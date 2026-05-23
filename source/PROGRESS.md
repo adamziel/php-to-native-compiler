@@ -1,124 +1,137 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 02:11 CEST
+Updated: 2026-05-23 02:27 CEST
+Evaluation marker: `20260523T002315Z`
 
-Primary baseline: `106cc646 codegen: lower scoped native if branches`
-Evaluator cadence: every 45 minutes; latest consumed evaluator report is
-`20260522T233339Z`, next scheduled report is `2026-05-23T02:23:15+02:00`.
+Primary baseline: `codegen: merge scalar native if branch state`
+Latest semantic baseline: `codegen: merge scalar native if branch state`
+Latest evaluator report: `20260523T002315Z`
 
 These percentages are candid engineering estimates toward generalized PHP
-semantics in the native compiler. They are not test pass rates. Lane-local
-work, uncommitted diffs, and exact-shape fixtures do not count here.
+semantics in the native compiler. They are not test pass rates. Primary
+integrated work counts; lane-local candidates, uncommitted diffs, and
+exact-shape fixtures do not.
 
 ## Executive Read
 
 Overall estimated progress: **86%** `[#################---]`
 
-The project is moving in the right direction, but most recent progress is still
-about making selected generated-native paths execute through shared PHP
-semantic boundaries. The current primary baseline now includes three important
-generated-C execution slices:
+Momentum is positive. Primary now includes several generated-C executable
+semantic slices: selected request/global/array/reference paths from earlier
+work, direct `exit()`/`die()` cleanup, diagnostic report ownership cleanup, and
+bounded `if`/`else` lowering. The latest branch slice is useful because it
+executes real branch bodies and can reconcile cleanup-free scalar/string/bool
+post-branch variable state while still rejecting cleanup-owner joins,
+mixed-value phis, and undefined-variable unions instead of faking them.
 
-- bounded `if`/`else` lowering for state-stable branches whose conditions route
-  through native truthiness or comparison boundaries;
-- bounded direct `exit()`/`die()` lowering for no-arg, `null`, `int`, and
-  `string` operands with shared cleanup;
-- generated-C diagnostic report ownership cleanup so reported diagnostics are
-  consumed consistently.
+This is still not a complete native PHP execution model. Calls/functions,
+objects/properties/methods, full references/COW, broad structured control flow,
+exact diagnostics, and LLVM/assembly parity remain the main gaps.
 
-This is real generalized movement, not a single PHP fixture. It is still not
-full PHP control flow, calls, objects, references, or diagnostics.
+Current primary cleanliness: the only expected dirty product diff after this
+batch is the protected `runtime/src/lib.rs` null-slot increment/decrement hunk;
+it is unintegrated and not counted.
 
-The only expected dirty primary diff is the preserved
-`runtime/src/lib.rs` null-slot increment/decrement hunk. It is unintegrated and
-not counted.
+## Grand Roadmap
 
-## Roadmap
+| Roadmap item | Estimate | Visual | Current read |
+| --- | ---: | --- | --- |
+| Runtime and ABI foundations | **97%** | `[###################-]` | Strong value, array, symbol-table, request-state, reference, comparison, truthiness, diagnostic, and exit-result surfaces. |
+| Compiler/backend consumers | **97%** | `[###################-]` | Good generated-C coverage for selected request, `$GLOBALS`, symbols, arrays, lvalues, references, exit, diagnostics, state-stable branches, and cleanup-free scalar branch joins. LLVM/assembly parity is uneven. |
+| Executable PHP semantics | **84%** | `[#################---]` | Improving through linked executable gates, but still selected islands rather than a complete execution model. |
+| Arrays, lvalues, references, COW | **87%** | `[#################---]` | Strong selected paths, including reference-backed active symbol-root array lvalues. Arbitrary writable roots, full COW, and by-reference foreach remain large. |
+| Symbols, globals, request state | **96%** | `[###################-]` | Strong request/`$GLOBALS` generated-C coverage. Broader request/global reconciliation remains open. |
+| Calls, functions, frames | **27%** | `[#####---------------]` | Runtime/interpreter call-frame metadata enforcement landed; generated-native call/frame execution is still the major missing piece. |
+| Objects, properties, methods | **11%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary still lacks general compiled object/property/method execution. |
+| Control flow, cleanup, diagnostics | **35%** | `[#######-------------]` | Direct exit, diagnostic ownership, bounded state-stable `if`/`else`, and cleanup-free scalar/string/bool branch joins execute on generated C. Loops, switch, cleanup-owner joins, exact ordering, shutdown/finally/destructors, and unwinding are not generalized. |
+| Broad integrated verification | **86%** | `[#################---]` | Focused gates are strong. Cross-feature composition and backend parity need broader proof. |
 
-| Roadmap item | Estimate | Status |
-| --- | ---: | --- |
-| Runtime and ABI foundations | **97%** `[###################-]` | Strong value, array, symbol-table, request-state, reference, comparison, truthiness, diagnostic, and exit-result surfaces. |
-| Compiler/backend consumers | **97%** `[###################-]` | Good generated-C coverage for selected request, `$GLOBALS`, symbol, array-query, lvalue, reference, exit, diagnostic, and scoped-branch consumers. LLVM/assembly parity is uneven. |
-| Executable PHP semantics | **84%** `[#################---]` | Improving through linked executable gates, but still selected islands rather than a complete native PHP execution model. |
-| Arrays, lvalues, references, COW | **87%** `[#################---]` | Strong selected paths, including reference-backed active symbol-root array lvalues. Arbitrary writable roots, full COW, and by-reference foreach remain large. |
-| Symbols, globals, request state | **96%** `[###################-]` | Strong request/`$GLOBALS` generated-C coverage. Broader request/global reconciliation remains open. |
-| Calls, functions, frames | **27%** `[#####---------------]` | Runtime/interpreter call-frame metadata enforcement landed; generated-native call/frame execution remains the major missing piece. |
-| Objects, properties, methods | **11%** `[##------------------]` | Mostly lane-local/runtime candidate work; primary still lacks general compiled object/property/method execution. |
-| Control flow, cleanup, diagnostics | **34%** `[#######-------------]` | Direct exit, diagnostic ownership, and bounded state-stable `if`/`else` now execute on generated C. Loops, switch, branch joins, exact diagnostic ordering, shutdown/finally/destructors, and exception-like unwinding are not generalized. |
-| Broad integrated verification | **86%** `[#################---]` | Focused gates are strong; cross-feature composition and backend parity still need broader proof. |
+## Primary-Integrated Progress
 
-## Recent Integrated Work
+- [x] Branch-state merge batch: generated-native C-link `if`/`else` joins for
+  cleanup-free scalar, string, and boolean variable values when both scoped
+  branches expose the same variable set and no native cleanup owner changes.
+- [x] `106cc646`: generated-native C-link `if`/`else` lowering for branch
+  conditions using native truthiness or comparison boundaries, guarded by a
+  persistent-state stability check.
+- [x] `2545d173`: generated-C diagnostic-report cleanup now uses one
+  owner-consuming report helper and avoids report-then-free ownership errors.
+- [x] `0cfae034`: generated-native direct `exit()`/`die()` handles no-arg,
+  `null`, `int`, and `string` operands with shared cleanup and focused linked
+  proof.
+- [x] `9ade9293`: runtime/interpreter call-frame execution enforces declared
+  by-value parameter/default/return type metadata. This is useful call-frame
+  groundwork, but not generated-native call lowering.
+- [x] Earlier baseline: selected generated-C request roots, `$GLOBALS`,
+  symbol-table operations, array queries/lvalues, and reference-backed active
+  symbol-root lvalue owners.
 
-- `106cc646`: generated-native C-link `if`/`else` lowering now emits scoped
-  branch bodies when branch conditions use existing native truthiness or value
-  comparison boundaries and both branches leave persistent compiler state
-  unchanged. It rejects branches needing environment merge/phi reconciliation
-  instead of silently losing locals or cleanup ownership. Focused proof covers
-  truthiness conditions, comparison conditions, linked executable output, and
-  rejection for branch assignments that need persistent environment merging.
-- `2545d173`: generated-C diagnostic-report cleanup now uses one owner-consuming
-  report helper and guards against report-then-free double ownership.
-- `0cfae034`: generated-native direct `exit()`/`die()` now handles no-argument,
-  `null`, `int`, and `string` operands on the C-link backend with shared
-  cleanup and focused linked executable proof.
-- `9ade9293`: runtime/interpreter call-frame execution enforces declared
-  by-value parameter/default/return type metadata across ordinary calls,
-  dynamic string calls, methods, closures, `call_user_func()`, and reflection.
-  This is useful call-frame infrastructure, but it is not generated-native call
-  lowering.
-- `83e08c94`: generated-C active ordinary symbol roots route array-lvalue
-  operations through reference-backed owner slots after references activate the
-  native symbol table.
+## Lane-Local Candidate Work
+
+Not counted until primary integrates it:
+
+- [ ] Generated named-call and callback-call blockers routed through shared
+  conversion-result cleanup paths.
+- [ ] Class method bodies consuming shared object-operation blockers instead
+  of vanishing behind metadata-only class registration.
+- [ ] Builtin interface/object metadata carriers for `ArrayAccess`,
+  `Countable`, `Iterator`, `IteratorAggregate`, and `Stringable`.
+- [ ] Diagnostic merge/severity-mask ABIs and branch diagnostic metadata.
+- [ ] Request population policy, byte-preserving request-name work, and
+  runtime/environment comparison-call blockers.
+- [ ] Output-argument writeback frames for selected byte replacement builtins.
+- [ ] Nested transient reference-source and array/lvalue diagnostic boundary
+  refinements.
 
 ## Done
 
-- Selected native value, string, array, symbol-table, request-state,
+- [x] Selected native value, string, array, symbol-table, request-state,
   comparison, truthiness, diagnostic, exit, and reference-slot ABIs.
-- Generated-C request root/key/path reads, writes, unsets, appends,
+- [x] Generated-C request root/key/path reads, writes, unsets, appends,
   assignment-expression values, `isset()`, `empty()`, and selected `??` paths.
-- Static and dynamic selected `$GLOBALS[...]` request/symbol dispatch,
+- [x] Static and dynamic selected `$GLOBALS[...]` request/symbol dispatch,
   including non-append reference paths and fatal direct no-key `$GLOBALS[]`
   rejection.
-- Selected generated-C array-query, array-lvalue, reference-backed lvalue,
+- [x] Selected generated-C array-query, array-lvalue, reference-backed lvalue,
   diagnostic cleanup, direct termination, and state-stable branch consumers.
-- Focused linked executable gates for the newest primary semantic slices.
+- [x] Focused linked executable gates for the newest primary semantic slices.
 
 ## In Progress
 
-- Compact primary integrations from lane-local candidate work, one semantic
-  boundary at a time.
-- Reference/COW owner expansion beyond active symbol-root arrays.
-- Generated-native call/frame handoff, argument cleanup, return ownership, and
-  dynamic call blockers.
-- Object/property/method execution, including `$this`, static context,
+- [ ] Compact primary integrations from lane-local candidate work, one
+  semantic boundary at a time.
+- [ ] Generated-native call/frame handoff, argument cleanup, return ownership,
+  and dynamic call blockers. Estimate: **27%** `[#####---------------]`
+- [ ] Reference/COW owner expansion beyond active symbol-root arrays and
+  through real control flow. Estimate: **87%** `[#################---]`
+- [ ] Object/property/method execution, including `$this`, static context,
   visibility/magic hooks, constructor behavior, and ArrayAccess boundaries.
-- Structured control flow beyond state-stable `if`/`else`: branch joins,
-  loops, switch, goto, break/continue, cleanup stacks, and source-ordered
-  diagnostics.
+  Estimate: **11%** `[##------------------]`
+- [ ] Structured control flow beyond state-stable `if`/`else` and
+  cleanup-free scalar branch joins: cleanup-owner joins, loops, switch, goto,
+  break/continue, cleanup stacks, and source-ordered diagnostics. Estimate:
+  **35%** `[#######-------------]`
+- [ ] Broader conversion/comparison behavior that removes shared blockers
+  rather than adding one-off builtin slices.
 
 ## Not Done
 
-- Full PHP references/COW, arbitrary writable roots, by-reference args/returns,
-  and by-reference foreach parity.
-- Full generated-native user function, method, closure, dynamic call,
+- [ ] Full PHP references/COW, arbitrary writable roots, by-reference
+  args/returns, and by-reference foreach parity.
+- [ ] Full generated-native user function, method, closure, dynamic call,
   variadic/spread, frame-local symbol, and cleanup semantics.
-- Real object construction, property/method dispatch, magic hooks, resources,
-  `ArrayAccess`, and object-compatible diagnostics.
-- Exact PHP diagnostics, warning masks, source spans, suppression/custom
+- [ ] Real object construction, property/method dispatch, magic hooks,
+  resources, `ArrayAccess`, and object-compatible diagnostics.
+- [ ] Exact PHP diagnostics, warning masks, source spans, suppression/custom
   handlers, exception-like unwinding, shutdown callbacks, destructors, finally
   ordering, output buffers, and SAPI behavior.
-- LLVM/assembly parity for newer generated-C/runtime ABI consumers.
+- [ ] LLVM/assembly parity for newer generated-C/runtime ABI consumers.
 
 ## Steering Bias
 
-Primary integration should keep landing small executable generalized slices.
-Reject exact-shape lowering, nearby builtin-only expansions, docs-only progress,
-and helper vocabulary that does not unlock behavior.
-
-Highest-value next work:
-
-- generated-native call/frame handoff;
-- object/property/method execution;
-- reference/COW owner slots through real control flow;
-- structured cleanup and diagnostic ordering;
-- broader conversion/comparison behavior that removes shared blockers.
+Keep primary landing small executable generalized slices. Good next work would
+remove one of the major shared blockers: generated-native call/frame execution,
+object/property/method execution, reference/COW through real control flow,
+structured cleanup and diagnostic ordering, or broad conversion/comparison
+semantics. Continue rejecting nearby builtin-only expansions, interpreter-only
+metadata progress, docs-only progress, and exact-shape lowering.

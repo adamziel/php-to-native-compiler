@@ -13,83 +13,88 @@
     <nav><a href="https://github.com/adamziel/php-to-native-compiler/blob/master/PROGRESS.md">PROGRESS.md</a><a href="https://github.com/adamziel/php-to-native-compiler">Repository</a><a href="../source/progress.html">Source Snapshot</a></nav>
   </header>
   <main><section class="source"><p><a href="../index.html">Back to dashboard</a> | <a href="https://github.com/adamziel/php-to-native-compiler/blob/master/PROGRESS.md">Open on GitHub</a></p><span class="eyebrow">Source document</span><h1>Canonical Progress Report</h1><h2>Visual Progress</h2><div class="tasks"></div><h2>Active Work Bars</h2><div class="tasks"></div><h2 id="php-native-compiler-progress">PHP Native Compiler Progress</h2>
-<p>Updated: 2026-05-23 02:11 CEST</p>
-<p>Primary baseline: <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/106cc646">106cc646</a> codegen: lower scoped native if branches</code> Evaluator cadence: every 45 minutes; latest consumed evaluator report is <code>20260522T233339Z</code>, next scheduled report is <code>2026-05-23T02:23:15+02:00</code>.</p>
-<p>These percentages are candid engineering estimates toward generalized PHP semantics in the native compiler. They are not test pass rates. Lane-local work, uncommitted diffs, and exact-shape fixtures do not count here.</p>
+<p>Updated: 2026-05-23 02:27 CEST Evaluation marker: <code>20260523T002315Z</code></p>
+<p>Primary baseline: <code>codegen: merge scalar native if branch state</code> Latest semantic baseline: <code>codegen: merge scalar native if branch state</code> Latest evaluator report: <code>20260523T002315Z</code></p>
+<p>These percentages are candid engineering estimates toward generalized PHP semantics in the native compiler. They are not test pass rates. Primary integrated work counts; lane-local candidates, uncommitted diffs, and exact-shape fixtures do not.</p>
 <h3 id="executive-read">Executive Read</h3>
 <p>Overall estimated progress: <strong>86%</strong> <code>[#################---]</code></p>
-<p>The project is moving in the right direction, but most recent progress is still about making selected generated-native paths execute through shared PHP semantic boundaries. The current primary baseline now includes three important generated-C execution slices:</p>
+<p>Momentum is positive. Primary now includes several generated-C executable semantic slices: selected request/global/array/reference paths from earlier work, direct <code>exit()</code>/<code>die()</code> cleanup, diagnostic report ownership cleanup, and bounded <code>if</code>/<code>else</code> lowering. The latest branch slice is useful because it executes real branch bodies and can reconcile cleanup-free scalar/string/bool post-branch variable state while still rejecting cleanup-owner joins, mixed-value phis, and undefined-variable unions instead of faking them.</p>
+<p>This is still not a complete native PHP execution model. Calls/functions, objects/properties/methods, full references/COW, broad structured control flow, exact diagnostics, and LLVM/assembly parity remain the main gaps.</p>
+<p>Current primary cleanliness: the only expected dirty product diff after this batch is the protected <code>runtime/src/lib.rs</code> null-slot increment/decrement hunk; it is unintegrated and not counted.</p>
+<h3 id="grand-roadmap">Grand Roadmap</h3>
+<div class="table-wrap"><table><thead><tr><th>Roadmap item</th><th>Estimate</th><th>Visual</th><th>Current read</th></tr></thead><tbody><tr><td>Runtime and ABI foundations</td><td><strong>97%</strong></td><td><code>[###################-]</code></td><td>Strong value, array, symbol-table, request-state, reference, comparison, truthiness, diagnostic, and exit-result surfaces.</td></tr><tr><td>Compiler/backend consumers</td><td><strong>97%</strong></td><td><code>[###################-]</code></td><td>Good generated-C coverage for selected request, <code>$GLOBALS</code>, symbols, arrays, lvalues, references, exit, diagnostics, state-stable branches, and cleanup-free scalar branch joins. LLVM/assembly parity is uneven.</td></tr><tr><td>Executable PHP semantics</td><td><strong>84%</strong></td><td><code>[#################---]</code></td><td>Improving through linked executable gates, but still selected islands rather than a complete execution model.</td></tr><tr><td>Arrays, lvalues, references, COW</td><td><strong>87%</strong></td><td><code>[#################---]</code></td><td>Strong selected paths, including reference-backed active symbol-root array lvalues. Arbitrary writable roots, full COW, and by-reference foreach remain large.</td></tr><tr><td>Symbols, globals, request state</td><td><strong>96%</strong></td><td><code>[###################-]</code></td><td>Strong request/<code>$GLOBALS</code> generated-C coverage. Broader request/global reconciliation remains open.</td></tr><tr><td>Calls, functions, frames</td><td><strong>27%</strong></td><td><code>[#####---------------]</code></td><td>Runtime/interpreter call-frame metadata enforcement landed; generated-native call/frame execution is still the major missing piece.</td></tr><tr><td>Objects, properties, methods</td><td><strong>11%</strong></td><td><code>[##------------------]</code></td><td>Mostly lane-local/runtime candidate work. Primary still lacks general compiled object/property/method execution.</td></tr><tr><td>Control flow, cleanup, diagnostics</td><td><strong>35%</strong></td><td><code>[#######-------------]</code></td><td>Direct exit, diagnostic ownership, bounded state-stable <code>if</code>/<code>else</code>, and cleanup-free scalar/string/bool branch joins execute on generated C. Loops, switch, cleanup-owner joins, exact ordering, shutdown/finally/destructors, and unwinding are not generalized.</td></tr><tr><td>Broad integrated verification</td><td><strong>86%</strong></td><td><code>[#################---]</code></td><td>Focused gates are strong. Cross-feature composition and backend parity need broader proof.</td></tr></tbody></table></div>
+<h3 id="primary-integrated-progress">Primary-Integrated Progress</h3>
 <ul>
-<li>bounded <code>if</code>/<code>else</code> lowering for state-stable branches whose conditions route</li>
-<p>through native truthiness or comparison boundaries;</p>
-<li>bounded direct <code>exit()</code>/<code>die()</code> lowering for no-arg, <code>null</code>, <code>int</code>, and</li>
-<p><code>string</code> operands with shared cleanup;</p>
-<li>generated-C diagnostic report ownership cleanup so reported diagnostics are</li>
-<p>consumed consistently.</p>
+<li>[x] Branch-state merge batch: generated-native C-link <code>if</code>/<code>else</code> joins for</li>
+<p>cleanup-free scalar, string, and boolean variable values when both scoped branches expose the same variable set and no native cleanup owner changes.</p>
+<li>[x] <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/106cc646">106cc646</a></code>: generated-native C-link <code>if</code>/<code>else</code> lowering for branch</li>
+<p>conditions using native truthiness or comparison boundaries, guarded by a persistent-state stability check.</p>
+<li>[x] <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/2545d173">2545d173</a></code>: generated-C diagnostic-report cleanup now uses one</li>
+<p>owner-consuming report helper and avoids report-then-free ownership errors.</p>
+<li>[x] <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/0cfae034">0cfae034</a></code>: generated-native direct <code>exit()</code>/<code>die()</code> handles no-arg,</li>
+<p><code>null</code>, <code>int</code>, and <code>string</code> operands with shared cleanup and focused linked proof.</p>
+<li>[x] <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/9ade9293">9ade9293</a></code>: runtime/interpreter call-frame execution enforces declared</li>
+<p>by-value parameter/default/return type metadata. This is useful call-frame groundwork, but not generated-native call lowering.</p>
+<li>[x] Earlier baseline: selected generated-C request roots, <code>$GLOBALS</code>,</li>
+<p>symbol-table operations, array queries/lvalues, and reference-backed active symbol-root lvalue owners.</p>
 </ul>
-<p>This is real generalized movement, not a single PHP fixture. It is still not full PHP control flow, calls, objects, references, or diagnostics.</p>
-<p>The only expected dirty primary diff is the preserved <code>runtime/src/lib.rs</code> null-slot increment/decrement hunk. It is unintegrated and not counted.</p>
-<h3 id="roadmap">Roadmap</h3>
-<div class="table-wrap"><table><thead><tr><th>Roadmap item</th><th>Estimate</th><th>Status</th></tr></thead><tbody><tr><td>Runtime and ABI foundations</td><td><strong>97%</strong> <code>[###################-]</code></td><td>Strong value, array, symbol-table, request-state, reference, comparison, truthiness, diagnostic, and exit-result surfaces.</td></tr><tr><td>Compiler/backend consumers</td><td><strong>97%</strong> <code>[###################-]</code></td><td>Good generated-C coverage for selected request, <code>$GLOBALS</code>, symbol, array-query, lvalue, reference, exit, diagnostic, and scoped-branch consumers. LLVM/assembly parity is uneven.</td></tr><tr><td>Executable PHP semantics</td><td><strong>84%</strong> <code>[#################---]</code></td><td>Improving through linked executable gates, but still selected islands rather than a complete native PHP execution model.</td></tr><tr><td>Arrays, lvalues, references, COW</td><td><strong>87%</strong> <code>[#################---]</code></td><td>Strong selected paths, including reference-backed active symbol-root array lvalues. Arbitrary writable roots, full COW, and by-reference foreach remain large.</td></tr><tr><td>Symbols, globals, request state</td><td><strong>96%</strong> <code>[###################-]</code></td><td>Strong request/<code>$GLOBALS</code> generated-C coverage. Broader request/global reconciliation remains open.</td></tr><tr><td>Calls, functions, frames</td><td><strong>27%</strong> <code>[#####---------------]</code></td><td>Runtime/interpreter call-frame metadata enforcement landed; generated-native call/frame execution remains the major missing piece.</td></tr><tr><td>Objects, properties, methods</td><td><strong>11%</strong> <code>[##------------------]</code></td><td>Mostly lane-local/runtime candidate work; primary still lacks general compiled object/property/method execution.</td></tr><tr><td>Control flow, cleanup, diagnostics</td><td><strong>34%</strong> <code>[#######-------------]</code></td><td>Direct exit, diagnostic ownership, and bounded state-stable <code>if</code>/<code>else</code> now execute on generated C. Loops, switch, branch joins, exact diagnostic ordering, shutdown/finally/destructors, and exception-like unwinding are not generalized.</td></tr><tr><td>Broad integrated verification</td><td><strong>86%</strong> <code>[#################---]</code></td><td>Focused gates are strong; cross-feature composition and backend parity still need broader proof.</td></tr></tbody></table></div>
-<h3 id="recent-integrated-work">Recent Integrated Work</h3>
+<h3 id="lane-local-candidate-work">Lane-Local Candidate Work</h3>
+<p>Not counted until primary integrates it:</p>
 <ul>
-<li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/106cc646">106cc646</a></code>: generated-native C-link <code>if</code>/<code>else</code> lowering now emits scoped</li>
-<p>branch bodies when branch conditions use existing native truthiness or value comparison boundaries and both branches leave persistent compiler state unchanged. It rejects branches needing environment merge/phi reconciliation instead of silently losing locals or cleanup ownership. Focused proof covers truthiness conditions, comparison conditions, linked executable output, and rejection for branch assignments that need persistent environment merging.</p>
-<li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/2545d173">2545d173</a></code>: generated-C diagnostic-report cleanup now uses one owner-consuming</li>
-<p>report helper and guards against report-then-free double ownership.</p>
-<li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/0cfae034">0cfae034</a></code>: generated-native direct <code>exit()</code>/<code>die()</code> now handles no-argument,</li>
-<p><code>null</code>, <code>int</code>, and <code>string</code> operands on the C-link backend with shared cleanup and focused linked executable proof.</p>
-<li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/9ade9293">9ade9293</a></code>: runtime/interpreter call-frame execution enforces declared</li>
-<p>by-value parameter/default/return type metadata across ordinary calls, dynamic string calls, methods, closures, <code>call_user_func()</code>, and reflection. This is useful call-frame infrastructure, but it is not generated-native call lowering.</p>
-<li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/83e08c94">83e08c94</a></code>: generated-C active ordinary symbol roots route array-lvalue</li>
-<p>operations through reference-backed owner slots after references activate the native symbol table.</p>
+<li>[ ] Generated named-call and callback-call blockers routed through shared</li>
+<p>conversion-result cleanup paths.</p>
+<li>[ ] Class method bodies consuming shared object-operation blockers instead</li>
+<p>of vanishing behind metadata-only class registration.</p>
+<li>[ ] Builtin interface/object metadata carriers for <code>ArrayAccess</code>,</li>
+<p><code>Countable</code>, <code>Iterator</code>, <code>IteratorAggregate</code>, and <code>Stringable</code>.</p>
+<li>[ ] Diagnostic merge/severity-mask ABIs and branch diagnostic metadata.</li>
+<li>[ ] Request population policy, byte-preserving request-name work, and</li>
+<p>runtime/environment comparison-call blockers.</p>
+<li>[ ] Output-argument writeback frames for selected byte replacement builtins.</li>
+<li>[ ] Nested transient reference-source and array/lvalue diagnostic boundary</li>
+<p>refinements.</p>
 </ul>
 <h3 id="done">Done</h3>
 <ul>
-<li>Selected native value, string, array, symbol-table, request-state,</li>
+<li>[x] Selected native value, string, array, symbol-table, request-state,</li>
 <p>comparison, truthiness, diagnostic, exit, and reference-slot ABIs.</p>
-<li>Generated-C request root/key/path reads, writes, unsets, appends,</li>
+<li>[x] Generated-C request root/key/path reads, writes, unsets, appends,</li>
 <p>assignment-expression values, <code>isset()</code>, <code>empty()</code>, and selected <code>??</code> paths.</p>
-<li>Static and dynamic selected <code>$GLOBALS[...]</code> request/symbol dispatch,</li>
+<li>[x] Static and dynamic selected <code>$GLOBALS[...]</code> request/symbol dispatch,</li>
 <p>including non-append reference paths and fatal direct no-key <code>$GLOBALS[]</code> rejection.</p>
-<li>Selected generated-C array-query, array-lvalue, reference-backed lvalue,</li>
+<li>[x] Selected generated-C array-query, array-lvalue, reference-backed lvalue,</li>
 <p>diagnostic cleanup, direct termination, and state-stable branch consumers.</p>
-<li>Focused linked executable gates for the newest primary semantic slices.</li>
+<li>[x] Focused linked executable gates for the newest primary semantic slices.</li>
 </ul>
 <h3 id="in-progress">In Progress</h3>
 <ul>
-<li>Compact primary integrations from lane-local candidate work, one semantic</li>
-<p>boundary at a time.</p>
-<li>Reference/COW owner expansion beyond active symbol-root arrays.</li>
-<li>Generated-native call/frame handoff, argument cleanup, return ownership, and</li>
-<p>dynamic call blockers.</p>
-<li>Object/property/method execution, including <code>$this</code>, static context,</li>
-<p>visibility/magic hooks, constructor behavior, and ArrayAccess boundaries.</p>
-<li>Structured control flow beyond state-stable <code>if</code>/<code>else</code>: branch joins,</li>
-<p>loops, switch, goto, break/continue, cleanup stacks, and source-ordered diagnostics.</p>
+<li>[ ] Compact primary integrations from lane-local candidate work, one</li>
+<p>semantic boundary at a time.</p>
+<li>[ ] Generated-native call/frame handoff, argument cleanup, return ownership,</li>
+<p>and dynamic call blockers. Estimate: <strong>27%</strong> <code>[#####---------------]</code></p>
+<li>[ ] Reference/COW owner expansion beyond active symbol-root arrays and</li>
+<p>through real control flow. Estimate: <strong>87%</strong> <code>[#################---]</code></p>
+<li>[ ] Object/property/method execution, including <code>$this</code>, static context,</li>
+<p>visibility/magic hooks, constructor behavior, and ArrayAccess boundaries. Estimate: <strong>11%</strong> <code>[##------------------]</code></p>
+<li>[ ] Structured control flow beyond state-stable <code>if</code>/<code>else</code> and</li>
+<p>cleanup-free scalar branch joins: cleanup-owner joins, loops, switch, goto, break/continue, cleanup stacks, and source-ordered diagnostics. Estimate: <strong>35%</strong> <code>[#######-------------]</code></p>
+<li>[ ] Broader conversion/comparison behavior that removes shared blockers</li>
+<p>rather than adding one-off builtin slices.</p>
 </ul>
 <h3 id="not-done">Not Done</h3>
 <ul>
-<li>Full PHP references/COW, arbitrary writable roots, by-reference args/returns,</li>
-<p>and by-reference foreach parity.</p>
-<li>Full generated-native user function, method, closure, dynamic call,</li>
+<li>[ ] Full PHP references/COW, arbitrary writable roots, by-reference</li>
+<p>args/returns, and by-reference foreach parity.</p>
+<li>[ ] Full generated-native user function, method, closure, dynamic call,</li>
 <p>variadic/spread, frame-local symbol, and cleanup semantics.</p>
-<li>Real object construction, property/method dispatch, magic hooks, resources,</li>
-<p><code>ArrayAccess</code>, and object-compatible diagnostics.</p>
-<li>Exact PHP diagnostics, warning masks, source spans, suppression/custom</li>
+<li>[ ] Real object construction, property/method dispatch, magic hooks,</li>
+<p>resources, <code>ArrayAccess</code>, and object-compatible diagnostics.</p>
+<li>[ ] Exact PHP diagnostics, warning masks, source spans, suppression/custom</li>
 <p>handlers, exception-like unwinding, shutdown callbacks, destructors, finally ordering, output buffers, and SAPI behavior.</p>
-<li>LLVM/assembly parity for newer generated-C/runtime ABI consumers.</li>
+<li>[ ] LLVM/assembly parity for newer generated-C/runtime ABI consumers.</li>
 </ul>
 <h3 id="steering-bias">Steering Bias</h3>
-<p>Primary integration should keep landing small executable generalized slices. Reject exact-shape lowering, nearby builtin-only expansions, docs-only progress, and helper vocabulary that does not unlock behavior.</p>
-<p>Highest-value next work:</p>
-<ul>
-<li>generated-native call/frame handoff;</li>
-<li>object/property/method execution;</li>
-<li>reference/COW owner slots through real control flow;</li>
-<li>structured cleanup and diagnostic ordering;</li>
-<li>broader conversion/comparison behavior that removes shared blockers.</li>
-</ul></section></main>
-  <footer><span>Generated 2026-05-23T00:18:59.836Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
+<p>Keep primary landing small executable generalized slices. Good next work would remove one of the major shared blockers: generated-native call/frame execution, object/property/method execution, reference/COW through real control flow, structured cleanup and diagnostic ordering, or broad conversion/comparison semantics. Continue rejecting nearby builtin-only expansions, interpreter-only metadata progress, docs-only progress, and exact-shape lowering.</p></section></main>
+  <footer><span>Generated 2026-05-23T00:34:03.726Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
 </body>
 </html>
