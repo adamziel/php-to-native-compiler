@@ -967,6 +967,38 @@ fn native_value_comparison_op_tag(op: BinaryOp) -> Option<&'static str> {
     }
 }
 
+fn native_value_non_strict_comparison_op_tag(op: BinaryOp) -> Option<&'static str> {
+    match op {
+        BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
+            native_value_comparison_op_tag(op)
+        }
+        BinaryOp::StrictEq
+        | BinaryOp::StrictNe
+        | BinaryOp::Add
+        | BinaryOp::Sub
+        | BinaryOp::Mul
+        | BinaryOp::Div
+        | BinaryOp::Mod
+        | BinaryOp::Concat
+        | BinaryOp::NullCoalesce
+        | BinaryOp::LogicalAnd
+        | BinaryOp::LogicalOr
+        | BinaryOp::LogicalXor
+        | BinaryOp::BitwiseAnd
+        | BinaryOp::BitwiseOr
+        | BinaryOp::BitwiseXor
+        | BinaryOp::ShiftLeft
+        | BinaryOp::ShiftRight => None,
+    }
+}
+
+fn native_value_non_strict_comparison_expr(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Binary { op, .. } if native_value_non_strict_comparison_op_tag(*op).is_some()
+    )
+}
+
 fn native_value_result_output_expr(expr: &Expr) -> bool {
     match expr {
         Expr::Index { .. } => true,
@@ -14890,6 +14922,10 @@ impl CGenerator {
                 span,
             } => {
                 if is_comparison_op(*op) && !matches!(op, BinaryOp::StrictEq | BinaryOp::StrictNe) {
+                    if self.uses_native_string_helpers {
+                        return self
+                            .emit_native_value_comparison_bool_expr(left, *op, right, *span);
+                    }
                     return self.emit_scalar_comparison_expr(left, *op, right, *span);
                 }
                 if matches!(op, BinaryOp::NullCoalesce) {
@@ -20368,6 +20404,47 @@ impl CGenerator {
         }
     }
 
+    fn emit_native_value_comparison_bool_expr(
+        &mut self,
+        left: &Expr,
+        op: BinaryOp,
+        right: &Expr,
+        span: Span,
+    ) -> CompileResult<CValue> {
+        let comparison =
+            self.materialize_native_value_comparison_expr(left, op, right, span, "")?;
+        let truthy = self.emit_native_value_handle_truthiness(&comparison.handle);
+        self.body.extend(comparison.cleanup_after_use);
+        Ok(CValue::BoolExpr(truthy))
+    }
+
+    fn materialize_native_value_comparison_expr(
+        &mut self,
+        left: &Expr,
+        op: BinaryOp,
+        right: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        let Some(op_tag) = native_value_non_strict_comparison_op_tag(op) else {
+            return Err(self.unsupported(span, assembly_comparison_rejection()));
+        };
+        let left_value = self.materialize_native_value_result_operand(left, failure_cleanup)?;
+        let right_failure_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&left_value.cleanup_after_use),
+            failure_cleanup
+        );
+        let right_value =
+            self.materialize_native_value_result_operand(right, &right_failure_cleanup)?;
+        Ok(self.emit_native_value_compare_result_handle(
+            left_value,
+            op_tag,
+            right_value,
+            failure_cleanup,
+        ))
+    }
+
     fn emit_bool_scalar_comparison(
         &mut self,
         left: String,
@@ -24006,13 +24083,30 @@ impl CGenerator {
             return Ok(true);
         }
 
-        if !native_value_result_output_expr(expr) {
+        if !native_value_result_output_expr(expr)
+            && !(self.uses_native_string_helpers && native_value_non_strict_comparison_expr(expr))
+        {
             return Ok(false);
         }
 
-        let value = self.try_materialize_native_value_result_expr(expr, "")?;
-        let Some(value) = value else {
-            return Ok(false);
+        let value = match expr {
+            Expr::Binary {
+                left,
+                op,
+                right,
+                span,
+            } if self.uses_native_string_helpers
+                && native_value_non_strict_comparison_op_tag(*op).is_some() =>
+            {
+                self.materialize_native_value_comparison_expr(left, *op, right, *span, "")?
+            }
+            _ => {
+                let value = self.try_materialize_native_value_result_expr(expr, "")?;
+                let Some(value) = value else {
+                    return Ok(false);
+                };
+                value
+            }
         };
 
         self.emit_native_value_format_stdout_with_diagnostic(&value.handle);

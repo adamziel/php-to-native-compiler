@@ -7737,155 +7737,43 @@ echo 1 !== "1";
 
     assert!(source.contains("#include <stdbool.h>"), "{source}");
     assert!(
-        source.contains("phpc_native_comparison_operand_from_scalar"),
+        source.contains("phpc_native_value_from_scalar")
+            && source.contains("phpc_native_value_from_string_bytes_with_diagnostic"),
         "{source}"
     );
     assert!(
-        source.contains("phpc_native_string_from_bytes")
-            && source.contains("phpc_native_comparison_operand_from_string_and_free"),
-        "{source}"
+        source.contains("extern phpc_NativeValueOperationResult phpc_native_value_compare_result"),
+        "non-strict comparison families should share the native value comparison result ABI:\n{source}"
     );
     assert!(
-        !source.contains("phpc_native_comparison_operand_from_string_bytes"),
-        "generated C should consume string comparison operands through owned string handles, not the raw-byte operand ABI:\n{source}"
+        source.matches(" = phpc_native_value_compare_result(").count() >= 11,
+        "direct scalar/string/null comparison echoes should route through value-result comparison:\n{source}"
+    );
+    for op in [
+        "PHPC_NATIVE_VALUE_COMPARISON_EQ",
+        "PHPC_NATIVE_VALUE_COMPARISON_NE",
+        "PHPC_NATIVE_VALUE_COMPARISON_LT",
+        "PHPC_NATIVE_VALUE_COMPARISON_LE",
+        "PHPC_NATIVE_VALUE_COMPARISON_GT",
+        "PHPC_NATIVE_VALUE_COMPARISON_GE",
+    ] {
+        assert!(source.contains(op), "{op}\n\n{source}");
+    }
+    assert!(
+        source.contains("phpc_native_value_format_stdout_with_diagnostic"),
+        "direct comparison echoes should keep the runtime-owned result through stdout formatting:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_comparison_operation_from_opcode"),
-        "{source}"
-    );
-    assert!(
-        source.contains("phpc_native_comparison_operand_compare_operation_relation_and_free"),
-        "runtime-linked native comparison should compute a shared relation result before branch consumption:\n{source}"
-    );
-    assert!(
-        source.contains("phpc_native_comparison_relation_result_decision_or_report_stderr_and_free"),
-        "runtime-linked native comparison should convert relation results through the shared decision/reporting ABI:\n{source}"
-    );
-    assert!(
-        source.contains("phpc_NativeComparisonOperation"),
-        "{source}"
-    );
-    assert!(source.contains("phpc_NativeComparisonOperand"), "{source}");
-    assert!(
-        source.contains("phpc_NativeComparisonRelationResult"),
-        "comparison results should flow through the shared relation-result ABI before branch truth consumption:\n{source}"
-    );
-    assert!(
-        source.contains("phpc_NativeComparisonRelationResult comparison_relation_"),
-        "generated C should allocate relation-result temporaries for comparison branch consumers:\n{source}"
-    );
-    assert!(
-        !source.contains("phpc_NativeComparisonBranchResult"),
-        "scalar/string comparison branches should not expose intermediate branch-result storage:\n{source}"
-    );
-    assert!(
-        source.contains("phpc_NativeComparisonBranchDecision"),
-        "{source}"
-    );
-    assert!(
-        !source.contains("phpc_native_comparison_branch_decision_from_result"),
-        "scalar/string comparisons should consume relation results through the relation decision ABI:\n{source}"
-    );
-    assert!(
-        source.contains("phpc_native_comparison_branch_decision_abort_code"),
-        "generated C should classify comparison branch aborts through the shared decision abort-code ABI:\n{source}"
-    );
-    assert!(
-        !source.contains("phpc_native_comparison_branch_decision_status"),
-        "generated C should not duplicate branch-decision status handling outside the abort-code ABI:\n{source}"
-    );
-    assert!(
-        !source.contains("phpc_native_comparison_branch_decision_exit_code"),
-        "generated C should not duplicate branch-decision exit-code handling outside the abort-code ABI:\n{source}"
-    );
-    assert!(
-        source.contains("phpc_native_comparison_branch_decision_is_true"),
-        "generated C should consume branch truth through the runtime branch-decision ABI:\n{source}"
-    );
-    assert!(
-        !source.contains("if (comparison_exit_code_"),
-        "generated C should not use exit-code checks as the comparison status classifier:\n{source}"
-    );
-    assert!(
-        !source.contains("phpc_NativeComparisonResult"),
-        "generated C should not materialize comparison result objects:\n{source}"
-    );
-    assert!(
-        !source.contains("phpc_native_comparison_operand_compare_operation_decision_and_free"),
-        "generated C should not bypass the relation-result comparison contract:\n{source}"
-    );
-    assert!(
-        !source.contains("phpc_native_comparison_operand_compare_operation_branch_and_free"),
-        "scalar/string comparisons should not materialize an intermediate branch result:\n{source}"
-    );
-    assert!(
-        !source.contains("phpc_native_value_materialization_failure_exit_code"),
-        "generated C should not open-code comparison operand materialization failure checks:\n{source}"
-    );
-    assert!(
-        !source.contains("phpc_native_value_compare_and_free"),
-        "generated C should consume operands through the comparison operand boundary:\n{source}"
-    );
-    assert!(
-        !source.contains("phpc_native_value_compare_branch_and_free"),
-        "generated C should consume operands through the comparison operand boundary:\n{source}"
-    );
-    assert!(
-        !source.contains("phpc_native_comparison_branch_result_status"),
-        "generated C should not open-code branch status handling:\n{source}"
-    );
-    assert!(
-        !source.contains("phpc_native_comparison_branch_result_value"),
-        "generated C should not open-code branch value handling:\n{source}"
-    );
-    assert!(
-        !source.contains("phpc_native_comparison_branch_result_diagnostic_len"),
-        "generated C should not need diagnostic-length access after branch ABI reporting:\n{source}"
-    );
-    assert!(
-        !source.contains("phpc_native_comparison_branch_result_exit_code"),
-        "generated C should not consume branch exits through raw branch-result accessors:\n{source}"
-    );
-    assert!(
-        !source.contains("phpc_native_comparison_branch_result_is_true"),
-        "generated C should not consume branch truth through raw branch-result accessors:\n{source}"
-    );
-    assert!(
-        !source.contains(".status != 0"),
-        "generated C should not inspect branch status fields directly:\n{source}"
-    );
-    assert!(
-        !source.contains(".value != 0"),
-        "generated C should not inspect branch value fields directly:\n{source}"
-    );
-    assert!(
-        !source.contains("comparison_string_handle_"),
-        "generated C should not allocate comparison-only string handles:\n{source}"
-    );
-    assert!(
-        !source.contains("phpc_native_value_from_string(comparison_string_handle_"),
-        "generated C should materialize comparison strings through the raw byte boundary:\n{source}"
-    );
-    assert!(
-        !source.contains("phpc_native_comparison_result_branch_or_report_stderr_and_free"),
-        "generated C should not compose result branch consumption outside the relation-result boundary:\n{source}"
-    );
-    assert!(
-        !source.contains("if (comparison_value_handle_"),
-        "generated C should not open-code comparison operand handle null checks:\n{source}"
-    );
-    assert!(
-        !source.contains("comparison_diagnostic_handle_"),
-        "generated C should not carry comparison operand diagnostics outside the operand ABI:\n{source}"
-    );
-    assert!(
-        !source.contains("((1) =="),
-        "loose equality should not lower as a C scalar comparison:\n{source}"
+        !source.contains("phpc_NativeComparisonOperand")
+            && !source.contains("phpc_native_comparison_operand_compare_operation_relation_and_free")
+            && !source.contains("phpc_native_comparison_branch_decision_result_operand")
+            && !source.contains("phpc_native_comparison_branch_decision_is_true"),
+        "non-strict scalar/string comparisons should not use the older comparison-decision ABI:\n{source}"
     );
 }
 
 #[test]
-fn native_executable_c_source_rematerializes_comparison_decisions_as_operands() {
+fn native_executable_c_source_rematerializes_nested_comparisons_as_value_operands() {
     let program = parse(
         r#"<?php
 $payload = "2";
@@ -7898,34 +7786,31 @@ echo ((null == false) != ("10" < 2));
     let source = emit_native_executable_c_source(&program).unwrap();
 
     assert!(
-        source.contains("extern phpc_NativeComparisonOperand phpc_native_comparison_branch_decision_result_operand"),
-        "generated C should declare the branch-decision-to-operand ABI:\n{source}"
-    );
-    assert!(
-        source.contains("phpc_native_comparison_operand_compare_operation_relation_and_free"),
-        "outer comparisons should consume the shared comparison relation ABI:\n{source}"
-    );
-    assert!(
-        source.contains("phpc_native_comparison_relation_result_decision_or_report_stderr_and_free"),
-        "outer comparisons should convert relation results through the shared decision/reporting ABI:\n{source}"
+        source.contains("extern phpc_NativeValueOperationResult phpc_native_value_compare_result"),
+        "nested comparisons should declare the shared native value comparison result ABI:\n{source}"
     );
     assert!(
         source
-            .matches(" = phpc_native_comparison_branch_decision_result_operand(")
+            .matches(" = phpc_native_value_compare_result(")
             .count()
-            >= 4,
-        "nested loose comparison operands should rematerialize branch decisions through the shared operand ABI:\n{source}"
+            >= 7,
+        "nested loose comparison operands should rematerialize through value-result handles:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_comparison_branch_decision_is_true"),
-        "generated C should still consume final branch truth through the runtime ABI:\n{source}"
+        source.contains("phpc_native_value_is_truthy"),
+        "ternary conditions should consume comparison result truth through native value truthiness:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_comparison_branch_decision_result_operand")
+            && !source.contains("phpc_NativeComparisonOperand"),
+        "nested loose comparisons should not rematerialize through the older branch-decision operand ABI:\n{source}"
     );
 }
 
 const ARRAY_HANDLE_COMPARISON_SOURCE: &str = "<?php\n$left = [1, \"two\" => 2];\n$right = [1, \"two\" => 2];\necho ($left === $right), \"\\n\";\necho ([1, \"two\" => 2] !== [1, \"two\" => 3]), \"\\n\";\necho ([1] == [1]), \"\\n\";\necho ([2] > [1]), \"\\n\";\n";
 
 #[test]
-fn native_executable_c_source_routes_array_handle_comparisons_through_runtime_branch() {
+fn native_executable_c_source_routes_array_handle_comparisons_through_runtime_boundaries() {
     let program = parse(ARRAY_HANDLE_COMPARISON_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
 
@@ -7936,9 +7821,15 @@ fn native_executable_c_source_routes_array_handle_comparisons_through_runtime_br
         "generated C should declare the shared array comparison branch ABI:\n{source}"
     );
     assert_eq!(
-        source.matches(" = phpc_native_array_compare_branch(").count(),
-        4,
-        "strict, loose-equality, and ordering array comparisons should share the array branch ABI:\n{source}"
+        source
+            .matches(" = phpc_native_array_compare_branch(")
+            .count(),
+        2,
+        "strict array comparisons should keep the array branch ABI:\n{source}"
+    );
+    assert!(
+        source.matches(" = phpc_native_value_compare_result(").count() >= 2,
+        "non-strict array equality and ordering should route through the shared value-result comparison ABI:\n{source}"
     );
     assert!(
         source.contains("phpc_NativeComparisonBranchDecision")
