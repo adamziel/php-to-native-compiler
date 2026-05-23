@@ -116,6 +116,14 @@ const NATIVE_BRANCH_LOCAL_VALUE_CLEANUP_SOURCE: &str = concat!(
     "echo \"done\";\n",
 );
 
+const NATIVE_DISCARDED_VALUE_STATEMENT_CLEANUP_SOURCE: &str = concat!(
+    "<?php\n",
+    "array_sum([2, 3]);\n",
+    "echo \"A\";\n",
+    "array_product([4, 5]);\n",
+    "echo \"B\";\n",
+);
+
 const NATIVE_FOREACH_PRIOR_CURSOR_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [\"a\" => \"A\", \"b\" => \"B\"];\n",
@@ -1077,6 +1085,24 @@ fn native_executable_c_source_releases_branch_local_native_value_cleanup() {
 }
 
 #[test]
+fn native_executable_c_source_discards_native_value_statement_results() {
+    let program = parse(NATIVE_DISCARDED_VALUE_STATEMENT_CLEANUP_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.matches("phpc_native_value_free(native_value_array_query_")
+            .count()
+            >= 2,
+        "{source}"
+    );
+    assert!(
+        !source.contains("assembly mutation lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_native_value_ternaries_through_lazy_branches() {
     let program = parse(NATIVE_VALUE_TERNARY_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -1849,6 +1875,34 @@ fn emit_exe_links_and_runs_if_branch_local_native_value_cleanup_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"T|done");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_discarded_native_value_statement_cleanup_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "discarded_native_value_statement_cleanup",
+        NATIVE_DISCARDED_VALUE_STATEMENT_CLEANUP_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run discarded native-value statement executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"AB");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);

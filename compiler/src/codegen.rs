@@ -12382,6 +12382,21 @@ impl CGenerator {
         Ok(())
     }
 
+    fn emit_discarded_expr_statement(&mut self, expr: &Expr) -> CompileResult<()> {
+        if let Some(value) = self.try_materialize_native_value_result_expr(expr, "")? {
+            self.body.extend(value.cleanup_after_use);
+            return Ok(());
+        }
+
+        let value = self.emit_expr(expr)?;
+        if let CValue::NativeValueHandle(handle) = value {
+            if self.release_native_value_cleanup_handle(&handle) {
+                self.body.push(format!("phpc_native_value_free({handle});"));
+            }
+        }
+        Ok(())
+    }
+
     fn emit_statement(&mut self, stmt: &Stmt) -> CompileResult<()> {
         if let Some(operation) = native_statement_operand_call_operation(stmt) {
             return Err(self.unsupported_call_operation(operation));
@@ -12569,10 +12584,7 @@ impl CGenerator {
                 }
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
-            Stmt::Expr { expr, .. } => {
-                self.emit_expr(expr)?;
-                Ok(())
-            }
+            Stmt::Expr { expr, .. } => self.emit_discarded_expr_statement(expr),
             Stmt::Function(function) => Err(native_function_declaration_fallback_diagnostic(
                 NativeCallBackend::Assembly,
                 function,
