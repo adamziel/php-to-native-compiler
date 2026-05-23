@@ -1,11 +1,11 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 04:48 CEST
-Evaluation marker: `20260523T020211Z`
+Updated: 2026-05-23 05:04 CEST
+Evaluation marker: `20260523T025130Z`
 
-Primary HEAD: `2f7c236a codegen: output array owners`
-Latest integrated semantic baseline: `2f7c236a codegen: output array owners`
-Latest evaluator report: `20260523T020211Z`
+Primary HEAD: `9a05a58b codegen: route strlen value results`
+Latest integrated semantic baseline: `9a05a58b codegen: route strlen value results`
+Latest evaluator report: `20260523T025130Z`
 
 These percentages are candid engineering estimates toward generalized PHP
 semantics in the native compiler. They are not test pass rates. Primary
@@ -30,15 +30,18 @@ now classify stored native values through shared null predicates and PHP
 truthiness. Native array owners now also feed shared PHP truthiness for
 `empty()`, `if` conditions, logical operands, and unary-not checks, and array
 owners now route echo/print output through the shared native-value stdout ABI.
+Native value-operation diagnostics now report through the shared diagnostic
+consumer, and `strlen()` can consume owned native value-result producers through
+the shared value-to-string conversion boundary.
 
 This is still selected compiled PHP execution, not complete PHP semantics.
 Calls/functions/frames, object/property/method execution, full references/COW,
 arbitrary by-reference foreach, structured cleanup/unwinding, exact
 diagnostics, and LLVM/assembly parity remain the major completion blockers.
 
-Current primary cleanliness: semantic work is current through the array-owner
-output batch. The protected `runtime/src/lib.rs` null-slot hunk is still dirty
-and uncounted.
+Current primary cleanliness: semantic work is current through the `strlen()`
+value-result conversion batch. The protected `runtime/src/lib.rs` null-slot
+hunk is still dirty and uncounted.
 
 ## Grand Roadmap
 
@@ -51,11 +54,19 @@ and uncounted.
 | Symbols, globals, request state | **96%** | `[###################-]` | Strong request/`$GLOBALS` generated-C coverage. Broader request/global reconciliation remains open. |
 | Calls, functions, frames | **27%** | `[#####---------------]` | Runtime/interpreter call-frame metadata enforcement exists, but generated-native call/frame execution is still the major missing piece. |
 | Objects, properties, methods | **11%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary still lacks general compiled object/property/method execution. |
-| Control flow, cleanup, diagnostics | **38%** | `[########------------]` | Direct exit, diagnostic ownership, bounded `if`/`else`, selected branch joins, logical short-circuiting, branch-local value/non-value cleanup, and statement cleanup execute on generated C. Loops, switch, cleanup stacks, exact ordering, and unwinding are not generalized. |
+| Control flow, cleanup, diagnostics | **38%** | `[########------------]` | Direct exit, diagnostic ownership/reporting, bounded `if`/`else`, selected branch joins, logical short-circuiting, branch-local value/non-value cleanup, and statement cleanup execute on generated C. Loops, switch, cleanup stacks, exact ordering, and unwinding are not generalized. |
 | Broad integrated verification | **87%** | `[#################---]` | Focused gates are strong. Cross-feature composition and backend parity need broader proof. |
 
 ## Primary-Integrated Progress
 
+- [x] `9a05a58b`: generated-C `strlen()` now consumes owned native
+  value-result producers through the shared native value materialization and
+  value-to-string conversion boundary, with linked proof across string-result,
+  cast, type-name, and binary value producers.
+- [x] `4efa12ba`: generated-C native value-operation diagnostics for bitwise,
+  cast, string-result, type-name, and operation-result families now route
+  through the shared diagnostic report consumer and clear reported handles
+  before later cleanup.
 - [x] `2f7c236a`: generated-C echo/print over native array owners now
   materializes the owner as a PHP-shaped native value and routes output through
   the shared native-value stdout ABI.
@@ -111,6 +122,9 @@ Not counted until primary integrates it cleanly:
   non-local unset owner classifiers, diagnostic/error-reporting masks, PCRE
   byte-pattern handling, JSON/serialization surfaces, and object/call/reference
   metadata.
+- [ ] Lane-local generated if-statement value truthiness from
+  `impl-array-value-runtime`, useful only if narrowed into a clean primary
+  slice without bypassing branch-state merge and cleanup blockers.
 - [ ] Generated named-call/callback-call blockers routed through shared
   conversion/result cleanup paths.
 - [ ] Object/property/method execution candidates, including ArrayAccess,
@@ -129,7 +143,8 @@ Not counted until primary integrates it cleanly:
 - [x] Selected generated-C array query, array lvalue, reference-backed lvalue,
   diagnostic cleanup, direct termination, state-stable branch, branch-owner,
   branch-local cleanup, foreach by-value storage, selected by-reference
-  foreach slots, strict value-result comparison, lazy expression, logical
+  foreach slots, strict value-result comparison, value-operation diagnostic
+  reporting, value-result string conversion, lazy expression, logical
   short-circuit, and statement-discard cleanup consumers.
 - [x] Focused source and linked executable gates for the newest primary
   semantic slices.
@@ -175,6 +190,9 @@ blockers with clean staging and focused proof. The best next work removes major
 shared blockers:
 generated-native call/frame execution, object/property/method execution,
 reference/COW through real control flow, broader cleanup and diagnostic
+ordering, or backend parity. Treat `4efa12ba` and `9a05a58b` as non-repeat;
+future diagnostic or string-conversion work should target source ordering,
+suppression/custom handlers, object/resource/string hooks, cleanup/unwind
 ordering, or backend parity. Continue rejecting docs-only progress, nearby
 builtin-only expansions, interpreter-only metadata patches, and exact-shape
 lowering.
