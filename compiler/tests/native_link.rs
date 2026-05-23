@@ -10641,6 +10641,21 @@ const NATIVE_STORED_VALUE_TYPE_INTROSPECTION_SOURCE: &str = concat!(
     "echo (true ? get_debug_type($array) : \"bad\");\n",
 );
 
+const NATIVE_STORED_VALUE_ISSET_EMPTY_SOURCE: &str = concat!(
+    "<?php\n",
+    "$sum = \"6\" + 1;\n",
+    "$zero = strtoupper(\"0\");\n",
+    "$word = strtoupper(\"go\");\n",
+    "$array = (array)null;\n",
+    "echo isset($sum) ? \"set\" : \"unset\", \"|\";\n",
+    "echo empty($sum) ? \"empty\" : \"filled\", \"|\";\n",
+    "echo isset($zero) ? \"set\" : \"unset\", \"|\";\n",
+    "echo empty($zero) ? \"empty\" : \"filled\", \"|\";\n",
+    "echo empty($word) ? \"empty\" : \"filled\", \"|\";\n",
+    "echo isset($array) ? \"set\" : \"unset\", \"|\";\n",
+    "echo empty($array) ? \"empty\" : \"filled\";\n",
+);
+
 const NATIVE_VALUE_CAST_ECHO_SOURCE: &str = "<?php\necho (int)\"5.9\", \"|\";\necho (float)\"3.5\", \"|\";\necho (string)(2 + 3), \"|\";\necho (bool)\"0\", \"|\";\necho gettype((string)123);\n";
 
 const NATIVE_VALUE_OPERATION_ECHO_SOURCE: &str = "<?php\n$left = \"6\";\n$right = 2;\necho -$left, \"|\";\necho $left + $right, \"|\";\necho $left / $right, \"|\";\necho \"A\" . \"\0B\", \"|\";\necho \"B\" & \"A\", \"|\";\necho 8 << \"1\";\n";
@@ -11307,6 +11322,62 @@ fn emit_exe_links_and_runs_stored_native_value_type_introspection_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"1|1|1|1|1|string|array");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn native_executable_c_source_routes_stored_value_isset_empty_through_runtime_abi() {
+    let program = parse(NATIVE_STORED_VALUE_ISSET_EMPTY_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("PHPC_NATIVE_VALUE_TYPE_IS_NULL")
+            && source.contains(" = phpc_native_value_type_predicate("),
+        "isset() should classify stored native values through the null type predicate:\n{source}"
+    );
+    assert!(
+        source.contains("extern _Bool phpc_native_value_is_truthy(phpc_NativeValueHandle value);")
+            && source.contains(" = phpc_native_value_is_truthy("),
+        "empty() should classify stored native values through shared truthiness:\n{source}"
+    );
+    assert!(
+        source.contains(" = phpc_native_value_string_result_operation_with_diagnostic(")
+            && source.contains(" = phpc_native_value_binary_result(")
+            && source.contains(" = phpc_native_value_cast_operation_with_diagnostic("),
+        "isset()/empty() should consume stored native owners from string, arithmetic, and cast value families:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly empty() lowering rejects")
+            && !source.contains("assembly isset() lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_stored_native_value_isset_empty_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "stored_native_value_isset_empty",
+        NATIVE_STORED_VALUE_ISSET_EMPTY_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run stored native value isset/empty executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"set|filled|set|empty|filled|set|empty");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

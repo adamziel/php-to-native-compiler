@@ -13756,8 +13756,22 @@ impl CGenerator {
                 continue;
             }
 
-            if matches!(self.variables.get(name), None | Some(CValue::Null)) {
-                return Ok(CValue::Bool(false));
+            match self.variables.get(name).cloned() {
+                None | Some(CValue::Null) => return Ok(CValue::Bool(false)),
+                Some(value @ (CValue::NativeValueHandle(_) | CValue::NativeReferenceHandle(_))) => {
+                    let value = self.materialize_native_array_c_value_handle(value, arg.span())?;
+                    let is_null = self
+                        .emit_native_value_type_predicate(value, "PHPC_NATIVE_VALUE_TYPE_IS_NULL");
+                    let is_set = self.emit_bool_not(is_null, span)?;
+                    match is_set {
+                        CValue::Bool(false) => return Ok(CValue::Bool(false)),
+                        CValue::Bool(true) => continue,
+                        CValue::BoolExpr(value) => dynamic_checks.push(value),
+                        _ => unreachable!("native value isset returns a bool C value"),
+                    }
+                    continue;
+                }
+                Some(_) => {}
             }
         }
 
@@ -13841,6 +13855,16 @@ impl CGenerator {
         let Some(value) = self.variables.get(name) else {
             return Ok(CValue::Bool(true));
         };
+
+        if matches!(
+            value,
+            CValue::NativeValueHandle(_) | CValue::NativeReferenceHandle(_)
+        ) {
+            let value = self.materialize_native_array_c_value_handle(value.clone(), arg.span())?;
+            let truthy = self.emit_native_value_handle_truthiness(&value.handle);
+            self.body.extend(value.cleanup_after_use);
+            return Ok(CValue::BoolExpr(format!("!({truthy})")));
+        }
 
         self.known_truthiness_for_value(value)
             .map(|truthy| CValue::Bool(!truthy))
