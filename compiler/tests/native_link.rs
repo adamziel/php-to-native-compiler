@@ -10626,6 +10626,21 @@ const NATIVE_VALUE_STRICT_IDENTITY_SOURCE: &str = "<?php\n$a = [\"i\" => 1, \"s\
 
 const NATIVE_VALUE_TYPE_PREDICATE_SOURCE: &str = "<?php\necho is_int(\"6\" + 1), \"|\";\necho is_float(\"7\" / 2), \"|\";\necho is_string((string)(2 + 3)), \"|\";\necho is_bool((2 + 3) > 4), \"|\";\necho is_array((array)\"x\"), \"|\";\necho is_scalar(gettype((float)\"3.5\")), \"|\";\necho is_numeric((string)(2 + 3)), \"|\";\necho is_countable((array)null), \"|\";\necho is_iterable((array)\"x\"), \"|\";\necho is_null((array)null), \"|\";\necho is_object((array)\"x\");\n";
 
+const NATIVE_STORED_VALUE_TYPE_INTROSPECTION_SOURCE: &str = concat!(
+    "<?php\n",
+    "$sum = \"6\" + 1;\n",
+    "$word = strtoupper(\"go\");\n",
+    "$array = (array)\"x\";\n",
+    "$flag = $sum > 6;\n",
+    "echo is_int($sum), \"|\";\n",
+    "echo is_string($word), \"|\";\n",
+    "echo is_array($array), \"|\";\n",
+    "echo is_bool($flag), \"|\";\n",
+    "echo is_numeric($sum), \"|\";\n",
+    "echo (true ? gettype($word) : \"bad\"), \"|\";\n",
+    "echo (true ? get_debug_type($array) : \"bad\");\n",
+);
+
 const NATIVE_VALUE_CAST_ECHO_SOURCE: &str = "<?php\necho (int)\"5.9\", \"|\";\necho (float)\"3.5\", \"|\";\necho (string)(2 + 3), \"|\";\necho (bool)\"0\", \"|\";\necho gettype((string)123);\n";
 
 const NATIVE_VALUE_OPERATION_ECHO_SOURCE: &str = "<?php\n$left = \"6\";\n$right = 2;\necho -$left, \"|\";\necho $left + $right, \"|\";\necho $left / $right, \"|\";\necho \"A\" . \"\0B\", \"|\";\necho \"B\" & \"A\", \"|\";\necho 8 << \"1\";\n";
@@ -11188,6 +11203,43 @@ fn native_executable_c_source_routes_type_predicates_through_value_result_abi() 
 }
 
 #[test]
+fn native_executable_c_source_routes_stored_value_type_introspection_through_runtime_abi() {
+    let program = parse(NATIVE_STORED_VALUE_TYPE_INTROSPECTION_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("extern phpc_NativeValueHandle phpc_native_value_clone"),
+        "stored native values should be cloned for type-introspection consumers:\n{source}"
+    );
+    assert!(
+        source
+            .matches(" = phpc_native_value_type_predicate(")
+            .count()
+            >= 5,
+        "stored native values should feed the shared type-predicate ABI:\n{source}"
+    );
+    assert!(
+        source
+            .matches(" = phpc_native_value_type_name_result(")
+            .count()
+            >= 2,
+        "stored native values should feed the shared type-name ABI:\n{source}"
+    );
+    assert!(
+        source.contains(" = phpc_native_value_binary_result(")
+            && source.contains(" = phpc_native_value_string_result_operation_with_diagnostic(")
+            && source.contains(" = phpc_native_value_cast_operation_with_diagnostic(")
+            && source.contains(" = phpc_native_value_compare_result("),
+        "stored type-introspection should compose with existing operation, string, cast, and comparison value owners:\n{source}"
+    );
+    assert!(
+        !source
+            .contains("native direct call lowering rejects this call until return value ownership"),
+        "{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_native_type_predicate_value_result_program() {
     if !has_cc() {
         return;
@@ -11231,6 +11283,34 @@ fn emit_exe_links_and_runs_native_type_predicate_value_result_program() {
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&temp_php);
+}
+
+#[test]
+fn emit_exe_links_and_runs_stored_native_value_type_introspection_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "stored_native_value_type_introspection",
+        NATIVE_STORED_VALUE_TYPE_INTROSPECTION_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run stored native value type-introspection executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"1|1|1|1|1|string|array");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
 }
 
 #[test]

@@ -17821,7 +17821,31 @@ impl CGenerator {
         }
 
         let value = self.emit_expr(&args[0])?;
-        if matches!(value, CValue::NativeValueHandle(_)) {
+        if let Some(predicate_tag) = native_value_type_predicate_tag(name) {
+            if matches!(
+                &value,
+                CValue::NativeValueHandle(_) | CValue::NativeReferenceHandle(_)
+            ) {
+                let value = self.materialize_native_array_c_value_handle(value, args[0].span())?;
+                return Ok(self.emit_native_value_type_predicate(value, predicate_tag));
+            }
+        }
+        if let Some(type_name_tag) = native_value_type_name_tag(name) {
+            if matches!(
+                &value,
+                CValue::NativeValueHandle(_) | CValue::NativeReferenceHandle(_)
+            ) {
+                let value = self.materialize_native_array_c_value_handle(value, args[0].span())?;
+                let type_name =
+                    self.emit_native_value_type_name_result_handle(value, type_name_tag, "");
+                self.retain_native_value_cleanup_handle(&type_name.handle);
+                return Ok(CValue::NativeValueHandle(type_name.handle));
+            }
+        }
+        if matches!(
+            &value,
+            CValue::NativeValueHandle(_) | CValue::NativeReferenceHandle(_)
+        ) {
             return Err(self.unsupported_direct_call(span, NativeCallBlocker::ReturnValueOwnership));
         }
         match name.to_ascii_lowercase().as_str() {
