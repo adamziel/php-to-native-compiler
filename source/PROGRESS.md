@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 04:14 CEST
+Updated: 2026-05-23 04:36 CEST
 Evaluation marker: `20260523T020211Z`
 
-Primary HEAD: `1914035b codegen: lower by-reference foreach slots`
-Latest integrated semantic baseline: `1914035b codegen: lower by-reference foreach slots`
+Primary HEAD: `10be1209 codegen: cleanup branch-local non-value owners`
+Latest integrated semantic baseline: `10be1209 codegen: cleanup branch-local non-value owners`
 Latest evaluator report: `20260523T020211Z`
 
 These percentages are candid engineering estimates toward generalized PHP
@@ -20,34 +20,43 @@ Primary has strong momentum in generated executable C ownership, cleanup, and
 selected reference execution slices. Recent integrated work covers selected
 branch owner joins, by-value foreach cursor preservation, branch-local
 native-value cleanup, statement boundary cleanup for discarded native-value
-expression results, and by-reference foreach slot execution for selected array
-lvalue owners.
+expression results, by-reference foreach slot execution for selected array
+lvalue owners, strict identity/non-identity routing through the shared native
+value-result comparison ABI, and branch-local cleanup for non-value owners such
+as native arrays and tracked byte buffers.
 
 This is still selected compiled PHP execution, not complete PHP semantics.
 Calls/functions/frames, object/property/method execution, full references/COW,
 arbitrary by-reference foreach, structured cleanup/unwinding, exact
 diagnostics, and LLVM/assembly parity remain the major completion blockers.
 
-Current primary cleanliness: semantic work is current through the by-reference
-foreach slot batch. The protected `runtime/src/lib.rs` null-slot hunk is still
-dirty and uncounted.
+Current primary cleanliness: semantic work is current through the branch-local
+non-value-owner cleanup batch. The protected `runtime/src/lib.rs` null-slot
+hunk is still dirty and uncounted.
 
 ## Grand Roadmap
 
 | Roadmap item | Estimate | Visual | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **97%** | `[###################-]` | Strong value, array, symbol-table, request-state, reference, comparison, truthiness, diagnostic, exit, and cleanup surfaces. |
-| Compiler/backend consumers | **98%** | `[####################]` | Good generated-C coverage for selected request, globals, arrays, lvalues, references, foreach by-value storage, exit, diagnostics, state-stable branches, branch owner joins, lazy ternaries, logical short-circuiting, and statement cleanup. LLVM/assembly parity is uneven. |
+| Compiler/backend consumers | **98%** | `[####################]` | Good generated-C coverage for selected request, globals, arrays, lvalues, references, foreach by-value storage, strict value-result comparison, exit, diagnostics, state-stable branches, branch owner joins, lazy ternaries, logical short-circuiting, and statement cleanup. LLVM/assembly parity is uneven. |
 | Executable PHP semantics | **86%** | `[#################---]` | Improving through linked executable gates, but still selected islands rather than a complete execution model. |
 | Arrays, lvalues, references, COW | **88%** | `[##################--]` | Strong selected paths, including reference-backed active symbol-root array lvalues, by-value foreach cursor storage, and selected by-reference foreach slot execution. Arbitrary writable roots, full COW, by-reference arguments, and broader by-reference foreach remain open. |
 | Symbols, globals, request state | **96%** | `[###################-]` | Strong request/`$GLOBALS` generated-C coverage. Broader request/global reconciliation remains open. |
 | Calls, functions, frames | **27%** | `[#####---------------]` | Runtime/interpreter call-frame metadata enforcement exists, but generated-native call/frame execution is still the major missing piece. |
 | Objects, properties, methods | **11%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary still lacks general compiled object/property/method execution. |
-| Control flow, cleanup, diagnostics | **37%** | `[#######-------------]` | Direct exit, diagnostic ownership, bounded `if`/`else`, selected branch joins, logical short-circuiting, branch-local cleanup, and statement cleanup execute on generated C. Loops, switch, cleanup stacks, exact ordering, and unwinding are not generalized. |
+| Control flow, cleanup, diagnostics | **38%** | `[########------------]` | Direct exit, diagnostic ownership, bounded `if`/`else`, selected branch joins, logical short-circuiting, branch-local value/non-value cleanup, and statement cleanup execute on generated C. Loops, switch, cleanup stacks, exact ordering, and unwinding are not generalized. |
 | Broad integrated verification | **87%** | `[#################---]` | Focused gates are strong. Cross-feature composition and backend parity need broader proof. |
 
 ## Primary-Integrated Progress
 
+- [x] `10be1209`: generated-C `if`/`else` branch lowering releases
+  branch-local native array owners and tracked byte-buffer owners before
+  rejoining when they do not survive the branch, while rejecting byte-buffer
+  values that would remain live after the join.
+- [x] `7d4864f6`: generated-C strict `===` and `!==` value-result operands
+  route through the shared native value comparison result ABI, with runtime
+  strict comparison opcodes and focused linked proof.
 - [x] `1914035b`: generated-C by-reference `foreach` over tracked array
   lvalue owners reacquires each live slot as a native reference, exposes loop
   values through reference handles, writes assignments back through
@@ -100,8 +109,8 @@ Not counted until primary integrates it cleanly:
 - [x] Selected generated-C array query, array lvalue, reference-backed lvalue,
   diagnostic cleanup, direct termination, state-stable branch, branch-owner,
   branch-local cleanup, foreach by-value storage, selected by-reference
-  foreach slots, lazy expression, logical short-circuit, and statement-discard
-  cleanup consumers.
+  foreach slots, strict value-result comparison, lazy expression, logical
+  short-circuit, and statement-discard cleanup consumers.
 - [x] Focused source and linked executable gates for the newest primary
   semantic slices.
 
@@ -120,8 +129,8 @@ Not counted until primary integrates it cleanly:
   Estimate: **11%** `[##------------------]`
 - [ ] Structured control flow beyond selected `if`/`else` and expression
   cleanup: broader cleanup-owner joins, loops, switch, goto, break/continue,
-  cleanup stacks, and source-ordered diagnostics. Estimate: **37%**
-  `[#######-------------]`
+  cleanup stacks, and source-ordered diagnostics. Estimate: **38%**
+  `[########------------]`
 - [ ] Broader conversion/comparison/callback behavior that removes shared
   blockers rather than adding one-off builtin slices.
 
@@ -140,9 +149,10 @@ Not counted until primary integrates it cleanly:
 
 ## Steering Bias
 
-Keep landing small executable generalized slices. The by-reference foreach
-slice landed because it targeted a real shared blocker with clean staging and
-linked proof. The best next work removes major shared blockers:
+Keep landing small executable generalized slices. The by-reference foreach and
+strict value-result comparison slices landed because they targeted real shared
+blockers with clean staging and focused proof. The best next work removes major
+shared blockers:
 generated-native call/frame execution, object/property/method execution,
 reference/COW through real control flow, broader cleanup and diagnostic
 ordering, or backend parity. Continue rejecting docs-only progress, nearby
