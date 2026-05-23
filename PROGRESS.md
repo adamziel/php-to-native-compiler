@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 03:46 CEST
+Updated: 2026-05-23 03:52 CEST
 Evaluation marker: `20260523T011218Z`
 
-Primary baseline: `codegen: cleanup branch-local native values`
-Latest semantic baseline: `codegen: cleanup branch-local native values`
+Primary baseline: `codegen: discard native value expression results`
+Latest semantic baseline: `codegen: discard native value expression results`
 Latest evaluator report: `20260523T011218Z`
 
 These percentages are candid engineering estimates toward generalized PHP
@@ -21,19 +21,20 @@ semantic slices: selected request/global/array/reference paths from earlier
 work, direct `exit()`/`die()` cleanup, diagnostic report ownership cleanup,
 bounded `if`/`else` lowering, lazy ternary/short-ternary value-result branches,
 dynamic logical `&&`/`||` short-circuit branches, selected owned native-value
-`if`/`else` branch joins, by-value foreach cursor storage, and branch-local
-native-value cleanup in generated-C `if`/`else` bodies. The latest cleanup
-slice is useful because branch-local native values produced only inside a
-selected branch can now be released before control rejoins, while broader
+`if`/`else` branch joins, by-value foreach cursor storage, branch-local
+native-value cleanup in generated-C `if`/`else` bodies, and discarded
+native-value expression-statement cleanup. The latest cleanup slices are useful
+because branch-local native values and intentionally unused native expression
+results can now be released before control continues, while broader
 cleanup-owner joins and stateful branch mutations remain blocked.
 
 This is still not a complete native PHP execution model. Calls/functions,
 objects/properties/methods, full references/COW, broad structured control flow,
 exact diagnostics, and LLVM/assembly parity remain the main gaps.
 
-Current primary cleanliness: semantic work is current through the foreach
-cursor-storage batch. The protected `runtime/src/lib.rs` null-slot hunk remains
-dirty and uncounted.
+Current primary cleanliness: semantic work is current through the discarded
+native-value expression-statement cleanup batch. The protected
+`runtime/src/lib.rs` null-slot hunk remains dirty and uncounted.
 
 ## Grand Roadmap
 
@@ -46,11 +47,16 @@ dirty and uncounted.
 | Symbols, globals, request state | **96%** | `[###################-]` | Strong request/`$GLOBALS` generated-C coverage. Broader request/global reconciliation remains open. |
 | Calls, functions, frames | **27%** | `[#####---------------]` | Runtime/interpreter call-frame metadata enforcement landed; generated-native call/frame execution is still the major missing piece. |
 | Objects, properties, methods | **11%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary still lacks general compiled object/property/method execution. |
-| Control flow, cleanup, diagnostics | **36%** | `[#######-------------]` | Direct exit, diagnostic ownership, bounded state-stable `if`/`else`, cleanup-free scalar/string/bool branch joins, selected owned native-value branch joins, and discarded branch-local native-value cleanup execute on generated C. Loops, switch, broader cleanup-owner joins, exact ordering, shutdown/finally/destructors, and unwinding are not generalized. |
+| Control flow, cleanup, diagnostics | **37%** | `[#######-------------]` | Direct exit, diagnostic ownership, bounded state-stable `if`/`else`, cleanup-free scalar/string/bool branch joins, selected owned native-value branch joins, discarded branch-local native-value cleanup, and discarded native-value expression-statement cleanup execute on generated C. Loops, switch, broader cleanup-owner joins, exact ordering, shutdown/finally/destructors, and unwinding are not generalized. |
 | Broad integrated verification | **87%** | `[#################---]` | Focused gates are strong. Cross-feature composition and backend parity need broader proof. |
 
 ## Primary-Integrated Progress
 
+- [x] `27387bd2`: generated-C discarded expression statements now release
+  owned native-value results through the statement emitter, with source and
+  linked executable proof. This removes one leak-prone cleanup gap but does
+  not solve arbitrary expression result propagation, branch/loop cleanup-owner
+  joins, references/COW, exact diagnostics, or LLVM/assembly parity.
 - [x] `a29f292f`: generated-C `if`/`else` branch lowering now releases
   branch-local native values produced only inside selected branches before
   rejoining, with source and linked executable proof. Broader cleanup-owner
@@ -136,10 +142,10 @@ Not counted until primary integrates it:
   visibility/magic hooks, constructor behavior, and ArrayAccess boundaries.
   Estimate: **11%** `[##------------------]`
 - [ ] Structured control flow beyond state-stable `if`/`else`, cleanup-free
-  scalar branch joins, and selected owned native-value joins: broader
-  cleanup-owner joins, loops, switch, goto, break/continue, cleanup stacks, and
-  source-ordered diagnostics. Estimate:
-  **36%** `[#######-------------]`
+  scalar branch joins, selected owned native-value joins, and discarded
+  native-value expression cleanup: broader cleanup-owner joins, loops, switch,
+  goto, break/continue, cleanup stacks, and source-ordered diagnostics.
+  Estimate: **37%** `[#######-------------]`
 - [ ] Broader conversion/comparison behavior that removes shared blockers
   rather than adding one-off builtin slices.
 
