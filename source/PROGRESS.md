@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 06:03 CEST
+Updated: 2026-05-23 06:07 CEST
 Evaluation marker: `20260523T034337Z`
 
-Primary HEAD: `171fd0f1 codegen: prove loop transfer state gates`
-Latest integrated semantic baseline: `171fd0f1 codegen: prove loop transfer state gates`
+Primary HEAD: `97ba85b6 codegen: lower state-stable switch dispatch`
+Latest integrated semantic baseline: `97ba85b6 codegen: lower state-stable switch dispatch`
 Latest evaluator report: `20260523T034337Z`
 
 These are candid engineering estimates toward generalized PHP semantics in the
@@ -28,8 +28,8 @@ generated-native calls/frames, object/property/method execution, complete
 references/COW identity, source-ordered diagnostics, cleanup/unwinding, and
 LLVM/assembly parity.
 
-Current primary cleanliness: semantic work is current through the loop-carried
-scalar-state and multi-level loop-transfer follow-up. The protected
+Current primary cleanliness: semantic work is current through state-stable
+switch dispatch/fallthrough/break on the generated-C path. The protected
 `runtime/src/lib.rs` null-slot hunk remains dirty, unstaged, and uncounted.
 
 ## Roadmap
@@ -43,11 +43,15 @@ scalar-state and multi-level loop-transfer follow-up. The protected
 | Symbols, globals, request state | **96%** | Strong request and `$GLOBALS` generated-C coverage. Reconciliation across calls/requests still needs work. |
 | Calls, functions, frames | **27%** | Runtime/interpreter metadata exists, but generated-native call/frame execution is the biggest missing block. |
 | Objects, properties, methods | **11%** | Mostly lane-local/runtime candidate work. Primary lacks general compiled object/property/method execution. |
-| Control flow, cleanup, diagnostics | **46%** | Generated-C now has bounded branches, lazy expressions, top-level return, state-stable loops, scalar loop-carried state, and loop-local/multi-level loop transfers; owner/reference phis, switch/goto, unwinding, and exact ordering are still missing. |
+| Control flow, cleanup, diagnostics | **49%** | Generated-C now has bounded branches, lazy expressions, top-level return, state-stable loops, scalar loop-carried state, loop-local/multi-level loop transfers, and state-stable switch dispatch/fallthrough/break; owner/reference phis, switch state joins, goto, unwinding, and exact ordering are still missing. |
 | Broad integrated verification | **88%** | Focused gates are strong. Cross-feature composition and backend parity need broader proof. |
 
 ## Recent Integrated Work
 
+- `97ba85b6`: generated-C `switch` now dispatches accepted state-stable case
+  conditions through shared native value comparison/truthiness, preserves
+  source-order fallthrough/default/break labels, and rejects state-changing
+  case bodies plus switch-local `continue`.
 - `fe73cc3e`: generated-C `while` and bounded `for` loops can carry
   int/float/bool scalar variables through mutable C slots while preserving
   blockers for unsupported owner/reference/native-value state.
@@ -107,9 +111,9 @@ scalar-state and multi-level loop-transfer follow-up. The protected
   arguments/returns, foreach, arrays, objects, request/global storage, and
   control-flow joins.
 - Structured control flow beyond the accepted generated-C subset:
-  owner/reference/native-value loop-carried state, switch, goto/labels,
-  cleanup joins, finally/destructors, shutdown behavior, output buffers, and
-  SAPI interactions.
+  owner/reference/native-value loop-carried state, switch state joins,
+  goto/labels, cleanup joins, finally/destructors, shutdown behavior, output
+  buffers, and SAPI interactions.
 - Exact diagnostics: severity, ordering, suppression, custom handlers, source
   spans, recovery values, fatal/throw behavior, and cleanup during diagnostics.
 - LLVM/assembly parity for newer generated-C/runtime ABI consumers.
@@ -118,6 +122,7 @@ scalar-state and multi-level loop-transfer follow-up. The protected
 
 The direction is right only while primary integration keeps converting shared
 semantic boundaries into executable behavior. The next accepted batches should
-avoid nearby `while`/`for` variants and target one of the hard cliffs above.
+avoid nearby `while`/`for` or state-stable `switch` variants and target one of
+the hard cliffs above.
 If a lane cannot make generalized progress, it should add or tighten a
 centralized blocker with proof instead of introducing exact-shape lowering.
