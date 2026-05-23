@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 04:25 CEST
+Updated: 2026-05-23 04:36 CEST
 Evaluation marker: `20260523T020211Z`
 
-Primary HEAD: `7d4864f6 codegen: route strict value results`
-Latest integrated semantic baseline: `7d4864f6 codegen: route strict value results`
+Primary HEAD: `10be1209 codegen: cleanup branch-local non-value owners`
+Latest integrated semantic baseline: `10be1209 codegen: cleanup branch-local non-value owners`
 Latest evaluator report: `20260523T020211Z`
 
 These percentages are candid engineering estimates toward generalized PHP
@@ -21,16 +21,17 @@ selected reference execution slices. Recent integrated work covers selected
 branch owner joins, by-value foreach cursor preservation, branch-local
 native-value cleanup, statement boundary cleanup for discarded native-value
 expression results, by-reference foreach slot execution for selected array
-lvalue owners, and strict identity/non-identity routing through the shared
-native value-result comparison ABI.
+lvalue owners, strict identity/non-identity routing through the shared native
+value-result comparison ABI, and branch-local cleanup for non-value owners such
+as native arrays and tracked byte buffers.
 
 This is still selected compiled PHP execution, not complete PHP semantics.
 Calls/functions/frames, object/property/method execution, full references/COW,
 arbitrary by-reference foreach, structured cleanup/unwinding, exact
 diagnostics, and LLVM/assembly parity remain the major completion blockers.
 
-Current primary cleanliness: semantic work is current through the strict
-value-result comparison batch. The protected `runtime/src/lib.rs` null-slot
+Current primary cleanliness: semantic work is current through the branch-local
+non-value-owner cleanup batch. The protected `runtime/src/lib.rs` null-slot
 hunk is still dirty and uncounted.
 
 ## Grand Roadmap
@@ -44,11 +45,15 @@ hunk is still dirty and uncounted.
 | Symbols, globals, request state | **96%** | `[###################-]` | Strong request/`$GLOBALS` generated-C coverage. Broader request/global reconciliation remains open. |
 | Calls, functions, frames | **27%** | `[#####---------------]` | Runtime/interpreter call-frame metadata enforcement exists, but generated-native call/frame execution is still the major missing piece. |
 | Objects, properties, methods | **11%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary still lacks general compiled object/property/method execution. |
-| Control flow, cleanup, diagnostics | **37%** | `[#######-------------]` | Direct exit, diagnostic ownership, bounded `if`/`else`, selected branch joins, logical short-circuiting, branch-local cleanup, and statement cleanup execute on generated C. Loops, switch, cleanup stacks, exact ordering, and unwinding are not generalized. |
+| Control flow, cleanup, diagnostics | **38%** | `[########------------]` | Direct exit, diagnostic ownership, bounded `if`/`else`, selected branch joins, logical short-circuiting, branch-local value/non-value cleanup, and statement cleanup execute on generated C. Loops, switch, cleanup stacks, exact ordering, and unwinding are not generalized. |
 | Broad integrated verification | **87%** | `[#################---]` | Focused gates are strong. Cross-feature composition and backend parity need broader proof. |
 
 ## Primary-Integrated Progress
 
+- [x] `10be1209`: generated-C `if`/`else` branch lowering releases
+  branch-local native array owners and tracked byte-buffer owners before
+  rejoining when they do not survive the branch, while rejecting byte-buffer
+  values that would remain live after the join.
 - [x] `7d4864f6`: generated-C strict `===` and `!==` value-result operands
   route through the shared native value comparison result ABI, with runtime
   strict comparison opcodes and focused linked proof.
@@ -124,8 +129,8 @@ Not counted until primary integrates it cleanly:
   Estimate: **11%** `[##------------------]`
 - [ ] Structured control flow beyond selected `if`/`else` and expression
   cleanup: broader cleanup-owner joins, loops, switch, goto, break/continue,
-  cleanup stacks, and source-ordered diagnostics. Estimate: **37%**
-  `[#######-------------]`
+  cleanup stacks, and source-ordered diagnostics. Estimate: **38%**
+  `[########------------]`
 - [ ] Broader conversion/comparison/callback behavior that removes shared
   blockers rather than adding one-off builtin slices.
 
