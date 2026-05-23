@@ -76,6 +76,28 @@ const NATIVE_BRANCH_STATE_MERGE_SOURCE: &str = concat!(
     "echo $word;\n",
 );
 
+const NATIVE_BRANCH_NATIVE_VALUE_OWNER_SOURCE: &str = concat!(
+    "<?php\n",
+    "$flags = [\"take\" => \"1\", \"skip\" => \"\"];\n",
+    "if ($flags[\"take\"]) {\n",
+    "    $value = strtoupper(\"go\");\n",
+    "} else {\n",
+    "    $value = strrev(\"dab\");\n",
+    "}\n",
+    "echo $value, \"|\";\n",
+    "$carry = strtolower(\"KEEP\");\n",
+    "if ($flags[\"skip\"]) {\n",
+    "    $carry = strtoupper(\"bad\");\n",
+    "}\n",
+    "echo $carry, \"|\";\n",
+    "if ($flags[\"take\"]) {\n",
+    "    $picked = array_sum([2, 3]);\n",
+    "} else {\n",
+    "    $picked = array_product([2, 3]);\n",
+    "}\n",
+    "echo $picked;\n",
+);
+
 const NATIVE_VALUE_TERNARY_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [\"flag\" => \"1\", \"word\" => \"go\"];\n",
@@ -942,6 +964,35 @@ fn native_executable_c_source_merges_cleanup_free_if_branch_state() {
 }
 
 #[test]
+fn native_executable_c_source_joins_if_branch_native_value_owners() {
+    let program = parse(NATIVE_BRANCH_NATIVE_VALUE_OWNER_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.matches("phpc_NativeValueHandle if_native_value_join_")
+            .count()
+            >= 3,
+        "branch-created and branch-selected native values should transfer into post-branch owners:\n{source}"
+    );
+    assert!(
+        body.contains("strtoupper_result_")
+            && body.contains("strrev_result_")
+            && body.contains("native_value_array_query_"),
+        "branch producers should remain inside scoped branch bodies across string and array-query value families:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_echo_stdout(if_native_value_join_")
+            && body.contains("phpc_native_value_free(if_native_value_join_"),
+        "joined owner handles should feed later consumers and final cleanup:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly control-flow lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_native_value_ternaries_through_lazy_branches() {
     let program = parse(NATIVE_VALUE_TERNARY_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -1067,6 +1118,7 @@ fn native_executable_c_source_rejects_if_branch_state_without_cleanup_free_join(
         "<?php\n$flag = 1 == \"1\";\nif ($flag) { $value = \"then\"; }\necho $value;\n",
         "<?php\n$flag = 1 == \"1\";\nif ($flag) { $value = \"then\"; } else { $value = 1; }\necho $value;\n",
         "<?php\n$flag = 1 == \"1\";\nif ($flag) { $value = [1]; } else { $value = [2]; }\necho $value[0];\n",
+        "<?php\n$flag = 1 == \"1\";\nif ($flag) { $value = strtoupper(\"then\"); } else { $value = 1; }\necho $value;\n",
     ] {
         let program = parse(source).unwrap();
         let error = emit_native_executable_c_source(&program).unwrap_err();
@@ -1074,7 +1126,7 @@ fn native_executable_c_source_rejects_if_branch_state_without_cleanup_free_join(
         assert!(
             error
                 .message
-                .contains("if/else branch state merges outside cleanup-free scalar/string/bool"),
+                .contains("if/else branch state merges outside cleanup-free scalar/string/bool variable values and owned native-value handle joins"),
             "{error:?}"
         );
     }
@@ -1662,6 +1714,29 @@ fn emit_exe_links_and_runs_if_branch_state_merge_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"then|10|Hhigh");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_if_branch_native_value_owner_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "if_branch_native_value_owner",
+        NATIVE_BRANCH_NATIVE_VALUE_OWNER_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native if-branch native-value owner executable: {error}")
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"GO|keep|5");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);

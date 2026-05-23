@@ -104,7 +104,7 @@ const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rej
 const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
 const ASSEMBLY_ARRAY_DESTRUCTURING_REJECTION: &str = "assembly array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
-const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else branch state merges outside cleanup-free scalar/string/bool variable values, elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, cleanup ownership joins, and exact native error behavior exist; generated-native C routes lowerable side-effect-only if/else branches and cleanup-free scalar/string/bool branch-state joins through scoped branch emission";
+const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else branch state merges outside cleanup-free scalar/string/bool variable values and owned native-value handle joins, elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, broader cleanup ownership joins, and exact native error behavior exist; generated-native C routes lowerable side-effect-only if/else branches, cleanup-free scalar/string/bool branch-state joins, and selected owned native-value branch results through scoped branch emission";
 const LLVM_EXCEPTION_REJECTION: &str = "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const ASSEMBLY_EXCEPTION_REJECTION: &str = "assembly exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const LLVM_TRY_BLOCK_REJECTION: &str = "LLVM try/catch/finally lowering rejects try blocks until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during normal and exceptional control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; phpc run handles current bounded no-throw try/catch/finally behavior";
@@ -7587,6 +7587,15 @@ fn c_diagnostic_report_call(diagnostic: &str) -> String {
     format!("phpc_native_diagnostic_report({diagnostic});")
 }
 
+fn remove_native_value_cleanup_handle(handles: &mut Vec<String>, handle: &str) -> bool {
+    if let Some(index) = handles.iter().rposition(|owned| owned == handle) {
+        handles.remove(index);
+        true
+    } else {
+        false
+    }
+}
+
 fn native_value_aux_cleanup_after_consuming_handle(
     value: &CNativeValueMaterialization,
 ) -> Vec<String> {
@@ -7623,10 +7632,9 @@ impl CGenerator {
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
     }
 
-    fn cleanup_state_matches(&self, other: &Self) -> bool {
+    fn non_native_value_cleanup_state_matches(&self, other: &Self) -> bool {
         self.array_cleanup_handles == other.array_cleanup_handles
             && self.owned_native_byte_buffers == other.owned_native_byte_buffers
-            && self.native_value_cleanup_handles == other.native_value_cleanup_handles
             && self.native_request_state_handle == other.native_request_state_handle
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
     }
@@ -7634,8 +7642,8 @@ impl CGenerator {
     fn merge_scoped_branch_state(
         &mut self,
         base: &Self,
-        then_branch: &Self,
-        else_branch: &Self,
+        then_branch: &mut Self,
+        else_branch: &mut Self,
         condition: &str,
         span: Span,
     ) -> CompileResult<()> {
@@ -7644,8 +7652,8 @@ impl CGenerator {
             return Ok(());
         }
 
-        if !base.cleanup_state_matches(then_branch)
-            || !base.cleanup_state_matches(else_branch)
+        if !base.non_native_value_cleanup_state_matches(then_branch)
+            || !base.non_native_value_cleanup_state_matches(else_branch)
             || then_branch.variable_order != else_branch.variable_order
         {
             return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
@@ -7660,31 +7668,105 @@ impl CGenerator {
         }
 
         let mut merged_variables = HashMap::new();
+        let mut merged_native_value_cleanup_handles = base.native_value_cleanup_handles.clone();
+        let mut branch_native_value_cleanup_handles = base.native_value_cleanup_handles.clone();
         for name in then_names {
             let then_value = then_branch
                 .variables
                 .get(&name)
-                .expect("branch variable name came from branch map");
+                .expect("branch variable name came from branch map")
+                .clone();
             let else_value = else_branch
                 .variables
                 .get(&name)
-                .expect("branch variable name came from branch map");
-            let merged = self
-                .merge_scoped_branch_value(
+                .expect("branch variable name came from branch map")
+                .clone();
+            let merged = if let Some(merged) = self.merge_scoped_branch_native_value_owner(
+                base,
+                &name,
+                then_branch,
+                &then_value,
+                else_branch,
+                &else_value,
+                &mut merged_native_value_cleanup_handles,
+                &mut branch_native_value_cleanup_handles,
+            ) {
+                merged
+            } else {
+                self.merge_scoped_branch_value(
                     condition,
                     then_branch,
-                    then_value,
+                    &then_value,
                     else_branch,
-                    else_value,
+                    &else_value,
                     span,
                 )
-                .ok_or_else(|| self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION))?;
+                .ok_or_else(|| self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION))?
+            };
             merged_variables.insert(name, merged);
+        }
+
+        if then_branch.native_value_cleanup_handles != branch_native_value_cleanup_handles
+            || else_branch.native_value_cleanup_handles != branch_native_value_cleanup_handles
+        {
+            return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
         }
 
         self.variables = merged_variables;
         self.variable_order = then_branch.variable_order.clone();
+        self.native_value_cleanup_handles = merged_native_value_cleanup_handles;
         Ok(())
+    }
+
+    fn merge_scoped_branch_native_value_owner(
+        &mut self,
+        base: &Self,
+        name: &str,
+        then_branch: &mut Self,
+        then_value: &CValue,
+        else_branch: &mut Self,
+        else_value: &CValue,
+        merged_cleanup: &mut Vec<String>,
+        branch_cleanup: &mut Vec<String>,
+    ) -> Option<CValue> {
+        if then_value == else_value {
+            return None;
+        }
+
+        let (CValue::NativeValueHandle(then_handle), CValue::NativeValueHandle(else_handle)) =
+            (then_value, else_value)
+        else {
+            return None;
+        };
+
+        let then_owns_handle = then_branch
+            .native_value_cleanup_handles
+            .iter()
+            .any(|owned| owned == then_handle);
+        let else_owns_handle = else_branch
+            .native_value_cleanup_handles
+            .iter()
+            .any(|owned| owned == else_handle);
+        if !then_owns_handle || !else_owns_handle {
+            return None;
+        }
+        then_branch.release_native_value_cleanup_handle(then_handle);
+        else_branch.release_native_value_cleanup_handle(else_handle);
+
+        if let Some(CValue::NativeValueHandle(base_handle)) = base.variables.get(name) {
+            remove_native_value_cleanup_handle(merged_cleanup, base_handle);
+            remove_native_value_cleanup_handle(branch_cleanup, base_handle);
+        }
+
+        self.uses_native_string_helpers = true;
+        let result = self.next_native_name("if_native_value_join");
+        self.body
+            .push(format!("phpc_NativeValueHandle {result} = {{0}};"));
+        then_branch.body.push(format!("{result} = {then_handle};"));
+        else_branch.body.push(format!("{result} = {else_handle};"));
+        merged_cleanup.push(result.clone());
+
+        Some(CValue::NativeValueHandle(result))
     }
 
     fn merge_scoped_branch_value(
@@ -8282,13 +8364,16 @@ impl CGenerator {
         self.native_value_cleanup_handles.push(handle.to_string());
     }
 
-    fn release_native_value_cleanup_handle(&mut self, handle: &str) {
+    fn release_native_value_cleanup_handle(&mut self, handle: &str) -> bool {
         if let Some(index) = self
             .native_value_cleanup_handles
             .iter()
             .rposition(|owned| owned == handle)
         {
             self.native_value_cleanup_handles.remove(index);
+            true
+        } else {
+            false
         }
     }
 
@@ -12217,12 +12302,19 @@ impl CGenerator {
         self.merge_scoped_branch_codegen(&else_generator);
         self.next_native_temp = else_generator.next_native_temp;
         self.next_static_data = else_generator.next_static_data;
+        self.merge_scoped_branch_state(
+            &base,
+            &mut then_generator,
+            &mut else_generator,
+            &condition,
+            span,
+        )?;
 
         self.body.push(format!("if ({condition}) {{"));
         for line in &then_generator.body {
             self.body.push(format!("  {line}"));
         }
-        if else_branch.is_empty() {
+        if else_generator.body.is_empty() {
             self.body.push("}".to_string());
         } else {
             self.body.push("} else {".to_string());
@@ -12231,8 +12323,6 @@ impl CGenerator {
             }
             self.body.push("}".to_string());
         }
-
-        self.merge_scoped_branch_state(&base, &then_generator, &else_generator, &condition, span)?;
 
         Ok(())
     }
