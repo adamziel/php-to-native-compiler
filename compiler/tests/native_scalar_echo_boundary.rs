@@ -55,7 +55,10 @@ fn emit_ir_keeps_false_and_null_echoes_silent() {
         ir.contains("@phpc_native_string_from_bytes(ptr @.str.0, i64 4)"),
         "{ir}"
     );
-    assert!(ir.contains("@phpc_native_value_echo_stdout"), "{ir}");
+    assert!(
+        ir.contains("@phpc_native_value_format_stdout_with_diagnostic"),
+        "{ir}"
+    );
 }
 
 #[test]

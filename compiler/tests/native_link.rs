@@ -488,7 +488,14 @@ fn native_executable_c_source_routes_direct_strings_and_scalars_through_runtime_
         source.contains("phpc_native_value_from_string_with_diagnostic"),
         "{source}"
     );
-    assert!(source.contains("phpc_native_value_echo_stdout"), "{source}");
+    assert!(
+        source.contains("phpc_native_value_format_stdout_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_value_echo_stdout"),
+        "{source}"
+    );
     assert_eq!(
         source
             .matches("phpc_native_value_from_scalar(scalar_")
@@ -498,9 +505,15 @@ fn native_executable_c_source_routes_direct_strings_and_scalars_through_runtime_
     );
     assert_eq!(
         source
-            .matches("phpc_native_value_echo_stdout(value_")
+            .matches("phpc_native_value_format_stdout_with_diagnostic(value_")
             .count(),
         7,
+        "{source}"
+    );
+    assert!(source.contains("PHPC_NATIVE_VALUE_FORMAT_ECHO"), "{source}");
+    assert!(
+        source.contains("phpc_NativeDiagnosticHandle stdout_diagnostic_")
+            && source.contains("phpc_native_diagnostic_report(stdout_diagnostic_"),
         "{source}"
     );
     assert!(!source.contains("printf(\"%s\", \"native link"), "{source}");
@@ -1148,7 +1161,7 @@ fn native_executable_c_source_routes_value_result_offset_reads_through_shared_bo
         "value-result offset reads should share the value-offset ABI:\n{source}"
     );
     assert!(
-        body.contains("phpc_native_value_echo_stdout(value_offset_read"),
+        body.contains("phpc_native_value_format_stdout_with_diagnostic(value_offset_read"),
         "offset-read values should feed the existing value formatter:\n{source}"
     );
     assert!(
@@ -1312,7 +1325,7 @@ fn native_executable_c_source_joins_if_branch_native_value_owners() {
         "branch producers should remain inside scoped branch bodies across string and array-query value families:\n{source}"
     );
     assert!(
-        body.contains("phpc_native_value_echo_stdout(if_native_value_join_")
+        body.contains("phpc_native_value_format_stdout_with_diagnostic(if_native_value_join_")
             && body.contains("phpc_native_value_free(if_native_value_join_"),
         "joined owner handles should feed later consumers and final cleanup:\n{source}"
     );
@@ -1604,7 +1617,9 @@ fn native_executable_c_source_routes_try_finally_normal_flow() {
         "catch bodies should not be emitted for the bounded no-throw native path:\n{source}"
     );
     assert!(
-        body.matches("phpc_native_value_echo_stdout").count() >= 4,
+        body.matches("phpc_native_value_format_stdout_with_diagnostic")
+            .count()
+            >= 4,
         "try body, finally body, and following statements should all emit output calls:\n{source}"
     );
     assert!(
@@ -1818,7 +1833,7 @@ fn native_executable_c_source_routes_native_value_ternaries_through_lazy_branche
         "branch value producers should live inside generated C branches:\n{source}"
     );
     assert!(
-        body.contains("phpc_native_value_echo_stdout(native_value_ternary_"),
+        body.contains("phpc_native_value_format_stdout_with_diagnostic(native_value_ternary_"),
         "direct ternary output should consume the shared owned result handle:\n{source}"
     );
     assert!(
@@ -3400,7 +3415,7 @@ fn native_executable_c_source_routes_unary_string_results_through_runtime_contra
         "scalar and string operands should both enter the native value boundary:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_value_echo_stdout("),
+        source.contains("phpc_native_value_format_stdout_with_diagnostic("),
         "string-result handles should be consumed through native value output:\n{source}"
     );
 }
@@ -3433,7 +3448,7 @@ fn native_executable_c_source_routes_shell_escape_results_through_runtime_contra
         "scalar and string shell-escape operands should both enter the native value boundary:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_value_echo_stdout("),
+        source.contains("phpc_native_value_format_stdout_with_diagnostic("),
         "shell-escape result handles should be consumed through native value output:\n{source}"
     );
 }
@@ -4950,7 +4965,7 @@ fn native_executable_c_source_routes_nested_value_assignment_expressions_through
         "assignment-expression path mutations should store the mutated owner through native value clones:\n{source}"
     );
     assert!(
-        body.contains("phpc_native_value_echo_stdout("),
+        body.contains("phpc_native_value_format_stdout_with_diagnostic("),
         "native-value RHS assignment results should remain available to expression consumers:\n{source}"
     );
 }
@@ -6983,7 +6998,7 @@ fn native_executable_c_source_routes_request_path_appends_through_state_operatio
         "{source}"
     );
     assert!(
-        body.contains("phpc_native_value_echo_stdout"),
+        body.contains("phpc_native_value_format_stdout_with_diagnostic"),
         "request append assignment-expression values should feed native-value output consumers:\n{source}"
     );
     assert!(
@@ -7033,7 +7048,7 @@ fn native_executable_c_source_routes_request_append_suffixes_through_state_opera
         "{source}"
     );
     assert!(
-        body.contains("phpc_native_value_echo_stdout"),
+        body.contains("phpc_native_value_format_stdout_with_diagnostic"),
         "request append assignment-expression values should still feed native-value output consumers:\n{source}"
     );
     assert!(
@@ -7126,7 +7141,7 @@ fn native_executable_c_source_routes_request_assignment_expression_values_throug
         "native-value RHS assignment results should be cloned for request storage while the expression result remains available:\n{source}"
     );
     assert!(
-        body.contains("phpc_native_value_echo_stdout"),
+        body.contains("phpc_native_value_format_stdout_with_diagnostic"),
         "request assignment-expression values should feed native-value output consumers:\n{source}"
     );
     assert!(
@@ -12406,12 +12421,12 @@ fn native_executable_c_source_routes_array_owner_output_through_runtime_abi() {
 
     assert!(
         source
-            .contains("extern size_t phpc_native_value_echo_stdout(phpc_NativeValueHandle value);"),
+            .contains("extern size_t phpc_native_value_format_stdout_with_diagnostic(phpc_NativeValueHandle value, uint8_t formatter, phpc_NativeDiagnosticHandle *diagnostic);"),
         "{source}"
     );
     assert!(
         source.matches("phpc_native_value_from_array(").count() >= 2
-            && source.matches("phpc_native_value_echo_stdout(").count() >= 3,
+            && source.matches("phpc_native_value_format_stdout_with_diagnostic(").count() >= 3,
         "echo and print should materialize array owners as PHP-shaped values and send them through runtime echo:\n{source}"
     );
     assert!(
@@ -12478,7 +12493,10 @@ fn native_executable_c_source_routes_cast_echoes_through_value_cast_operation_ab
         "{source}"
     );
     assert!(
-        source.matches("phpc_native_value_echo_stdout(").count() >= 5,
+        source
+            .matches("phpc_native_value_format_stdout_with_diagnostic(")
+            .count()
+            >= 5,
         "{source}"
     );
     assert!(
@@ -12525,7 +12543,10 @@ fn native_executable_c_source_routes_operation_echoes_through_value_result_abi()
         "operation echoes should use runtime value-operation boundaries where dynamic PHP value semantics are required:\n{source}"
     );
     assert!(
-        source.matches("phpc_native_value_echo_stdout(").count() >= 6,
+        source
+            .matches("phpc_native_value_format_stdout_with_diagnostic(")
+            .count()
+            >= 6,
         "{source}"
     );
     assert!(
@@ -12607,7 +12628,7 @@ fn native_executable_c_source_routes_print_values_through_value_result_and_array
         "print should use the existing runtime value-result and value-offset boundaries:\n{source}"
     );
     assert!(
-        source.matches("phpc_native_value_echo_stdout(").count() >= 8,
+        source.matches("phpc_native_value_format_stdout_with_diagnostic(").count() >= 8,
         "print output should flow through the value stdout ABI for direct and materialized values:\n{source}"
     );
 }
@@ -12643,7 +12664,7 @@ fn native_executable_c_source_routes_scalar_cast_builtins_through_value_cast_con
     assert!(
         source.contains("phpc_native_value_to_array_key")
             && source.contains("phpc_native_array_insert_key_value_with_diagnostic")
-            && source.contains("phpc_native_value_echo_stdout("),
+            && source.contains("phpc_native_value_format_stdout_with_diagnostic("),
         "{source}"
     );
 }

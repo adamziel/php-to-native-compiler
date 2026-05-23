@@ -460,7 +460,10 @@ echo $same;
         ir.contains("@phpc_native_string_from_bytes(ptr @.str.0, i64 5)"),
         "{ir}"
     );
-    assert!(ir.contains("@phpc_native_value_echo_stdout"), "{ir}");
+    assert!(
+        ir.contains("@phpc_native_value_format_stdout_with_diagnostic"),
+        "{ir}"
+    );
 }
 
 #[test]

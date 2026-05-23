@@ -32,7 +32,7 @@ declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStrin
 declare %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle, ptr)
 declare %phpc.NativeStringConversionResult @phpc_native_value_to_string_bytes(%phpc.NativeValueHandle)
 declare %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle)
-declare i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle)
+declare i64 @phpc_native_value_format_stdout_with_diagnostic(%phpc.NativeValueHandle, i8, ptr)
 declare void @phpc_native_value_free(%phpc.NativeValueHandle)
 declare %phpc.NativeStringConversionResult @phpc_native_reference_to_string_bytes(%phpc.NativeReferenceHandle)
 declare void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult)
@@ -117,7 +117,7 @@ entry:
   %value = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %string)
   %buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %value)
   %len = extractvalue %phpc.NativeByteBuffer %buffer, 1
-  %written = call i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %value)
+  %written = call i64 @phpc_native_value_format_stdout_with_diagnostic(%phpc.NativeValueHandle %value, i8 0, ptr null)
   call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %buffer)
   call void @phpc_native_value_free(%phpc.NativeValueHandle %value)
   call void @phpc_native_string_free(%phpc.NativeStringHandle %string)
@@ -174,7 +174,7 @@ report_diagnostic:
   br label %cleanup
 
 echo_value:
-  %written = call i64 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %value)
+  %written = call i64 @phpc_native_value_format_stdout_with_diagnostic(%phpc.NativeValueHandle %value, i8 0, ptr null)
   br label %cleanup
 
 cleanup:

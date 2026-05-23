@@ -19,6 +19,12 @@ pub enum NativeScalarTag {
     Float = 3,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeValueFormatterTag {
+    Echo = 0,
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NativeScalarValue {
@@ -11230,24 +11236,68 @@ fn similar_text_score_bytes(left: &[u8], right: &[u8]) -> usize {
 /// # Safety
 ///
 /// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. `formatter` must be one of the
+/// `NativeValueFormatterTag` discriminants. `diagnostic` may be null; when
+/// non-null, it must point to writable storage for one
+/// `NativeDiagnosticHandle`. On formatter-tag, null-handle, or output-write
+/// failure the helper stores a diagnostic handle that the caller owns and must
+/// release with `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_format_stdout_with_diagnostic(
+    handle: NativeValueHandle,
+    formatter: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> usize {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let mut stdout = io::stdout();
+    match unsafe { native_value_format_stdout_result(handle, formatter, &mut stdout) } {
+        Ok(written) => written,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            0
+        }
+    }
+}
+
+unsafe fn native_value_format_stdout_result<W: Write>(
+    handle: NativeValueHandle,
+    formatter: u8,
+    writer: &mut W,
+) -> RuntimeResult<usize> {
+    let formatter = NativeValueFormatterTag::from_tag(formatter)?;
+    let Some(value) = (unsafe { handle.as_ref() }) else {
+        return Err(RuntimeError::unsupported_call(
+            formatter.surface_name(),
+            "native value formatting failed: value handle is null",
+        ));
+    };
+    let output = value.echo_string();
+    writer
+        .write_all(output.as_bytes())
+        .and_then(|()| writer.flush())
+        .map_err(|_| {
+            RuntimeError::unsupported_call(
+                formatter.surface_name(),
+                "native value formatter stdout write failed",
+            )
+        })?;
+    Ok(output.len())
+}
+
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
 /// ABI and not yet freed. The helper writes the current PHP echo bytes for the
 /// value to stdout and returns the number of bytes written. Null handles and
-/// host write failures return zero until diagnostics handles exist.
+/// host write failures return zero; generated code should prefer
+/// `phpc_native_value_format_stdout_with_diagnostic`.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_value_echo_stdout(handle: NativeValueHandle) -> usize {
-    let Some(value) = (unsafe { handle.as_ref() }) else {
-        return 0;
-    };
-
-    let output = value.echo_string();
     let mut stdout = io::stdout();
-    match stdout
-        .write_all(output.as_bytes())
-        .and_then(|()| stdout.flush())
-    {
-        Ok(()) => output.len(),
-        Err(_) => 0,
+    unsafe {
+        native_value_format_stdout_result(handle, NativeValueFormatterTag::Echo as u8, &mut stdout)
     }
+    .unwrap_or(0)
 }
 
 #[no_mangle]
@@ -19352,6 +19402,24 @@ fn format_php_float(value: f64) -> String {
     }
 }
 
+impl NativeValueFormatterTag {
+    fn from_tag(tag: u8) -> RuntimeResult<Self> {
+        match tag {
+            tag if tag == Self::Echo as u8 => Ok(Self::Echo),
+            _ => Err(RuntimeError::unsupported_call(
+                "native value formatter",
+                format!("unsupported native value formatter tag {tag}"),
+            )),
+        }
+    }
+
+    fn surface_name(self) -> &'static str {
+        match self {
+            Self::Echo => "echo",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -19374,6 +19442,68 @@ mod tests {
             assert_eq!(native_value_echo_bytes_for_test(handle), expected);
             unsafe { phpc_native_value_free(handle) };
         }
+    }
+
+    #[test]
+    fn native_value_formatter_stdout_uses_diagnostic_abi_across_value_families() {
+        fn assert_stdout(
+            label: &str,
+            handle: NativeValueHandle,
+            formatter: NativeValueFormatterTag,
+            expected: &[u8],
+        ) {
+            let mut output = Vec::new();
+            let written =
+                unsafe { native_value_format_stdout_result(handle, formatter as u8, &mut output) }
+                    .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+            assert_eq!(written, expected.len(), "{label}");
+            assert_eq!(output, expected, "{label}");
+        }
+
+        let scalar = phpc_native_value_from_scalar(phpc_native_int(42));
+        assert_stdout("scalar echo", scalar, NativeValueFormatterTag::Echo, b"42");
+        unsafe { phpc_native_value_free(scalar) };
+
+        let binary_text = NativeValueHandle::from_value(Value::String("A\0B".to_string()));
+        assert_stdout(
+            "nul string echo",
+            binary_text,
+            NativeValueFormatterTag::Echo,
+            b"A\0B",
+        );
+        unsafe { phpc_native_value_free(binary_text) };
+
+        let mut array = PhpArray::new();
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert(2, Value::Bool(true));
+        let array = NativeValueHandle::from_value(Value::Array(array));
+        assert_stdout("array echo", array, NativeValueFormatterTag::Echo, b"Array");
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let written =
+            unsafe { phpc_native_value_format_stdout_with_diagnostic(array, 99, &mut diagnostic) };
+        assert_eq!(written, 0);
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "unsupported call native value formatter: unsupported native value formatter tag 99"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(array) };
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let written = unsafe {
+            phpc_native_value_format_stdout_with_diagnostic(
+                NativeValueHandle::null(),
+                NativeValueFormatterTag::Echo as u8,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(written, 0);
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "unsupported call echo: native value formatting failed: value handle is null"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
     }
 
     #[test]

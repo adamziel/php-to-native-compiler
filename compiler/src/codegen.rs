@@ -2970,7 +2970,9 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         "declare %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle, ptr)",
         "declare %phpc.NativeStringConversionResult @phpc_native_value_to_string_bytes(%phpc.NativeValueHandle)",
         "declare %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle)",
-        &format!("declare {usize_type} @phpc_native_value_echo_stdout(%phpc.NativeValueHandle)"),
+        &format!(
+            "declare {usize_type} @phpc_native_value_format_stdout_with_diagnostic(%phpc.NativeValueHandle, i8, ptr)"
+        ),
         "declare void @phpc_native_value_free(%phpc.NativeValueHandle)",
         "declare %phpc.NativeStringConversionResult @phpc_native_reference_to_string_bytes(%phpc.NativeReferenceHandle)",
         "declare void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult)",
@@ -3078,7 +3080,7 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         "  %buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %value)",
         "  %len = extractvalue %phpc.NativeByteBuffer %buffer, 1",
         &format!(
-            "  %written = call {usize_type} @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %value)"
+            "  %written = call {usize_type} @phpc_native_value_format_stdout_with_diagnostic(%phpc.NativeValueHandle %value, i8 0, ptr null)"
         ),
         "  call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %buffer)",
         "  call void @phpc_native_value_free(%phpc.NativeValueHandle %value)",
@@ -3161,7 +3163,7 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         "",
         "echo_value:",
         &format!(
-            "  %written = call {usize_type} @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %value)"
+            "  %written = call {usize_type} @phpc_native_value_format_stdout_with_diagnostic(%phpc.NativeValueHandle %value, i8 0, ptr null)"
         ),
         "  br label %cleanup",
         "",
@@ -3537,7 +3539,7 @@ impl LlvmGenerator {
             ));
             output.push_str("declare %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle, ptr)\n");
             output.push_str(&format!(
-                "declare {usize_type} @phpc_native_value_echo_stdout(%phpc.NativeValueHandle)\n"
+                "declare {usize_type} @phpc_native_value_format_stdout_with_diagnostic(%phpc.NativeValueHandle, i8, ptr)\n"
             ));
             output.push_str("declare void @phpc_native_value_free(%phpc.NativeValueHandle)\n");
             output.push_str(&format!(
@@ -6931,10 +6933,18 @@ impl LlvmGenerator {
 
     fn emit_native_value_handle_stdout(&mut self, value: &str) {
         let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+        let diagnostic_slot = self.next_temp();
         self.uses_native_value_echo_stdout = true;
         self.body.push(format!(
-            "call {usize_type} @phpc_native_value_echo_stdout(%phpc.NativeValueHandle {value})"
+            "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
         ));
+        self.body.push(format!(
+            "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
+        ));
+        self.body.push(format!(
+            "call {usize_type} @phpc_native_value_format_stdout_with_diagnostic(%phpc.NativeValueHandle {value}, i8 0, ptr {diagnostic_slot})"
+        ));
+        self.emit_report_native_diagnostic_slot(&diagnostic_slot);
         self.body.push(format!(
             "call void @phpc_native_value_free(%phpc.NativeValueHandle {value})"
         ));
@@ -6990,8 +7000,9 @@ impl LlvmGenerator {
         self.body.push(format!("br label %{cleanup_label}"));
         self.body.push(format!("{echo_label}:"));
         self.body.push(format!(
-            "call {usize_type} @phpc_native_value_echo_stdout(%phpc.NativeValueHandle {runtime_value})"
+            "call {usize_type} @phpc_native_value_format_stdout_with_diagnostic(%phpc.NativeValueHandle {runtime_value}, i8 0, ptr {diagnostic_slot})"
         ));
+        self.emit_report_native_diagnostic_slot(&diagnostic_slot);
         self.body.push(format!("br label %{cleanup_label}"));
         self.body.push(format!("{cleanup_label}:"));
         self.body.push(format!(
@@ -9410,6 +9421,7 @@ impl CGenerator {
                 output.push_str("#define PHPC_NATIVE_VALUE_TYPE_NAME_GETTYPE 0\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_TYPE_NAME_DEBUG 1\n");
             }
+            output.push_str("#define PHPC_NATIVE_VALUE_FORMAT_ECHO 0\n");
             output.push('\n');
             output.push_str("extern phpc_NativeStringHandle phpc_native_string_from_bytes(const uint8_t *ptr, size_t len);\n");
             output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_scalar(phpc_NativeScalarValue value);\n");
@@ -9512,9 +9524,7 @@ impl CGenerator {
                     "extern _Bool phpc_native_value_is_truthy(phpc_NativeValueHandle value);\n",
                 );
             }
-            output.push_str(
-                "extern size_t phpc_native_value_echo_stdout(phpc_NativeValueHandle value);\n",
-            );
+            output.push_str("extern size_t phpc_native_value_format_stdout_with_diagnostic(phpc_NativeValueHandle value, uint8_t formatter, phpc_NativeDiagnosticHandle *diagnostic);\n");
             if self.uses_native_value_clone {
                 output.push_str(
                     "extern phpc_NativeValueHandle phpc_native_value_clone(phpc_NativeValueHandle value);\n",
@@ -24005,8 +24015,7 @@ impl CGenerator {
             return Ok(false);
         };
 
-        self.body
-            .push(format!("phpc_native_value_echo_stdout({});", value.handle));
+        self.emit_native_value_format_stdout_with_diagnostic(&value.handle);
         self.body.extend(value.cleanup_after_use);
         Ok(true)
     }
@@ -24044,8 +24053,7 @@ impl CGenerator {
             "if ({diagnostic}.ptr != NULL) {{ {read_error_exit} }}"
         ));
         self.body.extend(key.cleanup_after_use);
-        self.body
-            .push(format!("phpc_native_value_echo_stdout({read});"));
+        self.emit_native_value_format_stdout_with_diagnostic(&read);
         self.body.push(format!("phpc_native_value_free({read});"));
         Ok(true)
     }
@@ -24132,18 +24140,15 @@ impl CGenerator {
             }
             value @ CValue::ArrayHandle(_) => {
                 let value = self.materialize_native_array_c_value_handle(value, span)?;
-                self.body
-                    .push(format!("phpc_native_value_echo_stdout({});", value.handle));
+                self.emit_native_value_format_stdout_with_diagnostic(&value.handle);
                 self.body.extend(value.cleanup_after_use);
             }
             CValue::NativeValueHandle(handle) => {
-                self.body
-                    .push(format!("phpc_native_value_echo_stdout({handle});"));
+                self.emit_native_value_format_stdout_with_diagnostic(&handle);
             }
             CValue::NativeReferenceHandle(reference) => {
                 let value = self.clone_native_reference_value_handle(&reference);
-                self.body
-                    .push(format!("phpc_native_value_echo_stdout({value});"));
+                self.emit_native_value_format_stdout_with_diagnostic(&value);
                 self.body.push(format!("phpc_native_value_free({value});"));
             }
         }
@@ -24162,10 +24167,21 @@ impl CGenerator {
         self.body.push(format!(
             "phpc_NativeValueHandle value_{index} = phpc_native_value_from_scalar(scalar_{index});"
         ));
-        self.body
-            .push(format!("phpc_native_value_echo_stdout(value_{index});"));
+        self.emit_native_value_format_stdout_with_diagnostic(&format!("value_{index}"));
         self.body
             .push(format!("phpc_native_value_free(value_{index});"));
+    }
+
+    fn emit_native_value_format_stdout_with_diagnostic(&mut self, value: &str) {
+        let diagnostic = self.next_native_name("stdout_diagnostic");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_native_value_format_stdout_with_diagnostic({value}, PHPC_NATIVE_VALUE_FORMAT_ECHO, &{diagnostic});"
+        ));
+        self.body.push(format!(
+            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {diagnostic}.ptr = NULL; }}"
+        ));
     }
 
     fn emit_c_stdout_printf(&mut self, line: impl Into<String>) {
@@ -24199,7 +24215,7 @@ impl CGenerator {
             "phpc_NativeValueHandle value_{index} = phpc_native_value_from_string_with_diagnostic(string_{index}, &diagnostic_{index});"
         ));
         self.body.push(format!(
-            "if (value_{index}.ptr == NULL) {{ phpc_native_diagnostic_report(diagnostic_{index}); }} else {{ phpc_native_value_echo_stdout(value_{index}); }}"
+            "if (value_{index}.ptr == NULL) {{ phpc_native_diagnostic_report(diagnostic_{index}); }} else {{ phpc_native_value_format_stdout_with_diagnostic(value_{index}, PHPC_NATIVE_VALUE_FORMAT_ECHO, &diagnostic_{index}); if (diagnostic_{index}.ptr != NULL) {{ phpc_native_diagnostic_report(diagnostic_{index}); phpc_native_diagnostic_free(diagnostic_{index}); diagnostic_{index}.ptr = NULL; }} }}"
         ));
         self.body
             .push(format!("phpc_native_value_free(value_{index});"));

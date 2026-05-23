@@ -9714,7 +9714,7 @@ case \"$ir\" in\n\
   ;;\n\
 esac\n\
 case \"$ir\" in\n\
-  *'@phpc_native_string_from_bytes(ptr @.str.6, i64 1)'*'@phpc_native_value_echo_stdout'*) : ;;\n\
+  *'@phpc_native_string_from_bytes(ptr @.str.6, i64 1)'*'@phpc_native_value_format_stdout_with_diagnostic'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing final folded false printf on stdin' >&2\n\
   exit 128\n\
@@ -16349,7 +16349,7 @@ case \"$ir\" in\n\
   ;;\n\
 esac\n\
 case \"$ir\" in\n\
-  *'@phpc_native_string_from_bytes(ptr %tmp3, i64 %tmp4)'*'@phpc_native_string_from_bytes(ptr %tmp5, i64 %tmp6)'*'@phpc_native_value_echo_stdout'*) : ;;\n\
+  *'@phpc_native_string_from_bytes(ptr %tmp3, i64 %tmp4)'*'@phpc_native_string_from_bytes(ptr %tmp5, i64 %tmp6)'*'@phpc_native_value_format_stdout_with_diagnostic'*) : ;;\n\
   *)\n\
   printf '%s\\n' 'fake clang missing string ternary runtime helper calls' >&2\n\
   exit 227\n\
