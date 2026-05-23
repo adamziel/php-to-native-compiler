@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 05:57 CEST
+Updated: 2026-05-23 06:03 CEST
 Evaluation marker: `20260523T034337Z`
 
-Primary HEAD: `fe73cc3e codegen: lower loop-carried scalar state`
-Latest integrated semantic baseline: `fe73cc3e codegen: lower loop-carried scalar state`
+Primary HEAD: `171fd0f1 codegen: prove loop transfer state gates`
+Latest integrated semantic baseline: `171fd0f1 codegen: prove loop transfer state gates`
 Latest evaluator report: `20260523T034337Z`
 
 These are candid engineering estimates toward generalized PHP semantics in the
@@ -51,7 +51,7 @@ scalar-state and multi-level loop-transfer follow-up. The protected
 - `fe73cc3e`: generated-C `while` and bounded `for` loops can carry
   int/float/bool scalar variables through mutable C slots while preserving
   blockers for unsupported owner/reference/native-value state.
-- Follow-up after `fe73cc3e`: generated-C nested loop `break N`/`continue N`
+- `171fd0f1`: generated-C nested loop `break N`/`continue N`
   now route through explicit loop target labels for accepted `while`/`for`
   loops, with focused source and linked executable proof.
 - `d6d5d1cf`: generated-C state-stable `for` loops lower through scoped
