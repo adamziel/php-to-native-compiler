@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 00:14 CEST
+Updated: 2026-05-24 00:31 CEST
 Evaluation marker: `20260523T220614Z`
 
-Primary HEAD: `0d049a06 codegen: lower state-stable goto labels`
-Latest integrated semantic baseline: `0d049a06 codegen: lower state-stable goto labels`
+Primary HEAD: `68eea573 codegen: block try finally jump transfers`
+Latest integrated semantic baseline: `68eea573 codegen: block try finally jump transfers`
 Latest evaluator report: `20260523T220614Z`
 
 These are candid engineering estimates toward generalized PHP semantics in the
@@ -17,10 +17,10 @@ exact-shape fixtures do not.
 Overall estimated progress: **88%** `[##################--]`
 
 Primary integrated progress now includes generated-C top-level state-stable
-`goto`/label dispatch with target-state validation. The compiler has strong
-generated-C islands for native values, arrays, selected references,
-request/symbol state, diagnostics, cleanup, lazy expressions, and bounded
-control flow.
+`goto`/label dispatch and normal-flow `try`/`finally` execution for bodies that
+do not need unwinding. The compiler has strong generated-C islands for native
+values, arrays, selected references, request/symbol state, diagnostics,
+cleanup, lazy expressions, and bounded control flow.
 
 This is still not full PHP semantics. The largest gaps remain generated-native
 calls/frames, object/property/method execution, complete references/COW
@@ -28,7 +28,7 @@ identity, source-ordered diagnostics, cleanup/unwinding, and LLVM/assembly
 parity.
 
 Current primary state: primary is synced with `origin/master` through
-`0d049a06`; the protected `runtime/src/lib.rs` null-slot hunk remains dirty,
+`68eea573`; the protected `runtime/src/lib.rs` null-slot hunk remains dirty,
 unstaged, and uncounted. The narrow generated-C user-function WIP was parked
 and is not counted.
 
@@ -43,24 +43,30 @@ and is not counted.
 | Symbols, globals, request state | **96%** | `[###################-]` | Strong request and `$GLOBALS` generated-C coverage. Reconciliation across calls/requests still needs work. |
 | Calls, functions, frames | **27%** | `[#####---------------]` | Runtime/interpreter metadata and lane contracts exist, but real generated-native frame execution is still missing. |
 | Objects, properties, methods | **11%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary lacks general compiled object/property/method execution. |
-| Control flow, cleanup, diagnostics | **50%** | `[##########----------]` | Bounded generated-C branches, loops, returns, transfers, switches, and top-level state-stable gotos exist; owner/reference joins, unwinding, and exact ordering remain open. |
+| Control flow, cleanup, diagnostics | **51%** | `[##########----------]` | Bounded generated-C branches, loops, returns, transfers, switches, top-level state-stable gotos, and normal-flow try/finally exist; owner/reference joins, unwinding, and exact ordering remain open. |
 | Broad integrated verification | **88%** | `[##################--]` | Focused gates are strong. Cross-feature composition and backend parity need broader proof. |
 
 ## Done / In Progress / Not Done
 
 - [x] Generated-C value-result diagnostics through shared diagnostic reporting.
 - [x] Generated-C native value-result `strlen()` consumption.
-- [x] Generated-C top-level `return`, state-stable `while`/`for`, scalar loop-carried slots, multi-level loop transfers, state-stable `switch` dispatch/fallthrough/break, and top-level state-stable `goto` labels.
+- [x] Generated-C top-level `return`, state-stable `while`/`for`, scalar loop-carried slots, multi-level loop transfers, state-stable `switch` dispatch/fallthrough/break, top-level state-stable `goto` labels, and normal-flow `try`/`finally`.
 - [x] Strong selected generated-C arrays, lvalues, references, request state, `$GLOBALS`, lazy ternaries, logical short-circuiting, branch cleanup, foreach storage, and output/truthiness paths.
 - [ ] Primary-integrated generated-native user-function/call-frame execution.
 - [ ] Primary-integrated object construction, property access, method dispatch, `$this`, static context, visibility, and magic behavior.
 - [ ] Full reference/COW identity across calls, arrays, objects, globals, foreach, and control-flow joins.
-- [ ] Structured cleanup/unwinding/finally/destructors/output-buffer/SAPI behavior.
+- [ ] Full structured cleanup/unwinding/finally/destructors/output-buffer/SAPI behavior.
 - [ ] Exact diagnostic severity, ordering, suppression, handlers, spans, recovery, fatal/throw behavior.
 - [ ] LLVM/assembly parity for newer generated-C/runtime ABI consumers.
 
 ## Recent Primary-Integrated Work
 
+- `68eea573`: tightens the generated-C `try`/`finally` boundary so
+  `break`/`continue` transfers reject with the same unwinding blocker as
+  `return`, `exit`, `goto`, and `throw` unless real finally scheduling exists.
+- `0988519d`: generated-C normal-flow `try`/`finally` executes accepted try
+  bodies, skips catch bodies when no throw path exists, runs finally bodies,
+  and rejects transfer paths that would require real unwinding/finally routing.
 - `0d049a06`: generated-C top-level `goto`/label lowering emits C labels for
   accepted statement-list targets, validates every transfer against the
   target's persistent compiler state snapshot, and rejects state-changing
@@ -133,8 +139,9 @@ be counted or repeated in that shape.
   control-flow joins.
 - Structured control flow beyond the accepted generated-C subset:
   owner/reference/native-value loop-carried state, switch state joins,
-  goto/labels, cleanup joins, finally/destructors, shutdown behavior, output
-  buffers, and SAPI interactions.
+  broader goto/label joins, cleanup joins, finally during
+  break/continue/return/exit/goto/throw transfers, destructors, shutdown
+  behavior, output buffers, and SAPI interactions.
 - Exact diagnostics: severity, ordering, suppression, custom handlers, source
   spans, recovery values, fatal/throw behavior, and cleanup during diagnostics.
 - LLVM/assembly parity for newer generated-C/runtime ABI consumers.
