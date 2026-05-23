@@ -1,11 +1,11 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 02:52 CEST
-Evaluation marker: `20260523T002315Z`
+Updated: 2026-05-23 03:16 CEST
+Evaluation marker: `20260523T011218Z`
 
-Primary baseline: `codegen: lower lazy native value ternaries`
-Latest semantic baseline: `codegen: lower lazy native value ternaries`
-Latest evaluator report: `20260523T002315Z`
+Primary baseline: `codegen: short-circuit native logical branches`
+Latest semantic baseline: `codegen: short-circuit native logical branches`
+Latest evaluator report: `20260523T011218Z`
 
 These percentages are candid engineering estimates toward generalized PHP
 semantics in the native compiler. They are not test pass rates. Primary
@@ -18,26 +18,28 @@ Overall estimated progress: **87%** `[#################---]`
 
 Momentum is positive. Primary now includes several generated-C executable
 semantic slices: selected request/global/array/reference paths from earlier
-work, direct `exit()`/`die()` cleanup, diagnostic report ownership cleanup, and
-bounded `if`/`else` lowering. The latest ternary slice is useful because it
-emits real generated-C `if`/`else` branch code for native value-result
-ternaries, assigns exactly the selected owned handle, and preserves lazy branch
-diagnostics/cleanup for the covered family instead of using eager lowering.
+work, direct `exit()`/`die()` cleanup, diagnostic report ownership cleanup,
+bounded `if`/`else` lowering, lazy ternary/short-ternary value-result branches,
+and dynamic logical `&&`/`||` short-circuit branches. The latest logical slice
+is useful because it removes an eager-evaluation blocker: generated C now
+evaluates the left operand once, emits the RHS only in the selected branch, and
+rejects RHS state merges instead of pretending broad logical side effects are
+solved.
 
 This is still not a complete native PHP execution model. Calls/functions,
 objects/properties/methods, full references/COW, broad structured control flow,
 exact diagnostics, and LLVM/assembly parity remain the main gaps.
 
-Current primary cleanliness: primary is pushed through `a1ab542a`. Remaining
-dirty files are unintegrated lane/format/doc/runtime work and are not counted
-until reviewed and committed.
+Current primary cleanliness: semantic work is committed through `481bc961` and
+the root progress baseline through `68f4d504`. The protected
+`runtime/src/lib.rs` null-slot hunk remains dirty and uncounted.
 
 ## Grand Roadmap
 
 | Roadmap item | Estimate | Visual | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **97%** | `[###################-]` | Strong value, array, symbol-table, request-state, reference, comparison, truthiness, diagnostic, and exit-result surfaces. |
-| Compiler/backend consumers | **98%** | `[####################]` | Good generated-C coverage for selected request, `$GLOBALS`, symbols, arrays, lvalues, references, exit, diagnostics, state-stable branches, cleanup-free scalar branch joins, and native value-result ternaries. LLVM/assembly parity is uneven. |
+| Compiler/backend consumers | **98%** | `[####################]` | Good generated-C coverage for selected request, `$GLOBALS`, symbols, arrays, lvalues, references, exit, diagnostics, state-stable branches, cleanup-free scalar branch joins, logical short-circuit branches, and native value-result ternary/short-ternary families. LLVM/assembly parity is uneven. |
 | Executable PHP semantics | **85%** | `[#################---]` | Improving through linked executable gates, but still selected islands rather than a complete execution model. |
 | Arrays, lvalues, references, COW | **87%** | `[#################---]` | Strong selected paths, including reference-backed active symbol-root array lvalues. Arbitrary writable roots, full COW, and by-reference foreach remain large. |
 | Symbols, globals, request state | **96%** | `[###################-]` | Strong request/`$GLOBALS` generated-C coverage. Broader request/global reconciliation remains open. |
@@ -48,6 +50,12 @@ until reviewed and committed.
 
 ## Primary-Integrated Progress
 
+- [x] `481bc961`: generated-C dynamic logical `&&`/`||` now lower through real
+  short-circuit RHS branches when operands use the native truthiness boundary
+  and the selected RHS leaves persistent state unchanged.
+- [x] `76ea0597`: generated-C lazy native value-result short ternaries now
+  lower through real selected-branch owner transfer, shared PHP truthiness, and
+  focused linked executable proof.
 - [x] `a1ab542a`: generated-C lazy native value-result ternaries now lower
   through real branch bodies and a selected owned result handle, with focused
   source and linked executable gates.
@@ -73,6 +81,10 @@ until reviewed and committed.
 
 Not counted until primary integrates it:
 
+- [ ] Recent worker-status candidates around internal integer parameter
+  diagnostics, PCRE counted byte atoms, shared `strlen()` string-int routing,
+  generated JSON encoding, keyed array/switch consumers, object/static-property
+  metadata carriers, and by-reference foreach reference-slot owners.
 - [ ] Generated named-call and callback-call blockers routed through shared
   conversion-result cleanup paths.
 - [ ] Class method bodies consuming shared object-operation blockers instead
