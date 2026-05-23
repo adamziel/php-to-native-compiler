@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 04:02 CEST
+Updated: 2026-05-23 04:14 CEST
 Evaluation marker: `20260523T020211Z`
 
-Primary HEAD: `ca13eb94 docs: update progress after statement cleanup`
-Latest integrated semantic baseline: `27387bd2 codegen: discard native value expression results`
+Primary HEAD: `1914035b codegen: lower by-reference foreach slots`
+Latest integrated semantic baseline: `1914035b codegen: lower by-reference foreach slots`
 Latest evaluator report: `20260523T020211Z`
 
 These percentages are candid engineering estimates toward generalized PHP
@@ -16,21 +16,21 @@ targets, and exact-shape fixtures do not.
 
 Overall estimated progress: **87%** `[#################---]`
 
-Primary has strong momentum in generated executable C ownership and cleanup
-slices. Recent integrated work covers selected branch owner joins, by-value
-foreach cursor preservation, branch-local native-value cleanup, and statement
-boundary cleanup for discarded native-value expression results.
+Primary has strong momentum in generated executable C ownership, cleanup, and
+selected reference execution slices. Recent integrated work covers selected
+branch owner joins, by-value foreach cursor preservation, branch-local
+native-value cleanup, statement boundary cleanup for discarded native-value
+expression results, and by-reference foreach slot execution for selected array
+lvalue owners.
 
 This is still selected compiled PHP execution, not complete PHP semantics.
 Calls/functions/frames, object/property/method execution, full references/COW,
-by-reference foreach, structured cleanup/unwinding, exact diagnostics, and
-LLVM/assembly parity remain the major completion blockers.
+arbitrary by-reference foreach, structured cleanup/unwinding, exact
+diagnostics, and LLVM/assembly parity remain the major completion blockers.
 
-Current primary cleanliness: uncommitted by-reference foreach candidate work is
-present in `compiler/src/codegen.rs`, `compiler/tests/native_link.rs`, and
-`runtime/src/lib.rs`, plus untracked `target-primary-byref-foreach-check-1/`.
-The protected `runtime/src/lib.rs` null-slot hunk is still dirty and uncounted.
-None of this dirty work is counted below until committed and pushed cleanly.
+Current primary cleanliness: semantic work is current through the by-reference
+foreach slot batch. The protected `runtime/src/lib.rs` null-slot hunk is still
+dirty and uncounted.
 
 ## Grand Roadmap
 
@@ -38,8 +38,8 @@ None of this dirty work is counted below until committed and pushed cleanly.
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **97%** | `[###################-]` | Strong value, array, symbol-table, request-state, reference, comparison, truthiness, diagnostic, exit, and cleanup surfaces. |
 | Compiler/backend consumers | **98%** | `[####################]` | Good generated-C coverage for selected request, globals, arrays, lvalues, references, foreach by-value storage, exit, diagnostics, state-stable branches, branch owner joins, lazy ternaries, logical short-circuiting, and statement cleanup. LLVM/assembly parity is uneven. |
-| Executable PHP semantics | **85%** | `[#################---]` | Improving through linked executable gates, but still selected islands rather than a complete execution model. |
-| Arrays, lvalues, references, COW | **87%** | `[#################---]` | Strong selected paths, including reference-backed active symbol-root array lvalues and by-value foreach cursor storage. Arbitrary writable roots, full COW, by-reference arguments, and by-reference foreach are not integrated. |
+| Executable PHP semantics | **86%** | `[#################---]` | Improving through linked executable gates, but still selected islands rather than a complete execution model. |
+| Arrays, lvalues, references, COW | **88%** | `[##################--]` | Strong selected paths, including reference-backed active symbol-root array lvalues, by-value foreach cursor storage, and selected by-reference foreach slot execution. Arbitrary writable roots, full COW, by-reference arguments, and broader by-reference foreach remain open. |
 | Symbols, globals, request state | **96%** | `[###################-]` | Strong request/`$GLOBALS` generated-C coverage. Broader request/global reconciliation remains open. |
 | Calls, functions, frames | **27%** | `[#####---------------]` | Runtime/interpreter call-frame metadata enforcement exists, but generated-native call/frame execution is still the major missing piece. |
 | Objects, properties, methods | **11%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary still lacks general compiled object/property/method execution. |
@@ -48,6 +48,11 @@ None of this dirty work is counted below until committed and pushed cleanly.
 
 ## Primary-Integrated Progress
 
+- [x] `1914035b`: generated-C by-reference `foreach` over tracked array
+  lvalue owners reacquires each live slot as a native reference, exposes loop
+  values through reference handles, writes assignments back through
+  `phpc_native_reference_set_value()`, and rejects lingering post-loop value
+  references unless explicitly unset.
 - [x] `27387bd2`: generated-C discarded expression statements now release owned
   native-value results at the statement boundary, with source and linked
   executable proof.
@@ -72,11 +77,6 @@ None of this dirty work is counted below until committed and pushed cleanly.
 
 Not counted until primary integrates it cleanly:
 
-- [ ] Dirty primary by-reference foreach candidate: adds native reference
-  handles, foreach value-reference exposure, assignment through foreach value
-  references, and selected native-link proof. Estimate as a candidate toward
-  full foreach/reference semantics: **20%** `[####----------------]`; counted
-  integrated progress: **0%** until committed and pushed.
 - [ ] Lane candidates around expression-position by-reference array mutator
   writeback, known string callback reducers, clone-source conversion results,
   non-local unset owner classifiers, diagnostic/error-reporting masks, PCRE
@@ -99,16 +99,18 @@ Not counted until primary integrates it cleanly:
   rejection.
 - [x] Selected generated-C array query, array lvalue, reference-backed lvalue,
   diagnostic cleanup, direct termination, state-stable branch, branch-owner,
-  branch-local cleanup, foreach by-value storage, lazy expression, logical
-  short-circuit, and statement-discard cleanup consumers.
+  branch-local cleanup, foreach by-value storage, selected by-reference
+  foreach slots, lazy expression, logical short-circuit, and statement-discard
+  cleanup consumers.
 - [x] Focused source and linked executable gates for the newest primary
   semantic slices.
 
 ## In Progress
 
-- [ ] By-reference foreach candidate review/integration or clean park. Estimate
-  toward full foreach/reference parity: **20%** `[####----------------]`
-  candidate, **0%** integrated.
+- [ ] Broader by-reference foreach parity beyond selected array lvalue owners:
+  temporary iterable owners, arbitrary loop-body mutation, lingering post-loop
+  references, symbol/request owners, ArrayAccess/object/resource iteration,
+  exact cleanup/error edges, and LLVM/assembly parity.
 - [ ] Generated-native call/frame handoff, argument cleanup, return ownership,
   and dynamic call blockers. Estimate: **27%** `[#####---------------]`
 - [ ] Reference/COW owner expansion beyond active symbol-root arrays and through
@@ -138,12 +140,11 @@ Not counted until primary integrates it cleanly:
 
 ## Steering Bias
 
-Keep landing small executable generalized slices. The dirty by-reference
-foreach WIP is worth evaluating because it targets a real shared blocker, but
-it should be counted only after clean staging, linked proof, and exclusion of
-the protected runtime hunk. After that, the best work removes major shared
-blockers: generated-native call/frame execution, object/property/method
-execution, reference/COW through real control flow, broader cleanup and
-diagnostic ordering, or backend parity. Continue rejecting docs-only progress,
-nearby builtin-only expansions, interpreter-only metadata patches, and
-exact-shape lowering.
+Keep landing small executable generalized slices. The by-reference foreach
+slice landed because it targeted a real shared blocker with clean staging and
+linked proof. The best next work removes major shared blockers:
+generated-native call/frame execution, object/property/method execution,
+reference/COW through real control flow, broader cleanup and diagnostic
+ordering, or backend parity. Continue rejecting docs-only progress, nearby
+builtin-only expansions, interpreter-only metadata patches, and exact-shape
+lowering.
