@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 05:23 CEST
+Updated: 2026-05-23 05:19 CEST
 Evaluation marker: `20260523T025130Z`
 
 Primary HEAD: `dcd99134 codegen: terminate top-level returns`
