@@ -10656,6 +10656,17 @@ const NATIVE_STORED_VALUE_ISSET_EMPTY_SOURCE: &str = concat!(
     "echo empty($array) ? \"empty\" : \"filled\";\n",
 );
 
+const NATIVE_ARRAY_OWNER_TRUTHINESS_SOURCE: &str = concat!(
+    "<?php\n",
+    "$empty = [];\n",
+    "$filled = [\"x\" => \"y\"];\n",
+    "echo empty($empty) ? \"empty\" : \"filled\", \"|\";\n",
+    "echo empty($filled) ? \"empty\" : \"filled\", \"|\";\n",
+    "if ($empty) { echo \"bad\"; } else { echo \"falsey\"; }\n",
+    "echo \"|\";\n",
+    "if ($filled && !$empty) { echo \"truthy\"; } else { echo \"bad\"; }\n",
+);
+
 const NATIVE_VALUE_CAST_ECHO_SOURCE: &str = "<?php\necho (int)\"5.9\", \"|\";\necho (float)\"3.5\", \"|\";\necho (string)(2 + 3), \"|\";\necho (bool)\"0\", \"|\";\necho gettype((string)123);\n";
 
 const NATIVE_VALUE_OPERATION_ECHO_SOURCE: &str = "<?php\n$left = \"6\";\n$right = 2;\necho -$left, \"|\";\necho $left + $right, \"|\";\necho $left / $right, \"|\";\necho \"A\" . \"\0B\", \"|\";\necho \"B\" & \"A\", \"|\";\necho 8 << \"1\";\n";
@@ -11378,6 +11389,62 @@ fn emit_exe_links_and_runs_stored_native_value_isset_empty_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"set|filled|set|empty|filled|set|empty");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn native_executable_c_source_routes_array_owner_truthiness_through_runtime_abi() {
+    let program = parse(NATIVE_ARRAY_OWNER_TRUTHINESS_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("extern _Bool phpc_native_value_is_truthy(phpc_NativeValueHandle value);"),
+        "{source}"
+    );
+    assert!(
+        source
+            .matches(" = phpc_native_value_is_truthy(")
+            .count()
+            >= 4,
+        "empty(), if-condition, and unary-not array owner truthiness should share the runtime truthiness ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_from_array("),
+        "array owners should be materialized as PHP-shaped native values before truthiness checks:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly empty() lowering rejects")
+            && !source.contains("assembly unary lowering rejects")
+            && !source.contains("assembly control-flow lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_array_owner_truthiness_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "array_owner_truthiness",
+        NATIVE_ARRAY_OWNER_TRUTHINESS_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run array owner truthiness executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"empty|filled|falsey|truthy");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

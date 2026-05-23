@@ -13858,7 +13858,9 @@ impl CGenerator {
 
         if matches!(
             value,
-            CValue::NativeValueHandle(_) | CValue::NativeReferenceHandle(_)
+            CValue::ArrayHandle(_)
+                | CValue::NativeValueHandle(_)
+                | CValue::NativeReferenceHandle(_)
         ) {
             let value = self.materialize_native_array_c_value_handle(value.clone(), arg.span())?;
             let truthy = self.emit_native_value_handle_truthiness(&value.handle);
@@ -20289,6 +20291,12 @@ impl CGenerator {
                 let truthy = self.emit_native_value_handle_truthiness(&handle);
                 Ok(CValue::BoolExpr(truthy))
             }
+            value @ (CValue::ArrayHandle(_) | CValue::NativeReferenceHandle(_)) => {
+                let value = self.materialize_native_array_c_value_handle(value, span)?;
+                let truthy = self.emit_native_value_handle_truthiness(&value.handle);
+                self.body.extend(value.cleanup_after_use);
+                Ok(CValue::BoolExpr(truthy))
+            }
             _ => Err(self.unsupported(span, assembly_logical_rejection())),
         }
     }
@@ -20976,7 +20984,12 @@ impl CGenerator {
                 self.body.push(format!("phpc_native_value_free({value});"));
                 Ok(CValue::BoolExpr(format!("!({truthy})")))
             }
-            CValue::ArrayHandle(_) => Err(self.unsupported(span, ASSEMBLY_UNARY_REJECTION)),
+            value @ CValue::ArrayHandle(_) => {
+                let value = self.materialize_native_array_c_value_handle(value, span)?;
+                let truthy = self.emit_native_value_handle_truthiness(&value.handle);
+                self.body.extend(value.cleanup_after_use);
+                Ok(CValue::BoolExpr(format!("!({truthy})")))
+            }
         }
     }
 
