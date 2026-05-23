@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 03:38 CEST
+Updated: 2026-05-23 03:46 CEST
 Evaluation marker: `20260523T011218Z`
 
-Primary baseline: `codegen: preserve foreach cursor storage`
-Latest semantic baseline: `codegen: preserve foreach cursor storage`
+Primary baseline: `codegen: cleanup branch-local native values`
+Latest semantic baseline: `codegen: cleanup branch-local native values`
 Latest evaluator report: `20260523T011218Z`
 
 These percentages are candid engineering estimates toward generalized PHP
@@ -20,12 +20,12 @@ Momentum is positive. Primary now includes several generated-C executable
 semantic slices: selected request/global/array/reference paths from earlier
 work, direct `exit()`/`die()` cleanup, diagnostic report ownership cleanup,
 bounded `if`/`else` lowering, lazy ternary/short-ternary value-result branches,
-dynamic logical `&&`/`||` short-circuit branches, and selected owned
-native-value `if`/`else` branch joins. The latest foreach slice is useful
-because generated C can now preserve and update pre-existing key/value cursor
-variables through owned native-value storage across by-value foreach loops,
-including empty-loop carry-forward, while still rejecting by-reference foreach,
-body mutation, and reference/COW-sensitive forms.
+dynamic logical `&&`/`||` short-circuit branches, selected owned native-value
+`if`/`else` branch joins, by-value foreach cursor storage, and branch-local
+native-value cleanup in generated-C `if`/`else` bodies. The latest cleanup
+slice is useful because branch-local native values produced only inside a
+selected branch can now be released before control rejoins, while broader
+cleanup-owner joins and stateful branch mutations remain blocked.
 
 This is still not a complete native PHP execution model. Calls/functions,
 objects/properties/methods, full references/COW, broad structured control flow,
@@ -46,11 +46,16 @@ dirty and uncounted.
 | Symbols, globals, request state | **96%** | `[###################-]` | Strong request/`$GLOBALS` generated-C coverage. Broader request/global reconciliation remains open. |
 | Calls, functions, frames | **27%** | `[#####---------------]` | Runtime/interpreter call-frame metadata enforcement landed; generated-native call/frame execution is still the major missing piece. |
 | Objects, properties, methods | **11%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary still lacks general compiled object/property/method execution. |
-| Control flow, cleanup, diagnostics | **35%** | `[#######-------------]` | Direct exit, diagnostic ownership, bounded state-stable `if`/`else`, cleanup-free scalar/string/bool branch joins, and selected owned native-value branch joins execute on generated C. Loops, switch, broader cleanup-owner joins, exact ordering, shutdown/finally/destructors, and unwinding are not generalized. |
+| Control flow, cleanup, diagnostics | **36%** | `[#######-------------]` | Direct exit, diagnostic ownership, bounded state-stable `if`/`else`, cleanup-free scalar/string/bool branch joins, selected owned native-value branch joins, and discarded branch-local native-value cleanup execute on generated C. Loops, switch, broader cleanup-owner joins, exact ordering, shutdown/finally/destructors, and unwinding are not generalized. |
 | Broad integrated verification | **87%** | `[#################---]` | Focused gates are strong. Cross-feature composition and backend parity need broader proof. |
 
 ## Primary-Integrated Progress
 
+- [x] `a29f292f`: generated-C `if`/`else` branch lowering now releases
+  branch-local native values produced only inside selected branches before
+  rejoining, with source and linked executable proof. Broader cleanup-owner
+  joins, branch mutations, loops/switch/goto, references/COW, exact diagnostic
+  ordering, and LLVM/assembly parity remain blocked.
 - [x] `8c504cf8`: generated-C by-value foreach now preserves pre-existing
   key/value cursor variables through owned native-value storage and linked
   executable proof, while keeping by-reference foreach and body-mutation forms
@@ -134,7 +139,7 @@ Not counted until primary integrates it:
   scalar branch joins, and selected owned native-value joins: broader
   cleanup-owner joins, loops, switch, goto, break/continue, cleanup stacks, and
   source-ordered diagnostics. Estimate:
-  **35%** `[#######-------------]`
+  **36%** `[#######-------------]`
 - [ ] Broader conversion/comparison behavior that removes shared blockers
   rather than adding one-off builtin slices.
 
