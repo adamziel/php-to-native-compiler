@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 03:06 CEST
+Updated: 2026-05-23 03:15 CEST
 Evaluation marker: `20260523T002315Z`
 
-Primary baseline: `codegen: lower lazy native value short ternaries`
-Latest semantic baseline: `codegen: lower lazy native value short ternaries`
+Primary baseline: `codegen: short-circuit native logical branches`
+Latest semantic baseline: `codegen: short-circuit native logical branches`
 Latest evaluator report: `20260523T002315Z`
 
 These percentages are candid engineering estimates toward generalized PHP
@@ -18,21 +18,20 @@ Overall estimated progress: **87%** `[#################---]`
 
 Momentum is positive. Primary now includes several generated-C executable
 semantic slices: selected request/global/array/reference paths from earlier
-work, direct `exit()`/`die()` cleanup, diagnostic report ownership cleanup, and
-bounded `if`/`else` lowering. The latest short-ternary slice is useful because
-it extends the existing lazy native value-result branch machinery to `?:`
-expressions, transfers exactly the selected owned handle, and preserves lazy
-fallback diagnostics/cleanup for the covered family instead of using eager
-lowering.
+work, direct `exit()`/`die()` cleanup, diagnostic report ownership cleanup,
+bounded `if`/`else` lowering, lazy ternary/short-ternary value-result branches,
+and dynamic logical `&&`/`||` short-circuit branches. The latest logical slice
+is useful because it removes an eager-evaluation blocker: generated C now
+evaluates the left operand once, emits the RHS only in the selected branch, and
+rejects RHS state merges instead of pretending broad logical side effects are
+solved.
 
 This is still not a complete native PHP execution model. Calls/functions,
 objects/properties/methods, full references/COW, broad structured control flow,
 exact diagnostics, and LLVM/assembly parity remain the main gaps.
 
-Current primary cleanliness: semantic work is committed through `76ea0597`.
-Remaining dirty files are unintegrated doc work and the protected
-`runtime/src/lib.rs` null-slot hunk; they are not counted until reviewed and
-committed.
+Current primary cleanliness: semantic work is committed through `481bc961`.
+The protected `runtime/src/lib.rs` null-slot hunk remains dirty and uncounted.
 
 ## Grand Roadmap
 
@@ -50,6 +49,9 @@ committed.
 
 ## Primary-Integrated Progress
 
+- [x] `481bc961`: generated-C dynamic logical `&&`/`||` now lower through real
+  short-circuit RHS branches when operands use the native truthiness boundary
+  and the selected RHS leaves persistent state unchanged.
 - [x] `76ea0597`: generated-C lazy native value-result short ternaries now
   lower through real selected-branch owner transfer, shared PHP truthiness, and
   focused linked executable proof.
