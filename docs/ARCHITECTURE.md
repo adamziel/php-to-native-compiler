@@ -978,6 +978,12 @@ expose the same variable set and neither branch creates owned native cleanup
 state. Native lowering still rejects one-sided undefined-variable unions,
 mixed-type/native-value phis, cleanup stack joins, `elseif`, loops,
 switch/goto/break/continue, and LLVM IR/assembly statement control flow.
+The same generated-C path now lowers dynamic logical `&&`/`and` and `||`/`or`
+through scoped RHS branches when both the left operand and selected RHS can use
+the native truthiness boundary and the RHS leaves persistent compiler state
+unchanged; skipped RHS operands are not evaluated. `xor` remains eager, and RHS
+state merges, cleanup-owner joins, exact diagnostic ordering, and LLVM/assembly
+parity remain separate contracts.
 `for` headers store initializer, condition, and increment slots as ordered
 lists. The interpreter executes initializer and increment actions left to
 right; condition expressions also evaluate left to right and the final
@@ -2295,14 +2301,17 @@ logical operands whose null, integer, finite-float, or string truthiness is
 unambiguous fold to a static boolean result without emitting a native boolean
 operation. Statically decisive known-left `&&`/`and` and `||`/`or`
 short-circuit cases such as `false && rhs` and `true || rhs` lower without
-lowering the skipped right-hand operand. Other dynamic boolean expressions
+lowering the skipped right-hand operand. The generated-C executable path also
+uses scoped RHS branches for dynamic `&&`/`and` and `||`/`or` operands that
+lower through native truthiness/value-result materialization, rejecting RHS
+branches that need persistent state merging. Other dynamic boolean expressions
 lower to native boolean operations with PHP-shaped boolean echo output. It
-rejects general PHP truthiness conversion, dynamic short-circuiting, `xor`
-right-hand skipping, selected/evaluated unsupported right-hand operands,
-ambiguous scalar truthiness, untracked scalar logical operands, non-finite float
-truthiness, null coalescing, arrays, objects, references/copy-on-write
-side-effect behavior, and exact native error
-behavior.
+rejects general PHP truthiness conversion beyond the current native value
+subset, `xor` right-hand skipping, selected/evaluated unsupported right-hand
+operands, ambiguous scalar truthiness, untracked scalar logical operands,
+non-finite float truthiness, null coalescing, arrays, objects,
+references/copy-on-write side-effect behavior, exact native error behavior, and
+LLVM/assembly parity.
 Native lowering accepts binary `+`, `-`, and `*` when both operands are
 already same-type lowerable floats, or when both operands are lowerable
 integers and the integer result is statically proven not to overflow, in the
@@ -2390,13 +2399,16 @@ known scalar truthiness folds to a static boolean, and dynamic boolean
 expressions lower to native boolean operations plus PHP-shaped boolean echo
 output. Statically decisive known-left `&&`/`and` and `||`/`or` cases such as
 `false && rhs` and `true || rhs` lower without lowering the skipped right-hand
-operand. The native lowerer still rejects cases that need general PHP
-truthiness conversion, dynamic short-circuiting, `xor` right-hand skipping, or
-selected/evaluated unsupported right-hand operands. Ambiguous scalar
-truthiness, untracked scalar logical operands, non-finite float truthiness,
-null coalescing, arrays, objects, references/copy-on-write side-effect
-behavior, exact native error behavior, linking/execution, and broader native
-lowering remain unsupported.
+operand. The generated-C executable path additionally emits scoped RHS
+branches for dynamic `&&`/`and` and `||`/`or` operands that use the native
+truthiness/value-result boundary and do not change persistent compiler state.
+The native lowerer still rejects cases that need general PHP truthiness
+conversion beyond the current native value subset, `xor` right-hand skipping,
+selected/evaluated unsupported right-hand operands, or RHS state merges.
+Ambiguous scalar truthiness, untracked scalar logical operands, non-finite
+float truthiness, null coalescing, arrays, objects,
+references/copy-on-write side-effect behavior, exact native error behavior,
+LLVM/assembly parity, and broader native lowering remain unsupported.
 Native lowering accepts integer bitwise `&`, `|`, `^`, and unary `~` only when
 operands are already lowerable integers in the straight-line subset. Bounded
 statically known integer bitwise and unary bitwise-not results remain tracked

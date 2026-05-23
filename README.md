@@ -248,14 +248,17 @@ stdout, integer operands become the process status, and owned native runtime
 handles are cleaned before returning from `main`. Bounded `if`/`else`
 statements can also lower when conditions use the existing native truthiness or
 value-comparison boundaries and both branches leave persistent variable/cleanup
-state unchanged.
+state unchanged. Bounded dynamic `&&`/`||` logical expressions on this path use
+real short-circuit C branches when both operands lower through the current
+native truthiness boundary and the selected RHS leaves persistent state
+unchanged.
 
 This is not broad native PHP support. Objects, functions, references,
 request/session/stream/header state, exceptions, includes, shutdown callbacks,
 destructors/finally ordering, output buffers, SAPI interaction, branch
-environment merging, loops/switch/goto/break/continue, dynamic string-pointer
-helper lowering, and broad PHP coercions remain unsupported or limited to the
-existing native diagnostics.
+environment merging, RHS logical state merging, loops/switch/goto/break/continue,
+dynamic string-pointer helper lowering, and broad PHP coercions remain
+unsupported or limited to the existing native diagnostics.
 
 ## Current Status
 

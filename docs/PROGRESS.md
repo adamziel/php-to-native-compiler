@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added bounded generated-native executable short-circuit lowering for logical
+  `&&`/`and` and `||`/`or` expressions whose operands can be converted through
+  the existing PHP truthiness boundary on the `phpc compile --emit-exe` C-link
+  path. The left operand is evaluated and cleaned up once, the right operand is
+  emitted only inside the selected C branch, and the boolean result is assigned
+  after the branch. Focused tests cover skipped RHS `exit(...)`, selected RHS
+  native value-result producers, linked executable behavior, and rejection when
+  the selected RHS would require persistent variable/owner state merging.
+  `xor` remains eager as PHP requires, while RHS branch state merges,
+  cleanup-owner joins, side-effectful persistent owners, exact diagnostic
+  ordering, references/copy-on-write, and LLVM IR/assembly parity remain
+  unsupported.
+
 - Added bounded generated-native executable `if`/`else` statement lowering for
   the `phpc compile --emit-exe` C-link path when the condition can be lowered
   through the existing native truthiness/value-comparison boundaries and both

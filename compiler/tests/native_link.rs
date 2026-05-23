@@ -15,6 +15,18 @@ const NATIVE_VALUE_TRUTHINESS_SOURCE: &str = concat!(
     "echo ((array_sum([2]) xor $items[\"one\"]) ? \"T\" : \"F\");\n",
 );
 
+const NATIVE_SHORT_CIRCUIT_LOGICAL_SOURCE: &str = concat!(
+    "<?php\n",
+    "$items = [\"empty\" => \"\", \"zero\" => \"0\", \"one\" => \"1\", \"word\" => \"go\"];\n",
+    "echo ($items[\"zero\"] && exit(\"bad\")) ? \"T\" : \"F\";\n",
+    "echo \"|\";\n",
+    "echo ($items[\"one\"] || exit(\"bad\")) ? \"T\" : \"F\";\n",
+    "echo \"|\";\n",
+    "echo ($items[\"one\"] && strtoupper($items[\"word\"])) ? \"T\" : \"F\";\n",
+    "echo \"|\";\n",
+    "echo ($items[\"empty\"] || strrev(\"ko\")) ? \"T\" : \"F\";\n",
+);
+
 const NATIVE_SCOPED_IF_SOURCE: &str = concat!(
     "<?php\n",
     "$sum = 2 + \"1\";\n",
@@ -836,6 +848,50 @@ fn native_executable_c_source_routes_native_value_truthiness_through_runtime_abi
 }
 
 #[test]
+fn native_executable_c_source_routes_dynamic_logical_and_or_through_short_circuit_branches() {
+    let program = parse(NATIVE_SHORT_CIRCUIT_LOGICAL_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("_Bool native_logical_result_"),
+        "dynamic logical &&/|| should materialize a boolean result variable:\n{source}"
+    );
+    assert!(
+        body.contains("if (native_value_truthy_") && body.contains("if (!(native_value_truthy_"),
+        "logical && and || should guard selected RHS evaluation with C branches:\n{source}"
+    );
+    assert!(
+        body.contains("native_exit_result_")
+            && body.contains("strtoupper_result_")
+            && body.contains("strrev_result_"),
+        "RHS producers should live in selected short-circuit branch bodies:\n{source}"
+    );
+    assert!(
+        body.contains("native_logical_result_") && body.contains("? (\"T\") : (\"F\")"),
+        "downstream ternary consumers should read the logical result after short-circuiting:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly logical lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_rejects_short_circuit_logical_rhs_state_merges() {
+    let program = parse(
+        "<?php\n$items = [\"one\" => \"1\"];\necho ($items[\"one\"] && ($value = strtoupper(\"x\"))) ? \"T\" : \"F\";\necho $value;\n",
+    )
+    .unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert!(
+        error.message.contains("logical lowering rejects"),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_scoped_if_branches_through_truthiness_boundary() {
     let program = parse(NATIVE_SCOPED_IF_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -1536,6 +1592,34 @@ fn emit_exe_links_and_runs_native_value_truthiness_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(String::from_utf8_lossy(&run.stdout), "TTFTFF");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_short_circuit_logical_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "native_short_circuit_logical",
+        NATIVE_SHORT_CIRCUIT_LOGICAL_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native short-circuit logical executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "F|T|T|T");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);

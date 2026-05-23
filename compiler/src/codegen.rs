@@ -19426,16 +19426,64 @@ impl CGenerator {
             let right = self.emit_logical_truthiness_expr(right, span)?;
             return self.emit_bool_binary(left, op, right, span);
         }
-        let left = self.emit_expr(left)?;
+        let left = self.emit_logical_truthiness_expr(left, span)?;
         if let Some(left_truthy) = self.known_truthiness_for_value(&left) {
             match op {
                 BinaryOp::LogicalAnd if !left_truthy => return Ok(CValue::Bool(false)),
                 BinaryOp::LogicalOr if left_truthy => return Ok(CValue::Bool(true)),
                 _ => {}
             }
+            let right = self.emit_logical_truthiness_expr(right, span)?;
+            return self.emit_bool_binary(CValue::Bool(left_truthy), op, right, span);
         }
-        let right = self.emit_expr(right)?;
-        self.emit_bool_binary(left, op, right, span)
+        self.emit_dynamic_short_circuit_logical_expr(left, op, right, span)
+    }
+
+    fn emit_dynamic_short_circuit_logical_expr(
+        &mut self,
+        left: CValue,
+        op: BinaryOp,
+        right: &Expr,
+        span: Span,
+    ) -> CompileResult<CValue> {
+        let Some(left_condition) = c_bool_operand(left) else {
+            return Err(self.unsupported(span, assembly_logical_rejection()));
+        };
+        let (initial_value, branch_condition) = match op {
+            BinaryOp::LogicalAnd => ("0", left_condition),
+            BinaryOp::LogicalOr => ("1", format!("!({left_condition})")),
+            _ => return Err(self.unsupported(span, assembly_logical_rejection())),
+        };
+
+        let result = self.next_native_name("native_logical_result");
+        let base = self.clone();
+        let mut rhs_branch = base.scoped_branch_generator();
+        let right = match rhs_branch.emit_logical_truthiness_expr(right, span) {
+            Ok(value) => value,
+            Err(_) => return Err(self.unsupported(span, assembly_logical_rejection())),
+        };
+        let Some(right_condition) = c_bool_operand(right) else {
+            return Err(self.unsupported(span, assembly_logical_rejection()));
+        };
+        rhs_branch
+            .body
+            .push(format!("{result} = (({right_condition}) != 0);"));
+
+        if !base.persistent_state_matches(&rhs_branch) {
+            return Err(self.unsupported(span, assembly_logical_rejection()));
+        }
+
+        self.merge_scoped_branch_codegen(&rhs_branch);
+        self.next_native_temp = rhs_branch.next_native_temp;
+        self.next_static_data = rhs_branch.next_static_data;
+
+        self.body.push(format!("_Bool {result} = {initial_value};"));
+        self.body.push(format!("if ({branch_condition}) {{"));
+        for line in &rhs_branch.body {
+            self.body.push(format!("  {line}"));
+        }
+        self.body.push("}".to_string());
+        Ok(CValue::BoolExpr(result))
     }
 
     fn emit_logical_truthiness_expr(&mut self, expr: &Expr, span: Span) -> CompileResult<CValue> {

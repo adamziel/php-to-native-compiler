@@ -5490,6 +5490,16 @@
   handles, cleanup stack joins, `elseif`, loops, switch/goto/break/continue,
   exact PHP diagnostic ordering, and LLVM IR/assembly lowering remain
   unsupported.
+- `phpc compile --emit-exe` handles bounded generated-C short-circuit logical
+  `&&`/`and` and `||`/`or` expressions when the left operand and selected
+  right operand lower through the current native truthiness boundary and the
+  selected RHS branch leaves persistent variable and owned-cleanup state
+  unchanged. The generated C evaluates and cleans the left operand once,
+  executes the RHS only inside the selected branch, and exposes a boolean
+  result to later expression consumers. `xor` still evaluates both operands.
+  RHS branches that require persistent state merging, cleanup-owner joins,
+  references/copy-on-write, exact diagnostic ordering, and LLVM IR/assembly
+  lowering remain unsupported.
 - Native lowering rejects `try`/`catch`/`finally` blocks through a dedicated
   try-block diagnostic until generated code has `Throwable` objects, stack
   unwinding, catch type matching, catch variable binding, finally execution
@@ -6801,16 +6811,20 @@
   string truthiness is unambiguous fold to a static boolean result without
   emitting a native boolean operation. Statically decisive known-left
   `&&`/`and` and `||`/`or` short-circuit cases such as `false && rhs` and
-  `true || rhs` lower without lowering the skipped right-hand operand. Other
-  dynamic boolean expressions lower to native boolean operations with PHP-shaped
-  boolean echo output. Cases that require general PHP truthiness conversion,
-  dynamic short-circuiting, `xor` right-hand skipping, selected/evaluated
-  unsupported right-hand operands, ambiguous scalar truthiness, untracked scalar
-  logical operands, non-finite float truthiness, null coalescing, arrays,
-  objects,
-  references/copy-on-write behavior, exact native error objects,
-  linking/execution, or broader native lowering are rejected with a
-  specific codegen diagnostic. Native bitwise lowering accepts binary `&`,
+  `true || rhs` lower without lowering the skipped right-hand operand. On the
+  generated-C executable path, dynamic `&&`/`and` and `||`/`or` operands that
+  lower through the native truthiness/value-result boundary now emit scoped RHS
+  branches instead of eager operand evaluation; those RHS branches are accepted
+  only when persistent variable and owned-cleanup state remain unchanged. Other
+  dynamic boolean expressions lower to native boolean operations with
+  PHP-shaped boolean echo output. Cases that require general PHP truthiness
+  conversion beyond the current native value subset, `xor` right-hand skipping,
+  selected/evaluated unsupported right-hand operands, RHS state merges,
+  ambiguous scalar truthiness, untracked scalar logical operands, non-finite
+  float truthiness, null coalescing, arrays, objects,
+  references/copy-on-write behavior, exact native error objects, LLVM/assembly
+  parity, or broader native lowering are rejected with a specific codegen
+  diagnostic. Native bitwise lowering accepts binary `&`,
   `|`, and `^`, plus unary `~`, only when operands are already lowerable
   integers in the same straight-line subset. Bounded statically known integer
   bitwise and unary bitwise-not results remain tracked for later checked
@@ -9852,14 +9866,17 @@
   unambiguous fold to a static boolean result without emitting a native boolean
   operation. Statically decisive known-left `&&`/`and` and `||`/`or`
   short-circuit cases such as `false && rhs` and `true || rhs` lower without
-  lowering the skipped right-hand operand. Other dynamic boolean expressions
-  lower to native boolean operations with PHP-shaped boolean echo output. Native
-  lowering still rejects general PHP truthiness conversion, dynamic
-  short-circuiting, `xor` right-hand skipping, selected/evaluated unsupported
-  right-hand operands, ambiguous scalar truthiness, untracked scalar logical
-  operands, non-finite float truthiness, null coalescing, arrays, objects,
-  references/copy-on-write side effects, exact native error objects,
-  linking/execution, and broader native lowering.
+  lowering the skipped right-hand operand. The generated-C executable path also
+  emits scoped RHS branches for dynamic `&&`/`and` and `||`/`or` operands that
+  lower through the native truthiness/value-result boundary, guarded so skipped
+  RHS operands are not evaluated. Other dynamic boolean expressions lower to
+  native boolean operations with PHP-shaped boolean echo output. Native lowering
+  still rejects general PHP truthiness conversion beyond the current native
+  value subset, `xor` right-hand skipping, selected/evaluated unsupported
+  right-hand operands, RHS state merges, ambiguous scalar truthiness, untracked
+  scalar logical operands, non-finite float truthiness, null coalescing, arrays,
+  objects, references/copy-on-write side effects, exact native error objects,
+  LLVM/assembly parity, and broader native lowering.
 - Bitwise operators are limited to `&`, `|`, `^`, unary `~`, and shift
   operators `<<`/`>>` over the current integer/string subset. Mixed binary
   operands and shift operands use the current
