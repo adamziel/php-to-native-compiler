@@ -1,11 +1,11 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 01:15 CEST
+Updated: 2026-05-24 01:28 CEST
 Evaluation marker: `20260523T225737Z`
 
 Latest primary semantic/test baseline:
-`1bd6d615 codegen: route loose comparisons through value results`
-Latest integrated semantic baseline: `1bd6d615 codegen: route loose comparisons through value results`
+`b53a1e88 codegen: schedule finally before try returns`
+Latest integrated semantic baseline: `b53a1e88 codegen: schedule finally before try returns`
 Latest evaluator report: `20260523T225737Z`
 
 These are candid engineering estimates toward generalized PHP semantics in the
@@ -18,12 +18,13 @@ exact-shape fixtures do not.
 Overall estimated progress: **88%** `[##################--]`
 
 Primary integrated progress now includes generated-C top-level state-stable
-`goto`/label dispatch, normal-flow `try`/`finally`, and a diagnostic-aware
-native value stdout formatter consumed by LLVM and generated-C display paths.
-Generated-C non-strict comparison conditions and direct comparison echoes now
-consume the shared native value comparison result boundary across scalar,
-string, null/bool, builtin-result, and array operand families. The compiler
-has strong generated-C islands for native values, arrays, selected references,
+`goto`/label dispatch, normal-flow `try`/`finally`, top-level `return` transfer
+through active generated-C `finally` bodies, and a diagnostic-aware native value
+stdout formatter consumed by LLVM and generated-C display paths. Generated-C
+non-strict comparison conditions and direct comparison echoes now consume the
+shared native value comparison result boundary across scalar, string,
+null/bool, builtin-result, and array operand families. The compiler has strong
+generated-C islands for native values, arrays, selected references,
 request/symbol state, diagnostics, cleanup, lazy expressions, and bounded
 control flow.
 
@@ -32,7 +33,7 @@ calls/frames, object/property/method execution, complete references/COW
 identity, source-ordered diagnostics, cleanup/unwinding, and LLVM/assembly
 parity.
 
-Current primary state: primary semantic head is `1bd6d615`; push/sync is
+Current primary state: primary semantic head is `b53a1e88`; push/sync is
 handled by the active primary integration worker.
 The protected `runtime/src/lib.rs` null-slot hunk remains dirty, unstaged, and
 uncounted. The narrow generated-C user-function WIP was parked and is not
@@ -49,7 +50,7 @@ counted.
 | Symbols, globals, request state | **96%** | `[###################-]` | Strong request and `$GLOBALS` generated-C coverage. Reconciliation across calls/requests still needs work. |
 | Calls, functions, frames | **27%** | `[#####---------------]` | Runtime/interpreter metadata and lane contracts exist, but real generated-native frame execution is still missing. |
 | Objects, properties, methods | **11%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary lacks general compiled object/property/method execution. |
-| Control flow, cleanup, diagnostics | **52%** | `[##########----------]` | Bounded generated-C branches, loops, returns, transfers, switches, top-level state-stable gotos, normal-flow try/finally, and diagnostic-aware stdout formatting exist; owner/reference joins, unwinding, handlers, and exact ordering remain open. |
+| Control flow, cleanup, diagnostics | **53%** | `[###########---------]` | Bounded generated-C branches, loops, returns, transfers, switches, top-level state-stable gotos, normal-flow try/finally, top-level return through finally, and diagnostic-aware stdout formatting exist; owner/reference joins, broad unwinding, handlers, and exact ordering remain open. |
 | Broad integrated verification | **88%** | `[##################--]` | Focused gates are strong. Cross-feature composition and backend parity need broader proof. |
 
 ## Done / In Progress / Not Done
@@ -57,7 +58,7 @@ counted.
 - [x] Generated-C value-result diagnostics through shared diagnostic reporting.
 - [x] Generated-C native value-result `strlen()` consumption.
 - [x] Generated-C non-strict comparison conditions and direct echoes route through shared native value comparison results across scalar, string, null/bool, builtin-result, and array families.
-- [x] Generated-C top-level `return`, state-stable `while`/`for`, scalar loop-carried slots, multi-level loop transfers, state-stable `switch` dispatch/fallthrough/break, top-level state-stable `goto` labels, and normal-flow `try`/`finally`.
+- [x] Generated-C top-level `return`, state-stable `while`/`for`, scalar loop-carried slots, multi-level loop transfers, state-stable `switch` dispatch/fallthrough/break, top-level state-stable `goto` labels, normal-flow `try`/`finally`, and top-level return transfer through active `finally` bodies.
 - [x] Diagnostic-aware native value stdout formatting consumed by LLVM and generated-C display paths.
 - [x] Strong selected generated-C arrays, lvalues, references, request state, `$GLOBALS`, lazy ternaries, logical short-circuiting, branch cleanup, foreach storage, and output/truthiness paths.
 - [ ] Primary-integrated generated-native user-function/call-frame execution.
@@ -69,6 +70,12 @@ counted.
 
 ## Recent Primary-Integrated Work
 
+- `b53a1e88`: schedules active generated-C `finally` bodies before a top-level
+  `return` terminates from inside a supported `try` body. Return operands still
+  evaluate before the finally path, linked proof covers finally-observed array
+  mutation and terminal cleanup, and exit/goto/throw/break/continue plus
+  returns from finally bodies remain blocked until broader unwind scheduling
+  exists.
 - `1bd6d615`: routes generated-C non-strict comparison conditions and direct
   comparison echoes through `phpc_native_value_compare_result(...)`, replacing
   the older comparison-decision consumer for supported scalar, string,
