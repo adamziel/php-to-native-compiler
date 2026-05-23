@@ -319,6 +319,22 @@ const NATIVE_SWITCH_DISPATCH_SOURCE: &str = concat!(
     "echo \"|done\";\n",
 );
 
+const NATIVE_STATE_STABLE_GOTO_SOURCE: &str = concat!(
+    "<?php\n",
+    "echo \"A\";\n",
+    "goto second;\n",
+    "echo \"bad\";\n",
+    "array_sum([99]);\n",
+    "first:\n",
+    "echo \"C\";\n",
+    "goto done;\n",
+    "second:\n",
+    "echo \"B\";\n",
+    "goto first;\n",
+    "done:\n",
+    "echo \"D\";\n",
+);
+
 const NATIVE_TOP_LEVEL_RETURN_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [\"flag\" => \"1\"];\n",
@@ -1517,6 +1533,50 @@ fn native_executable_c_source_rejects_switch_state_joins_and_continue() {
 }
 
 #[test]
+fn native_executable_c_source_routes_state_stable_goto_labels() {
+    let program = parse(NATIVE_STATE_STABLE_GOTO_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("goto goto_label_") && body.contains("goto_label_"),
+        "top-level goto statements and labels should emit C goto targets:\n{source}"
+    );
+    assert!(
+        body.matches("goto goto_label_").count() >= 3,
+        "multiple source-level goto transfers should route through generated labels:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_free(native_value_array_query_"),
+        "skipped state-stable statements may still contain scoped native cleanup:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly control-flow lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_rejects_goto_target_state_joins_and_nested_gotos() {
+    for source in [
+        "<?php\ngoto done;\n$value = \"changed\";\ndone:\necho $value;\n",
+        "<?php\ndone:\n$value = \"changed\";\ngoto done;\n",
+        "<?php\nif (true) { goto done; }\ndone:\necho \"after\";\n",
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert!(
+            error.message.contains("goto labels outside top-level state-stable target snapshots")
+                || error.message.contains(
+                    "if/else branch state merges outside cleanup-free scalar/string/bool variable values"
+                ),
+            "{error:?}"
+        );
+    }
+}
+
+#[test]
 fn native_executable_c_source_routes_state_stable_for_loops() {
     let program = parse(NATIVE_STATE_STABLE_FOR_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -2579,6 +2639,32 @@ fn emit_exe_links_and_runs_state_stable_switch_dispatch_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"B|onedefaulttwo|later|done");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_state_stable_goto_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("state_stable_goto", NATIVE_STATE_STABLE_GOTO_SOURCE);
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native goto executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ABCD");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);

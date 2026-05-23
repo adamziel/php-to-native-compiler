@@ -104,7 +104,7 @@ const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rej
 const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
 const ASSEMBLY_ARRAY_DESTRUCTURING_REJECTION: &str = "assembly array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
-const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else branch state merges outside cleanup-free scalar/string/bool variable values, owned native-value handle joins, and branch-local native-value cleanup joins, while/for loops outside state-stable condition/body/increment cleanup boundaries or loop-carried int/float/bool scalar storage, switch statements outside state-stable condition/case-body cleanup boundaries and switch-local continue, elseif chains, do-while loops, goto labels, top-level or depth-out-of-range break/continue, and unbounded loop headers until native PHP truthiness, branch layout, loop and switch control flow, goto jumps, references/copy-on-write side effects, broader cleanup ownership joins, and exact native error behavior exist; generated-native C routes lowerable side-effect-only if/else branches, cleanup-free scalar/string/bool branch-state joins, selected owned native-value branch results, discarded branch-local native-value cleanup, state-stable while/for loops, loop-carried scalar while/for state, multi-level while/for transfer targets, and state-stable switch dispatch/fallthrough/break through scoped control-flow emission";
+const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else branch state merges outside cleanup-free scalar/string/bool variable values, owned native-value handle joins, and branch-local native-value cleanup joins, while/for loops outside state-stable condition/body/increment cleanup boundaries or loop-carried int/float/bool scalar storage, switch statements outside state-stable condition/case-body cleanup boundaries and switch-local continue, goto labels outside top-level state-stable target snapshots, top-level or depth-out-of-range break/continue, elseif chains, do-while loops, and unbounded loop headers until native PHP truthiness, branch layout, loop and switch control flow, broader goto state joins, references/copy-on-write side effects, broader cleanup ownership joins, and exact native error behavior exist; generated-native C routes lowerable side-effect-only if/else branches, cleanup-free scalar/string/bool branch-state joins, selected owned native-value branch results, discarded branch-local native-value cleanup, state-stable while/for loops, loop-carried scalar while/for state, multi-level while/for transfer targets, state-stable switch dispatch/fallthrough/break, and top-level state-stable goto labels through scoped control-flow emission";
 const LLVM_EXCEPTION_REJECTION: &str = "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const ASSEMBLY_EXCEPTION_REJECTION: &str = "assembly exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const LLVM_TRY_BLOCK_REJECTION: &str = "LLVM try/catch/finally lowering rejects try blocks until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during normal and exceptional control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; phpc run handles current bounded no-throw try/catch/finally behavior";
@@ -7282,6 +7282,34 @@ struct CLoopTransferTarget {
     break_label: String,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct CGotoStateSnapshot {
+    variables: HashMap<String, CValue>,
+    variable_order: Vec<String>,
+    mutable_scalar_slots: HashMap<String, CMutableScalarSlot>,
+    by_reference_foreach_linger_variables: HashSet<String>,
+    array_cleanup_handles: Vec<String>,
+    owned_native_byte_buffers: Vec<String>,
+    native_byte_buffer_string_exprs: HashMap<String, String>,
+    native_value_cleanup_handles: Vec<String>,
+    native_reference_cleanup_handles: Vec<String>,
+    native_request_state_handle: Option<String>,
+    native_globals_symbol_table_handle: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct CGotoLabelTarget {
+    c_name: String,
+    state: Option<CGotoStateSnapshot>,
+}
+
+#[derive(Debug, Clone)]
+struct CGotoTransfer {
+    label: String,
+    state: CGotoStateSnapshot,
+    span: Span,
+}
+
 impl CMutableScalarSlotKind {
     fn c_type(self) -> &'static str {
         match self {
@@ -8261,6 +8289,24 @@ impl CGenerator {
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
     }
 
+    fn goto_state_snapshot(&self) -> CGotoStateSnapshot {
+        CGotoStateSnapshot {
+            variables: self.variables.clone(),
+            variable_order: self.variable_order.clone(),
+            mutable_scalar_slots: self.mutable_scalar_slots.clone(),
+            by_reference_foreach_linger_variables: self
+                .by_reference_foreach_linger_variables
+                .clone(),
+            array_cleanup_handles: self.array_cleanup_handles.clone(),
+            owned_native_byte_buffers: self.owned_native_byte_buffers.clone(),
+            native_byte_buffer_string_exprs: self.native_byte_buffer_string_exprs.clone(),
+            native_value_cleanup_handles: self.native_value_cleanup_handles.clone(),
+            native_reference_cleanup_handles: self.native_reference_cleanup_handles.clone(),
+            native_request_state_handle: self.native_request_state_handle.clone(),
+            native_globals_symbol_table_handle: self.native_globals_symbol_table_handle.clone(),
+        }
+    }
+
     fn non_joined_cleanup_state_matches(&self, other: &Self) -> bool {
         self.mutable_scalar_slots == other.mutable_scalar_slots
             && self.by_reference_foreach_linger_variables
@@ -8707,10 +8753,76 @@ impl CGenerator {
             || self.uses_native_exit_helpers
     }
 
-    fn emit_program(&mut self, program: &Program) -> CompileResult<String> {
-        for stmt in &program.statements {
-            self.emit_statement(stmt)?;
+    fn emit_program_statements(&mut self, statements: &[Stmt]) -> CompileResult<()> {
+        let mut labels: HashMap<String, CGotoLabelTarget> = HashMap::new();
+        let mut transfers = Vec::new();
+
+        for stmt in statements {
+            match stmt {
+                Stmt::Label { name, span } => {
+                    let state = self.goto_state_snapshot();
+                    let c_name = if let Some(label) = labels.get_mut(name) {
+                        if label.state.is_some() {
+                            return Err(self.unsupported(*span, ASSEMBLY_CONTROL_FLOW_REJECTION));
+                        }
+                        label.state = Some(state);
+                        label.c_name.clone()
+                    } else {
+                        let c_name = self.next_native_name("goto_label");
+                        labels.insert(
+                            name.clone(),
+                            CGotoLabelTarget {
+                                c_name: c_name.clone(),
+                                state: Some(state),
+                            },
+                        );
+                        c_name
+                    };
+                    self.body.push(format!("{c_name}: ;"));
+                }
+                Stmt::Goto { label, span } => {
+                    let state = self.goto_state_snapshot();
+                    let c_name = if let Some(target) = labels.get(label) {
+                        target.c_name.clone()
+                    } else {
+                        let c_name = self.next_native_name("goto_label");
+                        labels.insert(
+                            label.clone(),
+                            CGotoLabelTarget {
+                                c_name: c_name.clone(),
+                                state: None,
+                            },
+                        );
+                        c_name
+                    };
+                    self.body.push(format!("goto {c_name};"));
+                    transfers.push(CGotoTransfer {
+                        label: label.clone(),
+                        state,
+                        span: *span,
+                    });
+                }
+                _ => self.emit_statement(stmt)?,
+            }
         }
+
+        for transfer in transfers {
+            let Some(label) = labels.get(&transfer.label) else {
+                return Err(self.unsupported(transfer.span, ASSEMBLY_CONTROL_FLOW_REJECTION));
+            };
+            let Some(label_state) = &label.state else {
+                return Err(self.unsupported(transfer.span, ASSEMBLY_CONTROL_FLOW_REJECTION));
+            };
+            if &transfer.state != label_state {
+                return Err(self.unsupported(transfer.span, ASSEMBLY_CONTROL_FLOW_REJECTION));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn emit_program(&mut self, program: &Program) -> CompileResult<String> {
+        self.emit_program_statements(&program.statements)?;
 
         let mut output = String::new();
         if self.uses_native_runtime_helpers() {
