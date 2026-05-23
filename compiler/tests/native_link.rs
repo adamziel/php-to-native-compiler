@@ -98,6 +98,24 @@ const NATIVE_BRANCH_NATIVE_VALUE_OWNER_SOURCE: &str = concat!(
     "echo $picked;\n",
 );
 
+const NATIVE_BRANCH_LOCAL_VALUE_CLEANUP_SOURCE: &str = concat!(
+    "<?php\n",
+    "$flags = [\"take\" => \"1\", \"skip\" => \"0\"];\n",
+    "if ($flags[\"take\"]) {\n",
+    "    array_sum([2, 3]);\n",
+    "    echo \"T\";\n",
+    "} else {\n",
+    "    array_product([4, 5]);\n",
+    "    echo \"E\";\n",
+    "}\n",
+    "echo \"|\";\n",
+    "if ($flags[\"skip\"]) {\n",
+    "    array_sum([9]);\n",
+    "    echo \"bad\";\n",
+    "}\n",
+    "echo \"done\";\n",
+);
+
 const NATIVE_FOREACH_PRIOR_CURSOR_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [\"a\" => \"A\", \"b\" => \"B\"];\n",
@@ -1038,6 +1056,27 @@ fn native_executable_c_source_joins_if_branch_native_value_owners() {
 }
 
 #[test]
+fn native_executable_c_source_releases_branch_local_native_value_cleanup() {
+    let program = parse(
+        "<?php\n$flags = [\"take\" => \"1\", \"skip\" => \"0\"];\nif ($flags[\"take\"]) { array_sum([2, 3]); echo \"T\"; } else { array_product([4, 5]); echo \"E\"; }\nif ($flags[\"skip\"]) { array_sum([9]); echo \"bad\"; }\necho \"done\";\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.matches("phpc_native_value_free(native_value_array_query_")
+            .count()
+            >= 3,
+        "{source}"
+    );
+    assert!(
+        !source.contains("assembly control-flow lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_native_value_ternaries_through_lazy_branches() {
     let program = parse(NATIVE_VALUE_TERNARY_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -1171,7 +1210,7 @@ fn native_executable_c_source_rejects_if_branch_state_without_cleanup_free_join(
         assert!(
             error
                 .message
-                .contains("if/else branch state merges outside cleanup-free scalar/string/bool variable values and owned native-value handle joins"),
+                .contains("if/else branch state merges outside cleanup-free scalar/string/bool variable values, owned native-value handle joins, and branch-local native-value cleanup joins"),
             "{error:?}"
         );
     }
@@ -1782,6 +1821,34 @@ fn emit_exe_links_and_runs_if_branch_native_value_owner_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"GO|keep|5");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_if_branch_local_native_value_cleanup_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "if_branch_local_native_value_cleanup",
+        NATIVE_BRANCH_LOCAL_VALUE_CLEANUP_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native if-branch cleanup executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"T|done");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);

@@ -104,7 +104,7 @@ const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rej
 const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
 const ASSEMBLY_ARRAY_DESTRUCTURING_REJECTION: &str = "assembly array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
-const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else branch state merges outside cleanup-free scalar/string/bool variable values and owned native-value handle joins, elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, broader cleanup ownership joins, and exact native error behavior exist; generated-native C routes lowerable side-effect-only if/else branches, cleanup-free scalar/string/bool branch-state joins, and selected owned native-value branch results through scoped branch emission";
+const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else branch state merges outside cleanup-free scalar/string/bool variable values, owned native-value handle joins, and branch-local native-value cleanup joins, elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, broader cleanup ownership joins, and exact native error behavior exist; generated-native C routes lowerable side-effect-only if/else branches, cleanup-free scalar/string/bool branch-state joins, selected owned native-value branch results, and discarded branch-local native-value cleanup through scoped branch emission";
 const LLVM_EXCEPTION_REJECTION: &str = "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const ASSEMBLY_EXCEPTION_REJECTION: &str = "assembly exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const LLVM_TRY_BLOCK_REJECTION: &str = "LLVM try/catch/finally lowering rejects try blocks until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during normal and exceptional control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; phpc run handles current bounded no-throw try/catch/finally behavior";
@@ -7711,9 +7711,13 @@ impl CGenerator {
             merged_variables.insert(name, merged);
         }
 
-        if then_branch.native_value_cleanup_handles != branch_native_value_cleanup_handles
-            || else_branch.native_value_cleanup_handles != branch_native_value_cleanup_handles
-        {
+        if !Self::cleanup_scoped_branch_local_native_values(
+            then_branch,
+            &branch_native_value_cleanup_handles,
+        ) || !Self::cleanup_scoped_branch_local_native_values(
+            else_branch,
+            &branch_native_value_cleanup_handles,
+        ) {
             return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
         }
 
@@ -7721,6 +7725,52 @@ impl CGenerator {
         self.variable_order = then_branch.variable_order.clone();
         self.native_value_cleanup_handles = merged_native_value_cleanup_handles;
         Ok(())
+    }
+
+    fn cleanup_scoped_branch_local_native_values(branch: &mut Self, expected: &[String]) -> bool {
+        if branch.native_value_cleanup_handles == expected {
+            return true;
+        }
+
+        let mut expected_counts = HashMap::new();
+        for handle in expected {
+            *expected_counts.entry(handle.as_str()).or_insert(0usize) += 1;
+        }
+
+        let mut current_counts = HashMap::new();
+        for handle in &branch.native_value_cleanup_handles {
+            *current_counts.entry(handle.as_str()).or_insert(0usize) += 1;
+        }
+
+        for (handle, expected_count) in &expected_counts {
+            if current_counts.get(handle).copied().unwrap_or(0) < *expected_count {
+                return false;
+            }
+        }
+
+        let mut extra_counts = HashMap::new();
+        for (handle, current_count) in current_counts {
+            let expected_count = expected_counts.get(handle).copied().unwrap_or(0);
+            if current_count > expected_count {
+                extra_counts.insert(handle.to_string(), current_count - expected_count);
+            }
+        }
+
+        for handle in branch.native_value_cleanup_handles.clone().iter().rev() {
+            let Some(remaining) = extra_counts.get_mut(handle) else {
+                continue;
+            };
+            if *remaining == 0 {
+                continue;
+            }
+            *remaining -= 1;
+            branch
+                .body
+                .push(format!("phpc_native_value_free({handle});"));
+            branch.release_native_value_cleanup_handle(handle);
+        }
+
+        branch.native_value_cleanup_handles == expected
     }
 
     fn merge_scoped_branch_native_value_owner(
