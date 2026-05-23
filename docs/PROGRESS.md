@@ -18,6 +18,21 @@ Implemented:
   persistent request/symbol/array/value handles, exact PHP diagnostic ordering,
   and LLVM IR/assembly lowering remain unsupported.
 
+- Extended generated-native executable `if`/`else` lowering with a bounded
+  branch-state join for cleanup-free scalar, string, and boolean variable
+  values. The C-link generator now emits scoped branch bodies, then reconciles
+  post-branch variables through conditional C values when both branches define
+  the same variable set and no native value, array, byte-buffer, request-state,
+  or symbol-table cleanup ownership changes. Focused tests cover new variables
+  assigned in both branches, existing variables conditionally updated without
+  an `else`, branch-body output before the joined value is read, linked
+  executable behavior, and rejection for one-sided definitions, mixed value
+  families, and branch-created array/native cleanup state. `elseif`, loops,
+  switch/goto/break/continue, undefined-variable unions, mixed-type/native
+  value phis, branch-created persistent owner handles, cleanup stack joins,
+  exact PHP diagnostic ordering, and LLVM IR/assembly lowering remain
+  unsupported.
+
 - Added bounded generated-native executable termination for direct
   `exit()`/`die()` calls on the `phpc compile --emit-exe` C-link path. The
   generated C now lowers direct no-argument termination and materializable

@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 02:23 CEST
+Updated: 2026-05-23 02:27 CEST
 Evaluation marker: `20260523T002315Z`
 
-Primary baseline: `f54e293e docs: distill progress roadmap`
-Latest semantic baseline: `106cc646 codegen: lower scoped native if branches`
+Primary baseline: `codegen: merge scalar native if branch state`
+Latest semantic baseline: `codegen: merge scalar native if branch state`
 Latest evaluator report: `20260523T002315Z`
 
 These percentages are candid engineering estimates toward generalized PHP
@@ -19,36 +19,38 @@ Overall estimated progress: **86%** `[#################---]`
 Momentum is positive. Primary now includes several generated-C executable
 semantic slices: selected request/global/array/reference paths from earlier
 work, direct `exit()`/`die()` cleanup, diagnostic report ownership cleanup, and
-bounded state-stable `if`/`else` lowering. The latest branch slice is useful
-because it executes real branch bodies only when persistent compiler state does
-not need merge/phi reconciliation, and it rejects unsupported branch state
-instead of faking it.
+bounded `if`/`else` lowering. The latest branch slice is useful because it
+executes real branch bodies and can reconcile cleanup-free scalar/string/bool
+post-branch variable state while still rejecting cleanup-owner joins,
+mixed-value phis, and undefined-variable unions instead of faking them.
 
 This is still not a complete native PHP execution model. Calls/functions,
 objects/properties/methods, full references/COW, broad structured control flow,
 exact diagnostics, and LLVM/assembly parity remain the main gaps.
 
-Current primary cleanliness: HEAD is synced with `origin/master` at
-`f54e293e`, with concurrent uncommitted integration WIP in compiler/runtime/doc
-files. Those diffs are not integrated and are not counted until they are
-reviewed, gated, committed, and pushed.
+Current primary cleanliness: the only expected dirty product diff after this
+batch is the protected `runtime/src/lib.rs` null-slot increment/decrement hunk;
+it is unintegrated and not counted.
 
 ## Grand Roadmap
 
 | Roadmap item | Estimate | Visual | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **97%** | `[###################-]` | Strong value, array, symbol-table, request-state, reference, comparison, truthiness, diagnostic, and exit-result surfaces. |
-| Compiler/backend consumers | **97%** | `[###################-]` | Good generated-C coverage for selected request, `$GLOBALS`, symbols, arrays, lvalues, references, exit, diagnostics, and state-stable branches. LLVM/assembly parity is uneven. |
+| Compiler/backend consumers | **97%** | `[###################-]` | Good generated-C coverage for selected request, `$GLOBALS`, symbols, arrays, lvalues, references, exit, diagnostics, state-stable branches, and cleanup-free scalar branch joins. LLVM/assembly parity is uneven. |
 | Executable PHP semantics | **84%** | `[#################---]` | Improving through linked executable gates, but still selected islands rather than a complete execution model. |
 | Arrays, lvalues, references, COW | **87%** | `[#################---]` | Strong selected paths, including reference-backed active symbol-root array lvalues. Arbitrary writable roots, full COW, and by-reference foreach remain large. |
 | Symbols, globals, request state | **96%** | `[###################-]` | Strong request/`$GLOBALS` generated-C coverage. Broader request/global reconciliation remains open. |
 | Calls, functions, frames | **27%** | `[#####---------------]` | Runtime/interpreter call-frame metadata enforcement landed; generated-native call/frame execution is still the major missing piece. |
 | Objects, properties, methods | **11%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary still lacks general compiled object/property/method execution. |
-| Control flow, cleanup, diagnostics | **34%** | `[#######-------------]` | Direct exit, diagnostic ownership, and bounded state-stable `if`/`else` execute on generated C. Loops, switch, branch joins, exact ordering, shutdown/finally/destructors, and unwinding are not generalized. |
+| Control flow, cleanup, diagnostics | **35%** | `[#######-------------]` | Direct exit, diagnostic ownership, bounded state-stable `if`/`else`, and cleanup-free scalar/string/bool branch joins execute on generated C. Loops, switch, cleanup-owner joins, exact ordering, shutdown/finally/destructors, and unwinding are not generalized. |
 | Broad integrated verification | **86%** | `[#################---]` | Focused gates are strong. Cross-feature composition and backend parity need broader proof. |
 
 ## Primary-Integrated Progress
 
+- [x] Branch-state merge batch: generated-native C-link `if`/`else` joins for
+  cleanup-free scalar, string, and boolean variable values when both scoped
+  branches expose the same variable set and no native cleanup owner changes.
 - [x] `106cc646`: generated-native C-link `if`/`else` lowering for branch
   conditions using native truthiness or comparison boundaries, guarded by a
   persistent-state stability check.
@@ -105,9 +107,10 @@ Not counted until primary integrates it:
 - [ ] Object/property/method execution, including `$this`, static context,
   visibility/magic hooks, constructor behavior, and ArrayAccess boundaries.
   Estimate: **11%** `[##------------------]`
-- [ ] Structured control flow beyond state-stable `if`/`else`: branch joins,
-  loops, switch, goto, break/continue, cleanup stacks, and source-ordered
-  diagnostics. Estimate: **34%** `[#######-------------]`
+- [ ] Structured control flow beyond state-stable `if`/`else` and
+  cleanup-free scalar branch joins: cleanup-owner joins, loops, switch, goto,
+  break/continue, cleanup stacks, and source-ordered diagnostics. Estimate:
+  **35%** `[#######-------------]`
 - [ ] Broader conversion/comparison behavior that removes shared blockers
   rather than adding one-off builtin slices.
 

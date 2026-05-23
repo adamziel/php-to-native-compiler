@@ -5481,11 +5481,15 @@
   the dedicated termination diagnostic.
 - `phpc compile --emit-exe` handles a bounded generated-C `if`/`else` statement
   subset when conditions lower through existing native value truthiness or
-  value-comparison boundaries and both branch bodies leave persistent
-  variable/cleanup state unchanged. Branch-local variables, branch-created
-  persistent native handles, environment merging after divergent assignments,
-  `elseif`, loops, switch/goto/break/continue, exact PHP diagnostic ordering,
-  and LLVM IR/assembly lowering remain unsupported.
+  value-comparison boundaries. Branch bodies that leave persistent state
+  unchanged remain supported, and cleanup-free scalar/string/bool variable
+  states can join after the branch when both branches expose the same variable
+  set and neither branch creates native value, array, byte-buffer,
+  request-state, or symbol-table cleanup ownership. One-sided branch-local
+  variables, mixed-type/native-value phis, branch-created persistent native
+  handles, cleanup stack joins, `elseif`, loops, switch/goto/break/continue,
+  exact PHP diagnostic ordering, and LLVM IR/assembly lowering remain
+  unsupported.
 - Native lowering rejects `try`/`catch`/`finally` blocks through a dedicated
   try-block diagnostic until generated code has `Throwable` objects, stack
   unwinding, catch type matching, catch variable binding, finally execution

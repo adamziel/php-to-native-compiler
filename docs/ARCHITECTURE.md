@@ -971,9 +971,13 @@ runtime boundary, while `continue 2;` can pass through the switch to an outer
 loop. The generated-native C-link path has a bounded `if`/`else` statement
 emitter for conditions that already lower through native truthiness or value
 comparison boundaries; it emits branch bodies in scoped generators and accepts
-them only when persistent variable/cleanup state is unchanged after each
-branch. Native lowering still rejects branch environment merging, `elseif`,
-loops, switch/goto/break/continue, and LLVM IR/assembly statement control flow.
+them when persistent variable/cleanup state is unchanged after each branch. It
+can also join cleanup-free scalar, string, and boolean variable states by
+recording post-branch values as conditional C expressions when both branches
+expose the same variable set and neither branch creates owned native cleanup
+state. Native lowering still rejects one-sided undefined-variable unions,
+mixed-type/native-value phis, cleanup stack joins, `elseif`, loops,
+switch/goto/break/continue, and LLVM IR/assembly statement control flow.
 `for` headers store initializer, condition, and increment slots as ordered
 lists. The interpreter executes initializer and increment actions left to
 right; condition expressions also evaluate left to right and the final

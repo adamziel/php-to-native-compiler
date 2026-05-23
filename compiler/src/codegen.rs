@@ -104,7 +104,7 @@ const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rej
 const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
 const ASSEMBLY_ARRAY_DESTRUCTURING_REJECTION: &str = "assembly array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
-const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else branches that need persistent environment merging, elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; generated-native C routes lowerable side-effect-only if/else branches through scoped branch emission";
+const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering rejects if/else branch state merges outside cleanup-free scalar/string/bool variable values, elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, cleanup ownership joins, and exact native error behavior exist; generated-native C routes lowerable side-effect-only if/else branches and cleanup-free scalar/string/bool branch-state joins through scoped branch emission";
 const LLVM_EXCEPTION_REJECTION: &str = "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const ASSEMBLY_EXCEPTION_REJECTION: &str = "assembly exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const LLVM_TRY_BLOCK_REJECTION: &str = "LLVM try/catch/finally lowering rejects try blocks until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during normal and exceptional control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; phpc run handles current bounded no-throw try/catch/finally behavior";
@@ -7590,6 +7590,154 @@ impl CGenerator {
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
     }
 
+    fn cleanup_state_matches(&self, other: &Self) -> bool {
+        self.array_cleanup_handles == other.array_cleanup_handles
+            && self.owned_native_byte_buffers == other.owned_native_byte_buffers
+            && self.native_value_cleanup_handles == other.native_value_cleanup_handles
+            && self.native_request_state_handle == other.native_request_state_handle
+            && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
+    }
+
+    fn merge_scoped_branch_state(
+        &mut self,
+        base: &Self,
+        then_branch: &Self,
+        else_branch: &Self,
+        condition: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        if base.persistent_state_matches(then_branch) && base.persistent_state_matches(else_branch)
+        {
+            return Ok(());
+        }
+
+        if !base.cleanup_state_matches(then_branch)
+            || !base.cleanup_state_matches(else_branch)
+            || then_branch.variable_order != else_branch.variable_order
+        {
+            return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
+        }
+
+        let mut then_names = then_branch.variables.keys().cloned().collect::<Vec<_>>();
+        then_names.sort();
+        let mut else_names = else_branch.variables.keys().cloned().collect::<Vec<_>>();
+        else_names.sort();
+        if then_names != else_names {
+            return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
+        }
+
+        let mut merged_variables = HashMap::new();
+        for name in then_names {
+            let then_value = then_branch
+                .variables
+                .get(&name)
+                .expect("branch variable name came from branch map");
+            let else_value = else_branch
+                .variables
+                .get(&name)
+                .expect("branch variable name came from branch map");
+            let merged = self
+                .merge_scoped_branch_value(
+                    condition,
+                    then_branch,
+                    then_value,
+                    else_branch,
+                    else_value,
+                    span,
+                )
+                .ok_or_else(|| self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION))?;
+            merged_variables.insert(name, merged);
+        }
+
+        self.variables = merged_variables;
+        self.variable_order = then_branch.variable_order.clone();
+        Ok(())
+    }
+
+    fn merge_scoped_branch_value(
+        &mut self,
+        condition: &str,
+        then_branch: &Self,
+        then_value: &CValue,
+        else_branch: &Self,
+        else_value: &CValue,
+        _span: Span,
+    ) -> Option<CValue> {
+        if then_value == else_value {
+            return Some(then_value.clone());
+        }
+
+        match (then_value, else_value) {
+            (CValue::Int(then_value), CValue::Int(else_value)) => {
+                let expression = format!("(({condition}) ? ({then_value}) : ({else_value}))");
+                let values = then_branch
+                    .known_integer_values(then_value)
+                    .zip(else_branch.known_integer_values(else_value))
+                    .and_then(|(then_values, else_values)| {
+                        let mut values = then_values.values().to_vec();
+                        values.extend(else_values.values());
+                        KnownInt::from_values(values)
+                    });
+                if let Some(values) = values {
+                    self.known_ints.insert(expression.clone(), values);
+                }
+                Some(CValue::Int(expression))
+            }
+            (CValue::Float(then_value), CValue::Float(else_value)) => {
+                let expression = format!("(({condition}) ? ({then_value}) : ({else_value}))");
+                let values = then_branch
+                    .known_float_values(then_value)
+                    .zip(else_branch.known_float_values(else_value))
+                    .and_then(|(then_values, else_values)| {
+                        let mut values = then_values.values().to_vec();
+                        values.extend(else_values.values());
+                        KnownFloat::from_values(values)
+                    });
+                if let Some(values) = values {
+                    self.known_floats.insert(expression.clone(), values);
+                }
+                Some(CValue::Float(expression))
+            }
+            (
+                CValue::String(_) | CValue::StringExpr(_),
+                CValue::String(_) | CValue::StringExpr(_),
+            ) => {
+                let then_values = then_branch.known_string_values_for_value(then_value)?;
+                let else_values = else_branch.known_string_values_for_value(else_value)?;
+                let then_operand = c_string_operand(then_value.clone());
+                let else_operand = c_string_operand(else_value.clone());
+                let expression = format!("(({condition}) ? ({then_operand}) : ({else_operand}))");
+                let mut values = then_values.values().to_vec();
+                values.extend(else_values.values().iter().cloned());
+                if let Some(values) = KnownString::from_values(values) {
+                    self.known_strings.insert(expression.clone(), values);
+                }
+                Some(CValue::StringExpr(expression))
+            }
+            (
+                CValue::Bool(_) | CValue::BoolExpr(_) | CValue::ComparisonDecision(_),
+                CValue::Bool(_) | CValue::BoolExpr(_) | CValue::ComparisonDecision(_),
+            ) => {
+                let then_operand = c_bool_operand(then_value.clone())?;
+                let else_operand = c_bool_operand(else_value.clone())?;
+                let expression = format!("(({condition}) ? ({then_operand}) : ({else_operand}))");
+                let values = then_branch
+                    .known_bool_values(&then_operand)
+                    .zip(else_branch.known_bool_values(&else_operand))
+                    .and_then(|(then_values, else_values)| {
+                        let mut values = then_values.values().to_vec();
+                        values.extend(else_values.values());
+                        KnownBool::from_values(values)
+                    });
+                if let Some(values) = values {
+                    self.known_bools.insert(expression.clone(), values);
+                }
+                Some(CValue::BoolExpr(expression))
+            }
+            _ => None,
+        }
+    }
+
     fn merge_branch_feature_flags(&mut self, branch: &Self) {
         self.uses_strcmp |= branch.uses_strcmp;
         self.uses_native_string_helpers |= branch.uses_native_string_helpers;
@@ -12024,18 +12172,12 @@ impl CGenerator {
         for statement in then_branch {
             then_generator.emit_statement(statement)?;
         }
-        if !base.persistent_state_matches(&then_generator) {
-            return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
-        }
 
         let mut else_generator = base.scoped_branch_generator();
         else_generator.next_native_temp = then_generator.next_native_temp;
         else_generator.next_static_data = then_generator.next_static_data;
         for statement in else_branch {
             else_generator.emit_statement(statement)?;
-        }
-        if !base.persistent_state_matches(&else_generator) {
-            return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
         }
 
         self.merge_scoped_branch_codegen(&then_generator);
@@ -12056,6 +12198,8 @@ impl CGenerator {
             }
             self.body.push("}".to_string());
         }
+
+        self.merge_scoped_branch_state(&base, &then_generator, &else_generator, &condition, span)?;
 
         Ok(())
     }

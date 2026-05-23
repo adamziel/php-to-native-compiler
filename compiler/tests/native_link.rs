@@ -39,6 +39,31 @@ const NATIVE_SCOPED_IF_SOURCE: &str = concat!(
     "}\n",
 );
 
+const NATIVE_BRANCH_STATE_MERGE_SOURCE: &str = concat!(
+    "<?php\n",
+    "$flags = [\"go\" => \"1\", \"stop\" => \"0\"];\n",
+    "$label = \"base\";\n",
+    "if ($flags[\"go\"]) {\n",
+    "    $label = \"then\";\n",
+    "} else {\n",
+    "    $label = \"else\";\n",
+    "}\n",
+    "echo $label, \"|\";\n",
+    "$score = 10;\n",
+    "if ($flags[\"stop\"]) {\n",
+    "    $score = 1;\n",
+    "}\n",
+    "echo $score, \"|\";\n",
+    "if ($score > 5) {\n",
+    "    $word = \"high\";\n",
+    "    echo \"H\";\n",
+    "} else {\n",
+    "    $word = \"low\";\n",
+    "    echo \"L\";\n",
+    "}\n",
+    "echo $word;\n",
+);
+
 const NATIVE_EXIT_STRING_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [\"message\" => \"bye\"];\n",
@@ -820,20 +845,42 @@ fn native_executable_c_source_routes_scoped_if_branches_through_truthiness_bound
 }
 
 #[test]
-fn native_executable_c_source_rejects_if_branches_that_need_environment_merge() {
-    let program = parse(
-        "<?php\n$flag = 1 == \"1\";\nif ($flag) { $value = \"then\"; } else { $value = \"else\"; }\necho $value;\n",
-    )
-    .unwrap();
-    let error = emit_native_executable_c_source(&program).unwrap_err();
+fn native_executable_c_source_merges_cleanup_free_if_branch_state() {
+    let program = parse(NATIVE_BRANCH_STATE_MERGE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
 
     assert!(
-        error
-            .message
-            .contains("branches that need persistent environment merging"),
-        "{}",
-        error.message
+        body.matches(" ? ").count() >= 3,
+        "post-branch scalar/string variables should be represented by conditional values:\n{source}"
     );
+    assert!(
+        body.contains("if (native_value_truthy_") && body.contains("} else {"),
+        "branch bodies should still be emitted as scoped C control flow:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly control-flow lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_rejects_if_branch_state_without_cleanup_free_join() {
+    for source in [
+        "<?php\n$flag = 1 == \"1\";\nif ($flag) { $value = \"then\"; }\necho $value;\n",
+        "<?php\n$flag = 1 == \"1\";\nif ($flag) { $value = \"then\"; } else { $value = 1; }\necho $value;\n",
+        "<?php\n$flag = 1 == \"1\";\nif ($flag) { $value = [1]; } else { $value = [2]; }\necho $value[0];\n",
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert!(
+            error
+                .message
+                .contains("if/else branch state merges outside cleanup-free scalar/string/bool"),
+            "{error:?}"
+        );
+    }
 }
 
 #[test]
@@ -1369,6 +1416,27 @@ fn emit_exe_links_and_runs_scoped_if_branch_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"truthy|numeric|equal");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_if_branch_state_merge_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("if_branch_state_merge", NATIVE_BRANCH_STATE_MERGE_SOURCE);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native if-branch state merge executable: {error}")
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"then|10|Hhigh");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);
