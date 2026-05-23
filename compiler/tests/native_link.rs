@@ -1625,6 +1625,8 @@ fn native_executable_c_source_rejects_try_unwind_transfers() {
         "<?php\ntry { echo \"try\"; } finally { return; }\n",
         "<?php\ntry { throw new Exception(\"boom\"); } catch (Exception $e) { echo \"catch\"; } finally { echo \"finally\"; }\n",
         "<?php\ntry { goto done; } finally { echo \"finally\"; }\ndone:\necho \"after\";\n",
+        "<?php\nwhile (true) { try { break; } finally { echo \"finally\"; } }\n",
+        "<?php\nwhile (true) { try { continue; } finally { echo \"finally\"; } }\n",
     ] {
         let program = parse(source).unwrap();
         let error = emit_native_executable_c_source(&program).unwrap_err();

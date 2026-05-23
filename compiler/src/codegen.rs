@@ -108,7 +108,7 @@ const ASSEMBLY_CONTROL_FLOW_REJECTION: &str = "assembly control-flow lowering re
 const LLVM_EXCEPTION_REJECTION: &str = "LLVM exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const ASSEMBLY_EXCEPTION_REJECTION: &str = "assembly exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const LLVM_TRY_BLOCK_REJECTION: &str = "LLVM try/catch/finally lowering rejects try blocks until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during normal and exceptional control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; phpc run handles current bounded no-throw try/catch/finally behavior";
-const ASSEMBLY_TRY_BLOCK_REJECTION: &str = "assembly try/catch/finally lowering rejects try blocks outside the bounded generated-C normal-flow subset until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during return/exit/goto/throw control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; generated-native C executes try bodies, skips catches, and runs finally bodies only when no unwinding-capable transfer is present";
+const ASSEMBLY_TRY_BLOCK_REJECTION: &str = "assembly try/catch/finally lowering rejects try blocks outside the bounded generated-C normal-flow subset until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during break/continue/return/exit/goto/throw control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; generated-native C executes try bodies, skips catches, and runs finally bodies only when no unwinding-capable transfer is present";
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_GLOBALS_ROOT_APPEND_REJECTION: &str = "Cannot append to $GLOBALS";
@@ -1363,7 +1363,11 @@ fn stmt_list_contains_try_unwind_blocker(statements: &[Stmt]) -> bool {
 
 fn stmt_contains_try_unwind_blocker(stmt: &Stmt) -> bool {
     match stmt {
-        Stmt::Return { .. } | Stmt::Throw { .. } | Stmt::Goto { .. } => true,
+        Stmt::Return { .. }
+        | Stmt::Throw { .. }
+        | Stmt::Goto { .. }
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. } => true,
         Stmt::Echo { exprs, .. } => exprs.iter().any(expr_contains_exit_construct),
         Stmt::Print { expr, .. } | Stmt::Expr { expr, .. } => expr_contains_exit_construct(expr),
         Stmt::Assign { target, expr, .. }
@@ -1451,8 +1455,6 @@ fn stmt_contains_try_unwind_blocker(stmt: &Stmt) -> bool {
         | Stmt::UnsetSelfStaticProperty { .. }
         | Stmt::UnsetParentStaticProperty { .. }
         | Stmt::UnsetLateStaticProperty { .. }
-        | Stmt::Break { .. }
-        | Stmt::Continue { .. }
         | Stmt::Global { .. } => false,
     }
 }
