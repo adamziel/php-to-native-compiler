@@ -1,12 +1,12 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 00:33 CEST
-Evaluation marker: `20260523T220614Z`
+Updated: 2026-05-24 01:07 CEST
+Evaluation marker: `20260523T225737Z`
 
 Latest primary semantic/test baseline:
-`0b0335e6 test: target try finally transfer blocker`
-Latest integrated semantic baseline: `68eea573 codegen: block try finally jump transfers`
-Latest evaluator report: `20260523T220614Z`
+`cc919d46 runtime: report native formatter stdout diagnostics`
+Latest integrated semantic baseline: `cc919d46 runtime: report native formatter stdout diagnostics`
+Latest evaluator report: `20260523T225737Z`
 
 These are candid engineering estimates toward generalized PHP semantics in the
 native compiler. They are not test pass rates. Only primary-integrated,
@@ -18,21 +18,21 @@ exact-shape fixtures do not.
 Overall estimated progress: **88%** `[##################--]`
 
 Primary integrated progress now includes generated-C top-level state-stable
-`goto`/label dispatch and normal-flow `try`/`finally` execution for bodies that
-do not need unwinding. The compiler has strong generated-C islands for native
-values, arrays, selected references, request/symbol state, diagnostics,
-cleanup, lazy expressions, and bounded control flow.
+`goto`/label dispatch, normal-flow `try`/`finally`, and a diagnostic-aware
+native value stdout formatter consumed by LLVM and generated-C display paths.
+The compiler has strong generated-C islands for native values, arrays, selected
+references, request/symbol state, diagnostics, cleanup, lazy expressions, and
+bounded control flow.
 
 This is still not full PHP semantics. The largest gaps remain generated-native
 calls/frames, object/property/method execution, complete references/COW
 identity, source-ordered diagnostics, cleanup/unwinding, and LLVM/assembly
 parity.
 
-Current primary state: primary is synced with `origin/master`; only semantic
-and test baselines are named here so this roadmap does not go stale when the
-roadmap itself is committed. The protected `runtime/src/lib.rs` null-slot hunk
-remains dirty, unstaged, and uncounted. The narrow generated-C user-function
-WIP was parked and is not counted.
+Current primary state: primary is synced with `origin/master` at `cc919d46`.
+The protected `runtime/src/lib.rs` null-slot hunk remains dirty, unstaged, and
+uncounted. The narrow generated-C user-function WIP was parked and is not
+counted.
 
 ## Roadmap Snapshot
 
@@ -45,7 +45,7 @@ WIP was parked and is not counted.
 | Symbols, globals, request state | **96%** | `[###################-]` | Strong request and `$GLOBALS` generated-C coverage. Reconciliation across calls/requests still needs work. |
 | Calls, functions, frames | **27%** | `[#####---------------]` | Runtime/interpreter metadata and lane contracts exist, but real generated-native frame execution is still missing. |
 | Objects, properties, methods | **11%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary lacks general compiled object/property/method execution. |
-| Control flow, cleanup, diagnostics | **51%** | `[##########----------]` | Bounded generated-C branches, loops, returns, transfers, switches, top-level state-stable gotos, and normal-flow try/finally exist; owner/reference joins, unwinding, and exact ordering remain open. |
+| Control flow, cleanup, diagnostics | **52%** | `[##########----------]` | Bounded generated-C branches, loops, returns, transfers, switches, top-level state-stable gotos, normal-flow try/finally, and diagnostic-aware stdout formatting exist; owner/reference joins, unwinding, handlers, and exact ordering remain open. |
 | Broad integrated verification | **88%** | `[##################--]` | Focused gates are strong. Cross-feature composition and backend parity need broader proof. |
 
 ## Done / In Progress / Not Done
@@ -53,6 +53,7 @@ WIP was parked and is not counted.
 - [x] Generated-C value-result diagnostics through shared diagnostic reporting.
 - [x] Generated-C native value-result `strlen()` consumption.
 - [x] Generated-C top-level `return`, state-stable `while`/`for`, scalar loop-carried slots, multi-level loop transfers, state-stable `switch` dispatch/fallthrough/break, top-level state-stable `goto` labels, and normal-flow `try`/`finally`.
+- [x] Diagnostic-aware native value stdout formatting consumed by LLVM and generated-C display paths.
 - [x] Strong selected generated-C arrays, lvalues, references, request state, `$GLOBALS`, lazy ternaries, logical short-circuiting, branch cleanup, foreach storage, and output/truthiness paths.
 - [ ] Primary-integrated generated-native user-function/call-frame execution.
 - [ ] Primary-integrated object construction, property access, method dispatch, `$this`, static context, visibility, and magic behavior.
@@ -63,6 +64,12 @@ WIP was parked and is not counted.
 
 ## Recent Primary-Integrated Work
 
+- `cc919d46`: routes native value stdout display through
+  `phpc_native_value_format_stdout_with_diagnostic(...)` for the accepted echo
+  formatter tag, with LLVM and generated-C consumers across scalar, binary
+  string, array-owner, native-value, reference-read, and symbol-table display
+  families. Runtime-only formatter vocabulary for serialize/var_dump/print_r/
+  var_export was trimmed instead of counted.
 - `68eea573`: tightens the generated-C `try`/`finally` boundary so
   `break`/`continue` transfers reject with the same unwinding blocker as
   `return`, `exit`, `goto`, and `throw` unless real finally scheduling exists.
@@ -100,11 +107,12 @@ WIP was parked and is not counted.
 
 ## Lane-Local Candidate Work
 
-Lane-local work includes useful candidates around call-frame/reference
-contracts, object/property boundaries, conversion/request diagnostics, native
-loop cleanup blockers, and reference/COW-adjacent runtime ABI surfaces. These
-remain uncounted until primary integration reviews and lands a generalized
-semantic slice with focused source and executable proof.
+Lane-local work includes useful candidates around generated-C comparison
+consumers, call-frame/reference contracts, object/property boundaries,
+conversion/request diagnostics, native loop cleanup blockers, and
+reference/COW-adjacent runtime ABI surfaces. These remain uncounted until
+primary integration reviews and lands a generalized semantic slice with
+focused source and executable proof.
 
 The narrow generated-C user-function WIP was parked because it looked too much
 like direct/top-level/single-return execution without real frame ownership,
@@ -115,16 +123,15 @@ be counted or repeated in that shape.
 
 1. Integrate one small generalized primary slice at a time, with focused gates
    and immediate push.
-2. Prefer hard-cliff work over nearby control-flow variants: calls/frames,
-   objects/properties/methods, references/COW through real control flow,
-   structured cleanup/unwinding/source-ordered diagnostics, and backend parity.
+2. Prefer hard-cliff work and executable consumers over more vocabulary:
+   generated-C comparison execution, calls/frames, objects/properties/methods,
+   references/COW through real control flow, structured cleanup/unwinding/
+   source-ordered diagnostics, and backend parity.
 3. Keep lane-local work code-writing only and reject exact-shape progress:
    no one-fixture recognizers, no fixed-key/value branches, no docs-only
    progress, and no generated-source substring proof without a shared semantic
    boundary.
-4. After the supervisor recovery, require fresh worker status before treating
-   restarted lane processes as fresh semantic momentum.
-5. Preserve primary hygiene: commit only owned semantic/progress hunks, keep
+4. Preserve primary hygiene: commit only owned semantic/progress hunks, keep
    the protected null-slot runtime hunk uncommitted until it has its own
    reviewed semantics batch.
 
