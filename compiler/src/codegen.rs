@@ -7218,6 +7218,7 @@ struct CGenerator {
     known_strings: HashMap<String, KnownString>,
     known_string_lengths: HashMap<String, String>,
     known_bools: HashMap<String, KnownBool>,
+    native_byte_buffer_string_exprs: HashMap<String, String>,
     uses_strcmp: bool,
     uses_native_string_helpers: bool,
     uses_native_comparison_helpers: bool,
@@ -7645,6 +7646,10 @@ fn remove_native_value_cleanup_handle(handles: &mut Vec<String>, handle: &str) -
     }
 }
 
+fn c_value_references_string_expr(value: &CValue, string_expr: &str) -> bool {
+    matches!(value, CValue::StringExpr(expr) if expr.contains(string_expr))
+}
+
 fn native_value_aux_cleanup_after_consuming_handle(
     value: &CNativeValueMaterialization,
 ) -> Vec<String> {
@@ -7678,17 +7683,15 @@ impl CGenerator {
                 == other.by_reference_foreach_linger_variables
             && self.array_cleanup_handles == other.array_cleanup_handles
             && self.owned_native_byte_buffers == other.owned_native_byte_buffers
+            && self.native_byte_buffer_string_exprs == other.native_byte_buffer_string_exprs
             && self.native_value_cleanup_handles == other.native_value_cleanup_handles
             && self.native_reference_cleanup_handles == other.native_reference_cleanup_handles
             && self.native_request_state_handle == other.native_request_state_handle
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
     }
 
-    fn non_native_value_cleanup_state_matches(&self, other: &Self) -> bool {
-        self.array_cleanup_handles == other.array_cleanup_handles
-            && self.by_reference_foreach_linger_variables
-                == other.by_reference_foreach_linger_variables
-            && self.owned_native_byte_buffers == other.owned_native_byte_buffers
+    fn non_joined_cleanup_state_matches(&self, other: &Self) -> bool {
+        self.by_reference_foreach_linger_variables == other.by_reference_foreach_linger_variables
             && self.native_reference_cleanup_handles == other.native_reference_cleanup_handles
             && self.native_request_state_handle == other.native_request_state_handle
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
@@ -7707,8 +7710,8 @@ impl CGenerator {
             return Ok(());
         }
 
-        if !base.non_native_value_cleanup_state_matches(then_branch)
-            || !base.non_native_value_cleanup_state_matches(else_branch)
+        if !base.non_joined_cleanup_state_matches(then_branch)
+            || !base.non_joined_cleanup_state_matches(else_branch)
             || then_branch.variable_order != else_branch.variable_order
         {
             return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
@@ -7767,6 +7770,18 @@ impl CGenerator {
         ) || !Self::cleanup_scoped_branch_local_native_values(
             else_branch,
             &branch_native_value_cleanup_handles,
+        ) || !Self::cleanup_scoped_branch_local_array_handles(
+            then_branch,
+            &base.array_cleanup_handles,
+        ) || !Self::cleanup_scoped_branch_local_array_handles(
+            else_branch,
+            &base.array_cleanup_handles,
+        ) || !Self::cleanup_scoped_branch_local_byte_buffers(
+            then_branch,
+            &base.owned_native_byte_buffers,
+        ) || !Self::cleanup_scoped_branch_local_byte_buffers(
+            else_branch,
+            &base.owned_native_byte_buffers,
         ) {
             return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
         }
@@ -7774,6 +7789,9 @@ impl CGenerator {
         self.variables = merged_variables;
         self.variable_order = then_branch.variable_order.clone();
         self.native_value_cleanup_handles = merged_native_value_cleanup_handles;
+        self.array_cleanup_handles = base.array_cleanup_handles.clone();
+        self.owned_native_byte_buffers = base.owned_native_byte_buffers.clone();
+        self.native_byte_buffer_string_exprs = base.native_byte_buffer_string_exprs.clone();
         Ok(())
     }
 
@@ -7821,6 +7839,128 @@ impl CGenerator {
         }
 
         branch.native_value_cleanup_handles == expected
+    }
+
+    fn cleanup_scoped_branch_local_array_handles(branch: &mut Self, expected: &[String]) -> bool {
+        if branch.array_cleanup_handles == expected {
+            return true;
+        }
+
+        let mut expected_counts = HashMap::new();
+        for handle in expected {
+            *expected_counts.entry(handle.as_str()).or_insert(0usize) += 1;
+        }
+
+        let mut current_counts = HashMap::new();
+        for handle in &branch.array_cleanup_handles {
+            *current_counts.entry(handle.as_str()).or_insert(0usize) += 1;
+        }
+
+        for (handle, expected_count) in &expected_counts {
+            if current_counts.get(handle).copied().unwrap_or(0) < *expected_count {
+                return false;
+            }
+        }
+
+        let mut extra_counts = HashMap::new();
+        for (handle, current_count) in current_counts {
+            let expected_count = expected_counts.get(handle).copied().unwrap_or(0);
+            if current_count > expected_count {
+                extra_counts.insert(handle.to_string(), current_count - expected_count);
+            }
+        }
+
+        for handle in extra_counts.keys() {
+            if branch
+                .variables
+                .values()
+                .any(|value| matches!(value, CValue::ArrayHandle(array) if array == handle))
+            {
+                return false;
+            }
+        }
+
+        for handle in branch.array_cleanup_handles.clone().iter().rev() {
+            let Some(remaining) = extra_counts.get_mut(handle) else {
+                continue;
+            };
+            if *remaining == 0 {
+                continue;
+            }
+            *remaining -= 1;
+            branch
+                .body
+                .push(format!("phpc_native_array_free({handle});"));
+            branch.release_native_array_cleanup_handle(handle);
+        }
+
+        branch.array_cleanup_handles == expected
+    }
+
+    fn cleanup_scoped_branch_local_byte_buffers(branch: &mut Self, expected: &[String]) -> bool {
+        if branch.owned_native_byte_buffers == expected {
+            return true;
+        }
+
+        let mut expected_counts = HashMap::new();
+        for buffer in expected {
+            *expected_counts.entry(buffer.as_str()).or_insert(0usize) += 1;
+        }
+
+        let mut current_counts = HashMap::new();
+        for buffer in &branch.owned_native_byte_buffers {
+            *current_counts.entry(buffer.as_str()).or_insert(0usize) += 1;
+        }
+
+        for (buffer, expected_count) in &expected_counts {
+            if current_counts.get(buffer).copied().unwrap_or(0) < *expected_count {
+                return false;
+            }
+        }
+
+        let mut extra_counts = HashMap::new();
+        for (buffer, current_count) in current_counts {
+            let expected_count = expected_counts.get(buffer).copied().unwrap_or(0);
+            if current_count > expected_count {
+                extra_counts.insert(buffer.to_string(), current_count - expected_count);
+            }
+        }
+
+        for buffer in extra_counts.keys() {
+            let Some(string_expr) = branch.native_byte_buffer_string_exprs.get(buffer) else {
+                return false;
+            };
+            if branch
+                .variables
+                .values()
+                .any(|value| c_value_references_string_expr(value, string_expr))
+            {
+                return false;
+            }
+        }
+
+        for buffer in branch.owned_native_byte_buffers.clone().iter().rev() {
+            let Some(remaining) = extra_counts.get_mut(buffer) else {
+                continue;
+            };
+            if *remaining == 0 {
+                continue;
+            }
+            *remaining -= 1;
+            branch
+                .body
+                .push(format!("phpc_native_byte_buffer_free({buffer});"));
+            if let Some(index) = branch
+                .owned_native_byte_buffers
+                .iter()
+                .rposition(|owned| owned == buffer)
+            {
+                branch.owned_native_byte_buffers.remove(index);
+            }
+            branch.native_byte_buffer_string_exprs.remove(buffer);
+        }
+
+        branch.owned_native_byte_buffers == expected
     }
 
     fn merge_scoped_branch_native_value_owner(
@@ -13808,7 +13948,9 @@ impl CGenerator {
         self.body.extend(operand_cleanup);
         self.known_string_lengths
             .insert(bytes.clone(), format!("{buffer}.len"));
-        self.owned_native_byte_buffers.push(buffer);
+        self.owned_native_byte_buffers.push(buffer.clone());
+        self.native_byte_buffer_string_exprs
+            .insert(buffer.clone(), bytes.clone());
 
         Ok(CValue::StringExpr(bytes))
     }
@@ -13883,7 +14025,9 @@ impl CGenerator {
         self.body.extend(subject.cleanup_after_use);
         self.known_string_lengths
             .insert(bytes.clone(), format!("{buffer}.len"));
-        self.owned_native_byte_buffers.push(buffer);
+        self.owned_native_byte_buffers.push(buffer.clone());
+        self.native_byte_buffer_string_exprs
+            .insert(buffer.clone(), bytes.clone());
         self.store_variable_value(name, CValue::StringExpr(bytes));
         Ok(())
     }

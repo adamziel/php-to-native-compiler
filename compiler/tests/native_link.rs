@@ -116,6 +116,27 @@ const NATIVE_BRANCH_LOCAL_VALUE_CLEANUP_SOURCE: &str = concat!(
     "echo \"done\";\n",
 );
 
+const NATIVE_BRANCH_LOCAL_NON_VALUE_OWNER_CLEANUP_SOURCE: &str = concat!(
+    "<?php\n",
+    "$flags = [\"take\" => \"1\", \"skip\" => \"0\"];\n",
+    "$mark = \"base\";\n",
+    "if ($flags[\"take\"]) {\n",
+    "    [\"discarded\"];\n",
+    "    echo \"abc\"[1];\n",
+    "    $mark = \"T\";\n",
+    "} else {\n",
+    "    [\"else-discarded\"];\n",
+    "    echo \"xyz\"[2];\n",
+    "    $mark = \"E\";\n",
+    "}\n",
+    "echo \"|\", $mark, \"|\";\n",
+    "if ($flags[\"skip\"]) {\n",
+    "    [\"unused\"];\n",
+    "    echo \"bad\"[0];\n",
+    "}\n",
+    "echo \"done\";\n",
+);
+
 const NATIVE_DISCARDED_VALUE_STATEMENT_CLEANUP_SOURCE: &str = concat!(
     "<?php\n",
     "array_sum([2, 3]);\n",
@@ -1096,6 +1117,46 @@ fn native_executable_c_source_releases_branch_local_native_value_cleanup() {
 }
 
 #[test]
+fn native_executable_c_source_releases_branch_local_array_and_byte_buffer_cleanup() {
+    let program = parse(NATIVE_BRANCH_LOCAL_NON_VALUE_OWNER_CLEANUP_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.matches("phpc_native_array_free(array_").count() >= 3,
+        "branch-local array owners should be cleaned on branch exits:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_byte_buffer_free(string_offset_read_buffer_")
+            .count()
+            >= 3,
+        "branch-local string offset buffers should be cleaned on branch exits:\n{source}"
+    );
+    assert!(
+        body.contains(" ? (\"T\") : (\"E\")"),
+        "scalar branch state should still merge while local owners are cleaned:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly control-flow lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_rejects_branch_local_byte_buffer_state_join() {
+    let program = parse(
+        "<?php\n$flags = [\"take\" => \"1\"];\nif ($flags[\"take\"]) { $letter = \"abc\"[1]; } else { $letter = \"xyz\"[2]; }\necho $letter;\n",
+    )
+    .unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert!(
+        error.message.contains("control-flow lowering rejects"),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_discards_native_value_statement_results() {
     let program = parse(NATIVE_DISCARDED_VALUE_STATEMENT_CLEANUP_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -1886,6 +1947,34 @@ fn emit_exe_links_and_runs_if_branch_local_native_value_cleanup_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"T|done");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_if_branch_local_non_value_owner_cleanup_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "if_branch_local_non_value_owner_cleanup",
+        NATIVE_BRANCH_LOCAL_NON_VALUE_OWNER_CLEANUP_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native if-branch non-value cleanup executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"b|T|done");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);
