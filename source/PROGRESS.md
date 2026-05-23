@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 02:27 CEST
+Updated: 2026-05-23 02:52 CEST
 Evaluation marker: `20260523T002315Z`
 
-Primary baseline: `codegen: merge scalar native if branch state`
-Latest semantic baseline: `codegen: merge scalar native if branch state`
+Primary baseline: `codegen: lower lazy native value ternaries`
+Latest semantic baseline: `codegen: lower lazy native value ternaries`
 Latest evaluator report: `20260523T002315Z`
 
 These percentages are candid engineering estimates toward generalized PHP
@@ -14,40 +14,43 @@ exact-shape fixtures do not.
 
 ## Executive Read
 
-Overall estimated progress: **86%** `[#################---]`
+Overall estimated progress: **87%** `[#################---]`
 
 Momentum is positive. Primary now includes several generated-C executable
 semantic slices: selected request/global/array/reference paths from earlier
 work, direct `exit()`/`die()` cleanup, diagnostic report ownership cleanup, and
-bounded `if`/`else` lowering. The latest branch slice is useful because it
-executes real branch bodies and can reconcile cleanup-free scalar/string/bool
-post-branch variable state while still rejecting cleanup-owner joins,
-mixed-value phis, and undefined-variable unions instead of faking them.
+bounded `if`/`else` lowering. The latest ternary slice is useful because it
+emits real generated-C `if`/`else` branch code for native value-result
+ternaries, assigns exactly the selected owned handle, and preserves lazy branch
+diagnostics/cleanup for the covered family instead of using eager lowering.
 
 This is still not a complete native PHP execution model. Calls/functions,
 objects/properties/methods, full references/COW, broad structured control flow,
 exact diagnostics, and LLVM/assembly parity remain the main gaps.
 
-Current primary cleanliness: the only expected dirty product diff after this
-batch is the protected `runtime/src/lib.rs` null-slot increment/decrement hunk;
-it is unintegrated and not counted.
+Current primary cleanliness: primary is pushed through `a1ab542a`. Remaining
+dirty files are unintegrated lane/format/doc/runtime work and are not counted
+until reviewed and committed.
 
 ## Grand Roadmap
 
 | Roadmap item | Estimate | Visual | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **97%** | `[###################-]` | Strong value, array, symbol-table, request-state, reference, comparison, truthiness, diagnostic, and exit-result surfaces. |
-| Compiler/backend consumers | **97%** | `[###################-]` | Good generated-C coverage for selected request, `$GLOBALS`, symbols, arrays, lvalues, references, exit, diagnostics, state-stable branches, and cleanup-free scalar branch joins. LLVM/assembly parity is uneven. |
-| Executable PHP semantics | **84%** | `[#################---]` | Improving through linked executable gates, but still selected islands rather than a complete execution model. |
+| Compiler/backend consumers | **98%** | `[####################]` | Good generated-C coverage for selected request, `$GLOBALS`, symbols, arrays, lvalues, references, exit, diagnostics, state-stable branches, cleanup-free scalar branch joins, and native value-result ternaries. LLVM/assembly parity is uneven. |
+| Executable PHP semantics | **85%** | `[#################---]` | Improving through linked executable gates, but still selected islands rather than a complete execution model. |
 | Arrays, lvalues, references, COW | **87%** | `[#################---]` | Strong selected paths, including reference-backed active symbol-root array lvalues. Arbitrary writable roots, full COW, and by-reference foreach remain large. |
 | Symbols, globals, request state | **96%** | `[###################-]` | Strong request/`$GLOBALS` generated-C coverage. Broader request/global reconciliation remains open. |
 | Calls, functions, frames | **27%** | `[#####---------------]` | Runtime/interpreter call-frame metadata enforcement landed; generated-native call/frame execution is still the major missing piece. |
 | Objects, properties, methods | **11%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary still lacks general compiled object/property/method execution. |
 | Control flow, cleanup, diagnostics | **35%** | `[#######-------------]` | Direct exit, diagnostic ownership, bounded state-stable `if`/`else`, and cleanup-free scalar/string/bool branch joins execute on generated C. Loops, switch, cleanup-owner joins, exact ordering, shutdown/finally/destructors, and unwinding are not generalized. |
-| Broad integrated verification | **86%** | `[#################---]` | Focused gates are strong. Cross-feature composition and backend parity need broader proof. |
+| Broad integrated verification | **87%** | `[#################---]` | Focused gates are strong. Cross-feature composition and backend parity need broader proof. |
 
 ## Primary-Integrated Progress
 
+- [x] `a1ab542a`: generated-C lazy native value-result ternaries now lower
+  through real branch bodies and a selected owned result handle, with focused
+  source and linked executable gates.
 - [x] Branch-state merge batch: generated-native C-link `if`/`else` joins for
   cleanup-free scalar, string, and boolean variable values when both scoped
   branches expose the same variable set and no native cleanup owner changes.
