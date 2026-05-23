@@ -1,10 +1,10 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 04:45 CEST
+Updated: 2026-05-23 04:48 CEST
 Evaluation marker: `20260523T020211Z`
 
-Primary HEAD: `15f20e03 codegen: route array owner truthiness`
-Latest integrated semantic baseline: `15f20e03 codegen: route array owner truthiness`
+Primary HEAD: `2f7c236a codegen: output array owners`
+Latest integrated semantic baseline: `2f7c236a codegen: output array owners`
 Latest evaluator report: `20260523T020211Z`
 
 These percentages are candid engineering estimates toward generalized PHP
@@ -28,16 +28,17 @@ shared type predicates and `gettype` / `get_debug_type` result ABIs instead of
 falling back to return-value ownership rejection, and `isset()` / `empty()`
 now classify stored native values through shared null predicates and PHP
 truthiness. Native array owners now also feed shared PHP truthiness for
-`empty()`, `if` conditions, logical operands, and unary-not checks.
+`empty()`, `if` conditions, logical operands, and unary-not checks, and array
+owners now route echo/print output through the shared native-value stdout ABI.
 
 This is still selected compiled PHP execution, not complete PHP semantics.
 Calls/functions/frames, object/property/method execution, full references/COW,
 arbitrary by-reference foreach, structured cleanup/unwinding, exact
 diagnostics, and LLVM/assembly parity remain the major completion blockers.
 
-Current primary cleanliness: semantic work is current through the stored
-native-value and array-owner truthiness batches. The protected
-`runtime/src/lib.rs` null-slot hunk is still dirty and uncounted.
+Current primary cleanliness: semantic work is current through the array-owner
+output batch. The protected `runtime/src/lib.rs` null-slot hunk is still dirty
+and uncounted.
 
 ## Grand Roadmap
 
@@ -55,6 +56,9 @@ native-value and array-owner truthiness batches. The protected
 
 ## Primary-Integrated Progress
 
+- [x] `2f7c236a`: generated-C echo/print over native array owners now
+  materializes the owner as a PHP-shaped native value and routes output through
+  the shared native-value stdout ABI.
 - [x] `15f20e03`: generated-C native array owners now materialize through the
   shared native-value truthiness ABI for `empty()`, `if` conditions, logical
   operands, and unary-not checks.
