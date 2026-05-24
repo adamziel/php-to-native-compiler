@@ -1,18 +1,18 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 15:28 CEST
+Updated: 2026-05-24 15:33 CEST
 Evaluation marker: `20260524T132405Z`
 
 Latest counted primary semantic/test baseline:
 `deabcd6d codegen: lower by-reference closure parameters`
 
 Latest primary head before this progress update:
-`deabcd6d codegen: lower by-reference closure parameters`
+`ec743e97 docs: clarify progress accounting history`
 
 Latest observed `origin/master` during this review:
-`f0188cf9 docs: update progress after closure captures`
+`ec743e97 docs: clarify progress accounting history`
 
-Accounting rule: only generalized, tested, committed, and pushed primary work counts. Dirty primary WIP, lane-local candidates, parked diffs, blocker-only classifiers, and status-file claims are not product capability until selected, gated, committed, and pushed through primary.
+Accounting rule: only generalized, tested, committed, and pushed primary work counts. Current primary is synced to `origin/master`; dirty primary WIP, lane-local candidates, parked diffs, blocker-only classifiers, and status-file claims are not product capability until selected, gated, committed, and pushed through primary.
 
 Accounting history: the earlier **88%** headline is retired because it counted lane-local candidates, scaffolding, and ABI surface area too generously before they became executable product behavior. The later **50%** figure was a conservative strict-rubric rebaseline, not a code rollback. The current source-of-truth estimate is **75%** under the stricter rule.
 
