@@ -4,7 +4,7 @@ use std::process::Command;
 
 use php_compiler::{codegen::emit_native_executable_c_source, error::Phase, parse};
 
-const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including static arrow functions, by-reference closure captures, variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, implicit by-value arrow captures, typed/default by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
+const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including static arrow functions, by-reference closure captures, by-reference variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, implicit by-value arrow captures, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
 
 const NATIVE_VALUE_TRUTHINESS_SOURCE: &str = concat!(
     "<?php\n",
@@ -5271,6 +5271,99 @@ fn emit_exe_links_and_runs_typed_default_closure_parameter_program() {
 }
 
 #[test]
+fn native_executable_c_source_binds_variadic_closure_parameters() {
+    let source = concat!(
+        "<?php\n",
+        "function apply_variadic($callback, $head, $a, $b) { return $callback($head, $a, $b); }\n",
+        "class ClosureVariadicApply {\n",
+        "    public static function apply($callback, $value) { return $callback(\"S\", $value, \"9\"); }\n",
+        "}\n",
+        "$rest = function (...$tail) { return $tail[0] ?? \"empty\"; };\n",
+        "$head = function ($prefix = \"D\", int ...$tail): string { return $prefix . \":\" . $tail[1]; };\n",
+        "echo $rest(), \"|\", $rest(\"A\"), \"|\";\n",
+        "echo $head(\"H\", \"4\", 5), \"|\";\n",
+        "echo apply_variadic(function ($head, int ...$tail) { return $head . \":\" . $tail[0] . \":\" . $tail[1]; }, \"F\", \"6\", 7), \"|\";\n",
+        "echo ClosureVariadicApply::apply(fn(string $prefix, int ...$tail): string => $prefix . \":\" . $tail[0] . \":\" . $tail[1], \"8\"), \"|\";\n",
+        "$base = \"B\";\n",
+        "$captured = function (string ...$tail) use ($base) { return $base . $tail[0] . $tail[1]; };\n",
+        "echo $captured(\"x\", \"y\"), \"|\";\n",
+        "$slot = \"old\";\n",
+        "$mixed = function (&$slot, string ...$tail) { $slot = $tail[0]; return $slot . $tail[1]; };\n",
+        "echo $mixed($slot, \"m\", \"x\"), \":\", $slot;\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("PHPC_NATIVE_CLOSURE_ARGUMENT_VARIADIC")
+            && source.contains("PHPC_NATIVE_CLOSURE_ARGUMENT_BY_REFERENCE")
+            && source.contains("phpc_native_array_empty")
+            && source.contains("phpc_native_array_append_value_with_diagnostic")
+            && source.contains("phpc_native_value_from_array"),
+        "variadic closure parameters should pack surplus arguments through the shared native array/value ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_coerce_call_type_with_diagnostic"),
+        "typed variadic closure arguments should reuse the shared call-frame type ABI per supplied value:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_closure_call_arg_count")
+            && source.contains("phpc_user_function_0_apply_variadic(")
+            && source.contains("phpc_declared_method_")
+            && source.contains("phpc_native_value_from_closure_descriptor_captures_and_free"),
+        "variadic closure parameters should flow through function, static-method, arrow, and captured-closure consumers:\n{source}"
+    );
+    assert!(
+        !source.contains(ASSEMBLY_CLOSURE_REJECTION)
+            && !source.contains("assembly dynamic function-call lowering rejects"),
+        "supported variadic descriptor closures should not hit closure or dynamic-call blockers:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_variadic_closure_parameter_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function apply_variadic($callback, $head, $a, $b) { return $callback($head, $a, $b); }\n",
+        "class ClosureVariadicApply {\n",
+        "    public static function apply($callback, $value) { return $callback(\"S\", $value, \"9\"); }\n",
+        "}\n",
+        "$rest = function (...$tail) { return $tail[0] ?? \"empty\"; };\n",
+        "$head = function ($prefix = \"D\", int ...$tail): string { return $prefix . \":\" . $tail[1]; };\n",
+        "echo $rest(), \"|\", $rest(\"A\"), \"|\";\n",
+        "echo $head(\"H\", \"4\", 5), \"|\";\n",
+        "echo apply_variadic(function ($head, int ...$tail) { return $head . \":\" . $tail[0] . \":\" . $tail[1]; }, \"F\", \"6\", 7), \"|\";\n",
+        "echo ClosureVariadicApply::apply(fn(string $prefix, int ...$tail): string => $prefix . \":\" . $tail[0] . \":\" . $tail[1], \"8\"), \"|\";\n",
+        "$base = \"B\";\n",
+        "$captured = function (string ...$tail) use ($base) { return $base . $tail[0] . $tail[1]; };\n",
+        "echo $captured(\"x\", \"y\"), \"|\";\n",
+        "$slot = \"old\";\n",
+        "$mixed = function (&$slot, string ...$tail) { $slot = $tail[0]; return $slot . $tail[1]; };\n",
+        "echo $mixed($slot, \"m\", \"x\"), \":\", $slot;\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("variadic_closure_parameters", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"empty|A|H:5|F:6:7|S:8:9|Bxy|mx:m");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn native_executable_c_source_captures_arrow_variables_through_descriptor_abi() {
     let source = concat!(
         "<?php\n",
@@ -5408,7 +5501,7 @@ fn native_executable_c_source_keeps_unsupported_closure_shapes_on_shared_blocker
         ),
         concat!(
             "<?php\n",
-            "$callback = function (...$values) { return 1; };\n",
+            "$callback = function (&...$values) { return 1; };\n",
             "echo $callback(1, 2);\n",
         ),
         concat!(

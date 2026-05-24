@@ -64,7 +64,7 @@ const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lo
 const LLVM_STATIC_LOCAL_REJECTION: &str = "LLVM static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const ASSEMBLY_STATIC_LOCAL_REJECTION: &str = "assembly static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const LLVM_CLOSURE_REJECTION: &str = "LLVM closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
-const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including static arrow functions, by-reference closure captures, variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, implicit by-value arrow captures, typed/default by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
+const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including static arrow functions, by-reference closure captures, by-reference variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, implicit by-value arrow captures, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
 const LLVM_REQUIRE_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
 const ASSEMBLY_REQUIRE_REJECTION: &str = "assembly include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
 const LLVM_REQUIRE_EXPRESSION_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution for expression forms with include return values, _once de-duplication results, and caller-scope side effects until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles current include/require expression behavior";
@@ -528,22 +528,26 @@ fn native_user_function_accepts_arg_count(function: &FunctionDecl, arg_count: us
         && (native_user_function_variadic_param(function).is_some() || arg_count <= fixed_count)
 }
 
-fn native_user_function_has_malformed_variadic_params(function: &FunctionDecl) -> bool {
-    let variadic_count = function
-        .params
-        .iter()
-        .filter(|param| param.is_variadic)
-        .count();
+fn native_function_params_have_malformed_variadic_params(params: &[FunctionParam]) -> bool {
+    let variadic_count = params.iter().filter(|param| param.is_variadic).count();
     if variadic_count == 0 {
         return false;
     }
     if variadic_count > 1 {
         return true;
     }
-    let Some((index, param)) = native_user_function_variadic_param(function) else {
+    let Some((index, param)) = params
+        .iter()
+        .enumerate()
+        .find(|(_, param)| param.is_variadic)
+    else {
         return false;
     };
-    index + 1 != function.params.len() || param.default.is_some()
+    index + 1 != params.len() || param.default.is_some()
+}
+
+fn native_user_function_has_malformed_variadic_params(function: &FunctionDecl) -> bool {
+    native_function_params_have_malformed_variadic_params(&function.params)
 }
 
 fn native_user_function_param_has_unsupported_by_reference_shape(param: &FunctionParam) -> bool {
@@ -12331,12 +12335,12 @@ impl CGenerator {
         if is_static
             || captures.iter().any(|capture| capture.by_reference)
             || returns_by_reference
+            || native_function_params_have_malformed_variadic_params(params)
             || stmt_list_contains_global_import(body)
             || calls_root_symbol_frame
             || return_type.is_some_and(|decl| !native_function_type_decl_is_supported(decl))
             || params.iter().any(|param| {
                 native_user_function_param_has_unsupported_by_reference_shape(param)
-                    || param.is_variadic
                     || param
                         .type_decl
                         .as_ref()
@@ -12599,17 +12603,27 @@ impl CGenerator {
         )?;
         self.function_definitions.push(definition);
 
-        let param_flags = if params.iter().any(|param| param.by_reference) {
+        let param_flags = if params
+            .iter()
+            .any(|param| param.by_reference || param.is_variadic)
+        {
             let index = self.next_static_data;
             self.next_static_data += 1;
             let flags_name = format!("closure_param_flags_{index}");
             let flags = params
                 .iter()
                 .map(|param| {
+                    let mut flags = Vec::new();
                     if param.by_reference {
-                        "PHPC_NATIVE_CLOSURE_ARGUMENT_BY_REFERENCE"
+                        flags.push("PHPC_NATIVE_CLOSURE_ARGUMENT_BY_REFERENCE");
+                    }
+                    if param.is_variadic {
+                        flags.push("PHPC_NATIVE_CLOSURE_ARGUMENT_VARIADIC");
+                    }
+                    if flags.is_empty() {
+                        "0".to_string()
                     } else {
-                        "0"
+                        flags.join(" | ")
                     }
                 })
                 .collect::<Vec<_>>()
@@ -12739,11 +12753,18 @@ impl CGenerator {
             "if (phpc_call_depth > PHPC_NATIVE_USER_FUNCTION_MAX_CALL_DEPTH) {{ fprintf(stderr, \"phpc native user-function call depth exceeded\\n\"); return (phpc_NativeValueHandle){{0}}; }}"
         ));
         let required_arg_count = native_user_function_required_arg_count(&function);
-        generator.body.push(format!(
-            "if (phpc_closure_arg_count < {} || phpc_closure_arg_count > {}) {{ fprintf(stderr, \"phpc native closure frame argument count mismatch\\n\"); return (phpc_NativeValueHandle){{0}}; }}",
-            required_arg_count + captures.len(),
-            params.len() + captures.len()
-        ));
+        if native_user_function_variadic_param(&function).is_some() {
+            generator.body.push(format!(
+                "if (phpc_closure_arg_count < {}) {{ fprintf(stderr, \"phpc native closure frame argument count mismatch\\n\"); return (phpc_NativeValueHandle){{0}}; }}",
+                required_arg_count + captures.len()
+            ));
+        } else {
+            generator.body.push(format!(
+                "if (phpc_closure_arg_count < {} || phpc_closure_arg_count > {}) {{ fprintf(stderr, \"phpc native closure frame argument count mismatch\\n\"); return (phpc_NativeValueHandle){{0}}; }}",
+                required_arg_count + captures.len(),
+                params.len() + captures.len()
+            ));
+        }
         if captures.is_empty() {
             generator.body.push(format!(
                 "size_t phpc_closure_call_arg_count = phpc_closure_arg_count;"
@@ -12889,6 +12910,43 @@ impl CGenerator {
 
     fn bind_closure_frame_parameters(&mut self, params: &[FunctionParam]) -> CompileResult<()> {
         for (index, param) in params.iter().enumerate() {
+            if param.is_variadic {
+                let array = self.emit_empty_variadic_argument_array("");
+                let loop_index = self.next_native_name("closure_variadic_index");
+                self.body.push(format!(
+                    "for (size_t {loop_index} = {index}; {loop_index} < phpc_closure_call_arg_count; ++{loop_index}) {{"
+                ));
+                let value = self.next_native_name("closure_variadic_arg");
+                self.uses_native_value_clone = true;
+                self.body.push(format!(
+                    "  phpc_NativeValueHandle {value} = phpc_native_value_clone(phpc_closure_args[{loop_index}].value);"
+                ));
+                let clone_failure_cleanup = format!("phpc_native_array_free({array});");
+                let error_exit = self.native_error_exit(&clone_failure_cleanup);
+                self.body
+                    .push(format!("  if ({value}.ptr == NULL) {{ {error_exit} }}"));
+                let value = CNativeValueMaterialization {
+                    handle: value.clone(),
+                    cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
+                };
+                self.emit_variadic_argument_array_append(
+                    &array,
+                    param,
+                    value,
+                    "Closure::__invoke()",
+                    "",
+                );
+                self.body.push("}".to_string());
+                let variadic_value = self.materialize_variadic_argument_array_value(array, "");
+                self.retain_native_value_cleanup_handle(&variadic_value.handle);
+                self.variables.insert(
+                    param.name.clone(),
+                    CValue::NativeValueHandle(variadic_value.handle),
+                );
+                self.remember_variable_order(&param.name);
+                continue;
+            }
+
             let handle = self.next_native_name("frame_param");
             if param.by_reference {
                 self.uses_native_reference_helpers = true;
@@ -13144,6 +13202,7 @@ impl CGenerator {
             }
             if self.uses_native_closure_helpers {
                 output.push_str("#define PHPC_NATIVE_CLOSURE_ARGUMENT_BY_REFERENCE 1\n");
+                output.push_str("#define PHPC_NATIVE_CLOSURE_ARGUMENT_VARIADIC 2\n");
                 output.push_str("typedef struct { phpc_NativeValueHandle value; phpc_NativeReferenceHandle reference; uint8_t flags; } phpc_NativeClosureArgument;\n");
                 output.push_str("typedef phpc_NativeValueHandle (*phpc_NativeClosureFrameCallback)(int, const phpc_NativeClosureArgument *, size_t, int *);\n");
                 output.push_str("typedef struct { phpc_NativeClosureFrameCallback callback; size_t required_arg_count; size_t param_count; const uint8_t *param_flags; } phpc_NativeClosureDescriptor;\n");

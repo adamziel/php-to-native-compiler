@@ -3173,7 +3173,9 @@ pub unsafe extern "C" fn phpc_native_closure_invoke_value_with_diagnostic(
         };
         return NativeValueHandle::null();
     };
-    if arg_count < descriptor.required_arg_count || arg_count > descriptor.param_count {
+    if arg_count < descriptor.required_arg_count
+        || (!descriptor.is_variadic() && arg_count > descriptor.param_count)
+    {
         unsafe {
             native_store_diagnostic_message(
                 diagnostic,
@@ -18807,6 +18809,7 @@ impl PhpStringByteSource for Value {
 }
 
 pub const NATIVE_CLOSURE_ARGUMENT_BY_REFERENCE: u8 = 1;
+pub const NATIVE_CLOSURE_ARGUMENT_VARIADIC: u8 = 2;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18889,6 +18892,14 @@ impl NativeClosureDescriptor {
             return false;
         }
         (unsafe { *self.param_flags.add(index) } & NATIVE_CLOSURE_ARGUMENT_BY_REFERENCE) != 0
+    }
+
+    fn is_variadic(&self) -> bool {
+        if self.param_count == 0 || self.param_flags.is_null() {
+            return false;
+        }
+        let index = self.param_count - 1;
+        (unsafe { *self.param_flags.add(index) } & NATIVE_CLOSURE_ARGUMENT_VARIADIC) != 0
     }
 }
 
@@ -25593,6 +25604,79 @@ mod tests {
         unsafe { phpc_native_value_free(current) };
         unsafe { phpc_native_reference_free(reference) };
         unsafe { phpc_native_value_free(replacement) };
+        unsafe { phpc_native_value_free(closure) };
+    }
+
+    #[test]
+    fn native_descriptor_closure_variadic_descriptors_accept_surplus_arguments() {
+        unsafe extern "C" fn count_variadic_closure_callback(
+            _call_depth: c_int,
+            args: *const NativeClosureArgument,
+            arg_count: usize,
+            status: *mut c_int,
+        ) -> NativeValueHandle {
+            let args_slice = if arg_count == 0 {
+                &[]
+            } else {
+                unsafe { std::slice::from_raw_parts(args, arg_count) }
+            };
+            unsafe { *status = 1 };
+            NativeValueHandle::from_value(Value::Int(args_slice.len() as i64))
+        }
+
+        static PARAM_FLAGS: [u8; 2] = [0, NATIVE_CLOSURE_ARGUMENT_VARIADIC];
+        let descriptor = NativeClosureDescriptor::new_with_param_flags(
+            count_variadic_closure_callback,
+            1,
+            2,
+            PARAM_FLAGS.as_ptr(),
+        );
+        let closure = phpc_native_value_from_closure_descriptor(descriptor);
+
+        let first = NativeValueHandle::from_value(Value::Int(1));
+        let second = NativeValueHandle::from_value(Value::Int(2));
+        let third = NativeValueHandle::from_value(Value::Int(3));
+        let args = [
+            NativeClosureArgument::from_value(first),
+            NativeClosureArgument::from_value(second),
+            NativeClosureArgument::from_value(third),
+        ];
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let result = unsafe {
+            phpc_native_closure_invoke_value_with_diagnostic(
+                closure,
+                0,
+                args.as_ptr(),
+                args.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(unsafe { result.as_ref() }, Some(&Value::Int(3)));
+        unsafe { phpc_native_value_free(result) };
+
+        let blocked = unsafe {
+            phpc_native_closure_invoke_value_with_diagnostic(
+                closure,
+                0,
+                ptr::null(),
+                0,
+                &mut diagnostic,
+            )
+        };
+        assert!(blocked.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "unsupported call Closure::__invoke(): argument count is outside the native closure frame descriptor range"
+            )
+        );
+
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(blocked) };
+        unsafe { phpc_native_value_free(first) };
+        unsafe { phpc_native_value_free(second) };
+        unsafe { phpc_native_value_free(third) };
         unsafe { phpc_native_value_free(closure) };
     }
 
