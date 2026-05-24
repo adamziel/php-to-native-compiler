@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 18:16 CEST
-Evaluation marker: `20260524T1616Z`
+Updated: 2026-05-24 19:17 CEST
+Evaluation marker: `20260524T1717Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as product capability. Dirty primary WIP, lane-local candidates,
@@ -9,15 +9,13 @@ historical worktrees, blocker-only classifiers, and status-file claims are
 excluded until selected, gated, committed, pushed, and reflected here.
 
 Current counted primary head:
-`7679dc0e codegen: invoke callable objects through method frames`
+`b217e2b4 codegen: block destructor-observable native allocation`
 
 Latest counted semantic/test baseline:
-`7679dc0e codegen: invoke callable objects through method frames`
+`b217e2b4 codegen: block destructor-observable native allocation`
 
 Current uncounted primary WIP:
-`compiler/src/codegen.rs` and
-`compiler/tests/native_function_call_boundary.rs` contain dirty
-destructor-observable allocation-blocker work. This is not counted below.
+None in primary.
 
 ## Executive Read
 
@@ -51,6 +49,7 @@ parity.
 - [x] Callable-array invocation for supported public static/object method frames.
 - [x] Callable-object invocation through supported public `__invoke` method frames.
 - [x] Runtime string-valued declared-class `new` for constructorless and supported public-constructor classes.
+- [x] Destructor-observable declared-class allocation is blocked before generated-C native allocation through declared-class metadata, hierarchy lookup, and dynamic class-name facts.
 - [x] Bounded public declared-object properties, methods, statics, constructors, named `instanceof`, and same-family aggregate equality.
 - [ ] Not complete: general callable/closure/object/reference/COW/request/global/cleanup/diagnostic/include/backend semantics.
 
@@ -70,6 +69,15 @@ parity.
 
 ## Recent Primary-Integrated Work
 
+- `b217e2b4`: generated-C declared-object allocation now blocks
+  destructor-observable native allocation before emitting allocation branches.
+  Destructor declarations are recorded as declared-class metadata, inherited
+  through class hierarchy lookup, and checked against runtime string-valued
+  dynamic class-name facts. The slice treats this as cleanup/unwind safety, not
+  destructor execution: destructor-free dynamic constructors stay on the
+  bounded declared-class path, while direct, inherited, finite known dynamic,
+  unknown dynamic, and nested constructor-argument destructor-risk allocations
+  fail through the shared constructor call-boundary blocker.
 - `7679dc0e`: generated-C runtime dynamic calls can invoke supported declared
   callable objects through public `__invoke` method frames. Dispatch is gated
   by runtime object type, object/class relation checks, and the declared-method
@@ -91,12 +99,11 @@ parity.
 Primary-integrated and counted:
 
 - [x] Previous synced baseline was `adc1785d`.
-- [x] Local counted semantic baseline is `7679dc0e`; this progress wrapper and push complete the accounting batch.
+- [x] Local counted semantic baseline is `b217e2b4`; this progress wrapper and push complete the destructor-observable allocation-blocker accounting batch.
 - [x] Progress accounting clarifies that the current source-of-truth estimate is 85%, not older lane-inflated or strict-rebaseline figures.
 
 In progress but uncounted:
 
-- [ ] Dirty primary destructor-observable declared-class allocation blocker.
 - [ ] Lane-local ArrayAccess/object-offset diagnostics and blocker precision.
 - [ ] Lane-local byte-keyed global/symbol storage and request/global work.
 - [ ] Lane-local reference/COW metadata, cleanup/control-flow, callback, and object/property candidates.
@@ -127,12 +134,12 @@ unless they are rebased around a new unresolved boundary.
 
 ## Review Notes
 
-Focused callable-object gates passed on disk-backed
-`/tmp/phpc-primary-callable-object`: `cargo check -q -p phpc -p php_runtime`,
-`cargo test -q -p phpc --test native_link callable_object`,
-`callable_array`, `descriptor_closure`, `non_static_closure_this`,
-`runtime_dynamic_user_function_call`, `finite_mixed_dynamic_call`, the
-call-boundary blocker test, `cargo test -q -p php_runtime --lib`, scoped
-`rustfmt --edition 2021 --check`, and `git diff --check` /
-`git diff --cached --check`. The destructor blocker should be kept framed as
-cleanup/unwind safety, not as destructor support.
+Focused destructor-observable allocation-blocker gates passed on disk-backed
+`/tmp/phpc-primary-destructor-blocker`: `cargo check -q -p phpc -p
+php_runtime`, the `native_function_call_boundary` destructor filter, adjacent
+call-boundary routing regressions, declared-object and callable-object
+generated-C regressions, scoped `rustfmt --edition 2021 --check`, and `git diff
+--check` / `git diff --cached --check`. Whole-repo `cargo fmt --check` still
+reports unrelated existing formatting drift in `compiler/src/interpreter.rs`;
+the touched Rust files pass scoped rustfmt. This blocker remains cleanup/unwind
+safety only, not destructor execution.
