@@ -14753,6 +14753,33 @@ impl PhpArray {
         Ok(true)
     }
 
+    pub fn php_equality_checked(&self, other: &Self) -> RuntimeResult<bool> {
+        self.php_equality_checked_with_context(other, &mut NativeValueComparisonContext::default())
+    }
+
+    fn php_equality_checked_with_context(
+        &self,
+        other: &Self,
+        context: &mut NativeValueComparisonContext,
+    ) -> RuntimeResult<bool> {
+        if self.entries.len() != other.entries.len() {
+            return Ok(false);
+        }
+
+        for left in &self.entries {
+            let Some(right) = other.get_slot(left.key.clone()) else {
+                return Ok(false);
+            };
+            let left_value = left.value_cloned();
+            let right_value = right.value_cloned();
+            if !left_value.php_cmp_checked_with_context(&right_value, Comparison::Eq, context)? {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    }
+
     pub fn keys_matching_loose_scalar(&self, search_value: &Value) -> RuntimeResult<Self> {
         let mut array = Self::new();
         for entry in &self.entries {
@@ -17444,6 +17471,77 @@ impl PhpObject {
                 .any(|interface| interface.eq_ignore_ascii_case(class_name))
     }
 
+    fn php_equality_checked_with_context(
+        &self,
+        other: &Self,
+        context: &mut NativeValueComparisonContext,
+    ) -> RuntimeResult<bool> {
+        if self.id == other.id {
+            return Ok(true);
+        }
+        if !self.class_name.eq_ignore_ascii_case(&other.class_name) {
+            return Ok(false);
+        }
+
+        let Some(pair) = context.enter_object_pair(self.id, other.id)? else {
+            return Ok(true);
+        };
+
+        let mut left = self.comparison_properties();
+        let mut right = other.comparison_properties();
+        left.sort_by(|left, right| left.name.cmp(&right.name));
+        right.sort_by(|left, right| left.name.cmp(&right.name));
+
+        let result = (|| {
+            if left.len() != right.len() {
+                return Ok(false);
+            }
+
+            for (left, right) in left.iter().zip(right.iter()) {
+                if left.name != right.name || left.initialized != right.initialized {
+                    return Ok(false);
+                }
+                let (Some(left), Some(right)) = (&left.value, &right.value) else {
+                    continue;
+                };
+                if !left.php_cmp_checked_with_context(right, Comparison::Eq, context)? {
+                    return Ok(false);
+                }
+            }
+
+            Ok(true)
+        })();
+        context.leave_object_pair(pair);
+        result
+    }
+
+    fn php_cmp_checked_with_context(
+        &self,
+        other: &Self,
+        op: Comparison,
+        context: &mut NativeValueComparisonContext,
+    ) -> RuntimeResult<bool> {
+        match op {
+            Comparison::Eq => self.php_equality_checked_with_context(other, context),
+            Comparison::Ne => self
+                .php_equality_checked_with_context(other, context)
+                .map(|equal| !equal),
+            Comparison::Lt | Comparison::Le | Comparison::Gt | Comparison::Ge => {
+                Err(RuntimeError::unsupported_comparison(
+                    "object ordering comparisons are not implemented",
+                ))
+            }
+        }
+    }
+
+    fn comparison_properties(&self) -> Vec<ObjectComparisonProperty> {
+        self.properties
+            .borrow()
+            .iter()
+            .map(ObjectComparisonProperty::from_property)
+            .collect()
+    }
+
     pub fn read_public_property(&self, name: &str) -> RuntimeResult<Value> {
         let properties = self.properties.borrow();
         let property = self.public_property_or_error(&properties, name)?;
@@ -18204,6 +18302,51 @@ impl ObjectProperty {
     }
 }
 
+struct ObjectComparisonProperty {
+    name: String,
+    initialized: bool,
+    value: Option<Value>,
+}
+
+impl ObjectComparisonProperty {
+    fn from_property(property: &ObjectProperty) -> Self {
+        let initialized = property.is_initialized();
+        Self {
+            name: property.mangled_name(),
+            initialized,
+            value: initialized.then(|| property.value_cloned()),
+        }
+    }
+}
+
+#[derive(Default)]
+struct NativeValueComparisonContext {
+    object_pairs: HashSet<(i64, i64)>,
+}
+
+impl NativeValueComparisonContext {
+    fn enter_object_pair(&mut self, left: i64, right: i64) -> RuntimeResult<Option<(i64, i64)>> {
+        if left == right {
+            return Ok(None);
+        }
+        let pair = if left <= right {
+            (left, right)
+        } else {
+            (right, left)
+        };
+        if !self.object_pairs.insert(pair) {
+            return Err(RuntimeError::unsupported_comparison(
+                "cyclic object equality is not implemented",
+            ));
+        }
+        Ok(Some(pair))
+    }
+
+    fn leave_object_pair(&mut self, pair: (i64, i64)) {
+        self.object_pairs.remove(&pair);
+    }
+}
+
 fn coerce_typed_property_value(property: &ObjectProperty, value: Value) -> RuntimeResult<Value> {
     let Some(type_decl) = property.type_decl.as_deref() else {
         return Ok(value);
@@ -18889,11 +19032,79 @@ impl Value {
     }
 
     pub fn php_cmp_checked(&self, other: &Value, op: Comparison) -> RuntimeResult<bool> {
-        self.php_compare_checked(other, op.into())
+        self.php_cmp_checked_with_context(other, op, &mut NativeValueComparisonContext::default())
     }
 
     pub fn php_compare_checked(&self, other: &Value, op: PhpComparisonOp) -> RuntimeResult<bool> {
         evaluate_php_comparison(self, other, op)?.into_runtime_result()
+    }
+
+    fn php_cmp_checked_with_context(
+        &self,
+        other: &Value,
+        op: Comparison,
+        context: &mut NativeValueComparisonContext,
+    ) -> RuntimeResult<bool> {
+        match (self, other) {
+            (Value::Array(left), Value::Array(right)) => match op {
+                Comparison::Eq => left.php_equality_checked_with_context(right, context),
+                Comparison::Ne => left
+                    .php_equality_checked_with_context(right, context)
+                    .map(|equal| !equal),
+                Comparison::Lt | Comparison::Le | Comparison::Gt | Comparison::Ge => {
+                    Err(RuntimeError::unsupported_comparison(
+                        "array ordering comparisons are not implemented",
+                    ))
+                }
+            },
+            (Value::Array(_), _) | (_, Value::Array(_)) => {
+                Err(RuntimeError::unsupported_comparison(
+                    "array comparisons with non-array values are not implemented",
+                ))
+            }
+            (Value::Object(left), Value::Object(right)) => {
+                left.php_cmp_checked_with_context(right, op, context)
+            }
+            (Value::Closure(left), Value::Closure(right)) => match op {
+                Comparison::Eq => Ok(left.id() == right.id()),
+                Comparison::Ne => Ok(left.id() != right.id()),
+                Comparison::Lt | Comparison::Le | Comparison::Gt | Comparison::Ge => {
+                    Err(RuntimeError::unsupported_comparison(
+                        "object ordering comparisons are not implemented",
+                    ))
+                }
+            },
+            (Value::Object(_) | Value::Closure(_), Value::Object(_) | Value::Closure(_)) => {
+                match op {
+                    Comparison::Eq => Ok(false),
+                    Comparison::Ne => Ok(true),
+                    Comparison::Lt | Comparison::Le | Comparison::Gt | Comparison::Ge => {
+                        Err(RuntimeError::unsupported_comparison(
+                            "object ordering comparisons are not implemented",
+                        ))
+                    }
+                }
+            }
+            (Value::Object(_) | Value::Closure(_), _)
+            | (_, Value::Object(_) | Value::Closure(_)) => {
+                Err(RuntimeError::unsupported_comparison(
+                    "object comparisons with non-object values are not implemented",
+                ))
+            }
+            (Value::Resource(left), Value::Resource(right)) => match op {
+                Comparison::Eq => Ok(left == right),
+                Comparison::Ne => Ok(left != right),
+                Comparison::Lt | Comparison::Le | Comparison::Gt | Comparison::Ge => {
+                    Err(RuntimeError::unsupported_comparison(
+                        "resource ordering comparisons are not implemented",
+                    ))
+                }
+            },
+            (Value::Resource(_), _) | (_, Value::Resource(_)) => Err(
+                RuntimeError::unsupported_comparison("resource comparisons are not implemented"),
+            ),
+            _ => Ok(self.php_cmp(other, op)),
+        }
     }
 
     pub fn php_cmp(&self, other: &Value, op: Comparison) -> bool {
@@ -19387,7 +19598,7 @@ pub unsafe extern "C" fn phpc_native_value_compare_result(
     let left = unsafe { left.as_ref() }.unwrap_or(&null_left);
     let right = unsafe { right.as_ref() }.unwrap_or(&null_right);
 
-    if let Some(message) = native_value_comparison_blocker(left, right) {
+    if let Some(message) = native_value_comparison_blocker(left, right, op.operation_family()) {
         return NativeValueOperationResult::diagnostic(message);
     }
 
@@ -19414,7 +19625,13 @@ fn native_value_comparison_op(op: u8) -> Option<PhpComparisonOp> {
     })
 }
 
-fn native_value_comparison_blocker(left: &Value, right: &Value) -> Option<String> {
+fn native_value_comparison_blocker(
+    left: &Value,
+    right: &Value,
+    operation: ComparisonOperationFamily,
+) -> Option<String> {
+    comparison_blocker_for_family(left, right, operation)?;
+
     let unsupported = match (left, right) {
         (Value::Array(_), _) | (_, Value::Array(_)) => "arrays",
         (Value::Object(_), _)
@@ -20756,12 +20973,12 @@ fn evaluate_php_comparison(
     }
 
     Ok(ComparisonEvaluation::Value(
-        left.php_cmp(
+        left.php_cmp_checked(
             right,
             family
                 .loose_comparison()
                 .expect("non-strict comparison has a loose operator"),
-        ),
+        )?,
     ))
 }
 
@@ -20781,6 +20998,16 @@ fn evaluate_php_comparison_relation(
         ));
     }
 
+    if matches!(family, ComparisonOperationFamily::LooseEquality(_)) {
+        return Ok(ComparisonRelationEvaluation::Relation(
+            if left.php_cmp_checked(right, Comparison::Eq)? {
+                ComparisonRelation::Equal
+            } else {
+                ComparisonRelation::Different
+            },
+        ));
+    }
+
     Ok(ComparisonRelationEvaluation::Relation(
         ComparisonRelation::from_ordering(left.php_ordering(right)),
     ))
@@ -20795,18 +21022,23 @@ fn comparison_blocker_for_family(
         return None;
     }
 
-    ComparisonBlocker::unsupported_value_family(
-        ComparisonOperandSide::Left,
-        ComparisonValueFamily::for_value(left),
-        family,
-    )
-    .or_else(|| {
-        ComparisonBlocker::unsupported_value_family(
-            ComparisonOperandSide::Right,
-            ComparisonValueFamily::for_value(right),
-            family,
-        )
-    })
+    let left_family = ComparisonValueFamily::for_value(left);
+    let right_family = ComparisonValueFamily::for_value(right);
+    if matches!(family, ComparisonOperationFamily::LooseEquality(_))
+        && left_family == right_family
+        && !matches!(left_family, ComparisonValueFamily::Scalar)
+    {
+        return None;
+    }
+
+    ComparisonBlocker::unsupported_value_family(ComparisonOperandSide::Left, left_family, family)
+        .or_else(|| {
+            ComparisonBlocker::unsupported_value_family(
+                ComparisonOperandSide::Right,
+                right_family,
+                family,
+            )
+        })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -23594,7 +23826,7 @@ mod tests {
             compare_native_values_for_test(
                 Value::Resource(3),
                 NativeComparisonOp::LooseNe,
-                Value::Resource(4),
+                Value::Int(4),
             ),
             "resource comparisons are not implemented",
         );
@@ -23612,6 +23844,176 @@ mod tests {
             "null left value handle",
             null_left_result,
             "left value handle is null",
+        );
+    }
+
+    #[test]
+    fn native_value_comparison_executes_same_family_loose_equality_for_aggregates_and_handles() {
+        let mut loose_array_left = PhpArray::new();
+        loose_array_left.insert("id", Value::Int(7));
+        loose_array_left.insert("label", Value::String("seven".to_string()));
+        let mut loose_array_right = PhpArray::new();
+        loose_array_right.insert("label", Value::String("seven".to_string()));
+        loose_array_right.insert("id", Value::String("7".to_string()));
+        assert_native_comparison_ok(
+            "array loose equality",
+            compare_native_values_for_test(
+                Value::Array(loose_array_left),
+                NativeComparisonOp::LooseEq,
+                Value::Array(loose_array_right),
+            ),
+            true,
+        );
+
+        let mut resource_array_left = PhpArray::new();
+        resource_array_left.insert("handle", Value::Resource(41));
+        let mut resource_array_right = PhpArray::new();
+        resource_array_right.insert("handle", Value::Resource(41));
+        assert_native_comparison_ok(
+            "array resource loose equality",
+            compare_native_values_for_test(
+                Value::Array(resource_array_left),
+                NativeComparisonOp::LooseEq,
+                Value::Array(resource_array_right),
+            ),
+            true,
+        );
+
+        let mut class = PhpClassMetadata::new(ClassId(99100), "CompareBox".to_string());
+        class
+            .add_property(PhpPropertyMetadata::instance("count", Visibility::Public))
+            .unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("label", Visibility::Public))
+            .unwrap();
+        let object_left = PhpObject::from_class_with_id(&class, 99101);
+        object_left
+            .write_public_property("count", Value::Int(7))
+            .unwrap();
+        object_left
+            .write_public_property("label", Value::String("seven".to_string()))
+            .unwrap();
+        let object_right = PhpObject::from_class_with_id(&class, 99102);
+        object_right
+            .write_public_property("label", Value::String("seven".to_string()))
+            .unwrap();
+        object_right
+            .write_public_property("count", Value::Int(7))
+            .unwrap();
+        assert_native_comparison_ok(
+            "object loose equality",
+            compare_native_values_for_test(
+                Value::Object(object_left.clone()),
+                NativeComparisonOp::LooseEq,
+                Value::Object(object_right.clone()),
+            ),
+            true,
+        );
+        object_right
+            .write_public_property("count", Value::Int(8))
+            .unwrap();
+        assert_native_comparison_ok(
+            "object loose inequality",
+            compare_native_values_for_test(
+                Value::Object(object_left),
+                NativeComparisonOp::LooseNe,
+                Value::Object(object_right),
+            ),
+            true,
+        );
+
+        let mut callback_class =
+            PhpClassMetadata::new(ClassId(99103), "CallbackCompareBox".to_string());
+        callback_class
+            .add_property(PhpPropertyMetadata::instance(
+                "callback",
+                Visibility::Public,
+            ))
+            .unwrap();
+        callback_class
+            .add_property(PhpPropertyMetadata::instance("handle", Visibility::Public))
+            .unwrap();
+        let callback_left = PhpObject::from_class_with_id(&callback_class, 99104);
+        let callback_right = PhpObject::from_class_with_id(&callback_class, 99105);
+        callback_left
+            .bind_public_property_reference_cell(
+                "callback",
+                PhpReferenceCell::new(Value::Closure(PhpClosure::new(99106, false, Vec::new()))),
+            )
+            .unwrap();
+        callback_right
+            .bind_public_property_reference_cell(
+                "callback",
+                PhpReferenceCell::new(Value::Closure(PhpClosure::new(99106, false, Vec::new()))),
+            )
+            .unwrap();
+        callback_left
+            .write_public_property("handle", Value::Resource(99))
+            .unwrap();
+        callback_right
+            .write_public_property("handle", Value::Resource(99))
+            .unwrap();
+        assert_native_comparison_ok(
+            "object reference closure and resource property equality",
+            compare_native_values_for_test(
+                Value::Object(callback_left),
+                NativeComparisonOp::LooseEq,
+                Value::Object(callback_right),
+            ),
+            true,
+        );
+
+        assert_native_comparison_ok(
+            "closure loose identity equality",
+            compare_native_values_for_test(
+                Value::Closure(PhpClosure::new(99107, false, Vec::new())),
+                NativeComparisonOp::LooseEq,
+                Value::Closure(PhpClosure::new(99107, false, Vec::new())),
+            ),
+            true,
+        );
+        assert_native_comparison_ok(
+            "resource loose identity inequality",
+            compare_native_values_for_test(
+                Value::Resource(101),
+                NativeComparisonOp::LooseNe,
+                Value::Resource(102),
+            ),
+            true,
+        );
+
+        let result_left = NativeValueHandle::from_value(Value::Resource(103));
+        let result_right = NativeValueHandle::from_value(Value::Resource(103));
+        let result = unsafe {
+            phpc_native_value_compare_result(result_left, NATIVE_VALUE_COMPARISON_EQ, result_right)
+        };
+        assert!(result.succeeded());
+        assert_eq!(native_value_echo_bytes_for_test(result.value), b"1");
+        unsafe { phpc_native_value_operation_result_free(result) };
+        unsafe { phpc_native_value_free(result_right) };
+        unsafe { phpc_native_value_free(result_left) };
+
+        let mut cyclic_class =
+            PhpClassMetadata::new(ClassId(99108), "CyclicCompareBox".to_string());
+        cyclic_class
+            .add_property(PhpPropertyMetadata::instance("child", Visibility::Public))
+            .unwrap();
+        let cyclic_left = PhpObject::from_class_with_id(&cyclic_class, 99109);
+        let cyclic_right = PhpObject::from_class_with_id(&cyclic_class, 99110);
+        cyclic_left
+            .write_public_property("child", Value::Object(cyclic_left.clone()))
+            .unwrap();
+        cyclic_right
+            .write_public_property("child", Value::Object(cyclic_right.clone()))
+            .unwrap();
+        assert_native_comparison_blocked(
+            "cyclic object equality blocker",
+            compare_native_values_for_test(
+                Value::Object(cyclic_left),
+                NativeComparisonOp::LooseEq,
+                Value::Object(cyclic_right),
+            ),
+            "cyclic object equality is not implemented",
         );
     }
 
@@ -23847,7 +24249,7 @@ mod tests {
                 phpc_native_value_from_scalar(phpc_native_int(1)),
             )
         };
-        let array_loose_blocker = unsafe {
+        let array_loose_success = unsafe {
             phpc_native_array_compare_branch_and_free(
                 phpc_native_array_empty(),
                 NativeComparisonOp::LooseEq as u8,
@@ -23871,10 +24273,10 @@ mod tests {
                 1,
             ),
             (
-                "array blocker branch decision",
-                array_loose_blocker,
-                false,
-                1,
+                "array loose equality branch decision",
+                array_loose_success,
+                true,
+                0,
             ),
             ("malformed branch decision", malformed, false, 1),
         ] {
@@ -24176,10 +24578,10 @@ mod tests {
             },
             true,
         );
-        assert_native_comparison_blocked(
-            "array loose blocker",
+        assert_native_comparison_ok(
+            "array loose equality",
             unsafe { phpc_native_array_compare(left, NativeComparisonOp::LooseEq as u8, same) },
-            "recursive array comparisons are not implemented",
+            true,
         );
 
         assert_native_comparison_blocked(
@@ -24272,8 +24674,8 @@ mod tests {
 
         let array_left = phpc_native_array_empty();
         let array_right = phpc_native_array_empty();
-        assert_native_comparison_blocked(
-            "native array handle loose blocker",
+        assert_native_comparison_ok(
+            "native array handle loose equality",
             unsafe {
                 phpc_native_array_compare(
                     array_left,
@@ -24281,7 +24683,7 @@ mod tests {
                     array_right,
                 )
             },
-            expected_message,
+            true,
         );
         unsafe { phpc_native_array_free(array_left) };
         unsafe { phpc_native_array_free(array_right) };
@@ -24541,7 +24943,7 @@ mod tests {
         assert!(aliased_branch.value());
         assert_eq!(aliased_branch.diagnostic_len(), 0);
 
-        let blocked_branch = unsafe {
+        let array_loose_branch = unsafe {
             phpc_native_array_compare_branch_and_free(
                 phpc_native_array_empty(),
                 NativeComparisonOp::LooseEq as u8,
@@ -24549,11 +24951,11 @@ mod tests {
             )
         };
         assert_eq!(
-            blocked_branch.status(),
-            NativeComparisonStatus::Blocked as u8
+            array_loose_branch.status(),
+            NativeComparisonStatus::Ok as u8
         );
-        assert!(!blocked_branch.value());
-        assert!(blocked_branch.diagnostic_len() > 0);
+        assert!(array_loose_branch.value());
+        assert_eq!(array_loose_branch.diagnostic_len(), 0);
 
         assert_native_comparison_blocked(
             "owned array invalid opcode",
