@@ -210,6 +210,32 @@ const NATIVE_DECLARED_CLASS_STATIC_METHOD_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_DECLARED_OBJECT_STATIC_METHOD_SOURCE: &str = concat!(
+    "<?php\n",
+    "class Label {\n",
+    "    public static function text($value = \"Ada\") { return strtoupper($value); }\n",
+    "    public static function note($value) { echo $value; return $value; }\n",
+    "}\n",
+    "class Lower {\n",
+    "    public static function text($value = \"LOUD\") { return strtolower($value); }\n",
+    "}\n",
+    "class Counter {\n",
+    "    public static function add($left, $right = 1) { return $left + $right; }\n",
+    "}\n",
+    "$label = new Label();\n",
+    "$lower = new Lower();\n",
+    "$counter = new Counter();\n",
+    "echo $label::text(), \"|\";\n",
+    "echo $lower::text(\"SHOUT\"), \"|\";\n",
+    "echo $counter::add(6), \"|\";\n",
+    "$stored = $label::text($lower::text(\"GO\"));\n",
+    "echo $stored, \"|\";\n",
+    "$target = $counter;\n",
+    "echo $target::add(2, 5), \"|\";\n",
+    "$label::note(\"drop\");\n",
+    "echo \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_CONSTRUCTOR_SOURCE: &str = concat!(
     "<?php\n",
     "class Box {\n",
@@ -1140,6 +1166,34 @@ fn emit_exe_links_and_runs_declared_class_static_method_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"ADA|GRACE|7|GO|drop\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_declared_object_static_method_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "declared_object_static_method",
+        NATIVE_DECLARED_OBJECT_STATIC_METHOD_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run declared-object-static-method executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ADA|shout|7|GO|7|drop\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -2168,6 +2222,28 @@ fn native_executable_c_source_routes_declared_static_methods_through_frame_dispa
 }
 
 #[test]
+fn native_executable_c_source_invokes_object_static_methods_through_static_context() {
+    let program = parse(NATIVE_DECLARED_OBJECT_STATIC_METHOD_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("object_static_method_status")
+            && body.contains("phpc_declared_method_")
+            && body.contains("phpc_native_value_instanceof_class_with_diagnostic"),
+        "object static-receiver calls should evaluate the receiver as object class context and then call static frames:\n{source}"
+    );
+    assert!(
+        source
+            .lines()
+            .filter(|line| line.contains("phpc_declared_method_") && line.contains("("))
+            .all(|line| !line.contains("phpc_this")),
+        "static method frames must not bind $this:\n{source}"
+    );
+    assert!(!source.contains("method-call lowering rejects"), "{source}");
+}
+
+#[test]
 fn native_executable_c_source_routes_declared_constructors_through_frame_dispatch() {
     let program = parse(NATIVE_DECLARED_CLASS_CONSTRUCTOR_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -2246,7 +2322,7 @@ fn native_executable_c_source_keeps_unsupported_method_shapes_blocked() {
     for source in [
         "<?php\nclass Box { public function go() { return 1; } }\n$box = new Box();\n$method = \"go\";\necho $box->$method();\n",
         "<?php\nclass Box { public function go() { return 1; } }\nBox::go();\n",
-        "<?php\nclass Box { public static function go() { return 1; } }\n$box = new Box();\necho $box::go();\n",
+        "<?php\nclass Box { public function go() { return 1; } }\n$box = new Box();\necho $box::go();\n",
         "<?php\nclass Box { private function go() { return 1; } }\n$box = new Box();\necho $box->go();\n",
         "<?php\nclass Box { public function go() { return 1; } public function GO() { return 2; } }\nnew Box();\n",
     ] {

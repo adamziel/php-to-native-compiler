@@ -18257,9 +18257,23 @@ impl CGenerator {
                     Err(self.unsupported_value_call(expr))
                 }
             }
+            Expr::ObjectStaticMethodCall {
+                target,
+                method,
+                args,
+                span,
+            } => {
+                if let Some(value) = self.try_materialize_declared_object_static_method_call(
+                    target, method, args, *span, "",
+                )? {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    Ok(CValue::NativeValueHandle(value.handle))
+                } else {
+                    Err(self.unsupported_value_call(expr))
+                }
+            }
             Expr::DynamicMethodCall { .. }
             | Expr::ParentMethodCall { .. }
-            | Expr::ObjectStaticMethodCall { .. }
             | Expr::SelfMethodCall { .. }
             | Expr::LateStaticMethodCall { .. } => Err(self.unsupported_value_call(expr)),
             Expr::Variable(name, span) => {
@@ -19565,6 +19579,26 @@ impl CGenerator {
         Some((class.clone(), method))
     }
 
+    fn declared_class_static_method_candidates(
+        &self,
+        method_name: &str,
+    ) -> Vec<(CDeclaredClass, CDeclaredClassMethod)> {
+        let method_key = Self::declared_method_key(method_name);
+        let mut candidates = Vec::new();
+        for class_key in &self.declared_class_order {
+            let class = self
+                .declared_classes
+                .get(class_key)
+                .expect("registered class key has metadata");
+            for method in &class.methods {
+                if method.is_static && Self::declared_method_key(&method.decl.name) == method_key {
+                    candidates.push((class.clone(), method.clone()));
+                }
+            }
+        }
+        candidates
+    }
+
     fn materialize_declared_method_frame_arguments(
         &mut self,
         class_name: &str,
@@ -19740,6 +19774,124 @@ impl CGenerator {
             &receiver.handle,
             method_name,
             "receiver class did not provide a supported generated public method",
+            &format!("{receiver_cleanup}{failure_cleanup}"),
+            "",
+        );
+        self.body.push("}".to_string());
+        self.body.extend(receiver.cleanup_after_use);
+
+        Ok(Some(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }))
+    }
+
+    fn try_materialize_declared_object_static_method_call(
+        &mut self,
+        target: &Expr,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let candidates = self.declared_class_static_method_candidates(method_name);
+        if candidates.is_empty() {
+            return Ok(None);
+        }
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_object_instanceof_helpers = true;
+        self.uses_native_object_method_helpers = true;
+
+        let receiver = self.materialize_native_value_result_operand(target, failure_cleanup)?;
+        let receiver_cleanup = c_cleanup_sequence(&receiver.cleanup_after_use);
+        let matched = self.next_native_name("object_static_method_matched");
+        let result = self.next_native_name("object_static_method_result");
+        let status = self.next_native_name("object_static_method_status");
+        self.body.push(format!("_Bool {matched} = 0;"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = (phpc_NativeValueHandle){{0}};"
+        ));
+        self.body.push(format!("int {status} = 0;"));
+
+        for (class, method) in candidates {
+            let (class_name, class_name_len) = self
+                .emit_call_type_static_bytes("object_static_method_class_name_bytes", &class.name);
+            let diagnostic = self.next_native_name("object_static_method_match_diagnostic");
+            let class_match = self.next_native_name("object_static_method_class_match");
+            self.body.push(format!("if (!{matched}) {{"));
+            self.body
+                .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+            self.body.push(format!(
+                "_Bool {class_match} = phpc_native_value_instanceof_class_with_diagnostic({}, {class_name}, {class_name_len}, &{diagnostic});",
+                receiver.handle
+            ));
+            let class_failure_cleanup = format!(
+                "phpc_native_diagnostic_report({diagnostic}); {receiver_cleanup}{failure_cleanup}"
+            );
+            let class_error_exit = self.native_error_exit(&class_failure_cleanup);
+            self.body.push(format!(
+                "if ({diagnostic}.ptr != NULL) {{ {class_error_exit} }}"
+            ));
+            self.body
+                .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+            self.body.push(format!("if ({class_match}) {{"));
+            self.body.push(format!("{matched} = 1;"));
+
+            if !native_user_function_accepts_arg_count(&method.decl, args.len()) {
+                let reason =
+                    "argument count is outside the generated public static method frame arity/default/variadic subset";
+                self.emit_method_dispatch_failure(
+                    &receiver.handle,
+                    method_name,
+                    reason,
+                    &format!("{receiver_cleanup}{failure_cleanup}"),
+                    "",
+                );
+                self.body.push("}".to_string());
+                self.body.push("}".to_string());
+                continue;
+            }
+
+            let argument_failure_cleanup = format!("{receiver_cleanup}{failure_cleanup}");
+            let (mut call_args, branch_cleanup) = self
+                .materialize_declared_method_frame_arguments(
+                    &class.name,
+                    &method,
+                    None,
+                    args,
+                    span,
+                    &argument_failure_cleanup,
+                    NativeCallCallee::MethodDispatch,
+                )?;
+
+            self.body.push(format!("{status} = 0;"));
+            call_args.push(format!("&{status}"));
+            self.body.push(format!(
+                "{result} = {}({});",
+                method.c_name,
+                call_args.join(", ")
+            ));
+            let call_failure_cleanup = format!(
+                "{}{}{}",
+                c_cleanup_sequence(&branch_cleanup),
+                receiver_cleanup,
+                failure_cleanup
+            );
+            let error_exit = self.native_error_exit(&call_failure_cleanup);
+            self.body.push(format!(
+                "if ({status} != 1 || {result}.ptr == NULL) {{ {error_exit} }}"
+            ));
+            self.body.extend(branch_cleanup);
+            self.body.push("}".to_string());
+            self.body.push("}".to_string());
+        }
+
+        self.body.push(format!("if (!{matched}) {{"));
+        self.emit_method_dispatch_failure(
+            &receiver.handle,
+            method_name,
+            "receiver class did not provide a supported generated public static method",
             &format!("{receiver_cleanup}{failure_cleanup}"),
             "",
         );
@@ -28393,6 +28545,18 @@ impl CGenerator {
                 span,
             } => self.try_materialize_declared_class_static_method_call(
                 class_name,
+                method,
+                args,
+                *span,
+                failure_cleanup,
+            ),
+            Expr::ObjectStaticMethodCall {
+                target,
+                method,
+                args,
+                span,
+            } => self.try_materialize_declared_object_static_method_call(
+                target,
                 method,
                 args,
                 *span,
