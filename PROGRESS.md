@@ -1,11 +1,11 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 01:51 CEST
+Updated: 2026-05-24 02:05 CEST
 Evaluation marker: `20260523T235117Z`
 
 Latest primary semantic/test baseline:
-`089498c1 codegen: lower state-stable do while loops`
-Latest integrated semantic baseline: `089498c1 codegen: lower state-stable do while loops`
+`3cc56bfd codegen: lower native string search results`
+Latest integrated semantic baseline: `3cc56bfd codegen: lower native string search results`
 Latest evaluator report: `20260523T235117Z`
 
 These are candid engineering estimates toward generalized PHP semantics in the
@@ -27,6 +27,8 @@ boundary across scalar, string, null/bool, builtin-result, and array operand
 families. The compiler has strong generated-C islands for native values,
 arrays, selected references, request/symbol state, diagnostics, cleanup, lazy
 expressions, and bounded control flow.
+Generated-native `strpos()` and `substr_count()` now share a PHP-shaped
+string-search value-result ABI across LLVM IR and generated-C linked execution.
 
 This is still not close to complete PHP execution. The foundation is strong,
 but the remaining gaps are central language semantics rather than edge cases:
@@ -34,12 +36,9 @@ generated-native calls/frames, object/property/method execution, complete
 references/COW identity, source-ordered diagnostics, cleanup/unwinding, and
 LLVM/assembly parity.
 
-Current primary state: primary semantic head is `089498c1`; `master` and
-`origin/master` are synced at `e4cef022 docs: update progress after do while
-lowering`. At the bounded evidence snapshot, the only known primary dirty state
-was the protected `runtime/src/lib.rs` null-slot hunk. Post-write verification
-found new unowned dirty WIP in `compiler/src/codegen.rs` and `runtime/src/lib.rs`
-after the snapshot; it is active primary WIP, was not edited by this evaluator,
+Current primary state: primary semantic head is `3cc56bfd`. The protected
+`runtime/src/lib.rs` null-slot hunk remains unowned and unstaged; a separate
+unowned `compiler/src/interpreter.rs` formatting diff is also present locally
 and is not counted. The narrow generated-C user-function WIP was parked and is
 not counted.
 
@@ -51,9 +50,9 @@ target dirs only after live-owner checks.
 
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | **78%** | `[################----]` | Strong shared value, array, reference, symbol, request, comparison, truthiness, diagnostic, termination, and cleanup surfaces, but several are still scaffolding until consumed end-to-end. |
-| Compiler/backend consumers | **63%** | `[#############-------]` | Generated-C has broad selected coverage. LLVM/assembly parity remains uneven and many consumers still stop at blockers. |
-| Executable PHP semantics | **43%** | `[#########-----------]` | Many focused linked programs run, but behavior is still selected islands rather than a complete PHP execution model. |
+| Runtime and ABI foundations | **79%** | `[################----]` | Strong shared value, array, reference, symbol, request, comparison, truthiness, string-search, diagnostic, termination, and cleanup surfaces, but several are still scaffolding until consumed end-to-end. |
+| Compiler/backend consumers | **64%** | `[#############-------]` | Generated-C has broad selected coverage and LLVM consumes another value-result string ABI. LLVM/assembly parity remains uneven and many consumers still stop at blockers. |
+| Executable PHP semantics | **44%** | `[#########-----------]` | Many focused linked programs run, including PHP-shaped string-search results, but behavior is still selected islands rather than a complete PHP execution model. |
 | Arrays, lvalues, references, COW | **58%** | `[############--------]` | Strong selected array/lvalue/reference paths. Full COW, arbitrary writable roots, and by-reference call/foreach parity remain open. |
 | Symbols, globals, request state | **64%** | `[#############-------]` | Strong request and `$GLOBALS` generated-C coverage. Reconciliation across calls/requests still needs work. |
 | Calls, functions, frames | **22%** | `[####----------------]` | Runtime/interpreter metadata and lane contracts exist, but real generated-native frame execution is still missing. |
@@ -65,6 +64,7 @@ target dirs only after live-owner checks.
 
 - [x] Generated-C value-result diagnostics through shared diagnostic reporting.
 - [x] Generated-C native value-result `strlen()` consumption.
+- [x] Generated-native `strpos()` and `substr_count()` value results through a shared PHP-shaped string-search ABI.
 - [x] Generated-C non-strict comparison conditions and direct echoes route through shared native value comparison results across scalar, string, null/bool, builtin-result, and array families.
 - [x] Generated-C top-level `return`, state-stable `while`/`do...while`/`for`, scalar loop-carried slots, multi-level loop transfers, state-stable `switch` dispatch/fallthrough/break, top-level state-stable `goto` labels, normal-flow `try`/`finally`, and top-level return transfer through active `finally` bodies.
 - [x] Diagnostic-aware native value stdout formatting consumed by LLVM and generated-C display paths.
@@ -78,6 +78,14 @@ target dirs only after live-owner checks.
 
 ## Recent Primary-Integrated Work
 
+- `3cc56bfd`: routes lowerable generated-native `strpos()` and
+  `substr_count()` calls through
+  `phpc_native_value_string_search_result_with_diagnostic(...)`, returning
+  owned PHP values (`int` or `false`) instead of an int-only substring-count
+  path or generic function-call rejection. Focused proof covers LLVM IR,
+  assembly reachability, generated-C source, linked executable output, binary
+  strings, offset/length conversion, missing-needle false results, stdout
+  formatting, cleanup, and unsupported arity blockers.
 - `089498c1`: generated-C now lowers accepted state-stable `do...while`
   loops through the same scoped loop-carried scalar storage, body/condition
   cleanup checks, and loop transfer targets used by the existing while/for
