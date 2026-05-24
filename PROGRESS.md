@@ -1,13 +1,13 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 11:10 CEST
-Evaluation marker: `20260524T082135Z`
+Updated: 2026-05-24 11:14 CEST
+Evaluation marker: `20260524T091140Z`
 
 Latest primary semantic/test baseline:
 `06f699f8 codegen: route declared class instanceof`
 
 Latest primary head before this progress update:
-`06f699f8 codegen: route declared class instanceof`
+`41591a1d docs: update progress after instanceof`
 
 Only pushed primary work counts here. Dirty WIP, lane-local candidates, parked diffs, exact-shape fixtures, and status-file claims are not counted until selected, gated, committed, and pushed through primary.
 
@@ -38,7 +38,8 @@ The latest object slice routes generated-C named `instanceof` checks through `ph
 
 ## Current Dirty Primary WIP
 
-- [x] No counted dirty primary WIP at this review point.
+- [x] No counted dirty primary WIP before this evaluator progress update; primary was clean and synced at `41591a1d`.
+- [ ] After this review, only this `PROGRESS.md` update should be dirty for the wrapper commit.
 
 ## Lane-Local Candidate Work
 
@@ -86,7 +87,7 @@ These are not product capability yet. Treat them as a queue of possible integrat
 
 ## Current Review Notes
 
-- Primary semantic baseline is `06f699f8`; after this progress commit and push, primary should be clean and synced with `origin/master`.
-- The supervisor dashboard is stale relative to current primary; it still centers `0fff5f68` / `a27bb444` and should be refreshed before steering from it.
-- `/dev/shm` remains an operational risk but is currently just above the dispatcher floor: 22G total, 15G used, 6.9G available at the latest check. Keep using disk-backed `/tmp` targets for broad primary gates if headroom falls again, and reclaim shared-memory target dirs only after owner checks.
-- Lane-local status output is broad and fresh, but primary-integrated progress remains the only counted capability.
+- Primary semantic baseline is `06f699f8`; live verification found `master` and `origin/master` synced at `41591a1d` before this evaluator update.
+- The supervisor dashboard is stale relative to current primary; the latest visible dashboard update is around 2026-05-24 01:09 CEST and does not reflect the current declared-class allocation, public property, and `instanceof` integrations.
+- `/dev/shm` is critical at the live review check: 22G total, 22G used, about 549M free, 98% used. The largest visible targets are `/dev/shm/phpc-target-native-object-property-runtime` at 8.8G and `/dev/shm/phpc-target-native-exit-seed` at 7.3G. Prefer disk-backed `/tmp` targets for broad primary gates and reclaim shared-memory target dirs only after owner checks.
+- Lane-local status output is broad and fresh, including closure capture binding, object-property unset, text-membership reference slots, source-transfer cleanup scanning, symbol/reference classifiers, and object/class metadata carriers. None of that counts as product capability until selected, gated, committed, and pushed through primary.
