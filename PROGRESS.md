@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 03:36 CEST
+Updated: 2026-05-24 03:42 CEST
 Evaluation marker: `20260524T013053Z`
 
 Latest primary semantic/test baseline:
@@ -12,6 +12,19 @@ These are candid engineering estimates toward generalized PHP semantics in the
 native compiler. They are not test pass rates. Only primary-integrated,
 pushed work counts; lane-local candidates, dirty WIP, parked diffs, and
 exact-shape fixtures do not.
+
+## Progress Accounting Note
+
+No compiler work was rolled back. The apparent drop from 88% to the current
+53% is a correction in the estimating rubric, not a loss of integrated code.
+The older high-80s number overstated completion by counting strong foundations,
+selected generated-C islands, and focused gates as if they implied broad PHP
+execution. Starting with `93f55aee docs: clarify completion progress`, the
+estimate was recalibrated to count only primary-integrated, pushed progress
+toward generalized end-to-end PHP semantics. Under that stricter rubric,
+runtime/ABI foundations remain high, but user-visible executable PHP semantics
+are still held back by calls/frames, objects/properties/methods, references/COW,
+cleanup/unwinding, diagnostics, and backend parity.
 
 ## Executive Read
 
@@ -52,9 +65,11 @@ uncounted mixed WIP was reviewed and landed as one generalized semantic batch
 after focused runtime, generated-C source, linked executable, user-function,
 request-root, call-boundary, cargo-check, rustfmt, and diff gates passed.
 
-Current resource read: `/dev/shm` was sampled at 8.6G free, above the dispatch
-floor but not generous; `/home` had 309G free. Keep broad waves conservative
-and reclaim large inactive target dirs only after live-owner checks.
+Current resource read: `/dev/shm` was reclaimed to about 18G free after
+live-owner checks found no active `cargo`/`rustc`/linker/test process using the
+two largest inactive target dirs. `/home` had 309G free at the prior sample.
+Keep broad waves conservative and reclaim large inactive target dirs only after
+live-owner checks.
 
 ## Roadmap Snapshot
 
