@@ -273,18 +273,18 @@ Not done:
 
 ## Steering Read
 
-The runtime dynamic by-reference frame slice was accepted because it removes a
-hard call/frame blocker through the existing registered-frame and symbol-table
-reference boundaries, with linked execution across direct variables, nested
-array slots, multi-reference swaps, and by-value frame coexistence. The next
-primary direction should attack a different cliff: actual callable-array/object
-invocation, closures/methods/object execution, references/COW through real
-control-flow joins, structured unwind/cleanup/finally, or source-ordered
-diagnostics.
+The direct-variable compound assignment slice was accepted because it adds a
+new direct-variable owner class to the existing native binary value-result
+RMW path and proves local, reference-backed, and active symbol-table writeback
+without adding source-shape recognition. The next primary direction should
+attack a different cliff: actual callable-array/object invocation,
+closures/methods/object execution, references/COW through real control-flow
+joins, structured unwind/cleanup/finally, or source-ordered diagnostics.
 
 Resource note from this review: `/dev/shm` has recovered above the dispatcher
-floor at about 11G used and 12G free. The largest visible target dir remains
-the lane-local array-value runtime target. `/home` remains healthy at about
-179G used on a 459G filesystem. Primary gates for the latest batch used
-disk-backed `/tmp/phpc-primary-target-runtime-dynamic-byref`; keep checking
-resource ownership before broad dispatch.
+floor at about 5.2G used and 17G free. The largest visible target dirs are now
+ordinary lane-local build targets under 600M. `/home` remains healthy at about
+181G used on a 459G filesystem. Primary gates for the latest batches used
+disk-backed `/tmp/phpc-primary-target-runtime-dynamic-byref` and
+`/tmp/phpc-primary-target-direct-variable-rmw`; keep checking resource
+ownership before broad dispatch.
