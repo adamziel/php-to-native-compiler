@@ -7,8 +7,6 @@ use php_compiler::{
     codegen::emit_native_executable_c_source, emit_asm_source, emit_ir_source, parse, run_source,
 };
 
-const LLVM_ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects unsupported binary arithmetic operators or operands until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
-const LLVM_SCALAR_COERCION_ARITHMETIC_REJECTION: &str = "LLVM scalar-coercion arithmetic lowering rejects booleans, nulls, and strings in +, -, and * until native PHP numeric coercion, string numeric parsing, warnings/recovery behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current scalar-coercion arithmetic behavior";
 const LLVM_INTEGER_OVERFLOW_ARITHMETIC_REJECTION: &str = "LLVM integer arithmetic lowering rejects overflow-sensitive or not-statically-proven integer +, -, and * until native PHP integer overflow promotion, runtime checks, references/copy-on-write, and exact native error behavior exist; phpc run handles current integer overflow arithmetic behavior";
 const LLVM_MODULO_RUNTIME_CHECK_REJECTION: &str = "LLVM modulo lowering rejects dynamic, zero, or non-positive integer divisors until native modulo runtime checks, PHP modulo diagnostics, negative-divisor/min-int edge behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current modulo behavior";
 
@@ -30,11 +28,25 @@ echo "8" % 3;
 }
 
 #[test]
-fn emit_ir_rejects_non_integer_modulo_coercion_with_generic_arithmetic_boundary() {
-    let error = emit_ir_source("<?php\necho 7.5 % 3;\n").unwrap_err();
+fn emit_ir_routes_non_integer_modulo_coercion_through_value_result_boundary() {
+    let ir = emit_ir_source("<?php\necho 7.5 % 3;\n").unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_ARITHMETIC_REJECTION);
+    assert!(
+        ir.contains("declare %phpc.NativeValueOperationResult @phpc_native_value_binary_result"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call %phpc.NativeValueOperationResult @phpc_native_value_binary_result"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("i8 4"),
+        "float modulo should use the shared native value-operation modulo tag:\n{ir}"
+    );
+    assert!(
+        ir.contains("extractvalue %phpc.NativeValueOperationResult"),
+        "{ir}"
+    );
 }
 
 #[test]
@@ -88,6 +100,73 @@ echo -"3";
 }
 
 #[test]
+fn emit_ir_routes_scalar_and_native_value_arithmetic_through_operation_results() {
+    let ir = emit_ir_source(
+        r#"<?php
+echo "8tail" + 2, "|";
+echo 10 - "3tail", "|";
+echo "2.5tail" * 4, "|";
+echo "9tail" / 3, "|";
+echo "9tail" % 4, "|";
+echo strpos("abc", "b") + 1, "|";
+echo -strrev("6");
+"#,
+    )
+    .unwrap();
+
+    assert!(
+        ir.contains("%phpc.NativeValueOperationResult = type { i8, %phpc.NativeValueHandle, %phpc.NativeDiagnosticHandle }"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare %phpc.NativeValueOperationResult @phpc_native_value_binary_result"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare %phpc.NativeValueOperationResult @phpc_native_value_unary_result"),
+        "{ir}"
+    );
+    assert!(
+        ir.matches("call %phpc.NativeValueOperationResult @phpc_native_value_binary_result")
+            .count()
+            >= 6,
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call %phpc.NativeValueOperationResult @phpc_native_value_unary_result"),
+        "{ir}"
+    );
+    for tag in [0, 1, 2, 3, 4] {
+        assert!(
+            ir.contains(&format!("i8 {tag}")),
+            "missing op tag {tag}:\n{ir}"
+        );
+    }
+    assert!(
+        ir.matches("extractvalue %phpc.NativeValueOperationResult")
+            .count()
+            >= 18,
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i64 @phpc_native_diagnostic_message_stderr"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("native_value_operation_error")
+            && ir.contains("native_value_operation_ok")
+            && ir.contains("ret i32 1"),
+        "operation-result errors should have a generated native failure edge:\n{ir}"
+    );
+    assert!(
+        ir.matches("call i64 @phpc_native_value_format_stdout_with_diagnostic")
+            .count()
+            >= 7,
+        "{ir}"
+    );
+}
+
+#[test]
 fn emit_ir_rejects_integer_arithmetic_overflow_with_specific_boundary() {
     for source in [
         "<?php\necho 9223372036854775807 + 1;\n",
@@ -138,11 +217,10 @@ echo 3 * 2.5;
 }
 
 #[test]
-fn emit_asm_rejects_non_numeric_arithmetic_before_backend_execution() {
-    let error = emit_asm_source("<?php\necho \"two\" + 2;\n").unwrap_err();
+fn emit_asm_routes_non_numeric_arithmetic_through_backend_value_result_boundary() {
+    let asm = emit_asm_source("<?php\necho \"two\" + 2;\n").unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_SCALAR_COERCION_ARITHMETIC_REJECTION);
+    assert!(asm.contains("main"), "{asm}");
 }
 
 #[test]
@@ -162,19 +240,28 @@ fn emit_asm_rejects_integer_arithmetic_overflow_before_backend_execution() {
 }
 
 #[test]
-fn emit_ir_rejects_arithmetic_before_lowering_operands() {
-    let error = emit_ir_source("<?php\necho \"1foo\" + 2;\n").unwrap_err();
+fn emit_ir_routes_leading_numeric_arithmetic_through_value_result_boundary() {
+    let ir = emit_ir_source("<?php\necho \"1foo\" + 2;\n").unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_SCALAR_COERCION_ARITHMETIC_REJECTION);
+    assert!(
+        ir.contains("call %phpc.NativeValueOperationResult @phpc_native_value_binary_result"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i64 @phpc_native_diagnostic_message_stderr"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("native_value_operation_error"),
+        "runtime arithmetic errors should branch to the shared native error exit:\n{ir}"
+    );
 }
 
 #[test]
-fn emit_asm_rejects_arithmetic_before_backend_execution() {
-    let error = emit_asm_source("<?php\necho \"two\" * 4;\n").unwrap_err();
+fn emit_asm_routes_string_arithmetic_through_backend_value_result_boundary() {
+    let asm = emit_asm_source("<?php\necho \"two\" * 4;\n").unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_SCALAR_COERCION_ARITHMETIC_REJECTION);
+    assert!(asm.contains("main"), "{asm}");
 }
 
 #[test]
@@ -1099,7 +1186,7 @@ fn emit_ir_rejects_integer_modulo_without_static_positive_divisor() {
 }
 
 #[test]
-fn native_arithmetic_emit_ir_cli_snapshot_matches_committed_output() {
+fn native_arithmetic_emit_ir_cli_routes_string_division_and_modulo_value_results() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir
         .parent()
@@ -1118,13 +1205,27 @@ fn native_arithmetic_emit_ir_cli_snapshot_matches_committed_output() {
         .output()
         .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
 
-    let expected = fs::read_to_string(
-        workspace_root.join("tests/fixtures/milestone178/native_arithmetic_boundary_emit_ir.cli"),
-    )
-    .expect("native arithmetic CLI snapshot is readable");
-    let actual = render_cli_snapshot(&output);
-
-    assert_eq!(actual, expected);
+    assert!(
+        output.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let ir = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        ir.contains("%phpc.NativeValueOperationResult = type")
+            && ir.contains("@phpc_native_value_binary_result"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("i8 3") && ir.contains("i8 4"),
+        "string division and modulo should use shared value-operation tags:\n{ir}"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).is_empty(),
+        "unexpected CLI stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]

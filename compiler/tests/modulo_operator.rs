@@ -1,7 +1,6 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-const ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects unsupported binary arithmetic operators or operands until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
 const MODULO_RUNTIME_CHECK_REJECTION: &str = "LLVM modulo lowering rejects dynamic, zero, or non-positive integer divisors until native modulo runtime checks, PHP modulo diagnostics, negative-divisor/min-int edge behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current modulo behavior";
 
 #[test]
@@ -73,11 +72,17 @@ fn emit_ir_rejects_modulo_by_zero_until_native_runtime_checks_exist() {
 }
 
 #[test]
-fn emit_ir_rejects_non_integer_modulo_until_native_coercions_exist() {
-    let error = emit_ir_source("<?php\necho 7.5 % 3;\n").unwrap_err();
+fn emit_ir_routes_non_integer_modulo_through_value_result_boundary() {
+    let ir = emit_ir_source("<?php\necho 7.5 % 3;\n").unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, ARITHMETIC_REJECTION);
+    assert!(
+        ir.contains("call %phpc.NativeValueOperationResult @phpc_native_value_binary_result"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("i8 4"),
+        "modulo should use the native value-operation modulo tag:\n{ir}"
+    );
 }
 
 #[test]

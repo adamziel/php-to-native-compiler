@@ -1,13 +1,7 @@
-use std::fs;
 use std::path::Path;
-use std::process::{Command, Output};
+use std::process::Command;
 
-use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
-
-const ARITHMETIC_REJECTION: &str = "LLVM arithmetic lowering rejects unsupported binary arithmetic operators or operands until native PHP numeric coercion, division/modulo zero checks, modulo coercions, references/copy-on-write, and exact native error behavior exist; phpc run handles current arithmetic behavior";
-const SCALAR_COERCION_ARITHMETIC_REJECTION: &str = "LLVM scalar-coercion arithmetic lowering rejects booleans, nulls, and strings in +, -, and * until native PHP numeric coercion, string numeric parsing, warnings/recovery behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current scalar-coercion arithmetic behavior";
-const DIVISION_REJECTION: &str = "LLVM division lowering rejects / until native PHP division semantics, zero-divisor runtime checks, avoidance of misleading integer truncation, overflow/INF/NAN behavior, references/copy-on-write, and exact native error behavior exist; phpc run handles current division behavior";
 
 #[test]
 fn phpc_run_still_handles_numeric_string_arithmetic() {
@@ -40,27 +34,31 @@ echo "3e1" * 2;
     assert!(ir.contains("@printf(ptr @.fmt_float, double 5.5)"), "{ir}");
     assert!(ir.contains("@printf(ptr @.fmt_float, double 60.0)"), "{ir}");
 
-    let error = emit_ir_source("<?php\necho \"8\" % 3;\n").unwrap_err();
-
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, ARITHMETIC_REJECTION);
-
-    let error = emit_ir_source("<?php\necho 9 / \"3\";\n").unwrap_err();
-
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, DIVISION_REJECTION);
+    for (source, tag) in [
+        ("<?php\necho \"8\" % 3;\n", 4),
+        ("<?php\necho 9 / \"3\";\n", 3),
+    ] {
+        let ir = emit_ir_source(source).unwrap();
+        assert!(
+            ir.contains("call %phpc.NativeValueOperationResult @phpc_native_value_binary_result"),
+            "{source}: {ir}"
+        );
+        assert!(
+            ir.contains(&format!("i8 {tag}")),
+            "expected native value-operation tag {tag} for {source}:\n{ir}"
+        );
+    }
 }
 
 #[test]
-fn emit_asm_rejects_non_numeric_string_arithmetic_before_backend_execution() {
-    let error = emit_asm_source("<?php\necho \"two\" + 3;\n").unwrap_err();
+fn emit_asm_routes_non_numeric_string_arithmetic_to_runtime_error_path() {
+    let asm = emit_asm_source("<?php\necho \"two\" + 3;\n").unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, SCALAR_COERCION_ARITHMETIC_REJECTION);
+    assert!(asm.contains("main"), "{asm}");
 }
 
 #[test]
-fn native_string_arithmetic_emit_ir_cli_snapshot_matches_committed_output() {
+fn native_string_arithmetic_emit_ir_cli_routes_value_result_operands() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir
         .parent()
@@ -79,21 +77,25 @@ fn native_string_arithmetic_emit_ir_cli_snapshot_matches_committed_output() {
         .output()
         .unwrap_or_else(|error| panic!("failed to compile {relative_fixture}: {error}"));
 
-    let expected = fs::read_to_string(
-        workspace_root.join("tests/fixtures/milestone164/native_string_arithmetic_emit_ir.cli"),
-    )
-    .expect("native string arithmetic CLI snapshot is readable");
-    let actual = render_cli_snapshot(&output);
-
-    assert_eq!(actual, expected);
-}
-
-fn render_cli_snapshot(output: &Output) -> String {
-    let exit_code = output.status.code().unwrap_or(1);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    format!(
-        "exit: {exit_code}\nstdout:\n{stdout}--- stdout end ---\nstderr:\n{stderr}--- stderr end ---\n"
-    )
+    assert!(
+        output.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let ir = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        ir.contains("%phpc.NativeValueOperationResult = type")
+            && ir.contains("@phpc_native_value_binary_result"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("i8 3") && ir.contains("i8 4"),
+        "string division and modulo should use shared value-operation tags:\n{ir}"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).is_empty(),
+        "unexpected CLI stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

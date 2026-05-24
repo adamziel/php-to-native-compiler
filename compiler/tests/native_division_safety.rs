@@ -24,14 +24,26 @@ fn emit_ir_rejects_static_float_zero_divisor() {
 }
 
 #[test]
-fn emit_ir_rejects_static_null_and_false_zero_divisors() {
-    let null_error = emit_ir_source("<?php\necho 10 / null;\n").unwrap_err();
-    let false_error = emit_ir_source("<?php\n$zero = false;\necho 10 / $zero;\n").unwrap_err();
+fn emit_ir_routes_scalar_coercion_zero_divisors_through_value_result_boundary() {
+    for source in [
+        "<?php\necho 10 / null;\n",
+        "<?php\n$zero = false;\necho 10 / $zero;\n",
+    ] {
+        let ir = emit_ir_source(source).unwrap();
 
-    assert_eq!(null_error.phase, Phase::Codegen);
-    assert_eq!(false_error.phase, Phase::Codegen);
-    assert_eq!(null_error.message, DIVISION_REJECTION);
-    assert_eq!(false_error.message, DIVISION_REJECTION);
+        assert!(
+            ir.contains("call %phpc.NativeValueOperationResult @phpc_native_value_binary_result"),
+            "{source}: {ir}"
+        );
+        assert!(
+            ir.contains("i8 3"),
+            "division should use the shared native value-operation division tag for {source}:\n{ir}"
+        );
+        assert!(
+            ir.contains("native_value_operation_error") && ir.contains("ret i32 1"),
+            "runtime division errors should keep a generated native failure edge for {source}:\n{ir}"
+        );
+    }
 }
 
 #[test]

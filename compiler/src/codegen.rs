@@ -1060,6 +1060,14 @@ fn native_value_unary_op_tag(op: UnaryOp) -> Option<&'static str> {
     }
 }
 
+fn native_value_unary_op_tag_value(op: UnaryOp) -> Option<u8> {
+    match op {
+        UnaryOp::Negate => Some(0),
+        UnaryOp::BitwiseNot => Some(1),
+        UnaryOp::Not => None,
+    }
+}
+
 fn native_value_binary_op_tag(op: BinaryOp) -> Option<&'static str> {
     match op {
         BinaryOp::Add => Some("PHPC_NATIVE_VALUE_BINARY_ADD"),
@@ -1073,6 +1081,34 @@ fn native_value_binary_op_tag(op: BinaryOp) -> Option<&'static str> {
         BinaryOp::BitwiseXor => Some("PHPC_NATIVE_VALUE_BINARY_BITWISE_XOR"),
         BinaryOp::ShiftLeft => Some("PHPC_NATIVE_VALUE_BINARY_SHIFT_LEFT"),
         BinaryOp::ShiftRight => Some("PHPC_NATIVE_VALUE_BINARY_SHIFT_RIGHT"),
+        BinaryOp::LogicalAnd
+        | BinaryOp::LogicalOr
+        | BinaryOp::LogicalXor
+        | BinaryOp::Eq
+        | BinaryOp::Ne
+        | BinaryOp::StrictEq
+        | BinaryOp::StrictNe
+        | BinaryOp::Lt
+        | BinaryOp::Le
+        | BinaryOp::Gt
+        | BinaryOp::Ge
+        | BinaryOp::NullCoalesce => None,
+    }
+}
+
+fn native_value_binary_op_tag_value(op: BinaryOp) -> Option<u8> {
+    match op {
+        BinaryOp::Add => Some(0),
+        BinaryOp::Sub => Some(1),
+        BinaryOp::Mul => Some(2),
+        BinaryOp::Div => Some(3),
+        BinaryOp::Mod => Some(4),
+        BinaryOp::Concat => Some(5),
+        BinaryOp::BitwiseAnd => Some(6),
+        BinaryOp::BitwiseOr => Some(7),
+        BinaryOp::BitwiseXor => Some(8),
+        BinaryOp::ShiftLeft => Some(9),
+        BinaryOp::ShiftRight => Some(10),
         BinaryOp::LogicalAnd
         | BinaryOp::LogicalOr
         | BinaryOp::LogicalXor
@@ -1107,6 +1143,27 @@ fn native_value_bitwise_binary_result_prefix(op: BinaryOp) -> Option<&'static st
         BinaryOp::ShiftLeft => Some("native_value_shift_left"),
         BinaryOp::ShiftRight => Some("native_value_shift_right"),
         _ => None,
+    }
+}
+
+fn llvm_arithmetic_operand_needs_native_value_result(value: &IrValue) -> bool {
+    matches!(
+        value,
+        IrValue::Null
+            | IrValue::Bool(_)
+            | IrValue::BoolExpr(_)
+            | IrValue::String(_)
+            | IrValue::StringPtr(_)
+            | IrValue::NativeValue(_)
+    )
+}
+
+fn llvm_arithmetic_value_result_rejection(op: BinaryOp) -> &'static str {
+    match op {
+        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul => LLVM_SCALAR_COERCION_ARITHMETIC_REJECTION,
+        BinaryOp::Div => LLVM_DIVISION_REJECTION,
+        BinaryOp::Mod => LLVM_ARITHMETIC_REJECTION,
+        _ => LLVM_ARITHMETIC_REJECTION,
     }
 }
 
@@ -4391,6 +4448,7 @@ struct LlvmGenerator {
     uses_strcmp: bool,
     uses_native_value_echo_stdout: bool,
     uses_native_string_int_operation: bool,
+    uses_native_value_operation_result: bool,
     uses_native_value_offset_operation: bool,
     uses_native_value_truthiness: bool,
 }
@@ -4584,9 +4642,19 @@ impl LlvmGenerator {
             }
             output.push_str("%phpc.NativeScalarValue = type { i8, i8, [6 x i8], i64, double }\n");
         }
+        if self.uses_native_value_operation_result {
+            if !self.uses_native_value_echo_stdout && !self.uses_native_string_int_operation {
+                output.push_str("%phpc.NativeValueHandle = type { ptr }\n");
+                output.push_str("%phpc.NativeDiagnosticHandle = type { ptr }\n");
+            }
+            output.push_str("%phpc.NativeValueOperationResult = type { i8, %phpc.NativeValueHandle, %phpc.NativeDiagnosticHandle }\n");
+        }
         if self.uses_native_value_offset_operation {
             let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
-            if !self.uses_native_value_echo_stdout && !self.uses_native_string_int_operation {
+            if !self.uses_native_value_echo_stdout
+                && !self.uses_native_string_int_operation
+                && !self.uses_native_value_operation_result
+            {
                 output.push_str("%phpc.NativeValueHandle = type { ptr }\n");
                 output.push_str("%phpc.NativeDiagnosticHandle = type { ptr }\n");
             }
@@ -4598,6 +4666,7 @@ impl LlvmGenerator {
         if self.uses_native_value_truthiness
             && !self.uses_native_value_echo_stdout
             && !self.uses_native_string_int_operation
+            && !self.uses_native_value_operation_result
             && !self.uses_native_value_offset_operation
         {
             output.push_str("%phpc.NativeValueHandle = type { ptr }\n");
@@ -4648,6 +4717,10 @@ impl LlvmGenerator {
                     "declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)\n",
                 );
             }
+        }
+        if self.uses_native_value_operation_result {
+            output.push_str("declare %phpc.NativeValueOperationResult @phpc_native_value_unary_result(%phpc.NativeValueHandle, i8)\n");
+            output.push_str("declare %phpc.NativeValueOperationResult @phpc_native_value_binary_result(%phpc.NativeValueHandle, i8, %phpc.NativeValueHandle)\n");
         }
         if self.uses_native_value_offset_operation {
             output.push_str("declare %phpc.NativeValueHandle @phpc_native_value_offset_operation_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i8, ptr)\n");
@@ -6144,7 +6217,7 @@ impl LlvmGenerator {
             BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Mod => {
                 self.emit_arithmetic_binary(left, op, right, span)
             }
-            BinaryOp::Div => Err(self.unsupported(span, LLVM_DIVISION_REJECTION)),
+            BinaryOp::Div => self.emit_division_binary(left, right, span),
             BinaryOp::Concat => Err(self.unsupported(span, LLVM_CONCAT_REJECTION)),
             BinaryOp::Eq
             | BinaryOp::Ne
@@ -6166,6 +6239,26 @@ impl LlvmGenerator {
                 self.emit_integer_shift_binary(left, op, right, span)
             }
         }
+    }
+
+    fn emit_division_binary(
+        &mut self,
+        left: IrValue,
+        right: IrValue,
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        if self.should_route_arithmetic_to_native_value_result(&left, BinaryOp::Div, &right) {
+            return self.emit_native_value_binary_result(
+                left,
+                native_value_binary_op_tag_value(BinaryOp::Div)
+                    .expect("division has a native value operation tag"),
+                right,
+                span,
+                LLVM_DIVISION_REJECTION,
+            );
+        }
+
+        Err(self.unsupported(span, LLVM_DIVISION_REJECTION))
     }
 
     fn emit_arithmetic_binary(
@@ -6198,6 +6291,17 @@ impl LlvmGenerator {
                     | PhpPrimitiveArithmeticError::Conversion(_),
                 ) => {}
             }
+        }
+
+        if self.should_route_arithmetic_to_native_value_result(&left, op, &right) {
+            return self.emit_native_value_binary_result(
+                left,
+                native_value_binary_op_tag_value(op)
+                    .expect("arithmetic binary op has a native value operation tag"),
+                right,
+                span,
+                llvm_arithmetic_value_result_rejection(op),
+            );
         }
 
         match (left, right) {
@@ -6388,6 +6492,33 @@ impl LlvmGenerator {
                 Err(self.unsupported(span, LLVM_SCALAR_COERCION_ARITHMETIC_REJECTION))
             }
             _ => Err(self.unsupported(span, LLVM_ARITHMETIC_REJECTION)),
+        }
+    }
+
+    fn should_route_arithmetic_to_native_value_result(
+        &self,
+        left: &IrValue,
+        op: BinaryOp,
+        right: &IrValue,
+    ) -> bool {
+        if native_value_binary_op_tag_value(op).is_none() {
+            return false;
+        }
+
+        match op {
+            BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul => {
+                llvm_arithmetic_operand_needs_native_value_result(left)
+                    || llvm_arithmetic_operand_needs_native_value_result(right)
+            }
+            BinaryOp::Div => !matches!(
+                (left, right),
+                (IrValue::Int(_), IrValue::Int(_))
+                    | (IrValue::Float(_), IrValue::Float(_))
+                    | (IrValue::Int(_), IrValue::Float(_))
+                    | (IrValue::Float(_), IrValue::Int(_))
+            ),
+            BinaryOp::Mod => !matches!((left, right), (IrValue::Int(_), IrValue::Int(_))),
+            _ => false,
         }
     }
 
@@ -8049,6 +8180,16 @@ impl LlvmGenerator {
             }
         }
 
+        if llvm_arithmetic_operand_needs_native_value_result(&value) {
+            return self.emit_native_value_unary_result(
+                value,
+                native_value_unary_op_tag_value(UnaryOp::Negate)
+                    .expect("numeric negation has a native value operation tag"),
+                span,
+                LLVM_UNARY_REJECTION,
+            );
+        }
+
         match value {
             IrValue::Int(value) => {
                 let Some(result) = self.static_integer_negate(&value) else {
@@ -8395,6 +8536,91 @@ impl LlvmGenerator {
                 .push(format!("{widened} = zext {usize_type} {len} to i64"));
             Ok(IrValue::Int(widened))
         }
+    }
+
+    fn emit_native_value_unary_result(
+        &mut self,
+        value: IrValue,
+        op_tag: u8,
+        span: Span,
+        rejection: &'static str,
+    ) -> CompileResult<IrValue> {
+        let value_handle = self
+            .emit_native_value_for_ir_value(value, span)
+            .map_err(|_| self.unsupported(span, rejection))?;
+        let result = self.next_temp();
+        self.uses_native_value_operation_result = true;
+        self.body.push(format!(
+            "{result} = call %phpc.NativeValueOperationResult @phpc_native_value_unary_result(%phpc.NativeValueHandle {value_handle}, i8 {op_tag})"
+        ));
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {value_handle})"
+        ));
+        Ok(IrValue::NativeValue(
+            self.emit_native_value_operation_result_value(result),
+        ))
+    }
+
+    fn emit_native_value_binary_result(
+        &mut self,
+        left: IrValue,
+        op_tag: u8,
+        right: IrValue,
+        span: Span,
+        rejection: &'static str,
+    ) -> CompileResult<IrValue> {
+        let left_handle = self
+            .emit_native_value_for_ir_value(left, span)
+            .map_err(|_| self.unsupported(span, rejection))?;
+        let right_handle = self
+            .emit_native_value_for_ir_value(right, span)
+            .map_err(|_| self.unsupported(span, rejection))?;
+        let result = self.next_temp();
+        self.uses_native_value_operation_result = true;
+        self.body.push(format!(
+            "{result} = call %phpc.NativeValueOperationResult @phpc_native_value_binary_result(%phpc.NativeValueHandle {left_handle}, i8 {op_tag}, %phpc.NativeValueHandle {right_handle})"
+        ));
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {right_handle})"
+        ));
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {left_handle})"
+        ));
+        Ok(IrValue::NativeValue(
+            self.emit_native_value_operation_result_value(result),
+        ))
+    }
+
+    fn emit_native_value_operation_result_value(&mut self, result: String) -> String {
+        let tag = self.next_temp();
+        let value = self.next_temp();
+        let diagnostic = self.next_temp();
+        let failed = self.next_temp();
+        let error_label = self.next_label("native_value_operation_error");
+        let ok_label = self.next_label("native_value_operation_ok");
+
+        self.body.push(format!(
+            "{tag} = extractvalue %phpc.NativeValueOperationResult {result}, 0"
+        ));
+        self.body.push(format!(
+            "{value} = extractvalue %phpc.NativeValueOperationResult {result}, 1"
+        ));
+        self.body.push(format!(
+            "{diagnostic} = extractvalue %phpc.NativeValueOperationResult {result}, 2"
+        ));
+        self.emit_report_native_diagnostic_handle(&diagnostic);
+        self.body.push(format!("{failed} = icmp ne i8 {tag}, 0"));
+        self.body.push(format!(
+            "br i1 {failed}, label %{error_label}, label %{ok_label}"
+        ));
+        self.body.push(format!("{error_label}:"));
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {value})"
+        ));
+        self.body.push("ret i32 1".to_string());
+        self.body.push(format!("{ok_label}:"));
+
+        value
     }
 
     fn emit_native_value_for_ir_value(
