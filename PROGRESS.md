@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 18:04 CEST
-Evaluation marker: `20260524T1604Z`
+Updated: 2026-05-24 18:05 CEST
+Evaluation marker: `20260524T1605Z`
 
 Latest counted primary semantic/test baseline:
 `53c8a283 codegen: bind non-static closure this captures`
@@ -9,7 +9,7 @@ Latest counted primary semantic/test baseline:
 Latest primary head before this progress update:
 `53c8a283 codegen: bind non-static closure this captures`
 
-Latest observed `origin/master` after push:
+Latest semantic/progress push before this accounting clarification:
 `afdca215 docs: update progress after closure this binding`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work counts. Current primary is synced to `origin/master`; dirty primary WIP, lane-local candidates, parked diffs, blocker-only classifiers, and status-file claims are not product capability until selected, gated, committed, and pushed through primary.
