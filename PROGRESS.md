@@ -1,12 +1,12 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 03:20 CEST
-Evaluation marker: `20260523T235117Z`
+Updated: 2026-05-24 03:30 CEST
+Evaluation marker: `20260524T013053Z`
 
 Latest primary semantic/test baseline:
 `de01bfe0 codegen: lower known dynamic user function calls`
 Latest integrated semantic baseline: `de01bfe0 codegen: lower known dynamic user function calls`
-Latest evaluator report: `20260523T235117Z`
+Latest evaluator report: `20260524T013053Z`
 
 These are candid engineering estimates toward generalized PHP semantics in the
 native compiler. They are not test pass rates. Only primary-integrated,
@@ -43,20 +43,18 @@ full generated-native calls/frames, object/property/method execution, complete
 references/COW identity, source-ordered diagnostics, cleanup/unwinding, and
 LLVM/assembly parity.
 
-Current primary state: primary semantic head is `de01bfe0`. The earlier unowned
-`compiler/src/interpreter.rs` formatting spillover was restored and is not
-present. The former protected `runtime/src/lib.rs` null-slot hunk was rejected
-after focused runtime proof showed it broke existing-key increment/decrement,
-then parked outside the repo and restored. The earlier narrow generated-C
-user-function WIP remains rejected; the accepted frame slices add explicit
-frame ownership, caller handoff, cleanup/failure exits, registered
-function-symbol introspection, known-string dynamic calls to registered frames,
-and linked proof for a small direct/dynamic-call subset.
+Current primary state: primary semantic head remains `de01bfe0`, with
+`master`/`origin/master` synced at `544305bc`. The live evaluator guard still
+sees uncommitted primary WIP in `compiler/src/codegen.rs`,
+`compiler/tests/native_function_call_boundary.rs`,
+`compiler/tests/native_link.rs`, and `runtime/src/lib.rs`; that WIP is
+uncounted. The snapshot diff suggests it mixes call/frame recursion or
+dynamic-in-frame work with request-superglobal root operation work, so it
+should land only if split or proved as one coherent generalized semantic batch.
 
-Current resource read: `/dev/shm` is above the dispatch floor after reclaiming
-inactive exit/object-property build caches with live-owner checks. Keep broad
-waves conservative and reclaim large inactive target dirs only after live-owner
-checks.
+Current resource read: `/dev/shm` was sampled at 8.6G free, above the dispatch
+floor but not generous; `/home` had 309G free. Keep broad waves conservative
+and reclaim large inactive target dirs only after live-owner checks.
 
 ## Roadmap Snapshot
 
@@ -186,11 +184,13 @@ checks.
 ## Lane-Local Candidate Work
 
 Lane-local work includes useful candidates around call-frame/reference
-contracts, object/property boundaries, conversion/request diagnostics, native
-loop cleanup blockers, array-key/value diagnostics, assembly helper fallback
-parity, nested symbol result handles, and reference/COW-adjacent runtime ABI
-surfaces. These remain uncounted until primary integration reviews and lands a
-generalized semantic slice with focused source and executable proof.
+contracts, object/property boundaries, object-to-string blocker classification,
+array/lvalue cleanup routing, `array_slice()` transforms, conversion/request
+diagnostics, native loop cleanup blockers, array-key/value diagnostics,
+assembly helper fallback parity, symbol-table handles, and reference/COW
+adjacent runtime ABI surfaces. These remain uncounted until primary
+integration reviews and lands a generalized semantic slice with focused source
+and executable proof.
 
 The narrow generated-C user-function WIP was parked because it looked too much
 like direct/top-level/single-return execution without real frame ownership,
