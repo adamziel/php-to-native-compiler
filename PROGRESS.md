@@ -1,11 +1,11 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 03:30 CEST
+Updated: 2026-05-24 03:36 CEST
 Evaluation marker: `20260524T013053Z`
 
 Latest primary semantic/test baseline:
-`de01bfe0 codegen: lower known dynamic user function calls`
-Latest integrated semantic baseline: `de01bfe0 codegen: lower known dynamic user function calls`
+`528d1d26 codegen: advance recursive frames and request roots`
+Latest integrated semantic baseline: `528d1d26 codegen: advance recursive frames and request roots`
 Latest evaluator report: `20260524T013053Z`
 
 These are candid engineering estimates toward generalized PHP semantics in the
@@ -15,7 +15,7 @@ exact-shape fixtures do not.
 
 ## Executive Read
 
-Overall estimated progress: **52%** `[##########----------]`
+Overall estimated progress: **53%** `[###########---------]`
 
 Primary integrated progress now includes generated-C top-level state-stable
 `goto`/label dispatch, state-stable `do...while`, normal-flow `try`/`finally`,
@@ -34,8 +34,12 @@ top-level declarations are registered before `main`, argument/default values
 are cloned into callee-owned native handles, direct calls receive owned return
 handles, fallthrough returns `null`, registered direct frames are visible to
 generated-C `function_exists()` / `is_callable()` introspection, finite
-known-string dynamic calls can dispatch to one registered by-value frame, and
-unsupported frame shapes are rejected.
+known-string dynamic calls can dispatch to one registered by-value frame,
+recursive and mutually recursive by-value frames execute behind a generated
+call-depth guard, and unsupported frame shapes are rejected. Request
+superglobal roots now have a shared root-value operation with explicit
+missing-root state after root `unset(...)`, and keyed writes can reseed an
+unset root through the existing request-state boundary.
 
 This is still not close to complete PHP execution. The foundation is strong,
 but the remaining gaps are central language semantics rather than edge cases:
@@ -43,14 +47,10 @@ full generated-native calls/frames, object/property/method execution, complete
 references/COW identity, source-ordered diagnostics, cleanup/unwinding, and
 LLVM/assembly parity.
 
-Current primary state: primary semantic head remains `de01bfe0`, with
-`master`/`origin/master` synced at `544305bc`. The live evaluator guard still
-sees uncommitted primary WIP in `compiler/src/codegen.rs`,
-`compiler/tests/native_function_call_boundary.rs`,
-`compiler/tests/native_link.rs`, and `runtime/src/lib.rs`; that WIP is
-uncounted. The snapshot diff suggests it mixes call/frame recursion or
-dynamic-in-frame work with request-superglobal root operation work, so it
-should land only if split or proved as one coherent generalized semantic batch.
+Current primary state: primary semantic head is `528d1d26`. The formerly
+uncounted mixed WIP was reviewed and landed as one generalized semantic batch
+after focused runtime, generated-C source, linked executable, user-function,
+request-root, call-boundary, cargo-check, rustfmt, and diff gates passed.
 
 Current resource read: `/dev/shm` was sampled at 8.6G free, above the dispatch
 floor but not generous; `/home` had 309G free. Keep broad waves conservative
@@ -60,15 +60,15 @@ and reclaim large inactive target dirs only after live-owner checks.
 
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | **79%** | `[################----]` | Strong shared value, array, reference, symbol, request, comparison, truthiness, string-search, diagnostic, termination, and cleanup surfaces, but several are still scaffolding until consumed end-to-end. |
-| Compiler/backend consumers | **66%** | `[#############-------]` | Generated-C has broad selected coverage including a direct and finite known-string dynamic user-function frame subset, and LLVM consumes another value-result string ABI. LLVM/assembly parity remains uneven and many consumers still stop at blockers. |
-| Executable PHP semantics | **47%** | `[#########-----------]` | Many focused linked programs run, including PHP-shaped string-search results and direct/known-string dynamic by-value function frames, but behavior is still selected islands rather than a complete PHP execution model. |
+| Runtime and ABI foundations | **80%** | `[################----]` | Strong shared value, array, reference, symbol, request, comparison, truthiness, string-search, diagnostic, termination, cleanup, and request-root result surfaces, but several are still scaffolding until consumed end-to-end. |
+| Compiler/backend consumers | **67%** | `[#############-------]` | Generated-C has broad selected coverage including direct, recursive, and finite known-string dynamic user-function frame subsets, and LLVM consumes another value-result string ABI. LLVM/assembly parity remains uneven and many consumers still stop at blockers. |
+| Executable PHP semantics | **49%** | `[##########----------]` | Many focused linked programs run, including PHP-shaped string-search results, request-root unset/reseed behavior, and direct/recursive/known-string dynamic by-value function frames, but behavior is still selected islands rather than a complete PHP execution model. |
 | Arrays, lvalues, references, COW | **58%** | `[############--------]` | Strong selected array/lvalue/reference paths. Full COW, arbitrary writable roots, and by-reference call/foreach parity remain open. |
-| Symbols, globals, request state | **64%** | `[#############-------]` | Strong request and `$GLOBALS` generated-C coverage. Reconciliation across calls/requests still needs work. |
-| Calls, functions, frames | **33%** | `[#######-------------]` | Generated-C now lowers a compact direct by-value user-function frame subset with owned argument/default/return handles, registered-function introspection, and finite known-string dynamic calls to one registered frame. Runtime dynamic lookup, methods, closures, by-reference/variadic frames, typed signatures, recursion, and mixed-target dispatch are still missing. |
+| Symbols, globals, request state | **66%** | `[#############-------]` | Strong request and `$GLOBALS` generated-C coverage now includes explicit missing-root state and root reseeding. Reconciliation across calls/requests still needs work. |
+| Calls, functions, frames | **36%** | `[#######-------------]` | Generated-C now lowers a compact by-value user-function frame subset with owned argument/default/return handles, registered-function introspection, recursive/mutually recursive direct frames behind a depth guard, and finite known-string dynamic calls to one registered frame, including inside supported frames. Runtime dynamic lookup, methods, closures, by-reference/variadic frames, typed signatures, and mixed-target dispatch are still missing. |
 | Objects, properties, methods | **10%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary lacks general compiled object/property/method execution. |
-| Control flow, cleanup, diagnostics | **44%** | `[#########-----------]` | Bounded generated-C branches, loops including state-stable `do...while`, returns, transfers, switches, top-level state-stable gotos, normal-flow try/finally, top-level return through finally, and diagnostic-aware stdout formatting exist; owner/reference joins, broad unwinding, handlers, and exact ordering remain open. |
-| Broad integrated verification | **40%** | `[########------------]` | Focused gates are strong. Cross-feature composition, end-to-end PHP programs, and backend parity need much broader proof. |
+| Control flow, cleanup, diagnostics | **45%** | `[#########-----------]` | Bounded generated-C branches, loops including state-stable `do...while`, returns, transfers, switches, top-level state-stable gotos, normal-flow try/finally, top-level return through finally, diagnostic-aware stdout formatting, and corrected diagnostic-report ownership in generated stdout paths exist; owner/reference joins, broad unwinding, handlers, and exact ordering remain open. |
+| Broad integrated verification | **41%** | `[########------------]` | Focused gates are strong and now include broader request-root and user-function filters. Cross-feature composition, end-to-end PHP programs, and backend parity need much broader proof. |
 
 ## Done / In Progress / Not Done
 
@@ -79,8 +79,8 @@ and reclaim large inactive target dirs only after live-owner checks.
 - [x] Generated-C top-level `return`, state-stable `while`/`do...while`/`for`, scalar loop-carried slots, multi-level loop transfers, state-stable `switch` dispatch/fallthrough/break, top-level state-stable `goto` labels, normal-flow `try`/`finally`, and top-level return transfer through active `finally` bodies.
 - [x] Diagnostic-aware native value stdout formatting consumed by LLVM and generated-C display paths.
 - [x] Strong selected generated-C arrays, lvalues, references, request state, `$GLOBALS`, lazy ternaries, logical short-circuiting, branch cleanup, foreach storage, and output/truthiness paths.
-- [x] Primary-integrated bounded generated-C direct by-value user-function/call-frame execution, registered-function introspection, and finite known-string dynamic calls to registered frames.
-- [ ] Full generated-native user-function/call-frame execution across runtime dynamic calls, mixed-target dispatch, typed signatures, recursion, by-reference/variadic frames, closures, methods, and runtime lookup.
+- [x] Primary-integrated bounded generated-C direct/recursive by-value user-function/call-frame execution, registered-function introspection, finite known-string dynamic calls to registered frames, and request-superglobal root-value/missing-root state.
+- [ ] Full generated-native user-function/call-frame execution across runtime dynamic calls, mixed-target dispatch, typed signatures, by-reference/variadic frames, closures, methods, and runtime lookup.
 - [ ] Primary-integrated object construction, property access, method dispatch, `$this`, static context, visibility, and magic behavior.
 - [ ] Full reference/COW identity across calls, arrays, objects, globals, foreach, and control-flow joins.
 - [ ] Full structured cleanup/unwinding/finally/destructors/output-buffer/SAPI behavior.
@@ -89,6 +89,19 @@ and reclaim large inactive target dirs only after live-owner checks.
 
 ## Recent Primary-Integrated Work
 
+- `528d1d26`: advances two shared generated-C/runtime boundaries. Recursive
+  and mutually recursive by-value user-function frames now execute through the
+  existing owned argument/default/return handoff with a generated call-depth
+  guard, and finite known-string dynamic calls can dispatch from inside
+  supported frames when they resolve to one registered frame. Request
+  superglobal roots now expose a root-value operation, root `unset(...)`
+  records explicit missing-root state, `isset()`/`empty()`/direct root reads
+  consume that boundary, and keyed writes can reseed an unset root. The batch
+  also removes a generated stdout diagnostic double-free pattern by respecting
+  `phpc_native_diagnostic_report(...)` ownership. Focused proof covers runtime
+  request-state operations, linked request-root unset/reseed behavior,
+  recursive direct/mutual/dynamic-in-frame user calls, adjacent user-function
+  filters, and the full native function-call boundary.
 - `de01bfe0`: lowers generated-C dynamic calls when the callee expression has a
   finite known-string set that resolves to the same registered direct
   by-value user-function frame. The call reuses the existing owned
