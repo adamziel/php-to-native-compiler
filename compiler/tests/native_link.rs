@@ -5692,6 +5692,119 @@ fn emit_exe_links_and_runs_arrow_closure_implicit_capture_program() {
 }
 
 #[test]
+fn native_executable_c_source_lowers_static_descriptor_closures_without_this_binding() {
+    let source = concat!(
+        "<?php\n",
+        "function apply_static_closure($callback, $value) { return $callback($value); }\n",
+        "class StaticClosureApply {\n",
+        "    public static function apply($callback, $value) { return $callback($value); }\n",
+        "    public function make($prefix) { $mark = \":\"; return static function ($suffix) use ($prefix, $mark) { return $prefix . $mark . $suffix; }; }\n",
+        "}\n",
+        "$base = \"B\";\n",
+        "$direct = static function ($suffix) use ($base) { return $base . $suffix; };\n",
+        "echo $direct(\"0\"), \"|\";\n",
+        "echo apply_static_closure(static function ($suffix) { return \"F\" . $suffix; }, \"1\"), \"|\";\n",
+        "echo StaticClosureApply::apply(static function ($suffix) { return \"S\" . $suffix; }, \"2\"), \"|\";\n",
+        "$maker = new StaticClosureApply();\n",
+        "$made = $maker->make(\"M\");\n",
+        "echo $made(\"3\"), \"|\";\n",
+        "$slot = \"old\";\n",
+        "$mutator = static function (&$target, $suffix = \"4\"): string { $target = \"R\" . $suffix; return $target; };\n",
+        "echo $mutator($slot), \":\", $slot, \"|\";\n",
+        "$packed = static function (string $prefix = \"D\", int ...$nums): string { return $prefix . \":\" . $nums[1]; };\n",
+        "echo $packed(\"V\", \"5\", 6), \"|\";\n",
+        "$ref = \"Q\";\n",
+        "$capturedRef = static function ($suffix) use (&$ref) { $ref = $ref . $suffix; return $ref; };\n",
+        "echo $capturedRef(\"R\"), \":\", $ref;\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_from_closure_descriptor")
+            && source.contains("phpc_native_value_from_closure_descriptor_captures_and_free"),
+        "static closures should reuse the descriptor closure and capture ABI:\n{source}"
+    );
+    assert!(
+        source.contains("PHPC_NATIVE_CLOSURE_ARGUMENT_BY_REFERENCE"),
+        "static closures should reuse descriptor by-reference parameter/capture carriers:\n{source}"
+    );
+    assert!(
+        !source.contains(ASSEMBLY_CLOSURE_REJECTION),
+        "supported static descriptor closures should not hit the closure blocker:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_blocks_static_closure_this_binding_on_shared_variable_read_boundary()
+{
+    let source = concat!(
+        "<?php\n",
+        "class StaticClosureThisBinding {\n",
+        "    public function make() { return static function () { return $this; }; }\n",
+        "}\n",
+        "$callback = (new StaticClosureThisBinding())->make();\n",
+        "echo $callback();\n",
+    );
+    let program = parse(source).unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("variable-read lowering rejects"),
+        "static closures must not receive an implicit $this binding:\n{error:?}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_static_descriptor_closure_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function apply_static_closure($callback, $value) { return $callback($value); }\n",
+        "class StaticClosureApply {\n",
+        "    public static function apply($callback, $value) { return $callback($value); }\n",
+        "    public function make($prefix) { $mark = \":\"; return static function ($suffix) use ($prefix, $mark) { return $prefix . $mark . $suffix; }; }\n",
+        "}\n",
+        "$base = \"B\";\n",
+        "$direct = static function ($suffix) use ($base) { return $base . $suffix; };\n",
+        "echo $direct(\"0\"), \"|\";\n",
+        "echo apply_static_closure(static function ($suffix) { return \"F\" . $suffix; }, \"1\"), \"|\";\n",
+        "echo StaticClosureApply::apply(static function ($suffix) { return \"S\" . $suffix; }, \"2\"), \"|\";\n",
+        "$maker = new StaticClosureApply();\n",
+        "$made = $maker->make(\"M\");\n",
+        "echo $made(\"3\"), \"|\";\n",
+        "$slot = \"old\";\n",
+        "$mutator = static function (&$target, $suffix = \"4\"): string { $target = \"R\" . $suffix; return $target; };\n",
+        "echo $mutator($slot), \":\", $slot, \"|\";\n",
+        "$packed = static function (string $prefix = \"D\", int ...$nums): string { return $prefix . \":\" . $nums[1]; };\n",
+        "echo $packed(\"V\", \"5\", 6), \"|\";\n",
+        "$ref = \"Q\";\n",
+        "$capturedRef = static function ($suffix) use (&$ref) { $ref = $ref . $suffix; return $ref; };\n",
+        "echo $capturedRef(\"R\"), \":\", $ref;\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("static_descriptor_closures", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native static descriptor closure executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"B0|F1|S2|M:3|R4:R4|V:6|QR:QR");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn native_executable_c_source_keeps_unsupported_closure_shapes_on_shared_blocker() {
     for source in [
         concat!(

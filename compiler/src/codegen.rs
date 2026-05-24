@@ -12319,7 +12319,7 @@ impl CGenerator {
         captures: &[crate::ast::ClosureCapture],
         return_type: Option<&TypeDecl>,
         returns_by_reference: bool,
-        is_static: bool,
+        _is_static: bool,
         _is_arrow: bool,
         body: &[Stmt],
         span: Span,
@@ -12332,10 +12332,9 @@ impl CGenerator {
                 .is_some_and(|function| function.requires_root_symbols)
         });
 
-        if is_static
-            || captures
-                .iter()
-                .any(|capture| !self.native_closure_capture_is_supported(capture))
+        if captures
+            .iter()
+            .any(|capture| !self.native_closure_capture_is_supported(capture))
             || returns_by_reference
             || native_function_params_have_malformed_variadic_params(params)
             || stmt_list_contains_global_import(body)
