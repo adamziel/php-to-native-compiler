@@ -2958,6 +2958,74 @@ pub unsafe extern "C" fn phpc_native_value_clone(handle: NativeValueHandle) -> N
 /// # Safety
 ///
 /// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. `name_ptr..name_ptr+name_len` must either be a valid
+/// byte slice or be null with a zero length. String callable matching follows
+/// PHP's ASCII case-insensitive function-name lookup for generated user
+/// function frames.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_dynamic_call_name_matches(
+    handle: NativeValueHandle,
+    name_ptr: *const u8,
+    name_len: usize,
+) -> bool {
+    let Some(name) = (unsafe { native_abi_bytes(name_ptr, name_len) }) else {
+        return false;
+    };
+    let Some(Value::String(callable)) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    callable.as_bytes().eq_ignore_ascii_case(name)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. `reason_ptr..reason_ptr+reason_len` must be valid
+/// UTF-8 bytes. On return, `diagnostic` owns a diagnostic handle when non-null.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_dynamic_call_failure_with_diagnostic(
+    handle: NativeValueHandle,
+    reason_ptr: *const u8,
+    reason_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let reason = match unsafe { native_abi_utf8(reason_ptr, reason_len, "dynamic call reason") } {
+        Ok(reason) => reason,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            return;
+        }
+    };
+
+    let message = match unsafe { handle.as_ref() } {
+        Some(Value::String(callable)) => {
+            RuntimeError::unsupported_call(format!("{callable}()"), reason)
+                .message()
+                .to_string()
+        }
+        Some(value) => RuntimeError::unsupported_call(
+            "dynamic function call",
+            format!(
+                "callable must be a string for generated-C runtime dispatch, got {}",
+                value.type_name()
+            ),
+        )
+        .message()
+        .to_string(),
+        None => RuntimeError::unsupported_call(
+            "dynamic function call",
+            "callable value handle is null for generated-C runtime dispatch",
+        )
+        .message()
+        .to_string(),
+    };
+    unsafe { native_store_diagnostic_message(diagnostic, message) };
+}
+
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
 /// ABI and not yet freed. The callable, label, and type byte ranges must be
 /// valid UTF-8 byte slices. The returned value handle owns the coerced PHP
 /// value; ownership of `handle` remains with the caller. On failure the helper
@@ -22003,6 +22071,60 @@ mod tests {
             Some("unsupported call typed(): parameter $value expects int, got array")
         );
         unsafe { phpc_native_diagnostic_free(bad_diagnostic) };
+    }
+
+    #[test]
+    fn native_dynamic_call_lookup_matches_strings_and_reports_runtime_failures() {
+        let callable = NativeValueHandle::from_value(Value::String("Pick".to_string()));
+        assert!(unsafe {
+            phpc_native_value_dynamic_call_name_matches(callable, b"pick".as_ptr(), 4)
+        });
+        assert!(unsafe {
+            phpc_native_value_dynamic_call_name_matches(callable, b"PICK".as_ptr(), 4)
+        });
+        assert!(!unsafe {
+            phpc_native_value_dynamic_call_name_matches(callable, b"relay".as_ptr(), 5)
+        });
+
+        let mut missing_diagnostic = NativeDiagnosticHandle::null();
+        unsafe {
+            phpc_native_value_dynamic_call_failure_with_diagnostic(
+                callable,
+                b"runtime dynamic generated-C lookup did not find a registered frame".as_ptr(),
+                66,
+                &mut missing_diagnostic,
+            );
+        }
+        assert_eq!(
+            unsafe { missing_diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "unsupported call Pick(): runtime dynamic generated-C lookup did not find a registered frame"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(missing_diagnostic) };
+        unsafe { phpc_native_value_free(callable) };
+
+        let non_string = NativeValueHandle::from_value(Value::Int(7));
+        assert!(!unsafe {
+            phpc_native_value_dynamic_call_name_matches(non_string, b"pick".as_ptr(), 4)
+        });
+        let mut type_diagnostic = NativeDiagnosticHandle::null();
+        unsafe {
+            phpc_native_value_dynamic_call_failure_with_diagnostic(
+                non_string,
+                b"ignored".as_ptr(),
+                7,
+                &mut type_diagnostic,
+            );
+        }
+        assert_eq!(
+            unsafe { type_diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "unsupported call dynamic function call: callable must be a string for generated-C runtime dispatch, got int"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(type_diagnostic) };
+        unsafe { phpc_native_value_free(non_string) };
     }
 
     #[test]

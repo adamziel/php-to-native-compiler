@@ -25,7 +25,7 @@ const NATIVE_FILESYSTEM_PATH_HAS_PATH: u8 = 8;
 const LLVM_CONDITIONAL_REJECTION: &str = "LLVM conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
-const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, and unsupported dynamic string-valued calls, until native runtime lookup, full arity/type diagnostics, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value direct and finite known-string dynamic user-function frames";
+const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, and unsupported dynamic string-valued calls, until full callable lookup, full arity/type diagnostics, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value direct, finite known-string dynamic, and runtime string-valued dynamic user-function frames";
 const LLVM_STRING_PREDICATE_REJECTION: &str = "LLVM string-predicate lowering rejects str_starts_with(), str_ends_with(), and str_contains() until native PHP string conversion, empty-needle handling, binary string byte semantics, argument diagnostics, references/copy-on-write, and exact native predicate diagnostics exist; generated-native C routes lowerable predicate operands through the shared runtime contract";
 const ASSEMBLY_STRING_PREDICATE_REJECTION: &str = "assembly string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; generated-native C routes lowerable str_starts_with(), str_ends_with(), and str_contains() operands through the shared runtime contract";
 const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int/search builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), strpos(), substr_count(), ord(), and crc32() forms outside the reusable native string operation contracts, including unsupported arity, non-lowerable operands, nested call cleanup, references/copy-on-write, and exact native builtin diagnostics; lowerable LLVM and generated-native C string operands route through shared runtime contracts";
@@ -51,11 +51,11 @@ const ASSEMBLY_CLEARSTATCACHE_REJECTION: &str = "assembly clearstatcache lowerin
 const LLVM_FILESYSTEM_PATH_OPERATION_REJECTION: &str = "LLVM filesystem-path builtin lowering rejects realpath_cache_get() and realpath_cache_size() until native filesystem realpath-cache ABI, request-local cache state, binary path byte fidelity, policy checks, warning-plus-false recovery, references/copy-on-write, and exact native diagnostics exist; generated-native C routes realpath-cache introspection through the shared runtime blocker";
 const ASSEMBLY_FILESYSTEM_PATH_OPERATION_REJECTION: &str = "assembly filesystem-path builtin lowering rejects forms outside the reusable native filesystem path operation blocker, including unsupported arity, stream contexts, file_get_contents() offset/length forms, non-lowerable operands, filesystem policy, stat cache/current-directory state, realpath-cache introspection return ownership, references/copy-on-write, and exact native diagnostics; lowerable stream, canonicalization, stat-predicate, stat-value, current-directory, stat-cache, and realpath-cache operands route through byte-preserving value-to-string conversion, optional truthiness, diagnostics, and cleanup";
 const LLVM_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "LLVM dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
-const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions outside the bounded generated-C finite known-string dispatch to registered by-value user-function frames, including unknown or non-string callables, callable builtins, mixed target/default arity, runtime lookup, callbacks, methods, closures, and exact native callable errors; phpc run handles broader string-valued dynamic function calls";
+const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions outside the bounded generated-C finite known-string or runtime string-valued dispatch to registered by-value user-function frames, including unknown or non-string callables, callable builtins, mixed finite targets, callbacks, methods, closures, and exact native callable errors; phpc run handles broader string-valued dynamic function calls";
 const LLVM_TERMINATION_REJECTION: &str = "LLVM termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const ASSEMBLY_TERMINATION_REJECTION: &str = "assembly termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
-const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations outside the bounded generated-C by-value frame subset, including nested functions, by-reference/variadic parameters, unsupported parameter or return type metadata, static locals, and unsupported body cleanup, until full native function symbol tables, stack-frame layout, default parameter binding, complete dynamic lookup, return-value flow, and exact native error behavior exist; generated-native C lowers supported by-value direct and finite known-string dynamic user-function frames with bounded scalar/array type enforcement";
+const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations outside the bounded generated-C by-value frame subset, including nested functions, by-reference/variadic parameters, unsupported parameter or return type metadata, static locals, and unsupported body cleanup, until full native function symbol tables, stack-frame layout, default parameter binding, complete callable lookup, return-value flow, and exact native error behavior exist; generated-native C lowers supported by-value direct, finite known-string dynamic, and runtime string-valued dynamic user-function frames with bounded scalar/array type enforcement";
 const LLVM_STATIC_LOCAL_REJECTION: &str = "LLVM static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const ASSEMBLY_STATIC_LOCAL_REJECTION: &str = "assembly static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const LLVM_CLOSURE_REJECTION: &str = "LLVM closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
@@ -8296,6 +8296,7 @@ struct CGenerator {
     uses_native_symbol_table_helpers: bool,
     uses_native_exit_helpers: bool,
     uses_native_call_type_helpers: bool,
+    uses_native_dynamic_call_helpers: bool,
     next_static_data: usize,
     next_native_temp: usize,
     native_value_cleanup_handles: Vec<String>,
@@ -9816,6 +9817,7 @@ impl CGenerator {
         self.uses_native_symbol_table_helpers |= branch.uses_native_symbol_table_helpers;
         self.uses_native_exit_helpers |= branch.uses_native_exit_helpers;
         self.uses_native_call_type_helpers |= branch.uses_native_call_type_helpers;
+        self.uses_native_dynamic_call_helpers |= branch.uses_native_dynamic_call_helpers;
     }
 
     fn merge_scoped_branch_codegen(&mut self, branch: &Self) {
@@ -9833,6 +9835,7 @@ impl CGenerator {
             || self.uses_native_exit_helpers
             || self.uses_native_value_clone
             || self.uses_native_call_type_helpers
+            || self.uses_native_dynamic_call_helpers
             || !self.function_definitions.is_empty()
     }
 
@@ -10509,6 +10512,10 @@ impl CGenerator {
             }
             if self.uses_native_call_type_helpers {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_coerce_call_type_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *callable_ptr, size_t callable_len, const uint8_t *label_ptr, size_t label_len, const uint8_t *type_ptr, size_t type_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            }
+            if self.uses_native_dynamic_call_helpers {
+                output.push_str("extern _Bool phpc_native_value_dynamic_call_name_matches(phpc_NativeValueHandle value, const uint8_t *name_ptr, size_t name_len);\n");
+                output.push_str("extern void phpc_native_value_dynamic_call_failure_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *reason_ptr, size_t reason_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             output.push_str("extern void phpc_native_value_free(phpc_NativeValueHandle value);\n");
             output.push_str("extern size_t phpc_native_diagnostic_message_stderr(phpc_NativeDiagnosticHandle diagnostic);\n");
@@ -16312,7 +16319,15 @@ impl CGenerator {
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
         let callee_value = self.emit_expr(callee)?;
         let Some(candidate) = self.dynamic_user_function_candidate_for_value(&callee_value) else {
-            return Ok(None);
+            if self.known_string_values_for_value(&callee_value).is_some() {
+                return Ok(None);
+            }
+            return self.materialize_runtime_dynamic_user_function_call(
+                callee_value,
+                args,
+                span,
+                failure_cleanup,
+            );
         };
         debug_assert!(!candidate.spellings.is_empty());
 
@@ -16351,6 +16366,173 @@ impl CGenerator {
             }
         }
         candidate.map(|(_, candidate)| candidate)
+    }
+
+    fn materialize_runtime_dynamic_user_function_call(
+        &mut self,
+        callee_value: CValue,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        if self.user_function_order.is_empty() {
+            return Ok(None);
+        }
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_dynamic_call_helpers = true;
+
+        let callee = self.materialize_native_array_c_value_handle(callee_value, span)?;
+        let mut shared_cleanup = callee.cleanup_after_use.clone();
+        let mut arg_values = Vec::new();
+        for arg in args {
+            let arg_failure_cleanup =
+                format!("{}{}", c_cleanup_sequence(&shared_cleanup), failure_cleanup);
+            let value = self.materialize_native_value_result_operand(arg, &arg_failure_cleanup)?;
+            shared_cleanup.extend(value.cleanup_after_use.clone());
+            arg_values.push(value);
+        }
+
+        let matched = self.next_native_name("dynamic_user_function_matched");
+        let status = self.next_native_name("dynamic_user_function_status");
+        let result = self.next_native_name("dynamic_user_function_result");
+        self.body.push(format!("_Bool {matched} = 0;"));
+        self.body.push(format!("int {status} = 0;"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = (phpc_NativeValueHandle){{0}};"
+        ));
+
+        let functions = self
+            .user_function_order
+            .iter()
+            .map(|key| {
+                self.user_functions
+                    .get(key)
+                    .expect("registered function key has metadata")
+                    .clone()
+            })
+            .collect::<Vec<_>>();
+
+        for function in functions {
+            let (name_bytes, name_len) =
+                self.emit_call_type_static_bytes("dynamic_call_name_bytes", &function.decl.name);
+            self.body.push(format!(
+                "if (!{matched} && phpc_native_value_dynamic_call_name_matches({}, {name_bytes}, {name_len})) {{",
+                callee.handle
+            ));
+            self.body.push(format!("  {matched} = 1;"));
+
+            let required_count = function
+                .decl
+                .params
+                .iter()
+                .filter(|param| param.default.is_none())
+                .count();
+            if args.len() < required_count || args.len() > function.decl.params.len() {
+                let branch_failure_cleanup =
+                    format!("{}{}", c_cleanup_sequence(&shared_cleanup), failure_cleanup);
+                self.emit_runtime_dynamic_call_failure(
+                    &callee.handle,
+                    "argument count is outside the generated by-value frame arity/default subset",
+                    &branch_failure_cleanup,
+                    "  ",
+                );
+                self.body.push("}".to_string());
+                continue;
+            }
+
+            let mut branch_cleanup = Vec::new();
+            let mut call_args = vec![self.user_function_call_depth_argument()];
+            for (index, param) in function.decl.params.iter().enumerate() {
+                if let Some(arg_value) = arg_values.get(index) {
+                    call_args.push(arg_value.handle.clone());
+                    continue;
+                }
+
+                let default_expr = param.default.as_ref().ok_or_else(|| {
+                    self.unsupported_call_operation(NativeCallOperation::value_result(
+                        span,
+                        NativeCallCallee::DynamicExpression,
+                        NativeCallBlocker::UnknownCalleeDiagnostics,
+                    ))
+                })?;
+                let default_failure_cleanup = format!(
+                    "{}{}{}",
+                    c_cleanup_sequence(&branch_cleanup),
+                    c_cleanup_sequence(&shared_cleanup),
+                    failure_cleanup
+                );
+                let default_value = self.materialize_native_value_result_operand(
+                    default_expr,
+                    &default_failure_cleanup,
+                )?;
+                branch_cleanup.extend(default_value.cleanup_after_use.clone());
+                call_args.push(default_value.handle);
+            }
+            self.body.push(format!("  {status} = 0;"));
+            call_args.push(format!("&{status}"));
+            self.body.push(format!(
+                "  {result} = {}({});",
+                function.c_name,
+                call_args.join(", ")
+            ));
+            let call_failure_cleanup = format!(
+                "{}{}{}",
+                c_cleanup_sequence(&branch_cleanup),
+                c_cleanup_sequence(&shared_cleanup),
+                failure_cleanup
+            );
+            let error_exit = self.native_error_exit(&call_failure_cleanup);
+            self.body.push(format!(
+                "  if ({status} != 1 || {result}.ptr == NULL) {{ {error_exit} }}"
+            ));
+            for cleanup in branch_cleanup {
+                self.body.push(format!("  {cleanup}"));
+            }
+            self.body.push("}".to_string());
+        }
+
+        let unknown_failure_cleanup =
+            format!("{}{}", c_cleanup_sequence(&shared_cleanup), failure_cleanup);
+        self.body.push(format!("if (!{matched}) {{"));
+        self.emit_runtime_dynamic_call_failure(
+            &callee.handle,
+            "runtime dynamic generated-C lookup did not find a registered by-value user-function frame",
+            &unknown_failure_cleanup,
+            "  ",
+        );
+        self.body.push("}".to_string());
+        self.body.extend(shared_cleanup);
+
+        Ok(Some(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }))
+    }
+
+    fn emit_runtime_dynamic_call_failure(
+        &mut self,
+        callee_handle: &str,
+        reason: &str,
+        failure_cleanup: &str,
+        indent: &str,
+    ) {
+        self.uses_native_string_helpers = true;
+        self.uses_native_dynamic_call_helpers = true;
+
+        let (reason_bytes, reason_len) =
+            self.emit_call_type_static_bytes("dynamic_call_reason_bytes", reason);
+        let diagnostic = self.next_native_name("dynamic_call_diagnostic");
+        self.body.push(format!(
+            "{indent}phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "{indent}phpc_native_value_dynamic_call_failure_with_diagnostic({callee_handle}, {reason_bytes}, {reason_len}, &{diagnostic});"
+        ));
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!(
+            "{indent}if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); {diagnostic}.ptr = NULL; }} {error_exit}"
+        ));
     }
 
     fn materialize_user_function_call(
