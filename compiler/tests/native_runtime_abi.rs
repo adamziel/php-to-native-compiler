@@ -8,6 +8,7 @@ use php_compiler::{
 };
 
 const STRING_INT_IR_SOURCE: &str = "<?php\n$payload = \"A\\0bA\\0b\";\necho strcasecmp($payload, \"a\\0B\");\necho strcmp($payload, \"A\\0c\");\necho strncmp($payload, \"A\\0bZ\", \"3\");\necho strncasecmp($payload, \"a\\0Bz\", 3);\necho ord(\"A\");\necho crc32($payload);\n";
+const STRING_PREDICATE_IR_SOURCE: &str = "<?php\n$payload = \"A\\0B\";\necho str_starts_with($payload, \"A\\0\");\necho str_ends_with($payload, \"\\0B\");\necho str_contains(42, \"2\");\necho str_contains($payload, \"C\");\n";
 const STRING_SEARCH_IR_SOURCE: &str = "<?php\n$payload = \"A\\0bA\\0b\";\necho strpos($payload, \"\\0b\", 2);\necho strpos($payload, \"missing\");\necho substr_count($payload, \"A\", false, \"5\");\n";
 const STRING_RESULT_IR_SOURCE: &str = "<?php\n$payload = \"A\\0B\";\necho strrev($payload), \"|\";\nprint str_rot13(\"Az-09\");\necho \"|\";\necho bin2hex($payload), \"|\";\necho strtolower(\"MiXeD\"), \"|\";\necho strtoupper(\"MiXeD\"), \"|\";\necho ucfirst(\"word\"), \"|\";\necho lcfirst(\"Word\"), \"|\";\necho escapeshellarg(\"X ;\\$'Q\\\"\"), \"|\";\necho escapeshellcmd(\"X ;\\$'Q\\\"\"), \"|\";\necho strrev(42042);\n";
 const VALUE_OFFSET_IR_SOURCE: &str = "<?php\n$payload = \"A\\0B\\xff\";\necho $payload[1];\necho isset($payload[2]);\necho empty($payload[3]);\necho strlen($payload[0]);\necho strcmp($payload[0], \"A\");\n";
@@ -149,6 +150,39 @@ fn generated_ir_routes_string_int_builtins_through_runtime_contract() {
 }
 
 #[test]
+fn generated_ir_routes_string_predicates_through_runtime_contract() {
+    let ir = emit_ir_source(STRING_PREDICATE_IR_SOURCE).unwrap();
+
+    assert!(
+        ir.contains(
+            "declare i1 @phpc_native_value_string_predicate_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i8, ptr)"
+        ),
+        "{ir}"
+    );
+    assert_eq!(
+        ir.matches("call i1 @phpc_native_value_string_predicate_with_diagnostic")
+            .count(),
+        4,
+        "{ir}"
+    );
+    for tag in [0, 1, 2] {
+        assert!(ir.contains(&format!("i8 {tag}, ptr %")), "{tag}: {ir}");
+    }
+    assert!(
+        ir.matches("call i32 (ptr, ...) @printf").count() >= 4,
+        "{ir}"
+    );
+    assert!(
+        ir.matches("call void @phpc_native_value_free").count() >= 8,
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("LLVM string-predicate lowering rejects"),
+        "{ir}"
+    );
+}
+
+#[test]
 fn generated_ir_routes_string_search_builtins_through_value_result_contract() {
     let ir = emit_ir_source(STRING_SEARCH_IR_SOURCE).unwrap();
 
@@ -227,6 +261,17 @@ fn generated_ir_string_int_route_reaches_assembly_backend() {
     }
 
     let asm = emit_asm_source(STRING_INT_IR_SOURCE).unwrap();
+
+    assert!(asm.contains("main"), "{asm}");
+}
+
+#[test]
+fn generated_ir_string_predicate_route_reaches_assembly_backend() {
+    if !has_llvm_assembly_backend() {
+        return;
+    }
+
+    let asm = emit_asm_source(STRING_PREDICATE_IR_SOURCE).unwrap();
 
     assert!(asm.contains("main"), "{asm}");
 }
@@ -435,6 +480,25 @@ fn generated_ir_blocks_string_result_unsupported_forms_at_shared_boundary() {
         assert!(
             error.message.contains(
                 "LLVM string-result builtin lowering rejects forms outside the reusable native string-result operation contract"
+            ),
+            "{source}: {}",
+            error.message
+        );
+    }
+}
+
+#[test]
+fn generated_ir_blocks_string_predicate_unsupported_forms_at_shared_boundary() {
+    for source in [
+        "<?php\nstr_contains('abc');\n",
+        "<?php\nstr_starts_with('abc', 'a', 'extra');\n",
+        "<?php\nstr_ends_with('abc');\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+        assert_eq!(error.phase, Phase::Codegen, "{source}");
+        assert!(
+            error.message.contains(
+                "LLVM string-predicate lowering rejects forms outside the reusable native string predicate contract"
             ),
             "{source}: {}",
             error.message

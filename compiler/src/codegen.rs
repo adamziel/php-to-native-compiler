@@ -26,7 +26,7 @@ const LLVM_CONDITIONAL_REJECTION: &str = "LLVM conditional lowering rejects unsu
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, and unsupported dynamic string-valued calls, until full callable lookup, full arity/type diagnostics, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value direct, finite known-string dynamic, and runtime string-valued dynamic user-function frames";
-const LLVM_STRING_PREDICATE_REJECTION: &str = "LLVM string-predicate lowering rejects str_starts_with(), str_ends_with(), and str_contains() until native PHP string conversion, empty-needle handling, binary string byte semantics, argument diagnostics, references/copy-on-write, and exact native predicate diagnostics exist; generated-native C routes lowerable predicate operands through the shared runtime contract";
+const LLVM_STRING_PREDICATE_REJECTION: &str = "LLVM string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; lowerable LLVM and generated-native C str_starts_with(), str_ends_with(), and str_contains() operands route through the shared runtime contract";
 const ASSEMBLY_STRING_PREDICATE_REJECTION: &str = "assembly string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; generated-native C routes lowerable str_starts_with(), str_ends_with(), and str_contains() operands through the shared runtime contract";
 const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int/search builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), strpos(), substr_count(), ord(), and crc32() forms outside the reusable native string operation contracts, including unsupported arity, non-lowerable operands, nested call cleanup, references/copy-on-write, and exact native builtin diagnostics; lowerable LLVM and generated-native C string operands route through shared runtime contracts";
 const ASSEMBLY_STRING_INT_OPERATION_REJECTION: &str = "assembly string-int/search builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), strpos(), substr_count(), ord(), and crc32() forms outside the reusable native string operation contracts until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
@@ -4149,6 +4149,7 @@ impl LlvmGenerator {
                 "declare %phpc.NativeValueHandle @phpc_native_value_from_string_bytes_with_diagnostic(ptr, {usize_type}, ptr)\n"
             ));
             output.push_str("declare i64 @phpc_native_value_to_int64_with_diagnostic(%phpc.NativeValueHandle, i8, ptr)\n");
+            output.push_str("declare i1 @phpc_native_value_string_predicate_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i8, ptr)\n");
             output.push_str("declare i64 @phpc_native_value_string_int_operation_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i64, i64, i8, i8, ptr)\n");
             output.push_str("declare %phpc.NativeValueHandle @phpc_native_value_string_search_result_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i64, i64, i8, i8, ptr)\n");
             output.push_str("declare %phpc.NativeValueHandle @phpc_native_value_string_result_operation_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, %phpc.NativeValueHandle, i64, i64, i8, i8, ptr)\n");
@@ -4486,11 +4487,9 @@ impl LlvmGenerator {
                 Err(self.unsupported_direct_named_call(args, *span, LLVM_CAST_REJECTION))
             }
             Expr::Call { name, args, span } if native_string_predicate_for_name(name).is_some() => {
-                Err(self.unsupported_direct_named_call(
-                    args,
-                    *span,
-                    LLVM_STRING_PREDICATE_REJECTION,
-                ))
+                let predicate =
+                    native_string_predicate_for_name(name).expect("string predicate checked above");
+                self.emit_llvm_string_predicate_call(predicate, args, *span)
             }
             Expr::Call { name, args, span }
                 if native_string_int_operation_for_name(name).is_some() =>
@@ -4916,6 +4915,64 @@ impl LlvmGenerator {
                 LLVM_STRING_INT_OPERATION_REJECTION,
             )),
         }
+    }
+
+    fn emit_llvm_string_predicate_call(
+        &mut self,
+        predicate: NativeStringPredicate,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        if let Some(call_operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(call_operation));
+        }
+
+        let [haystack, needle] = args else {
+            return Err(self.unsupported_direct_named_call(
+                args,
+                span,
+                LLVM_STRING_PREDICATE_REJECTION,
+            ));
+        };
+        let haystack = self.emit_value_operand_expr(haystack)?;
+        let needle = self.emit_value_operand_expr(needle)?;
+        self.emit_native_string_predicate_operation(predicate, haystack, needle, span)
+    }
+
+    fn emit_native_string_predicate_operation(
+        &mut self,
+        predicate: NativeStringPredicate,
+        haystack: IrValue,
+        needle: IrValue,
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        let haystack = self
+            .emit_native_value_for_ir_value(haystack, span)
+            .map_err(|_| self.unsupported(span, LLVM_STRING_PREDICATE_REJECTION))?;
+        let needle = self
+            .emit_native_value_for_ir_value(needle, span)
+            .map_err(|_| self.unsupported(span, LLVM_STRING_PREDICATE_REJECTION))?;
+        let diagnostic_slot = self.next_temp();
+        let result = self.next_temp();
+        self.uses_native_string_int_operation = true;
+        self.body.push(format!(
+            "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
+        ));
+        self.body.push(format!(
+            "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
+        ));
+        self.body.push(format!(
+            "{result} = call i1 @phpc_native_value_string_predicate_with_diagnostic(%phpc.NativeValueHandle {haystack}, %phpc.NativeValueHandle {needle}, i8 {}, ptr {diagnostic_slot})",
+            predicate as u8
+        ));
+        self.emit_report_native_diagnostic_slot(&diagnostic_slot);
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {needle})"
+        ));
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {haystack})"
+        ));
+        Ok(IrValue::BoolExpr(result))
     }
 
     fn emit_llvm_string_search_call(
