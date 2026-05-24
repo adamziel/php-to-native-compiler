@@ -8206,7 +8206,7 @@ echo ($left == "2\x00z") ? 1 : 0;
 "#;
 
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
-const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions outside the bounded generated-C finite known-string dispatch to registered by-value user-function frames or supported native builtin families, and runtime string-valued dispatch to registered by-value user-function frames or supported native builtin families, including unknown or non-string callables, unsupported runtime callable builtin families, mixed finite targets, callbacks, methods, closures, and exact native callable errors; phpc run handles broader string-valued dynamic function calls";
+const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions outside the bounded generated-C finite known-string dispatch to registered by-value user-function frames, supported native builtin families, or supported mixed callable target sets, and runtime string-valued dispatch to registered by-value user-function frames or supported native builtin families, including unknown or non-string callables, unsupported runtime callable builtin families, unsupported finite target sets, callbacks, methods, closures, and exact native callable errors; phpc run handles broader string-valued dynamic function calls";
 
 #[test]
 fn native_executable_c_source_quarantines_dynamic_string_operand_lengths_at_conditional_boundary() {
@@ -13394,6 +13394,31 @@ const NATIVE_DYNAMIC_BUILTIN_CALL_SOURCE: &str = concat!(
     "echo $pos(\"abcabc\", \"ca\"), \"|\", $type([1]), \"|\", $numeric(\"42\");\n",
 );
 
+const NATIVE_MIXED_DYNAMIC_CALL_SOURCE: &str = concat!(
+    "<?php\n",
+    "function pick($value) {\n",
+    "    return \"user:\" . $value;\n",
+    "}\n",
+    "function wrap($value) {\n",
+    "    return \"wrap:\" . $value;\n",
+    "}\n",
+    "$call = isset($_GET[\"user_alt\"]) ? \"wrap\" : \"pick\";\n",
+    "echo $call(\"Go\"), \"|\";\n",
+    "$_GET[\"user_alt\"] = \"1\";\n",
+    "$call = isset($_GET[\"user_alt\"]) ? \"wrap\" : \"pick\";\n",
+    "echo $call(\"Go\"), \"|\";\n",
+    "$mixed = isset($_GET[\"builtin_alt\"]) ? \"strtoupper\" : \"pick\";\n",
+    "echo $mixed(\"yo\"), \"|\";\n",
+    "$_GET[\"builtin_alt\"] = \"1\";\n",
+    "$mixed = isset($_GET[\"builtin_alt\"]) ? \"strtoupper\" : \"pick\";\n",
+    "echo $mixed(\"yo\"), \"|\";\n",
+    "$builtin = isset($_GET[\"type_alt\"]) ? \"gettype\" : \"strlen\";\n",
+    "echo $builtin(\"abc\"), \"|\";\n",
+    "$_GET[\"type_alt\"] = \"1\";\n",
+    "$builtin = isset($_GET[\"type_alt\"]) ? \"gettype\" : \"strlen\";\n",
+    "echo $builtin(\"abc\");\n",
+);
+
 const NATIVE_RECURSIVE_USER_FUNCTION_FRAME_SOURCE: &str = concat!(
     "<?php\n",
     "function countdown($n) {\n",
@@ -13638,10 +13663,39 @@ fn native_executable_c_source_lowers_runtime_string_dynamic_builtin_calls() {
 }
 
 #[test]
+fn native_executable_c_source_lowers_finite_mixed_dynamic_calls() {
+    let program = parse(NATIVE_MIXED_DYNAMIC_CALL_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_dynamic_call_name_matches")
+            && source.contains("phpc_native_value_dynamic_call_failure_with_diagnostic"),
+        "finite mixed callable sets should reuse the shared runtime lookup/failure ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_user_function_0_pick(")
+            && source.contains("phpc_user_function_1_wrap(")
+            && source.contains("phpc_native_value_string_result_operation_with_diagnostic")
+            && source.contains("phpc_native_value_type_name_result"),
+        "finite mixed dispatch should cover multiple user frames and builtin semantic families:\n{source}"
+    );
+    assert!(
+        source.matches("phpc_native_value_dynamic_call_name_matches(").count() >= 6
+            && source.contains("dynamic_user_function_matched_"),
+        "finite mixed dispatch should be generated as a callable table, not one recognized spelling:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly dynamic function-call lowering rejects")
+            && !source.contains("unsupported finite target sets"),
+        "supported finite mixed callable sets should no longer hit the dynamic-call blocker:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_keeps_unsupported_dynamic_builtin_targets_blocked() {
     for source in [
         "<?php\n$call = \"count\";\necho $call([1]);\n",
-        "<?php\n$flag = isset($_GET[\"x\"]);\n$call = $flag ? \"strlen\" : \"gettype\";\necho $call(\"abc\");\n",
+        "<?php\n$flag = isset($_GET[\"x\"]);\n$call = $flag ? \"strlen\" : \"count\";\necho $call(\"abc\");\n",
     ] {
         let program = parse(source).unwrap();
         let error = emit_native_executable_c_source(&program).unwrap_err();
@@ -13878,6 +13932,34 @@ fn emit_exe_links_and_runs_runtime_dynamic_builtin_call_program() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_finite_mixed_dynamic_call_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "finite_mixed_dynamic_call",
+        NATIVE_MIXED_DYNAMIC_CALL_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native finite mixed dynamic executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"user:Go|wrap:Go|user:yo|YO|3|string");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
 fn emit_exe_reports_runtime_dynamic_user_function_call_failures() {
     if !has_cc() {
         return;
@@ -13898,6 +13980,11 @@ fn emit_exe_reports_runtime_dynamic_user_function_call_failures() {
             "runtime_dynamic_user_function_non_string",
             "<?php\nfunction invoke($call, $value) { return $call($value); }\nfunction pick($value) { return $value; }\necho invoke(7, \"abc\"), \"after\";\n",
             "unsupported call dynamic function call: callable must be a string for generated-C runtime dispatch, got int",
+        ),
+        (
+            "runtime_dynamic_user_function_array_callable_blocked",
+            "<?php\nfunction invoke($call, $value) { return $call($value); }\nfunction pick($value) { return $value; }\necho invoke([\"Box\", \"run\"], \"abc\"), \"after\";\n",
+            "unsupported call dynamic function call: callable must be a string for generated-C runtime dispatch, got array",
         ),
     ] {
         let (source_path, output_path) = compile_native_link_fixture(name, source);

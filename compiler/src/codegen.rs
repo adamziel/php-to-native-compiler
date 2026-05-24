@@ -51,7 +51,7 @@ const ASSEMBLY_CLEARSTATCACHE_REJECTION: &str = "assembly clearstatcache lowerin
 const LLVM_FILESYSTEM_PATH_OPERATION_REJECTION: &str = "LLVM filesystem-path builtin lowering rejects realpath_cache_get() and realpath_cache_size() until native filesystem realpath-cache ABI, request-local cache state, binary path byte fidelity, policy checks, warning-plus-false recovery, references/copy-on-write, and exact native diagnostics exist; generated-native C routes realpath-cache introspection through the shared runtime blocker";
 const ASSEMBLY_FILESYSTEM_PATH_OPERATION_REJECTION: &str = "assembly filesystem-path builtin lowering rejects forms outside the reusable native filesystem path operation blocker, including unsupported arity, stream contexts, file_get_contents() offset/length forms, non-lowerable operands, filesystem policy, stat cache/current-directory state, realpath-cache introspection return ownership, references/copy-on-write, and exact native diagnostics; lowerable stream, canonicalization, stat-predicate, stat-value, current-directory, stat-cache, and realpath-cache operands route through byte-preserving value-to-string conversion, optional truthiness, diagnostics, and cleanup";
 const LLVM_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "LLVM dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
-const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions outside the bounded generated-C finite known-string dispatch to registered by-value user-function frames or supported native builtin families, and runtime string-valued dispatch to registered by-value user-function frames or supported native builtin families, including unknown or non-string callables, unsupported runtime callable builtin families, mixed finite targets, callbacks, methods, closures, and exact native callable errors; phpc run handles broader string-valued dynamic function calls";
+const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions outside the bounded generated-C finite known-string dispatch to registered by-value user-function frames, supported native builtin families, or supported mixed callable target sets, and runtime string-valued dispatch to registered by-value user-function frames or supported native builtin families, including unknown or non-string callables, unsupported runtime callable builtin families, unsupported finite target sets, callbacks, methods, closures, and exact native callable errors; phpc run handles broader string-valued dynamic function calls";
 const LLVM_TERMINATION_REJECTION: &str = "LLVM termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const ASSEMBLY_TERMINATION_REJECTION: &str = "assembly termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
@@ -16358,7 +16358,15 @@ impl CGenerator {
                     )
                     .map(Some);
             }
-            if self.known_string_values_for_value(&callee_value).is_some() {
+            if let Some(values) = self.known_string_values_for_value(&callee_value) {
+                if self.finite_dynamic_call_can_use_runtime_dispatch(&values) {
+                    return self.materialize_runtime_dynamic_user_function_call(
+                        callee_value,
+                        args,
+                        span,
+                        failure_cleanup,
+                    );
+                }
                 return Ok(None);
             }
             return self.materialize_runtime_dynamic_user_function_call(
@@ -16405,6 +16413,14 @@ impl CGenerator {
             }
         }
         candidate.map(|(_, candidate)| candidate)
+    }
+
+    fn finite_dynamic_call_can_use_runtime_dispatch(&self, values: &KnownString) -> bool {
+        values.values().iter().all(|spelling| {
+            self.user_functions
+                .contains_key(&Self::user_function_key(spelling))
+                || native_dynamic_callable_builtin_runtime_candidate_for_name(spelling).is_some()
+        })
     }
 
     fn dynamic_callable_builtin_candidate_for_value(
@@ -27744,6 +27760,16 @@ fn native_dynamic_callable_builtin_runtime_candidates(
             TypePredicate("PHPC_NATIVE_VALUE_TYPE_IS_OBJECT"),
         ),
     ]
+}
+
+fn native_dynamic_callable_builtin_runtime_candidate_for_name(
+    name: &str,
+) -> Option<CDynamicCallableBuiltinRuntimeCandidate> {
+    native_dynamic_callable_builtin_runtime_candidates()
+        .iter()
+        .find_map(|(candidate, operation)| {
+            candidate.eq_ignore_ascii_case(name).then_some(*operation)
+        })
 }
 
 fn is_native_known_function_name(name: &str) -> bool {
