@@ -4,10 +4,10 @@ Updated: 2026-05-24 12:07 CEST
 Evaluation marker: `20260524T100021Z`
 
 Latest counted primary semantic/test baseline:
-`6b4a69cd codegen: lower declared static methods`
+`de8e9634 codegen: lower declared static methods`
 
 Latest primary head before this progress update:
-`6b4a69cd codegen: lower declared static methods`
+`de8e9634 codegen: lower declared static methods`
 
 Only pushed primary work counts here. Dirty WIP, lane-local candidates, parked diffs, exact-shape fixtures, and status-file claims are not product capability until selected, gated, committed, and pushed through primary.
 
@@ -34,8 +34,8 @@ The latest method slice extends generated-C declared method frames to named publ
 
 ## Current Primary State
 
-- [x] Primary semantic work is committed locally as `6b4a69cd`.
-- [x] Latest counted semantic commit is `6b4a69cd`.
+- [x] Primary semantic work is committed locally as `de8e9634`.
+- [x] Latest counted semantic commit is `de8e9634`.
 - [x] No uncounted dirty primary WIP remains from the declared static-method-call slice before this progress update.
 - [ ] After this review, `PROGRESS.md` is expected to be dirty for the wrapper commit; unrelated product diffs should remain untouched.
 
@@ -68,7 +68,7 @@ These are useful inputs, not product capability. Prefer candidates that land as 
 
 ## Recent Primary-Integrated Work
 
-- `6b4a69cd`: generated-C named public static method calls now resolve declared-class static method metadata, emit receiverless declared-method frames, and reuse the same argument/default/variadic materialization, call-depth/status handling, return ownership, and cleanup machinery used by public instance methods and constructors. Source/link proof covers defaults, explicit arguments, multiple classes, nested static-call arguments, assignment RHS values, discard statements with method-body output, and unsupported object static-receiver shapes staying blocked.
+- `de8e9634`: generated-C named public static method calls now resolve declared-class static method metadata, emit receiverless declared-method frames, and reuse the same argument/default/variadic materialization, call-depth/status handling, return ownership, and cleanup machinery used by public instance methods and constructors. Source/link proof covers defaults, explicit arguments, multiple classes, nested static-call arguments, assignment RHS values, discard statements with method-body output, and unsupported object static-receiver shapes staying blocked.
 - `b099039e`: generated-C named public object-property `unset` routes through the shared object-property ABI, with runtime/source/link proof for direct, chained, missing-property, post-unset `isset`/`empty`, reassignment, visibility diagnostics, and non-object diagnostics.
 - `c00780c3`: generated-C `new NamedClass(...)` runs supported public constructors after allocation through the declared-method frame boundary, with `$this` binding and constructor argument/default cleanup proof.
 - `a792e8b5`: generated-C public declared instance-method calls dispatch over declared-class method candidates, bind `$this`, reuse argument/default/return cleanup, and report runtime method misses through shared diagnostics.
@@ -79,7 +79,7 @@ These are useful inputs, not product capability. Prefer candidates that land as 
 
 ## Current Review Notes
 
-- Primary semantic baseline is `6b4a69cd`; the progress wrapper should be the only dirty primary file before the docs commit.
+- Primary semantic baseline is `de8e9634`; the progress wrapper should be the only dirty primary file before the docs commit.
 - The supervisor dashboard tail is stale relative to current primary; it still centers on the earlier formatter-diagnostics era and should be refreshed before strategic steering relies on it.
 - `/dev/shm` live check: 22G total, 15G used, 7.4G available, 67% used. Use disk-backed `/tmp` targets for broad gates if it approaches the 6G floor, and only reclaim shared-memory targets after owner checks.
 - `/home` live check: 459G total, 210G used, 231G available, 48% used. `du -sh /home` reported about 110G but exited nonzero with stderr suppressed.
