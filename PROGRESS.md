@@ -1,19 +1,20 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 05:24 CEST
+Updated: 2026-05-24 05:45 CEST
 Evaluation marker: `20260524T031006Z`
 
 Latest primary semantic/test baseline:
-`2633fe55 codegen: lower nested llvm string call operands`
+`9fa9aa92 codegen: lower variadic user function frames`
 
-Latest integrated semantic baseline: `2633fe55 codegen: lower nested llvm string call operands`
+Latest integrated semantic baseline: `9fa9aa92 codegen: lower variadic user function frames`
 Latest evaluator report: `20260524T031006Z`
 
 Current primary git state:
 
-- `master` contains `2633fe55 codegen: lower nested llvm string call operands`
-  on top of `e3a9d5d1 docs: update progress dashboard`. After this progress
-  update is pushed, `origin/master` should match the progress update commit.
+- `master` contains `9fa9aa92 codegen: lower variadic user function frames`
+  on top of `1580aeaa docs: update progress after nested llvm call operands`.
+  After this progress update is pushed, `origin/master` should match the
+  progress update commit.
 - No primary semantic WIP remains in the worktree.
 
 These are candid engineering estimates toward generalized PHP semantics in the
@@ -34,22 +35,22 @@ parity.
 
 ## Executive Read
 
-Overall estimated progress: **58%** `[############--------]`
+Overall estimated progress: **59%** `[############--------]`
 
-Executable PHP semantics: **54%** `[###########---------]`
+Executable PHP semantics: **55%** `[###########---------]`
 
 The primary branch is advancing at a useful pace. Recent integrated work
 improved generated-C dynamic calls across registered by-value user frames and
-supported native builtin families, added bounded type enforcement for by-value
-frames, and moved LLVM closer to generated-C for direct string-result,
-string-predicate, string-search, string-int, and `strlen()` operand families
-through shared native ABIs.
+supported native builtin families, added bounded type enforcement and variadic
+argument packing for by-value frames, and moved LLVM closer to generated-C for
+direct string-result, string-predicate, string-search, string-int, and
+`strlen()` operand families through shared native ABIs.
 
 This is still selected island execution, not complete PHP. The hard remaining
 work is central language behavior: full callable lookup, closures, methods,
-objects/properties, by-reference and variadic frames, reference/COW identity,
-source-ordered diagnostics, cleanup/unwind/finally/destructors, and broad
-backend parity.
+objects/properties, by-reference frames, named/unpacked arguments,
+reference/COW identity, source-ordered diagnostics, cleanup/unwind/finally/
+destructors, and broad backend parity.
 
 ## Grand Roadmap Position
 
@@ -57,16 +58,21 @@ backend parity.
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **82%** | `[################----]` | Strong shared value, array, reference, symbol, request, comparison, truthiness, string, diagnostic, cleanup, request-root, call-frame type-coercion, and dynamic-call surfaces. Some remain scaffolding until consumed end to end. |
 | Compiler/backend consumers | **75%** | `[###############-----]` | Generated-C has broad selected coverage. LLVM now consumes shared direct string-result, string-predicate, string-search, string-int, and selected `strlen()` nested operand ABIs. Direct assembly and many nested/backend consumers still stop at blockers. |
-| Executable PHP semantics | **54%** | `[###########---------]` | Many focused linked programs run, but behavior is still selected islands rather than a complete PHP execution model. |
+| Executable PHP semantics | **55%** | `[###########---------]` | Many focused linked programs run, but behavior is still selected islands rather than a complete PHP execution model. |
 | Arrays, lvalues, references, COW | **58%** | `[############--------]` | Strong selected array/lvalue/reference paths. Full COW, arbitrary writable roots, by-reference calls, foreach parity, and object/reference joins remain open. |
 | Symbols, globals, request state | **66%** | `[#############-------]` | Request roots and selected `$GLOBALS` paths are strong. Reconciliation across calls, requests, includes, and aliases remains incomplete. |
-| Calls, functions, frames | **48%** | `[##########----------]` | Bounded generated-C by-value frames, typed params/returns, recursion guards, registered introspection, dynamic user calls, dynamic builtin calls, and finite mixed user/builtin sets are integrated. Full callable lookup, closures, methods, by-reference/variadic/named frames, and broader type behavior remain missing. |
+| Calls, functions, frames | **50%** | `[##########----------]` | Bounded generated-C by-value fixed/default/variadic frames, typed params/returns, recursion guards, registered introspection, dynamic user calls, dynamic builtin calls, and finite mixed user/builtin sets are integrated. Full callable lookup, closures, methods, by-reference frames, named/unpacked arguments, and broader type behavior remain missing. |
 | Objects, properties, methods | **10%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary lacks general compiled object construction, property access, method dispatch, `$this`, visibility, static context, and magic behavior. |
 | Control flow, cleanup, diagnostics | **45%** | `[#########-----------]` | Bounded generated-C branches, loops, transfers, switch/goto, normal-flow `try`/`finally`, return-through-finally, diagnostic-aware stdout formatting, and selected cleanup paths exist. Broad unwind, handlers, destructors, output buffers, and exact ordering remain open. |
 | Broad integrated verification | **49%** | `[##########----------]` | Focused gates are strong. Cross-feature composition, end-to-end PHP programs, backend parity, and the unfiltered `native_runtime_abi` debt need broader proof. |
 
 ## Recent Primary-Integrated Work
 
+- `9fa9aa92`: generated-C by-value variadic user-function frames now pack
+  surplus positional arguments through the shared native array/value ABI across
+  direct, finite known-string dynamic, and runtime string-valued dispatch, with
+  typed variadic elements routed through the existing call-frame type-coercion
+  diagnostic path.
 - `2633fe55`: LLVM direct string/native-value consumers now admit lowerable
   nested direct call-result operands across string-result, string-predicate,
   string-search, string-int, and selected `strlen()` paths. The compiler keeps
@@ -97,7 +103,7 @@ backend parity.
 
 ## Candidate Work Not Counted
 
-Primary semantic progress is counted only through pushed baseline `2633fe55`.
+Primary semantic progress is counted only through pushed baseline `9fa9aa92`.
 Current and lane-local candidates are not counted until primary integration
 lands them with focused proof.
 
@@ -121,8 +127,8 @@ Done:
 - [x] Generated-C selected arrays, lvalues, references, request roots,
   `$GLOBALS`, lazy expressions, branches, loops, switch/goto, selected
   `try`/`finally`, and stdout diagnostics.
-- [x] Generated-C bounded by-value direct, recursive, typed, dynamic user,
-  dynamic builtin, and finite mixed user/builtin calls.
+- [x] Generated-C bounded by-value direct, recursive, typed, variadic, dynamic
+  user, dynamic builtin, and finite mixed user/builtin calls.
 - [x] Generated-native `strpos()` and `substr_count()` through a shared
   PHP-shaped string-search ABI.
 - [x] LLVM direct string-result and string-predicate builtin families through
@@ -147,8 +153,8 @@ Not done:
   static context, magic methods, and object lifecycle behavior.
 - [ ] Full references/COW identity across calls, arrays, objects, globals,
   foreach, and control-flow joins.
-- [ ] By-reference, variadic, named/unpacked argument, by-reference return,
-  closure capture, and method-frame semantics.
+- [ ] By-reference, named/unpacked argument, by-reference return, closure
+  capture, and method-frame semantics.
 - [ ] Full structured cleanup/unwind/finally/destructor/output-buffer/SAPI
   behavior.
 - [ ] Exact diagnostic severity, ordering, suppression, handlers, spans,
@@ -161,7 +167,7 @@ Not done:
 Best next primary integrations should come from a hard semantic cliff rather
 than another narrow adjacent builtin/backend slice: callable lookup, methods
 and object/property execution, references/COW through calls or real control
-flow, by-reference/variadic/named frames, cleanup/unwind/finally, or
+flow, by-reference/named/unpacked frames, cleanup/unwind/finally, or
 source-ordered diagnostics.
 
 Resource note from this review: `/dev/shm` has about 7.7G free, above the 6G
