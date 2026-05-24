@@ -1527,6 +1527,17 @@ impl NativeValueOperationResult {
         }
     }
 
+    fn value_with_diagnostic(value: Value, message: impl Into<String>) -> Self {
+        Self {
+            tag: NativeValueOperationResultTag::Ok,
+            value: NativeValueHandle::from_value(value),
+            diagnostic: NativeDiagnosticHandle::from_message_with_severity(
+                NativeDiagnosticSeverity::Warning,
+                message,
+            ),
+        }
+    }
+
     fn diagnostic(message: impl Into<String>) -> Self {
         Self {
             tag: NativeValueOperationResultTag::Error,
@@ -18201,67 +18212,39 @@ impl Value {
         }
 
         let operands = convert_binary_arithmetic_numbers(self, other, ArithmeticOp::Add)?;
-        match (operands.left, operands.right) {
-            (Number::Int(left), Number::Int(right)) => Ok(Value::Int(left.wrapping_add(right))),
-            (left, right) => Ok(Value::Float(left.as_float() + right.as_float())),
-        }
+        Ok(php_arithmetic_add_result(operands.left, operands.right))
     }
 
     pub fn php_sub(&self, other: &Value) -> RuntimeResult<Value> {
         let operands = convert_binary_arithmetic_numbers(self, other, ArithmeticOp::Subtract)?;
-        match (operands.left, operands.right) {
-            (Number::Int(left), Number::Int(right)) => Ok(Value::Int(left.wrapping_sub(right))),
-            (left, right) => Ok(Value::Float(left.as_float() - right.as_float())),
-        }
+        Ok(php_arithmetic_subtract_result(
+            operands.left,
+            operands.right,
+        ))
     }
 
     pub fn php_mul(&self, other: &Value) -> RuntimeResult<Value> {
         let operands = convert_binary_arithmetic_numbers(self, other, ArithmeticOp::Multiply)?;
-        match (operands.left, operands.right) {
-            (Number::Int(left), Number::Int(right)) => Ok(Value::Int(left.wrapping_mul(right))),
-            (left, right) => Ok(Value::Float(left.as_float() * right.as_float())),
-        }
+        Ok(php_arithmetic_multiply_result(
+            operands.left,
+            operands.right,
+        ))
     }
 
     pub fn php_div(&self, other: &Value) -> RuntimeResult<Value> {
         let operands = convert_binary_arithmetic_numbers(self, other, ArithmeticOp::Divide)?;
-        let left = operands.left;
-        let right = operands.right;
-        if right.as_float() == 0.0 {
-            return Err(RuntimeError::invalid_arithmetic(
-                ArithmeticOp::Divide,
-                "division by zero",
-            ));
-        }
-
-        match (left, right) {
-            (Number::Int(i64::MIN), Number::Int(-1)) => Ok(Value::Float(i64::MIN as f64 / -1.0)),
-            (Number::Int(a), Number::Int(b)) if a % b == 0 => Ok(Value::Int(a / b)),
-            (a, b) => Ok(Value::Float(a.as_float() / b.as_float())),
-        }
+        php_arithmetic_divide_result(operands.left, operands.right)
     }
 
     pub fn php_mod(&self, other: &Value) -> RuntimeResult<Value> {
-        let left = self.to_arithmetic_int(ArithmeticOp::Modulo)?;
-        let right = other.to_arithmetic_int(ArithmeticOp::Modulo)?;
-        if right == 0 {
-            return Err(RuntimeError::invalid_arithmetic(
-                ArithmeticOp::Modulo,
-                "modulo by zero",
-            ));
-        }
-        if left == i64::MIN && right == -1 {
-            return Ok(Value::Int(0));
-        }
-
-        Ok(Value::Int(left % right))
+        let operands = convert_binary_arithmetic_numbers(self, other, ArithmeticOp::Modulo)?;
+        php_arithmetic_modulo_result(operands.left, operands.right)
     }
 
     pub fn php_negate(&self) -> RuntimeResult<Value> {
-        match self.to_arithmetic_number(ArithmeticOp::Negate)? {
-            Number::Int(value) => Ok(Value::Int(value.wrapping_neg())),
-            Number::Float(value) => Ok(Value::Float(-value)),
-        }
+        Ok(php_arithmetic_negate_result(
+            self.to_arithmetic_number(ArithmeticOp::Negate)?,
+        ))
     }
 
     pub fn php_concat(&self, other: &Value) -> RuntimeResult<Value> {
@@ -18488,13 +18471,6 @@ impl Value {
         }
     }
 
-    fn to_arithmetic_int(&self, operation: ArithmeticOp) -> RuntimeResult<i64> {
-        match self.to_arithmetic_number(operation)? {
-            Number::Int(value) => Ok(value),
-            Number::Float(value) => Ok(value as i64),
-        }
-    }
-
     fn php_bitwise(
         &self,
         other: &Value,
@@ -18570,8 +18546,11 @@ pub unsafe extern "C" fn phpc_native_value_unary_result(
         return NativeValueOperationResult::diagnostic(message);
     }
 
-    match native_value_unary_value(value, op) {
-        Ok(value) => NativeValueOperationResult::value(value),
+    match native_value_unary_value_with_diagnostic(value, op) {
+        Ok((value, diagnostic)) => match diagnostic {
+            Some(message) => NativeValueOperationResult::value_with_diagnostic(value, message),
+            None => NativeValueOperationResult::value(value),
+        },
         Err(error) => NativeValueOperationResult::diagnostic(format!(
             "native value unary operation rejected by runtime semantics: {}",
             error.message()
@@ -18594,6 +18573,22 @@ fn native_value_unary_value(value: &Value, op: u8) -> RuntimeResult<Value> {
             ArithmeticOp::Negate,
             format!("native value unary operation tag {op} is not supported"),
         )),
+    }
+}
+
+fn native_value_unary_value_with_diagnostic(
+    value: &Value,
+    op: u8,
+) -> RuntimeResult<(Value, Option<String>)> {
+    match op {
+        NATIVE_VALUE_UNARY_NEGATE => {
+            let operand = native_value_arithmetic_number(value, ArithmeticOp::Negate)?;
+            Ok((
+                php_arithmetic_negate_result(operand.number),
+                native_value_arithmetic_diagnostic(operand.leading_numeric),
+            ))
+        }
+        _ => native_value_unary_value(value, op).map(|value| (value, None)),
     }
 }
 
@@ -18637,8 +18632,11 @@ pub unsafe extern "C" fn phpc_native_value_binary_result(
         return NativeValueOperationResult::diagnostic(message);
     }
 
-    match native_value_binary_value(left, op, right) {
-        Ok(value) => NativeValueOperationResult::value(value),
+    match native_value_binary_value_with_diagnostic(left, op, right) {
+        Ok((value, diagnostic)) => match diagnostic {
+            Some(message) => NativeValueOperationResult::value_with_diagnostic(value, message),
+            None => NativeValueOperationResult::value(value),
+        },
         Err(error) => NativeValueOperationResult::diagnostic(format!(
             "native value binary operation rejected by runtime semantics: {}",
             error.message()
@@ -18680,6 +18678,82 @@ fn native_value_binary_value(left: &Value, op: u8, right: &Value) -> RuntimeResu
             ArithmeticOp::Add,
             format!("native value binary operation tag {op} is not supported"),
         )),
+    }
+}
+
+fn native_value_binary_value_with_diagnostic(
+    left: &Value,
+    op: u8,
+    right: &Value,
+) -> RuntimeResult<(Value, Option<String>)> {
+    match op {
+        NATIVE_VALUE_BINARY_ADD if matches!((left, right), (Value::Array(_), Value::Array(_))) => {
+            left.php_add(right).map(|value| (value, None))
+        }
+        NATIVE_VALUE_BINARY_ADD
+        | NATIVE_VALUE_BINARY_SUB
+        | NATIVE_VALUE_BINARY_MUL
+        | NATIVE_VALUE_BINARY_DIV => {
+            let operation = native_value_binary_arithmetic_op(op)
+                .expect("arithmetic binary tags are handled in this branch");
+            let operands = native_value_binary_arithmetic_numbers(left, right, operation)?;
+            let value = native_value_binary_arithmetic_result(
+                op,
+                operands.left.number,
+                operands.right.number,
+            )?;
+            Ok((
+                value,
+                native_value_arithmetic_diagnostic(
+                    operands.left.leading_numeric || operands.right.leading_numeric,
+                ),
+            ))
+        }
+        NATIVE_VALUE_BINARY_MOD => {
+            let operation = ArithmeticOp::Modulo;
+            let operands = native_value_binary_arithmetic_numbers(left, right, operation)?;
+            let value = native_value_binary_arithmetic_result(
+                op,
+                operands.left.number,
+                operands.right.number,
+            )?;
+            Ok((
+                value,
+                native_value_arithmetic_diagnostic(
+                    operands.left.leading_numeric || operands.right.leading_numeric,
+                ),
+            ))
+        }
+        _ => native_value_binary_value(left, op, right).map(|value| (value, None)),
+    }
+}
+
+fn native_value_binary_arithmetic_result(
+    op: u8,
+    left: Number,
+    right: Number,
+) -> RuntimeResult<Value> {
+    match op {
+        NATIVE_VALUE_BINARY_ADD => Ok(php_arithmetic_add_result(left, right)),
+        NATIVE_VALUE_BINARY_SUB => Ok(php_arithmetic_subtract_result(left, right)),
+        NATIVE_VALUE_BINARY_MUL => Ok(php_arithmetic_multiply_result(left, right)),
+        NATIVE_VALUE_BINARY_DIV => php_arithmetic_divide_result(left, right),
+        NATIVE_VALUE_BINARY_MOD => php_arithmetic_modulo_result(left, right),
+        _ => Err(RuntimeError::invalid_arithmetic(
+            ArithmeticOp::Add,
+            format!("native value binary operation tag {op} is not supported"),
+        )),
+    }
+}
+
+fn native_value_binary_arithmetic_op(op: u8) -> Option<ArithmeticOp> {
+    match op {
+        NATIVE_VALUE_BINARY_ADD => Some(ArithmeticOp::Add),
+        NATIVE_VALUE_BINARY_SUB => Some(ArithmeticOp::Subtract),
+        NATIVE_VALUE_BINARY_MUL => Some(ArithmeticOp::Multiply),
+        NATIVE_VALUE_BINARY_DIV => Some(ArithmeticOp::Divide),
+        NATIVE_VALUE_BINARY_MOD => Some(ArithmeticOp::Modulo),
+        _ => None,
     }
 }
 
@@ -19633,6 +19707,13 @@ impl Number {
         }
     }
 
+    fn as_int(&self) -> i64 {
+        match self {
+            Number::Int(value) => *value,
+            Number::Float(value) => *value as i64,
+        }
+    }
+
     fn to_php_string(self) -> String {
         match self {
             Number::Int(value) => value.to_string(),
@@ -19797,6 +19878,18 @@ struct ArithmeticNumberOperands {
     right: Number,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct NativeArithmeticNumber {
+    number: Number,
+    leading_numeric: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct NativeArithmeticNumberOperands {
+    left: NativeArithmeticNumber,
+    right: NativeArithmeticNumber,
+}
+
 fn convert_binary_arithmetic_numbers(
     left: &Value,
     right: &Value,
@@ -19805,6 +19898,157 @@ fn convert_binary_arithmetic_numbers(
     let left = left.to_arithmetic_number(operation)?;
     let right = right.to_arithmetic_number(operation)?;
     Ok(ArithmeticNumberOperands { left, right })
+}
+
+fn native_value_binary_arithmetic_numbers(
+    left: &Value,
+    right: &Value,
+    operation: ArithmeticOp,
+) -> RuntimeResult<NativeArithmeticNumberOperands> {
+    Ok(NativeArithmeticNumberOperands {
+        left: native_value_arithmetic_number(left, operation)?,
+        right: native_value_arithmetic_number(right, operation)?,
+    })
+}
+
+fn native_value_arithmetic_number(
+    value: &Value,
+    operation: ArithmeticOp,
+) -> RuntimeResult<NativeArithmeticNumber> {
+    let number = match value {
+        Value::Null => Number::Int(0),
+        Value::Bool(false) => Number::Int(0),
+        Value::Bool(true) => Number::Int(1),
+        Value::Int(value) => Number::Int(*value),
+        Value::Float(value) => Number::Float(*value),
+        Value::String(value) => match classify_php_numeric_string(value) {
+            PhpNumericStringClassification::Integer(value) => {
+                return Ok(NativeArithmeticNumber {
+                    number: Number::Int(value),
+                    leading_numeric: false,
+                });
+            }
+            PhpNumericStringClassification::Float(value) => {
+                return Ok(NativeArithmeticNumber {
+                    number: Number::Float(value),
+                    leading_numeric: false,
+                });
+            }
+            PhpNumericStringClassification::LeadingNumeric => {
+                return leading_numeric_string_number(value)
+                    .map(|number| NativeArithmeticNumber {
+                        number,
+                        leading_numeric: true,
+                    })
+                    .ok_or_else(|| {
+                        RuntimeError::invalid_arithmetic(operation, "string is not numeric")
+                    });
+            }
+            PhpNumericStringClassification::NonNumeric => {
+                return Err(RuntimeError::invalid_arithmetic(
+                    operation,
+                    "string is not numeric",
+                ));
+            }
+        },
+        Value::Array(_) => {
+            return Err(RuntimeError::invalid_arithmetic(
+                operation,
+                "arrays are not numeric",
+            ))
+        }
+        Value::Object(_) => {
+            return Err(RuntimeError::invalid_arithmetic(
+                operation,
+                "objects are not numeric",
+            ))
+        }
+        Value::Closure(_) => {
+            return Err(RuntimeError::invalid_arithmetic(
+                operation,
+                "closures are not numeric",
+            ))
+        }
+        Value::Resource(_) => {
+            return Err(RuntimeError::invalid_arithmetic(
+                operation,
+                "resources are not numeric",
+            ))
+        }
+    };
+
+    Ok(NativeArithmeticNumber {
+        number,
+        leading_numeric: false,
+    })
+}
+
+fn native_value_arithmetic_diagnostic(leading_numeric: bool) -> Option<String> {
+    leading_numeric.then(|| {
+        "native value arithmetic accepted a leading-numeric string operand with a PHP warning"
+            .to_string()
+    })
+}
+
+fn php_arithmetic_add_result(left: Number, right: Number) -> Value {
+    match (left, right) {
+        (Number::Int(left), Number::Int(right)) => Value::Int(left.wrapping_add(right)),
+        (left, right) => Value::Float(left.as_float() + right.as_float()),
+    }
+}
+
+fn php_arithmetic_subtract_result(left: Number, right: Number) -> Value {
+    match (left, right) {
+        (Number::Int(left), Number::Int(right)) => Value::Int(left.wrapping_sub(right)),
+        (left, right) => Value::Float(left.as_float() - right.as_float()),
+    }
+}
+
+fn php_arithmetic_multiply_result(left: Number, right: Number) -> Value {
+    match (left, right) {
+        (Number::Int(left), Number::Int(right)) => Value::Int(left.wrapping_mul(right)),
+        (left, right) => Value::Float(left.as_float() * right.as_float()),
+    }
+}
+
+fn php_arithmetic_divide_result(left: Number, right: Number) -> RuntimeResult<Value> {
+    if right.as_float() == 0.0 {
+        return Err(RuntimeError::invalid_arithmetic(
+            ArithmeticOp::Divide,
+            "division by zero",
+        ));
+    }
+
+    match (left, right) {
+        (Number::Int(i64::MIN), Number::Int(-1)) => Ok(Value::Float(i64::MIN as f64 / -1.0)),
+        (Number::Int(left), Number::Int(right)) if left % right == 0 => {
+            Ok(Value::Int(left / right))
+        }
+        (left, right) => Ok(Value::Float(left.as_float() / right.as_float())),
+    }
+}
+
+fn php_arithmetic_modulo_result(left: Number, right: Number) -> RuntimeResult<Value> {
+    let left = left.as_int();
+    let right = right.as_int();
+    if right == 0 {
+        return Err(RuntimeError::invalid_arithmetic(
+            ArithmeticOp::Modulo,
+            "modulo by zero",
+        ));
+    }
+    if left == i64::MIN && right == -1 {
+        return Ok(Value::Int(0));
+    }
+
+    Ok(Value::Int(left % right))
+}
+
+fn php_arithmetic_negate_result(number: Number) -> Value {
+    match number {
+        Number::Int(value) => Value::Int(value.wrapping_neg()),
+        Number::Float(value) => Value::Float(-value),
+    }
 }
 
 fn compare_numbers(left: Number, right: Number) -> Option<Ordering> {
@@ -19848,6 +20092,17 @@ fn compare_binary_strings(left: &str, right: &str) -> Option<Ordering> {
 
 fn parse_numeric_string(value: &str) -> Option<Number> {
     match classify_php_numeric_string(value) {
+        PhpNumericStringClassification::Integer(value) => Some(Number::Int(value)),
+        PhpNumericStringClassification::Float(value) => Some(Number::Float(value)),
+        PhpNumericStringClassification::LeadingNumeric
+        | PhpNumericStringClassification::NonNumeric => None,
+    }
+}
+
+fn leading_numeric_string_number(value: &str) -> Option<Number> {
+    let trimmed = value.trim_matches(|ch: char| ch.is_ascii_whitespace());
+    let prefix_len = php_numeric_string_prefix_len(trimmed)?;
+    match classify_well_formed_php_numeric_string(&trimmed[..prefix_len]) {
         PhpNumericStringClassification::Integer(value) => Some(Number::Int(value)),
         PhpNumericStringClassification::Float(value) => Some(Number::Float(value)),
         PhpNumericStringClassification::LeadingNumeric
@@ -20540,6 +20795,95 @@ mod tests {
         unsafe { phpc_native_value_free(divisor) };
         unsafe { phpc_native_value_free(string_number) };
         unsafe { phpc_native_value_free(int_value) };
+    }
+
+    #[test]
+    fn native_value_arithmetic_results_recover_leading_numeric_strings_with_diagnostics() {
+        fn assert_leading_numeric_result(result: NativeValueOperationResult, expected: &[u8]) {
+            assert!(result.succeeded());
+            assert_eq!(native_value_echo_bytes_for_test(result.value), expected);
+            assert!(!result.diagnostic.is_null());
+            assert!(native_diagnostic_message_for_test(result.diagnostic)
+                .contains("leading-numeric string operand"));
+            assert_eq!(
+                unsafe { phpc_native_diagnostic_severity_at(result.diagnostic, 0) },
+                NativeDiagnosticSeverity::Warning.tag()
+            );
+            unsafe { phpc_native_value_operation_result_free(result) };
+        }
+
+        let add_left = NativeValueHandle::from_value(Value::String("8tail".to_string()));
+        let add_right = NativeValueHandle::from_value(Value::Int(2));
+        let added = unsafe {
+            phpc_native_value_binary_result(add_left, NATIVE_VALUE_BINARY_ADD, add_right)
+        };
+        assert_leading_numeric_result(added, b"10");
+        unsafe { phpc_native_value_free(add_right) };
+        unsafe { phpc_native_value_free(add_left) };
+
+        let sub_left = NativeValueHandle::from_value(Value::Int(10));
+        let sub_right = NativeValueHandle::from_value(Value::String("3tail".to_string()));
+        let subtracted = unsafe {
+            phpc_native_value_binary_result(sub_left, NATIVE_VALUE_BINARY_SUB, sub_right)
+        };
+        assert_leading_numeric_result(subtracted, b"7");
+        unsafe { phpc_native_value_free(sub_right) };
+        unsafe { phpc_native_value_free(sub_left) };
+
+        let mul_left = NativeValueHandle::from_value(Value::String("2.5tail".to_string()));
+        let mul_right = NativeValueHandle::from_value(Value::Int(4));
+        let multiplied = unsafe {
+            phpc_native_value_binary_result(mul_left, NATIVE_VALUE_BINARY_MUL, mul_right)
+        };
+        assert_leading_numeric_result(multiplied, b"10");
+        unsafe { phpc_native_value_free(mul_right) };
+        unsafe { phpc_native_value_free(mul_left) };
+
+        let div_left = NativeValueHandle::from_value(Value::String("9tail".to_string()));
+        let div_right = NativeValueHandle::from_value(Value::Int(3));
+        let divided = unsafe {
+            phpc_native_value_binary_result(div_left, NATIVE_VALUE_BINARY_DIV, div_right)
+        };
+        assert_leading_numeric_result(divided, b"3");
+        unsafe { phpc_native_value_free(div_right) };
+        unsafe { phpc_native_value_free(div_left) };
+
+        let mod_left = NativeValueHandle::from_value(Value::String("9tail".to_string()));
+        let mod_right = NativeValueHandle::from_value(Value::Int(4));
+        let modulo = unsafe {
+            phpc_native_value_binary_result(mod_left, NATIVE_VALUE_BINARY_MOD, mod_right)
+        };
+        assert_leading_numeric_result(modulo, b"1");
+        unsafe { phpc_native_value_free(mod_right) };
+        unsafe { phpc_native_value_free(mod_left) };
+
+        let negated_operand = NativeValueHandle::from_value(Value::String("6tail".to_string()));
+        let negated =
+            unsafe { phpc_native_value_unary_result(negated_operand, NATIVE_VALUE_UNARY_NEGATE) };
+        assert_leading_numeric_result(negated, b"-6");
+        unsafe { phpc_native_value_free(negated_operand) };
+
+        let non_numeric = NativeValueHandle::from_value(Value::String("tail".to_string()));
+        let one = NativeValueHandle::from_value(Value::Int(1));
+        let rejected =
+            unsafe { phpc_native_value_binary_result(non_numeric, NATIVE_VALUE_BINARY_ADD, one) };
+        assert_eq!(rejected.tag, NativeValueOperationResultTag::Error);
+        assert!(native_diagnostic_message_for_test(rejected.diagnostic)
+            .contains("string is not numeric"));
+        unsafe { phpc_native_value_operation_result_free(rejected) };
+        unsafe { phpc_native_value_free(one) };
+        unsafe { phpc_native_value_free(non_numeric) };
+
+        let union_left = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
+        let union_right = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
+        let array_added = unsafe {
+            phpc_native_value_binary_result(union_left, NATIVE_VALUE_BINARY_ADD, union_right)
+        };
+        assert!(array_added.succeeded());
+        assert!(array_added.diagnostic.is_null());
+        unsafe { phpc_native_value_operation_result_free(array_added) };
+        unsafe { phpc_native_value_free(union_right) };
+        unsafe { phpc_native_value_free(union_left) };
     }
 
     #[test]

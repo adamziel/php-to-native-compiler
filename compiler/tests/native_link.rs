@@ -51,6 +51,16 @@ const NATIVE_SCOPED_IF_SOURCE: &str = concat!(
     "}\n",
 );
 
+const NATIVE_LEADING_NUMERIC_ARITHMETIC_SOURCE: &str = concat!(
+    "<?php\n",
+    "echo \"8tail\" + 2, \"|\";\n",
+    "echo 10 - \"3tail\", \"|\";\n",
+    "echo \"2.5tail\" * 4, \"|\";\n",
+    "echo \"9tail\" / 3, \"|\";\n",
+    "echo \"9tail\" % 4, \"|\";\n",
+    "echo -(\"6tail\");\n",
+);
+
 const NATIVE_BRANCH_STATE_MERGE_SOURCE: &str = concat!(
     "<?php\n",
     "$flags = [\"go\" => \"1\", \"stop\" => \"0\"];\n",
@@ -776,6 +786,67 @@ fn emit_exe_links_and_runs_scalar_runtime_value_echo_program() {
 }
 
 #[test]
+fn emit_exe_runs_leading_numeric_arithmetic_value_results_with_diagnostics() {
+    if !has_cc() {
+        return;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let source_path = native_link_output_path("leading_numeric_arithmetic.php");
+    let output_path = native_link_output_path("leading_numeric_arithmetic");
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(&source_path, NATIVE_LEADING_NUMERIC_ARITHMETIC_SOURCE)
+        .expect("write leading-numeric arithmetic native link source");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native leading-numeric arithmetic source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "native executable stdout:\n{}\nnative executable stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"10|7|10|3|1|-6");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.matches("leading-numeric string operand").count() >= 6,
+        "each arithmetic value operation should report the PHP leading-numeric warning:\n{stderr}"
+    );
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn emit_exe_links_and_runs_native_exit_string_value_program() {
     if !has_cc() {
         return;
@@ -1413,6 +1484,31 @@ fn native_executable_c_source_routes_scoped_if_branches_through_truthiness_bound
     assert!(
         !source.contains("assembly control-flow lowering rejects"),
         "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_leading_numeric_arithmetic_through_value_results() {
+    let program = parse(NATIVE_LEADING_NUMERIC_ARITHMETIC_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.matches(" = phpc_native_value_binary_result(").count() >= 5,
+        "binary leading-numeric arithmetic should use the shared native value operation ABI:\n{source}"
+    );
+    assert!(
+        body.contains(" = phpc_native_value_unary_result("),
+        "unary leading-numeric arithmetic should use the shared native value operation ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_diagnostic_report("),
+        "warning-bearing successful value operations should flow through the shared diagnostic reporter:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly arithmetic lowering rejects")
+            && !source.contains("assembly scalar arithmetic coercion rejects"),
+        "leading-numeric arithmetic should not fall through arithmetic blockers:\n{source}"
     );
 }
 
