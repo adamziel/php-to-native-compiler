@@ -1,15 +1,18 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 14:31 CEST
-Evaluation marker: `20260524T114058Z`
+Updated: 2026-05-24 14:39 CEST
+Evaluation marker: `20260524T123034Z`
 
 Latest counted primary semantic/test baseline:
 `d5e0e60f codegen: lower descriptor closure calls`
 
 Latest primary head before this progress update:
-`d5e0e60f codegen: lower descriptor closure calls`
+`88ebfad2 docs: update progress after descriptor closures`
 
-Only pushed primary work counts here. Dirty WIP, lane-local candidates, parked diffs, exact-shape fixtures, and status-file claims are not product capability until selected, gated, committed, and pushed through primary.
+Latest observed `origin/master` during this review:
+`88ebfad2 docs: update progress after descriptor closures`
+
+Only committed and pushed primary work counts here. Dirty WIP, lane-local candidates, parked diffs, exact-shape fixtures, and status-file claims are not product capability until selected, gated, committed, and pushed through primary.
 
 ## Executive Read
 
@@ -17,7 +20,9 @@ Overall estimated progress: **73%** `[###############-----]`
 
 Executable PHP semantics: **73%** `[###############-----]`
 
-Primary is making real integrated progress in selected generated-C execution islands. The current strongest area is declared objects/classes: supported declared allocation, ancestor-aware child allocation, inherited public properties, named `instanceof`, public instance methods, runtime string-valued public dynamic instance methods, supported public/inherited constructors for named and runtime string-valued `new`, public static methods, object static-receiver methods, and runtime string-valued constructorless declared-class `new`.
+Progress accounting note: the earlier **88%** figure is retired because it counted too much scaffolding, lane-local candidate work, and ABI surface area before it was executable product behavior. A later **50%** figure was a conservative strict rebaseline after switching the rule to "only generalized semantics integrated, tested, committed, and pushed in primary count." The current source-of-truth estimate is **73%** under that stricter rule, after the dynamic constructor and descriptor-backed closure slices landed in primary.
+
+Primary is making real integrated progress in selected generated-C execution islands. The current strongest area is declared objects/classes: supported declared allocation, ancestor-aware child allocation, inherited public properties, named `instanceof`, public instance methods, runtime string-valued public dynamic instance methods, supported public/inherited constructors for named and runtime string-valued `new`, public static methods, object static-receiver methods, and runtime string-valued declared-class `new` for constructorless and supported public-constructor classes.
 
 Generated-C now also has the first executable closure/callable frame slice: no-capture by-value fixed-parameter closures lower to descriptor-backed closure values, preserve descriptors through ordinary by-value frame slots, and invoke later through the shared dynamic-call path. Linked proof covers immediate closure calls, direct function-frame transfer, nested relay, dynamic named dispatch to a closure-consuming function, static method frames, inline closure arguments, and discarded closure calls.
 
@@ -35,14 +40,15 @@ This is still not general PHP. The remaining cliffs are large: full callable loo
 ## Current Primary State
 
 - [x] Primary semantic baseline is committed as `d5e0e60f`.
-- [x] Primary head before this progress update is `d5e0e60f`.
+- [x] Primary head before this progress update is `88ebfad2`.
+- [x] `origin/master` was synced with local `master` at `88ebfad2` during final verification.
 - [x] Latest counted semantic work is generated-C descriptor-backed no-capture closure values and dynamic invocation through closure frame callbacks.
-- [x] No uncounted dirty primary WIP was present before this progress update.
-- [x] This progress update is expected to be committed as a wrapper docs commit; unrelated product diffs should remain untouched.
+- [x] No uncounted dirty primary implementation WIP was present before this progress update.
+- [x] This progress update is documentation only; unrelated product diffs should remain untouched.
 
 ## Lane-Local Candidate Work
 
-The `candidate-closure-callable-frames` lane produced the descriptor-backed closure frame slice that landed as `d5e0e60f`.
+The `candidate-closure-callable-frames` lane produced the descriptor-backed closure frame slice that landed in primary as `d5e0e60f` and was pushed with progress commit `88ebfad2`.
 
 The `candidate-dynamic-constructor-new` lane has been integrated through primary as `6360acdf`.
 
@@ -84,7 +90,7 @@ Other active lanes contain useful but uncounted material around broader callable
 
 ## Current Review Notes
 
-- Primary semantic baseline is `d5e0e60f`; primary head was clean at `d5e0e60f` before this progress update.
+- Primary semantic baseline is `d5e0e60f`; local `master` and `origin/master` were synced at `88ebfad2` during final verification before this documentation update.
 - Focused gates for the latest descriptor-backed closure slice passed using disk-backed `/tmp` targets: `cargo check -q -p phpc`, `cargo test -q -p php_runtime native_descriptor_closure_values_invoke_through_frame_callback`, `cargo test -q -p phpc --test native_link native_executable_c_source_routes_descriptor_closures_through_shared_runtime_abi`, `cargo test -q -p phpc --test native_link emit_exe_links_and_runs_immediate_descriptor_closure_invocation`, `cargo test -q -p phpc --test native_link emit_exe_links_and_runs_descriptor_closure_after_by_value_frame_transfer`, `cargo test -q -p phpc --test native_link native_executable_c_source_keeps_unsupported_closure_shapes_on_shared_blocker`, `cargo test -q -p phpc --test native_link emit_exe_links_and_runs_runtime_dynamic_user_function_call_program`, `cargo test -q -p phpc --test native_link emit_exe_reports_runtime_dynamic_user_function_call_failures`, `cargo test -q -p phpc --test native_function_call_boundary native_executable_c_source_routes_call_operation_blockers_across_call_families`, `cargo test -q -p phpc native_call_diagnostics_centralizes_backend_recovery_across_call_families`, `rustfmt --edition 2021 --check compiler/src/codegen.rs compiler/tests/native_link.rs compiler/tests/native_function_call_boundary.rs runtime/src/lib.rs`, and `git diff --check`.
 - The broader full `cargo test -q -p phpc --test native_function_call_boundary` gate was not re-run for this slice; the previous known unrelated direct-call column expectation failures remain the last full-test observation.
 - Live `/dev/shm` check: 22G total, 15G used, 7.8G available, 65% used. Use disk-backed `/tmp` targets for broad gates and owner-check before cleaning shared-memory targets.
