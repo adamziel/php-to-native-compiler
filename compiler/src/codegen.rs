@@ -22455,39 +22455,20 @@ impl CGenerator {
         args: &[Expr],
         span: Span,
     ) -> CompileResult<CValue> {
-        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
-            return Err(self.unsupported_call_operation(operation));
-        }
-
-        if args.len() != 2 || !self.uses_native_string_helpers {
+        let [haystack_expr, needle_expr] = args else {
             return Err(self.unsupported_direct_named_call(
                 args,
                 span,
                 ASSEMBLY_STRING_PREDICATE_REJECTION,
             ));
-        }
+        };
 
-        let haystack = self.emit_value_operand_expr(&args[0])?;
-        let needle = self.emit_value_operand_expr(&args[1])?;
-        let haystack = self.emit_native_value_for_cvalue(haystack, span)?;
-        let needle = self.emit_native_value_for_cvalue(needle, span)?;
-        let result = format!("string_predicate_result_{}", self.next_native_temp);
-        self.next_native_temp += 1;
-        let diagnostic = format!("string_predicate_diagnostic_{}", self.next_native_temp);
-        self.next_native_temp += 1;
+        let haystack = self.materialize_native_value_result_operand(haystack_expr, "")?;
+        let needle_failure_cleanup = c_cleanup_sequence(&haystack.cleanup_after_use);
+        let needle =
+            self.materialize_native_value_result_operand(needle_expr, &needle_failure_cleanup)?;
 
-        self.body
-            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
-        self.body.push(format!(
-            "_Bool {result} = phpc_native_value_string_predicate_with_diagnostic({haystack}, {needle}, {}, &{diagnostic});",
-            predicate as u8
-        ));
-        self.emit_report_native_diagnostic(&diagnostic);
-        self.body.push(format!("phpc_native_value_free({needle});"));
-        self.body
-            .push(format!("phpc_native_value_free({haystack});"));
-
-        Ok(CValue::BoolExpr(result))
+        Ok(self.emit_native_string_predicate_value(haystack, needle, predicate))
     }
 
     fn emit_native_string_predicate_value(
@@ -30223,6 +30204,62 @@ echo " 10" < "zeta";
 
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, ASSEMBLY_STRING_RESULT_OPERATION_REJECTION);
+    }
+
+    #[test]
+    fn c_assembly_fallback_routes_string_predicates_through_runtime_contract() {
+        let program = crate::parse(
+            "<?php\n$payload = \"A\\0B\";\necho str_starts_with($payload, \"A\\0\"), \"|\";\necho str_contains(strrev(\"abc\"), \"b\"), \"|\";\necho str_ends_with(42042, 42);\n",
+        )
+        .expect("parse string-predicate fallback source");
+        let c_source = emit_c_source_for_assembly(&program)
+            .expect("C assembly fallback should lower string-predicate operations");
+
+        assert!(
+            c_source.contains("phpc_native_value_string_predicate_with_diagnostic"),
+            "C fallback should consume the shared native string-predicate ABI:\n{c_source}"
+        );
+        assert_eq!(
+            c_source
+                .matches(" = phpc_native_value_string_predicate_with_diagnostic(")
+                .count(),
+            3,
+            "predicate family should share one runtime contract across direct and nested operands:\n{c_source}"
+        );
+        for tag in [
+            NativeStringPredicate::StartsWith as u8,
+            NativeStringPredicate::Contains as u8,
+            NativeStringPredicate::EndsWith as u8,
+        ] {
+            assert!(
+                c_source.contains(&format!(", {tag}, &string_predicate_diagnostic_")),
+                "missing string-predicate operation tag {tag} in C fallback:\n{c_source}"
+            );
+        }
+        assert!(
+            c_source.contains("phpc_native_value_string_result_operation_with_diagnostic"),
+            "nested string-result operands should materialize before predicate dispatch:\n{c_source}"
+        );
+        assert!(
+            !c_source.contains(ASSEMBLY_STRING_PREDICATE_REJECTION),
+            "lowerable string-predicate family should no longer hit the assembly fallback blocker:\n{c_source}"
+        );
+
+        if command_available("cc") {
+            let asm = cc_assembly_from_c(&c_source)
+                .expect("C assembly fallback string-predicate source should compile to assembly");
+            assert!(asm.contains("main"), "{asm}");
+        }
+    }
+
+    #[test]
+    fn c_assembly_fallback_keeps_string_predicate_arity_boundary() {
+        let program = crate::parse("<?php\necho str_contains(\"abc\");\n")
+            .expect("parse unsupported string-predicate arity");
+        let error = emit_c_source_for_assembly(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, ASSEMBLY_STRING_PREDICATE_REJECTION);
     }
 
     fn test_param(by_reference: bool, is_variadic: bool) -> FunctionParam {
