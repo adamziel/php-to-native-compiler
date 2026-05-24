@@ -14042,6 +14042,46 @@ const NATIVE_GLOBAL_IMPORT_USER_FUNCTION_SOURCE: &str = concat!(
     "echo swap_globals(\"S\", \"O\"), \":\", $slot, \":\", $other;\n",
 );
 
+const NATIVE_RUNTIME_DYNAMIC_GLOBAL_IMPORT_USER_FUNCTION_SOURCE: &str = concat!(
+    "<?php\n",
+    "$slot = \"root\";\n",
+    "$bag = [\"k\" => \"root\"];\n",
+    "function set_global($value) {\n",
+    "    global $slot;\n",
+    "    echo \"seen:\", $slot, \"|\";\n",
+    "    $slot = $value;\n",
+    "    return $slot;\n",
+    "}\n",
+    "function read_global($prefix) {\n",
+    "    global $slot;\n",
+    "    return $prefix . \":\" . $slot;\n",
+    "}\n",
+    "function set_key($value) {\n",
+    "    global $bag;\n",
+    "    $bag[\"k\"] = $value;\n",
+    "    return $bag[\"k\"];\n",
+    "}\n",
+    "function wrap($value) {\n",
+    "    return \"wrap:\" . $value;\n",
+    "}\n",
+    "$runtime = isset($_GET[\"call\"]) ? $_GET[\"call\"] : \"set_global\";\n",
+    "echo $runtime(\"dynamic\"), \":\", $slot, \"|\";\n",
+    "$runtime = isset($_GET[\"read\"]) ? $_GET[\"read\"] : \"read_global\";\n",
+    "echo $runtime(\"seen\"), \"|\";\n",
+    "$key_call = isset($_GET[\"key\"]) ? $_GET[\"key\"] : \"set_key\";\n",
+    "echo $key_call(\"array\"), \":\", $bag[\"k\"], \"|\";\n",
+    "$multi = isset($_GET[\"multi\"]) ? \"wrap\" : \"set_global\";\n",
+    "echo $multi(\"finite\"), \":\", $slot, \"|\";\n",
+    "$_GET[\"multi\"] = \"1\";\n",
+    "$multi = isset($_GET[\"multi\"]) ? \"wrap\" : \"set_global\";\n",
+    "echo $multi(\"finite\"), \":\", $slot, \"|\";\n",
+    "$mixed = isset($_GET[\"mixed\"]) ? \"strtoupper\" : \"read_global\";\n",
+    "echo $mixed(\"mix\"), \"|\";\n",
+    "$_GET[\"mixed\"] = \"1\";\n",
+    "$mixed = isset($_GET[\"mixed\"]) ? \"strtoupper\" : \"read_global\";\n",
+    "echo $mixed(\"mix\");\n",
+);
+
 #[test]
 fn native_executable_c_source_lowers_direct_user_function_frames() {
     let program = parse(NATIVE_USER_FUNCTION_FRAME_SOURCE).unwrap();
@@ -14270,6 +14310,38 @@ fn native_executable_c_source_lowers_runtime_string_dynamic_user_function_calls(
         !source.contains("assembly dynamic function-call lowering rejects")
             && !source.contains("bounded generated-C finite known-string or runtime string-valued dispatch"),
         "runtime string-valued dynamic calls should no longer hit the finite-known-string blocker:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_runtime_dynamic_global_import_user_function_calls() {
+    let program = parse(NATIVE_RUNTIME_DYNAMIC_GLOBAL_IMPORT_USER_FUNCTION_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_NativeSymbolTableHandle phpc_root_symbols")
+            && source.contains("phpc_native_value_dynamic_call_name_matches")
+            && source.contains("dynamic_user_function_matched_"),
+        "runtime dynamic global-import dispatch should reuse the frame root-symbol and dynamic lookup ABIs:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_symbol_table_new()")
+            && body.contains("phpc_user_function_0_set_global(")
+            && body.contains("phpc_user_function_1_read_global(")
+            && body.contains("phpc_user_function_2_set_key(")
+            && body.contains("phpc_user_function_3_wrap(")
+            && body.contains("phpc_native_value_string_result_operation_with_diagnostic"),
+        "runtime dispatch should cover global-import frames, ordinary frames, and mixed builtin branches through one lookup table:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_value_dynamic_call_name_matches(").count() >= 5,
+        "dynamic global-import dispatch should stay table-driven across callable families:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly dynamic function-call lowering rejects")
+            && !source.contains("assembly global-declaration lowering rejects"),
+        "ordinary global-import frames should no longer be excluded from runtime dynamic dispatch:\n{source}"
     );
 }
 
@@ -14701,6 +14773,37 @@ fn emit_exe_links_and_runs_runtime_dynamic_user_function_call_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"GO|mix|D!");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_runtime_dynamic_global_import_user_function_call_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "runtime_dynamic_global_import_user_function_call",
+        NATIVE_RUNTIME_DYNAMIC_GLOBAL_IMPORT_USER_FUNCTION_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native runtime dynamic global-import executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"seen:root|dynamic:dynamic|seen:dynamic|array:array|seen:dynamic|finite:finite|wrap:finite:finite|mix:finite|MIX"
+    );
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

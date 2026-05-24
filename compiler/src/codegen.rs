@@ -17337,7 +17337,7 @@ impl CGenerator {
         values.values().iter().all(|spelling| {
             self.user_functions
                 .get(&Self::user_function_key(spelling))
-                .is_some_and(|function| !function.uses_global_import)
+                .is_some()
                 || native_dynamic_callable_builtin_runtime_candidate_for_name(spelling).is_some()
         })
     }
@@ -17550,10 +17550,11 @@ impl CGenerator {
                     .expect("registered function key has metadata")
                     .clone()
             })
-            .filter(|function| !function.uses_global_import)
             .collect::<Vec<_>>();
 
-        if self.runtime_dynamic_call_needs_symbol_table_for_reference_args(&functions, args) {
+        if functions.iter().any(|function| function.uses_global_import)
+            || self.runtime_dynamic_call_needs_symbol_table_for_reference_args(&functions, args)
+        {
             let symbol_table_failure_cleanup =
                 format!("{}{}", c_cleanup_sequence(&shared_cleanup), failure_cleanup);
             self.ensure_globals_symbol_table(&symbol_table_failure_cleanup, span)?;
@@ -17662,6 +17663,16 @@ impl CGenerator {
                 )?;
                 branch_cleanup.extend(variadic_value.cleanup_after_use.clone());
                 call_args.push(variadic_value.handle);
+            }
+            if function.uses_global_import {
+                let table_failure_cleanup = format!(
+                    "{}{}{}",
+                    c_cleanup_sequence(&branch_cleanup),
+                    c_cleanup_sequence(&shared_cleanup),
+                    failure_cleanup
+                );
+                let table = self.ensure_globals_symbol_table(&table_failure_cleanup, span)?;
+                call_args.insert(1, table);
             }
             self.body.push(format!("  {status} = 0;"));
             call_args.push(format!("&{status}"));
