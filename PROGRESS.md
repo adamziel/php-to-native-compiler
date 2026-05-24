@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-25 00:05 CEST
-Evaluation marker: `20260524T220555Z`
+Updated: 2026-05-25 00:58 CEST
+Evaluation marker: `20260524T225813Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as product capability. Dirty primary WIP, probe-only commits,
@@ -10,7 +10,7 @@ blocker-only classifiers, and status-file claims are excluded until selected,
 gated, committed, pushed, and reflected here as semantic product progress.
 
 Current live pushed primary head:
-`9417fcfa docs: update progress dashboard`
+`4aa6c24c docs: update progress dashboard`
 
 Latest counted semantic/test baseline:
 `b217e2b4 codegen: block destructor-observable native allocation`
@@ -26,6 +26,7 @@ Recent pushed but uncounted primary state:
 - `16209c55 docs: update progress dashboard` is management metadata only.
 - `12fe04ea docs: update progress dashboard` is management metadata only.
 - `9417fcfa docs: update progress dashboard` is management metadata only.
+- `4aa6c24c docs: update progress dashboard` is management metadata only.
 
 Current dirty primary WIP:
 
@@ -36,10 +37,14 @@ The dirty `preg_replace_callback()` repair is still uncounted. Current diff
 hash is `2fe60aa50993cbb2b488bd174e52a9587f9ac94fc0a94cc832079ad0e0148dfc`.
 The fixer reports `ready-for-evaluator` with focused preg tests, milestone841
 PHP comparison, `cargo check -p phpc`, rustfmt on touched files, and scoped
-diff-check passing. The independent evaluator status file is not present yet,
-though the live `primary-preg-eval` tmux window exists. Do not count or
-integrate this WIP until the evaluator produces a decision and a clean primary
-integration plan preserves unrelated diffs.
+diff-check passing.
+
+The independent evaluator status file is not present. The old
+`primary-preg-eval` tmux pane exists, but its captured output shows Codex
+failed on `/home/claude/.codex/state_5.sqlite` locking and exited at
+`2026-05-25T00:34:23+02:00` without writing a decision. A packetized evaluator
+now exists under `state/lanes/primary-preg-callback-evaluator/`; use that gate
+or a deliberate supervised evaluator before counting or integrating this WIP.
 
 ## Executive Read
 
@@ -81,8 +86,8 @@ diagnostics, and backend parity.
 
 | Item | Toward Primary Integration | Toward Full Feature | Status |
 | --- | ---: | ---: | --- |
-| Dirty `preg_replace_callback()` repair | **65%** `[#############-------]` | **25%** `[#####---------------]` | Fixer reports ready-for-evaluator at hash `2fe60aa50993cbb2b488bd174e52a9587f9ac94fc0a94cc832079ad0e0148dfc` with focused gates. It removes the prior WordPress-specific callback/name/output shortcut and moves toward bounded slash-regex callback execution, but evaluator decision and clean integration are still missing. |
-| Object-offset ArrayAccess error-control classifier | **92%** `[##################--]` | **10%** `[##------------------]` | GO candidate at hash `9637c2c66471017bbd31d602913f3480d44ef5cc414e885f5807a29ebd`. Clean one-file compiler diff with current-primary apply/rustfmt/diff-check evidence. Diagnostic/blocker progress only; no runtime `ArrayAccess` dispatch. |
+| Dirty `preg_replace_callback()` repair | **60%** `[############--------]` | **25%** `[#####---------------]` | Fixer reports ready at hash `2fe60aa50993cbb2b488bd174e52a9587f9ac94fc0a94cc832079ad0e0148dfc` with focused gates and removes the prior WordPress-specific callback shortcut. The independent evaluator failed artifactless on a Codex sqlite lock; packetized gate/direct evaluation is now required before counting or integrating. |
+| Object-offset ArrayAccess error-control classifier | **90%** `[##################--]` | **10%** `[##------------------]` | Best isolated non-preg candidate. One-file compiler diagnostic/blocker classifier, not runtime `ArrayAccess`. Recheck live hash/apply state before integration because status artifacts mention both `9637c2c66471017bbd31d602913f3480d44ef5cc414e885f36589f5807a29ebd` and stale `813da81a87347c97f16d701a72ed946619fb29ed86a29df911781022a7b9be13`. |
 | Object-property reference-slot mutation | **78%** `[################----]` | **35%** `[#######-------------]` | Strong executable candidate at hash `c60ed1c30dc1d979da1fc44641ae4378a3629e45c42da0d9621faf10519e56e8`, but current triage still reports scoped rustfmt failure. Needs formatting repair, new hash, and focused `/tmp` gate reruns. |
 | Symbol-table executable storage | **20%** `[####----------------]` | **20%** `[####----------------]` | ABI/runtime helper visibility exists through `2967110c`; generalized PHP variable assignment/readback through symbol tables is still not implemented. |
 | Direct user-function call/frame extraction | **45%** `[#########-----------]` | **35%** `[#######-------------]` | Lane-local direct-call/user-frame consumer work looks semantically useful, but it is cumulative lane work. Extract a compact current-primary candidate with stable hash and apply proof before review. |
@@ -111,8 +116,8 @@ Primary-integrated and counted:
 In progress but uncounted:
 
 - [ ] Pushed symbol-table ABI probe `2967110c`; useful visibility, not generalized PHP symbol storage.
-- [ ] Dirty bounded `preg_replace_callback()` callback-execution repair; promising and owner-gated, but still dirty and awaiting independent evaluator decision.
-- [ ] Lane-local `object-arrayaccess-error-control-retry` diagnostic classifier candidate at hash `9637c2c66471017bbd31d602913f3480d44ef5cc414e885f5807a29ebd`.
+- [ ] Dirty bounded `preg_replace_callback()` callback-execution repair; promising and fixer-gated, but still dirty and awaiting a successful independent evaluator artifact.
+- [ ] Lane-local `object-arrayaccess-error-control-retry` diagnostic classifier candidate; recheck hash/apply state before integration because status artifacts disagree.
 - [ ] Lane-local `object-property-reference-slots` mutation/reference-slot candidate at hash `c60ed1c30dc1d979da1fc44641ae4378a3629e45c42da0d9621faf10519e56e8`, pending formatting and rerun gates.
 - [ ] Lane-local direct-call/frame, `http_build_query()`, JSON/type-conversion, constructor/call preflight, control-flow, cleanup-contract, diagnostic sequencing, comparison, object-policy, symbol/global, and array/reference candidates that need clean extraction.
 
@@ -159,15 +164,17 @@ Pushed but uncounted:
 - [ ] `16209c55 docs: update progress dashboard` is progress metadata.
 - [ ] `12fe04ea docs: update progress dashboard` is progress metadata.
 - [ ] `9417fcfa docs: update progress dashboard` is progress metadata.
+- [ ] `4aa6c24c docs: update progress dashboard` is progress metadata.
 
 Dirty primary but uncounted:
 
-- [ ] `preg_replace_callback()` WIP is now fixer-ready for independent evaluation, but remains dirty and uncounted.
-- [ ] `primary-preg-eval` is live; `primary-preg-callback-evaluator.status.md` is not present as of this review.
+- [ ] `preg_replace_callback()` WIP is fixer-ready, but remains dirty and uncounted.
+- [ ] `primary-preg-callback-evaluator.status.md` is absent.
+- [ ] `main:31 primary-preg-eval` exited without an artifact due to a Codex sqlite lock; use the lane packet gate or a deliberate evaluator before any count/integration decision.
 
 Lane-local but uncounted:
 
-- [ ] `object-arrayaccess-error-control-retry` is the current GO candidate for centralized unsupported object-offset diagnostics after preg is resolved or parked.
+- [ ] `object-arrayaccess-error-control-retry` is the current non-preg GO candidate for centralized unsupported object-offset diagnostics after preg is resolved or parked.
 - [ ] `object-property-reference-slots` is the next stronger executable candidate once formatted and re-gated.
 - [ ] Direct-call/frame, `http_build_query()`, JSON/type-conversion, constructor visibility, and control-flow lanes should be extracted into narrow current-primary candidates before primary review.
 
@@ -175,9 +182,8 @@ Lane-local but uncounted:
 
 Resource pressure remains a steering constraint. `/dev/shm` is `22G` total,
 `21G` used, `1.8G` available, `92%` used; `du -sh /dev/shm` reports `21G`.
-`/home` has filesystem headroom at `459G` total, `168G` used, `272G`
-available, `39%` used. Live `du -sh /home` did not complete promptly and
-emitted permission errors in container overlay directories before being
-stopped. New gates should use disk-backed `/tmp` targets,
+`/home` has filesystem headroom at `459G` total, `197G` used, `244G`
+available, `45%` used. A live `du -sh /home` retry did not complete within an
+8 second timeout. New gates should use disk-backed `/tmp` targets,
 `CARGO_BUILD_JOBS=1`, `CARGO_INCREMENTAL=0`, and focused filters until shared
 memory recovers.
