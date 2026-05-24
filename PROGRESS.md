@@ -1,12 +1,12 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 04:21 CEST
-Evaluation marker: `20260524T013053Z`
+Updated: 2026-05-24 04:30 CEST
+Evaluation marker: `20260524T022032Z`
 
 Latest primary semantic/test baseline:
 `1209d8cb codegen: lower known dynamic builtin calls`
 Latest integrated semantic baseline: `1209d8cb codegen: lower known dynamic builtin calls`
-Latest evaluator report: `20260524T013053Z`
+Latest evaluator report: `20260524T022032Z`
 
 These are candid engineering estimates toward generalized PHP semantics in the
 native compiler. They are not test pass rates. Only primary-integrated,
@@ -16,7 +16,7 @@ exact-shape fixtures do not.
 ## Progress Accounting Note
 
 No compiler work was rolled back. The apparent drop from 88% to the current
-55% is a correction in the estimating rubric, not a loss of integrated code.
+56% is a correction in the estimating rubric, not a loss of integrated code.
 The older high-80s number overstated completion by counting strong foundations,
 selected generated-C islands, and focused gates as if they implied broad PHP
 execution. Starting with `93f55aee docs: clarify completion progress`, the
@@ -101,6 +101,19 @@ live-owner checks.
 | Objects, properties, methods | **10%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary lacks general compiled object/property/method execution. |
 | Control flow, cleanup, diagnostics | **45%** | `[#########-----------]` | Bounded generated-C branches, loops including state-stable `do...while`, returns, transfers, switches, top-level state-stable gotos, normal-flow try/finally, top-level return through finally, diagnostic-aware stdout formatting, and corrected diagnostic-report ownership in generated stdout paths exist; owner/reference joins, broad unwinding, handlers, and exact ordering remain open. |
 | Broad integrated verification | **44%** | `[#########-----------]` | Focused gates are strong and now include broader request-root, user-function, typed-frame, runtime dynamic-call, dynamic-builtin, and call-boundary filters. Cross-feature composition, end-to-end PHP programs, and backend parity need much broader proof. |
+
+## Candidate Work Not Counted
+
+As of this review, primary semantic progress is counted only through pushed
+baseline `1209d8cb`. Active worker lanes continue to produce candidate work
+that is not counted in the percentages until it lands in primary with focused
+proof.
+
+- Call-semantics cleanup ownership for native source-call failure paths.
+- Function-frame result-consumer contracts for cleanup-sensitive values.
+- Global-symbol diagnostic-ordering contracts across control-flow surfaces.
+- Object/class metadata and method-call blocker refinements.
+- Direct type-predicate consumers and additional array/lvalue cleanup routing.
 
 ## Done / In Progress / Not Done
 
