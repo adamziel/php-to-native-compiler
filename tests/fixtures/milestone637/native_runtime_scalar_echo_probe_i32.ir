@@ -32,7 +32,7 @@ declare %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStrin
 declare %phpc.NativeValueHandle @phpc_native_value_from_string_with_diagnostic(%phpc.NativeStringHandle, ptr)
 declare %phpc.NativeStringConversionResult @phpc_native_value_to_string_bytes(%phpc.NativeValueHandle)
 declare %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle)
-declare i32 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle)
+declare i32 @phpc_native_value_format_stdout_with_diagnostic(%phpc.NativeValueHandle, i8, ptr)
 declare void @phpc_native_value_free(%phpc.NativeValueHandle)
 declare %phpc.NativeStringConversionResult @phpc_native_reference_to_string_bytes(%phpc.NativeReferenceHandle)
 declare void @phpc_native_string_conversion_result_free(%phpc.NativeStringConversionResult)
@@ -64,6 +64,8 @@ declare %phpc.NativeRequestStateHandle @phpc_native_request_state_null()
 declare %phpc.NativeRequestStateHandle @phpc_native_request_state_empty()
 declare i1 @phpc_native_request_state_is_null(%phpc.NativeRequestStateHandle)
 declare %phpc.NativeRequestStateKeyResult @phpc_native_request_state_key_from_scalar(%phpc.NativeScalarValue)
+declare %phpc.NativeByteBuffer @phpc_native_request_state_key_result_buffer(%phpc.NativeRequestStateKeyResult)
+declare i8 @phpc_native_request_state_key_result_status(%phpc.NativeRequestStateKeyResult)
 declare %phpc.NativeRequestStateOperationResult @phpc_native_request_state_superglobal_operation(%phpc.NativeRequestStateHandle, i8, ptr, i32, ptr, i32, i8)
 declare %phpc.NativeValueHandle @phpc_native_request_state_superglobal_snapshot_value(%phpc.NativeRequestStateHandle, %phpc.NativeStringHandle)
 declare i1 @phpc_native_request_state_rebuild_request_from_order(%phpc.NativeRequestStateHandle, %phpc.NativeStringHandle)
@@ -117,7 +119,7 @@ entry:
   %value = call %phpc.NativeValueHandle @phpc_native_value_from_string(%phpc.NativeStringHandle %string)
   %buffer = call %phpc.NativeByteBuffer @phpc_native_value_echo_bytes(%phpc.NativeValueHandle %value)
   %len = extractvalue %phpc.NativeByteBuffer %buffer, 1
-  %written = call i32 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %value)
+  %written = call i32 @phpc_native_value_format_stdout_with_diagnostic(%phpc.NativeValueHandle %value, i8 0, ptr null)
   call void @phpc_native_byte_buffer_free(%phpc.NativeByteBuffer %buffer)
   call void @phpc_native_value_free(%phpc.NativeValueHandle %value)
   call void @phpc_native_string_free(%phpc.NativeStringHandle %string)
@@ -174,7 +176,7 @@ report_diagnostic:
   br label %cleanup
 
 echo_value:
-  %written = call i32 @phpc_native_value_echo_stdout(%phpc.NativeValueHandle %value)
+  %written = call i32 @phpc_native_value_format_stdout_with_diagnostic(%phpc.NativeValueHandle %value, i8 0, ptr null)
   br label %cleanup
 
 cleanup:
@@ -269,8 +271,8 @@ entry:
   %key_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0
   %key_scalar = insertvalue %phpc.NativeScalarValue %key_tag, i64 0, 3
   %key = call %phpc.NativeRequestStateKeyResult @phpc_native_request_state_key_from_scalar(%phpc.NativeScalarValue %key_scalar)
-  %key_buffer = extractvalue %phpc.NativeRequestStateKeyResult %key, 0
-  %key_status = extractvalue %phpc.NativeRequestStateKeyResult %key, 1
+  %key_buffer = call %phpc.NativeByteBuffer @phpc_native_request_state_key_result_buffer(%phpc.NativeRequestStateKeyResult %key)
+  %key_status = call i8 @phpc_native_request_state_key_result_status(%phpc.NativeRequestStateKeyResult %key)
   %key_ptr = extractvalue %phpc.NativeByteBuffer %key_buffer, 0
   %key_len = extractvalue %phpc.NativeByteBuffer %key_buffer, 1
   %bag = getelementptr inbounds [4 x i8], ptr @phpc.probe.request.bag, i32 0, i32 0

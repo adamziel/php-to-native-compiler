@@ -6018,6 +6018,7 @@ fn native_executable_c_source_routes_globals_dynamic_references_through_request_
     let source = emit_native_executable_c_source(&program).unwrap();
     let body = main_body(&source);
 
+    assert_request_key_results_use_accessors(&source);
     assert!(
         source.contains("phpc_native_request_state_key_matches_superglobal"),
         "{source}"
@@ -7225,6 +7226,7 @@ fn native_executable_c_source_routes_request_keyed_storage_through_state_operati
     let source = emit_native_executable_c_source(&program).unwrap();
     let body = main_body(&source);
 
+    assert_request_key_results_use_accessors(&source);
     assert!(
         source.contains("phpc_native_request_state_key_from_value"),
         "{source}"
@@ -7308,6 +7310,7 @@ fn native_executable_c_source_routes_request_path_mutations_through_state_operat
     let source = emit_native_executable_c_source(&program).unwrap();
     let body = main_body(&source);
 
+    assert_request_key_results_use_accessors(&source);
     assert!(
         source.contains("phpc_native_request_state_superglobal_path_mutation_operation"),
         "{source}"
@@ -7444,6 +7447,7 @@ fn native_executable_c_source_routes_request_path_reads_and_probes_through_state
     let source = emit_native_executable_c_source(&program).unwrap();
     let body = main_body(&source);
 
+    assert_request_key_results_use_accessors(&source);
     assert!(
         source.contains("phpc_native_request_state_key_from_value"),
         "{source}"
@@ -7718,6 +7722,7 @@ fn native_executable_c_source_dispatches_dynamic_globals_request_root_assignment
     let source = emit_native_executable_c_source(&program).unwrap();
     let body = main_body(&source);
 
+    assert_request_key_results_use_accessors(&source);
     assert!(
         source.contains("phpc_native_request_state_key_matches_superglobal"),
         "{source}"
@@ -14525,6 +14530,61 @@ fn main_body(source: &str) -> &str {
         .split_once("int main(void)")
         .map(|(_, body)| body)
         .unwrap_or(source)
+}
+
+fn assert_request_key_results_use_accessors(source: &str) {
+    assert!(
+        source.contains("phpc_native_request_state_key_result_buffer"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_request_state_key_result_status"),
+        "{source}"
+    );
+
+    for line in source.lines() {
+        assert!(
+            !(line_has_request_key_result_field(line, "request_superglobal_key_", ".buffer")
+                || line_has_request_key_result_field(line, "request_superglobal_key_", ".status")
+                || line_has_request_key_result_field(
+                    line,
+                    "globals_dynamic_request_key_",
+                    ".buffer"
+                )
+                || line_has_request_key_result_field(
+                    line,
+                    "globals_dynamic_request_key_",
+                    ".status"
+                )
+                || line_has_request_key_result_field(
+                    line,
+                    "globals_dynamic_reference_path_key_",
+                    ".buffer"
+                )
+                || line_has_request_key_result_field(
+                    line,
+                    "globals_dynamic_reference_path_key_",
+                    ".status"
+                )),
+            "generated request-key code must consume key-result data through runtime accessors, not struct fields:\n{line}\n\n{source}"
+        );
+    }
+}
+
+fn line_has_request_key_result_field(line: &str, stem: &str, field: &str) -> bool {
+    let mut remaining = line;
+    while let Some(position) = remaining.find(stem) {
+        let after_stem = &remaining[position + stem.len()..];
+        let digit_count = after_stem
+            .chars()
+            .take_while(|value| value.is_ascii_digit())
+            .count();
+        if digit_count > 0 && after_stem[digit_count..].starts_with(field) {
+            return true;
+        }
+        remaining = &after_stem[digit_count..];
+    }
+    false
 }
 
 fn assert_no_diagnostic_report_double_free(source: &str) {

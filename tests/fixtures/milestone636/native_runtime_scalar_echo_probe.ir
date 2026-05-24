@@ -64,6 +64,8 @@ declare %phpc.NativeRequestStateHandle @phpc_native_request_state_null()
 declare %phpc.NativeRequestStateHandle @phpc_native_request_state_empty()
 declare i1 @phpc_native_request_state_is_null(%phpc.NativeRequestStateHandle)
 declare %phpc.NativeRequestStateKeyResult @phpc_native_request_state_key_from_scalar(%phpc.NativeScalarValue)
+declare %phpc.NativeByteBuffer @phpc_native_request_state_key_result_buffer(%phpc.NativeRequestStateKeyResult)
+declare i8 @phpc_native_request_state_key_result_status(%phpc.NativeRequestStateKeyResult)
 declare %phpc.NativeRequestStateOperationResult @phpc_native_request_state_superglobal_operation(%phpc.NativeRequestStateHandle, i8, ptr, i64, ptr, i64, i8)
 declare %phpc.NativeValueHandle @phpc_native_request_state_superglobal_snapshot_value(%phpc.NativeRequestStateHandle, %phpc.NativeStringHandle)
 declare i1 @phpc_native_request_state_rebuild_request_from_order(%phpc.NativeRequestStateHandle, %phpc.NativeStringHandle)
@@ -269,8 +271,8 @@ entry:
   %key_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0
   %key_scalar = insertvalue %phpc.NativeScalarValue %key_tag, i64 0, 3
   %key = call %phpc.NativeRequestStateKeyResult @phpc_native_request_state_key_from_scalar(%phpc.NativeScalarValue %key_scalar)
-  %key_buffer = extractvalue %phpc.NativeRequestStateKeyResult %key, 0
-  %key_status = extractvalue %phpc.NativeRequestStateKeyResult %key, 1
+  %key_buffer = call %phpc.NativeByteBuffer @phpc_native_request_state_key_result_buffer(%phpc.NativeRequestStateKeyResult %key)
+  %key_status = call i8 @phpc_native_request_state_key_result_status(%phpc.NativeRequestStateKeyResult %key)
   %key_ptr = extractvalue %phpc.NativeByteBuffer %key_buffer, 0
   %key_len = extractvalue %phpc.NativeByteBuffer %key_buffer, 1
   %bag = getelementptr inbounds [4 x i8], ptr @phpc.probe.request.bag, i64 0, i64 0

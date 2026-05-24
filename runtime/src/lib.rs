@@ -5409,6 +5409,20 @@ pub unsafe extern "C" fn phpc_native_request_state_key_from_value(
     }
 }
 
+#[no_mangle]
+pub extern "C" fn phpc_native_request_state_key_result_buffer(
+    result: NativeRequestStateKeyResult,
+) -> NativeByteBuffer {
+    result.buffer
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_request_state_key_result_status(
+    result: NativeRequestStateKeyResult,
+) -> u8 {
+    result.status
+}
+
 /// # Safety
 ///
 /// `bag_ptr` must either be valid for `bag_len` bytes or null with a zero
@@ -20071,6 +20085,14 @@ mod tests {
         bytes
     }
 
+    fn native_request_state_key_result_for_test(
+        result: NativeRequestStateKeyResult,
+    ) -> (u8, Vec<u8>) {
+        let status = phpc_native_request_state_key_result_status(result);
+        let buffer = phpc_native_request_state_key_result_buffer(result);
+        (status, native_byte_buffer_to_vec_for_test(buffer))
+    }
+
     fn native_string_bytes_for_test(handle: NativeStringHandle) -> Vec<u8> {
         let buffer = unsafe { phpc_native_string_clone_bytes(handle) };
         native_byte_buffer_to_vec_for_test(buffer)
@@ -22656,7 +22678,7 @@ mod tests {
     }
 
     #[test]
-    fn native_request_state_key_abi_coerces_scalar_and_value_key_families() {
+    fn native_request_state_key_abi_coerces_scalar_and_value_key_families_through_accessors() {
         for (value, expected) in [
             (NativeScalarValue::null(), b"".as_slice()),
             (NativeScalarValue::bool(false), b"0".as_slice()),
@@ -22666,9 +22688,10 @@ mod tests {
             (NativeScalarValue::float(-0.0), b"0".as_slice()),
         ] {
             let key = phpc_native_request_state_key_from_scalar(value);
+            let (status, bytes) = native_request_state_key_result_for_test(key);
 
-            assert_eq!(key.status, PHPC_NATIVE_REQUEST_STATE_STATUS_OK);
-            assert_eq!(native_byte_buffer_to_vec_for_test(key.buffer), expected);
+            assert_eq!(status, PHPC_NATIVE_REQUEST_STATE_STATUS_OK);
+            assert_eq!(bytes, expected);
         }
 
         for value in [
@@ -22677,12 +22700,13 @@ mod tests {
             NativeScalarValue::float(f64::NAN),
         ] {
             let key = phpc_native_request_state_key_from_scalar(value);
+            let (status, bytes) = native_request_state_key_result_for_test(key);
 
             assert_eq!(
-                key.status,
+                status,
                 PHPC_NATIVE_REQUEST_STATE_STATUS_UNSUPPORTED_KEY_COERCION
             );
-            assert_eq!(native_byte_buffer_to_vec_for_test(key.buffer), b"");
+            assert_eq!(bytes, b"");
         }
 
         for (value, expected) in [
@@ -22698,9 +22722,10 @@ mod tests {
         ] {
             let handle = NativeValueHandle::from_value(value);
             let key = unsafe { phpc_native_request_state_key_from_value(handle) };
+            let (status, bytes) = native_request_state_key_result_for_test(key);
 
-            assert_eq!(key.status, PHPC_NATIVE_REQUEST_STATE_STATUS_OK);
-            assert_eq!(native_byte_buffer_to_vec_for_test(key.buffer), expected);
+            assert_eq!(status, PHPC_NATIVE_REQUEST_STATE_STATUS_OK);
+            assert_eq!(bytes, expected);
             unsafe { phpc_native_value_free(handle) };
         }
 
@@ -22711,22 +22736,21 @@ mod tests {
         ] {
             let handle = NativeValueHandle::from_value(value);
             let key = unsafe { phpc_native_request_state_key_from_value(handle) };
+            let (status, bytes) = native_request_state_key_result_for_test(key);
 
             assert_eq!(
-                key.status,
+                status,
                 PHPC_NATIVE_REQUEST_STATE_STATUS_UNSUPPORTED_KEY_COERCION
             );
-            assert_eq!(native_byte_buffer_to_vec_for_test(key.buffer), b"");
+            assert_eq!(bytes, b"");
             unsafe { phpc_native_value_free(handle) };
         }
 
         let null_key =
             unsafe { phpc_native_request_state_key_from_value(NativeValueHandle::null()) };
-        assert_eq!(
-            null_key.status,
-            PHPC_NATIVE_REQUEST_STATE_STATUS_INVALID_ABI
-        );
-        assert_eq!(native_byte_buffer_to_vec_for_test(null_key.buffer), b"");
+        let (status, bytes) = native_request_state_key_result_for_test(null_key);
+        assert_eq!(status, PHPC_NATIVE_REQUEST_STATE_STATUS_INVALID_ABI);
+        assert_eq!(bytes, b"");
     }
 
     #[test]
@@ -22754,7 +22778,8 @@ mod tests {
                 )
             });
 
-            unsafe { phpc_native_byte_buffer_free(key.buffer) };
+            let buffer = phpc_native_request_state_key_result_buffer(key);
+            unsafe { phpc_native_byte_buffer_free(buffer) };
             unsafe { phpc_native_value_free(handle) };
         }
 
@@ -22774,7 +22799,8 @@ mod tests {
                 b"plain".len(),
             )
         });
-        unsafe { phpc_native_byte_buffer_free(ordinary_key.buffer) };
+        let ordinary_buffer = phpc_native_request_state_key_result_buffer(ordinary_key);
+        unsafe { phpc_native_byte_buffer_free(ordinary_buffer) };
         unsafe { phpc_native_value_free(ordinary) };
 
         let unsupported = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
@@ -22786,7 +22812,8 @@ mod tests {
                 b"_GET".len(),
             )
         });
-        unsafe { phpc_native_byte_buffer_free(unsupported_key.buffer) };
+        let unsupported_buffer = phpc_native_request_state_key_result_buffer(unsupported_key);
+        unsafe { phpc_native_byte_buffer_free(unsupported_buffer) };
         unsafe { phpc_native_value_free(unsupported) };
     }
 

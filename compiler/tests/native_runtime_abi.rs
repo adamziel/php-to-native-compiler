@@ -25,6 +25,36 @@ fn scalar_echo_probe_ir_matches_committed_snapshot() {
 }
 
 #[test]
+fn native_request_state_runtime_value_keys_share_key_result_accessors() {
+    let ir = native_runtime_scalar_echo_probe_ir();
+
+    assert!(
+        ir.contains("declare %phpc.NativeRequestStateKeyResult @phpc_native_request_state_key_from_scalar(%phpc.NativeScalarValue)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare %phpc.NativeByteBuffer @phpc_native_request_state_key_result_buffer(%phpc.NativeRequestStateKeyResult)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i8 @phpc_native_request_state_key_result_status(%phpc.NativeRequestStateKeyResult)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call %phpc.NativeByteBuffer @phpc_native_request_state_key_result_buffer"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i8 @phpc_native_request_state_key_result_status"),
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("extractvalue %phpc.NativeRequestStateKeyResult"),
+        "{ir}"
+    );
+}
+
+#[test]
 fn generated_ir_blocks_scalar_cast_builtins_at_shared_value_cast_boundary() {
     for source in [
         "<?php\n$payload = \"ABC\";\necho strval($payload);\n",
@@ -835,6 +865,14 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
         "{ir}"
     );
     assert!(
+        ir.contains("declare %phpc.NativeByteBuffer @phpc_native_request_state_key_result_buffer(%phpc.NativeRequestStateKeyResult)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i8 @phpc_native_request_state_key_result_status(%phpc.NativeRequestStateKeyResult)"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("declare %phpc.NativeRequestStateOperationResult @phpc_native_request_state_superglobal_operation(%phpc.NativeRequestStateHandle, i8, ptr, i64, ptr, i64, i8)"),
         "{ir}"
     );
@@ -1263,6 +1301,18 @@ fn scalar_echo_probe_ir_renders_64_bit_usize_helper_signatures() {
     );
     assert!(
         ir.contains("define i64 @phpc_probe_request_state_empty_missing_value()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call %phpc.NativeByteBuffer @phpc_native_request_state_key_result_buffer"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i8 @phpc_native_request_state_key_result_status"),
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("extractvalue %phpc.NativeRequestStateKeyResult"),
         "{ir}"
     );
 }

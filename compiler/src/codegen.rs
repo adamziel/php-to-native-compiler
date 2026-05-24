@@ -3977,6 +3977,8 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         "declare %phpc.NativeRequestStateHandle @phpc_native_request_state_empty()",
         "declare i1 @phpc_native_request_state_is_null(%phpc.NativeRequestStateHandle)",
         "declare %phpc.NativeRequestStateKeyResult @phpc_native_request_state_key_from_scalar(%phpc.NativeScalarValue)",
+        "declare %phpc.NativeByteBuffer @phpc_native_request_state_key_result_buffer(%phpc.NativeRequestStateKeyResult)",
+        "declare i8 @phpc_native_request_state_key_result_status(%phpc.NativeRequestStateKeyResult)",
         &format!("declare %phpc.NativeRequestStateOperationResult @phpc_native_request_state_superglobal_operation(%phpc.NativeRequestStateHandle, i8, ptr, {usize_type}, ptr, {usize_type}, i8)"),
         "declare %phpc.NativeValueHandle @phpc_native_request_state_superglobal_snapshot_value(%phpc.NativeRequestStateHandle, %phpc.NativeStringHandle)",
         "declare i1 @phpc_native_request_state_rebuild_request_from_order(%phpc.NativeRequestStateHandle, %phpc.NativeStringHandle)",
@@ -4240,8 +4242,8 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
         "  %key_tag = insertvalue %phpc.NativeScalarValue zeroinitializer, i8 2, 0",
         "  %key_scalar = insertvalue %phpc.NativeScalarValue %key_tag, i64 0, 3",
         "  %key = call %phpc.NativeRequestStateKeyResult @phpc_native_request_state_key_from_scalar(%phpc.NativeScalarValue %key_scalar)",
-        "  %key_buffer = extractvalue %phpc.NativeRequestStateKeyResult %key, 0",
-        "  %key_status = extractvalue %phpc.NativeRequestStateKeyResult %key, 1",
+        "  %key_buffer = call %phpc.NativeByteBuffer @phpc_native_request_state_key_result_buffer(%phpc.NativeRequestStateKeyResult %key)",
+        "  %key_status = call i8 @phpc_native_request_state_key_result_status(%phpc.NativeRequestStateKeyResult %key)",
         "  %key_ptr = extractvalue %phpc.NativeByteBuffer %key_buffer, 0",
         "  %key_len = extractvalue %phpc.NativeByteBuffer %key_buffer, 1",
         &format!(
@@ -9188,13 +9190,15 @@ struct CNativeArrayKeyMaterialization {
 }
 
 struct CRequestStateKeyMaterialization {
-    result: String,
+    buffer: String,
+    status: String,
     cleanup_after_use: Vec<String>,
 }
 
 struct CGlobalsDynamicRootKeyMaterialization {
     value: CNativeValueMaterialization,
     request_key: String,
+    request_key_buffer: String,
 }
 
 struct CRequestStatePathMaterialization {
@@ -10958,6 +10962,8 @@ impl CGenerator {
                     "extern phpc_NativeRequestStateHandle phpc_native_request_state_empty(void);\n",
                 );
                 output.push_str("extern phpc_NativeRequestStateKeyResult phpc_native_request_state_key_from_value(phpc_NativeValueHandle value);\n");
+                output.push_str("extern phpc_NativeByteBuffer phpc_native_request_state_key_result_buffer(phpc_NativeRequestStateKeyResult result);\n");
+                output.push_str("extern uint8_t phpc_native_request_state_key_result_status(phpc_NativeRequestStateKeyResult result);\n");
                 output.push_str("extern _Bool phpc_native_request_state_key_matches_superglobal(phpc_NativeRequestStateKeyResult key, const uint8_t *bag, size_t bag_len);\n");
                 output.push_str("extern phpc_NativeRequestStateOperationResult phpc_native_request_state_superglobal_operation(phpc_NativeRequestStateHandle request_state, uint8_t operation, const uint8_t *bag, size_t bag_len, const uint8_t *key, size_t key_len, uint8_t key_status);\n");
                 output.push_str("extern phpc_NativeRequestStateOperationResult phpc_native_request_state_superglobal_path_operation(phpc_NativeRequestStateHandle request_state, uint8_t operation, const uint8_t *bag, size_t bag_len, const uint8_t **key_ptrs, const size_t *key_lens, size_t key_count, uint8_t key_status);\n");
@@ -12045,11 +12051,20 @@ impl CGenerator {
                 "phpc_NativeRequestStateKeyResult {request_key} = phpc_native_request_state_key_from_value({});",
                 value.handle
             ));
+            let (request_key_buffer, request_key_status) = self
+                .materialize_request_state_key_result_accessors(
+                    &request_key,
+                    "globals_dynamic_reference_path_key",
+                );
             cleanup_after_use.push(format!(
-                "phpc_native_byte_buffer_free({request_key}.buffer);"
+                "phpc_native_byte_buffer_free({request_key_buffer});"
             ));
             cleanup_after_use.extend(value.cleanup_after_use.clone());
-            request_keys.push(request_key);
+            request_keys.push(CRequestStateKeyMaterialization {
+                buffer: request_key_buffer,
+                status: request_key_status,
+                cleanup_after_use: Vec::new(),
+            });
             symbol_values.push(value);
         }
 
@@ -12063,7 +12078,7 @@ impl CGenerator {
             let ptrs = self.next_native_name("globals_dynamic_reference_path_key_ptrs");
             let ptr_entries = request_keys
                 .iter()
-                .map(|key| format!("{key}.buffer.ptr"))
+                .map(|key| format!("{}.ptr", key.buffer))
                 .collect::<Vec<_>>()
                 .join(", ");
             self.body
@@ -12072,7 +12087,7 @@ impl CGenerator {
             let lens = self.next_native_name("globals_dynamic_reference_path_key_lens");
             let len_entries = request_keys
                 .iter()
-                .map(|key| format!("{key}.buffer.len"))
+                .map(|key| format!("{}.len", key.buffer))
                 .collect::<Vec<_>>()
                 .join(", ");
             self.body
@@ -12084,7 +12099,8 @@ impl CGenerator {
             ));
             for key in &request_keys {
                 self.body.push(format!(
-                    "if ({status} == PHPC_NATIVE_REQUEST_STATE_STATUS_OK && {key}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK) {{ {status} = {key}.status; }}"
+                    "if ({status} == PHPC_NATIVE_REQUEST_STATE_STATUS_OK && {key_status} != PHPC_NATIVE_REQUEST_STATE_STATUS_OK) {{ {status} = {key_status}; }}",
+                    key_status = key.status
                 ));
             }
 
@@ -12599,9 +12615,10 @@ impl CGenerator {
         let bag_bytes = self.emit_request_superglobal_bag_static_bytes(request_root);
         let result = self.next_native_name("request_keyed_reference_bind");
         self.body.push(format!(
-            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_keyed_reference_bind_operation({request_state}, {bag_bytes}, {}, {key}.buffer.ptr, {key}.buffer.len, {key}.status, {source_ref});",
+            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_keyed_reference_bind_operation({request_state}, {bag_bytes}, {}, {key_buffer}.ptr, {key_buffer}.len, {key_status}, {source_ref});",
             request_root.len(),
-            key = key.result
+            key_buffer = key.buffer,
+            key_status = key.status
         ));
         self.body.push(format!(
             "phpc_native_request_state_operation_result_report_diagnostic({result});"
@@ -12643,9 +12660,10 @@ impl CGenerator {
         let source_bag_bytes = self.emit_request_superglobal_bag_static_bytes(source_root);
         let source_result = self.next_native_name("request_keyed_alias_source");
         self.body.push(format!(
-            "phpc_NativeRequestStateReferenceResult {source_result} = phpc_native_request_state_superglobal_keyed_reference_operation({request_state}, {source_bag_bytes}, {}, {source_key}.buffer.ptr, {source_key}.buffer.len, {source_key}.status);",
+            "phpc_NativeRequestStateReferenceResult {source_result} = phpc_native_request_state_superglobal_keyed_reference_operation({request_state}, {source_bag_bytes}, {}, {source_key_buffer}.ptr, {source_key_buffer}.len, {source_key_status});",
             source_root.len(),
-            source_key = source_key.result
+            source_key_buffer = source_key.buffer,
+            source_key_status = source_key.status
         ));
         self.body.push(format!(
             "phpc_native_request_state_reference_result_report_diagnostic({source_result});"
@@ -12667,9 +12685,10 @@ impl CGenerator {
         let target_bag_bytes = self.emit_request_superglobal_bag_static_bytes(target_root);
         let bind_result = self.next_native_name("request_keyed_alias_bind");
         self.body.push(format!(
-            "phpc_NativeRequestStateOperationResult {bind_result} = phpc_native_request_state_superglobal_keyed_reference_bind_operation({request_state}, {target_bag_bytes}, {}, {target_key}.buffer.ptr, {target_key}.buffer.len, {target_key}.status, {source_result}.reference);",
+            "phpc_NativeRequestStateOperationResult {bind_result} = phpc_native_request_state_superglobal_keyed_reference_bind_operation({request_state}, {target_bag_bytes}, {}, {target_key_buffer}.ptr, {target_key_buffer}.len, {target_key_status}, {source_result}.reference);",
             target_root.len(),
-            target_key = target_key.result
+            target_key_buffer = target_key.buffer,
+            target_key_status = target_key.status
         ));
         self.body.push(format!(
             "phpc_native_request_state_operation_result_report_diagnostic({bind_result});"
@@ -12712,9 +12731,10 @@ impl CGenerator {
         let bag_bytes = self.emit_request_superglobal_bag_static_bytes(request_root);
         let source_result = self.next_native_name("request_keyed_reference_source");
         self.body.push(format!(
-            "phpc_NativeRequestStateReferenceResult {source_result} = phpc_native_request_state_superglobal_keyed_reference_operation({request_state}, {bag_bytes}, {}, {key}.buffer.ptr, {key}.buffer.len, {key}.status);",
+            "phpc_NativeRequestStateReferenceResult {source_result} = phpc_native_request_state_superglobal_keyed_reference_operation({request_state}, {bag_bytes}, {}, {key_buffer}.ptr, {key_buffer}.len, {key_status});",
             request_root.len(),
-            key = key.result
+            key_buffer = key.buffer,
+            key_status = key.status
         ));
         self.body.push(format!(
             "phpc_native_request_state_reference_result_report_diagnostic({source_result});"
@@ -13704,13 +13724,32 @@ impl CGenerator {
             "phpc_NativeRequestStateKeyResult {result} = phpc_native_request_state_key_from_value({});",
             key_value.handle
         ));
+        let (buffer, status) =
+            self.materialize_request_state_key_result_accessors(&result, "request_superglobal_key");
 
-        let mut cleanup_after_use = vec![format!("phpc_native_byte_buffer_free({result}.buffer);")];
+        let mut cleanup_after_use = vec![format!("phpc_native_byte_buffer_free({buffer});")];
         cleanup_after_use.extend(key_value.cleanup_after_use);
         Ok(CRequestStateKeyMaterialization {
-            result,
+            buffer,
+            status,
             cleanup_after_use,
         })
+    }
+
+    fn materialize_request_state_key_result_accessors(
+        &mut self,
+        result: &str,
+        stem: &str,
+    ) -> (String, String) {
+        let buffer = self.next_native_name(&format!("{stem}_buffer"));
+        self.body.push(format!(
+            "phpc_NativeByteBuffer {buffer} = phpc_native_request_state_key_result_buffer({result});"
+        ));
+        let status = self.next_native_name(&format!("{stem}_status"));
+        self.body.push(format!(
+            "uint8_t {status} = phpc_native_request_state_key_result_status({result});"
+        ));
+        (buffer, status)
     }
 
     fn materialize_globals_dynamic_root_key(
@@ -13727,16 +13766,25 @@ impl CGenerator {
             "phpc_NativeRequestStateKeyResult {request_key} = phpc_native_request_state_key_from_value({});",
             value.handle
         ));
+        let (request_key_buffer, _request_key_status) = self
+            .materialize_request_state_key_result_accessors(
+                &request_key,
+                "globals_dynamic_request_key",
+            );
 
-        Ok(CGlobalsDynamicRootKeyMaterialization { value, request_key })
+        Ok(CGlobalsDynamicRootKeyMaterialization {
+            value,
+            request_key,
+            request_key_buffer,
+        })
     }
 
     fn globals_dynamic_root_key_cleanup(
         key: &CGlobalsDynamicRootKeyMaterialization,
     ) -> Vec<String> {
         let mut cleanup = vec![format!(
-            "phpc_native_byte_buffer_free({}.buffer);",
-            key.request_key
+            "phpc_native_byte_buffer_free({});",
+            key.request_key_buffer
         )];
         cleanup.extend(key.value.cleanup_after_use.clone());
         cleanup
@@ -13785,7 +13833,7 @@ impl CGenerator {
         let ptrs = self.next_native_name("request_superglobal_path_key_ptrs");
         let ptr_entries = keys
             .iter()
-            .map(|key| format!("{}.buffer.ptr", key.result))
+            .map(|key| format!("{}.ptr", key.buffer))
             .collect::<Vec<_>>()
             .join(", ");
         self.body
@@ -13794,7 +13842,7 @@ impl CGenerator {
         let lens = self.next_native_name("request_superglobal_path_key_lens");
         let len_entries = keys
             .iter()
-            .map(|key| format!("{}.buffer.len", key.result))
+            .map(|key| format!("{}.len", key.buffer))
             .collect::<Vec<_>>()
             .join(", ");
         self.body
@@ -13806,8 +13854,8 @@ impl CGenerator {
         ));
         for key in &keys {
             self.body.push(format!(
-                "if ({status} == PHPC_NATIVE_REQUEST_STATE_STATUS_OK && {key}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK) {{ {status} = {key}.status; }}",
-                key = key.result
+                "if ({status} == PHPC_NATIVE_REQUEST_STATE_STATUS_OK && {key_status} != PHPC_NATIVE_REQUEST_STATE_STATUS_OK) {{ {status} = {key_status}; }}",
+                key_status = key.status
             ));
         }
 
@@ -14385,9 +14433,10 @@ impl CGenerator {
         let key = self.materialize_request_superglobal_key(index, failure_cleanup)?;
         let result = self.next_native_name("request_superglobal_keyed_read");
         self.body.push(format!(
-            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_OP_VALUE, {bag_bytes}, {}, {key}.buffer.ptr, {key}.buffer.len, {key}.status);",
+            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_OP_VALUE, {bag_bytes}, {}, {key_buffer}.ptr, {key_buffer}.len, {key_status});",
             name.len(),
-            key = key.result
+            key_buffer = key.buffer,
+            key_status = key.status
         ));
         self.body.push(format!(
             "phpc_native_request_state_operation_result_report_diagnostic({result});"
@@ -14454,9 +14503,10 @@ impl CGenerator {
         let key = self.materialize_request_superglobal_key(index, failure_cleanup)?;
         let result = self.next_native_name("request_superglobal_keyed_presence");
         self.body.push(format!(
-            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_OP_PRESENCE, {bag_bytes}, {}, {key}.buffer.ptr, {key}.buffer.len, {key}.status);",
+            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_OP_PRESENCE, {bag_bytes}, {}, {key_buffer}.ptr, {key_buffer}.len, {key_status});",
             name.len(),
-            key = key.result
+            key_buffer = key.buffer,
+            key_status = key.status
         ));
         self.body.push(format!(
             "phpc_native_request_state_operation_result_report_diagnostic({result});"
@@ -14522,9 +14572,10 @@ impl CGenerator {
         let result = self.next_native_name("request_superglobal_keyed_empty");
         self.body.push(format!("_Bool {result} = 1;"));
         self.body.push(format!(
-            "phpc_NativeRequestStateOperationResult {presence} = phpc_native_request_state_superglobal_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_OP_PRESENCE, {bag_bytes}, {}, {key}.buffer.ptr, {key}.buffer.len, {key}.status);",
+            "phpc_NativeRequestStateOperationResult {presence} = phpc_native_request_state_superglobal_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_OP_PRESENCE, {bag_bytes}, {}, {key_buffer}.ptr, {key_buffer}.len, {key_status});",
             name.len(),
-            key = key.result
+            key_buffer = key.buffer,
+            key_status = key.status
         ));
         self.body.push(format!(
             "phpc_native_request_state_operation_result_report_diagnostic({presence});"
@@ -14550,9 +14601,10 @@ impl CGenerator {
         let truthy = self.next_native_name("request_superglobal_keyed_empty_truthy");
         self.body.push(format!("if ({present}) {{"));
         self.body.push(format!(
-            "phpc_NativeRequestStateOperationResult {value} = phpc_native_request_state_superglobal_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_OP_VALUE, {bag_bytes}, {}, {key}.buffer.ptr, {key}.buffer.len, {key}.status);",
+            "phpc_NativeRequestStateOperationResult {value} = phpc_native_request_state_superglobal_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_OP_VALUE, {bag_bytes}, {}, {key_buffer}.ptr, {key_buffer}.len, {key_status});",
             name.len(),
-            key = key.result
+            key_buffer = key.buffer,
+            key_status = key.status
         ));
         self.body.push(format!(
             "phpc_native_request_state_operation_result_report_diagnostic({value});"
@@ -14867,10 +14919,11 @@ impl CGenerator {
         let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
         let result = self.next_native_name("request_superglobal_keyed_write");
         self.body.push(format!(
-            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_keyed_mutation_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE, {bag_bytes}, {}, {key}.buffer.ptr, {key}.buffer.len, {key}.status, {});",
+            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_keyed_mutation_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE, {bag_bytes}, {}, {key_buffer}.ptr, {key_buffer}.len, {key_status}, {});",
             name.len(),
             value.handle,
-            key = key.result
+            key_buffer = key.buffer,
+            key_status = key.status
         ));
         self.body.push(format!(
             "phpc_native_request_state_operation_result_report_diagnostic({result});"
@@ -15238,9 +15291,10 @@ impl CGenerator {
         let key = self.materialize_request_superglobal_key(index, failure_cleanup)?;
         let result = self.next_native_name("request_superglobal_keyed_unset");
         self.body.push(format!(
-            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_keyed_mutation_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET, {bag_bytes}, {}, {key}.buffer.ptr, {key}.buffer.len, {key}.status, (phpc_NativeValueHandle){{0}});",
+            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_keyed_mutation_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET, {bag_bytes}, {}, {key_buffer}.ptr, {key_buffer}.len, {key_status}, (phpc_NativeValueHandle){{0}});",
             name.len(),
-            key = key.result
+            key_buffer = key.buffer,
+            key_status = key.status
         ));
         self.body.push(format!(
             "phpc_native_request_state_operation_result_report_diagnostic({result});"
