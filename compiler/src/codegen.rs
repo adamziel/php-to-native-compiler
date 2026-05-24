@@ -64,7 +64,7 @@ const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lo
 const LLVM_STATIC_LOCAL_REJECTION: &str = "LLVM static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const ASSEMBLY_STATIC_LOCAL_REJECTION: &str = "assembly static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const LLVM_CLOSURE_REJECTION: &str = "LLVM closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
-const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including static arrow functions, by-reference closure captures, typed/default/variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, implicit by-value arrow captures, and untyped by-reference closure parameters through dynamic callable dispatch";
+const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including static arrow functions, by-reference closure captures, variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, implicit by-value arrow captures, typed/default by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
 const LLVM_REQUIRE_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
 const ASSEMBLY_REQUIRE_REJECTION: &str = "assembly include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
 const LLVM_REQUIRE_EXPRESSION_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution for expression forms with include return values, _once de-duplication results, and caller-scope side effects until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles current include/require expression behavior";
@@ -12337,7 +12337,6 @@ impl CGenerator {
             || params.iter().any(|param| {
                 native_user_function_param_has_unsupported_by_reference_shape(param)
                     || param.is_variadic
-                    || param.default.is_some()
                     || param
                         .type_decl
                         .as_ref()
@@ -12623,9 +12622,20 @@ impl CGenerator {
             "NULL".to_string()
         };
         let descriptor = self.next_native_name("closure_descriptor");
+        let closure_function = FunctionDecl {
+            name: "Closure::__invoke".to_string(),
+            params: params.to_vec(),
+            return_type: return_type.cloned(),
+            returns_by_reference: false,
+            body: body.to_vec(),
+            is_nested: false,
+            end_line: span.line,
+            doc_comment: None,
+            span,
+        };
         self.body.push(format!(
             "phpc_NativeClosureDescriptor {descriptor} = {{ &{callback_name}, {}, {}, {param_flags} }};",
-            params.len(),
+            native_user_function_required_arg_count(&closure_function),
             params.len()
         ));
         let value = self.next_native_name("closure_value");
@@ -12728,23 +12738,24 @@ impl CGenerator {
         generator.body.push(format!(
             "if (phpc_call_depth > PHPC_NATIVE_USER_FUNCTION_MAX_CALL_DEPTH) {{ fprintf(stderr, \"phpc native user-function call depth exceeded\\n\"); return (phpc_NativeValueHandle){{0}}; }}"
         ));
+        let required_arg_count = native_user_function_required_arg_count(&function);
         generator.body.push(format!(
-            "if (phpc_closure_arg_count != {}) {{ fprintf(stderr, \"phpc native closure frame argument count mismatch\\n\"); return (phpc_NativeValueHandle){{0}}; }}",
+            "if (phpc_closure_arg_count < {} || phpc_closure_arg_count > {}) {{ fprintf(stderr, \"phpc native closure frame argument count mismatch\\n\"); return (phpc_NativeValueHandle){{0}}; }}",
+            required_arg_count + captures.len(),
             params.len() + captures.len()
         ));
-        for (index, param) in params.iter().enumerate() {
-            if param.by_reference {
-                generator.body.push(format!(
-                    "phpc_NativeReferenceHandle arg_{index} = phpc_closure_args[{index}].reference;"
-                ));
-            } else {
-                generator.body.push(format!(
-                    "phpc_NativeValueHandle arg_{index} = phpc_closure_args[{index}].value;"
-                ));
-            }
+        if captures.is_empty() {
+            generator.body.push(format!(
+                "size_t phpc_closure_call_arg_count = phpc_closure_arg_count;"
+            ));
+        } else {
+            generator.body.push(format!(
+                "size_t phpc_closure_call_arg_count = phpc_closure_arg_count - {};",
+                captures.len()
+            ));
         }
-        generator.bind_function_frame_parameters(&function);
-        generator.bind_closure_frame_captures(params.len(), captures);
+        generator.bind_closure_frame_parameters(params)?;
+        generator.bind_closure_frame_captures("phpc_closure_call_arg_count", captures);
 
         for statement in &function.body {
             generator.emit_statement(statement)?;
@@ -12868,27 +12879,7 @@ impl CGenerator {
                 self.remember_variable_order(&param.name);
                 continue;
             }
-            if let Some(type_decl) = param
-                .type_decl
-                .as_ref()
-                .filter(|_| !param.is_variadic)
-                .filter(|decl| !native_function_type_decl_is_mixed(decl))
-            {
-                self.emit_call_frame_type_coercion_assignment(
-                    &handle,
-                    &format!("arg_{index}"),
-                    &format!("parameter ${}", param.name),
-                    &type_decl.text,
-                    "",
-                );
-            } else {
-                self.body.push(format!(
-                    "phpc_NativeValueHandle {handle} = phpc_native_value_clone(arg_{index});"
-                ));
-            }
-            let error_exit = self.native_error_exit("");
-            self.body
-                .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
+            self.emit_frame_parameter_value_assignment(&handle, &format!("arg_{index}"), param, "");
             self.retain_native_value_cleanup_handle(&handle);
             self.variables
                 .insert(param.name.clone(), CValue::NativeValueHandle(handle));
@@ -12896,13 +12887,127 @@ impl CGenerator {
         }
     }
 
+    fn bind_closure_frame_parameters(&mut self, params: &[FunctionParam]) -> CompileResult<()> {
+        for (index, param) in params.iter().enumerate() {
+            let handle = self.next_native_name("frame_param");
+            if param.by_reference {
+                self.uses_native_reference_helpers = true;
+                self.body.push(format!(
+                    "phpc_NativeReferenceHandle {handle} = phpc_native_reference_clone(phpc_closure_args[{index}].reference);"
+                ));
+                let error_exit = self.native_error_exit("");
+                self.body
+                    .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
+                self.retain_native_reference_cleanup_handle(&handle);
+                self.variables
+                    .insert(param.name.clone(), CValue::NativeReferenceHandle(handle));
+                self.remember_variable_order(&param.name);
+                continue;
+            }
+
+            let source = format!("phpc_closure_args[{index}].value");
+            if let Some(default) = &param.default {
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {handle} = (phpc_NativeValueHandle){{0}};"
+                ));
+                self.body
+                    .push(format!("if (phpc_closure_call_arg_count > {index}) {{"));
+                self.emit_frame_parameter_value_store(&handle, &source, param, "");
+                self.body.push("} else {".to_string());
+                let value = self.materialize_native_value_result_operand(default, "")?;
+                let default_cleanup = c_cleanup_sequence(&value.cleanup_after_use);
+                self.emit_frame_parameter_value_store(
+                    &handle,
+                    &value.handle,
+                    param,
+                    &default_cleanup,
+                );
+                self.body.extend(value.cleanup_after_use);
+                self.body.push("}".to_string());
+            } else {
+                self.emit_frame_parameter_value_assignment(&handle, &source, param, "");
+            }
+
+            self.retain_native_value_cleanup_handle(&handle);
+            self.variables
+                .insert(param.name.clone(), CValue::NativeValueHandle(handle));
+            self.remember_variable_order(&param.name);
+        }
+        Ok(())
+    }
+
+    fn emit_frame_parameter_value_assignment(
+        &mut self,
+        handle: &str,
+        source: &str,
+        param: &FunctionParam,
+        failure_cleanup: &str,
+    ) {
+        if let Some(type_decl) = param
+            .type_decl
+            .as_ref()
+            .filter(|_| !param.is_variadic)
+            .filter(|decl| !native_function_type_decl_is_mixed(decl))
+        {
+            self.emit_call_frame_type_coercion_assignment(
+                handle,
+                source,
+                &format!("parameter ${}", param.name),
+                &type_decl.text,
+                failure_cleanup,
+            );
+        } else {
+            self.body.push(format!(
+                "phpc_NativeValueHandle {handle} = phpc_native_value_clone({source});"
+            ));
+            let error_exit = self.native_error_exit(failure_cleanup);
+            self.body
+                .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
+        }
+    }
+
+    fn emit_frame_parameter_value_store(
+        &mut self,
+        handle: &str,
+        source: &str,
+        param: &FunctionParam,
+        failure_cleanup: &str,
+    ) {
+        if let Some(type_decl) = param
+            .type_decl
+            .as_ref()
+            .filter(|_| !param.is_variadic)
+            .filter(|decl| !native_function_type_decl_is_mixed(decl))
+        {
+            let coerced = self.next_native_name("frame_param_coerced");
+            self.emit_call_frame_type_coercion_assignment(
+                &coerced,
+                source,
+                &format!("parameter ${}", param.name),
+                &type_decl.text,
+                failure_cleanup,
+            );
+            self.body.push(format!("{handle} = {coerced};"));
+        } else {
+            self.body
+                .push(format!("{handle} = phpc_native_value_clone({source});"));
+            let error_exit = self.native_error_exit(failure_cleanup);
+            self.body
+                .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
+        }
+    }
+
     fn bind_closure_frame_captures(
         &mut self,
-        capture_start: usize,
+        capture_start: &str,
         captures: &[crate::ast::ClosureCapture],
     ) {
         for (index, capture) in captures.iter().enumerate() {
-            let arg_index = capture_start + index;
+            let arg_index = if index == 0 {
+                capture_start.to_string()
+            } else {
+                format!("({capture_start} + {index})")
+            };
             let handle = self.next_native_name("frame_capture");
             self.uses_native_value_clone = true;
             self.body.push(format!(

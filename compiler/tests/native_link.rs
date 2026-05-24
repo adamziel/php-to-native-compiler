@@ -4,7 +4,7 @@ use std::process::Command;
 
 use php_compiler::{codegen::emit_native_executable_c_source, error::Phase, parse};
 
-const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including static arrow functions, by-reference closure captures, typed/default/variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, implicit by-value arrow captures, and untyped by-reference closure parameters through dynamic callable dispatch";
+const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including static arrow functions, by-reference closure captures, variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, implicit by-value arrow captures, typed/default by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
 
 const NATIVE_VALUE_TRUTHINESS_SOURCE: &str = concat!(
     "<?php\n",
@@ -5195,6 +5195,82 @@ fn emit_exe_links_and_runs_descriptor_closure_by_reference_parameter_program() {
 }
 
 #[test]
+fn native_executable_c_source_binds_typed_default_closure_parameters() {
+    let source = concat!(
+        "<?php\n",
+        "function apply_default($callback, $value) { return $callback($value); }\n",
+        "class ClosureParamApply {\n",
+        "    public static function apply($callback, $value) { return $callback($value); }\n",
+        "}\n",
+        "$default = function (int $value = 4, string $suffix = \"x\"): string { return $suffix . \":\" . $value; };\n",
+        "echo $default(), \"|\", $default(\"5\", \"y\"), \"|\";\n",
+        "echo apply_default(function (int $value = 6) { return $value + 1; }, \"7\"), \"|\";\n",
+        "echo ClosureParamApply::apply(fn(int $value = 8): int => $value + 2, \"9\"), \"|\";\n",
+        "$base = \"B\";\n",
+        "$captured = function (string $suffix = \"d\") use ($base) { return $base . $suffix; };\n",
+        "echo $captured(), \":\", $captured(\"e\");\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_closure_call_arg_count")
+            && source.contains("phpc_closure_arg_count <")
+            && source.contains("phpc_native_value_coerce_call_type_with_diagnostic"),
+        "typed/default closure parameters should reuse descriptor arity and call-frame type boundaries:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_user_function_0_apply_default(")
+            && source.contains("phpc_declared_method_")
+            && source.contains("phpc_native_value_from_closure_descriptor_captures_and_free"),
+        "typed/default closure parameters should flow through function, static-method, arrow, and captured-closure consumers:\n{source}"
+    );
+    assert!(
+        !source.contains(ASSEMBLY_CLOSURE_REJECTION)
+            && !source.contains("assembly dynamic function-call lowering rejects"),
+        "supported typed/default descriptor closures should not hit closure or dynamic-call blockers:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_typed_default_closure_parameter_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function apply_default($callback, $value) { return $callback($value); }\n",
+        "class ClosureParamApply {\n",
+        "    public static function apply($callback, $value) { return $callback($value); }\n",
+        "}\n",
+        "$default = function (int $value = 4, string $suffix = \"x\"): string { return $suffix . \":\" . $value; };\n",
+        "echo $default(), \"|\", $default(\"5\", \"y\"), \"|\";\n",
+        "echo apply_default(function (int $value = 6) { return $value + 1; }, \"7\"), \"|\";\n",
+        "echo ClosureParamApply::apply(fn(int $value = 8): int => $value + 2, \"9\"), \"|\";\n",
+        "$base = \"B\";\n",
+        "$captured = function (string $suffix = \"d\") use ($base) { return $base . $suffix; };\n",
+        "echo $captured(), \":\", $captured(\"e\");\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("typed_default_closure_parameters", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"x:4|y:5|8|11|Bd:Be");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn native_executable_c_source_captures_arrow_variables_through_descriptor_abi() {
     let source = concat!(
         "<?php\n",
@@ -5328,16 +5404,6 @@ fn native_executable_c_source_keeps_unsupported_closure_shapes_on_shared_blocker
             "<?php\n",
             "$value = 1;\n",
             "$callback = function () use (&$value) { return $value; };\n",
-            "echo $callback();\n",
-        ),
-        concat!(
-            "<?php\n",
-            "$callback = function ($value = 1) { return $value; };\n",
-            "echo $callback();\n",
-        ),
-        concat!(
-            "<?php\n",
-            "$callback = fn($value = 1) => $value;\n",
             "echo $callback();\n",
         ),
         concat!(
