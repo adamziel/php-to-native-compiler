@@ -1,11 +1,11 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 02:42 CEST
+Updated: 2026-05-24 02:58 CEST
 Evaluation marker: `20260523T235117Z`
 
 Latest primary semantic/test baseline:
-`cbda996b codegen: lower direct user function frames`
-Latest integrated semantic baseline: `cbda996b codegen: lower direct user function frames`
+`92728ce9 codegen: expose registered user functions to introspection`
+Latest integrated semantic baseline: `92728ce9 codegen: expose registered user functions to introspection`
 Latest evaluator report: `20260523T235117Z`
 
 These are candid engineering estimates toward generalized PHP semantics in the
@@ -32,7 +32,9 @@ string-search value-result ABI across LLVM IR and generated-C linked execution.
 Generated-C now has a compact direct by-value user-function frame subset:
 top-level declarations are registered before `main`, argument/default values
 are cloned into callee-owned native handles, direct calls receive owned return
-handles, fallthrough returns `null`, and unsupported frame shapes are rejected.
+handles, fallthrough returns `null`, registered direct frames are visible to
+generated-C `function_exists()` / `is_callable()` introspection, and
+unsupported frame shapes are rejected.
 
 This is still not close to complete PHP execution. The foundation is strong,
 but the remaining gaps are central language semantics rather than edge cases:
@@ -40,14 +42,14 @@ full generated-native calls/frames, object/property/method execution, complete
 references/COW identity, source-ordered diagnostics, cleanup/unwinding, and
 LLVM/assembly parity.
 
-Current primary state: primary semantic head is `cbda996b`. The earlier unowned
+Current primary state: primary semantic head is `92728ce9`. The earlier unowned
 `compiler/src/interpreter.rs` formatting spillover was restored and is not
 present. The former protected `runtime/src/lib.rs` null-slot hunk was rejected
 after focused runtime proof showed it broke existing-key increment/decrement,
 then parked outside the repo and restored. The earlier narrow generated-C
-user-function WIP remains rejected; the accepted slice adds explicit frame
-ownership, caller handoff, cleanup/failure exits, and linked proof for a small
-direct-call subset.
+user-function WIP remains rejected; the accepted frame slices add explicit
+frame ownership, caller handoff, cleanup/failure exits, registered
+function-symbol introspection, and linked proof for a small direct-call subset.
 
 Current resource read: `/dev/shm` is above the dispatch floor after reclaiming
 an inactive call-semantics build cache. Keep broad waves conservative and
@@ -62,7 +64,7 @@ reclaim large inactive target dirs only after live-owner checks.
 | Executable PHP semantics | **46%** | `[#########-----------]` | Many focused linked programs run, including PHP-shaped string-search results and direct by-value function frames, but behavior is still selected islands rather than a complete PHP execution model. |
 | Arrays, lvalues, references, COW | **58%** | `[############--------]` | Strong selected array/lvalue/reference paths. Full COW, arbitrary writable roots, and by-reference call/foreach parity remain open. |
 | Symbols, globals, request state | **64%** | `[#############-------]` | Strong request and `$GLOBALS` generated-C coverage. Reconciliation across calls/requests still needs work. |
-| Calls, functions, frames | **30%** | `[######--------------]` | Generated-C now lowers a compact direct by-value user-function frame subset with owned argument/default/return handles. Dynamic calls, methods, closures, by-reference/variadic frames, typed signatures, recursion, and full runtime lookup are still missing. |
+| Calls, functions, frames | **31%** | `[######--------------]` | Generated-C now lowers a compact direct by-value user-function frame subset with owned argument/default/return handles and registered-function introspection. Dynamic calls, methods, closures, by-reference/variadic frames, typed signatures, recursion, and full runtime lookup are still missing. |
 | Objects, properties, methods | **10%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary lacks general compiled object/property/method execution. |
 | Control flow, cleanup, diagnostics | **44%** | `[#########-----------]` | Bounded generated-C branches, loops including state-stable `do...while`, returns, transfers, switches, top-level state-stable gotos, normal-flow try/finally, top-level return through finally, and diagnostic-aware stdout formatting exist; owner/reference joins, broad unwinding, handlers, and exact ordering remain open. |
 | Broad integrated verification | **40%** | `[########------------]` | Focused gates are strong. Cross-feature composition, end-to-end PHP programs, and backend parity need much broader proof. |
@@ -76,7 +78,7 @@ reclaim large inactive target dirs only after live-owner checks.
 - [x] Generated-C top-level `return`, state-stable `while`/`do...while`/`for`, scalar loop-carried slots, multi-level loop transfers, state-stable `switch` dispatch/fallthrough/break, top-level state-stable `goto` labels, normal-flow `try`/`finally`, and top-level return transfer through active `finally` bodies.
 - [x] Diagnostic-aware native value stdout formatting consumed by LLVM and generated-C display paths.
 - [x] Strong selected generated-C arrays, lvalues, references, request state, `$GLOBALS`, lazy ternaries, logical short-circuiting, branch cleanup, foreach storage, and output/truthiness paths.
-- [x] Primary-integrated bounded generated-C direct by-value user-function/call-frame execution.
+- [x] Primary-integrated bounded generated-C direct by-value user-function/call-frame execution and registered-function introspection.
 - [ ] Full generated-native user-function/call-frame execution across dynamic calls, typed signatures, recursion, by-reference/variadic frames, closures, methods, and runtime lookup.
 - [ ] Primary-integrated object construction, property access, method dispatch, `$this`, static context, visibility, and magic behavior.
 - [ ] Full reference/COW identity across calls, arrays, objects, globals, foreach, and control-flow joins.
@@ -86,6 +88,12 @@ reclaim large inactive target dirs only after live-owner checks.
 
 ## Recent Primary-Integrated Work
 
+- `92728ce9`: wires generated-C `function_exists()` and `is_callable()` over
+  known string values to the registered direct user-function table as well as
+  the existing builtin function set. Focused proof covers generated-C source
+  and linked executable behavior for case-insensitive user-function lookup,
+  builtin lookup, missing-user-function false results, and subsequent direct
+  user-function execution.
 - `cbda996b`: lowers a compact generated-C direct by-value user-function frame
   subset. Top-level function declarations are registered before `main`,
   acyclic direct calls materialize argument/default values into callee-owned
