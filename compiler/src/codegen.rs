@@ -2156,8 +2156,7 @@ fn function_body_contains_native_frame_blocker(statements: &[Stmt]) -> bool {
 
 fn stmt_contains_function_frame_blocker(stmt: &Stmt) -> bool {
     match stmt {
-        Stmt::Try { .. }
-        | Stmt::Global { .. }
+        Stmt::Global { .. }
         | Stmt::StaticLocal { .. }
         | Stmt::Function(_)
         | Stmt::Interface(_)
@@ -2179,6 +2178,14 @@ fn stmt_contains_function_frame_blocker(stmt: &Stmt) -> bool {
         Stmt::Switch { cases, .. } => cases
             .iter()
             .any(|case| case.body.iter().any(stmt_contains_function_frame_blocker)),
+        Stmt::Try {
+            body, finally_body, ..
+        } => {
+            body.iter().any(stmt_contains_function_frame_blocker)
+                || finally_body
+                    .as_ref()
+                    .is_some_and(|body| body.iter().any(stmt_contains_function_frame_blocker))
+        }
         Stmt::Namespace { .. }
         | Stmt::Use { .. }
         | Stmt::Echo { .. }

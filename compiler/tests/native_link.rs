@@ -398,6 +398,39 @@ const NATIVE_TRY_FINALLY_RETURN_SOURCE: &str = concat!(
     "echo \"after\";\n",
 );
 
+const NATIVE_FUNCTION_TRY_FINALLY_FRAME_SOURCE: &str = concat!(
+    "<?php\n",
+    "function finish($value) {\n",
+    "    try {\n",
+    "        echo \"try:\";\n",
+    "        return strtoupper($value);\n",
+    "    } finally {\n",
+    "        echo \"finally:\";\n",
+    "    }\n",
+    "}\n",
+    "function fallthrough($value) {\n",
+    "    try {\n",
+    "        echo \"body:\";\n",
+    "        $value = strrev($value);\n",
+    "    } finally {\n",
+    "        echo \"cleanup:\";\n",
+    "    }\n",
+    "    return $value;\n",
+    "}\n",
+    "function nested_finally($value) {\n",
+    "    try {\n",
+    "        try {\n",
+    "            return $value;\n",
+    "        } finally {\n",
+    "            echo \"inner:\";\n",
+    "        }\n",
+    "    } finally {\n",
+    "        echo \"outer:\";\n",
+    "    }\n",
+    "}\n",
+    "echo finish(\"go\"), \"|\", fallthrough(\"abc\"), \"|\", nested_finally(\"done\"), \"|after\";\n",
+);
+
 const NATIVE_TOP_LEVEL_RETURN_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [\"flag\" => \"1\"];\n",
@@ -1712,6 +1745,36 @@ fn native_executable_c_source_runs_finally_before_try_return_transfer() {
 }
 
 #[test]
+fn native_executable_c_source_runs_finally_inside_user_function_frames() {
+    let program = parse(NATIVE_FUNCTION_TRY_FINALLY_FRAME_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("static phpc_NativeValueHandle phpc_user_function_0_finish(")
+            && source.contains("static phpc_NativeValueHandle phpc_user_function_1_fallthrough(")
+            && source
+                .contains("static phpc_NativeValueHandle phpc_user_function_2_nested_finally("),
+        "try/finally functions should still lower to reusable frame entries:\n{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_value_format_stdout_with_diagnostic")
+            .count()
+            >= 6,
+        "try bodies and active finally bodies inside frames should emit through the shared stdout path:\n{source}"
+    );
+    assert!(
+        source.contains("*phpc_call_status = 1; return"),
+        "return-through-finally inside frames should still use the owned frame return handoff:\n{source}"
+    );
+    assert!(
+        !source.contains("try/catch/finally lowering rejects")
+            && !source.contains("assembly user-function lowering rejects"),
+        "bounded function-local try/finally should not hit try or frame blockers:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_rejects_try_unwind_transfers() {
     for source in [
         "<?php\ntry { return; } catch (Exception $e) { echo \"catch\"; }\n",
@@ -1731,6 +1794,23 @@ fn native_executable_c_source_rejects_try_unwind_transfers() {
                 .message
                 .contains("try blocks outside the bounded generated-C normal-flow subset"),
             "{error:?}"
+        );
+    }
+}
+
+#[test]
+fn native_executable_c_source_rejects_unsupported_function_try_unwind_transfers() {
+    for source in [
+        "<?php\nfunction bad() { try { exit(\"bye\"); } finally { echo \"finally\"; } }\necho bad();\n",
+        "<?php\nfunction bad() { try { return \"ok\"; } finally { return \"override\"; } }\necho bad();\n",
+        "<?php\nfunction bad() { while (true) { try { break; } finally { echo \"finally\"; } } }\necho bad();\n",
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert!(
+            error.message.contains("by-value frame subset"),
+            "{source}\n{error:?}"
         );
     }
 }
@@ -2931,6 +3011,37 @@ fn emit_exe_links_and_runs_try_finally_return_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"try|finally:7|");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_function_try_finally_frame_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "function_try_finally_frame",
+        NATIVE_FUNCTION_TRY_FINALLY_FRAME_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native function try/finally executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"try:finally:GO|body:cleanup:cba|inner:outer:done|after"
+    );
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);
