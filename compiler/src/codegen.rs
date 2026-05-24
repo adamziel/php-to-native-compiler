@@ -63,7 +63,7 @@ const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lo
 const LLVM_STATIC_LOCAL_REJECTION: &str = "LLVM static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const ASSEMBLY_STATIC_LOCAL_REJECTION: &str = "assembly static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const LLVM_CLOSURE_REJECTION: &str = "LLVM closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
-const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including arrow functions, by-reference closure captures, implicit arrow captures, by-reference/default/variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported by-value descriptor closures and by-value captures through dynamic callable dispatch";
+const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including arrow functions, by-reference closure captures, implicit arrow captures, typed/default/variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, and untyped by-reference closure parameters through dynamic callable dispatch";
 const LLVM_REQUIRE_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
 const ASSEMBLY_REQUIRE_REJECTION: &str = "assembly include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
 const LLVM_REQUIRE_EXPRESSION_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution for expression forms with include return values, _once de-duplication results, and caller-scope side effects until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles current include/require expression behavior";
@@ -486,22 +486,15 @@ fn native_closure_frame_blocker(
     params: &[FunctionParam],
     returns_by_reference: bool,
 ) -> NativeCallBlocker {
-    match native_callable_frame_blocker(params, returns_by_reference) {
-        NativeCallBlocker::FunctionFrameHandoff => NativeCallBlocker::ClosureFrameHandoff,
-        blocker => blocker,
-    }
-}
-
-fn native_callable_frame_blocker(
-    params: &[FunctionParam],
-    returns_by_reference: bool,
-) -> NativeCallBlocker {
-    if params.iter().any(|param| param.by_reference) {
+    if params
+        .iter()
+        .any(native_user_function_param_has_unsupported_by_reference_shape)
+    {
         NativeCallBlocker::ByReferenceArgumentBinding
     } else if returns_by_reference {
         NativeCallBlocker::ReturnValueOwnership
     } else {
-        NativeCallBlocker::FunctionFrameHandoff
+        NativeCallBlocker::ClosureFrameHandoff
     }
 }
 
@@ -11120,7 +11113,7 @@ impl CGenerator {
 
     fn c_closure_frame_callback_signature(c_name: &str) -> String {
         format!(
-            "static phpc_NativeValueHandle {c_name}(int phpc_call_depth, const phpc_NativeValueHandle *phpc_closure_args, size_t phpc_closure_arg_count, int *phpc_call_status)"
+            "static phpc_NativeValueHandle {c_name}(int phpc_call_depth, const phpc_NativeClosureArgument *phpc_closure_args, size_t phpc_closure_arg_count, int *phpc_call_status)"
         )
     }
 
@@ -11610,7 +11603,7 @@ impl CGenerator {
             || calls_root_symbol_frame
             || return_type.is_some_and(|decl| !native_function_type_decl_is_supported(decl))
             || params.iter().any(|param| {
-                param.by_reference
+                native_user_function_param_has_unsupported_by_reference_shape(param)
                     || param.is_variadic
                     || param.default.is_some()
                     || param
@@ -11832,9 +11825,31 @@ impl CGenerator {
         )?;
         self.function_definitions.push(definition);
 
+        let param_flags = if params.iter().any(|param| param.by_reference) {
+            let index = self.next_static_data;
+            self.next_static_data += 1;
+            let flags_name = format!("closure_param_flags_{index}");
+            let flags = params
+                .iter()
+                .map(|param| {
+                    if param.by_reference {
+                        "PHPC_NATIVE_CLOSURE_ARGUMENT_BY_REFERENCE"
+                    } else {
+                        "0"
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.static_data.push(format!(
+                "static const uint8_t {flags_name}[] = {{ {flags} }};"
+            ));
+            flags_name
+        } else {
+            "NULL".to_string()
+        };
         let descriptor = self.next_native_name("closure_descriptor");
         self.body.push(format!(
-            "phpc_NativeClosureDescriptor {descriptor} = {{ &{callback_name}, {}, {} }};",
+            "phpc_NativeClosureDescriptor {descriptor} = {{ &{callback_name}, {}, {}, {param_flags} }};",
             params.len(),
             params.len()
         ));
@@ -11942,10 +11957,16 @@ impl CGenerator {
             "if (phpc_closure_arg_count != {}) {{ fprintf(stderr, \"phpc native closure frame argument count mismatch\\n\"); return (phpc_NativeValueHandle){{0}}; }}",
             params.len() + captures.len()
         ));
-        for index in 0..params.len() {
-            generator.body.push(format!(
-                "phpc_NativeValueHandle arg_{index} = phpc_closure_args[{index}];"
-            ));
+        for (index, param) in params.iter().enumerate() {
+            if param.by_reference {
+                generator.body.push(format!(
+                    "phpc_NativeReferenceHandle arg_{index} = phpc_closure_args[{index}].reference;"
+                ));
+            } else {
+                generator.body.push(format!(
+                    "phpc_NativeValueHandle arg_{index} = phpc_closure_args[{index}].value;"
+                ));
+            }
         }
         generator.bind_function_frame_parameters(&function);
         generator.bind_closure_frame_captures(params.len(), captures);
@@ -12107,7 +12128,7 @@ impl CGenerator {
             let handle = self.next_native_name("frame_capture");
             self.uses_native_value_clone = true;
             self.body.push(format!(
-                "phpc_NativeValueHandle {handle} = phpc_native_value_clone(phpc_closure_args[{arg_index}]);"
+                "phpc_NativeValueHandle {handle} = phpc_native_value_clone(phpc_closure_args[{arg_index}].value);"
             ));
             let error_exit = self.native_error_exit("");
             self.body
@@ -12204,12 +12225,16 @@ impl CGenerator {
         if self.uses_native_runtime_helpers() {
             output.push_str("#include <stddef.h>\n");
             output.push_str("#include <stdint.h>\n");
-            if self.uses_native_comparison_helpers || self.uses_native_array_helpers {
+            if self.uses_native_comparison_helpers
+                || self.uses_native_array_helpers
+                || self.uses_native_reference_helpers
+            {
                 output.push_str("#include <stdbool.h>\n");
             }
             if self.uses_native_symbol_table_helpers
                 && !self.uses_native_comparison_helpers
                 && !self.uses_native_array_helpers
+                && !self.uses_native_reference_helpers
             {
                 output.push_str("#include <stdbool.h>\n");
             }
@@ -12226,9 +12251,19 @@ impl CGenerator {
             output.push_str("typedef struct { void *ptr; } phpc_NativeStringHandle;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeValueHandle;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeDiagnosticHandle;\n");
+            if self.uses_native_closure_helpers
+                || self.uses_native_array_lvalue_helpers
+                || self.uses_native_reference_helpers
+                || self.uses_native_request_state_reference_helpers
+                || self.uses_native_symbol_table_helpers
+            {
+                output.push_str("typedef struct { void *ptr; } phpc_NativeReferenceHandle;\n");
+            }
             if self.uses_native_closure_helpers {
-                output.push_str("typedef phpc_NativeValueHandle (*phpc_NativeClosureFrameCallback)(int, const phpc_NativeValueHandle *, size_t, int *);\n");
-                output.push_str("typedef struct { phpc_NativeClosureFrameCallback callback; size_t required_arg_count; size_t param_count; } phpc_NativeClosureDescriptor;\n");
+                output.push_str("#define PHPC_NATIVE_CLOSURE_ARGUMENT_BY_REFERENCE 1\n");
+                output.push_str("typedef struct { phpc_NativeValueHandle value; phpc_NativeReferenceHandle reference; uint8_t flags; } phpc_NativeClosureArgument;\n");
+                output.push_str("typedef phpc_NativeValueHandle (*phpc_NativeClosureFrameCallback)(int, const phpc_NativeClosureArgument *, size_t, int *);\n");
+                output.push_str("typedef struct { phpc_NativeClosureFrameCallback callback; size_t required_arg_count; size_t param_count; const uint8_t *param_flags; } phpc_NativeClosureDescriptor;\n");
             }
             if self.uses_native_array_helpers || self.uses_native_request_state_helpers {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeArrayHandle;\n");
@@ -12238,13 +12273,6 @@ impl CGenerator {
             }
             if self.uses_native_symbol_table_helpers {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeSymbolTableHandle;\n");
-            }
-            if self.uses_native_array_lvalue_helpers
-                || self.uses_native_reference_helpers
-                || self.uses_native_request_state_reference_helpers
-                || self.uses_native_symbol_table_helpers
-            {
-                output.push_str("typedef struct { void *ptr; } phpc_NativeReferenceHandle;\n");
             }
             if self.uses_native_string_helpers || self.uses_native_array_helpers {
                 output.push_str(
@@ -12583,7 +12611,9 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_closure_descriptor(phpc_NativeClosureDescriptor descriptor);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_closure_descriptor_captures_and_free(phpc_NativeClosureDescriptor descriptor, const phpc_NativeStringHandle *capture_names, const phpc_NativeValueHandle *capture_values, size_t capture_count);\n");
                 output.push_str("extern _Bool phpc_native_value_is_descriptor_closure(phpc_NativeValueHandle value);\n");
-                output.push_str("extern phpc_NativeValueHandle phpc_native_closure_invoke_value_with_diagnostic(phpc_NativeValueHandle value, int call_depth, const phpc_NativeValueHandle *args, size_t arg_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern _Bool phpc_native_closure_value_param_is_by_reference(phpc_NativeValueHandle value, size_t index);\n");
+                output.push_str("extern void phpc_native_closure_reference_argument_failure_with_diagnostic(phpc_NativeValueHandle value, size_t index, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_closure_invoke_value_with_diagnostic(phpc_NativeValueHandle value, int call_depth, const phpc_NativeClosureArgument *args, size_t arg_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_output_buffer_operation {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_output_buffer_operation_with_diagnostic(phpc_NativeValueHandle first, phpc_NativeValueHandle second, phpc_NativeValueHandle third, uint8_t argc, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -20013,6 +20043,15 @@ impl CGenerator {
         result: &str,
     ) -> CompileResult<()> {
         self.uses_native_closure_helpers = true;
+        self.uses_native_reference_helpers = true;
+        if let Some(arg) = args
+            .iter()
+            .find(|arg| self.runtime_dynamic_call_reference_argument_needs_symbol_table(arg))
+        {
+            let table_failure_cleanup =
+                format!("{}{}", c_cleanup_sequence(shared_cleanup), failure_cleanup);
+            self.ensure_globals_symbol_table(&table_failure_cleanup, arg.span())?;
+        }
 
         self.body.push(format!(
             "if (!{matched} && phpc_native_value_is_descriptor_closure({callee_handle})) {{"
@@ -20020,32 +20059,33 @@ impl CGenerator {
         self.body.push(format!("  {matched} = 1;"));
 
         let mut branch_cleanup = Vec::new();
-        let mut arg_values = Vec::new();
-        for arg in args {
-            let arg_failure_cleanup = format!(
-                "{}{}{}",
-                c_cleanup_sequence(&branch_cleanup),
-                c_cleanup_sequence(shared_cleanup),
-                failure_cleanup
-            );
-            let value = self.materialize_native_value_result_operand(arg, &arg_failure_cleanup)?;
-            branch_cleanup.extend(value.cleanup_after_use.clone());
-            arg_values.push(value);
+        let mut closure_args = Vec::new();
+        for (index, arg) in args.iter().enumerate() {
+            let argument = self.materialize_descriptor_closure_argument(
+                callee_handle,
+                index,
+                arg,
+                shared_cleanup,
+                failure_cleanup,
+                &branch_cleanup,
+            )?;
+            branch_cleanup.extend(argument.cleanup_after_use);
+            closure_args.push(argument.handle);
         }
 
-        let (arg_handles, arg_count) = if arg_values.is_empty() {
+        let (arg_handles, arg_count) = if closure_args.is_empty() {
             ("NULL".to_string(), "0".to_string())
         } else {
             let handles = self.next_native_name("closure_arg_values");
-            let value_handles = arg_values
+            let argument_entries = closure_args
                 .iter()
-                .map(|value| value.handle.as_str())
+                .map(|argument| argument.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
             self.body.push(format!(
-                "  phpc_NativeValueHandle {handles}[] = {{ {value_handles} }};"
+                "  phpc_NativeClosureArgument {handles}[] = {{ {argument_entries} }};"
             ));
-            (handles, arg_values.len().to_string())
+            (handles, closure_args.len().to_string())
         };
 
         let diagnostic = self.next_native_name("closure_invoke_diagnostic");
@@ -20074,6 +20114,113 @@ impl CGenerator {
         self.body.push("}".to_string());
 
         Ok(())
+    }
+
+    fn materialize_descriptor_closure_argument(
+        &mut self,
+        callee_handle: &str,
+        index: usize,
+        arg: &Expr,
+        shared_cleanup: &[String],
+        failure_cleanup: &str,
+        prior_cleanup: &[String],
+    ) -> CompileResult<CNativeValueMaterialization> {
+        let argument = self.next_native_name("closure_arg");
+        self.body.push(format!(
+            "  phpc_NativeClosureArgument {argument} = {{ (phpc_NativeValueHandle){{0}}, (phpc_NativeReferenceHandle){{0}}, 0 }};"
+        ));
+        let current_cleanup = vec![
+            format!("phpc_native_value_free({argument}.value);"),
+            format!("phpc_native_reference_free({argument}.reference);"),
+        ];
+        let current_cleanup_sequence = c_cleanup_sequence(&current_cleanup);
+        self.body.push(format!(
+            "  if (phpc_native_closure_value_param_is_by_reference({callee_handle}, {index})) {{"
+        ));
+        if self.runtime_dynamic_call_reference_argument_is_supported(arg) {
+            let reference_failure_cleanup = format!(
+                "{}{}{}{}",
+                c_cleanup_sequence(prior_cleanup),
+                current_cleanup_sequence,
+                c_cleanup_sequence(shared_cleanup),
+                failure_cleanup
+            );
+            let reference = self.materialize_call_reference_argument(
+                arg,
+                arg.span(),
+                &reference_failure_cleanup,
+                NativeCallCallee::DynamicExpression,
+            )?;
+            self.body
+                .push(format!("    {argument}.reference = {};", reference.handle));
+            self.body.push(format!(
+                "    {argument}.flags = PHPC_NATIVE_CLOSURE_ARGUMENT_BY_REFERENCE;"
+            ));
+            let value = self.next_native_name("closure_reference_arg_value");
+            self.body.push(format!(
+                "    phpc_NativeValueHandle {value} = phpc_native_reference_value_clone({});",
+                reference.handle
+            ));
+            let error_exit = self.native_error_exit(&reference_failure_cleanup);
+            self.body
+                .push(format!("    if ({value}.ptr == NULL) {{ {error_exit} }}"));
+            self.body.push(format!("    {argument}.value = {value};"));
+        } else {
+            let reference_failure_cleanup = format!(
+                "{}{}{}{}",
+                c_cleanup_sequence(prior_cleanup),
+                current_cleanup_sequence,
+                c_cleanup_sequence(shared_cleanup),
+                failure_cleanup
+            );
+            self.emit_descriptor_closure_reference_argument_failure(
+                callee_handle,
+                index,
+                &reference_failure_cleanup,
+                "    ",
+            );
+        }
+        self.body.push("  } else {".to_string());
+        let value_failure_cleanup = format!(
+            "{}{}{}{}",
+            c_cleanup_sequence(prior_cleanup),
+            current_cleanup_sequence,
+            c_cleanup_sequence(shared_cleanup),
+            failure_cleanup
+        );
+        let value = self.materialize_native_value_result_operand(arg, &value_failure_cleanup)?;
+        self.body
+            .push(format!("    {argument}.value = {};", value.handle));
+        self.body
+            .extend(native_value_aux_cleanup_after_consuming_handle(&value));
+        self.body.push("  }".to_string());
+
+        Ok(CNativeValueMaterialization {
+            handle: argument,
+            cleanup_after_use: current_cleanup,
+        })
+    }
+
+    fn emit_descriptor_closure_reference_argument_failure(
+        &mut self,
+        callee_handle: &str,
+        index: usize,
+        failure_cleanup: &str,
+        indent: &str,
+    ) {
+        self.uses_native_closure_helpers = true;
+
+        let diagnostic = self.next_native_name("closure_reference_arg_diagnostic");
+        self.body.push(format!(
+            "{indent}phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "{indent}phpc_native_closure_reference_argument_failure_with_diagnostic({callee_handle}, {index}, &{diagnostic});"
+        ));
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!(
+            "{indent}if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); {diagnostic}.ptr = NULL; }} {error_exit}"
+        ));
     }
 
     fn runtime_dynamic_call_reference_argument_is_supported(&self, arg: &Expr) -> bool {
@@ -33203,6 +33350,10 @@ echo " 10" < "zeta";
         ));
         assert!(matches!(
             native_closure_frame_blocker(&[test_param(true, false)], false),
+            NativeCallBlocker::ClosureFrameHandoff
+        ));
+        assert!(matches!(
+            native_closure_frame_blocker(&[test_typed_param(true, "int")], false),
             NativeCallBlocker::ByReferenceArgumentBinding
         ));
         assert!(matches!(

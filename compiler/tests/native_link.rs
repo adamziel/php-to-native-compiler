@@ -4,7 +4,7 @@ use std::process::Command;
 
 use php_compiler::{codegen::emit_native_executable_c_source, error::Phase, parse};
 
-const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including arrow functions, by-reference closure captures, implicit arrow captures, by-reference/default/variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported by-value descriptor closures and by-value captures through dynamic callable dispatch";
+const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including arrow functions, by-reference closure captures, implicit arrow captures, typed/default/variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, and untyped by-reference closure parameters through dynamic callable dispatch";
 
 const NATIVE_VALUE_TRUTHINESS_SOURCE: &str = concat!(
     "<?php\n",
@@ -5061,6 +5061,56 @@ fn emit_exe_links_and_runs_descriptor_closure_after_by_value_frame_transfer() {
 }
 
 #[test]
+fn native_executable_c_source_binds_descriptor_closure_by_reference_parameters() {
+    let source = concat!(
+        "<?php\n",
+        "function apply($callback, &$slot, $value) { return $callback($slot, $value); }\n",
+        "function relay($callback, &$slot) { return apply($callback, $slot, \"relay\"); }\n",
+        "$callback = function (&$slot, $value) { $slot = $value; return $slot; };\n",
+        "$direct = \"old\";\n",
+        "echo $callback($direct, \"direct\"), \":\", $direct, \"|\";\n",
+        "$frame = \"old\";\n",
+        "echo apply($callback, $frame, \"frame\"), \":\", $frame, \"|\";\n",
+        "$dynamic = \"old\";\n",
+        "$name = \"apply\";\n",
+        "echo $name($callback, $dynamic, \"dynamic\"), \":\", $dynamic, \"|\";\n",
+        "$nested = \"old\";\n",
+        "echo relay($callback, $nested), \":\", $nested, \"|\";\n",
+        "$items = [\"a\" => \"old\", \"b\" => [\"c\" => \"deep\"]];\n",
+        "$callback($items[\"a\"], \"array\");\n",
+        "$callback($items[\"b\"][\"c\"], \"nested\");\n",
+        "echo $items[\"a\"], \":\", $items[\"b\"][\"c\"];\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("PHPC_NATIVE_CLOSURE_ARGUMENT_BY_REFERENCE")
+            && source.contains("phpc_native_closure_value_param_is_by_reference")
+            && source.contains("phpc_native_closure_reference_argument_failure_with_diagnostic"),
+        "closure descriptors should carry reusable by-reference parameter metadata:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_NativeClosureArgument")
+            && source.contains("phpc_native_symbol_table_reference_for_path")
+            && source.contains("phpc_native_reference_value_clone")
+            && source.contains("phpc_native_reference_set_value"),
+        "closure invocation should bind lvalue arguments through the shared reference ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_user_function_0_apply(")
+            && source.contains("phpc_user_function_1_relay(")
+            && source.contains("phpc_native_value_dynamic_call_name_matches"),
+        "by-reference descriptor closures should flow through direct, nested, and runtime dynamic callable consumers:\n{source}"
+    );
+    assert!(
+        !source.contains(ASSEMBLY_CLOSURE_REJECTION)
+            && !source.contains("assembly dynamic function-call lowering rejects"),
+        "supported by-reference descriptor closures should not hit closure or dynamic-call blockers:\n{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_by_value_captured_descriptor_closure_invocation() {
     if !has_cc() {
         return;
@@ -5099,6 +5149,52 @@ fn emit_exe_links_and_runs_by_value_captured_descriptor_closure_invocation() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_descriptor_closure_by_reference_parameter_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function apply($callback, &$slot, $value) { return $callback($slot, $value); }\n",
+        "function relay($callback, &$slot) { return apply($callback, $slot, \"relay\"); }\n",
+        "$callback = function (&$slot, $value) { $slot = $value; return $slot; };\n",
+        "$direct = \"old\";\n",
+        "echo $callback($direct, \"direct\"), \":\", $direct, \"|\";\n",
+        "$frame = \"old\";\n",
+        "echo apply($callback, $frame, \"frame\"), \":\", $frame, \"|\";\n",
+        "$dynamic = \"old\";\n",
+        "$name = \"apply\";\n",
+        "echo $name($callback, $dynamic, \"dynamic\"), \":\", $dynamic, \"|\";\n",
+        "$nested = \"old\";\n",
+        "echo relay($callback, $nested), \":\", $nested, \"|\";\n",
+        "$items = [\"a\" => \"old\", \"b\" => [\"c\" => \"deep\"]];\n",
+        "$callback($items[\"a\"], \"array\");\n",
+        "$callback($items[\"b\"][\"c\"], \"nested\");\n",
+        "echo $items[\"a\"], \":\", $items[\"b\"][\"c\"];\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("descriptor_closure_by_reference_parameters", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(
+        run.stdout,
+        b"direct:direct|frame:frame|dynamic:dynamic|relay:relay|array:nested"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn native_executable_c_source_keeps_unsupported_closure_shapes_on_shared_blocker() {
     for source in [
         concat!(
@@ -5106,12 +5202,6 @@ fn native_executable_c_source_keeps_unsupported_closure_shapes_on_shared_blocker
             "$value = 1;\n",
             "$callback = function () use (&$value) { return $value; };\n",
             "echo $callback();\n",
-        ),
-        concat!(
-            "<?php\n",
-            "$callback = function (&$value) { return $value; };\n",
-            "$value = 1;\n",
-            "echo $callback($value);\n",
         ),
         concat!(
             "<?php\n",
