@@ -14344,6 +14344,42 @@ const NATIVE_TRANSITIVE_GLOBAL_IMPORT_USER_FUNCTION_SOURCE: &str = concat!(
     "echo relay_key(\"via\"), \":\", $bag[\"k\"];\n",
 );
 
+const NATIVE_GLOBALS_SELF_IMPORT_USER_FUNCTION_SOURCE: &str = concat!(
+    "<?php\n",
+    "$slot = \"root\";\n",
+    "$bag = [\"k\" => \"root\"];\n",
+    "function touch_globals($value) {\n",
+    "    global $GLOBALS;\n",
+    "    echo $GLOBALS[\"slot\"], \"|\";\n",
+    "    $GLOBALS[\"slot\"] = $value;\n",
+    "    $GLOBALS[\"bag\"][\"k\"] = strtoupper(\"deep\");\n",
+    "    echo $GLOBALS[\"slot\"], \":\", $GLOBALS[\"bag\"][\"k\"];\n",
+    "}\n",
+    "function mix_globals($value) {\n",
+    "    global $GLOBALS, $slot;\n",
+    "    $GLOBALS[\"slot\"] = $value;\n",
+    "    $slot = $slot . \"!\";\n",
+    "    echo \"|\", $GLOBALS[\"slot\"], \":\", $slot;\n",
+    "}\n",
+    "touch_globals(\"changed\");\n",
+    "echo \"|\", $slot, \":\", $bag[\"k\"];\n",
+    "mix_globals(\"mixed\");\n",
+    "echo \"|\", $GLOBALS[\"slot\"];\n",
+);
+
+const NATIVE_RUNTIME_DYNAMIC_GLOBALS_SELF_IMPORT_USER_FUNCTION_SOURCE: &str = concat!(
+    "<?php\n",
+    "$slot = \"root\";\n",
+    "function touch_globals($value) {\n",
+    "    global $GLOBALS;\n",
+    "    $GLOBALS[\"slot\"] = $value;\n",
+    "    echo $GLOBALS[\"slot\"];\n",
+    "}\n",
+    "$call = isset($_GET[\"call\"]) ? $_GET[\"call\"] : \"touch_globals\";\n",
+    "$call(\"dynamic\");\n",
+    "echo \"|\", $slot;\n",
+);
+
 #[test]
 fn native_executable_c_source_lowers_direct_user_function_frames() {
     let program = parse(NATIVE_USER_FUNCTION_FRAME_SOURCE).unwrap();
@@ -14637,6 +14673,63 @@ fn native_executable_c_source_threads_global_import_roots_through_wrapper_frames
         !source.contains("assembly user-function lowering rejects")
             && !source.contains("assembly global-declaration lowering rejects"),
         "transitive global-import frame calls should not hit frame/global blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_globals_self_import_user_function_frames() {
+    let program = parse(NATIVE_GLOBALS_SELF_IMPORT_USER_FUNCTION_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "phpc_user_function_0_touch_globals(int phpc_call_depth, phpc_NativeSymbolTableHandle phpc_root_symbols"
+        ) && source.contains(
+            "phpc_user_function_1_mix_globals(int phpc_call_depth, phpc_NativeSymbolTableHandle phpc_root_symbols"
+        ),
+        "$GLOBALS self-import frames should receive the shared caller root symbol table:\n{source}"
+    );
+    assert!(
+        source.matches("phpc_native_symbol_table_reference_for_path(").count() >= 1
+            && source.contains("global_import_ref_")
+            && body.contains("phpc_native_symbol_table_new()"),
+        "ordinary globals mixed with $GLOBALS self-imports should still bind through reference paths and one caller root table:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_symbol_table_set_value_by_path_with_diagnostic")
+            && source.contains("phpc_native_symbol_table_read_value_by_path_with_diagnostic"),
+        "$GLOBALS self-import function bodies should read and write through shared symbol paths:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly global-declaration lowering rejects")
+            && !source.contains("assembly user-function lowering rejects"),
+        "$GLOBALS self-imports should not hit global/frame blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_runtime_dynamic_globals_self_import_calls() {
+    let program = parse(NATIVE_RUNTIME_DYNAMIC_GLOBALS_SELF_IMPORT_USER_FUNCTION_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "phpc_user_function_0_touch_globals(int phpc_call_depth, phpc_NativeSymbolTableHandle phpc_root_symbols"
+        ) && source.contains("phpc_native_value_dynamic_call_name_matches"),
+        "runtime dynamic calls to $GLOBALS self-import frames should reuse dynamic lookup and root-symbol frame ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_symbol_table_new()")
+            && body.contains("phpc_user_function_0_touch_globals(")
+            && body.contains("dynamic_user_function_matched_"),
+        "runtime dynamic $GLOBALS self-import dispatch should materialize and pass one caller root table:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly dynamic function-call lowering rejects")
+            && !source.contains("assembly global-declaration lowering rejects"),
+        "runtime dynamic $GLOBALS self-import calls should not hit dynamic/global blockers:\n{source}"
     );
 }
 
@@ -14968,6 +15061,37 @@ fn emit_exe_links_and_runs_transitive_global_import_user_function_frame_program(
 }
 
 #[test]
+fn emit_exe_links_and_runs_globals_self_import_user_function_frame_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "globals_self_import_user_function_frame",
+        NATIVE_GLOBALS_SELF_IMPORT_USER_FUNCTION_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native $GLOBALS self-import executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"root|changed:DEEP|changed:DEEP|mixed!:mixed!|mixed!"
+    );
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
 fn emit_exe_links_and_runs_runtime_dynamic_by_reference_user_function_frame_program() {
     if !has_cc() {
         return;
@@ -15127,6 +15251,34 @@ fn emit_exe_links_and_runs_runtime_dynamic_global_import_user_function_call_prog
         run.stdout,
         b"seen:root|dynamic:dynamic|seen:dynamic|array:array|seen:dynamic|finite:finite|wrap:finite:finite|mix:finite|MIX"
     );
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_runtime_dynamic_globals_self_import_user_function_call_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "runtime_dynamic_globals_self_import_user_function_call",
+        NATIVE_RUNTIME_DYNAMIC_GLOBALS_SELF_IMPORT_USER_FUNCTION_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native runtime dynamic $GLOBALS self-import executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"dynamic|dynamic");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
@@ -15397,10 +15549,7 @@ fn native_executable_c_source_rejects_unsupported_user_function_frame_shapes() {
 
 #[test]
 fn native_executable_c_source_rejects_unsupported_global_import_roots() {
-    for source in [
-        "<?php\nfunction bad() { global $_GET; return 1; }\necho bad();\n",
-        "<?php\nfunction bad() { global $GLOBALS; return 1; }\necho bad();\n",
-    ] {
+    for source in ["<?php\nfunction bad() { global $_GET; return 1; }\necho bad();\n"] {
         let program = parse(source).unwrap();
         let error = emit_native_executable_c_source(&program).unwrap_err();
 

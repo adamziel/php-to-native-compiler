@@ -2325,7 +2325,7 @@ fn stmt_unsupported_global_import_span(stmt: &Stmt) -> Option<Span> {
     match stmt {
         Stmt::Global { names, span } => names
             .iter()
-            .any(|name| is_request_superglobal_name(name) || is_globals_superglobal_name(name))
+            .any(|name| is_request_superglobal_name(name))
             .then_some(*span),
         Stmt::If {
             then_branch,
@@ -16698,10 +16698,7 @@ impl CGenerator {
     }
 
     fn emit_global_declaration(&mut self, names: &[String], span: Span) -> CompileResult<()> {
-        if names
-            .iter()
-            .any(|name| is_request_superglobal_name(name) || is_globals_superglobal_name(name))
-        {
+        if names.iter().any(|name| is_request_superglobal_name(name)) {
             return Err(self.unsupported(span, ASSEMBLY_GLOBAL_DECLARATION_REJECTION));
         }
 
@@ -16709,8 +16706,12 @@ impl CGenerator {
             return Ok(());
         }
 
-        let table = self.ensure_globals_symbol_table("", span)?;
         for name in names {
+            if is_globals_superglobal_name(name) {
+                continue;
+            }
+
+            let table = self.ensure_globals_symbol_table("", span)?;
             let name_bytes = self.emit_symbol_name_static_bytes(name);
             let reference = self.next_native_name("global_import_ref");
             self.body.push(format!(
