@@ -25,7 +25,7 @@ const NATIVE_FILESYSTEM_PATH_HAS_PATH: u8 = 8;
 const LLVM_CONDITIONAL_REJECTION: &str = "LLVM conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
-const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, and unsupported dynamic string-valued calls, until full callable lookup, full arity/type diagnostics, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value fixed/default/variadic direct, finite known-string dynamic, and runtime string-valued dynamic user-function frames";
+const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, unsupported by-reference argument binding, and unsupported dynamic string-valued calls, until full callable lookup, full arity/type diagnostics, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value fixed/default/variadic direct, supported direct and compiler-known single-target by-reference frames, finite known-string dynamic, and runtime string-valued dynamic user-function frames";
 const LLVM_STRING_PREDICATE_REJECTION: &str = "LLVM string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; lowerable LLVM and generated-native C str_starts_with(), str_ends_with(), and str_contains() operands route through the shared runtime contract";
 const ASSEMBLY_STRING_PREDICATE_REJECTION: &str = "assembly string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; generated-native C routes lowerable str_starts_with(), str_ends_with(), and str_contains() operands through the shared runtime contract";
 const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int/search builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), strpos(), substr_count(), ord(), and crc32() forms outside the reusable native string operation contracts, including unsupported arity, non-lowerable operands, nested call cleanup, references/copy-on-write, and exact native builtin diagnostics; lowerable LLVM and generated-native C string operands route through shared runtime contracts";
@@ -55,7 +55,7 @@ const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic functio
 const LLVM_TERMINATION_REJECTION: &str = "LLVM termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const ASSEMBLY_TERMINATION_REJECTION: &str = "assembly termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
-const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations outside the bounded generated-C by-value frame subset, including nested functions, by-reference parameters, malformed variadic declarations, unsupported parameter or return type metadata, static locals, and unsupported body cleanup, until full native function symbol tables, stack-frame layout, complete callable lookup, return-value flow, and exact native error behavior exist; generated-native C lowers supported by-value fixed/default/variadic direct, finite known-string dynamic, and runtime string-valued dynamic user-function frames with bounded scalar/array type enforcement";
+const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations outside the bounded generated-C frame subset, including nested functions, unsupported typed/default/variadic by-reference parameters, malformed variadic declarations, unsupported parameter or return type metadata, static locals, and unsupported body cleanup, until full native function symbol tables, stack-frame layout, complete callable lookup, return-value flow, and exact native error behavior exist; generated-native C lowers supported by-value fixed/default/variadic direct, supported direct and compiler-known single-target by-reference frames, finite known-string dynamic, and runtime string-valued dynamic user-function frames with bounded scalar/array type enforcement";
 const LLVM_STATIC_LOCAL_REJECTION: &str = "LLVM static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const ASSEMBLY_STATIC_LOCAL_REJECTION: &str = "assembly static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const LLVM_CLOSURE_REJECTION: &str = "LLVM closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
@@ -418,7 +418,17 @@ impl NativeCallDiagnostics {
 }
 
 fn native_function_frame_blocker(function: &FunctionDecl) -> NativeCallBlocker {
-    native_callable_frame_blocker(&function.params, function.returns_by_reference)
+    if function
+        .params
+        .iter()
+        .any(native_user_function_param_has_unsupported_by_reference_shape)
+    {
+        NativeCallBlocker::ByReferenceArgumentBinding
+    } else if function.returns_by_reference {
+        NativeCallBlocker::ReturnValueOwnership
+    } else {
+        NativeCallBlocker::FunctionFrameHandoff
+    }
 }
 
 fn native_function_frame_call_operation(function: &FunctionDecl) -> NativeCallOperation {
@@ -536,6 +546,15 @@ fn native_user_function_has_malformed_variadic_params(function: &FunctionDecl) -
         return false;
     };
     index + 1 != function.params.len() || param.default.is_some()
+}
+
+fn native_user_function_param_has_unsupported_by_reference_shape(param: &FunctionParam) -> bool {
+    param.by_reference
+        && (param.is_variadic || param.default.is_some() || param.type_decl.is_some())
+}
+
+fn native_user_function_has_by_reference_params(function: &FunctionDecl) -> bool {
+    function.params.iter().any(|param| param.by_reference)
 }
 
 fn native_call_argument_list_blocker(args: &[Expr]) -> Option<NativeCallBlocker> {
@@ -3332,6 +3351,7 @@ fn native_direct_call_blocker_message(
             | NativeCallBlocker::ValueOperandEvaluationCleanup
             | NativeCallBlocker::LvalueOperandEvaluationCleanup
             | NativeCallBlocker::ReturnValueOwnership
+            | NativeCallBlocker::ByReferenceArgumentBinding
             | NativeCallBlocker::UnknownCalleeDiagnostics,
         ) => backend.function_call_rejection(),
         (
@@ -3357,6 +3377,7 @@ fn native_dynamic_call_blocker_message(
             | NativeCallBlocker::ValueOperandEvaluationCleanup
             | NativeCallBlocker::LvalueOperandEvaluationCleanup
             | NativeCallBlocker::ReturnValueOwnership
+            | NativeCallBlocker::ByReferenceArgumentBinding
             | NativeCallBlocker::UnknownCalleeDiagnostics,
         ) => backend.dynamic_function_call_rejection(),
         (
@@ -8763,6 +8784,7 @@ struct CGenerator {
     uses_native_value_offset_path_unset: bool,
     uses_native_value_truthiness: bool,
     uses_native_array_lvalue_helpers: bool,
+    uses_native_reference_helpers: bool,
     uses_native_request_state_helpers: bool,
     uses_native_request_state_reference_helpers: bool,
     uses_native_symbol_table_helpers: bool,
@@ -9251,6 +9273,11 @@ struct CNativeArrayLvaluePath {
 }
 
 struct CNativeValueMaterialization {
+    handle: String,
+    cleanup_after_use: Vec<String>,
+}
+
+struct CNativeReferenceMaterialization {
     handle: String,
     cleanup_after_use: Vec<String>,
 }
@@ -10309,6 +10336,7 @@ impl CGenerator {
         self.uses_native_value_offset_path_unset |= branch.uses_native_value_offset_path_unset;
         self.uses_native_value_truthiness |= branch.uses_native_value_truthiness;
         self.uses_native_array_lvalue_helpers |= branch.uses_native_array_lvalue_helpers;
+        self.uses_native_reference_helpers |= branch.uses_native_reference_helpers;
         self.uses_native_request_state_helpers |= branch.uses_native_request_state_helpers;
         self.uses_native_request_state_reference_helpers |=
             branch.uses_native_request_state_reference_helpers;
@@ -10332,6 +10360,7 @@ impl CGenerator {
             || self.uses_native_value_truthiness
             || self.uses_native_exit_helpers
             || self.uses_native_value_clone
+            || self.uses_native_reference_helpers
             || self.uses_native_call_type_helpers
             || self.uses_native_dynamic_call_helpers
             || !self.function_definitions.is_empty()
@@ -10356,13 +10385,15 @@ impl CGenerator {
         format!("phpc_user_function_{index}_{sanitized}")
     }
 
-    fn c_user_function_signature(c_name: &str, param_count: usize) -> String {
+    fn c_user_function_signature(c_name: &str, function_params: &[FunctionParam]) -> String {
         let mut params = vec!["int phpc_call_depth".to_string()];
-        params.extend(
-            (0..param_count)
-                .map(|index| format!("phpc_NativeValueHandle arg_{index}"))
-                .collect::<Vec<_>>(),
-        );
+        params.extend(function_params.iter().enumerate().map(|(index, param)| {
+            if param.by_reference {
+                format!("phpc_NativeReferenceHandle arg_{index}")
+            } else {
+                format!("phpc_NativeValueHandle arg_{index}")
+            }
+        }));
         params.push("int *phpc_call_status".to_string());
         format!(
             "static phpc_NativeValueHandle {c_name}({})",
@@ -10406,7 +10437,7 @@ impl CGenerator {
                 .as_ref()
                 .is_some_and(|decl| !native_function_type_decl_is_supported(decl))
             || function.params.iter().any(|param| {
-                param.by_reference
+                native_user_function_param_has_unsupported_by_reference_shape(param)
                     || param
                         .type_decl
                         .as_ref()
@@ -10518,6 +10549,22 @@ impl CGenerator {
         ));
         for (index, param) in function.decl.params.iter().enumerate() {
             let handle = generator.next_native_name("frame_param");
+            if param.by_reference {
+                generator.uses_native_reference_helpers = true;
+                generator.body.push(format!(
+                    "phpc_NativeReferenceHandle {handle} = phpc_native_reference_clone(arg_{index});"
+                ));
+                let error_exit = generator.native_error_exit("");
+                generator
+                    .body
+                    .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
+                generator.retain_native_reference_cleanup_handle(&handle);
+                generator
+                    .variables
+                    .insert(param.name.clone(), CValue::NativeReferenceHandle(handle));
+                generator.remember_variable_order(&param.name);
+                continue;
+            }
             if let Some(type_decl) = param
                 .type_decl
                 .as_ref()
@@ -10561,7 +10608,7 @@ impl CGenerator {
         let mut definition = String::new();
         definition.push_str(&Self::c_user_function_signature(
             &function.c_name,
-            function.decl.params.len(),
+            &function.decl.params,
         ));
         definition.push_str(" {\n");
         for line in &generator.body {
@@ -10688,6 +10735,7 @@ impl CGenerator {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeSymbolTableHandle;\n");
             }
             if self.uses_native_array_lvalue_helpers
+                || self.uses_native_reference_helpers
                 || self.uses_native_request_state_reference_helpers
                 || self.uses_native_symbol_table_helpers
             {
@@ -10709,6 +10757,7 @@ impl CGenerator {
                 output.push_str("typedef struct { phpc_NativeValueHandle value; phpc_NativeArrayHandle array; uint8_t is_set; uint8_t result_kind; uint8_t status; uint8_t exists; } phpc_NativeRequestStateOperationResult;\n");
                 output.push_str("typedef struct { phpc_NativeByteBuffer buffer; uint8_t status; } phpc_NativeRequestStateKeyResult;\n");
                 if self.uses_native_array_lvalue_helpers
+                    || self.uses_native_reference_helpers
                     || self.uses_native_request_state_reference_helpers
                     || self.uses_native_symbol_table_helpers
                 {
@@ -11020,7 +11069,11 @@ impl CGenerator {
             output.push_str("extern size_t phpc_native_diagnostic_message_stderr(phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern size_t phpc_native_diagnostic_report(phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern void phpc_native_diagnostic_free(phpc_NativeDiagnosticHandle diagnostic);\n");
-            if self.uses_native_symbol_table_helpers || self.uses_native_array_lvalue_helpers {
+            if self.uses_native_reference_helpers
+                || self.uses_native_symbol_table_helpers
+                || self.uses_native_array_lvalue_helpers
+            {
+                output.push_str("extern phpc_NativeReferenceHandle phpc_native_reference_clone(phpc_NativeReferenceHandle reference);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_reference_value_clone(phpc_NativeReferenceHandle reference);\n");
                 output.push_str("extern bool phpc_native_reference_set_value(phpc_NativeReferenceHandle reference, phpc_NativeValueHandle value);\n");
                 output.push_str("extern void phpc_native_reference_free(phpc_NativeReferenceHandle reference);\n");
@@ -11104,7 +11157,7 @@ impl CGenerator {
                     .expect("registered function key has metadata");
                 output.push_str(&Self::c_user_function_signature(
                     &function.c_name,
-                    function.decl.params.len(),
+                    &function.decl.params,
                 ));
                 output.push_str(";\n");
             }
@@ -11188,6 +11241,15 @@ impl CGenerator {
         } else {
             false
         }
+    }
+
+    fn clone_native_reference_handle(&mut self, reference: &str) -> String {
+        self.uses_native_reference_helpers = true;
+        let cloned = self.next_native_name("native_reference_clone");
+        self.body.push(format!(
+            "phpc_NativeReferenceHandle {cloned} = phpc_native_reference_clone({reference});"
+        ));
+        cloned
     }
 
     fn release_variable_native_value_handle(&mut self, name: &str) {
@@ -11602,6 +11664,30 @@ impl CGenerator {
         }
     }
 
+    fn c_reference_path_for_expr<'a>(&self, expr: &'a Expr) -> Option<CReferencePath<'a>> {
+        match expr {
+            Expr::Variable(name, span) => Some(CReferencePath {
+                name,
+                keys: Vec::new(),
+                append: false,
+                span: *span,
+            }),
+            Expr::Index { .. } => {
+                let (root, indices, span) = array_index_expr_path(expr)?;
+                let Expr::Variable(name, _) = root else {
+                    return None;
+                };
+                Some(CReferencePath {
+                    name,
+                    keys: indices,
+                    append: false,
+                    span,
+                })
+            }
+            _ => None,
+        }
+    }
+
     fn is_static_ordinary_globals_symbol_root(&self, index: &Expr) -> bool {
         static_string_key_expr_value(index)
             .as_deref()
@@ -11859,6 +11945,58 @@ impl CGenerator {
             key_count: keys.len(),
             cleanup_after_use,
             append: path.append,
+        })
+    }
+
+    fn materialize_call_reference_argument(
+        &mut self,
+        expr: &Expr,
+        call_span: Span,
+        failure_cleanup: &str,
+        callee: NativeCallCallee,
+    ) -> CompileResult<CNativeReferenceMaterialization> {
+        if let Expr::Variable(name, _) = expr {
+            if let Some(CValue::NativeReferenceHandle(reference)) =
+                self.variables.get(name).cloned()
+            {
+                let handle = self.clone_native_reference_handle(&reference);
+                let error_exit = self.native_error_exit(failure_cleanup);
+                self.body
+                    .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
+                return Ok(CNativeReferenceMaterialization {
+                    handle: handle.clone(),
+                    cleanup_after_use: vec![format!("phpc_native_reference_free({handle});")],
+                });
+            }
+        }
+
+        let Some(path) = self.c_reference_path_for_expr(expr) else {
+            return Err(
+                self.unsupported_call_operation(NativeCallOperation::value_result(
+                    call_span,
+                    callee,
+                    NativeCallBlocker::ByReferenceArgumentBinding,
+                )),
+            );
+        };
+        self.reject_unsupported_symbol_reference_path_root(&path, call_span)?;
+
+        let table = self.ensure_globals_symbol_table(failure_cleanup, expr.span())?;
+        let path = self.materialize_c_reference_path(path, failure_cleanup)?;
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let handle = self.next_native_name("call_reference_arg");
+        self.body.push(format!(
+            "phpc_NativeReferenceHandle {handle} = phpc_native_symbol_table_reference_for_path({table}, {}, {}, {}, {}, false);",
+            path.name_bytes, path.name_len, path.keys, path.key_count
+        ));
+        let error_exit = self.native_error_exit(&format!("{path_cleanup}{failure_cleanup}"));
+        self.body
+            .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
+        self.body.extend(path.cleanup_after_use);
+
+        Ok(CNativeReferenceMaterialization {
+            handle: handle.clone(),
+            cleanup_after_use: vec![format!("phpc_native_reference_free({handle});")],
         })
     }
 
@@ -16910,7 +17048,10 @@ impl CGenerator {
     fn finite_dynamic_call_can_use_runtime_dispatch(&self, values: &KnownString) -> bool {
         values.values().iter().all(|spelling| {
             self.user_functions
-                .contains_key(&Self::user_function_key(spelling))
+                .get(&Self::user_function_key(spelling))
+                .is_some_and(|function| {
+                    !native_user_function_has_by_reference_params(&function.decl)
+                })
                 || native_dynamic_callable_builtin_runtime_candidate_for_name(spelling).is_some()
         })
     }
@@ -17198,6 +17339,19 @@ impl CGenerator {
             ));
             self.body.push(format!("  {matched} = 1;"));
 
+            if native_user_function_has_by_reference_params(&function.decl) {
+                let branch_failure_cleanup =
+                    format!("{}{}", c_cleanup_sequence(&shared_cleanup), failure_cleanup);
+                self.emit_runtime_dynamic_call_failure(
+                    &callee.handle,
+                    "by-reference parameter binding requires a statically known reference argument set in the generated-C frame subset",
+                    &branch_failure_cleanup,
+                    "  ",
+                );
+                self.body.push("}".to_string());
+                continue;
+            }
+
             if !native_user_function_accepts_arg_count(&function.decl, args.len()) {
                 let branch_failure_cleanup =
                     format!("{}{}", c_cleanup_sequence(&shared_cleanup), failure_cleanup);
@@ -17456,8 +17610,8 @@ impl CGenerator {
             );
         }
 
-        let mut values = Vec::new();
         let mut cleanup_after_use = Vec::new();
+        let mut call_args = vec![self.user_function_call_depth_argument()];
         let fixed_count = native_user_function_fixed_param_count(&function.decl);
         for (index, param) in function.decl.params.iter().take(fixed_count).enumerate() {
             let value_expr = if let Some(arg) = args.get(index) {
@@ -17476,10 +17630,21 @@ impl CGenerator {
                 c_cleanup_sequence(&cleanup_after_use),
                 failure_cleanup
             );
-            let value =
-                self.materialize_native_value_result_operand(value_expr, &value_failure_cleanup)?;
-            cleanup_after_use.extend(value.cleanup_after_use.clone());
-            values.push(value);
+            if param.by_reference {
+                let reference = self.materialize_call_reference_argument(
+                    value_expr,
+                    span,
+                    &value_failure_cleanup,
+                    callee,
+                )?;
+                cleanup_after_use.extend(reference.cleanup_after_use);
+                call_args.push(reference.handle);
+            } else {
+                let value = self
+                    .materialize_native_value_result_operand(value_expr, &value_failure_cleanup)?;
+                cleanup_after_use.extend(value.cleanup_after_use.clone());
+                call_args.push(value.handle.clone());
+            }
         }
         if let Some((_, variadic_param)) = native_user_function_variadic_param(&function.decl) {
             let variadic_failure_cleanup = format!(
@@ -17495,19 +17660,12 @@ impl CGenerator {
                 &variadic_failure_cleanup,
             )?;
             cleanup_after_use.extend(variadic_value.cleanup_after_use.clone());
-            values.push(variadic_value);
+            call_args.push(variadic_value.handle);
         }
 
         let status = self.next_native_name("user_function_status");
         let result = self.next_native_name("user_function_result");
         self.body.push(format!("int {status} = 0;"));
-        let mut call_args = vec![self.user_function_call_depth_argument()];
-        call_args.extend(
-            values
-                .iter()
-                .map(|value| value.handle.clone())
-                .collect::<Vec<_>>(),
-        );
         call_args.push(format!("&{status}"));
         self.body.push(format!(
             "phpc_NativeValueHandle {result} = {}({});",
@@ -28989,6 +29147,20 @@ echo " 10" < "zeta";
         }
     }
 
+    fn test_typed_param(by_reference: bool, type_text: &str) -> FunctionParam {
+        FunctionParam {
+            name: "value".to_string(),
+            type_decl: Some(TypeDecl {
+                text: type_text.to_string(),
+                span: test_span(),
+            }),
+            by_reference,
+            is_variadic: false,
+            default: None,
+            span: test_span(),
+        }
+    }
+
     fn test_function(params: Vec<FunctionParam>, returns_by_reference: bool) -> FunctionDecl {
         FunctionDecl {
             name: "sample".to_string(),
@@ -29035,6 +29207,13 @@ echo " 10" < "zeta";
         ));
         assert!(matches!(
             native_function_frame_blocker(&test_function(vec![test_param(true, false)], false)),
+            NativeCallBlocker::FunctionFrameHandoff
+        ));
+        assert!(matches!(
+            native_function_frame_blocker(&test_function(
+                vec![test_typed_param(true, "int")],
+                false
+            )),
             NativeCallBlocker::ByReferenceArgumentBinding
         ));
         assert!(matches!(
@@ -29074,6 +29253,10 @@ echo " 10" < "zeta";
             ),
             (
                 test_function(vec![test_param(true, false)], false),
+                NativeCallOperation::function_frame(span, NativeCallBlocker::FunctionFrameHandoff),
+            ),
+            (
+                test_function(vec![test_typed_param(true, "int")], false),
                 NativeCallOperation::function_frame(
                     span,
                     NativeCallBlocker::ByReferenceArgumentBinding,

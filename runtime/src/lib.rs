@@ -4853,6 +4853,21 @@ pub unsafe extern "C" fn phpc_native_reference_value_clone(
 /// # Safety
 ///
 /// `handle` must be null or a reference handle previously returned by the
+/// runtime ABI and not yet freed. The returned handle points at the same PHP
+/// reference cell and must be released independently with
+/// `phpc_native_reference_free`. Null handles return a null reference handle.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_reference_clone(
+    handle: NativeReferenceHandle,
+) -> NativeReferenceHandle {
+    unsafe { handle.as_ref() }
+        .map(|reference| NativeReferenceHandle::from_cell(reference.cell.clone()))
+        .unwrap_or_else(NativeReferenceHandle::null)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a reference handle previously returned by the
 /// runtime ABI and not yet freed. `value` must be null or a value handle
 /// previously returned by the runtime ABI and not yet freed. Null handles are
 /// rejected and leave the reference unchanged. The reference stores a clone of
@@ -22416,6 +22431,32 @@ mod tests {
             0
         );
         unsafe { phpc_native_array_free(NativeArrayHandle::null()) };
+    }
+
+    #[test]
+    fn native_reference_clone_handles_share_cells_with_independent_ownership() {
+        unsafe {
+            let original = NativeReferenceHandle::from_cell(PhpReferenceCell::new(Value::String(
+                "start".to_string(),
+            )));
+            let alias = phpc_native_reference_clone(original);
+
+            assert!(!phpc_native_reference_is_null(alias));
+            let replacement = NativeValueHandle::from_value(Value::String("changed".to_string()));
+            assert!(phpc_native_reference_set_value(alias, replacement));
+            phpc_native_value_free(replacement);
+
+            let observed = phpc_native_reference_value_clone(original);
+            assert_eq!(
+                observed.as_ref(),
+                Some(&Value::String("changed".to_string()))
+            );
+
+            phpc_native_value_free(observed);
+            phpc_native_reference_free(alias);
+            phpc_native_reference_free(original);
+            phpc_native_reference_free(phpc_native_reference_clone(phpc_native_reference_null()));
+        }
     }
 
     unsafe fn request_state_operation_for_test(

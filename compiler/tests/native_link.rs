@@ -1809,7 +1809,7 @@ fn native_executable_c_source_rejects_unsupported_function_try_unwind_transfers(
         let error = emit_native_executable_c_source(&program).unwrap_err();
 
         assert!(
-            error.message.contains("by-value frame subset"),
+            error.message.contains("bounded generated-C frame subset"),
             "{source}\n{error:?}"
         );
     }
@@ -13608,6 +13608,33 @@ const NATIVE_VARIADIC_USER_FUNCTION_FRAME_SOURCE: &str = concat!(
     "echo call_dynamic(\"first_extra\", \"dyn\");\n",
 );
 
+const NATIVE_BY_REFERENCE_USER_FUNCTION_FRAME_SOURCE: &str = concat!(
+    "<?php\n",
+    "function set_to(&$slot, $value) {\n",
+    "    $slot = $value;\n",
+    "    return $slot;\n",
+    "}\n",
+    "function swap(&$left, &$right) {\n",
+    "    $tmp = $left;\n",
+    "    $left = $right;\n",
+    "    $right = $tmp;\n",
+    "    return $left;\n",
+    "}\n",
+    "$known = \"set_to\";\n",
+    "$dyn = \"seed\";\n",
+    "echo $known($dyn, \"dynamic\"), \":\", $dyn, \"|\";\n",
+    "$name = \"start\";\n",
+    "echo set_to($name, \"changed\"), \":\", $name, \"|\";\n",
+    "$items = [\"a\" => \"old\", \"b\" => [\"c\" => \"deep\"]];\n",
+    "set_to($items[\"a\"], \"new\");\n",
+    "echo $items[\"a\"], \"|\";\n",
+    "set_to($items[\"b\"][\"c\"], \"deep-new\");\n",
+    "echo $items[\"b\"][\"c\"], \"|\";\n",
+    "$x = \"left\";\n",
+    "$y = \"right\";\n",
+    "echo swap($x, $y), \":\", $x, \":\", $y;\n",
+);
+
 #[test]
 fn native_executable_c_source_lowers_direct_user_function_frames() {
     let program = parse(NATIVE_USER_FUNCTION_FRAME_SOURCE).unwrap();
@@ -13722,8 +13749,33 @@ fn native_executable_c_source_lowers_variadic_user_function_frames() {
     assert!(
         !source.contains("assembly user-function lowering rejects")
             && !source.contains("assembly dynamic function-call lowering rejects")
-            && !source.contains("by-value frame subset"),
+            && !source.contains("bounded generated-C frame subset"),
         "supported by-value variadic frames should not hit declaration or call blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_by_reference_user_function_frames() {
+    let program = parse(NATIVE_BY_REFERENCE_USER_FUNCTION_FRAME_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_NativeReferenceHandle arg_0")
+            && source.contains("phpc_native_reference_clone(arg_0)")
+            && source.contains("phpc_native_reference_set_value")
+            && source.contains("phpc_native_symbol_table_reference_for_path"),
+        "by-reference frame entries should bind reference handles through shared symbol/reference ABI:\n{source}"
+    );
+    assert!(
+        source.matches("phpc_native_symbol_table_reference_for_path(").count() >= 4
+            && source.contains("phpc_user_function_0_set_to(")
+            && source.contains("phpc_user_function_1_swap("),
+        "direct variables, nested array slots, and known dynamic calls should reuse the same reference path:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly user-function lowering rejects")
+            && !source.contains("unsupported typed/default/variadic by-reference parameters"),
+        "supported untyped by-reference frames should not hit declaration blockers:\n{source}"
     );
 }
 
@@ -13970,6 +14022,37 @@ fn emit_exe_links_and_runs_variadic_user_function_frame_program() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_by_reference_user_function_frame_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "by_reference_user_function_frame",
+        NATIVE_BY_REFERENCE_USER_FUNCTION_FRAME_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native by-reference user-function executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"dynamic:dynamic|changed:changed|new|deep-new|right:right:left"
+    );
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
 fn emit_exe_reports_typed_user_function_frame_mismatches() {
     if !has_cc() {
         return;
@@ -14184,6 +14267,11 @@ fn emit_exe_reports_runtime_dynamic_user_function_call_failures() {
             "<?php\nfunction invoke($call, $value) { return $call($value); }\nfunction pick($value) { return $value; }\necho invoke([\"Box\", \"run\"], \"abc\"), \"after\";\n",
             "unsupported call dynamic function call: callable must be a string for generated-C runtime dispatch, got array",
         ),
+        (
+            "runtime_dynamic_user_function_by_reference_blocked",
+            "<?php\nfunction set_to(&$slot, $value) { $slot = $value; }\nfunction invoke($call, $value) { return $call($value, \"x\"); }\n$slot = \"old\";\necho invoke(isset($_GET[\"call\"]) ? $_GET[\"call\"] : \"set_to\", $slot), \"after\";\n",
+            "unsupported call set_to(): by-reference parameter binding requires a statically known reference argument set in the generated-C frame subset",
+        ),
     ] {
         let (source_path, output_path) = compile_native_link_fixture(name, source);
         let run = Command::new(&output_path).output().unwrap_or_else(|error| {
@@ -14304,8 +14392,9 @@ fn emit_exe_links_and_runs_user_function_introspection_program() {
 #[test]
 fn native_executable_c_source_rejects_unsupported_user_function_frame_shapes() {
     for source in [
-        "<?php\nfunction byref(&$value) { return $value; }\n",
         "<?php\nfunction byref_variadic(&...$values) { return 1; }\n",
+        "<?php\nfunction typed_byref(int &$value) { return $value; }\n",
+        "<?php\nfunction default_byref(&$value = null) { return $value; }\n",
         "<?php\nfunction typed(callable $value) { return 1; }\n",
         "<?php\nfunction typed_object(object $value) { return 1; }\n",
         "<?php\nfunction ret(): void { return; }\n",
@@ -14318,10 +14407,52 @@ fn native_executable_c_source_rejects_unsupported_user_function_frame_shapes() {
         assert!(
             error
                 .message
-                .contains("by-value frame subset"),
+                .contains("bounded generated-C frame subset"),
             "{source}\n{error:?}"
         );
     }
+}
+
+#[test]
+fn native_executable_c_source_rejects_unsupported_by_reference_call_bindings() {
+    for source in [
+        "<?php\nfunction set_to(&$slot, $value) { $slot = $value; }\nset_to(\"literal\", \"x\");\n",
+        "<?php\nfunction set_to(&$slot, $value) { $slot = $value; }\nset_to(strrev(\"x\"), \"y\");\n",
+        "<?php\nfunction set_to(&$slot, $value) { $slot = $value; }\n$call = isset($_GET[\"alt\"]) ? \"set_to\" : \"strlen\";\necho $call($value, \"x\");\n",
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert!(
+            error.message.contains("by-reference argument binding")
+                || error.message.contains("dynamic string-valued calls")
+                || error
+                    .message
+                    .contains("assembly dynamic function-call lowering rejects"),
+            "{source}\n{error:?}"
+        );
+    }
+}
+
+#[test]
+fn native_executable_c_source_blocks_runtime_dynamic_by_reference_user_function_dispatch() {
+    let program = parse(concat!(
+        "<?php\n",
+        "function set_to(&$slot, $value) { $slot = $value; return $slot; }\n",
+        "$slot = \"old\";\n",
+        "$call = $_GET[\"fn\"];\n",
+        "echo $call($slot, \"x\");\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_value_dynamic_call_failure_with_diagnostic")
+            && body.contains("dynamic_call_reason_bytes_")
+            && !body.contains("phpc_user_function_0_set_to("),
+        "runtime string-valued by-reference frame dispatch should route to the shared dynamic-call failure ABI instead of calling the by-reference frame with by-value operands:\n{source}"
+    );
 }
 
 #[test]
