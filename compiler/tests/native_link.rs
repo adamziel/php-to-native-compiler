@@ -4,6 +4,8 @@ use std::process::Command;
 
 use php_compiler::{codegen::emit_native_executable_c_source, error::Phase, parse};
 
+const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including arrow functions, closure captures, implicit arrow captures, by-reference/default/variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported by-value descriptor closures through dynamic callable dispatch";
+
 const NATIVE_VALUE_TRUTHINESS_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [\"empty\" => \"\", \"zero\" => \"0\", \"one\" => \"1\"];\n",
@@ -4912,6 +4914,158 @@ fn emit_exe_links_and_runs_prior_foreach_cursor_storage_program() {
 
     let _ = fs::remove_file(&source_path);
     let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_executable_c_source_routes_descriptor_closures_through_shared_runtime_abi() {
+    let source = concat!(
+        "<?php\n",
+        "function invoke_later($callback, $value) { return $callback($value); }\n",
+        "$callback = function ($value) { return $value + 2; };\n",
+        "echo invoke_later($callback, 3);\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_from_closure_descriptor"),
+        "closure values should be materialized through the shared descriptor ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_is_descriptor_closure"),
+        "dynamic callable dispatch should test runtime descriptor-closure values:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_closure_invoke_value_with_diagnostic"),
+        "dynamic callable dispatch should invoke closure descriptors through the runtime ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_closure_frame_"),
+        "generated closure bodies should lower as reusable frame callbacks:\n{source}"
+    );
+    assert!(
+        !source.contains(ASSEMBLY_CLOSURE_REJECTION),
+        "descriptor-ready closure frames should not hit the closure blocker:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_immediate_descriptor_closure_invocation() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "echo (function ($value) { return $value; })(\"A\");\n",
+        "echo \"|\";\n",
+        "echo (function ($left, $right) { return $left + $right; })(2, 3);\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("immediate_descriptor_closure_invocation", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"A|5");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_descriptor_closure_after_by_value_frame_transfer() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class Caller {\n",
+        "    public static function run($callback, $value) { return $callback($value); }\n",
+        "    public static function discard($callback) { $callback(2); return 0; }\n",
+        "}\n",
+        "function choose($value) { return $value; }\n",
+        "function invoke_later($callback, $value) { return $callback($value); }\n",
+        "function relay($callback, $value) { return invoke_later($callback, $value); }\n",
+        "function apply_dynamic($function, $callback, $value) { return $function($callback, $value); }\n",
+        "$callback = function ($value) { return $value + 10; };\n",
+        "echo invoke_later($callback, 5);\n",
+        "echo \"|\";\n",
+        "echo relay($callback, 7);\n",
+        "echo \"|\";\n",
+        "echo apply_dynamic(choose(\"invoke_later\"), $callback, 9);\n",
+        "echo \"|\";\n",
+        "echo Caller::run($callback, 11);\n",
+        "echo \"|\";\n",
+        "echo invoke_later(function ($value) { return $value * 2; }, 6);\n",
+        "echo \"|\";\n",
+        "$printer = function ($value) { echo $value + 20; return $value; };\n",
+        "Caller::discard($printer);\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("descriptor_closure_by_value_frame_transfer", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"15|17|19|21|12|22");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_executable_c_source_keeps_unsupported_closure_shapes_on_shared_blocker() {
+    for source in [
+        concat!(
+            "<?php\n",
+            "$value = 1;\n",
+            "$callback = function () use ($value) { return $value; };\n",
+            "echo $callback();\n",
+        ),
+        concat!(
+            "<?php\n",
+            "$callback = function (&$value) { return $value; };\n",
+            "$value = 1;\n",
+            "echo $callback($value);\n",
+        ),
+        concat!(
+            "<?php\n",
+            "$callback = function ($value = 1) { return $value; };\n",
+            "echo $callback();\n",
+        ),
+        concat!(
+            "<?php\n",
+            "$callback = function (...$values) { return 1; };\n",
+            "echo $callback(1, 2);\n",
+        ),
+        concat!(
+            "<?php\n",
+            "function from_root() { global $value; return $value; }\n",
+            "$value = 1;\n",
+            "$callback = function () { return from_root(); };\n",
+            "echo $callback();\n",
+        ),
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, ASSEMBLY_CLOSURE_REJECTION);
+    }
 }
 
 #[test]
@@ -10016,7 +10170,7 @@ echo ($left == "2\x00z") ? 1 : 0;
 "#;
 
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
-const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions outside the bounded generated-C finite known-string dispatch to registered user-function frames, supported native builtin families, or supported mixed callable target sets, and runtime string-valued dispatch to registered user-function frames or supported native builtin families, including unknown or non-string callables, unsupported runtime callable builtin families, unsupported finite target sets, unsupported by-reference argument carriers, callbacks, methods, closures, and exact native callable errors; phpc run handles broader string-valued dynamic function calls";
+const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions outside the bounded generated-C finite known-string dispatch to registered user-function frames, supported native builtin families, or supported mixed callable target sets, runtime string-valued dispatch to registered user-function frames or supported native builtin families, and descriptor-backed closure values, including unknown callables, unsupported runtime callable builtin families, unsupported finite target sets, unsupported by-reference argument carriers, callbacks, methods, non-descriptor closures, and exact native callable errors; phpc run handles broader dynamic function calls";
 
 #[test]
 fn native_executable_c_source_quarantines_dynamic_string_operand_lengths_at_conditional_boundary() {

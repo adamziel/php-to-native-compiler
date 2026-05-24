@@ -55,7 +55,7 @@ const ASSEMBLY_CLEARSTATCACHE_REJECTION: &str = "assembly clearstatcache lowerin
 const LLVM_FILESYSTEM_PATH_OPERATION_REJECTION: &str = "LLVM filesystem-path builtin lowering rejects realpath_cache_get() and realpath_cache_size() until native filesystem realpath-cache ABI, request-local cache state, binary path byte fidelity, policy checks, warning-plus-false recovery, references/copy-on-write, and exact native diagnostics exist; generated-native C routes realpath-cache introspection through the shared runtime blocker";
 const ASSEMBLY_FILESYSTEM_PATH_OPERATION_REJECTION: &str = "assembly filesystem-path builtin lowering rejects forms outside the reusable native filesystem path operation blocker, including unsupported arity, stream contexts, file_get_contents() offset/length forms, non-lowerable operands, filesystem policy, stat cache/current-directory state, realpath-cache introspection return ownership, references/copy-on-write, and exact native diagnostics; lowerable stream, canonicalization, stat-predicate, stat-value, current-directory, stat-cache, and realpath-cache operands route through byte-preserving value-to-string conversion, optional truthiness, diagnostics, and cleanup";
 const LLVM_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "LLVM dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
-const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions outside the bounded generated-C finite known-string dispatch to registered user-function frames, supported native builtin families, or supported mixed callable target sets, and runtime string-valued dispatch to registered user-function frames or supported native builtin families, including unknown or non-string callables, unsupported runtime callable builtin families, unsupported finite target sets, unsupported by-reference argument carriers, callbacks, methods, closures, and exact native callable errors; phpc run handles broader string-valued dynamic function calls";
+const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions outside the bounded generated-C finite known-string dispatch to registered user-function frames, supported native builtin families, or supported mixed callable target sets, runtime string-valued dispatch to registered user-function frames or supported native builtin families, and descriptor-backed closure values, including unknown callables, unsupported runtime callable builtin families, unsupported finite target sets, unsupported by-reference argument carriers, callbacks, methods, non-descriptor closures, and exact native callable errors; phpc run handles broader dynamic function calls";
 const LLVM_TERMINATION_REJECTION: &str = "LLVM termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const ASSEMBLY_TERMINATION_REJECTION: &str = "assembly termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
@@ -63,7 +63,7 @@ const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lo
 const LLVM_STATIC_LOCAL_REJECTION: &str = "LLVM static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const ASSEMBLY_STATIC_LOCAL_REJECTION: &str = "assembly static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const LLVM_CLOSURE_REJECTION: &str = "LLVM closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
-const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
+const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including arrow functions, closure captures, implicit arrow captures, by-reference/default/variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported by-value descriptor closures through dynamic callable dispatch";
 const LLVM_REQUIRE_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
 const ASSEMBLY_REQUIRE_REJECTION: &str = "assembly include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
 const LLVM_REQUIRE_EXPRESSION_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution for expression forms with include return values, _once de-duplication results, and caller-scope side effects until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles current include/require expression behavior";
@@ -9421,6 +9421,7 @@ struct CGenerator {
     uses_native_exit_helpers: bool,
     uses_native_call_type_helpers: bool,
     uses_native_dynamic_call_helpers: bool,
+    uses_native_closure_helpers: bool,
     uses_native_output_buffer_operation: bool,
     uses_native_object_instantiation_helpers: bool,
     uses_native_object_property_helpers: bool,
@@ -11054,6 +11055,7 @@ impl CGenerator {
         self.uses_native_exit_helpers |= branch.uses_native_exit_helpers;
         self.uses_native_call_type_helpers |= branch.uses_native_call_type_helpers;
         self.uses_native_dynamic_call_helpers |= branch.uses_native_dynamic_call_helpers;
+        self.uses_native_closure_helpers |= branch.uses_native_closure_helpers;
         self.uses_native_output_buffer_operation |= branch.uses_native_output_buffer_operation;
         self.uses_native_object_instantiation_helpers |=
             branch.uses_native_object_instantiation_helpers;
@@ -11079,6 +11081,7 @@ impl CGenerator {
             || self.uses_native_reference_helpers
             || self.uses_native_call_type_helpers
             || self.uses_native_dynamic_call_helpers
+            || self.uses_native_closure_helpers
             || self.uses_native_output_buffer_operation
             || self.uses_native_object_instantiation_helpers
             || self.uses_native_object_property_helpers
@@ -11109,6 +11112,16 @@ impl CGenerator {
     fn c_user_function_name(index: usize, name: &str) -> String {
         let sanitized = Self::c_identifier_suffix(name, "anonymous");
         format!("phpc_user_function_{index}_{sanitized}")
+    }
+
+    fn c_closure_frame_callback_name(index: usize) -> String {
+        format!("phpc_closure_frame_{index}")
+    }
+
+    fn c_closure_frame_callback_signature(c_name: &str) -> String {
+        format!(
+            "static phpc_NativeValueHandle {c_name}(int phpc_call_depth, const phpc_NativeValueHandle *phpc_closure_args, size_t phpc_closure_arg_count, int *phpc_call_status)"
+        )
     }
 
     fn c_declared_class_method_name(
@@ -11570,6 +11583,50 @@ impl CGenerator {
         Ok(())
     }
 
+    fn validate_closure_descriptor_frame(
+        &self,
+        params: &[FunctionParam],
+        captures: &[crate::ast::ClosureCapture],
+        return_type: Option<&TypeDecl>,
+        returns_by_reference: bool,
+        body: &[Stmt],
+        span: Span,
+    ) -> CompileResult<()> {
+        let mut direct_calls = Vec::new();
+        collect_direct_call_names_from_stmts(body, &mut direct_calls);
+        let calls_root_symbol_frame = direct_calls.into_iter().any(|name| {
+            self.user_functions
+                .get(&Self::user_function_key(&name))
+                .is_some_and(|function| function.requires_root_symbols)
+        });
+
+        if !captures.is_empty()
+            || returns_by_reference
+            || stmt_list_contains_global_import(body)
+            || calls_root_symbol_frame
+            || return_type.is_some_and(|decl| !native_function_type_decl_is_supported(decl))
+            || params.iter().any(|param| {
+                param.by_reference
+                    || param.is_variadic
+                    || param.default.is_some()
+                    || param
+                        .type_decl
+                        .as_ref()
+                        .is_some_and(|decl| !native_function_type_decl_is_supported(decl))
+            })
+            || function_body_contains_native_frame_blocker(body)
+        {
+            return Err(self.native_call_diagnostics().operation(
+                NativeCallOperation::closure_frame(
+                    span,
+                    native_closure_frame_blocker(params, returns_by_reference),
+                ),
+            ));
+        }
+
+        Ok(())
+    }
+
     fn accept_recursive_user_function_frames(&self) -> CompileResult<()> {
         let mut graph = HashMap::<String, Vec<String>>::new();
         for key in &self.user_function_order {
@@ -11725,6 +11782,135 @@ impl CGenerator {
             &function.decl.params,
             function.requires_root_symbols,
         ));
+        definition.push_str(" {\n");
+        for line in &generator.body {
+            definition.push_str("  ");
+            definition.push_str(line);
+            definition.push('\n');
+        }
+        definition.push_str("}\n");
+        Ok(definition)
+    }
+
+    fn materialize_closure_descriptor_expr(
+        &mut self,
+        params: &[FunctionParam],
+        captures: &[crate::ast::ClosureCapture],
+        return_type: Option<&TypeDecl>,
+        returns_by_reference: bool,
+        body: &[Stmt],
+        span: Span,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        self.validate_closure_descriptor_frame(
+            params,
+            captures,
+            return_type,
+            returns_by_reference,
+            body,
+            span,
+        )?;
+
+        self.uses_native_closure_helpers = true;
+        let callback_index = self.next_native_temp;
+        self.next_native_temp += 1;
+        let callback_name = Self::c_closure_frame_callback_name(callback_index);
+        let definition = self.emit_closure_frame_callback_definition(
+            &callback_name,
+            params,
+            return_type.cloned(),
+            body,
+            span,
+        )?;
+        self.function_definitions.push(definition);
+
+        let descriptor = self.next_native_name("closure_descriptor");
+        self.body.push(format!(
+            "phpc_NativeClosureDescriptor {descriptor} = {{ &{callback_name}, {}, {} }};",
+            params.len(),
+            params.len()
+        ));
+        let value = self.next_native_name("closure_value");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value} = phpc_native_value_from_closure_descriptor({descriptor});"
+        ));
+        let error_exit = self.native_error_exit("");
+        self.body
+            .push(format!("if ({value}.ptr == NULL) {{ {error_exit} }}"));
+
+        Ok(CNativeValueMaterialization {
+            handle: value.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
+        })
+    }
+
+    fn emit_closure_frame_callback_definition(
+        &mut self,
+        c_name: &str,
+        params: &[FunctionParam],
+        return_type: Option<TypeDecl>,
+        body: &[Stmt],
+        span: Span,
+    ) -> CompileResult<String> {
+        let function = FunctionDecl {
+            name: "Closure::__invoke".to_string(),
+            params: params.to_vec(),
+            return_type,
+            returns_by_reference: false,
+            body: body.to_vec(),
+            is_nested: false,
+            end_line: span.line,
+            doc_comment: None,
+            span,
+        };
+
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            uses_native_value_clone: true,
+            uses_native_closure_helpers: true,
+            user_functions: self.user_functions.clone(),
+            user_function_order: self.user_function_order.clone(),
+            declared_classes: self.declared_classes.clone(),
+            declared_class_order: self.declared_class_order.clone(),
+            function_return_status: Some("phpc_call_status".to_string()),
+            function_call_depth: Some("phpc_call_depth".to_string()),
+            function_callable_name: Some("Closure::__invoke()".to_string()),
+            function_return_type: function.return_type.as_ref().map(|decl| decl.text.clone()),
+            next_static_data: self.next_static_data,
+            next_native_temp: self.next_native_temp,
+            ..CGenerator::default()
+        };
+
+        generator.body.push("*phpc_call_status = 0;".to_string());
+        generator.body.push(format!(
+            "if (phpc_call_depth > PHPC_NATIVE_USER_FUNCTION_MAX_CALL_DEPTH) {{ fprintf(stderr, \"phpc native user-function call depth exceeded\\n\"); return (phpc_NativeValueHandle){{0}}; }}"
+        ));
+        generator.body.push(format!(
+            "if (phpc_closure_arg_count != {}) {{ fprintf(stderr, \"phpc native closure frame argument count mismatch\\n\"); return (phpc_NativeValueHandle){{0}}; }}",
+            params.len()
+        ));
+        for index in 0..params.len() {
+            generator.body.push(format!(
+                "phpc_NativeValueHandle arg_{index} = phpc_closure_args[{index}];"
+            ));
+        }
+        generator.bind_function_frame_parameters(&function);
+
+        for statement in &function.body {
+            generator.emit_statement(statement)?;
+        }
+        generator.emit_function_default_return(span)?;
+
+        self.next_static_data = generator.next_static_data;
+        self.next_native_temp = generator.next_native_temp;
+        self.static_data
+            .extend(generator.static_data.iter().cloned());
+        self.merge_branch_feature_flags(&generator);
+
+        let mut definition = String::new();
+        for nested in &generator.function_definitions {
+            definition.push_str(nested);
+        }
+        definition.push_str(&Self::c_closure_frame_callback_signature(c_name));
         definition.push_str(" {\n");
         for line in &generator.body {
             definition.push_str("  ");
@@ -11963,6 +12149,10 @@ impl CGenerator {
             output.push_str("typedef struct { void *ptr; } phpc_NativeStringHandle;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeValueHandle;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeDiagnosticHandle;\n");
+            if self.uses_native_closure_helpers {
+                output.push_str("typedef phpc_NativeValueHandle (*phpc_NativeClosureFrameCallback)(int, const phpc_NativeValueHandle *, size_t, int *);\n");
+                output.push_str("typedef struct { phpc_NativeClosureFrameCallback callback; size_t required_arg_count; size_t param_count; } phpc_NativeClosureDescriptor;\n");
+            }
             if self.uses_native_array_helpers || self.uses_native_request_state_helpers {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeArrayHandle;\n");
             }
@@ -12312,6 +12502,11 @@ impl CGenerator {
                 output.push_str("extern _Bool phpc_native_value_dynamic_call_name_matches(phpc_NativeValueHandle value, const uint8_t *name_ptr, size_t name_len);\n");
                 output.push_str("extern void phpc_native_value_dynamic_call_failure_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *reason_ptr, size_t reason_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
+            if self.uses_native_closure_helpers {
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_closure_descriptor(phpc_NativeClosureDescriptor descriptor);\n");
+                output.push_str("extern _Bool phpc_native_value_is_descriptor_closure(phpc_NativeValueHandle value);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_closure_invoke_value_with_diagnostic(phpc_NativeValueHandle value, int call_depth, const phpc_NativeValueHandle *args, size_t arg_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            }
             if self.uses_native_output_buffer_operation {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_output_buffer_operation_with_diagnostic(phpc_NativeValueHandle first, phpc_NativeValueHandle second, phpc_NativeValueHandle third, uint8_t argc, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
@@ -12405,7 +12600,10 @@ impl CGenerator {
         if self.uses_strcmp {
             output.push_str("#include <string.h>\n\n");
         }
-        if !self.user_function_order.is_empty() || self.has_declared_class_methods() {
+        if !self.function_definitions.is_empty()
+            || !self.user_function_order.is_empty()
+            || self.has_declared_class_methods()
+        {
             output.push_str("#define PHPC_NATIVE_USER_FUNCTION_MAX_CALL_DEPTH 1024\n\n");
         }
         for line in &self.static_data {
@@ -18925,7 +19123,26 @@ impl CGenerator {
                 class_name,
                 span,
             } => self.emit_object_instanceof_expr(expr, class_name, *span),
-            Expr::Closure { .. } => Err(self.native_call_diagnostics().call_root(expr)),
+            Expr::Closure {
+                params,
+                captures,
+                return_type,
+                returns_by_reference,
+                body,
+                span,
+                ..
+            } => {
+                let value = self.materialize_closure_descriptor_expr(
+                    params,
+                    captures,
+                    return_type.as_ref(),
+                    *returns_by_reference,
+                    body,
+                    *span,
+                )?;
+                self.retain_native_value_cleanup_handle(&value.handle);
+                Ok(CValue::NativeValueHandle(value.handle))
+            }
             Expr::New {
                 class_name,
                 args,
@@ -19530,6 +19747,15 @@ impl CGenerator {
             self.ensure_globals_symbol_table(&symbol_table_failure_cleanup, span)?;
         }
 
+        self.emit_runtime_dynamic_descriptor_closure_branch(
+            &callee.handle,
+            args,
+            &shared_cleanup,
+            failure_cleanup,
+            &matched,
+            &result,
+        )?;
+
         'function_branches: for function in functions {
             let (name_bytes, name_len) =
                 self.emit_call_type_static_bytes("dynamic_call_name_bytes", &function.decl.name);
@@ -19693,6 +19919,79 @@ impl CGenerator {
             handle: result.clone(),
             cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
         }))
+    }
+
+    fn emit_runtime_dynamic_descriptor_closure_branch(
+        &mut self,
+        callee_handle: &str,
+        args: &[Expr],
+        shared_cleanup: &[String],
+        failure_cleanup: &str,
+        matched: &str,
+        result: &str,
+    ) -> CompileResult<()> {
+        self.uses_native_closure_helpers = true;
+
+        self.body.push(format!(
+            "if (!{matched} && phpc_native_value_is_descriptor_closure({callee_handle})) {{"
+        ));
+        self.body.push(format!("  {matched} = 1;"));
+
+        let mut branch_cleanup = Vec::new();
+        let mut arg_values = Vec::new();
+        for arg in args {
+            let arg_failure_cleanup = format!(
+                "{}{}{}",
+                c_cleanup_sequence(&branch_cleanup),
+                c_cleanup_sequence(shared_cleanup),
+                failure_cleanup
+            );
+            let value = self.materialize_native_value_result_operand(arg, &arg_failure_cleanup)?;
+            branch_cleanup.extend(value.cleanup_after_use.clone());
+            arg_values.push(value);
+        }
+
+        let (arg_handles, arg_count) = if arg_values.is_empty() {
+            ("NULL".to_string(), "0".to_string())
+        } else {
+            let handles = self.next_native_name("closure_arg_values");
+            let value_handles = arg_values
+                .iter()
+                .map(|value| value.handle.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.body.push(format!(
+                "  phpc_NativeValueHandle {handles}[] = {{ {value_handles} }};"
+            ));
+            (handles, arg_values.len().to_string())
+        };
+
+        let diagnostic = self.next_native_name("closure_invoke_diagnostic");
+        self.body.push(format!(
+            "  phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "  {result} = phpc_native_closure_invoke_value_with_diagnostic({callee_handle}, {}, {arg_handles}, {arg_count}, &{diagnostic});",
+            self.user_function_call_depth_argument()
+        ));
+        let branch_failure_cleanup = format!(
+            "{}{}{}",
+            c_cleanup_sequence(&branch_cleanup),
+            c_cleanup_sequence(shared_cleanup),
+            failure_cleanup
+        );
+        let error_exit = self.native_error_exit(&format!(
+            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); {diagnostic}.ptr = NULL; }} {branch_failure_cleanup}"
+        ));
+        self.body.push(format!(
+            "  if ({diagnostic}.ptr != NULL || {result}.ptr == NULL) {{ {error_exit} }}"
+        ));
+        for cleanup in branch_cleanup {
+            self.body.push(format!("  {cleanup}"));
+        }
+        self.body.push("}".to_string());
+
+        Ok(())
     }
 
     fn runtime_dynamic_call_reference_argument_is_supported(&self, arg: &Expr) -> bool {
@@ -29205,6 +29504,24 @@ impl CGenerator {
             }
             Expr::DynamicCall { callee, args, span } => self
                 .try_materialize_dynamic_user_function_call(callee, args, *span, failure_cleanup),
+            Expr::Closure {
+                params,
+                captures,
+                return_type,
+                returns_by_reference,
+                body,
+                span,
+                ..
+            } => self
+                .materialize_closure_descriptor_expr(
+                    params,
+                    captures,
+                    return_type.as_ref(),
+                    *returns_by_reference,
+                    body,
+                    *span,
+                )
+                .map(Some),
             Expr::StaticMethodCall {
                 class_name,
                 method,

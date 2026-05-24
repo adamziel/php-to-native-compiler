@@ -2991,6 +2991,140 @@ pub unsafe extern "C" fn phpc_native_value_clone(handle: NativeValueHandle) -> N
         .unwrap_or_else(NativeValueHandle::null)
 }
 
+#[no_mangle]
+pub extern "C" fn phpc_native_value_from_closure_descriptor(
+    descriptor: NativeClosureDescriptor,
+) -> NativeValueHandle {
+    if !descriptor.is_invokable() {
+        return NativeValueHandle::null();
+    }
+
+    NativeValueHandle::from_value(Value::Closure(PhpClosure::new_with_descriptor(
+        NEXT_NATIVE_CLOSURE_ID.fetch_add(1, AtomicOrdering::Relaxed),
+        false,
+        Vec::new(),
+        descriptor,
+    )))
+}
+
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_is_descriptor_closure(
+    handle: NativeValueHandle,
+) -> bool {
+    matches!(
+        unsafe { handle.as_ref() },
+        Some(Value::Closure(closure)) if closure.descriptor().is_some_and(|descriptor| descriptor.is_invokable())
+    )
+}
+
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. When `arg_count` is non-zero, `args` must point to an
+/// array of `arg_count` native value handles that remain valid for the duration
+/// of the callback. On return, `diagnostic` owns a diagnostic handle when
+/// non-null.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_closure_invoke_value_with_diagnostic(
+    handle: NativeValueHandle,
+    call_depth: c_int,
+    args: *const NativeValueHandle,
+    arg_count: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    if arg_count > 0 && args.is_null() {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native closure invocation failed: argument handle array is null",
+            )
+        };
+        return NativeValueHandle::null();
+    }
+
+    let Some(Value::Closure(closure)) = (unsafe { handle.as_ref() }) else {
+        let type_name = unsafe { handle.as_ref() }
+            .map(Value::type_name)
+            .unwrap_or("null");
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                RuntimeError::unsupported_call(
+                    "dynamic function call",
+                    format!("callable must be a descriptor-backed closure, got {type_name}"),
+                )
+                .message(),
+            )
+        };
+        return NativeValueHandle::null();
+    };
+
+    let Some(descriptor) = closure.descriptor() else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                RuntimeError::unsupported_call(
+                    "Closure::__invoke()",
+                    "closure value has no native descriptor/frame callback",
+                )
+                .message(),
+            )
+        };
+        return NativeValueHandle::null();
+    };
+    let Some(callback) = descriptor.callback else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                RuntimeError::unsupported_call(
+                    "Closure::__invoke()",
+                    "closure descriptor has no frame callback",
+                )
+                .message(),
+            )
+        };
+        return NativeValueHandle::null();
+    };
+    if arg_count < descriptor.required_arg_count || arg_count > descriptor.param_count {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                RuntimeError::unsupported_call(
+                    "Closure::__invoke()",
+                    "argument count is outside the native closure frame descriptor range",
+                )
+                .message(),
+            )
+        };
+        return NativeValueHandle::null();
+    }
+
+    let mut status = 0;
+    let result = unsafe { callback(call_depth, args, arg_count, &mut status) };
+    if status != 1 || result.is_null() {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                RuntimeError::unsupported_call(
+                    "Closure::__invoke()",
+                    "native closure frame callback did not return an owned value",
+                )
+                .message(),
+            )
+        };
+        unsafe { phpc_native_value_free(result) };
+        return NativeValueHandle::null();
+    }
+
+    result
+}
+
 /// # Safety
 ///
 /// `handle` must be null or a value handle previously returned by the runtime
@@ -17104,6 +17238,7 @@ impl PhpObjectShape {
 }
 
 static NEXT_OBJECT_ID: AtomicI64 = AtomicI64::new(1);
+static NEXT_NATIVE_CLOSURE_ID: AtomicI64 = AtomicI64::new(1);
 
 #[derive(Debug, Clone)]
 pub struct PhpObject {
@@ -18337,11 +18472,45 @@ impl PhpStringByteSource for Value {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+pub type NativeClosureFrameCallback = unsafe extern "C" fn(
+    call_depth: c_int,
+    args: *const NativeValueHandle,
+    arg_count: usize,
+    status: *mut c_int,
+) -> NativeValueHandle;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct NativeClosureDescriptor {
+    callback: Option<NativeClosureFrameCallback>,
+    required_arg_count: usize,
+    param_count: usize,
+}
+
+impl NativeClosureDescriptor {
+    pub fn new(
+        callback: NativeClosureFrameCallback,
+        required_arg_count: usize,
+        param_count: usize,
+    ) -> Self {
+        Self {
+            callback: Some(callback),
+            required_arg_count,
+            param_count,
+        }
+    }
+
+    fn is_invokable(&self) -> bool {
+        self.callback.is_some() && self.required_arg_count <= self.param_count
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct PhpClosure {
     id: i64,
     is_arrow: bool,
     captures: Vec<PhpClosureCapture>,
+    descriptor: Option<NativeClosureDescriptor>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -18357,6 +18526,21 @@ impl PhpClosure {
             id,
             is_arrow,
             captures,
+            descriptor: None,
+        }
+    }
+
+    pub fn new_with_descriptor(
+        id: i64,
+        is_arrow: bool,
+        captures: Vec<PhpClosureCapture>,
+        descriptor: NativeClosureDescriptor,
+    ) -> Self {
+        Self {
+            id,
+            is_arrow,
+            captures,
+            descriptor: Some(descriptor),
         }
     }
 
@@ -18370,6 +18554,16 @@ impl PhpClosure {
 
     pub fn captures(&self) -> &[PhpClosureCapture] {
         &self.captures
+    }
+
+    pub fn descriptor(&self) -> Option<NativeClosureDescriptor> {
+        self.descriptor
+    }
+}
+
+impl PartialEq for PhpClosure {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.is_arrow == other.is_arrow && self.captures == other.captures
     }
 }
 
@@ -24521,6 +24715,91 @@ mod tests {
         );
         unsafe { phpc_native_diagnostic_free(type_diagnostic) };
         unsafe { phpc_native_value_free(non_string) };
+    }
+
+    #[test]
+    fn native_descriptor_closure_values_invoke_through_frame_callback() {
+        unsafe extern "C" fn add_one_closure_callback(
+            call_depth: c_int,
+            args: *const NativeValueHandle,
+            arg_count: usize,
+            status: *mut c_int,
+        ) -> NativeValueHandle {
+            assert_eq!(call_depth, 3);
+            assert_eq!(arg_count, 1);
+            let value = unsafe { (*args).as_ref() };
+            unsafe { *status = 1 };
+            match value {
+                Some(Value::Int(value)) => NativeValueHandle::from_value(Value::Int(value + 1)),
+                _ => NativeValueHandle::null(),
+            }
+        }
+
+        let descriptor = NativeClosureDescriptor::new(add_one_closure_callback, 1, 1);
+        let closure = phpc_native_value_from_closure_descriptor(descriptor);
+        assert!(unsafe { phpc_native_value_is_descriptor_closure(closure) });
+
+        let arg = NativeValueHandle::from_value(Value::Int(4));
+        let args = [arg];
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let result = unsafe {
+            phpc_native_closure_invoke_value_with_diagnostic(
+                closure,
+                3,
+                args.as_ptr(),
+                args.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(unsafe { result.as_ref() }, Some(&Value::Int(5)));
+        unsafe { phpc_native_value_free(result) };
+
+        let arity_blocked = unsafe {
+            phpc_native_closure_invoke_value_with_diagnostic(
+                closure,
+                3,
+                ptr::null(),
+                0,
+                &mut diagnostic,
+            )
+        };
+        assert!(arity_blocked.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "unsupported call Closure::__invoke(): argument count is outside the native closure frame descriptor range"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        diagnostic = NativeDiagnosticHandle::null();
+
+        let plain_closure =
+            NativeValueHandle::from_value(Value::Closure(PhpClosure::new(99, false, Vec::new())));
+        assert!(!unsafe { phpc_native_value_is_descriptor_closure(plain_closure) });
+        let blocked = unsafe {
+            phpc_native_closure_invoke_value_with_diagnostic(
+                plain_closure,
+                3,
+                ptr::null(),
+                0,
+                &mut diagnostic,
+            )
+        };
+        assert!(blocked.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "unsupported call Closure::__invoke(): closure value has no native descriptor/frame callback"
+            )
+        );
+
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(blocked) };
+        unsafe { phpc_native_value_free(plain_closure) };
+        unsafe { phpc_native_value_free(arity_blocked) };
+        unsafe { phpc_native_value_free(arg) };
+        unsafe { phpc_native_value_free(closure) };
     }
 
     #[test]
