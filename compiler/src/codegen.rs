@@ -8888,6 +8888,12 @@ struct CDynamicCallableBuiltinCandidate {
     spellings: Vec<String>,
 }
 
+enum CDirectVariableCompoundAssignmentOwner {
+    Local(String),
+    Reference(String),
+    SymbolTable(String),
+}
+
 #[derive(Debug, Clone, Copy)]
 enum CDynamicCallableBuiltinRuntimeCandidate {
     StringLength,
@@ -15855,6 +15861,14 @@ impl CGenerator {
                     return Err(self.unsupported(span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
                 }
                 if let Some(value) = self
+                    .materialize_direct_variable_compound_assignment_result_for_target(
+                        target, *op, expr, span, "",
+                    )?
+                {
+                    self.body.extend(value.cleanup_after_use);
+                    return Ok(());
+                }
+                if let Some(value) = self
                     .materialize_array_lvalue_compound_assignment_result_for_target(
                         target, *op, expr, span, "",
                     )?
@@ -16243,6 +16257,14 @@ impl CGenerator {
                 }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                }
+                if let Some(value) = self
+                    .materialize_direct_variable_compound_assignment_result_for_target(
+                        target, *op, expr, *span, "",
+                    )?
+                {
+                    self.body.extend(value.cleanup_after_use);
+                    return Ok(());
                 }
                 if let Some(value) = self
                     .materialize_array_lvalue_compound_assignment_result_for_target(
@@ -16864,6 +16886,14 @@ impl CGenerator {
                 }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                }
+                if let Some(value) = self
+                    .materialize_direct_variable_compound_assignment_result_for_target(
+                        target, *op, expr, *span, "",
+                    )?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
                 }
                 if let Some(value) = self
                     .materialize_array_lvalue_compound_assignment_result_for_target(
@@ -21271,6 +21301,121 @@ impl CGenerator {
             },
             _ => None,
         }
+    }
+
+    fn materialize_direct_variable_compound_assignment_result_for_target(
+        &mut self,
+        target: &AssignTarget,
+        op: CompoundAssignOp,
+        rhs_expr: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let AssignTarget::Variable { name, .. } = target else {
+            return Ok(None);
+        };
+        if self.by_reference_foreach_linger_variables.contains(name) {
+            return Err(self.unsupported(
+                target.span(),
+                ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION,
+            ));
+        }
+        if is_request_superglobal_name(name) || is_globals_superglobal_name(name) {
+            return Ok(None);
+        }
+
+        let (current_value, owner) = if let Some(CValue::NativeReferenceHandle(reference)) =
+            self.variables.get(name).cloned()
+        {
+            let handle = self.clone_native_reference_value_handle(&reference);
+            (
+                CNativeValueMaterialization {
+                    handle: handle.clone(),
+                    cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
+                },
+                CDirectVariableCompoundAssignmentOwner::Reference(reference),
+            )
+        } else if self.globals_symbol_table_is_active() {
+            (
+                self.emit_symbol_table_variable_value_read(name, span, failure_cleanup)?,
+                CDirectVariableCompoundAssignmentOwner::SymbolTable(name.clone()),
+            )
+        } else if let Some(value) = self.variables.get(name).cloned() {
+            (
+                self.materialize_native_array_c_value_handle(value, span)?,
+                CDirectVariableCompoundAssignmentOwner::Local(name.clone()),
+            )
+        } else {
+            return Ok(None);
+        };
+
+        let rhs_failure_cleanup = format!(
+            "{}{failure_cleanup}",
+            c_cleanup_sequence(&current_value.cleanup_after_use)
+        );
+        let rhs_value =
+            self.materialize_native_value_result_operand(rhs_expr, &rhs_failure_cleanup)?;
+        let result = self.emit_native_value_binary_result_handle(
+            current_value,
+            native_array_lvalue_compound_binary_op_tag(op),
+            rhs_value,
+            failure_cleanup,
+        );
+
+        match owner {
+            CDirectVariableCompoundAssignmentOwner::Local(name) => {
+                let stored = self.clone_native_value_handle(&result.handle);
+                let clone_error_exit = self.native_error_exit(&format!(
+                    "{}{failure_cleanup}",
+                    c_cleanup_sequence(&result.cleanup_after_use)
+                ));
+                self.body.push(format!(
+                    "if ({stored}.ptr == NULL) {{ {clone_error_exit} }}"
+                ));
+                self.remember_variable_order(&name);
+                self.release_variable_native_value_handle(&name);
+                self.retain_native_value_cleanup_handle(&stored);
+                self.variables
+                    .insert(name, CValue::NativeValueHandle(stored));
+            }
+            CDirectVariableCompoundAssignmentOwner::Reference(reference) => {
+                let stored = self.next_native_name("native_reference_compound_set");
+                self.body.push(format!(
+                    "bool {stored} = phpc_native_reference_set_value({reference}, {});",
+                    result.handle
+                ));
+                let store_error_exit = self.native_error_exit(&format!(
+                    "{}{failure_cleanup}",
+                    c_cleanup_sequence(&result.cleanup_after_use)
+                ));
+                self.body
+                    .push(format!("if (!{stored}) {{ {store_error_exit} }}"));
+            }
+            CDirectVariableCompoundAssignmentOwner::SymbolTable(name) => {
+                let path_failure_cleanup = format!(
+                    "{}{failure_cleanup}",
+                    c_cleanup_sequence(&result.cleanup_after_use)
+                );
+                let path = self.materialize_static_globals_symbol_path_key(
+                    &name,
+                    span,
+                    &path_failure_cleanup,
+                )?;
+                self.release_variable_native_value_handle(&name);
+                self.variables.remove(&name);
+                self.emit_globals_symbol_path_write_from_materialized(
+                    path,
+                    CNativeValueMaterialization {
+                        handle: result.handle.clone(),
+                        cleanup_after_use: Vec::new(),
+                    },
+                    span,
+                    &path_failure_cleanup,
+                )?;
+            }
+        }
+
+        Ok(Some(result))
     }
 
     fn materialize_array_lvalue_compound_assignment_result_for_target(
@@ -25901,13 +26046,26 @@ impl CGenerator {
                 op,
                 expr,
                 span,
-            } => self.materialize_array_lvalue_compound_assignment_result_for_target(
-                target,
-                *op,
-                expr,
-                *span,
-                failure_cleanup,
-            ),
+            } => {
+                if let Some(value) = self
+                    .materialize_direct_variable_compound_assignment_result_for_target(
+                        target,
+                        *op,
+                        expr,
+                        *span,
+                        failure_cleanup,
+                    )?
+                {
+                    return Ok(Some(value));
+                }
+                self.materialize_array_lvalue_compound_assignment_result_for_target(
+                    target,
+                    *op,
+                    expr,
+                    *span,
+                    failure_cleanup,
+                )
+            }
             Expr::IncrementDecrement {
                 target,
                 op,

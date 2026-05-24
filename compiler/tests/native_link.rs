@@ -3837,6 +3837,31 @@ const ARRAY_LVALUE_NESTED_READ_SOURCE: &str = "<?php\n$outer = \"outer\";\n$inne
 
 const ARRAY_LVALUE_COMPOUND_ASSIGNMENT_SOURCE: &str = "<?php\n$key = \"slot\";\n$alt = \"alt\";\n$items = [$key => 2, $alt => 10, \"text\" => \"A\"];\n$out = [];\n$items[$key] += 3;\n$twenty = ($items[$alt] *= 2);\necho $twenty;\n$out[($items[$key] .= \"x\")] = ($items[$alt] -= 5);\necho \"|\", $out[\"5x\"], \"|\", $items[$alt], \"|\", $items[$key];\n";
 
+const DIRECT_VARIABLE_COMPOUND_ASSIGNMENT_SOURCE: &str = concat!(
+    "<?php\n",
+    "$count = 2;\n",
+    "$count += 5;\n",
+    "$again = ($count += 1);\n",
+    "echo $count, \":\", $again, \"|\";\n",
+    "$text = \"A\";\n",
+    "$text .= \"b\";\n",
+    "echo $text, \"|\";\n",
+    "$product = 6;\n",
+    "$product *= 3;\n",
+    "echo $product, \"|\";\n",
+    "$items = [\"left\" => 1];\n",
+    "$items += [\"right\" => 2, \"left\" => 9];\n",
+    "echo $items[\"left\"], \":\", $items[\"right\"], \"|\";\n",
+    "function bump(&$slot) {\n",
+    "    $slot += 4;\n",
+    "    return $slot;\n",
+    "}\n",
+    "$value = 6;\n",
+    "echo bump($value), \":\", $value;\n",
+    "$value += 1;\n",
+    "echo \":\", $value;\n",
+);
+
 const ARRAY_LVALUE_COMPOUND_ARRAY_UNION_SOURCE: &str = "<?php\n$box = [];\n$box[\"left\"] = [0 => \"left-zero\", \"name\" => \"left-name\"];\n$box[\"left\"] += [0 => \"right-zero\", 1 => \"right-one\", \"name\" => \"right-name\", \"role\" => \"right-role\"];\n$outer = \"outer\";\n$slot = \"slot\";\n$box[$outer][$slot] = [\"keep\" => \"nested-left\"];\n$box[$outer][$slot] += [\"keep\" => \"nested-right\", \"add\" => \"nested-add\"];\necho $box[\"left\"][0], \"|\", $box[\"left\"][1], \"|\", $box[\"left\"][\"name\"], \"|\", $box[\"left\"][\"role\"], \"|\", $box[$outer][$slot][\"keep\"], \"|\", $box[$outer][$slot][\"add\"];\n";
 
 const ARRAY_LVALUE_INCREMENT_DECREMENT_SOURCE: &str = "<?php\n$key = \"slot\";\n$float = \"float\";\n$items = [$key => 4, $float => 1.5, \"other\" => 9];\n$items[$key]++;\necho ++$items[$key], \"|\", $items[$key]--, \"|\", $items[$key], \"|\";\n$oldFloat = $items[$float]--;\necho $oldFloat, \"|\", $items[$float], \"|\";\n$out = [];\n$out[++$items[$key]] = $items[$key]--;\necho $out[6], \"|\", $items[$key];\n";
@@ -5036,6 +5061,33 @@ fn native_executable_c_source_routes_array_lvalue_compound_assignments_through_r
     assert!(
         !body.contains("assembly mutation lowering rejects"),
         "lowerable array lvalue compound assignments should not fall through the blanket mutation blocker:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_direct_variable_compound_assignments_through_value_results() {
+    let program = parse(DIRECT_VARIABLE_COMPOUND_ASSIGNMENT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.matches(" = phpc_native_value_binary_result(").count() >= 5,
+        "direct variable compound assignments should compute through the shared native value binary ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_clone(")
+            && source.contains("phpc_native_reference_set_value(")
+            && body.contains("phpc_native_symbol_table_set_value_by_path_with_diagnostic("),
+        "direct variable compound assignments should store ordinary, reference-backed, and active symbol-table variables through shared owner paths:\n{source}"
+    );
+    assert!(
+        !body.contains("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ")
+            && !body.contains("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE"),
+        "direct variable compound assignments should not use array-offset lvalue owner read/write operations:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly mutation lowering rejects"),
+        "lowerable direct variable compound assignments should not fall through the blanket mutation blocker:\n{source}"
     );
 }
 
@@ -9533,6 +9585,34 @@ fn emit_exe_links_and_runs_array_lvalue_compound_assignment_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"20|15|15|5x");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_direct_variable_compound_assignment_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "direct_variable_compound_assignment",
+        DIRECT_VARIABLE_COMPOUND_ASSIGNMENT_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native direct variable compound executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"8:8|Ab|18|1:2|10:10:11");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
