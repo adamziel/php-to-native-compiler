@@ -14,6 +14,8 @@ Latest observed `origin/master` during this review:
 
 Accounting rule: only generalized, tested, committed, and pushed primary work counts. Dirty primary WIP, lane-local candidates, parked diffs, blocker-only classifiers, and status-file claims are not product capability until selected, gated, committed, and pushed through primary.
 
+Accounting history: the earlier **88%** headline is retired because it counted lane-local candidates, scaffolding, and ABI surface area too generously before they became executable product behavior. The later **50%** figure was a conservative strict-rubric rebaseline, not a code rollback. The current source-of-truth estimate is **75%** under the stricter rule.
+
 ## Executive Read
 
 Overall estimated progress: **75%** `[###############-----]`
