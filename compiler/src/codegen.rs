@@ -89,7 +89,7 @@ const ASSEMBLY_CLASS_NAME_CONSTANT_REJECTION: &str = "assembly class-name consta
 const LLVM_STATIC_MEMBER_REJECTION: &str = "LLVM static-member lowering rejects class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
 const ASSEMBLY_STATIC_MEMBER_REJECTION: &str = "assembly static-member lowering rejects class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
 const LLVM_METHOD_CALL_REJECTION: &str = "LLVM method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
-const ASSEMBLY_METHOD_CALL_REJECTION: &str = "assembly method-call lowering rejects method calls outside the bounded generated-C public declared instance/static method frame subset, including dynamic method names, object static-receiver, self::, parent::, static::, unsupported method declarations, unsupported receiver classes, visibility contexts, references/copy-on-write, and exact native method-call errors; generated-native C lowers supported public declared instance methods with $this frame binding and supported named public static methods without $this";
+const ASSEMBLY_METHOD_CALL_REJECTION: &str = "assembly method-call lowering rejects method calls outside the bounded generated-C public declared instance/static method frame subset, including unsupported dynamic method-name dispatch, self::, parent::, static::, unsupported method declarations, unsupported receiver classes, visibility contexts, references/copy-on-write, and exact native method-call errors; generated-native C lowers supported public declared instance methods with $this frame binding, runtime string-valued dynamic public instance methods through declared-frame dispatch, supported named public static methods without $this, and supported object static-receiver calls through static frames";
 const LLVM_CLONE_REJECTION: &str = "LLVM clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
 const ASSEMBLY_CLONE_REJECTION: &str = "assembly clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
 const LLVM_INTERFACE_REJECTION: &str = "LLVM interface lowering rejects interface declarations until native class/interface tables, implementation checks, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current interface metadata behavior";
@@ -12181,6 +12181,7 @@ impl CGenerator {
             }
             if self.uses_native_object_method_helpers {
                 output.push_str("extern void phpc_native_value_object_method_failure_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *method_name, size_t method_name_len, const uint8_t *reason, size_t reason_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern void phpc_native_value_object_dynamic_method_failure_with_diagnostic(phpc_NativeValueHandle value, phpc_NativeValueHandle method_name, const uint8_t *reason, size_t reason_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             output.push_str("extern void phpc_native_value_free(phpc_NativeValueHandle value);\n");
             output.push_str("extern size_t phpc_native_diagnostic_message_stderr(phpc_NativeDiagnosticHandle diagnostic);\n");
@@ -18272,8 +18273,22 @@ impl CGenerator {
                     Err(self.unsupported_value_call(expr))
                 }
             }
-            Expr::DynamicMethodCall { .. }
-            | Expr::ParentMethodCall { .. }
+            Expr::DynamicMethodCall {
+                target,
+                method,
+                args,
+                span,
+            } => {
+                if let Some(value) = self.try_materialize_declared_class_dynamic_method_call(
+                    target, method, args, *span, "",
+                )? {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    Ok(CValue::NativeValueHandle(value.handle))
+                } else {
+                    Err(self.unsupported_value_call(expr))
+                }
+            }
+            Expr::ParentMethodCall { .. }
             | Expr::SelfMethodCall { .. }
             | Expr::LateStaticMethodCall { .. } => Err(self.unsupported_value_call(expr)),
             Expr::Variable(name, span) => {
@@ -19561,6 +19576,24 @@ impl CGenerator {
         candidates
     }
 
+    fn declared_class_dynamic_method_candidates(
+        &self,
+    ) -> Vec<(CDeclaredClass, CDeclaredClassMethod)> {
+        let mut candidates = Vec::new();
+        for class_key in &self.declared_class_order {
+            let class = self
+                .declared_classes
+                .get(class_key)
+                .expect("registered class key has metadata");
+            for method in &class.methods {
+                if !method.is_static {
+                    candidates.push((class.clone(), method.clone()));
+                }
+            }
+        }
+        candidates
+    }
+
     fn declared_class_static_method(
         &self,
         class_name: &str,
@@ -19786,6 +19819,137 @@ impl CGenerator {
         }))
     }
 
+    fn try_materialize_declared_class_dynamic_method_call(
+        &mut self,
+        target: &Expr,
+        method_expr: &Expr,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let candidates = self.declared_class_dynamic_method_candidates();
+        if candidates.is_empty() {
+            return Ok(None);
+        }
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_dynamic_call_helpers = true;
+        self.uses_native_object_instanceof_helpers = true;
+        self.uses_native_object_method_helpers = true;
+
+        let receiver = self.materialize_native_value_result_operand(target, failure_cleanup)?;
+        let receiver_cleanup = c_cleanup_sequence(&receiver.cleanup_after_use);
+        let method_failure_cleanup = format!("{receiver_cleanup}{failure_cleanup}");
+        let method_name =
+            self.materialize_native_value_result_operand(method_expr, &method_failure_cleanup)?;
+        let method_cleanup = c_cleanup_sequence(&method_name.cleanup_after_use);
+        let shared_failure_cleanup = format!("{method_cleanup}{receiver_cleanup}{failure_cleanup}");
+        let matched = self.next_native_name("dynamic_method_dispatch_matched");
+        let result = self.next_native_name("dynamic_method_dispatch_result");
+        let status = self.next_native_name("dynamic_method_dispatch_status");
+        self.body.push(format!("_Bool {matched} = 0;"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = (phpc_NativeValueHandle){{0}};"
+        ));
+        self.body.push(format!("int {status} = 0;"));
+
+        for (class, method) in candidates {
+            let (method_name_bytes, method_name_len) = self.emit_call_type_static_bytes(
+                "dynamic_method_dispatch_name_bytes",
+                &method.decl.name,
+            );
+            let (class_name, class_name_len) = self.emit_call_type_static_bytes(
+                "dynamic_method_dispatch_class_name_bytes",
+                &class.name,
+            );
+            let diagnostic = self.next_native_name("dynamic_method_dispatch_match_diagnostic");
+            let class_match = self.next_native_name("dynamic_method_dispatch_class_match");
+            self.body.push(format!(
+                "if (!{matched} && phpc_native_value_dynamic_call_name_matches({}, {method_name_bytes}, {method_name_len})) {{",
+                method_name.handle
+            ));
+            self.body
+                .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+            self.body.push(format!(
+                "_Bool {class_match} = phpc_native_value_instanceof_class_with_diagnostic({}, {class_name}, {class_name_len}, &{diagnostic});",
+                receiver.handle
+            ));
+            let class_failure_cleanup =
+                format!("phpc_native_diagnostic_report({diagnostic}); {shared_failure_cleanup}");
+            let class_error_exit = self.native_error_exit(&class_failure_cleanup);
+            self.body.push(format!(
+                "if ({diagnostic}.ptr != NULL) {{ {class_error_exit} }}"
+            ));
+            self.body
+                .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+            self.body.push(format!("if ({class_match}) {{"));
+            self.body.push(format!("{matched} = 1;"));
+
+            if !native_user_function_accepts_arg_count(&method.decl, args.len()) {
+                let reason =
+                    "argument count is outside the generated public dynamic method frame arity/default/variadic subset";
+                self.emit_dynamic_method_dispatch_failure(
+                    &receiver.handle,
+                    &method_name.handle,
+                    reason,
+                    &shared_failure_cleanup,
+                    "",
+                );
+                self.body.push("}".to_string());
+                self.body.push("}".to_string());
+                continue;
+            }
+
+            let (mut call_args, branch_cleanup) = self
+                .materialize_declared_method_frame_arguments(
+                    &class.name,
+                    &method,
+                    Some(&receiver.handle),
+                    args,
+                    span,
+                    &shared_failure_cleanup,
+                    NativeCallCallee::MethodDispatch,
+                )?;
+
+            self.body.push(format!("{status} = 0;"));
+            call_args.push(format!("&{status}"));
+            self.body.push(format!(
+                "{result} = {}({});",
+                method.c_name,
+                call_args.join(", ")
+            ));
+            let call_failure_cleanup = format!(
+                "{}{}",
+                c_cleanup_sequence(&branch_cleanup),
+                shared_failure_cleanup
+            );
+            let error_exit = self.native_error_exit(&call_failure_cleanup);
+            self.body.push(format!(
+                "if ({status} != 1 || {result}.ptr == NULL) {{ {error_exit} }}"
+            ));
+            self.body.extend(branch_cleanup);
+            self.body.push("}".to_string());
+            self.body.push("}".to_string());
+        }
+
+        self.body.push(format!("if (!{matched}) {{"));
+        self.emit_dynamic_method_dispatch_failure(
+            &receiver.handle,
+            &method_name.handle,
+            "runtime dynamic generated-C method lookup did not find a supported public instance method for the receiver",
+            &shared_failure_cleanup,
+            "",
+        );
+        self.body.push("}".to_string());
+        self.body.extend(method_name.cleanup_after_use);
+        self.body.extend(receiver.cleanup_after_use);
+
+        Ok(Some(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }))
+    }
+
     fn try_materialize_declared_object_static_method_call(
         &mut self,
         target: &Expr,
@@ -19983,6 +20147,32 @@ impl CGenerator {
         ));
         self.body.push(format!(
             "{indent}phpc_native_value_object_method_failure_with_diagnostic({receiver_handle}, {method_bytes}, {method_len}, {reason_bytes}, {reason_len}, &{diagnostic});"
+        ));
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!(
+            "{indent}if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); {diagnostic}.ptr = NULL; }} {error_exit}"
+        ));
+    }
+
+    fn emit_dynamic_method_dispatch_failure(
+        &mut self,
+        receiver_handle: &str,
+        method_name_handle: &str,
+        reason: &str,
+        failure_cleanup: &str,
+        indent: &str,
+    ) {
+        self.uses_native_string_helpers = true;
+        self.uses_native_object_method_helpers = true;
+
+        let (reason_bytes, reason_len) =
+            self.emit_call_type_static_bytes("dynamic_method_dispatch_reason_bytes", reason);
+        let diagnostic = self.next_native_name("dynamic_method_dispatch_failure_diagnostic");
+        self.body.push(format!(
+            "{indent}phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "{indent}phpc_native_value_object_dynamic_method_failure_with_diagnostic({receiver_handle}, {method_name_handle}, {reason_bytes}, {reason_len}, &{diagnostic});"
         ));
         let error_exit = self.native_error_exit(failure_cleanup);
         self.body.push(format!(
@@ -28556,6 +28746,18 @@ impl CGenerator {
                 args,
                 span,
             } => self.try_materialize_declared_object_static_method_call(
+                target,
+                method,
+                args,
+                *span,
+                failure_cleanup,
+            ),
+            Expr::DynamicMethodCall {
+                target,
+                method,
+                args,
+                span,
+            } => self.try_materialize_declared_class_dynamic_method_call(
                 target,
                 method,
                 args,

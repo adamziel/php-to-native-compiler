@@ -192,6 +192,40 @@ const NATIVE_DECLARED_CLASS_METHOD_SOURCE: &str = concat!(
     "echo $box->store(\"Tail\"), \"\\n\";\n",
 );
 
+const NATIVE_DECLARED_CLASS_DYNAMIC_METHOD_SOURCE: &str = concat!(
+    "<?php\n",
+    "class Box {\n",
+    "    public $name;\n",
+    "    public function store($value = \"Ada\") {\n",
+    "        $this->name = $value;\n",
+    "        return $this->name;\n",
+    "    }\n",
+    "    public function label($prefix) {\n",
+    "        return strtoupper($prefix);\n",
+    "    }\n",
+    "}\n",
+    "class Packet {\n",
+    "    public $code;\n",
+    "    public function store($value) {\n",
+    "        $this->code = $value;\n",
+    "        return $this->code;\n",
+    "    }\n",
+    "    public function label($prefix = \"P\") {\n",
+    "        return strtolower($prefix);\n",
+    "    }\n",
+    "}\n",
+    "$box = new Box();\n",
+    "$packet = new Packet();\n",
+    "$store = \"store\";\n",
+    "$label = \"label\";\n",
+    "echo $box->$store(), \":\", $box->name, \"|\";\n",
+    "echo $packet->{$store}(7), \":\", $packet->code, \"|\";\n",
+    "echo $box->{$label}(\"go\"), \"|\";\n",
+    "echo $packet->{($packet instanceof Packet ? \"label\" : \"store\")}(\"LOUD\"), \"|\";\n",
+    "$box->{$store}(\"Tail\");\n",
+    "echo $box->name, \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_STATIC_METHOD_SOURCE: &str = concat!(
     "<?php\n",
     "class Label {\n",
@@ -1138,6 +1172,34 @@ fn emit_exe_links_and_runs_declared_class_method_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"Ada:Ada|Grace:Grace|7:7|GO|Temp|Tail\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_declared_class_dynamic_method_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "declared_class_dynamic_method",
+        NATIVE_DECLARED_CLASS_DYNAMIC_METHOD_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run declared-class-dynamic-method executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"Ada:Ada|7:7|GO|loud|Tail\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -2222,6 +2284,27 @@ fn native_executable_c_source_routes_declared_static_methods_through_frame_dispa
 }
 
 #[test]
+fn native_executable_c_source_invokes_dynamic_instance_methods_through_runtime_name_dispatch() {
+    let program = parse(NATIVE_DECLARED_CLASS_DYNAMIC_METHOD_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("dynamic_method_dispatch_status")
+            && body.contains("phpc_native_value_dynamic_call_name_matches")
+            && body.contains("phpc_native_value_instanceof_class_with_diagnostic")
+            && body.contains("phpc_declared_method_")
+            && source.contains("phpc_NativeValueHandle phpc_this"),
+        "dynamic instance calls should compare runtime method names, verify receiver classes, and call declared instance frames:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_object_dynamic_method_failure_with_diagnostic"),
+        "dynamic method misses should use the shared object-method diagnostic ABI:\n{source}"
+    );
+    assert!(!source.contains("method-call lowering rejects"), "{source}");
+}
+
+#[test]
 fn native_executable_c_source_invokes_object_static_methods_through_static_context() {
     let program = parse(NATIVE_DECLARED_OBJECT_STATIC_METHOD_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -2320,7 +2403,6 @@ fn native_executable_c_source_keeps_unsupported_constructor_shapes_blocked() {
 #[test]
 fn native_executable_c_source_keeps_unsupported_method_shapes_blocked() {
     for source in [
-        "<?php\nclass Box { public function go() { return 1; } }\n$box = new Box();\n$method = \"go\";\necho $box->$method();\n",
         "<?php\nclass Box { public function go() { return 1; } }\nBox::go();\n",
         "<?php\nclass Box { public function go() { return 1; } }\n$box = new Box();\necho $box::go();\n",
         "<?php\nclass Box { private function go() { return 1; } }\n$box = new Box();\necho $box->go();\n",
