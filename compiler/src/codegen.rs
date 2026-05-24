@@ -25,7 +25,7 @@ const NATIVE_FILESYSTEM_PATH_HAS_PATH: u8 = 8;
 const LLVM_CONDITIONAL_REJECTION: &str = "LLVM conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
-const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C direct user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, and dynamic string-valued calls, until native runtime lookup, full arity/type diagnostics, recursion, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value direct user-function frames";
 const LLVM_STRING_PREDICATE_REJECTION: &str = "LLVM string-predicate lowering rejects str_starts_with(), str_ends_with(), and str_contains() until native PHP string conversion, empty-needle handling, binary string byte semantics, argument diagnostics, references/copy-on-write, and exact native predicate diagnostics exist; generated-native C routes lowerable predicate operands through the shared runtime contract";
 const ASSEMBLY_STRING_PREDICATE_REJECTION: &str = "assembly string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; generated-native C routes lowerable str_starts_with(), str_ends_with(), and str_contains() operands through the shared runtime contract";
 const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int/search builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), strpos(), substr_count(), ord(), and crc32() forms outside the reusable native string operation contracts, including unsupported arity, non-lowerable operands, nested call cleanup, references/copy-on-write, and exact native builtin diagnostics; lowerable LLVM and generated-native C string operands route through shared runtime contracts";
@@ -55,7 +55,7 @@ const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic functio
 const LLVM_TERMINATION_REJECTION: &str = "LLVM termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const ASSEMBLY_TERMINATION_REJECTION: &str = "assembly termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
-const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
+const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations outside the bounded generated-C direct by-value frame subset, including nested functions, typed/by-reference/variadic parameters, return types, recursion, static locals, dynamic calls, and unsupported body cleanup, until full native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; generated-native C lowers supported by-value direct user-function frames";
 const LLVM_STATIC_LOCAL_REJECTION: &str = "LLVM static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const ASSEMBLY_STATIC_LOCAL_REJECTION: &str = "assembly static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const LLVM_CLOSURE_REJECTION: &str = "LLVM closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
@@ -1750,6 +1750,491 @@ fn expr_contains_exit_construct(expr: &Expr) -> bool {
         | Expr::ParentStaticProperty { .. }
         | Expr::LateStaticProperty { .. }
         | Expr::Closure { .. } => false,
+    }
+}
+
+fn function_body_contains_native_frame_blocker(statements: &[Stmt]) -> bool {
+    stmt_list_contains_try_unwind_blocker_allowing_return(statements)
+        || statements.iter().any(stmt_contains_function_frame_blocker)
+}
+
+fn stmt_contains_function_frame_blocker(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Try { .. }
+        | Stmt::Global { .. }
+        | Stmt::StaticLocal { .. }
+        | Stmt::Function(_)
+        | Stmt::Interface(_)
+        | Stmt::Trait(_)
+        | Stmt::Enum(_)
+        | Stmt::Class(_) => true,
+        Stmt::If {
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            then_branch.iter().any(stmt_contains_function_frame_blocker)
+                || else_branch.iter().any(stmt_contains_function_frame_blocker)
+        }
+        Stmt::While { body, .. } | Stmt::DoWhile { body, .. } | Stmt::Foreach { body, .. } => {
+            body.iter().any(stmt_contains_function_frame_blocker)
+        }
+        Stmt::For { body, .. } => body.iter().any(stmt_contains_function_frame_blocker),
+        Stmt::Switch { cases, .. } => cases
+            .iter()
+            .any(|case| case.body.iter().any(stmt_contains_function_frame_blocker)),
+        Stmt::Namespace { .. }
+        | Stmt::Use { .. }
+        | Stmt::Echo { .. }
+        | Stmt::Print { .. }
+        | Stmt::Assign { .. }
+        | Stmt::ReferenceAssign { .. }
+        | Stmt::CompoundAssign { .. }
+        | Stmt::IncrementDecrement { .. }
+        | Stmt::NullCoalesceAssign { .. }
+        | Stmt::Expr { .. }
+        | Stmt::Goto { .. }
+        | Stmt::Label { .. }
+        | Stmt::UnsetVariable { .. }
+        | Stmt::UnsetArrayIndex { .. }
+        | Stmt::UnsetNestedArrayIndex { .. }
+        | Stmt::UnsetObjectProperty { .. }
+        | Stmt::UnsetDynamicObjectProperty { .. }
+        | Stmt::UnsetStaticProperty { .. }
+        | Stmt::UnsetSelfStaticProperty { .. }
+        | Stmt::UnsetParentStaticProperty { .. }
+        | Stmt::UnsetLateStaticProperty { .. }
+        | Stmt::UnsetMany { .. }
+        | Stmt::ConstDeclaration { .. }
+        | Stmt::Require { .. }
+        | Stmt::Include { .. }
+        | Stmt::Return { .. }
+        | Stmt::Throw { .. }
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. } => false,
+    }
+}
+
+fn collect_direct_call_names_from_stmts(statements: &[Stmt], names: &mut Vec<String>) {
+    for statement in statements {
+        collect_direct_call_names_from_stmt(statement, names);
+    }
+}
+
+fn collect_direct_call_names_from_stmt(stmt: &Stmt, names: &mut Vec<String>) {
+    match stmt {
+        Stmt::Echo { exprs, .. } => {
+            for expr in exprs {
+                collect_direct_call_names_from_expr(expr, names);
+            }
+        }
+        Stmt::Print { expr, .. }
+        | Stmt::Expr { expr, .. }
+        | Stmt::Require { path: expr, .. }
+        | Stmt::Include { path: expr, .. }
+        | Stmt::Throw { expr, .. } => collect_direct_call_names_from_expr(expr, names),
+        Stmt::Assign { target, expr, .. }
+        | Stmt::CompoundAssign { target, expr, .. }
+        | Stmt::NullCoalesceAssign { target, expr, .. } => {
+            collect_direct_call_names_from_assign_target(target, names);
+            collect_direct_call_names_from_expr(expr, names);
+        }
+        Stmt::IncrementDecrement { target, .. } | Stmt::ReferenceAssign { target, .. } => {
+            collect_direct_call_names_from_assign_target(target, names);
+        }
+        Stmt::If {
+            condition,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            collect_direct_call_names_from_expr(condition, names);
+            collect_direct_call_names_from_stmts(then_branch, names);
+            collect_direct_call_names_from_stmts(else_branch, names);
+        }
+        Stmt::While {
+            condition, body, ..
+        }
+        | Stmt::DoWhile {
+            condition, body, ..
+        } => {
+            collect_direct_call_names_from_expr(condition, names);
+            collect_direct_call_names_from_stmts(body, names);
+        }
+        Stmt::For {
+            initializers,
+            conditions,
+            increments,
+            body,
+            ..
+        } => {
+            for action in initializers.iter().chain(increments.iter()) {
+                collect_direct_call_names_from_for_action(action, names);
+            }
+            for condition in conditions {
+                collect_direct_call_names_from_expr(condition, names);
+            }
+            collect_direct_call_names_from_stmts(body, names);
+        }
+        Stmt::Switch { value, cases, .. } => {
+            collect_direct_call_names_from_expr(value, names);
+            for case in cases {
+                if let Some(condition) = &case.condition {
+                    collect_direct_call_names_from_expr(condition, names);
+                }
+                collect_direct_call_names_from_stmts(&case.body, names);
+            }
+        }
+        Stmt::Foreach { iterable, body, .. } => {
+            collect_direct_call_names_from_expr(iterable, names);
+            collect_direct_call_names_from_stmts(body, names);
+        }
+        Stmt::UnsetArrayIndex { index, .. }
+        | Stmt::UnsetDynamicObjectProperty {
+            property: index, ..
+        } => collect_direct_call_names_from_expr(index, names),
+        Stmt::UnsetNestedArrayIndex { indices, .. } => {
+            for index in indices {
+                collect_direct_call_names_from_expr(index, names);
+            }
+        }
+        Stmt::UnsetMany { targets, .. } => {
+            for target in targets {
+                collect_direct_call_names_from_unset_target(target, names);
+            }
+        }
+        Stmt::ConstDeclaration { declarations, .. } => {
+            for declaration in declarations {
+                collect_direct_call_names_from_expr(&declaration.value, names);
+            }
+        }
+        Stmt::Return { value, .. } => {
+            if let Some(value) = value {
+                collect_direct_call_names_from_expr(value, names);
+            }
+        }
+        Stmt::Try {
+            body,
+            catches,
+            finally_body,
+            ..
+        } => {
+            collect_direct_call_names_from_stmts(body, names);
+            for catch in catches {
+                collect_direct_call_names_from_stmts(&catch.body, names);
+            }
+            if let Some(finally_body) = finally_body {
+                collect_direct_call_names_from_stmts(finally_body, names);
+            }
+        }
+        Stmt::StaticLocal { declarations, .. } => {
+            for declaration in declarations {
+                if let Some(default) = &declaration.default {
+                    collect_direct_call_names_from_expr(default, names);
+                }
+            }
+        }
+        Stmt::Namespace { .. }
+        | Stmt::Use { .. }
+        | Stmt::Goto { .. }
+        | Stmt::Label { .. }
+        | Stmt::UnsetVariable { .. }
+        | Stmt::UnsetObjectProperty { .. }
+        | Stmt::UnsetStaticProperty { .. }
+        | Stmt::UnsetSelfStaticProperty { .. }
+        | Stmt::UnsetParentStaticProperty { .. }
+        | Stmt::UnsetLateStaticProperty { .. }
+        | Stmt::Function(_)
+        | Stmt::Interface(_)
+        | Stmt::Trait(_)
+        | Stmt::Enum(_)
+        | Stmt::Class(_)
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. }
+        | Stmt::Global { .. } => {}
+    }
+}
+
+fn collect_direct_call_names_from_for_action(action: &ForAction, names: &mut Vec<String>) {
+    match action {
+        ForAction::Assign { target, expr } | ForAction::CompoundAssign { target, expr, .. } => {
+            collect_direct_call_names_from_assign_target(target, names);
+            collect_direct_call_names_from_expr(expr, names);
+        }
+        ForAction::IncrementDecrement { target, .. } => {
+            collect_direct_call_names_from_assign_target(target, names);
+        }
+        ForAction::Expr { expr } => collect_direct_call_names_from_expr(expr, names),
+    }
+}
+
+fn collect_direct_call_names_from_assign_target(target: &AssignTarget, names: &mut Vec<String>) {
+    match target {
+        AssignTarget::ArrayIndex { index, .. } => {
+            if let Some(index) = index {
+                collect_direct_call_names_from_expr(index, names);
+            }
+        }
+        AssignTarget::NestedArrayIndex { indices, .. }
+        | AssignTarget::ObjectPropertyArrayIndex { indices, .. } => {
+            for index in indices {
+                collect_direct_call_names_from_expr(index, names);
+            }
+        }
+        AssignTarget::NestedArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::ObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            for index in indices.iter().chain(suffix_indices.iter()) {
+                collect_direct_call_names_from_expr(index, names);
+            }
+        }
+        AssignTarget::DynamicProperty { property, .. } => {
+            collect_direct_call_names_from_expr(property, names);
+        }
+        AssignTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => {
+            collect_direct_call_names_from_expr(property, names);
+            for index in indices {
+                collect_direct_call_names_from_expr(index, names);
+            }
+        }
+        AssignTarget::DynamicObjectPropertyArrayAppend {
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            collect_direct_call_names_from_expr(property, names);
+            for index in indices.iter().chain(suffix_indices.iter()) {
+                collect_direct_call_names_from_expr(index, names);
+            }
+        }
+        AssignTarget::NonDirectProperty { holder, .. }
+        | AssignTarget::ObjectStaticProperty { target: holder, .. }
+        | AssignTarget::NonDirectObjectPropertyArrayIndex { holder, .. } => {
+            collect_direct_call_names_from_expr(holder, names);
+        }
+        AssignTarget::NonDirectObjectPropertyArrayAppend {
+            holder,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            collect_direct_call_names_from_expr(holder, names);
+            for index in indices.iter().chain(suffix_indices.iter()) {
+                collect_direct_call_names_from_expr(index, names);
+            }
+        }
+        AssignTarget::NonDirectDynamicProperty {
+            holder, property, ..
+        }
+        | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder, property, ..
+        } => {
+            collect_direct_call_names_from_expr(holder, names);
+            collect_direct_call_names_from_expr(property, names);
+        }
+        AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+            holder,
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            collect_direct_call_names_from_expr(holder, names);
+            collect_direct_call_names_from_expr(property, names);
+            for index in indices.iter().chain(suffix_indices.iter()) {
+                collect_direct_call_names_from_expr(index, names);
+            }
+        }
+        AssignTarget::Variable { .. }
+        | AssignTarget::List { .. }
+        | AssignTarget::Property { .. }
+        | AssignTarget::StaticProperty { .. }
+        | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::ParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. } => {}
+    }
+}
+
+fn collect_direct_call_names_from_unset_target(target: &UnsetTarget, names: &mut Vec<String>) {
+    match target {
+        UnsetTarget::ArrayIndex { index, .. }
+        | UnsetTarget::DynamicObjectProperty {
+            property: index, ..
+        } => collect_direct_call_names_from_expr(index, names),
+        UnsetTarget::NestedArrayIndex { indices, .. }
+        | UnsetTarget::ObjectPropertyArrayIndex { indices, .. } => {
+            for index in indices {
+                collect_direct_call_names_from_expr(index, names);
+            }
+        }
+        UnsetTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => {
+            collect_direct_call_names_from_expr(property, names);
+            for index in indices {
+                collect_direct_call_names_from_expr(index, names);
+            }
+        }
+        UnsetTarget::NonDirectObjectProperty { holder, .. }
+        | UnsetTarget::NonDirectObjectPropertyArrayIndex { holder, .. } => {
+            collect_direct_call_names_from_expr(holder, names);
+        }
+        UnsetTarget::NonDirectDynamicObjectProperty {
+            holder, property, ..
+        }
+        | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder, property, ..
+        } => {
+            collect_direct_call_names_from_expr(holder, names);
+            collect_direct_call_names_from_expr(property, names);
+        }
+        UnsetTarget::Variable { .. }
+        | UnsetTarget::ObjectProperty { .. }
+        | UnsetTarget::StaticProperty { .. }
+        | UnsetTarget::SelfStaticProperty { .. }
+        | UnsetTarget::ParentStaticProperty { .. }
+        | UnsetTarget::LateStaticProperty { .. } => {}
+    }
+}
+
+fn collect_direct_call_names_from_expr(expr: &Expr, names: &mut Vec<String>) {
+    match expr {
+        Expr::Call { name, args, .. } => {
+            names.push(name.clone());
+            for arg in args {
+                collect_direct_call_names_from_expr(arg, names);
+            }
+        }
+        Expr::DynamicCall { callee, args, .. } => {
+            collect_direct_call_names_from_expr(callee, names);
+            for arg in args {
+                collect_direct_call_names_from_expr(arg, names);
+            }
+        }
+        Expr::MethodCall { target, args, .. }
+        | Expr::ObjectStaticMethodCall { target, args, .. } => {
+            collect_direct_call_names_from_expr(target, names);
+            for arg in args {
+                collect_direct_call_names_from_expr(arg, names);
+            }
+        }
+        Expr::StaticMethodCall { args, .. }
+        | Expr::ParentMethodCall { args, .. }
+        | Expr::SelfMethodCall { args, .. }
+        | Expr::LateStaticMethodCall { args, .. }
+        | Expr::New { args, .. } => {
+            for arg in args {
+                collect_direct_call_names_from_expr(arg, names);
+            }
+        }
+        Expr::DynamicMethodCall {
+            target,
+            method,
+            args,
+            ..
+        } => {
+            collect_direct_call_names_from_expr(target, names);
+            collect_direct_call_names_from_expr(method, names);
+            for arg in args {
+                collect_direct_call_names_from_expr(arg, names);
+            }
+        }
+        Expr::Array { items, .. } => {
+            for item in items {
+                if let Some(key) = &item.key {
+                    collect_direct_call_names_from_expr(key, names);
+                }
+                collect_direct_call_names_from_expr(&item.value, names);
+            }
+        }
+        Expr::Index { target, index, .. } => {
+            collect_direct_call_names_from_expr(target, names);
+            collect_direct_call_names_from_expr(index, names);
+        }
+        Expr::AppendIndex { target, .. }
+        | Expr::Property { target, .. }
+        | Expr::ObjectStaticProperty { target, .. }
+        | Expr::InstanceOf { expr: target, .. }
+        | Expr::Clone { expr: target, .. }
+        | Expr::Unary { expr: target, .. }
+        | Expr::ErrorControl { expr: target, .. }
+        | Expr::Include { path: target, .. }
+        | Expr::Require { path: target, .. }
+        | Expr::Cast { expr: target, .. } => collect_direct_call_names_from_expr(target, names),
+        Expr::DynamicProperty {
+            target, property, ..
+        } => {
+            collect_direct_call_names_from_expr(target, names);
+            collect_direct_call_names_from_expr(property, names);
+        }
+        Expr::Binary { left, right, .. } => {
+            collect_direct_call_names_from_expr(left, names);
+            collect_direct_call_names_from_expr(right, names);
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            collect_direct_call_names_from_expr(condition, names);
+            collect_direct_call_names_from_expr(if_true, names);
+            collect_direct_call_names_from_expr(if_false, names);
+        }
+        Expr::ShortTernary {
+            condition,
+            if_false,
+            ..
+        } => {
+            collect_direct_call_names_from_expr(condition, names);
+            collect_direct_call_names_from_expr(if_false, names);
+        }
+        Expr::Assign { target, expr, .. }
+        | Expr::CompoundAssign { target, expr, .. }
+        | Expr::NullCoalesceAssign { target, expr, .. } => {
+            collect_direct_call_names_from_assign_target(target, names);
+            collect_direct_call_names_from_expr(expr, names);
+        }
+        Expr::IncrementDecrement { target, .. } => {
+            collect_direct_call_names_from_assign_target(target, names);
+        }
+        Expr::Closure { .. }
+        | Expr::Null(_)
+        | Expr::Bool(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::String(_, _)
+        | Expr::InterpolatedString { .. }
+        | Expr::Variable(_, _)
+        | Expr::MagicLine { .. }
+        | Expr::MagicFile { .. }
+        | Expr::MagicDir { .. }
+        | Expr::MagicFunction { .. }
+        | Expr::MagicClass { .. }
+        | Expr::MagicMethod { .. }
+        | Expr::GlobalConstant { .. }
+        | Expr::ClassNameConstant { .. }
+        | Expr::SelfClassNameConstant { .. }
+        | Expr::ParentClassNameConstant { .. }
+        | Expr::StaticClassNameConstant { .. }
+        | Expr::ClassConstant { .. }
+        | Expr::SelfClassConstant { .. }
+        | Expr::ParentClassConstant { .. }
+        | Expr::LateStaticClassConstant { .. }
+        | Expr::StaticProperty { .. }
+        | Expr::SelfStaticProperty { .. }
+        | Expr::ParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. } => {}
     }
 }
 
@@ -7775,6 +8260,10 @@ struct CGenerator {
     native_globals_symbol_table_handle: Option<String>,
     loop_transfer_targets: Vec<CLoopTransferTarget>,
     active_finally_bodies: Vec<Vec<Stmt>>,
+    user_functions: HashMap<String, CUserFunction>,
+    user_function_order: Vec<String>,
+    function_definitions: Vec<String>,
+    function_return_status: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -7839,6 +8328,12 @@ struct CGotoTransfer {
     label: String,
     state: CGotoStateSnapshot,
     span: Span,
+}
+
+#[derive(Debug, Clone)]
+struct CUserFunction {
+    c_name: String,
+    decl: FunctionDecl,
 }
 
 impl CMutableScalarSlotKind {
@@ -9282,6 +9777,217 @@ impl CGenerator {
             || self.uses_native_symbol_table_helpers
             || self.uses_native_value_truthiness
             || self.uses_native_exit_helpers
+            || self.uses_native_value_clone
+            || !self.function_definitions.is_empty()
+    }
+
+    fn user_function_key(name: &str) -> String {
+        name.to_ascii_lowercase()
+    }
+
+    fn c_user_function_name(index: usize, name: &str) -> String {
+        let mut sanitized = String::new();
+        for ch in name.chars() {
+            if ch.is_ascii_alphanumeric() {
+                sanitized.push(ch.to_ascii_lowercase());
+            } else {
+                sanitized.push('_');
+            }
+        }
+        if sanitized.is_empty() {
+            sanitized.push_str("anonymous");
+        }
+        format!("phpc_user_function_{index}_{sanitized}")
+    }
+
+    fn c_user_function_signature(c_name: &str, param_count: usize) -> String {
+        let mut params = (0..param_count)
+            .map(|index| format!("phpc_NativeValueHandle arg_{index}"))
+            .collect::<Vec<_>>();
+        params.push("int *phpc_call_status".to_string());
+        format!(
+            "static phpc_NativeValueHandle {c_name}({})",
+            params.join(", ")
+        )
+    }
+
+    fn register_top_level_user_functions(&mut self, statements: &[Stmt]) -> CompileResult<()> {
+        for stmt in statements {
+            let Stmt::Function(function) = stmt else {
+                continue;
+            };
+            self.validate_user_function_frame(function)?;
+            let key = Self::user_function_key(&function.name);
+            if self.user_functions.contains_key(&key) {
+                return Err(native_function_declaration_fallback_diagnostic(
+                    NativeCallBackend::Assembly,
+                    function,
+                    ASSEMBLY_STATIC_LOCAL_REJECTION,
+                ));
+            }
+            let c_name = Self::c_user_function_name(self.user_function_order.len(), &function.name);
+            self.user_function_order.push(key.clone());
+            self.user_functions.insert(
+                key,
+                CUserFunction {
+                    c_name,
+                    decl: function.clone(),
+                },
+            );
+        }
+        self.reject_recursive_user_function_frames()
+    }
+
+    fn validate_user_function_frame(&self, function: &FunctionDecl) -> CompileResult<()> {
+        if function.is_nested
+            || function.returns_by_reference
+            || function.return_type.is_some()
+            || function
+                .params
+                .iter()
+                .any(|param| param.by_reference || param.is_variadic || param.type_decl.is_some())
+            || function_body_contains_native_frame_blocker(&function.body)
+        {
+            return Err(native_function_declaration_fallback_diagnostic(
+                NativeCallBackend::Assembly,
+                function,
+                ASSEMBLY_STATIC_LOCAL_REJECTION,
+            ));
+        }
+        Ok(())
+    }
+
+    fn reject_recursive_user_function_frames(&self) -> CompileResult<()> {
+        let mut graph = HashMap::<String, Vec<String>>::new();
+        for key in &self.user_function_order {
+            let function = self
+                .user_functions
+                .get(key)
+                .expect("registered function key has metadata");
+            let mut calls = Vec::new();
+            collect_direct_call_names_from_stmts(&function.decl.body, &mut calls);
+            let callees = calls
+                .into_iter()
+                .map(|name| Self::user_function_key(&name))
+                .filter(|callee| self.user_functions.contains_key(callee))
+                .collect::<Vec<_>>();
+            graph.insert(key.clone(), callees);
+        }
+
+        let mut visiting = HashSet::new();
+        let mut visited = HashSet::new();
+        for key in &self.user_function_order {
+            if self.user_function_call_graph_has_cycle(key, &graph, &mut visiting, &mut visited) {
+                let function = self
+                    .user_functions
+                    .get(key)
+                    .expect("registered function key has metadata");
+                return Err(native_function_declaration_fallback_diagnostic(
+                    NativeCallBackend::Assembly,
+                    &function.decl,
+                    ASSEMBLY_STATIC_LOCAL_REJECTION,
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn user_function_call_graph_has_cycle(
+        &self,
+        key: &str,
+        graph: &HashMap<String, Vec<String>>,
+        visiting: &mut HashSet<String>,
+        visited: &mut HashSet<String>,
+    ) -> bool {
+        if visited.contains(key) {
+            return false;
+        }
+        if !visiting.insert(key.to_string()) {
+            return true;
+        }
+        if let Some(callees) = graph.get(key) {
+            for callee in callees {
+                if self.user_function_call_graph_has_cycle(callee, graph, visiting, visited) {
+                    return true;
+                }
+            }
+        }
+        visiting.remove(key);
+        visited.insert(key.to_string());
+        false
+    }
+
+    fn emit_registered_user_function_definitions(&mut self) -> CompileResult<()> {
+        let functions = self
+            .user_function_order
+            .iter()
+            .map(|key| {
+                self.user_functions
+                    .get(key)
+                    .expect("registered function key has metadata")
+                    .clone()
+            })
+            .collect::<Vec<_>>();
+        for function in functions {
+            let definition = self.emit_user_function_definition(&function)?;
+            self.function_definitions.push(definition);
+        }
+        Ok(())
+    }
+
+    fn emit_user_function_definition(&mut self, function: &CUserFunction) -> CompileResult<String> {
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            uses_native_value_clone: true,
+            user_functions: self.user_functions.clone(),
+            user_function_order: self.user_function_order.clone(),
+            function_return_status: Some("phpc_call_status".to_string()),
+            next_static_data: self.next_static_data,
+            next_native_temp: self.next_native_temp,
+            ..CGenerator::default()
+        };
+
+        generator.body.push("*phpc_call_status = 0;".to_string());
+        for (index, param) in function.decl.params.iter().enumerate() {
+            let handle = generator.next_native_name("frame_param");
+            generator.body.push(format!(
+                "phpc_NativeValueHandle {handle} = phpc_native_value_clone(arg_{index});"
+            ));
+            let error_exit = generator.native_error_exit("");
+            generator
+                .body
+                .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
+            generator.retain_native_value_cleanup_handle(&handle);
+            generator
+                .variables
+                .insert(param.name.clone(), CValue::NativeValueHandle(handle));
+            generator.remember_variable_order(&param.name);
+        }
+
+        for statement in &function.decl.body {
+            generator.emit_statement(statement)?;
+        }
+        generator.emit_function_default_return(function.decl.span)?;
+
+        self.next_static_data = generator.next_static_data;
+        self.next_native_temp = generator.next_native_temp;
+        self.static_data
+            .extend(generator.static_data.iter().cloned());
+        self.merge_branch_feature_flags(&generator);
+
+        let mut definition = String::new();
+        definition.push_str(&Self::c_user_function_signature(
+            &function.c_name,
+            function.decl.params.len(),
+        ));
+        definition.push_str(" {\n");
+        for line in &generator.body {
+            definition.push_str("  ");
+            definition.push_str(line);
+            definition.push('\n');
+        }
+        definition.push_str("}\n");
+        Ok(definition)
     }
 
     fn emit_program_statements(&mut self, statements: &[Stmt]) -> CompileResult<()> {
@@ -9353,6 +10059,8 @@ impl CGenerator {
     }
 
     fn emit_program(&mut self, program: &Program) -> CompileResult<String> {
+        self.register_top_level_user_functions(&program.statements)?;
+        self.emit_registered_user_function_definitions()?;
         self.emit_program_statements(&program.statements)?;
 
         let mut output = String::new();
@@ -9790,6 +10498,24 @@ impl CGenerator {
             output.push('\n');
         }
         if !self.static_data.is_empty() {
+            output.push('\n');
+        }
+        if !self.user_function_order.is_empty() {
+            for key in &self.user_function_order {
+                let function = self
+                    .user_functions
+                    .get(key)
+                    .expect("registered function key has metadata");
+                output.push_str(&Self::c_user_function_signature(
+                    &function.c_name,
+                    function.decl.params.len(),
+                ));
+                output.push_str(";\n");
+            }
+            output.push('\n');
+        }
+        for definition in &self.function_definitions {
+            output.push_str(definition);
             output.push('\n');
         }
         output.push_str("int main(void) {\n");
@@ -14322,6 +15048,52 @@ impl CGenerator {
         Ok(())
     }
 
+    fn emit_return_statement(&mut self, value: Option<&Expr>) -> CompileResult<()> {
+        if self.function_return_status.is_some() {
+            self.emit_function_return_statement(value)
+        } else {
+            self.emit_top_level_return_statement(value)
+        }
+    }
+
+    fn emit_function_return_statement(&mut self, value: Option<&Expr>) -> CompileResult<()> {
+        let materialized = if let Some(value) = value {
+            self.materialize_native_value_result_operand(value, "")?
+        } else {
+            let handle = self.emit_native_value_for_cvalue(CValue::Null, Span::new(0, 0))?;
+            CNativeValueMaterialization {
+                handle: handle.clone(),
+                cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
+            }
+        };
+        self.emit_active_finally_bodies_before_terminal_transfer()?;
+        let local_cleanup = c_cleanup_sequence(&native_value_aux_cleanup_after_consuming_handle(
+            &materialized,
+        ));
+        let cleanup = self.native_scope_cleanup_sequence(&local_cleanup);
+        let status = self
+            .function_return_status
+            .as_ref()
+            .expect("function return status is present in function context");
+        self.body.push(format!(
+            "{cleanup} *{status} = 1; return {};",
+            materialized.handle
+        ));
+        Ok(())
+    }
+
+    fn emit_function_default_return(&mut self, span: Span) -> CompileResult<()> {
+        let handle = self.emit_native_value_for_cvalue(CValue::Null, span)?;
+        let cleanup = self.native_scope_cleanup_sequence("");
+        let status = self
+            .function_return_status
+            .as_ref()
+            .expect("function return status is present in function context");
+        self.body
+            .push(format!("{cleanup} *{status} = 1; return {handle};"));
+        Ok(())
+    }
+
     fn emit_active_finally_bodies_before_terminal_transfer(&mut self) -> CompileResult<()> {
         let active_finally_bodies = self.active_finally_bodies.clone();
         for finally_body in active_finally_bodies.iter().rev() {
@@ -14561,11 +15333,18 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
             Stmt::Expr { expr, .. } => self.emit_discarded_expr_statement(expr),
-            Stmt::Function(function) => Err(native_function_declaration_fallback_diagnostic(
-                NativeCallBackend::Assembly,
-                function,
-                ASSEMBLY_STATIC_LOCAL_REJECTION,
-            )),
+            Stmt::Function(function) => {
+                let key = Self::user_function_key(&function.name);
+                if self.user_functions.contains_key(&key) && !function.is_nested {
+                    Ok(())
+                } else {
+                    Err(native_function_declaration_fallback_diagnostic(
+                        NativeCallBackend::Assembly,
+                        function,
+                        ASSEMBLY_STATIC_LOCAL_REJECTION,
+                    ))
+                }
+            }
             Stmt::Interface(interface) => {
                 Err(self.unsupported(interface.span, ASSEMBLY_INTERFACE_REJECTION))
             }
@@ -14684,7 +15463,7 @@ impl CGenerator {
                 finally_body,
                 span,
             } => self.emit_try_statement(body, catches, finally_body.as_deref(), *span),
-            Stmt::Return { value, .. } => self.emit_top_level_return_statement(value.as_ref()),
+            Stmt::Return { value, .. } => self.emit_return_statement(value.as_ref()),
             Stmt::Global { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_GLOBAL_DECLARATION_REJECTION))
             }
@@ -14984,11 +15763,19 @@ impl CGenerator {
                 self.retain_native_value_cleanup_handle(&value.handle);
                 Ok(CValue::NativeValueHandle(value.handle))
             }
-            Expr::Call { name, args, span } if is_array_builtin(name) => {
-                Err(self.unsupported_direct_named_call(args, *span, ASSEMBLY_ARRAY_REJECTION))
+            Expr::Call { name, args, span } => {
+                if let Some(value) =
+                    self.try_materialize_user_function_call(name, args, *span, "")?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    Ok(CValue::NativeValueHandle(value.handle))
+                } else if is_array_builtin(name) {
+                    Err(self.unsupported_direct_named_call(args, *span, ASSEMBLY_ARRAY_REJECTION))
+                } else {
+                    Err(self.unsupported_value_call(expr))
+                }
             }
             Expr::DynamicCall { .. } => Err(self.unsupported_value_call(expr)),
-            Expr::Call { .. } => Err(self.unsupported_value_call(expr)),
             Expr::InstanceOf { span, .. } => {
                 if let Some(operation) = native_value_operand_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
@@ -15252,6 +16039,84 @@ impl CGenerator {
             &format!("{result}.exit_code"),
         ));
         Ok(CValue::Null)
+    }
+
+    fn try_materialize_user_function_call(
+        &mut self,
+        name: &str,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some(function) = self
+            .user_functions
+            .get(&Self::user_function_key(name))
+            .cloned()
+        else {
+            return Ok(None);
+        };
+
+        let required_count = function
+            .decl
+            .params
+            .iter()
+            .filter(|param| param.default.is_none())
+            .count();
+        if args.len() < required_count || args.len() > function.decl.params.len() {
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::UnknownCalleeDiagnostics)
+            );
+        }
+
+        let mut values = Vec::new();
+        let mut cleanup_after_use = Vec::new();
+        for (index, param) in function.decl.params.iter().enumerate() {
+            let value_expr = if let Some(arg) = args.get(index) {
+                arg
+            } else {
+                param.default.as_ref().ok_or_else(|| {
+                    self.unsupported_direct_call(span, NativeCallBlocker::UnknownCalleeDiagnostics)
+                })?
+            };
+            let value_failure_cleanup = format!(
+                "{}{}",
+                c_cleanup_sequence(&cleanup_after_use),
+                failure_cleanup
+            );
+            let value =
+                self.materialize_native_value_result_operand(value_expr, &value_failure_cleanup)?;
+            cleanup_after_use.extend(value.cleanup_after_use.clone());
+            values.push(value);
+        }
+
+        let status = self.next_native_name("user_function_status");
+        let result = self.next_native_name("user_function_result");
+        self.body.push(format!("int {status} = 0;"));
+        let mut call_args = values
+            .iter()
+            .map(|value| value.handle.clone())
+            .collect::<Vec<_>>();
+        call_args.push(format!("&{status}"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = {}({});",
+            function.c_name,
+            call_args.join(", ")
+        ));
+        let call_failure_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&cleanup_after_use),
+            failure_cleanup
+        );
+        let error_exit = self.native_error_exit(&call_failure_cleanup);
+        self.body.push(format!(
+            "if ({status} != 1 || {result}.ptr == NULL) {{ {error_exit} }}"
+        ));
+        self.body.extend(cleanup_after_use);
+
+        Ok(Some(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }))
     }
 
     fn emit_request_superglobal_assignment_expr(
@@ -23387,6 +24252,11 @@ impl CGenerator {
                         )
                         .map(Some);
                 }
+                if let Some(value) =
+                    self.try_materialize_user_function_call(name, args, *span, failure_cleanup)?
+                {
+                    return Ok(Some(value));
+                }
                 Ok(None)
             }
             Expr::NullCoalesceAssign { target, expr, span } => self
@@ -24612,7 +25482,7 @@ impl CGenerator {
         self.native_error_exit_with_code(local_cleanup, "1")
     }
 
-    fn native_error_exit_with_code(&self, local_cleanup: &str, exit_code: &str) -> String {
+    fn native_scope_cleanup_sequence(&self, local_cleanup: &str) -> String {
         let mut cleanup = String::new();
         cleanup.push_str(local_cleanup);
         for handle in self.native_value_cleanup_handles.iter().rev() {
@@ -24633,7 +25503,18 @@ impl CGenerator {
         if let Some(handle) = &self.native_globals_symbol_table_handle {
             cleanup.push_str(&format!(" phpc_native_symbol_table_free({handle});"));
         }
-        cleanup.push_str(&format!(" return {exit_code};"));
+        cleanup
+    }
+
+    fn native_error_exit_with_code(&self, local_cleanup: &str, exit_code: &str) -> String {
+        let mut cleanup = self.native_scope_cleanup_sequence(local_cleanup);
+        if let Some(status) = &self.function_return_status {
+            cleanup.push_str(&format!(
+                " *{status} = 0; return (phpc_NativeValueHandle){{0}};"
+            ));
+        } else {
+            cleanup.push_str(&format!(" return {exit_code};"));
+        }
         cleanup
     }
 

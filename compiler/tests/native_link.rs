@@ -13209,6 +13209,110 @@ fn emit_exe_links_and_runs_generalized_array_key_materialization_program() {
     let _ = fs::remove_file(&temp_php);
 }
 
+const NATIVE_USER_FUNCTION_FRAME_SOURCE: &str = concat!(
+    "<?php\n",
+    "function pick($value, $fallback = \"D\") {\n",
+    "    $local = strtoupper($value);\n",
+    "    if ($local) {\n",
+    "        return $local;\n",
+    "    }\n",
+    "    return strtolower($fallback);\n",
+    "}\n",
+    "function relay($value) {\n",
+    "    return pick($value, \"Relay\");\n",
+    "}\n",
+    "function side($value) {\n",
+    "    echo \"side:\", $value, \"|\";\n",
+    "}\n",
+    "echo pick(\"go\"), \"|\", pick(\"\", \"ALT\"), \"|\", pick(\"\"), \"|\", relay(\"\"), \"|\";\n",
+    "echo side(\"effect\");\n",
+    "echo \"done\";\n",
+);
+
+#[test]
+fn native_executable_c_source_lowers_direct_user_function_frames() {
+    let program = parse(NATIVE_USER_FUNCTION_FRAME_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("static phpc_NativeValueHandle phpc_user_function_0_pick(")
+            && source.contains("static phpc_NativeValueHandle phpc_user_function_1_relay(")
+            && source.contains("static phpc_NativeValueHandle phpc_user_function_2_side("),
+        "top-level functions should lower to reusable C frame entries:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_clone(arg_0)")
+            && source.contains("*phpc_call_status = 1; return"),
+        "callee frames should clone by-value parameters and return owned handles:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_user_function_0_pick(")
+            && body.contains("user_function_status_")
+            && body.contains("phpc_native_value_free(user_function_result_"),
+        "caller should check handoff status and own returned value cleanup:\n{source}"
+    );
+    assert!(
+        !body.contains("static phpc_NativeValueHandle"),
+        "function definitions must stay outside main:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly user-function lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_direct_user_function_frame_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "direct_user_function_frame",
+        NATIVE_USER_FUNCTION_FRAME_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native user-function executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"GO|alt|d|relay|side:effect|done");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn native_executable_c_source_rejects_unsupported_user_function_frame_shapes() {
+    for source in [
+        "<?php\nfunction byref(&$value) { return $value; }\n",
+        "<?php\nfunction variadic(...$values) { return 1; }\n",
+        "<?php\nfunction typed(int $value) { return $value; }\n",
+        "<?php\nfunction ret(): int { return 1; }\n",
+        "<?php\nfunction rec() { return rec(); }\necho rec();\n",
+        "<?php\nfunction bad_exit() { exit(\"bad\"); }\necho bad_exit();\n",
+        "<?php\nfunction outer() { function inner() { return 1; } return inner(); }\necho outer();\n",
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert!(
+            error
+                .message
+                .contains("direct by-value frame subset"),
+            "{source}\n{error:?}"
+        );
+    }
+}
+
 fn native_link_output_path(name: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
     path.push(format!("phpc-native-link-{name}-{}", std::process::id()));
