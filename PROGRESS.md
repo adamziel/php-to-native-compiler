@@ -1,11 +1,11 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 04:42 CEST
+Updated: 2026-05-24 04:55 CEST
 Evaluation marker: `20260524T022032Z`
 
 Latest primary semantic/test baseline:
-`59f3be42 codegen: dispatch finite mixed dynamic calls`
-Latest integrated semantic baseline: `59f3be42 codegen: dispatch finite mixed dynamic calls`
+`2cf2adda codegen: lower llvm string result operations`
+Latest integrated semantic baseline: `2cf2adda codegen: lower llvm string result operations`
 Latest evaluator report: `20260524T022032Z`
 
 These are candid engineering estimates toward generalized PHP semantics in the
@@ -51,6 +51,11 @@ arrays, selected references, request/symbol state, diagnostics, cleanup, lazy
 expressions, and bounded control flow.
 Generated-native `strpos()` and `substr_count()` now share a PHP-shaped
 string-search value-result ABI across LLVM IR and generated-C linked execution.
+LLVM IR and the LLVM-backed assembly path now also consume the shared native
+string-result ABI for lowerable direct `strrev()`, `bin2hex()`, `str_rot13()`,
+ASCII case transforms, and shell-escape result operations; generated-C keeps
+the already integrated nested string-result execution, while nested LLVM
+call-result operands remain blocked.
 Generated-C now has a compact direct by-value user-function frame subset:
 top-level declarations are registered before `main`, argument/default values
 are cloned into callee-owned native handles, direct calls receive owned return
@@ -84,13 +89,12 @@ full generated-native calls/frames, object/property/method execution, complete
 references/COW identity, source-ordered diagnostics, cleanup/unwinding, and
 LLVM/assembly parity.
 
-Current primary state: primary semantic head is `59f3be42`. The finite mixed
-dynamic-call batch landed after generated-C source and linked executable proof
-across user/user, user/builtin, and builtin/builtin finite callable sets,
-unsupported builtin blocker proof, array-callable runtime failure proof,
-closure/method blocker proof, adjacent dynamic-builtin/dynamic-user/
-user-function and call-boundary gates, cargo-check, rustfmt, and diff gates
-passed.
+Current primary state: primary semantic head is `2cf2adda`. The LLVM
+string-result backend-parity batch landed after IR proof across the whole
+one-argument string-result operation family, LLVM-backed assembly reachability,
+unsupported arity and nested-call blocker proof, existing generated-C linked
+string-result proof, full native function-call boundary, string-case tests,
+cargo-check, rustfmt, and diff gates passed.
 
 Current resource read: `/dev/shm` is above the dispatcher floor at about 9.5G
 free; `/home` has about 306G free.
@@ -102,19 +106,19 @@ live-owner checks.
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **82%** | `[################----]` | Strong shared value, array, reference, symbol, request, comparison, truthiness, string-search, diagnostic, termination, cleanup, request-root, call-frame type-coercion, and runtime dynamic-call result surfaces, but several are still scaffolding until consumed end-to-end. |
-| Compiler/backend consumers | **72%** | `[##############------]` | Generated-C has broad selected coverage including direct, recursive, finite known-string dynamic, runtime string-valued dynamic, bounded typed by-value user-function frame subsets, finite known-string plus runtime string-valued dynamic calls to supported native builtin families, and supported finite mixed user/builtin target sets. LLVM/assembly parity remains uneven and many consumers still stop at blockers. |
+| Compiler/backend consumers | **73%** | `[###############-----]` | Generated-C has broad selected coverage including direct, recursive, finite known-string dynamic, runtime string-valued dynamic, bounded typed by-value user-function frame subsets, finite known-string plus runtime string-valued dynamic calls to supported native builtin families, and supported finite mixed user/builtin target sets. LLVM/assembly now consume the shared string-result ABI for lowerable direct operands, but parity remains uneven and many consumers still stop at blockers. |
 | Executable PHP semantics | **54%** | `[###########---------]` | Many focused linked programs run, including PHP-shaped string-search results, request-root unset/reseed behavior, direct/recursive/known-string dynamic/runtime dynamic/typed by-value function frames, finite/runtime dynamic builtin calls, and finite mixed user/builtin dynamic calls, but behavior is still selected islands rather than a complete PHP execution model. |
 | Arrays, lvalues, references, COW | **58%** | `[############--------]` | Strong selected array/lvalue/reference paths. Full COW, arbitrary writable roots, and by-reference call/foreach parity remain open. |
 | Symbols, globals, request state | **66%** | `[#############-------]` | Strong request and `$GLOBALS` generated-C coverage now includes explicit missing-root state and root reseeding. Reconciliation across calls/requests still needs work. |
 | Calls, functions, frames | **48%** | `[##########----------]` | Generated-C now lowers a compact by-value user-function frame subset with owned argument/default/return handles, registered-function introspection, recursive/mutually recursive direct frames behind a depth guard, finite known-string dynamic calls, runtime string-valued dynamic calls to registered frames, finite known-string and runtime string-valued dynamic calls to supported native builtin families, supported finite mixed user/builtin target sets, and bounded scalar/nullable/union/array/mixed parameter and return type enforcement. Full callable lookup, unsupported runtime callable builtin families, callable array/object forms, methods, closures, by-reference/variadic frames, full type-system coverage, and broader mixed callable dispatch are still missing. |
 | Objects, properties, methods | **10%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary lacks general compiled object/property/method execution. |
 | Control flow, cleanup, diagnostics | **45%** | `[#########-----------]` | Bounded generated-C branches, loops including state-stable `do...while`, returns, transfers, switches, top-level state-stable gotos, normal-flow try/finally, top-level return through finally, diagnostic-aware stdout formatting, and corrected diagnostic-report ownership in generated stdout paths exist; owner/reference joins, broad unwinding, handlers, and exact ordering remain open. |
-| Broad integrated verification | **46%** | `[#########-----------]` | Focused gates are strong and now include broader request-root, user-function, typed-frame, runtime dynamic-call, dynamic-builtin, finite mixed-callable, and call-boundary filters. Cross-feature composition, end-to-end PHP programs, and backend parity need much broader proof. |
+| Broad integrated verification | **47%** | `[#########-----------]` | Focused gates are strong and now include broader request-root, user-function, typed-frame, runtime dynamic-call, dynamic-builtin, finite mixed-callable, string-result backend-parity, and call-boundary filters. Cross-feature composition, end-to-end PHP programs, and backend parity need much broader proof. |
 
 ## Candidate Work Not Counted
 
 As of this review, primary semantic progress is counted only through pushed
-baseline `59f3be42`. Active worker lanes continue to produce candidate work
+baseline `2cf2adda`. Active worker lanes continue to produce candidate work
 that is not counted in the percentages until it lands in primary with focused
 proof.
 
@@ -129,6 +133,7 @@ proof.
 - [x] Generated-C value-result diagnostics through shared diagnostic reporting.
 - [x] Generated-C native value-result `strlen()` consumption.
 - [x] Generated-native `strpos()` and `substr_count()` value results through a shared PHP-shaped string-search ABI.
+- [x] LLVM IR/assembly direct string-result builtins consume the shared native string-result ABI for lowerable operands.
 - [x] Generated-C non-strict comparison conditions and direct echoes route through shared native value comparison results across scalar, string, null/bool, builtin-result, and array families.
 - [x] Generated-C top-level `return`, state-stable `while`/`do...while`/`for`, scalar loop-carried slots, multi-level loop transfers, state-stable `switch` dispatch/fallthrough/break, top-level state-stable `goto` labels, normal-flow `try`/`finally`, and top-level return transfer through active `finally` bodies.
 - [x] Diagnostic-aware native value stdout formatting consumed by LLVM and generated-C display paths.
@@ -146,6 +151,18 @@ proof.
 
 ## Recent Primary-Integrated Work
 
+- `2cf2adda`: LLVM direct string-result builtins now lower lowerable operands
+  through `phpc_native_value_string_result_operation_with_diagnostic(...)`,
+  matching the shared runtime ABI already used by generated-C for `strrev()`,
+  `bin2hex()`, `str_rot13()`, ASCII case transforms, and shell-escape result
+  operations. The slice deliberately does not claim nested LLVM call-result
+  operands: `strtoupper(strtolower(...))` remains blocked in LLVM at the
+  shared call-result boundary, while generated-C keeps its linked nested
+  string-result behavior. Focused proof covers IR source, LLVM-backed
+  assembly reachability, unsupported arity blockers, nested-call blockers,
+  existing generated-C linked string-result execution, full native
+  function-call boundary, string-case tests, cargo-check, rustfmt, and diff
+  gates.
 - `59f3be42`: generated-C finite known-string dynamic calls whose possible
   spellings mix registered by-value user-function frames and supported native
   builtin families now reuse the shared runtime dynamic-call dispatch path.
