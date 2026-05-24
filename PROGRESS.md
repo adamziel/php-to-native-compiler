@@ -1,11 +1,11 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 02:05 CEST
+Updated: 2026-05-24 02:42 CEST
 Evaluation marker: `20260523T235117Z`
 
 Latest primary semantic/test baseline:
-`3cc56bfd codegen: lower native string search results`
-Latest integrated semantic baseline: `3cc56bfd codegen: lower native string search results`
+`cbda996b codegen: lower direct user function frames`
+Latest integrated semantic baseline: `cbda996b codegen: lower direct user function frames`
 Latest evaluator report: `20260523T235117Z`
 
 These are candid engineering estimates toward generalized PHP semantics in the
@@ -15,7 +15,7 @@ exact-shape fixtures do not.
 
 ## Executive Read
 
-Overall estimated progress: **50%** `[##########----------]`
+Overall estimated progress: **51%** `[##########----------]`
 
 Primary integrated progress now includes generated-C top-level state-stable
 `goto`/label dispatch, state-stable `do...while`, normal-flow `try`/`finally`,
@@ -29,20 +29,25 @@ arrays, selected references, request/symbol state, diagnostics, cleanup, lazy
 expressions, and bounded control flow.
 Generated-native `strpos()` and `substr_count()` now share a PHP-shaped
 string-search value-result ABI across LLVM IR and generated-C linked execution.
+Generated-C now has a compact direct by-value user-function frame subset:
+top-level declarations are registered before `main`, argument/default values
+are cloned into callee-owned native handles, direct calls receive owned return
+handles, fallthrough returns `null`, and unsupported frame shapes are rejected.
 
 This is still not close to complete PHP execution. The foundation is strong,
 but the remaining gaps are central language semantics rather than edge cases:
-generated-native calls/frames, object/property/method execution, complete
+full generated-native calls/frames, object/property/method execution, complete
 references/COW identity, source-ordered diagnostics, cleanup/unwinding, and
 LLVM/assembly parity.
 
-Current primary state: primary semantic head is `3cc56bfd`. Primary is clean
-and synced with `origin/master`. The earlier unowned
+Current primary state: primary semantic head is `cbda996b`. The earlier unowned
 `compiler/src/interpreter.rs` formatting spillover was restored and is not
 present. The former protected `runtime/src/lib.rs` null-slot hunk was rejected
 after focused runtime proof showed it broke existing-key increment/decrement,
-then parked outside the repo and restored. The narrow generated-C user-function
-WIP was parked and is not counted.
+then parked outside the repo and restored. The earlier narrow generated-C
+user-function WIP remains rejected; the accepted slice adds explicit frame
+ownership, caller handoff, cleanup/failure exits, and linked proof for a small
+direct-call subset.
 
 Current resource read: `/dev/shm` is above the dispatch floor after reclaiming
 an inactive call-semantics build cache. Keep broad waves conservative and
@@ -53,11 +58,11 @@ reclaim large inactive target dirs only after live-owner checks.
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **79%** | `[################----]` | Strong shared value, array, reference, symbol, request, comparison, truthiness, string-search, diagnostic, termination, and cleanup surfaces, but several are still scaffolding until consumed end-to-end. |
-| Compiler/backend consumers | **64%** | `[#############-------]` | Generated-C has broad selected coverage and LLVM consumes another value-result string ABI. LLVM/assembly parity remains uneven and many consumers still stop at blockers. |
-| Executable PHP semantics | **44%** | `[#########-----------]` | Many focused linked programs run, including PHP-shaped string-search results, but behavior is still selected islands rather than a complete PHP execution model. |
+| Compiler/backend consumers | **65%** | `[#############-------]` | Generated-C has broad selected coverage including a direct user-function frame subset, and LLVM consumes another value-result string ABI. LLVM/assembly parity remains uneven and many consumers still stop at blockers. |
+| Executable PHP semantics | **46%** | `[#########-----------]` | Many focused linked programs run, including PHP-shaped string-search results and direct by-value function frames, but behavior is still selected islands rather than a complete PHP execution model. |
 | Arrays, lvalues, references, COW | **58%** | `[############--------]` | Strong selected array/lvalue/reference paths. Full COW, arbitrary writable roots, and by-reference call/foreach parity remain open. |
 | Symbols, globals, request state | **64%** | `[#############-------]` | Strong request and `$GLOBALS` generated-C coverage. Reconciliation across calls/requests still needs work. |
-| Calls, functions, frames | **22%** | `[####----------------]` | Runtime/interpreter metadata and lane contracts exist, but real generated-native frame execution is still missing. |
+| Calls, functions, frames | **30%** | `[######--------------]` | Generated-C now lowers a compact direct by-value user-function frame subset with owned argument/default/return handles. Dynamic calls, methods, closures, by-reference/variadic frames, typed signatures, recursion, and full runtime lookup are still missing. |
 | Objects, properties, methods | **10%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary lacks general compiled object/property/method execution. |
 | Control flow, cleanup, diagnostics | **44%** | `[#########-----------]` | Bounded generated-C branches, loops including state-stable `do...while`, returns, transfers, switches, top-level state-stable gotos, normal-flow try/finally, top-level return through finally, and diagnostic-aware stdout formatting exist; owner/reference joins, broad unwinding, handlers, and exact ordering remain open. |
 | Broad integrated verification | **40%** | `[########------------]` | Focused gates are strong. Cross-feature composition, end-to-end PHP programs, and backend parity need much broader proof. |
@@ -71,7 +76,8 @@ reclaim large inactive target dirs only after live-owner checks.
 - [x] Generated-C top-level `return`, state-stable `while`/`do...while`/`for`, scalar loop-carried slots, multi-level loop transfers, state-stable `switch` dispatch/fallthrough/break, top-level state-stable `goto` labels, normal-flow `try`/`finally`, and top-level return transfer through active `finally` bodies.
 - [x] Diagnostic-aware native value stdout formatting consumed by LLVM and generated-C display paths.
 - [x] Strong selected generated-C arrays, lvalues, references, request state, `$GLOBALS`, lazy ternaries, logical short-circuiting, branch cleanup, foreach storage, and output/truthiness paths.
-- [ ] Primary-integrated generated-native user-function/call-frame execution.
+- [x] Primary-integrated bounded generated-C direct by-value user-function/call-frame execution.
+- [ ] Full generated-native user-function/call-frame execution across dynamic calls, typed signatures, recursion, by-reference/variadic frames, closures, methods, and runtime lookup.
 - [ ] Primary-integrated object construction, property access, method dispatch, `$this`, static context, visibility, and magic behavior.
 - [ ] Full reference/COW identity across calls, arrays, objects, globals, foreach, and control-flow joins.
 - [ ] Full structured cleanup/unwinding/finally/destructors/output-buffer/SAPI behavior.
@@ -80,6 +86,16 @@ reclaim large inactive target dirs only after live-owner checks.
 
 ## Recent Primary-Integrated Work
 
+- `cbda996b`: lowers a compact generated-C direct by-value user-function frame
+  subset. Top-level function declarations are registered before `main`,
+  acyclic direct calls materialize argument/default values into callee-owned
+  native handles, returns hand owned value handles back to callers, fallthrough
+  returns owned `null`, and callee cleanup/failure exits release frame-local
+  state. Focused proof covers generated-C source, linked executable output,
+  nested direct calls, defaults, early return, fallthrough return, echo side
+  effects inside functions, and blockers for nested functions, typed/by-ref/
+  variadic parameters, typed returns, recursion, static locals, dynamic calls,
+  and unsupported control-flow cleanup shapes.
 - `3cc56bfd`: routes lowerable generated-native `strpos()` and
   `substr_count()` calls through
   `phpc_native_value_string_search_result_with_diagnostic(...)`, returning
