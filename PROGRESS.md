@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 07:23 CEST
+Updated: 2026-05-24 07:25 CEST
 Evaluation marker: `20260524T045209Z`
 
 Latest primary semantic/test baseline:
@@ -11,8 +11,9 @@ Latest evaluator report: `20260524T045209Z`
 
 Current primary git state at review:
 
-- Current primary head after this progress update is
-  `600b5d9f docs: update progress after runtime by-reference dispatch`.
+- Runtime by-reference dispatch progress metadata was pushed as
+  `600b5d9f docs: update progress after runtime by-reference dispatch`;
+  later docs-only clarifications do not change the counted semantic baseline.
 - `c50866c5 codegen: dispatch runtime dynamic by-reference frames` is the
   latest counted semantic commit in this progress update.
 - `01c3a750` and `bd18a7c9` were docs-only progress refreshes; `fb27be7d`
