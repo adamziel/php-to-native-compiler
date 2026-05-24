@@ -1,22 +1,20 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 05:12 CEST
+Updated: 2026-05-24 05:24 CEST
 Evaluation marker: `20260524T031006Z`
 
 Latest primary semantic/test baseline:
-`ac875386 codegen: lower llvm string predicates`
+`2633fe55 codegen: lower nested llvm string call operands`
 
-Latest integrated semantic baseline: `ac875386 codegen: lower llvm string predicates`
+Latest integrated semantic baseline: `2633fe55 codegen: lower nested llvm string call operands`
 Latest evaluator report: `20260524T031006Z`
 
 Current primary git state:
 
-- `master` and `origin/master` are synced at
-  `058d7445 docs: update progress after llvm string predicates`.
-- Live uncommitted primary WIP exists in `compiler/src/codegen.rs` and
-  `compiler/tests/native_runtime_abi.rs`. It appears to target nested LLVM
-  direct string call-result operands. This is not committed, not pushed, and
-  not counted below.
+- `master` contains `2633fe55 codegen: lower nested llvm string call operands`
+  on top of `e3a9d5d1 docs: update progress dashboard`. After this progress
+  update is pushed, `origin/master` should match the progress update commit.
+- No primary semantic WIP remains in the worktree.
 
 These are candid engineering estimates toward generalized PHP semantics in the
 native compiler. They are not test pass rates. Only primary-integrated, pushed
@@ -43,8 +41,9 @@ Executable PHP semantics: **54%** `[###########---------]`
 The primary branch is advancing at a useful pace. Recent integrated work
 improved generated-C dynamic calls across registered by-value user frames and
 supported native builtin families, added bounded type enforcement for by-value
-frames, and moved LLVM closer to generated-C for direct string-result and
-string-predicate builtin families through shared native ABIs.
+frames, and moved LLVM closer to generated-C for direct string-result,
+string-predicate, string-search, string-int, and `strlen()` operand families
+through shared native ABIs.
 
 This is still selected island execution, not complete PHP. The hard remaining
 work is central language behavior: full callable lookup, closures, methods,
@@ -57,17 +56,22 @@ backend parity.
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **82%** | `[################----]` | Strong shared value, array, reference, symbol, request, comparison, truthiness, string, diagnostic, cleanup, request-root, call-frame type-coercion, and dynamic-call surfaces. Some remain scaffolding until consumed end to end. |
-| Compiler/backend consumers | **74%** | `[###############-----]` | Generated-C has broad selected coverage. LLVM now consumes shared direct string-result and string-predicate ABIs. Direct assembly and many nested/backend consumers still stop at blockers. |
+| Compiler/backend consumers | **75%** | `[###############-----]` | Generated-C has broad selected coverage. LLVM now consumes shared direct string-result, string-predicate, string-search, string-int, and selected `strlen()` nested operand ABIs. Direct assembly and many nested/backend consumers still stop at blockers. |
 | Executable PHP semantics | **54%** | `[###########---------]` | Many focused linked programs run, but behavior is still selected islands rather than a complete PHP execution model. |
 | Arrays, lvalues, references, COW | **58%** | `[############--------]` | Strong selected array/lvalue/reference paths. Full COW, arbitrary writable roots, by-reference calls, foreach parity, and object/reference joins remain open. |
 | Symbols, globals, request state | **66%** | `[#############-------]` | Request roots and selected `$GLOBALS` paths are strong. Reconciliation across calls, requests, includes, and aliases remains incomplete. |
 | Calls, functions, frames | **48%** | `[##########----------]` | Bounded generated-C by-value frames, typed params/returns, recursion guards, registered introspection, dynamic user calls, dynamic builtin calls, and finite mixed user/builtin sets are integrated. Full callable lookup, closures, methods, by-reference/variadic/named frames, and broader type behavior remain missing. |
 | Objects, properties, methods | **10%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary lacks general compiled object construction, property access, method dispatch, `$this`, visibility, static context, and magic behavior. |
 | Control flow, cleanup, diagnostics | **45%** | `[#########-----------]` | Bounded generated-C branches, loops, transfers, switch/goto, normal-flow `try`/`finally`, return-through-finally, diagnostic-aware stdout formatting, and selected cleanup paths exist. Broad unwind, handlers, destructors, output buffers, and exact ordering remain open. |
-| Broad integrated verification | **48%** | `[##########----------]` | Focused gates are strong. Cross-feature composition, end-to-end PHP programs, backend parity, and the unfiltered `native_runtime_abi` debt need broader proof. |
+| Broad integrated verification | **49%** | `[##########----------]` | Focused gates are strong. Cross-feature composition, end-to-end PHP programs, backend parity, and the unfiltered `native_runtime_abi` debt need broader proof. |
 
 ## Recent Primary-Integrated Work
 
+- `2633fe55`: LLVM direct string/native-value consumers now admit lowerable
+  nested direct call-result operands across string-result, string-predicate,
+  string-search, string-int, and selected `strlen()` paths. The compiler keeps
+  dynamic calls, methods, constructors, closures, unknown calls, unsupported
+  builtin families, and direct assembly on shared blockers.
 - `ac875386`: LLVM direct string-predicate builtins now lower lowerable
   operands through `phpc_native_value_string_predicate_with_diagnostic(...)`
   for `str_starts_with()`, `str_ends_with()`, and `str_contains()`. Direct
@@ -93,12 +97,10 @@ backend parity.
 
 ## Candidate Work Not Counted
 
-Primary semantic progress is counted only through pushed baseline `ac875386`.
+Primary semantic progress is counted only through pushed baseline `2633fe55`.
 Current and lane-local candidates are not counted until primary integration
 lands them with focused proof.
 
-- Dirty primary WIP: nested LLVM lowerable direct string call-result operand
-  lowering in `compiler/src/codegen.rs` and `compiler/tests/native_runtime_abi.rs`.
 - Lane-local branch-merge cleanup readiness and grouped cleanup/terminal
   contract work.
 - Lane-local array builtin candidates such as `array_unique()` and diagnostic
@@ -125,11 +127,12 @@ Done:
   PHP-shaped string-search ABI.
 - [x] LLVM direct string-result and string-predicate builtin families through
   shared native ABIs for lowerable operands.
+- [x] LLVM lowerable nested direct call-result operands for direct string/native
+  value consumers across string-result, string-predicate, string-search,
+  string-int, and selected `strlen()` paths.
 
 In progress / candidates:
 
-- [ ] Dirty primary nested LLVM direct string call-result operand lowering
-  candidate. Not counted until committed and pushed.
 - [ ] Lane-local cleanup/readiness contracts that may support broader
   control-flow and unwind semantics.
 - [ ] Lane-local array, string, diagnostic, call-frame, reference-slot, and
