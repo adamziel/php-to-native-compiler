@@ -6,7 +6,7 @@ use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
-const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, non-direct assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment outside lowerable direct variables, null coalescing assignment, increment/decrement, non-direct assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 
 #[test]
@@ -82,10 +82,8 @@ echo $storage;
 #[test]
 fn emit_ir_rejects_mutation_forms_with_specific_boundary() {
     for source in [
-        "<?php\n$value = 1;\n$value += 2;\n",
         "<?php\n$value = null;\n$value ??= 2;\n",
         "<?php\n$value = 1;\n$value++;\n",
-        "<?php\n$value = 1;\necho ($value += 2);\n",
         "<?php\n$value = null;\necho ($value ??= 2);\n",
         "<?php\n$value = 1;\necho ++$value;\n",
         "<?php\n$value = 1;\nunset($value);\n",
@@ -97,6 +95,30 @@ fn emit_ir_rejects_mutation_forms_with_specific_boundary() {
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, LLVM_MUTATION_REJECTION);
     }
+}
+
+#[test]
+fn emit_ir_lowers_direct_variable_compound_assignment_values() {
+    let ir = emit_ir_source(
+        "<?php\n$value = 4;\n$delta = 5;\n$value += $delta;\necho $value;\necho ($value *= 2), $value;\n",
+    )
+    .expect("direct variable compound assignments should lower for primitive value families");
+
+    assert!(
+        ir.contains(" = add i64 4, 5") && ir.matches("i64 18").count() >= 2,
+        "direct variable compound assignment statements and expressions should reuse primitive binary lowering:\n{ir}"
+    );
+    assert!(
+        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %tmp0)")
+            && ir.matches("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 18)")
+                .count()
+                >= 2,
+        "compound assignment expression results and later reads should remain available to echo, even when known-value tracking folds the expression result:\n{ir}"
+    );
+    assert!(
+        !ir.contains(LLVM_MUTATION_REJECTION),
+        "direct variable compound assignments should not fall through the mutation blocker:\n{ir}"
+    );
 }
 
 #[test]
@@ -215,7 +237,7 @@ fn emit_asm_rejects_reference_assignment_before_backend_execution() {
 
 #[test]
 fn emit_asm_rejects_mutation_before_backend_execution() {
-    let error = emit_asm_source("<?php\n$value = 1;\n$value += 2;\n").unwrap_err();
+    let error = emit_asm_source("<?php\n$value = null;\n$value ??= 2;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_MUTATION_REJECTION);

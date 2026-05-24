@@ -1,7 +1,7 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, non-direct assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment outside lowerable direct variables, null coalescing assignment, increment/decrement, non-direct assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -466,42 +466,67 @@ fn modulo_compound_assignment_reuses_modulo_diagnostics() {
 }
 
 #[test]
-fn emit_ir_rejects_compound_assignment_until_native_lowering_exists() {
-    let error = emit_ir_source("<?php\n$value = 1;\n$value += 2;\n").unwrap_err();
+fn emit_ir_lowers_direct_variable_arithmetic_compound_assignments() {
+    let ir = emit_ir_source(
+        "<?php\n$value = 1;\n$delta = 2;\n$value += $delta;\necho $value;\n$float = 1.5;\n$factor = 2.0;\n$float *= $factor;\necho $float;\n",
+    )
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 1);
-    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
+    assert!(
+        ir.contains(" = add i64 1, 2") && ir.contains(" = fmul double 1.5, 2.0"),
+        "direct variable arithmetic compound assignments should reuse LLVM binary lowering:\n{ir}"
+    );
+    assert!(
+        !ir.contains(LLVM_MUTATION_REJECTION),
+        "lowerable direct variable compound assignments should not fall through the mutation blocker:\n{ir}"
+    );
 }
 
 #[test]
-fn emit_ir_rejects_bitwise_compound_assignment_until_native_lowering_exists() {
-    let error = emit_ir_source("<?php\n$value = 6;\n$value &= 3;\n").unwrap_err();
+fn emit_ir_lowers_direct_variable_bitwise_shift_and_modulo_compound_assignments() {
+    let ir = emit_ir_source(
+        "<?php\n$value = 13;\n$mask = 7;\n$value &= $mask;\n$shift = 1;\n$value <<= $shift;\n$mod = 4;\n$value %= $mod;\necho $value;\n",
+    )
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 1);
-    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
+    assert!(
+        ir.contains(" = and i64 13, 7") && ir.contains(" = srem i64"),
+        "direct variable bitwise and modulo compound assignments should reuse integer binary lowering:\n{ir}"
+    );
+    assert!(
+        !ir.contains(LLVM_MUTATION_REJECTION),
+        "lowerable direct variable compound assignments should not fall through the mutation blocker:\n{ir}"
+    );
 }
 
 #[test]
-fn emit_ir_rejects_modulo_compound_assignment_until_native_lowering_exists() {
-    let error = emit_ir_source("<?php\n$value = 10;\n$value %= 4;\n").unwrap_err();
+fn emit_ir_lowers_direct_variable_compound_assignment_expressions() {
+    let ir = emit_ir_source("<?php\n$value = 2;\n$delta = 3;\necho ($value += $delta), $value;\n")
+        .unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 1);
-    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
+    assert!(
+        ir.contains(" = add i64 2, 3"),
+        "compound assignment expressions should read the left value and evaluate the RHS through existing value semantics:\n{ir}"
+    );
+    assert!(
+        ir.matches("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %")
+            .count()
+            >= 2,
+        "compound assignment expression result and later variable read should both echo the stored result:\n{ir}"
+    );
+    assert!(
+        !ir.contains(LLVM_MUTATION_REJECTION),
+        "direct variable compound assignment expressions should not fall through the mutation blocker:\n{ir}"
+    );
 }
 
 #[test]
-fn emit_ir_rejects_compound_assignment_expressions_until_native_lowering_exists() {
-    let error = emit_ir_source("<?php\n$value = 1;\necho ($value += 2);\n").unwrap_err();
+fn emit_ir_rejects_undefined_direct_variable_compound_assignment_until_diagnostics_exist() {
+    let error = emit_ir_source("<?php\n$value += 2;\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 7);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
     assert_eq!(error.message, LLVM_MUTATION_REJECTION);
 }
 

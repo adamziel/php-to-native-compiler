@@ -112,7 +112,7 @@ const ASSEMBLY_TRY_BLOCK_REJECTION: &str = "assembly try/catch/finally lowering 
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_GLOBALS_ROOT_APPEND_REJECTION: &str = "Cannot append to $GLOBALS";
-const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, non-direct assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment outside lowerable direct variables, null coalescing assignment, increment/decrement, non-direct assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const ASSEMBLY_MUTATION_REJECTION: &str = "assembly mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions outside lowerable direct variable, direct and nested array offset write/append values, and request-superglobal assignment values, non-symbol unset, object property unset, static property unset, mixed-target unset, and request/global-root unset until native read-modify-write ordering, null-aware mutation, unset writeback effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const LLVM_ISSET_REJECTION: &str = "LLVM isset lowering rejects array offset operands, object property operands, static property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
 const ASSEMBLY_ISSET_REJECTION: &str = "assembly isset lowering rejects array offset operands, object property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
@@ -1180,6 +1180,22 @@ fn native_array_lvalue_compound_binary_op_tag(op: CompoundAssignOp) -> &'static 
         CompoundAssignOp::BitwiseXor => "PHPC_NATIVE_VALUE_BINARY_BITWISE_XOR",
         CompoundAssignOp::ShiftLeft => "PHPC_NATIVE_VALUE_BINARY_SHIFT_LEFT",
         CompoundAssignOp::ShiftRight => "PHPC_NATIVE_VALUE_BINARY_SHIFT_RIGHT",
+    }
+}
+
+fn compound_assignment_binary_op(op: CompoundAssignOp) -> BinaryOp {
+    match op {
+        CompoundAssignOp::Add => BinaryOp::Add,
+        CompoundAssignOp::Sub => BinaryOp::Sub,
+        CompoundAssignOp::Mul => BinaryOp::Mul,
+        CompoundAssignOp::Div => BinaryOp::Div,
+        CompoundAssignOp::Mod => BinaryOp::Mod,
+        CompoundAssignOp::Concat => BinaryOp::Concat,
+        CompoundAssignOp::BitwiseAnd => BinaryOp::BitwiseAnd,
+        CompoundAssignOp::BitwiseOr => BinaryOp::BitwiseOr,
+        CompoundAssignOp::BitwiseXor => BinaryOp::BitwiseXor,
+        CompoundAssignOp::ShiftLeft => BinaryOp::ShiftLeft,
+        CompoundAssignOp::ShiftRight => BinaryOp::ShiftRight,
     }
 }
 
@@ -4801,8 +4817,27 @@ impl LlvmGenerator {
 
                 Err(self.unsupported(*span, LLVM_REFERENCE_ASSIGNMENT_REJECTION))
             }
-            Stmt::CompoundAssign { target, span, .. }
-            | Stmt::IncrementDecrement { target, span, .. }
+            Stmt::CompoundAssign {
+                target,
+                op,
+                expr,
+                span,
+            } => {
+                if let Some(operation) = native_assignment_target_call_operation(target) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                if is_object_property_array_access_target(target) {
+                    return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
+                }
+                if self
+                    .emit_direct_variable_compound_assignment(target, *op, expr, *span)?
+                    .is_some()
+                {
+                    return Ok(());
+                }
+                Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
+            }
+            Stmt::IncrementDecrement { target, span, .. }
             | Stmt::NullCoalesceAssign { target, span, .. } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
@@ -5200,8 +5235,26 @@ impl LlvmGenerator {
                 }
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
-            Expr::CompoundAssign { target, span, .. }
-            | Expr::NullCoalesceAssign { target, span, .. }
+            Expr::CompoundAssign {
+                target,
+                op,
+                expr,
+                span,
+            } => {
+                if let Some(operation) = native_assignment_target_call_operation(target) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                if is_object_property_array_access_target(target) {
+                    return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
+                }
+                if let Some(value) =
+                    self.emit_direct_variable_compound_assignment(target, *op, expr, *span)?
+                {
+                    return Ok(value);
+                }
+                Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
+            }
+            Expr::NullCoalesceAssign { target, span, .. }
             | Expr::IncrementDecrement { target, span, .. } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
@@ -6169,6 +6222,34 @@ impl LlvmGenerator {
         }
 
         let value = self.emit_expr(expr)?;
+        if matches!(value, IrValue::NativeValue(_)) {
+            return Err(
+                self.unsupported_direct_call(expr.span(), NativeCallBlocker::ReturnValueOwnership)
+            );
+        }
+        self.variables.insert(name.clone(), value.clone());
+        Ok(Some(value))
+    }
+
+    fn emit_direct_variable_compound_assignment(
+        &mut self,
+        target: &AssignTarget,
+        op: CompoundAssignOp,
+        expr: &Expr,
+        span: Span,
+    ) -> CompileResult<Option<IrValue>> {
+        let AssignTarget::Variable { name, .. } = target else {
+            return Ok(None);
+        };
+        if is_request_superglobal_name(name) || is_globals_superglobal_name(name) {
+            return Ok(None);
+        }
+
+        let Some(left) = self.variables.get(name).cloned() else {
+            return Err(self.unsupported(span, LLVM_MUTATION_REJECTION));
+        };
+        let right = self.emit_expr(expr)?;
+        let value = self.emit_binary(left, compound_assignment_binary_op(op), right, span)?;
         if matches!(value, IrValue::NativeValue(_)) {
             return Err(
                 self.unsupported_direct_call(expr.span(), NativeCallBlocker::ReturnValueOwnership)
