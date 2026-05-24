@@ -1,13 +1,13 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 12:47 CEST
-Evaluation marker: `20260524T104719Z`
+Updated: 2026-05-24 12:51 CEST
+Evaluation marker: `20260524T105131Z`
 
 Latest counted primary semantic/test baseline:
 `de7ee6d2 codegen: lower declared class inheritance`
 
 Latest primary head before this progress update:
-`de7ee6d2 codegen: lower declared class inheritance`
+`e1ee1314 docs: update progress after declared inheritance`
 
 Only pushed primary work counts here. Dirty WIP, lane-local candidates, parked diffs, exact-shape fixtures, and status-file claims are not product capability until selected, gated, committed, and pushed through primary.
 
@@ -40,12 +40,13 @@ The latest inheritance slice extends generated-C declared objects through ancest
 
 - [x] Primary semantic work is committed as `de7ee6d2`.
 - [x] Latest counted semantic commit is `de7ee6d2`.
-- [x] No uncounted dirty primary WIP remains from the declared inheritance slice before this progress update.
-- [x] This progress update is expected to be committed as a wrapper docs commit; unrelated product diffs should remain untouched.
+- [x] Primary head before this evaluator progress update is synced with `origin/master` at `e1ee1314`.
+- [x] No uncounted dirty primary WIP was present before this evaluator progress update.
+- [x] This evaluator progress update is expected to be committed as a wrapper docs commit; unrelated product diffs should remain untouched.
 
 ## Lane-Local Candidate Work
 
-Fresh worker statuses show broad candidate inventory, including static-property blockers, contextual `self`/`parent`/`static` receiver carriers, callable result egress dispatch, non-local symbol candidate sequencing, request/global diagnostics, parameter-aware conversion diagnostics, reference/COW metadata, and cleanup/CFG transfer planning.
+Fresh worker statuses show broad candidate inventory, including callable/closure frame and by-reference parameter/result contracts, linked local symbol-table routing, request/diagnostic snapshots and custom-handler blockers, object-property reference dispatch boundaries, reference/COW live-generator conformance gates, control-flow cleanup and target-state planning, and runtime object-instantiation candidate ABIs.
 
 These are useful inputs, not product capability. Prefer candidates that land as primary source/link proof or remove a real shared execution blocker. Treat blocker-only or metadata-only slices as lower priority unless they unlock an immediate executable consumer.
 
@@ -86,10 +87,10 @@ These are useful inputs, not product capability. Prefer candidates that land as 
 
 ## Current Review Notes
 
-- Primary semantic baseline is `de7ee6d2`; the progress wrapper should be the only dirty primary file before the docs commit.
+- Primary semantic baseline is `de7ee6d2`; primary head was clean and synced at `e1ee1314` before this evaluator progress update.
 - Focused gates for the latest inheritance slice passed using disk-backed `/tmp` targets: `cargo check -q -p phpc -p php_runtime`, `cargo test -q -p php_runtime native_declared_class_inheritance_allocation_preserves_ancestors_and_slots`, `cargo test -q -p php_runtime native_declared_class`, `cargo test -q -p phpc --test native_link native_executable_c_source_routes_declared_inheritance_through_ancestor_metadata`, `cargo test -q -p phpc --test native_link emit_exe_links_and_runs_declared_class_inheritance_program`, `cargo test -q -p phpc --test native_link declared_class`, `cargo test -q -p phpc --test native_link object_static`, `cargo test -q -p phpc --test native_object_class_boundary`, and `cargo test -q -p phpc --test native_link native_executable_c_source_keeps_unsupported_method_shapes_blocked`.
 - The broader `cargo test -q -p phpc --test native_function_call_boundary` gate was not re-run for this inheritance slice; the previous unrelated direct-call column expectation failures in `emit_ir_routes_unsupported_direct_call_argument_results_through_call_boundary` and `native_executable_c_source_routes_unsupported_direct_call_argument_results_through_call_boundary` remain noted until that boundary is refreshed.
-- The supervisor dashboard tail is stale relative to current primary; it still centers on the earlier formatter-diagnostics era and should be refreshed before strategic steering relies on it.
-- `/dev/shm` live check briefly hit 100% during worker activity, then recovered to about 64% used with roughly 8G available. Use disk-backed `/tmp` targets for primary gates when shared memory is near the 6G floor, and only reclaim shared-memory targets after owner checks.
-- `/home` live check: 459G total, 211G used, 230G available, 48% used. The disk-backed primary target `/tmp/phpc-primary-target-object-static` is about 335M.
+- The supervisor dashboard is current as of 2026-05-24 12:50 CEST and matches primary head `e1ee1314` / semantic baseline `de7ee6d2`.
+- `/dev/shm` live check: 22G total, 15G used, 7.9G available, 65% used. Use disk-backed `/tmp` targets for broad primary gates, and only reclaim shared-memory targets after owner checks.
+- `/home` live check: 459G total, 224G used, 217G available, 51% used. Disk-backed `/tmp/php-to-native-compiler-target*` targets include one large 11G target plus several 256-264M focused targets.
 - Lane-local status claims still do not count until selected, gated, committed, and pushed through primary.
