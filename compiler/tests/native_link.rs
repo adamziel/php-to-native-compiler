@@ -109,6 +109,27 @@ const NATIVE_DECLARED_CLASS_OBJECT_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_DECLARED_CLASS_PROPERTY_SOURCE: &str = concat!(
+    "<?php\n",
+    "class Box { public $name; public $count; private $secret; }\n",
+    "$box = new Box();\n",
+    "echo empty($box->name) ? \"E\" : \"N\";\n",
+    "echo isset($box->name) ? \"S\" : \"M\";\n",
+    "echo \"|\";\n",
+    "echo ($box->name = \"Ada\");\n",
+    "echo \":\";\n",
+    "echo $box->name;\n",
+    "echo \":\";\n",
+    "echo isset($box->name) ? \"S\" : \"M\";\n",
+    "echo \":\";\n",
+    "echo empty($box->name) ? \"E\" : \"N\";\n",
+    "echo \"|\";\n",
+    "$other = new Box();\n",
+    "$other->count = 7;\n",
+    "echo $other->count;\n",
+    "echo \"\\n\";\n",
+);
+
 const NATIVE_BRANCH_STATE_MERGE_SOURCE: &str = concat!(
     "<?php\n",
     "$flags = [\"go\" => \"1\", \"stop\" => \"0\"];\n",
@@ -879,6 +900,34 @@ fn emit_exe_links_and_runs_declared_class_object_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"YYN|object:object:Box|Packet\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_declared_object_property_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "declared_object_property",
+        NATIVE_DECLARED_CLASS_PROPERTY_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run declared-object-property executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"EM|Ada:Ada:S:N|7\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -1677,6 +1726,36 @@ fn native_executable_c_source_routes_declared_class_objects_through_runtime_abi(
 }
 
 #[test]
+fn native_executable_c_source_routes_declared_object_properties_through_runtime_abi() {
+    let program = parse(NATIVE_DECLARED_CLASS_PROPERTY_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_value_object_public_property_operation_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_value_object_public_property_operation_with_diagnostic")
+            .count()
+            >= 8,
+        "reads, writes, isset, and empty should share the public property ABI:\n{source}"
+    );
+    for tag in [
+        "PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_READ",
+        "PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_WRITE",
+        "PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_ISSET",
+        "PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_EMPTY",
+    ] {
+        assert!(source.contains(tag), "{source}");
+    }
+    assert!(
+        !source.contains("object-property lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_keeps_unsupported_declared_class_features_blocked() {
     for source in [
         "<?php\nclass Base {}\nclass Child extends Base {}\nnew Child();\n",
@@ -1693,6 +1772,25 @@ fn native_executable_c_source_keeps_unsupported_declared_class_features_blocked(
                 || error
                     .message
                     .contains("object-instantiation lowering rejects"),
+            "{source}\n{error:?}"
+        );
+    }
+}
+
+#[test]
+fn native_executable_c_source_keeps_unsupported_object_property_shapes_blocked() {
+    for source in [
+        "<?php\nclass Box { public $name; }\n$box = new Box();\n$prop = \"name\";\necho $box->$prop;\n",
+        "<?php\nclass Box { public $items; }\n$box = new Box();\n$box->items[\"x\"] = 1;\n",
+        "<?php\nclass Box { public $name; }\necho Box::$name;\n",
+    ] {
+        let program = parse(source).expect("unsupported object-property source parses");
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert!(
+            error.message.contains("object-property lowering rejects")
+                || error.message.contains("ArrayAccess lowering rejects")
+                || error.message.contains("static-member lowering rejects"),
             "{source}\n{error:?}"
         );
     }

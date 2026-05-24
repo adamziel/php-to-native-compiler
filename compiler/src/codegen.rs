@@ -948,6 +948,7 @@ fn native_expr_call_result_operation(
             ..
         } => native_expr_call_result_operation(condition, blocker)
             .or_else(|| native_expr_call_result_operation(if_false, blocker)),
+        Expr::Assign { target, .. } if is_object_public_property_assign_target(target) => None,
         Expr::Assign { target, expr, .. }
         | Expr::CompoundAssign { target, expr, .. }
         | Expr::NullCoalesceAssign { target, expr, .. } => {
@@ -1497,6 +1498,7 @@ fn native_string_search_result_expr(expr: &Expr) -> bool {
 fn native_value_result_output_expr(expr: &Expr) -> bool {
     match expr {
         Expr::Index { .. } => true,
+        Expr::Property { .. } => true,
         Expr::CompoundAssign { .. } => true,
         Expr::NullCoalesceAssign { .. } => true,
         Expr::Ternary {
@@ -1790,6 +1792,7 @@ fn native_statement_assignment_rhs_call_operation(
 ) -> Option<NativeCallOperation> {
     match target {
         AssignTarget::Variable { .. } => None,
+        target if is_object_public_property_assign_target(target) => None,
         _ => native_value_result_expr_call_operation(
             expr,
             NativeCallBlocker::StatementOperandEvaluationCleanup,
@@ -1824,6 +1827,9 @@ fn native_statement_operand_call_operation(stmt: &Stmt) -> Option<NativeCallOper
                     .find_map(native_statement_operand_call_result_operation)
             }),
         Stmt::Foreach { iterable, .. } => native_statement_operand_call_result_operation(iterable),
+        Stmt::Assign { target, expr, .. } if is_object_public_property_assign_target(target) => {
+            native_statement_assignment_rhs_call_operation(target, expr)
+        }
         Stmt::Assign { target, expr, .. } => native_assignment_target_call_operation(target)
             .or_else(|| native_statement_assignment_rhs_call_operation(target, expr)),
         Stmt::CompoundAssign { target, expr, .. }
@@ -3987,6 +3993,13 @@ fn is_static_member_assign_target(target: &AssignTarget) -> bool {
             | AssignTarget::SelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
             | AssignTarget::LateStaticProperty { .. }
+    )
+}
+
+fn is_object_public_property_assign_target(target: &AssignTarget) -> bool {
+    matches!(
+        target,
+        AssignTarget::Property { .. } | AssignTarget::NonDirectProperty { .. }
     )
 }
 
@@ -9376,6 +9389,7 @@ struct CGenerator {
     uses_native_dynamic_call_helpers: bool,
     uses_native_output_buffer_operation: bool,
     uses_native_object_instantiation_helpers: bool,
+    uses_native_object_property_helpers: bool,
     next_static_data: usize,
     next_native_temp: usize,
     native_value_cleanup_handles: Vec<String>,
@@ -10966,6 +10980,7 @@ impl CGenerator {
         self.uses_native_output_buffer_operation |= branch.uses_native_output_buffer_operation;
         self.uses_native_object_instantiation_helpers |=
             branch.uses_native_object_instantiation_helpers;
+        self.uses_native_object_property_helpers |= branch.uses_native_object_property_helpers;
     }
 
     fn merge_scoped_branch_codegen(&mut self, branch: &Self) {
@@ -10987,6 +11002,7 @@ impl CGenerator {
             || self.uses_native_dynamic_call_helpers
             || self.uses_native_output_buffer_operation
             || self.uses_native_object_instantiation_helpers
+            || self.uses_native_object_property_helpers
             || !self.function_definitions.is_empty()
     }
 
@@ -11705,6 +11721,12 @@ impl CGenerator {
                 output.push_str("#define PHPC_NATIVE_VALUE_TYPE_NAME_GETTYPE 0\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_TYPE_NAME_DEBUG 1\n");
             }
+            if self.uses_native_object_property_helpers {
+                output.push_str("#define PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_READ 1\n");
+                output.push_str("#define PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_WRITE 2\n");
+                output.push_str("#define PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_ISSET 3\n");
+                output.push_str("#define PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_EMPTY 4\n");
+            }
             output.push_str("#define PHPC_NATIVE_VALUE_FORMAT_ECHO 0\n");
             output.push('\n');
             output.push_str("extern phpc_NativeStringHandle phpc_native_string_from_bytes(const uint8_t *ptr, size_t len);\n");
@@ -11830,6 +11852,9 @@ impl CGenerator {
             }
             if self.uses_native_object_instantiation_helpers {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_new_declared_class_with_diagnostic(size_t class_id, const uint8_t *class_name, size_t class_name_len, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, size_t property_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            }
+            if self.uses_native_object_property_helpers {
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_public_property_operation_with_diagnostic(phpc_NativeValueHandle object, const uint8_t *property_name, size_t property_name_len, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             output.push_str("extern void phpc_native_value_free(phpc_NativeValueHandle value);\n");
             output.push_str("extern size_t phpc_native_diagnostic_message_stderr(phpc_NativeDiagnosticHandle diagnostic);\n");
@@ -12208,6 +12233,167 @@ impl CGenerator {
             class,
             failure_cleanup,
         )))
+    }
+
+    fn materialize_object_public_property_operation_expr(
+        &mut self,
+        object: &Expr,
+        property: &str,
+        replacement: Option<&Expr>,
+        operation_tag: &str,
+        result_prefix: &str,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_object_property_helpers = true;
+
+        let object_value = self.materialize_native_value_result_operand(object, failure_cleanup)?;
+        let replacement_failure_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&object_value.cleanup_after_use),
+            failure_cleanup
+        );
+        let replacement_value = replacement
+            .map(|expr| {
+                self.materialize_native_value_result_operand(expr, &replacement_failure_cleanup)
+            })
+            .transpose()?;
+
+        let mut operand_cleanup = Vec::new();
+        let replacement_handle = if let Some(replacement_value) = replacement_value {
+            let handle = replacement_value.handle.clone();
+            operand_cleanup.extend(replacement_value.cleanup_after_use);
+            handle
+        } else {
+            "(phpc_NativeValueHandle){0}".to_string()
+        };
+        operand_cleanup.extend(object_value.cleanup_after_use);
+
+        let (property_name, property_name_len) =
+            self.emit_call_type_static_bytes("object_property_name_bytes", property);
+        let diagnostic = self.next_native_name("object_property_diagnostic");
+        let result = self.next_native_name(result_prefix);
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_value_object_public_property_operation_with_diagnostic({}, {property_name}, {property_name_len}, {replacement_handle}, {operation_tag}, &{diagnostic});",
+            object_value.handle
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&operand_cleanup),
+            failure_cleanup
+        );
+        let error_exit = self.native_error_exit(&cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.body.extend(operand_cleanup);
+
+        Ok(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        })
+    }
+
+    fn materialize_object_public_property_read_expr(
+        &mut self,
+        object: &Expr,
+        property: &str,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        self.materialize_object_public_property_operation_expr(
+            object,
+            property,
+            None,
+            "PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_READ",
+            "object_property_read",
+            failure_cleanup,
+        )
+    }
+
+    fn materialize_object_public_property_assignment_result_for_target(
+        &mut self,
+        target: &AssignTarget,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        match target {
+            AssignTarget::Property {
+                object,
+                property,
+                span,
+            } => {
+                let object = Expr::Variable(object.clone(), *span);
+                self.materialize_object_public_property_operation_expr(
+                    &object,
+                    property,
+                    Some(expr),
+                    "PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_WRITE",
+                    "object_property_write",
+                    failure_cleanup,
+                )
+                .map(Some)
+            }
+            AssignTarget::NonDirectProperty {
+                holder, property, ..
+            } => self
+                .materialize_object_public_property_operation_expr(
+                    holder,
+                    property,
+                    Some(expr),
+                    "PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_WRITE",
+                    "object_property_write",
+                    failure_cleanup,
+                )
+                .map(Some),
+            AssignTarget::Variable { .. }
+            | AssignTarget::List { .. }
+            | AssignTarget::ArrayIndex { .. }
+            | AssignTarget::NestedArrayIndex { .. }
+            | AssignTarget::NestedArrayAppend { .. }
+            | AssignTarget::ObjectPropertyArrayIndex { .. }
+            | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
+            | AssignTarget::ObjectPropertyArrayAppend { .. }
+            | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
+            | AssignTarget::DynamicProperty { .. }
+            | AssignTarget::NonDirectDynamicProperty { .. }
+            | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
+            | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
+            | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
+            | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. }
+            | AssignTarget::StaticProperty { .. }
+            | AssignTarget::ObjectStaticProperty { .. }
+            | AssignTarget::SelfStaticProperty { .. }
+            | AssignTarget::ParentStaticProperty { .. }
+            | AssignTarget::LateStaticProperty { .. } => Ok(None),
+        }
+    }
+
+    fn emit_object_public_property_bool_operation_expr(
+        &mut self,
+        expr: &Expr,
+        operation_tag: &str,
+        result_prefix: &str,
+    ) -> CompileResult<Option<CValue>> {
+        let Expr::Property {
+            target, property, ..
+        } = expr
+        else {
+            return Ok(None);
+        };
+
+        let value = self.materialize_object_public_property_operation_expr(
+            target,
+            property,
+            None,
+            operation_tag,
+            result_prefix,
+            "",
+        )?;
+        let truthy = self.emit_native_value_handle_truthiness(&value.handle);
+        self.body.extend(value.cleanup_after_use);
+        Ok(Some(CValue::BoolExpr(truthy)))
     }
 
     fn emit_call_frame_type_coercion_assignment(
@@ -17549,7 +17735,15 @@ impl CGenerator {
                 }
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
-            Expr::Property { span, .. } | Expr::DynamicProperty { span, .. } => {
+            Expr::Property {
+                target, property, ..
+            } => {
+                let value =
+                    self.materialize_object_public_property_read_expr(target, property, "")?;
+                self.retain_native_value_cleanup_handle(&value.handle);
+                Ok(CValue::NativeValueHandle(value.handle))
+            }
+            Expr::DynamicProperty { span, .. } => {
                 if let Some(operation) = native_dereferenced_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
                 }
@@ -17820,6 +18014,14 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_CAST_REJECTION))
             }
             Expr::Assign { target, expr, span } => {
+                if let Some(value) = self
+                    .materialize_object_public_property_assignment_result_for_target(
+                        target, expr, "",
+                    )?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
@@ -19157,6 +19359,20 @@ impl CGenerator {
                 continue;
             }
 
+            if let Some(value) = self.emit_object_public_property_bool_operation_expr(
+                arg,
+                "PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_ISSET",
+                "object_property_isset",
+            )? {
+                match value {
+                    CValue::Bool(false) => return Ok(CValue::Bool(false)),
+                    CValue::Bool(true) => continue,
+                    CValue::BoolExpr(value) => dynamic_checks.push(value),
+                    _ => unreachable!("object property isset returns a bool C value"),
+                }
+                continue;
+            }
+
             if let Some(operation) =
                 native_direct_call_argument_result_operation(std::slice::from_ref(arg), span)
             {
@@ -19260,6 +19476,14 @@ impl CGenerator {
         if let Some(value) =
             self.emit_value_offset_bool_operation_expr(arg, NativeStringOffsetOperation::Empty)?
         {
+            return Ok(value);
+        }
+
+        if let Some(value) = self.emit_object_public_property_bool_operation_expr(
+            arg,
+            "PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_EMPTY",
+            "object_property_empty",
+        )? {
             return Ok(value);
         }
 
@@ -23899,6 +24123,13 @@ impl CGenerator {
     }
 
     fn emit_assignment(&mut self, target: &AssignTarget, expr: &Expr) -> CompileResult<()> {
+        if let Some(value) =
+            self.materialize_object_public_property_assignment_result_for_target(target, expr, "")?
+        {
+            self.body.extend(value.cleanup_after_use);
+            return Ok(());
+        }
+
         if let Some(operation) = native_assignment_target_call_operation(target) {
             return Err(self.unsupported_call_operation(operation));
         }
@@ -27348,6 +27579,11 @@ impl CGenerator {
                 *span,
                 failure_cleanup,
             ),
+            Expr::Property {
+                target, property, ..
+            } => self
+                .materialize_object_public_property_read_expr(target, property, failure_cleanup)
+                .map(Some),
             Expr::NullCoalesceAssign { target, expr, span } => self
                 .materialize_array_offset_null_coalesce_assignment_expr(
                     target,
