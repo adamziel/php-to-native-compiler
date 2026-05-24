@@ -51,7 +51,7 @@ const ASSEMBLY_CLEARSTATCACHE_REJECTION: &str = "assembly clearstatcache lowerin
 const LLVM_FILESYSTEM_PATH_OPERATION_REJECTION: &str = "LLVM filesystem-path builtin lowering rejects realpath_cache_get() and realpath_cache_size() until native filesystem realpath-cache ABI, request-local cache state, binary path byte fidelity, policy checks, warning-plus-false recovery, references/copy-on-write, and exact native diagnostics exist; generated-native C routes realpath-cache introspection through the shared runtime blocker";
 const ASSEMBLY_FILESYSTEM_PATH_OPERATION_REJECTION: &str = "assembly filesystem-path builtin lowering rejects forms outside the reusable native filesystem path operation blocker, including unsupported arity, stream contexts, file_get_contents() offset/length forms, non-lowerable operands, filesystem policy, stat cache/current-directory state, realpath-cache introspection return ownership, references/copy-on-write, and exact native diagnostics; lowerable stream, canonicalization, stat-predicate, stat-value, current-directory, stat-cache, and realpath-cache operands route through byte-preserving value-to-string conversion, optional truthiness, diagnostics, and cleanup";
 const LLVM_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "LLVM dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
-const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions outside the bounded generated-C finite known-string dispatch to registered by-value user-function frames or supported native builtin families, and runtime string-valued dispatch to registered by-value user-function frames, including unknown or non-string callables, runtime callable builtins, mixed finite targets, callbacks, methods, closures, and exact native callable errors; phpc run handles broader string-valued dynamic function calls";
+const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions outside the bounded generated-C finite known-string dispatch to registered by-value user-function frames or supported native builtin families, and runtime string-valued dispatch to registered by-value user-function frames or supported native builtin families, including unknown or non-string callables, unsupported runtime callable builtin families, mixed finite targets, callbacks, methods, closures, and exact native callable errors; phpc run handles broader string-valued dynamic function calls";
 const LLVM_TERMINATION_REJECTION: &str = "LLVM termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const ASSEMBLY_TERMINATION_REJECTION: &str = "assembly termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
@@ -8396,6 +8396,16 @@ struct CDynamicCallableBuiltinCandidate {
     spellings: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum CDynamicCallableBuiltinRuntimeCandidate {
+    StringLength,
+    StringPredicate(NativeStringPredicate),
+    StringResult(NativeStringResultOperation),
+    Cast(&'static str),
+    TypeName(&'static str),
+    TypePredicate(&'static str),
+}
+
 impl CMutableScalarSlotKind {
     fn c_type(self) -> &'static str {
         match self {
@@ -8771,6 +8781,16 @@ struct CNativeArrayLvaluePath {
 struct CNativeValueMaterialization {
     handle: String,
     cleanup_after_use: Vec<String>,
+}
+
+fn borrowed_native_arg(
+    values: &[CNativeValueMaterialization],
+    index: usize,
+) -> CNativeValueMaterialization {
+    CNativeValueMaterialization {
+        handle: values[index].handle.clone(),
+        cleanup_after_use: Vec::new(),
+    }
 }
 
 struct CNativeForeachCursorStorage {
@@ -16442,10 +16462,6 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        if self.user_function_order.is_empty() {
-            return Ok(None);
-        }
-
         self.uses_native_string_helpers = true;
         self.uses_native_dynamic_call_helpers = true;
 
@@ -16559,12 +16575,22 @@ impl CGenerator {
             self.body.push("}".to_string());
         }
 
+        self.emit_runtime_dynamic_callable_builtin_branches(
+            &callee.handle,
+            &arg_values,
+            span,
+            &shared_cleanup,
+            failure_cleanup,
+            &matched,
+            &result,
+        )?;
+
         let unknown_failure_cleanup =
             format!("{}{}", c_cleanup_sequence(&shared_cleanup), failure_cleanup);
         self.body.push(format!("if (!{matched}) {{"));
         self.emit_runtime_dynamic_call_failure(
             &callee.handle,
-            "runtime dynamic generated-C lookup did not find a registered by-value user-function frame",
+            "runtime dynamic generated-C lookup did not find a registered by-value user-function frame or supported native builtin family",
             &unknown_failure_cleanup,
             "  ",
         );
@@ -16575,6 +16601,111 @@ impl CGenerator {
             handle: result.clone(),
             cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
         }))
+    }
+
+    fn emit_runtime_dynamic_callable_builtin_branches(
+        &mut self,
+        callee_handle: &str,
+        arg_values: &[CNativeValueMaterialization],
+        span: Span,
+        shared_cleanup: &[String],
+        failure_cleanup: &str,
+        matched: &str,
+        result: &str,
+    ) -> CompileResult<()> {
+        for (name, builtin) in native_dynamic_callable_builtin_runtime_candidates() {
+            let (name_bytes, name_len) =
+                self.emit_call_type_static_bytes("dynamic_call_name_bytes", name);
+            self.body.push(format!(
+                "if (!{matched} && phpc_native_value_dynamic_call_name_matches({callee_handle}, {name_bytes}, {name_len})) {{"
+            ));
+            self.body.push(format!("  {matched} = 1;"));
+            let branch_failure_cleanup =
+                format!("{}{}", c_cleanup_sequence(shared_cleanup), failure_cleanup);
+            if let Some(value) = self.materialize_runtime_dynamic_callable_builtin_call(
+                *builtin,
+                arg_values,
+                span,
+                &branch_failure_cleanup,
+            )? {
+                self.body.push(format!("  {result} = {};", value.handle));
+            } else {
+                self.emit_runtime_dynamic_call_failure(
+                    callee_handle,
+                    "argument count is outside the generated native builtin family subset",
+                    &branch_failure_cleanup,
+                    "  ",
+                );
+            }
+            self.body.push("}".to_string());
+        }
+
+        Ok(())
+    }
+
+    fn materialize_runtime_dynamic_callable_builtin_call(
+        &mut self,
+        builtin: CDynamicCallableBuiltinRuntimeCandidate,
+        arg_values: &[CNativeValueMaterialization],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        match builtin {
+            CDynamicCallableBuiltinRuntimeCandidate::StringLength if arg_values.len() == 1 => {
+                let value = self.emit_native_value_materialization_string_byte_len(
+                    borrowed_native_arg(arg_values, 0),
+                );
+                self.materialize_native_array_c_value_handle(value, span)
+                    .map(Some)
+            }
+            CDynamicCallableBuiltinRuntimeCandidate::StringPredicate(predicate)
+                if arg_values.len() == 2 =>
+            {
+                let value = self.emit_native_string_predicate_value(
+                    borrowed_native_arg(arg_values, 0),
+                    borrowed_native_arg(arg_values, 1),
+                    predicate,
+                );
+                self.materialize_native_array_c_value_handle(value, span)
+                    .map(Some)
+            }
+            CDynamicCallableBuiltinRuntimeCandidate::StringResult(operation)
+                if arg_values.len() == 1 =>
+            {
+                Ok(Some(self.emit_native_string_result_operation_handle(
+                    borrowed_native_arg(arg_values, 0),
+                    operation,
+                    failure_cleanup,
+                )))
+            }
+            CDynamicCallableBuiltinRuntimeCandidate::Cast(op_tag) if arg_values.len() == 1 => {
+                Ok(Some(self.emit_native_value_cast_operation_result_handle(
+                    borrowed_native_arg(arg_values, 0),
+                    op_tag,
+                    failure_cleanup,
+                )))
+            }
+            CDynamicCallableBuiltinRuntimeCandidate::TypeName(type_name_tag)
+                if arg_values.len() == 1 =>
+            {
+                Ok(Some(self.emit_native_value_type_name_result_handle(
+                    borrowed_native_arg(arg_values, 0),
+                    type_name_tag,
+                    failure_cleanup,
+                )))
+            }
+            CDynamicCallableBuiltinRuntimeCandidate::TypePredicate(predicate_tag)
+                if arg_values.len() == 1 =>
+            {
+                let value = self.emit_native_value_type_predicate(
+                    borrowed_native_arg(arg_values, 0),
+                    predicate_tag,
+                );
+                self.materialize_native_array_c_value_handle(value, span)
+                    .map(Some)
+            }
+            _ => Ok(None),
+        }
     }
 
     fn emit_runtime_dynamic_call_failure(
@@ -20540,6 +20671,31 @@ impl CGenerator {
             .push(format!("phpc_native_value_free({haystack});"));
 
         Ok(CValue::BoolExpr(result))
+    }
+
+    fn emit_native_string_predicate_value(
+        &mut self,
+        haystack: CNativeValueMaterialization,
+        needle: CNativeValueMaterialization,
+        predicate: NativeStringPredicate,
+    ) -> CValue {
+        self.uses_native_string_helpers = true;
+
+        let haystack_handle = haystack.handle.clone();
+        let needle_handle = needle.handle.clone();
+        let result = self.next_native_name("string_predicate_result");
+        let diagnostic = self.next_native_name("string_predicate_diagnostic");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "_Bool {result} = phpc_native_value_string_predicate_with_diagnostic({haystack_handle}, {needle_handle}, {}, &{diagnostic});",
+            predicate as u8
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body.extend(needle.cleanup_after_use);
+        self.body.extend(haystack.cleanup_after_use);
+
+        CValue::BoolExpr(result)
     }
 
     fn emit_string_int_operation_call(
@@ -27488,6 +27644,106 @@ fn native_dynamic_callable_builtin_canonical_name(name: &str) -> Option<&'static
         "is_object" => Some("is_object"),
         _ => None,
     }
+}
+
+fn native_dynamic_callable_builtin_runtime_candidates(
+) -> &'static [(&'static str, CDynamicCallableBuiltinRuntimeCandidate)] {
+    use CDynamicCallableBuiltinRuntimeCandidate::{
+        Cast, StringLength, StringPredicate, StringResult, TypeName, TypePredicate,
+    };
+
+    &[
+        ("strlen", StringLength),
+        (
+            "str_contains",
+            StringPredicate(NativeStringPredicate::Contains),
+        ),
+        (
+            "str_starts_with",
+            StringPredicate(NativeStringPredicate::StartsWith),
+        ),
+        (
+            "str_ends_with",
+            StringPredicate(NativeStringPredicate::EndsWith),
+        ),
+        ("strrev", StringResult(NativeStringResultOperation::Reverse)),
+        (
+            "bin2hex",
+            StringResult(NativeStringResultOperation::BinToHex),
+        ),
+        (
+            "str_rot13",
+            StringResult(NativeStringResultOperation::Rot13),
+        ),
+        (
+            "strtolower",
+            StringResult(NativeStringResultOperation::AsciiLower),
+        ),
+        (
+            "strtoupper",
+            StringResult(NativeStringResultOperation::AsciiUpper),
+        ),
+        (
+            "ucfirst",
+            StringResult(NativeStringResultOperation::AsciiFirstUpper),
+        ),
+        (
+            "lcfirst",
+            StringResult(NativeStringResultOperation::AsciiFirstLower),
+        ),
+        (
+            "escapeshellarg",
+            StringResult(NativeStringResultOperation::ShellArgEscape),
+        ),
+        (
+            "escapeshellcmd",
+            StringResult(NativeStringResultOperation::ShellCommandEscape),
+        ),
+        ("strval", Cast("PHPC_NATIVE_VALUE_CAST_STRING")),
+        ("boolval", Cast("PHPC_NATIVE_VALUE_CAST_BOOL")),
+        ("floatval", Cast("PHPC_NATIVE_VALUE_CAST_FLOAT")),
+        ("doubleval", Cast("PHPC_NATIVE_VALUE_CAST_FLOAT")),
+        ("gettype", TypeName("PHPC_NATIVE_VALUE_TYPE_NAME_GETTYPE")),
+        (
+            "get_debug_type",
+            TypeName("PHPC_NATIVE_VALUE_TYPE_NAME_DEBUG"),
+        ),
+        ("is_null", TypePredicate("PHPC_NATIVE_VALUE_TYPE_IS_NULL")),
+        ("is_bool", TypePredicate("PHPC_NATIVE_VALUE_TYPE_IS_BOOL")),
+        ("is_int", TypePredicate("PHPC_NATIVE_VALUE_TYPE_IS_INT")),
+        ("is_integer", TypePredicate("PHPC_NATIVE_VALUE_TYPE_IS_INT")),
+        ("is_long", TypePredicate("PHPC_NATIVE_VALUE_TYPE_IS_INT")),
+        ("is_float", TypePredicate("PHPC_NATIVE_VALUE_TYPE_IS_FLOAT")),
+        (
+            "is_double",
+            TypePredicate("PHPC_NATIVE_VALUE_TYPE_IS_FLOAT"),
+        ),
+        (
+            "is_string",
+            TypePredicate("PHPC_NATIVE_VALUE_TYPE_IS_STRING"),
+        ),
+        ("is_array", TypePredicate("PHPC_NATIVE_VALUE_TYPE_IS_ARRAY")),
+        (
+            "is_scalar",
+            TypePredicate("PHPC_NATIVE_VALUE_TYPE_IS_SCALAR"),
+        ),
+        (
+            "is_numeric",
+            TypePredicate("PHPC_NATIVE_VALUE_TYPE_IS_NUMERIC"),
+        ),
+        (
+            "is_countable",
+            TypePredicate("PHPC_NATIVE_VALUE_TYPE_IS_COUNTABLE"),
+        ),
+        (
+            "is_iterable",
+            TypePredicate("PHPC_NATIVE_VALUE_TYPE_IS_ITERABLE"),
+        ),
+        (
+            "is_object",
+            TypePredicate("PHPC_NATIVE_VALUE_TYPE_IS_OBJECT"),
+        ),
+    ]
 }
 
 fn is_native_known_function_name(name: &str) -> bool {
