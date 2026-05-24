@@ -1,11 +1,11 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 04:30 CEST
+Updated: 2026-05-24 04:42 CEST
 Evaluation marker: `20260524T022032Z`
 
 Latest primary semantic/test baseline:
-`8790f3a4 codegen: dispatch runtime dynamic builtin calls`
-Latest integrated semantic baseline: `8790f3a4 codegen: dispatch runtime dynamic builtin calls`
+`59f3be42 codegen: dispatch finite mixed dynamic calls`
+Latest integrated semantic baseline: `59f3be42 codegen: dispatch finite mixed dynamic calls`
 Latest evaluator report: `20260524T022032Z`
 
 These are candid engineering estimates toward generalized PHP semantics in the
@@ -16,7 +16,7 @@ exact-shape fixtures do not.
 ## Progress Accounting Note
 
 No compiler work was rolled back. The apparent drop from 88% to the current
-57% is a correction in the estimating rubric, not a loss of integrated code.
+58% is a correction in the estimating rubric, not a loss of integrated code.
 The older high-80s number overstated completion by counting strong foundations,
 selected generated-C islands, and focused gates as if they implied broad PHP
 execution. Starting with `93f55aee docs: clarify completion progress`, the
@@ -28,16 +28,16 @@ cleanup/unwinding, diagnostics, and backend parity.
 
 Read the current numbers this way:
 
-- **57% overall**: weighted progress across primary-integrated foundations,
+- **58% overall**: weighted progress across primary-integrated foundations,
   compiler/backend consumers, executable semantics, and verification.
-- **53% executable PHP semantics**: the stricter user-visible estimate for how
+- **54% executable PHP semantics**: the stricter user-visible estimate for how
   much generalized PHP behavior can actually execute today.
 - **88% is retired**: it was an older, non-comparable estimate that counted too
   much lane-local and foundation-only work as completion.
 
 ## Executive Read
 
-Overall estimated progress: **57%** `[###########---------]`
+Overall estimated progress: **58%** `[############--------]`
 
 Primary integrated progress now includes generated-C top-level state-stable
 `goto`/label dispatch, state-stable `do...while`, normal-flow `try`/`finally`,
@@ -65,7 +65,12 @@ generated-C native value/string/type builtin materializers instead of a
 one-off callable recognizer. Runtime string-valued dynamic calls now also
 dispatch to supported native builtin families after registered by-value frames,
 using the same materialized callee/argument handles, dynamic-call name matcher,
-and cleanup path. Request
+and cleanup path. Finite known-string callable sets that mix registered
+by-value user frames and supported native builtin families now reuse that same
+runtime dispatch table when every possible spelling is supported, covering
+user/user, user/builtin, and builtin/builtin target sets while unsupported
+builtin, array-callable, method, closure, and broader callable forms stay
+blocked. Request
 superglobal roots now have a shared root-value operation with explicit
 missing-root state after root `unset(...)`, and keyed writes can reseed an
 unset root through the existing request-state boundary. Supported generated-C
@@ -79,14 +84,15 @@ full generated-native calls/frames, object/property/method execution, complete
 references/COW identity, source-ordered diagnostics, cleanup/unwinding, and
 LLVM/assembly parity.
 
-Current primary state: primary semantic head is `8790f3a4`. The runtime
-dynamic-builtin batch landed after generated-C source proof across runtime
-string-valued dispatch to string length, string result, string predicate,
-cast, type-name, and type-predicate families, linked executable success and
-unsupported-family failure proof, adjacent dynamic-user/user-function and
-call-boundary gates, cargo-check, rustfmt, and diff gates passed.
+Current primary state: primary semantic head is `59f3be42`. The finite mixed
+dynamic-call batch landed after generated-C source and linked executable proof
+across user/user, user/builtin, and builtin/builtin finite callable sets,
+unsupported builtin blocker proof, array-callable runtime failure proof,
+closure/method blocker proof, adjacent dynamic-builtin/dynamic-user/
+user-function and call-boundary gates, cargo-check, rustfmt, and diff gates
+passed.
 
-Current resource read: `/dev/shm` is above the dispatcher floor at about 8.2G
+Current resource read: `/dev/shm` is above the dispatcher floor at about 9.5G
 free; `/home` has about 306G free.
 Keep broad waves conservative and reclaim large inactive target dirs only after
 live-owner checks.
@@ -96,19 +102,19 @@ live-owner checks.
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **82%** | `[################----]` | Strong shared value, array, reference, symbol, request, comparison, truthiness, string-search, diagnostic, termination, cleanup, request-root, call-frame type-coercion, and runtime dynamic-call result surfaces, but several are still scaffolding until consumed end-to-end. |
-| Compiler/backend consumers | **71%** | `[##############------]` | Generated-C has broad selected coverage including direct, recursive, finite known-string dynamic, runtime string-valued dynamic, bounded typed by-value user-function frame subsets, and finite known-string plus runtime string-valued dynamic calls to supported native builtin families. LLVM/assembly parity remains uneven and many consumers still stop at blockers. |
-| Executable PHP semantics | **53%** | `[###########---------]` | Many focused linked programs run, including PHP-shaped string-search results, request-root unset/reseed behavior, direct/recursive/known-string dynamic/runtime dynamic/typed by-value function frames, and finite/runtime dynamic builtin calls, but behavior is still selected islands rather than a complete PHP execution model. |
+| Compiler/backend consumers | **72%** | `[##############------]` | Generated-C has broad selected coverage including direct, recursive, finite known-string dynamic, runtime string-valued dynamic, bounded typed by-value user-function frame subsets, finite known-string plus runtime string-valued dynamic calls to supported native builtin families, and supported finite mixed user/builtin target sets. LLVM/assembly parity remains uneven and many consumers still stop at blockers. |
+| Executable PHP semantics | **54%** | `[###########---------]` | Many focused linked programs run, including PHP-shaped string-search results, request-root unset/reseed behavior, direct/recursive/known-string dynamic/runtime dynamic/typed by-value function frames, finite/runtime dynamic builtin calls, and finite mixed user/builtin dynamic calls, but behavior is still selected islands rather than a complete PHP execution model. |
 | Arrays, lvalues, references, COW | **58%** | `[############--------]` | Strong selected array/lvalue/reference paths. Full COW, arbitrary writable roots, and by-reference call/foreach parity remain open. |
 | Symbols, globals, request state | **66%** | `[#############-------]` | Strong request and `$GLOBALS` generated-C coverage now includes explicit missing-root state and root reseeding. Reconciliation across calls/requests still needs work. |
-| Calls, functions, frames | **46%** | `[#########-----------]` | Generated-C now lowers a compact by-value user-function frame subset with owned argument/default/return handles, registered-function introspection, recursive/mutually recursive direct frames behind a depth guard, finite known-string dynamic calls, runtime string-valued dynamic calls to registered frames, finite known-string and runtime string-valued dynamic calls to supported native builtin families, and bounded scalar/nullable/union/array/mixed parameter and return type enforcement. Full callable lookup, unsupported runtime callable builtin families, methods, closures, by-reference/variadic frames, full type-system coverage, and mixed-target dispatch are still missing. |
+| Calls, functions, frames | **48%** | `[##########----------]` | Generated-C now lowers a compact by-value user-function frame subset with owned argument/default/return handles, registered-function introspection, recursive/mutually recursive direct frames behind a depth guard, finite known-string dynamic calls, runtime string-valued dynamic calls to registered frames, finite known-string and runtime string-valued dynamic calls to supported native builtin families, supported finite mixed user/builtin target sets, and bounded scalar/nullable/union/array/mixed parameter and return type enforcement. Full callable lookup, unsupported runtime callable builtin families, callable array/object forms, methods, closures, by-reference/variadic frames, full type-system coverage, and broader mixed callable dispatch are still missing. |
 | Objects, properties, methods | **10%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary lacks general compiled object/property/method execution. |
 | Control flow, cleanup, diagnostics | **45%** | `[#########-----------]` | Bounded generated-C branches, loops including state-stable `do...while`, returns, transfers, switches, top-level state-stable gotos, normal-flow try/finally, top-level return through finally, diagnostic-aware stdout formatting, and corrected diagnostic-report ownership in generated stdout paths exist; owner/reference joins, broad unwinding, handlers, and exact ordering remain open. |
-| Broad integrated verification | **45%** | `[#########-----------]` | Focused gates are strong and now include broader request-root, user-function, typed-frame, runtime dynamic-call, dynamic-builtin, and call-boundary filters. Cross-feature composition, end-to-end PHP programs, and backend parity need much broader proof. |
+| Broad integrated verification | **46%** | `[#########-----------]` | Focused gates are strong and now include broader request-root, user-function, typed-frame, runtime dynamic-call, dynamic-builtin, finite mixed-callable, and call-boundary filters. Cross-feature composition, end-to-end PHP programs, and backend parity need much broader proof. |
 
 ## Candidate Work Not Counted
 
 As of this review, primary semantic progress is counted only through pushed
-baseline `8790f3a4`. Active worker lanes continue to produce candidate work
+baseline `59f3be42`. Active worker lanes continue to produce candidate work
 that is not counted in the percentages until it lands in primary with focused
 proof.
 
@@ -130,7 +136,8 @@ proof.
 - [x] Primary-integrated bounded generated-C direct/recursive/typed by-value user-function/call-frame execution, registered-function introspection, finite known-string and runtime string-valued dynamic calls to registered frames, and request-superglobal root-value/missing-root state.
 - [x] Generated-C finite known-string dynamic calls to supported native builtin families reuse shared builtin materialization and value-result paths.
 - [x] Generated-C runtime string-valued dynamic calls dispatch to supported native builtin families through shared dynamic-call lookup and cleanup.
-- [ ] Full generated-native user-function/call-frame execution across full callable lookup, unsupported runtime callable builtin families, mixed-target dispatch, full PHP type metadata, by-reference/variadic frames, closures, and methods.
+- [x] Generated-C finite mixed dynamic calls dispatch across supported registered user-function and native builtin-family target sets through the shared dynamic-call lookup and cleanup path.
+- [ ] Full generated-native user-function/call-frame execution across full callable lookup, unsupported runtime callable builtin families, callable array/object forms, full PHP type metadata, by-reference/variadic frames, closures, and methods.
 - [ ] Primary-integrated object construction, property access, method dispatch, `$this`, static context, visibility, and magic behavior.
 - [ ] Full reference/COW identity across calls, arrays, objects, globals, foreach, and control-flow joins.
 - [ ] Full structured cleanup/unwinding/finally/destructors/output-buffer/SAPI behavior.
@@ -139,6 +146,21 @@ proof.
 
 ## Recent Primary-Integrated Work
 
+- `59f3be42`: generated-C finite known-string dynamic calls whose possible
+  spellings mix registered by-value user-function frames and supported native
+  builtin families now reuse the shared runtime dynamic-call dispatch path.
+  The compiler materializes the callee and arguments once, gates entry on all
+  finite spellings being supported, then dispatches through
+  `phpc_native_value_dynamic_call_name_matches(...)` over registered frames
+  and supported builtin-family branches. Unsupported builtin families, array
+  callable forms, methods, closures, broader callable lookup, by-reference/
+  variadic frames, exact callable diagnostics, references/COW through calls,
+  cleanup/unwinding, and LLVM/assembly parity remain blocked. Focused proof
+  covers generated-C source, linked executable user/user, user/builtin, and
+  builtin/builtin target sets, unsupported builtin blockers, runtime
+  array-callable failure, closure/method blockers, adjacent dynamic-builtin/
+  dynamic-user/user-function filters, the full native function-call boundary,
+  cargo-check, rustfmt, and diff gates.
 - `8790f3a4`: generated-C runtime string-valued dynamic calls now continue
   past registered by-value user-function frames into supported native builtin
   families. The compiler still materializes the callee and all arguments once,
