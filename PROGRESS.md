@@ -36,11 +36,13 @@ generated-native calls/frames, object/property/method execution, complete
 references/COW identity, source-ordered diagnostics, cleanup/unwinding, and
 LLVM/assembly parity.
 
-Current primary state: primary semantic head is `3cc56bfd`. The protected
-`runtime/src/lib.rs` null-slot hunk remains unowned and unstaged. The earlier
-unowned `compiler/src/interpreter.rs` formatting spillover was restored and is
-not present. The narrow generated-C user-function WIP was parked and is not
-counted.
+Current primary state: primary semantic head is `3cc56bfd`. Primary is clean
+and synced with `origin/master`. The earlier unowned
+`compiler/src/interpreter.rs` formatting spillover was restored and is not
+present. The former protected `runtime/src/lib.rs` null-slot hunk was rejected
+after focused runtime proof showed it broke existing-key increment/decrement,
+then parked outside the repo and restored. The narrow generated-C user-function
+WIP was parked and is not counted.
 
 Current resource read: `/dev/shm` is above the dispatch floor after reclaiming
 an inactive call-semantics build cache. Keep broad waves conservative and
@@ -172,8 +174,8 @@ be counted or repeated in that shape.
    progress, and no generated-source substring proof without a shared semantic
    boundary.
 4. Preserve primary hygiene: commit only owned semantic/progress hunks, keep
-   the protected null-slot runtime hunk and any newer active WIP uncounted
-   until they have their own reviewed semantics batch.
+   parked or active WIP uncounted until it has its own reviewed semantics
+   batch.
 
 ## Major Blockers
 
