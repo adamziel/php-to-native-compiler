@@ -1,28 +1,28 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 08:21 CEST
+Updated: 2026-05-24 08:42 CEST
 Evaluation marker: `20260524T045209Z`
 
 Latest primary semantic/test baseline:
-`84d33e6f codegen: thread globals through frame callers`
+`40838cef runtime: recover leading numeric value arithmetic`
 
-Latest integrated semantic baseline: `84d33e6f codegen: thread globals through frame callers`
+Latest integrated semantic baseline: `40838cef runtime: recover leading numeric value arithmetic`
 Latest evaluator report: `20260524T045209Z`
 
 Current primary git state at review:
 
 - Current primary head before this progress update was
-  `84d33e6f codegen: thread globals through frame callers`.
-- `f0b22da2` is now the previous counted semantic commit.
-- Generated-C user-function frames now propagate the caller root symbol table
-  through direct wrapper frames that can reach an ordinary global-import
-  callee, so wrappers do not create isolated function-local symbol tables for
-  callee `global $name` imports.
-- This is a compact call/frame plus request/global alias execution slice, not
-  full global environment or callable parity: request superglobal imports,
-  `$GLOBALS` self-import, dynamic-wrapper reachability, includes, variable
-  variables, callable arrays, methods/closures/objects, and exact unset/global
-  alias behavior remain blocked.
+  `40838cef runtime: recover leading numeric value arithmetic`.
+- `84d33e6f` is now the previous counted semantic commit.
+- Native value binary/unary arithmetic results now recover PHP
+  leading-numeric string operands with warning diagnostics on successful
+  operations, rather than treating the whole generated-C expression family as
+  a hard runtime failure.
+- This is a compact conversion/diagnostic execution slice consumed by
+  generated-C value-result expression arithmetic. It is not callable lookup,
+  callable-array/object invocation, closure/method/object execution,
+  reference/COW parity, source-ordered diagnostics, broad unwind cleanup, LLVM,
+  or direct assembly parity.
 
 These are candid engineering estimates toward generalized PHP semantics in the
 native compiler. They are not test pass rates. Only primary-integrated, pushed
@@ -36,7 +36,7 @@ numbers. It counted strong foundations, lane-local candidates, and selected
 generated-C execution islands too much like broad PHP completion. The current
 percentages use the stricter rubric above: pushed primary work toward
 generalized, end-to-end PHP semantics. The move from 88% to the current
-65% overall / 62% executable estimate was a measurement correction plus later
+65% overall / 62% executable estimate is a measurement correction plus later
 primary semantic integration, not a code rollback.
 
 ## Executive Read
@@ -65,6 +65,10 @@ global-import frames through the shared dynamic-call table while preserving the
 same root symbol environment.
 Direct wrapper frames that can reach global-import callees now receive and
 forward the same caller root symbol table through the frame call graph.
+Native value-result arithmetic now accepts leading-numeric string operands for
+generated-C binary `+`, `-`, `*`, `/`, `%` and unary negation consumers,
+returning the computed PHP value while carrying a warning diagnostic through
+the existing value-operation result ABI.
 Request-key result accessors remove generated backend dependence on the
 concrete key-result return layout across request keyed/path consumers.
 Generated-C also has a first shared runtime consumer for syntax-only callable
@@ -84,8 +88,8 @@ destructors, and backend parity.
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **83%** | `[#################---]` | Strong shared value, array, reference, symbol, request, comparison, truthiness, string, diagnostic, cleanup, request-root, call-frame type-coercion, dynamic-call, and reference-clone surfaces. Some remain scaffolding until consumed end to end. |
-| Compiler/backend consumers | **81%** | `[################----]` | Generated-C has broad selected coverage, including direct-variable compound assignment, function-scope ordinary `global` imports reached by direct, transitive wrapper, and runtime dynamic dispatch, `break`/`continue` through active `finally` scopes, and untyped by-reference frame parameters reached by runtime string-valued dispatch. LLVM now consumes shared direct string-result, string-predicate, string-search, string-int, and selected `strlen()` nested operand ABIs. Direct assembly and many nested/backend consumers still stop at blockers. |
-| Executable PHP semantics | **62%** | `[############--------]` | Many focused linked programs run, including direct-variable compound assignment through local, reference-backed, and active symbol-table variables plus function-local bounded `try`/`finally`, loop transfer through finalizers, direct/transitive/runtime dynamic function-scope global imports, and alias-visible by-reference frame writes, but behavior is still selected islands rather than a complete PHP execution model. |
+| Compiler/backend consumers | **81%** | `[################----]` | Generated-C has broad selected coverage, including direct-variable compound assignment, function-scope ordinary `global` imports reached by direct, transitive wrapper, and runtime dynamic dispatch, `break`/`continue` through active `finally` scopes, untyped by-reference frame parameters reached by runtime string-valued dispatch, and warning-bearing leading-numeric arithmetic through the native value-result ABI. LLVM now consumes shared direct string-result, string-predicate, string-search, string-int, and selected `strlen()` nested operand ABIs. Direct assembly and many nested/backend consumers still stop at blockers. |
+| Executable PHP semantics | **62%** | `[############--------]` | Many focused linked programs run, including direct-variable compound assignment through local, reference-backed, and active symbol-table variables plus function-local bounded `try`/`finally`, loop transfer through finalizers, direct/transitive/runtime dynamic function-scope global imports, warning-bearing leading-numeric arithmetic expressions, and alias-visible by-reference frame writes, but behavior is still selected islands rather than a complete PHP execution model. |
 | Arrays, lvalues, references, COW | **63%** | `[#############-------]` | Strong selected array/lvalue/reference paths now include generated-C direct-variable compound assignment, function-scope global imports of scalar variables and array paths, by-reference call binding for direct variables and nested symbol-table paths, and PHP array-union value addition through generated-C array-offset and direct-variable `+=`. Full COW, arbitrary writable roots, foreach parity, object/reference joins, and broader frame/reference composition remain open. |
 | Symbols, globals, request state | **72%** | `[##############------]` | Request roots and selected `$GLOBALS` paths are strong. Generated-C function-scope ordinary `global` imports now borrow the caller root symbol table and bind imported locals through shared references across direct, transitive wrapper, and runtime dynamic frame calls. Generated-C by-reference calls and direct-variable compound assignments also reuse symbol-table paths for ordinary variables and nested array slots. Reconciliation across requests, includes, variable variables, aliases, and broader reference frames remains incomplete. |
 | Calls, functions, frames | **57%** | `[###########---------]` | Bounded generated-C by-value fixed/default/variadic frames, typed params/returns, recursion guards, registered introspection, syntax-only callable-array checks, dynamic user calls including global-import frames, dynamic builtin calls, finite mixed user/builtin sets, transitive root-symbol wrapper frames, function-local bounded `try`/`finally`, function-scope ordinary `global` imports, and untyped by-reference direct/compiler-known/runtime string-valued frame calls are integrated. |
@@ -95,6 +99,17 @@ destructors, and backend parity.
 
 ## Recent Primary-Integrated Work
 
+- `40838cef`: native value binary/unary arithmetic result ABIs now recover
+  leading-numeric string operands through shared PHP numeric-prefix
+  classification. Generated-C expression consumers for `+`, `-`, `*`, `/`,
+  `%`, and unary negation receive successful owned value results and report a
+  warning diagnostic through the existing value-operation result path. Runtime
+  proof covers int and float prefixes, left/right operands, modulo/division,
+  unary negation, non-numeric rejection, and array-union preservation. Source
+  and linked proof cover generated-C arithmetic expressions continuing after
+  warnings. Full exact PHP diagnostic text/order, interpreter-wide warning
+  propagation, comparison-side leading-numeric warnings, object/resource
+  coercions, references/COW, LLVM, and direct assembly remain blocked.
 - `84d33e6f`: generated-C user-function frame metadata now tracks whether a
   frame requires the caller root symbol table, not only whether its own body
   declares `global`. The requirement propagates through the direct registered
