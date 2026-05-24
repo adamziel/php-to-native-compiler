@@ -4,7 +4,7 @@ use std::process::Command;
 
 use php_compiler::{codegen::emit_native_executable_c_source, error::Phase, parse};
 
-const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including static arrow functions, by-reference closure captures that cannot be materialized through root symbol/reference handles or promoted frame locals, by-reference variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, supported by-reference captures, implicit by-value arrow captures, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
+const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including by-reference closure captures that cannot be materialized through root symbol/reference handles or promoted frame locals, by-reference variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, supported static arrow closures, by-value captures, supported by-reference captures, implicit by-value arrow captures, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
 
 const NATIVE_VALUE_TRUTHINESS_SOURCE: &str = concat!(
     "<?php\n",
@@ -5685,6 +5685,141 @@ fn emit_exe_links_and_runs_arrow_closure_implicit_capture_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"T0|T1|T2|M3|A4|new:new|T5|T6|T7");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_executable_c_source_lowers_static_arrow_closures_without_this_binding() {
+    let source = concat!(
+        "<?php\n",
+        "function invoke_static_arrow($callback, $value) { return $callback($value); }\n",
+        "function make_static_arrow($prefix) { return static fn($suffix) => $prefix . $suffix; }\n",
+        "class StaticArrowApply {\n",
+        "    public static function apply($callback, $value) { return $callback($value); }\n",
+        "    public function make($prefix) { $mark = \":\"; return static fn($suffix) => $prefix . $mark . $suffix; }\n",
+        "}\n",
+        "$top = \"T\";\n",
+        "$items = [\"slot\" => \"A\"];\n",
+        "$key = \"slot\";\n",
+        "$direct = static fn($suffix) => $top . $suffix;\n",
+        "$array = static fn($suffix) => $items[$key] . $suffix;\n",
+        "$setter = static fn(&$target, $value) => $target = $value;\n",
+        "$nested = static fn() => static fn($suffix) => $top . $suffix;\n",
+        "$packed = static fn(string $prefix = \"D\", int ...$nums): string => $prefix . \":\" . $nums[1];\n",
+        "echo $direct(\"0\"), \"|\";\n",
+        "echo invoke_static_arrow(static fn($suffix) => $top . $suffix, \"1\"), \"|\";\n",
+        "echo StaticArrowApply::apply(static fn($suffix) => $top . $suffix, \"2\"), \"|\";\n",
+        "$made = make_static_arrow(\"F\");\n",
+        "echo $made(\"3\"), \"|\";\n",
+        "$maker = new StaticArrowApply();\n",
+        "echo $maker->make(\"M\")(\"4\"), \"|\";\n",
+        "echo $array(\"5\"), \"|\";\n",
+        "$slot = \"old\";\n",
+        "echo $setter($slot, \"new\"), \":\", $slot, \"|\";\n",
+        "$top = \"changed\";\n",
+        "echo $direct(\"6\"), \"|\";\n",
+        "echo $nested()(\"7\"), \"|\";\n",
+        "echo $packed(\"P\", \"8\", \"9\");\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_from_closure_descriptor")
+            && source.contains("phpc_native_value_from_closure_descriptor_captures_and_free"),
+        "static arrows should reuse the descriptor closure and capture ABI:\n{source}"
+    );
+    assert!(
+        source.contains("PHPC_NATIVE_CLOSURE_ARGUMENT_BY_REFERENCE")
+            && source.contains("PHPC_NATIVE_CLOSURE_ARGUMENT_VARIADIC")
+            && source.contains("phpc_closure_call_arg_count"),
+        "static arrows should reuse descriptor parameter metadata, by-reference carriers, and variadic/default binding:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_user_function_")
+            && source.contains("invoke_static_arrow")
+            && source.contains("make_static_arrow")
+            && source.contains("phpc_declared_method_"),
+        "static arrows should flow through direct, user-function, static-method, and instance-method-return consumers:\n{source}"
+    );
+    assert!(
+        !source.contains(ASSEMBLY_CLOSURE_REJECTION),
+        "supported static arrows should not hit the closure blocker:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_blocks_static_arrow_this_binding_on_shared_variable_read_boundary() {
+    let source = concat!(
+        "<?php\n",
+        "class StaticArrowThisBinding {\n",
+        "    public function make() { return static fn() => $this; }\n",
+        "}\n",
+        "$callback = (new StaticArrowThisBinding())->make();\n",
+        "echo $callback();\n",
+    );
+    let program = parse(source).unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("variable-read lowering rejects"),
+        "static arrows must not receive an implicit $this binding:\n{error:?}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_static_arrow_closure_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function invoke_static_arrow($callback, $value) { return $callback($value); }\n",
+        "function make_static_arrow($prefix) { return static fn($suffix) => $prefix . $suffix; }\n",
+        "class StaticArrowApply {\n",
+        "    public static function apply($callback, $value) { return $callback($value); }\n",
+        "    public function make($prefix) { $mark = \":\"; return static fn($suffix) => $prefix . $mark . $suffix; }\n",
+        "}\n",
+        "$top = \"T\";\n",
+        "$items = [\"slot\" => \"A\"];\n",
+        "$key = \"slot\";\n",
+        "$direct = static fn($suffix) => $top . $suffix;\n",
+        "$array = static fn($suffix) => $items[$key] . $suffix;\n",
+        "$setter = static fn(&$target, $value) => $target = $value;\n",
+        "$nested = static fn() => static fn($suffix) => $top . $suffix;\n",
+        "$packed = static fn(string $prefix = \"D\", int ...$nums): string => $prefix . \":\" . $nums[1];\n",
+        "echo $direct(\"0\"), \"|\";\n",
+        "echo invoke_static_arrow(static fn($suffix) => $top . $suffix, \"1\"), \"|\";\n",
+        "echo StaticArrowApply::apply(static fn($suffix) => $top . $suffix, \"2\"), \"|\";\n",
+        "$made = make_static_arrow(\"F\");\n",
+        "echo $made(\"3\"), \"|\";\n",
+        "$maker = new StaticArrowApply();\n",
+        "echo $maker->make(\"M\")(\"4\"), \"|\";\n",
+        "echo $array(\"5\"), \"|\";\n",
+        "$slot = \"old\";\n",
+        "echo $setter($slot, \"new\"), \":\", $slot, \"|\";\n",
+        "$top = \"changed\";\n",
+        "echo $direct(\"6\"), \"|\";\n",
+        "echo $nested()(\"7\"), \"|\";\n",
+        "echo $packed(\"P\", \"8\", \"9\");\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("static_arrow_closure_implicit_captures", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native static arrow executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"T0|T1|T2|F3|M:4|A5|new:new|T6|T7|P:9");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);

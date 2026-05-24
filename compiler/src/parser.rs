@@ -5373,7 +5373,7 @@ impl Parser {
                 Err(self.error_at(token.span, unsupported_instanceof_message()))
             }
             TokenKind::Function => self.parse_closure_expression(token.span, false),
-            TokenKind::Fn => self.parse_arrow_function_expression(token.span),
+            TokenKind::Fn => self.parse_arrow_function_expression(token.span, false),
             TokenKind::Eval => Err(self.error_at(token.span, unsupported_eval_message())),
             TokenKind::Do => {
                 Err(self.error_at(token.span, unsupported_do_while_expression_message()))
@@ -5585,7 +5585,8 @@ impl Parser {
                 self.parse_closure_expression(token.span, true)
             }
             TokenKind::Static if self.check(|kind| matches!(kind, TokenKind::Fn)) => {
-                Err(self.error_at(token.span, unsupported_static_arrow_function_message()))
+                self.advance();
+                self.parse_arrow_function_expression(token.span, true)
             }
             TokenKind::Static if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) => {
                 self.reject_unsupported_static_member_access(Some("static"))
@@ -5657,7 +5658,11 @@ impl Parser {
         })
     }
 
-    fn parse_arrow_function_expression(&mut self, span: Span) -> CompileResult<Expr> {
+    fn parse_arrow_function_expression(
+        &mut self,
+        span: Span,
+        is_static: bool,
+    ) -> CompileResult<Expr> {
         if self.check(|kind| matches!(kind, TokenKind::Ampersand)) {
             let span = self.advance().span;
             return Err(self.error_at(
@@ -5691,7 +5696,7 @@ impl Parser {
                 value: Some(value),
                 span,
             }],
-            is_static: false,
+            is_static,
             is_arrow: true,
             span,
         })
@@ -7612,10 +7617,6 @@ fn unsupported_argument_unpacking_message() -> &'static str {
 
 fn unsupported_reference_argument_message() -> &'static str {
     "unsupported call-time by-reference argument: passing & at a call site requires legacy syntax handling, by-reference parameter metadata, alias setup, default handling, variadic/unpacking interaction, references/copy-on-write, and native lowering"
-}
-
-fn unsupported_static_arrow_function_message() -> &'static str {
-    "unsupported static arrow function: static arrow closures require no-$this binding, implicit capture metadata, closure invocation, callback integration, references/copy-on-write, and native lowering"
 }
 
 fn unsupported_named_argument_message() -> &'static str {

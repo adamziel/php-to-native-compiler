@@ -643,35 +643,17 @@ fn emit_ir_rejects_call_time_reference_arguments_at_parse_boundary() {
 }
 
 #[test]
-fn unsupported_static_arrow_functions_have_stable_parse_errors() {
-    let cases = [
-        ("<?php\n$handler = static fn ($value) => $value;\n", 2, 12),
-        ("<?php\necho static fn () => 1;\n", 2, 6),
-    ];
+fn static_arrow_functions_parse_and_can_be_stored() {
+    php_compiler::parse("<?php\n$handler = static fn ($value) => $value;\n").unwrap();
+    php_compiler::parse("<?php\necho static fn () => 1;\n").unwrap();
 
-    for (source, line, column) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported static arrow function: static arrow closures require no-$this binding, implicit capture metadata, closure invocation, callback integration, references/copy-on-write, and native lowering"
-        );
-    }
+    let execution = run_source(
+        "<?php\n$handler = static fn ($value) => $value;\necho $handler ? \"stored\" : \"missing\";\n",
+    )
+    .unwrap();
 
-    run_source("<?php\n$handler = static function ($value) { return $value; };\n").unwrap();
-}
-
-#[test]
-fn emit_ir_rejects_static_arrow_functions_at_parse_boundary() {
-    let error = php_compiler::emit_ir_source("<?php\n$handler = static fn ($value) => $value;\n")
-        .unwrap_err();
-
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported static arrow function: static arrow closures require no-$this binding, implicit capture metadata, closure invocation, callback integration, references/copy-on-write, and native lowering"
-    );
+    assert_eq!(execution.stdout, "stored");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
