@@ -1,28 +1,32 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 08:42 CEST
+Updated: 2026-05-24 08:56 CEST
 Evaluation marker: `20260524T045209Z`
 
 Latest primary semantic/test baseline:
-`40838cef runtime: recover leading numeric value arithmetic`
+`c7e35c50 codegen: route llvm arithmetic value results`
 
-Latest integrated semantic baseline: `40838cef runtime: recover leading numeric value arithmetic`
+Latest integrated semantic baseline: `c7e35c50 codegen: route llvm arithmetic value results`
 Latest evaluator report: `20260524T045209Z`
 
 Current primary git state at review:
 
 - Current primary head before this progress update was
-  `40838cef runtime: recover leading numeric value arithmetic`.
-- `84d33e6f` is now the previous counted semantic commit.
-- Native value binary/unary arithmetic results now recover PHP
-  leading-numeric string operands with warning diagnostics on successful
-  operations, rather than treating the whole generated-C expression family as
-  a hard runtime failure.
-- This is a compact conversion/diagnostic execution slice consumed by
-  generated-C value-result expression arithmetic. It is not callable lookup,
-  callable-array/object invocation, closure/method/object execution,
-  reference/COW parity, source-ordered diagnostics, broad unwind cleanup, LLVM,
-  or direct assembly parity.
+  `c7e35c50 codegen: route llvm arithmetic value results`.
+- `40838cef` is now the previous counted semantic commit.
+- LLVM IR now consumes the shared native value-operation result ABI for
+  scalar/native-value arithmetic when static primitive lowering is insufficient:
+  leading/non-numeric string operands, null/bool scalar coercion operands,
+  non-integer modulo operands, string division/modulo operands, native
+  value-result producers, and unary negation flow through
+  `phpc_native_value_binary_result(...)` /
+  `phpc_native_value_unary_result(...)` with diagnostic reporting and a
+  generated error edge.
+- This is backend parity for an already integrated value-operation arithmetic
+  semantic family. It is not direct numeric LLVM division, dynamic integer
+  modulo runtime checks, callable lookup, callable-array/object invocation,
+  closure/method/object execution, reference/COW parity, source-ordered
+  diagnostics, broad unwind cleanup, or direct assembly parity.
 
 These are candid engineering estimates toward generalized PHP semantics in the
 native compiler. They are not test pass rates. Only primary-integrated, pushed
@@ -69,6 +73,10 @@ Native value-result arithmetic now accepts leading-numeric string operands for
 generated-C binary `+`, `-`, `*`, `/`, `%` and unary negation consumers,
 returning the computed PHP value while carrying a warning diagnostic through
 the existing value-operation result ABI.
+LLVM IR now uses the same native value-operation result ABI for scalar/native
+value arithmetic that cannot be safely folded as primitive IR, including string
+division/modulo, non-integer modulo, native value-result operands, and
+warning/error diagnostic paths.
 Request-key result accessors remove generated backend dependence on the
 concrete key-result return layout across request keyed/path consumers.
 Generated-C also has a first shared runtime consumer for syntax-only callable
@@ -88,7 +96,7 @@ destructors, and backend parity.
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **83%** | `[#################---]` | Strong shared value, array, reference, symbol, request, comparison, truthiness, string, diagnostic, cleanup, request-root, call-frame type-coercion, dynamic-call, and reference-clone surfaces. Some remain scaffolding until consumed end to end. |
-| Compiler/backend consumers | **81%** | `[################----]` | Generated-C has broad selected coverage, including direct-variable compound assignment, function-scope ordinary `global` imports reached by direct, transitive wrapper, and runtime dynamic dispatch, `break`/`continue` through active `finally` scopes, untyped by-reference frame parameters reached by runtime string-valued dispatch, and warning-bearing leading-numeric arithmetic through the native value-result ABI. LLVM now consumes shared direct string-result, string-predicate, string-search, string-int, and selected `strlen()` nested operand ABIs. Direct assembly and many nested/backend consumers still stop at blockers. |
+| Compiler/backend consumers | **81%** | `[################----]` | Generated-C has broad selected coverage, including direct-variable compound assignment, function-scope ordinary `global` imports reached by direct, transitive wrapper, and runtime dynamic dispatch, `break`/`continue` through active `finally` scopes, untyped by-reference frame parameters reached by runtime string-valued dispatch, and warning-bearing leading-numeric arithmetic through the native value-result ABI. LLVM now consumes shared direct string-result, string-predicate, string-search, string-int, selected `strlen()` nested operand ABIs, and scalar/native-value arithmetic through the native value-operation result ABI where primitive IR lowering is insufficient. Direct assembly and many nested/backend consumers still stop at blockers. |
 | Executable PHP semantics | **62%** | `[############--------]` | Many focused linked programs run, including direct-variable compound assignment through local, reference-backed, and active symbol-table variables plus function-local bounded `try`/`finally`, loop transfer through finalizers, direct/transitive/runtime dynamic function-scope global imports, warning-bearing leading-numeric arithmetic expressions, and alias-visible by-reference frame writes, but behavior is still selected islands rather than a complete PHP execution model. |
 | Arrays, lvalues, references, COW | **63%** | `[#############-------]` | Strong selected array/lvalue/reference paths now include generated-C direct-variable compound assignment, function-scope global imports of scalar variables and array paths, by-reference call binding for direct variables and nested symbol-table paths, and PHP array-union value addition through generated-C array-offset and direct-variable `+=`. Full COW, arbitrary writable roots, foreach parity, object/reference joins, and broader frame/reference composition remain open. |
 | Symbols, globals, request state | **72%** | `[##############------]` | Request roots and selected `$GLOBALS` paths are strong. Generated-C function-scope ordinary `global` imports now borrow the caller root symbol table and bind imported locals through shared references across direct, transitive wrapper, and runtime dynamic frame calls. Generated-C by-reference calls and direct-variable compound assignments also reuse symbol-table paths for ordinary variables and nested array slots. Reconciliation across requests, includes, variable variables, aliases, and broader reference frames remains incomplete. |
@@ -99,6 +107,18 @@ destructors, and backend parity.
 
 ## Recent Primary-Integrated Work
 
+- `c7e35c50`: LLVM IR now routes scalar/native-value arithmetic that cannot be
+  safely folded as primitive IR through the shared native value-operation
+  result ABI. Lowered families include leading/non-numeric string operands for
+  `+`, `-`, `*`, `/`, `%`, non-integer modulo operands, null/bool scalar
+  coercion division operands, native value-result producers feeding
+  arithmetic, and unary negation over native/string values. The generated IR
+  reports warning/error diagnostics from `NativeValueOperationResult`, frees
+  operands, preserves the owned result handle on success, and emits a native
+  failure edge for runtime value-operation errors. Direct numeric LLVM
+  division, dynamic integer modulo checks, exact diagnostic ordering, object/
+  resource arithmetic hooks, reference/COW identity, direct assembly parity,
+  and broad executable LLVM linking remain blocked.
 - `40838cef`: native value binary/unary arithmetic result ABIs now recover
   leading-numeric string operands through shared PHP numeric-prefix
   classification. Generated-C expression consumers for `+`, `-`, `*`, `/`,
