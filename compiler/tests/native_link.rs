@@ -109,6 +109,32 @@ const NATIVE_DECLARED_CLASS_OBJECT_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_DECLARED_CLASS_DYNAMIC_NEW_SOURCE: &str = concat!(
+    "<?php\n",
+    "class Alpha {}\n",
+    "class Beta {}\n",
+    "class Base { public $name; }\n",
+    "class Child extends Base {}\n",
+    "function mark($value) { echo $value; return $value; }\n",
+    "$class = \"beta\";\n",
+    "echo is_object(new Alpha(mark(\"N\"))) ? \":named:\" : \":bad:\";\n",
+    "$object = new $class(mark(\"D1\"), mark(\"D2\"));\n",
+    "echo gettype($object);\n",
+    "echo \":\";\n",
+    "echo get_debug_type($object);\n",
+    "echo \":\";\n",
+    "$class = \"Child\";\n",
+    "$child = new $class(mark(\"D3\"));\n",
+    "$child->name = \"kid\";\n",
+    "echo ($child instanceof Base) ? \"base\" : \"no\";\n",
+    "echo \":\";\n",
+    "echo $child->name;\n",
+    "echo \":\";\n",
+    "$class = \"Alpha\";\n",
+    "echo is_object(new $class()) ? get_debug_type(new $class(mark(\"D4\"))) : \"bad\";\n",
+    "echo \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_PROPERTY_SOURCE: &str = concat!(
     "<?php\n",
     "class Box { public $name; public $count; private $secret; }\n",
@@ -1112,6 +1138,34 @@ fn emit_exe_links_and_runs_declared_class_object_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"YYN|object:object:Box|Packet\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_declared_class_dynamic_new_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "declared_class_dynamic_new",
+        NATIVE_DECLARED_CLASS_DYNAMIC_NEW_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run declared-class dynamic-new executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"N:named:D1D2object:Beta:D3base:kid:D4Alpha\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -2231,6 +2285,51 @@ fn native_executable_c_source_routes_declared_class_objects_through_runtime_abi(
 }
 
 #[test]
+fn native_executable_c_source_routes_dynamic_declared_class_new_through_declared_allocation_helpers(
+) {
+    let program = parse(NATIVE_DECLARED_CLASS_DYNAMIC_NEW_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_value_new_declared_class_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_new_declared_class_with_ancestors_and_diagnostic"),
+        "dynamic new should keep declared-child allocation on the ancestor-aware allocation helper:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_dynamic_call_name_matches"),
+        "dynamic new should materialize class-name values and match generated declared-class candidates through the shared dynamic-name helper:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_NativeValueHandle constructor_arg_values_")
+            .count()
+            >= 4,
+        "constructorless named and dynamic new argument lists should be evaluated into reusable native-value arrays before allocation:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_value_new_declared_class_with_diagnostic")
+            .count()
+            >= 5,
+        "named and dynamic class-name allocation candidates should share declared-class allocation helpers:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_type_predicate")
+            && source.contains("phpc_native_value_type_name_result")
+            && source.contains("phpc_native_value_instanceof_class_with_diagnostic")
+            && source.contains("phpc_native_value_object_public_property_operation_with_diagnostic"),
+        "new-expression results should compose with native value, class-relation, and property consumers:\n{source}"
+    );
+    assert!(
+        !source.contains("object-instantiation lowering rejects")
+            && !source.contains("object/class lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_declared_object_properties_through_runtime_abi() {
     let program = parse(NATIVE_DECLARED_CLASS_PROPERTY_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -2482,7 +2581,6 @@ fn native_executable_c_source_keeps_unsupported_declared_class_features_blocked(
         "<?php\nfinal class Base {}\nclass Child extends Base {}\nnew Child();\n",
         "<?php\nclass Box { public static $count; }\nnew Box();\n",
         "<?php\nclass Box { public $name = \"Ada\"; }\nnew Box();\n",
-        "<?php\nclass Box {}\nnew Box(\"Ada\");\n",
     ] {
         let program = parse(source).expect("unsupported declared-class source parses");
         let error = emit_native_executable_c_source(&program).unwrap_err();
@@ -2503,6 +2601,7 @@ fn native_executable_c_source_keeps_unsupported_constructor_shapes_blocked() {
         "<?php\nclass Box { private function __construct() {} }\nnew Box();\n",
         "<?php\nclass Box { public function __construct() { return 1; } }\nnew Box();\n",
         "<?php\nclass Box { public function __construct() { global $x; } }\nnew Box();\n",
+        "<?php\nclass Box { public function __construct($value) {} }\n$class = \"Box\";\nnew $class(\"Ada\");\n",
     ] {
         let program = parse(source).expect("unsupported constructor source parses");
         let error = emit_native_executable_c_source(&program).unwrap_err();

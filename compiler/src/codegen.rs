@@ -77,7 +77,7 @@ const ASSEMBLY_GLOBAL_DECLARATION_REJECTION: &str = "assembly global-declaration
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const ASSEMBLY_OBJECT_CLASS_REJECTION: &str = "assembly object/class lowering rejects class declarations outside the bounded generated-C declared-object subset, including inheritance metadata, unsupported constructor dispatch, unsupported public property and instance method forms, object metadata builtins, visibility contexts, references/copy-on-write, and exact native object errors; generated-native C lowers supported declared object allocation, public properties, named instanceof, public declared instance methods, and supported constructors";
 const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
-const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions outside the bounded generated-C declared-object constructor subset, including dynamic class names, constructorless argument lists, unsupported constructor declarations, non-public constructors, constructor returns, visibility contexts, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors; generated-native C lowers supported declared object allocation and public constructors with $this frame binding";
+const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions outside the bounded generated-C declared-object constructor subset, including dynamic class names that require constructor dispatch, unsupported constructor declarations, non-public constructors, constructor returns, visibility contexts, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors; generated-native C lowers supported named declared object allocation, dynamic declared-class allocation for constructorless classes, constructorless argument evaluation, and public constructors with $this frame binding";
 const LLVM_OBJECT_PROPERTY_REJECTION: &str = "LLVM object-property lowering rejects instance property reads/writes and dynamic property-name access until native object layout, property tables/slots, visibility checks, magic property hooks, dynamic property policy, references/copy-on-write, and exact native object-property errors exist; phpc run handles current bounded object-property behavior";
 const ASSEMBLY_OBJECT_PROPERTY_REJECTION: &str = "assembly object-property lowering rejects instance property reads/writes and dynamic property-name access until native object layout, property tables/slots, visibility checks, magic property hooks, dynamic property policy, references/copy-on-write, and exact native object-property errors exist; phpc run handles current bounded object-property behavior";
 const LLVM_OBJECT_METADATA_REJECTION: &str = "LLVM object-metadata lowering rejects object/class metadata builtins until native class metadata tables, object handles, inheritance/interface/trait/enum registries, property/method tables, autoload interaction, references/copy-on-write, and exact native object-metadata errors exist; phpc run handles current bounded object metadata behavior";
@@ -9975,6 +9975,12 @@ struct CNativeValueMaterialization {
     cleanup_after_use: Vec<String>,
 }
 
+struct CNativeConstructorArgumentArray {
+    handles: String,
+    count: usize,
+    cleanup_after_use: Vec<String>,
+}
+
 struct CNativeReferenceMaterialization {
     handle: String,
     cleanup_after_use: Vec<String>,
@@ -12739,26 +12745,26 @@ impl CGenerator {
                 .any(|property| property.declaring_class_id != class.class_id)
     }
 
-    fn materialize_declared_class_instantiation(
+    fn emit_declared_class_instantiation_assignment(
         &mut self,
-        class: CDeclaredClass,
+        class: &CDeclaredClass,
+        result: &str,
         failure_cleanup: &str,
-    ) -> CNativeValueMaterialization {
+    ) {
         self.uses_native_string_helpers = true;
         self.uses_native_object_instantiation_helpers = true;
 
         let (class_name, class_name_len) =
             self.emit_call_type_static_bytes("declared_class_name_bytes", &class.name);
-        let property_metadata = self.emit_declared_class_property_metadata_arrays(&class);
+        let property_metadata = self.emit_declared_class_property_metadata_arrays(class);
 
         let diagnostic = self.next_native_name("declared_class_diagnostic");
-        let result = self.next_native_name("declared_class_object");
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
-        if Self::declared_class_requires_ancestor_allocation(&class) {
-            let ancestor_metadata = self.emit_declared_class_ancestor_metadata_arrays(&class);
+        if Self::declared_class_requires_ancestor_allocation(class) {
+            let ancestor_metadata = self.emit_declared_class_ancestor_metadata_arrays(class);
             self.body.push(format!(
-                "phpc_NativeValueHandle {result} = phpc_native_value_new_declared_class_with_ancestors_and_diagnostic({}, {class_name}, {class_name_len}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, &{diagnostic});",
+                "{result} = phpc_native_value_new_declared_class_with_ancestors_and_diagnostic({}, {class_name}, {class_name_len}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, &{diagnostic});",
                 class.class_id,
                 property_metadata.declaring_class_ids,
                 property_metadata.declaring_class_names,
@@ -12773,7 +12779,7 @@ impl CGenerator {
             ));
         } else {
             self.body.push(format!(
-                "phpc_NativeValueHandle {result} = phpc_native_value_new_declared_class_with_diagnostic({}, {class_name}, {class_name_len}, {}, {}, {}, {}, &{diagnostic});",
+                "{result} = phpc_native_value_new_declared_class_with_diagnostic({}, {class_name}, {class_name_len}, {}, {}, {}, {}, &{diagnostic});",
                 class.class_id,
                 property_metadata.names,
                 property_metadata.name_lens,
@@ -12785,6 +12791,18 @@ impl CGenerator {
         let error_exit = self.native_error_exit(failure_cleanup);
         self.body
             .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+    }
+
+    fn materialize_declared_class_instantiation(
+        &mut self,
+        class: CDeclaredClass,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        let result = self.next_native_name("declared_class_object");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = (phpc_NativeValueHandle){{0}};"
+        ));
+        self.emit_declared_class_instantiation_assignment(&class, &result, failure_cleanup);
 
         CNativeValueMaterialization {
             handle: result.clone(),
@@ -12799,20 +12817,31 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let NewClassName::Named(name) = class_name else {
-            return Ok(None);
+        let class = match class_name {
+            NewClassName::Named(name) => {
+                let key = Self::declared_class_key(name);
+                let Some(class) = self.declared_classes.get(&key).cloned() else {
+                    return Ok(None);
+                };
+                class
+            }
+            NewClassName::DynamicVariable(_) => {
+                return self.materialize_dynamic_declared_class_new_expr(
+                    class_name,
+                    args,
+                    span,
+                    failure_cleanup,
+                );
+            }
+            NewClassName::SelfClass | NewClassName::ParentClass | NewClassName::StaticClass => {
+                return Ok(None);
+            }
         };
-        let key = Self::declared_class_key(name);
-        let Some(class) = self.declared_classes.get(&key).cloned() else {
-            return Ok(None);
-        };
-        let constructor = self.declared_class_constructor_for_instantiation(&class);
-        if constructor.is_none() && !args.is_empty() {
-            return Err(self.unsupported(span, ASSEMBLY_OBJECT_INSTANTIATION_REJECTION));
-        }
 
-        let value = self.materialize_declared_class_instantiation(class.clone(), failure_cleanup);
-        if let Some((constructor_class, constructor)) = constructor {
+        let constructor = self.declared_class_constructor_for_instantiation(&class);
+        let value = if let Some((constructor_class, constructor)) = constructor {
+            let value =
+                self.materialize_declared_class_instantiation(class.clone(), failure_cleanup);
             let constructor_failure_cleanup = format!(
                 "{}{}",
                 c_cleanup_sequence(&value.cleanup_after_use),
@@ -12826,9 +12855,166 @@ impl CGenerator {
                 span,
                 &constructor_failure_cleanup,
             )?;
-        }
+            value
+        } else {
+            let constructor_args =
+                self.materialize_constructor_argument_value_array(args, failure_cleanup)?;
+            let arg_cleanup = c_cleanup_sequence(&constructor_args.cleanup_after_use);
+            let allocation_failure_cleanup = format!("{arg_cleanup}{failure_cleanup}");
+            let value = self.materialize_declared_class_instantiation(
+                class.clone(),
+                &allocation_failure_cleanup,
+            );
+            if constructor_args.count > 0 {
+                self.body
+                    .push(format!("(void){};", constructor_args.handles));
+            }
+            self.body.extend(constructor_args.cleanup_after_use);
+            value
+        };
 
         Ok(Some(value))
+    }
+
+    fn materialize_dynamic_declared_class_new_expr(
+        &mut self,
+        class_name: &NewClassName,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let candidates = self
+            .declared_class_order
+            .iter()
+            .map(|key| {
+                self.declared_classes
+                    .get(key)
+                    .expect("registered class key has metadata")
+            })
+            .filter(|class| {
+                self.declared_class_constructor_for_instantiation(class)
+                    .is_none()
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if candidates.is_empty() {
+            return Ok(None);
+        }
+
+        let class_name_value =
+            self.materialize_new_class_name_value(class_name, span, failure_cleanup)?;
+        let class_name_cleanup = c_cleanup_sequence(&class_name_value.cleanup_after_use);
+        let result = self.next_native_name("declared_class_object");
+        let matched = self.next_native_name("declared_class_match");
+        self.uses_native_dynamic_call_helpers = true;
+        self.body.push(format!("_Bool {matched} = 0;"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = (phpc_NativeValueHandle){{0}};"
+        ));
+
+        for class in candidates {
+            let (candidate_name, candidate_name_len) =
+                self.emit_call_type_static_bytes("declared_class_match_name_bytes", &class.name);
+            self.body.push(format!(
+                "if (!{matched} && phpc_native_value_dynamic_call_name_matches({}, {candidate_name}, {candidate_name_len})) {{",
+                class_name_value.handle
+            ));
+            self.body.push(format!("{matched} = 1;"));
+
+            let branch_failure_cleanup = format!("{class_name_cleanup}{failure_cleanup}");
+            let constructor_args =
+                self.materialize_constructor_argument_value_array(args, &branch_failure_cleanup)?;
+            let arg_cleanup = c_cleanup_sequence(&constructor_args.cleanup_after_use);
+            let allocation_failure_cleanup = format!("{arg_cleanup}{branch_failure_cleanup}");
+            self.emit_declared_class_instantiation_assignment(
+                &class,
+                &result,
+                &allocation_failure_cleanup,
+            );
+            if constructor_args.count > 0 {
+                self.body
+                    .push(format!("(void){};", constructor_args.handles));
+            }
+            self.body.extend(constructor_args.cleanup_after_use);
+            self.body.push("}".to_string());
+        }
+
+        self.body.push(format!("if (!{matched}) {{"));
+        let no_match_error_exit =
+            self.native_error_exit(&format!("{class_name_cleanup}{failure_cleanup}"));
+        self.body.push(format!(
+            "fprintf(stderr, \"runtime error: unsupported object instantiation: class name did not match a generated constructorless declared class\\n\"); {no_match_error_exit}"
+        ));
+        self.body.push("}".to_string());
+        self.body.extend(class_name_value.cleanup_after_use);
+
+        Ok(Some(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }))
+    }
+
+    fn materialize_new_class_name_value(
+        &mut self,
+        class_name: &NewClassName,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        match class_name {
+            NewClassName::DynamicVariable(name) => {
+                let expr = Expr::Variable(name.clone(), span);
+                self.materialize_native_value_result_operand(&expr, failure_cleanup)
+            }
+            NewClassName::Named(_)
+            | NewClassName::SelfClass
+            | NewClassName::ParentClass
+            | NewClassName::StaticClass => {
+                unreachable!("only dynamic variable new class names are materialized here")
+            }
+        }
+    }
+
+    fn materialize_constructor_argument_value_array(
+        &mut self,
+        args: &[Expr],
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeConstructorArgumentArray> {
+        let mut values = Vec::new();
+        let mut cleanup_after_use = Vec::new();
+        for arg in args {
+            let arg_failure_cleanup = format!(
+                "{}{}",
+                c_cleanup_sequence(&cleanup_after_use),
+                failure_cleanup
+            );
+            let value = self.materialize_native_value_result_operand(arg, &arg_failure_cleanup)?;
+            cleanup_after_use.extend(value.cleanup_after_use.clone());
+            values.push(value);
+        }
+
+        if values.is_empty() {
+            return Ok(CNativeConstructorArgumentArray {
+                handles: "NULL".to_string(),
+                count: 0,
+                cleanup_after_use,
+            });
+        }
+
+        let handles = self.next_native_name("constructor_arg_values");
+        let value_handles = values
+            .iter()
+            .map(|value| value.handle.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {handles}[] = {{ {value_handles} }};"
+        ));
+
+        Ok(CNativeConstructorArgumentArray {
+            handles,
+            count: values.len(),
+            cleanup_after_use,
+        })
     }
 
     fn emit_declared_class_constructor_call(
