@@ -11,10 +11,10 @@ use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
     classify_php_numeric_string, is_php_truthy_string, php_primitive_arithmetic_result,
     php_strings_use_numeric_comparison, NativeComparisonOp, NativeFilesystemPathOperation,
-    NativeIntConversionOperation, NativeStringDistanceOperation, NativeStringIntOperation,
-    NativeStringOffsetOperation, NativeStringPredicate, NativeStringResultOperation,
-    NativeStringSearchOperation, PhpPrimitiveArithmeticError, PhpPrimitiveArithmeticOperation,
-    PhpPrimitiveArithmeticValue, PhpPrimitiveValue,
+    NativeIntConversionOperation, NativeOutputBufferOperation, NativeStringDistanceOperation,
+    NativeStringIntOperation, NativeStringOffsetOperation, NativeStringPredicate,
+    NativeStringResultOperation, NativeStringSearchOperation, PhpPrimitiveArithmeticError,
+    PhpPrimitiveArithmeticOperation, PhpPrimitiveArithmeticValue, PhpPrimitiveValue,
 };
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
@@ -1520,6 +1520,7 @@ fn native_value_result_output_expr(expr: &Expr) -> bool {
                 || native_array_mutation_builtin(name, args).is_some()
                 || native_value_array_callback_builtin(name, args).is_some()
                 || native_value_array_query_builtin(name, args).is_some()
+                || native_output_buffer_operation_for_call(name).is_some()
         }
         _ => false,
     }
@@ -3854,6 +3855,10 @@ fn request_superglobal_expr_span(expr: &Expr) -> Option<Span> {
     }
 }
 
+fn request_superglobal_consumed_args_span(args: &[Expr]) -> Option<Span> {
+    args.iter().find_map(request_superglobal_expr_span)
+}
+
 fn is_header_state_builtin(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
@@ -3879,22 +3884,65 @@ fn is_session_state_builtin(name: &str) -> bool {
     )
 }
 
+fn native_output_buffer_operation_for_call(name: &str) -> Option<NativeOutputBufferOperation> {
+    match name.to_ascii_lowercase().as_str() {
+        "ob_start" => Some(NativeOutputBufferOperation::Start),
+        "ob_get_level" => Some(NativeOutputBufferOperation::GetLevel),
+        "ob_get_contents" => Some(NativeOutputBufferOperation::GetContents),
+        "ob_get_length" => Some(NativeOutputBufferOperation::GetLength),
+        "ob_list_handlers" => Some(NativeOutputBufferOperation::ListHandlers),
+        "ob_get_status" => Some(NativeOutputBufferOperation::GetStatus),
+        "ob_get_clean" => Some(NativeOutputBufferOperation::GetClean),
+        "ob_get_flush" => Some(NativeOutputBufferOperation::GetFlush),
+        "ob_clean" => Some(NativeOutputBufferOperation::Clean),
+        "ob_flush" => Some(NativeOutputBufferOperation::Flush),
+        "ob_end_clean" => Some(NativeOutputBufferOperation::EndClean),
+        "ob_end_flush" => Some(NativeOutputBufferOperation::EndFlush),
+        _ => None,
+    }
+}
+
+fn native_output_buffer_operation_result_prefix(
+    operation: NativeOutputBufferOperation,
+) -> &'static str {
+    match operation {
+        NativeOutputBufferOperation::Start => "ob_start_value",
+        NativeOutputBufferOperation::GetLevel => "ob_get_level_value",
+        NativeOutputBufferOperation::GetContents => "ob_get_contents_value",
+        NativeOutputBufferOperation::GetLength => "ob_get_length_value",
+        NativeOutputBufferOperation::ListHandlers => "ob_list_handlers_value",
+        NativeOutputBufferOperation::GetStatus => "ob_get_status_value",
+        NativeOutputBufferOperation::GetClean => "ob_get_clean_value",
+        NativeOutputBufferOperation::GetFlush => "ob_get_flush_value",
+        NativeOutputBufferOperation::Clean => "ob_clean_value",
+        NativeOutputBufferOperation::Flush => "ob_flush_value",
+        NativeOutputBufferOperation::EndClean => "ob_end_clean_value",
+        NativeOutputBufferOperation::EndFlush => "ob_end_flush_value",
+    }
+}
+
+fn native_output_buffer_operation_accepts_arg_count(
+    operation: NativeOutputBufferOperation,
+    actual: usize,
+) -> bool {
+    match operation {
+        NativeOutputBufferOperation::Start => actual <= 3,
+        NativeOutputBufferOperation::GetStatus => actual <= 1,
+        NativeOutputBufferOperation::GetLevel
+        | NativeOutputBufferOperation::GetContents
+        | NativeOutputBufferOperation::GetLength
+        | NativeOutputBufferOperation::ListHandlers
+        | NativeOutputBufferOperation::GetClean
+        | NativeOutputBufferOperation::GetFlush
+        | NativeOutputBufferOperation::Clean
+        | NativeOutputBufferOperation::Flush
+        | NativeOutputBufferOperation::EndClean
+        | NativeOutputBufferOperation::EndFlush => actual == 0,
+    }
+}
+
 fn is_output_buffer_builtin(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        "ob_start"
-            | "ob_get_level"
-            | "ob_get_contents"
-            | "ob_get_length"
-            | "ob_list_handlers"
-            | "ob_get_status"
-            | "ob_get_clean"
-            | "ob_get_flush"
-            | "ob_clean"
-            | "ob_flush"
-            | "ob_end_clean"
-            | "ob_end_flush"
-    )
+    native_output_buffer_operation_for_call(name).is_some()
 }
 
 fn is_stream_resource_builtin(name: &str) -> bool {
@@ -4466,6 +4514,7 @@ struct LlvmGenerator {
     uses_native_string_int_operation: bool,
     uses_native_value_operation_result: bool,
     uses_native_value_offset_operation: bool,
+    uses_native_output_buffer_operation: bool,
     uses_native_value_truthiness: bool,
 }
 
@@ -4733,6 +4782,9 @@ impl LlvmGenerator {
                     "declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)\n",
                 );
             }
+        }
+        if self.uses_native_output_buffer_operation {
+            output.push_str("declare %phpc.NativeValueHandle @phpc_native_output_buffer_operation_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, %phpc.NativeValueHandle, i8, i8, ptr)\n");
         }
         if self.uses_native_value_operation_result {
             output.push_str("declare %phpc.NativeValueOperationResult @phpc_native_value_unary_result(%phpc.NativeValueHandle, i8)\n");
@@ -5137,7 +5189,9 @@ impl LlvmGenerator {
                 Err(self.unsupported_direct_named_call(args, *span, LLVM_SESSION_STATE_REJECTION))
             }
             Expr::Call { name, args, span } if is_output_buffer_builtin(name) => {
-                Err(self.unsupported_direct_named_call(args, *span, LLVM_OUTPUT_BUFFER_REJECTION))
+                let operation = native_output_buffer_operation_for_call(name)
+                    .expect("output-buffer guard should provide operation");
+                self.emit_llvm_output_buffer_operation_call(operation, args, *span)
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("function_exists") => {
                 self.emit_function_exists_call(args, *span)
@@ -5807,6 +5861,72 @@ impl LlvmGenerator {
         self.body.push(format!(
             "call void @phpc_native_value_free(%phpc.NativeValueHandle {subject})"
         ));
+        Ok(IrValue::NativeValue(result))
+    }
+
+    fn emit_llvm_output_buffer_operation_call(
+        &mut self,
+        operation: NativeOutputBufferOperation,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        if !native_output_buffer_operation_accepts_arg_count(operation, args.len()) {
+            return Err(self.unsupported_direct_named_call(
+                args,
+                span,
+                LLVM_OUTPUT_BUFFER_REJECTION,
+            ));
+        }
+        if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+            return Err(self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION));
+        }
+
+        let mut handles = Vec::new();
+        for arg in args {
+            let value = self.emit_value_operand_expr(arg)?;
+            let handle = self
+                .emit_native_value_for_ir_value(value, span)
+                .map_err(|_| self.unsupported(span, LLVM_OUTPUT_BUFFER_REJECTION))?;
+            handles.push(handle);
+        }
+
+        let null_handle = "%phpc.NativeValueHandle zeroinitializer".to_string();
+        let first = handles
+            .first()
+            .map(|handle| format!("%phpc.NativeValueHandle {handle}"))
+            .unwrap_or_else(|| null_handle.clone());
+        let second = handles
+            .get(1)
+            .map(|handle| format!("%phpc.NativeValueHandle {handle}"))
+            .unwrap_or_else(|| null_handle.clone());
+        let third = handles
+            .get(2)
+            .map(|handle| format!("%phpc.NativeValueHandle {handle}"))
+            .unwrap_or(null_handle);
+        let diagnostic_slot = self.next_temp();
+        let result = self.next_temp();
+
+        self.uses_native_output_buffer_operation = true;
+        self.uses_native_string_int_operation = true;
+        self.uses_native_value_echo_stdout = true;
+        self.body.push(format!(
+            "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
+        ));
+        self.body.push(format!(
+            "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
+        ));
+        self.body.push(format!(
+            "{result} = call %phpc.NativeValueHandle @phpc_native_output_buffer_operation_with_diagnostic({first}, {second}, {third}, i8 {}, i8 {}, ptr {diagnostic_slot})",
+            handles.len(),
+            operation as u8
+        ));
+        self.emit_report_native_diagnostic_slot(&diagnostic_slot);
+        for handle in handles.into_iter().rev() {
+            self.body.push(format!(
+                "call void @phpc_native_value_free(%phpc.NativeValueHandle {handle})"
+            ));
+        }
+
         Ok(IrValue::NativeValue(result))
     }
 
@@ -8426,11 +8546,17 @@ impl LlvmGenerator {
     fn emit_echo(&mut self, value: IrValue) {
         match value {
             IrValue::Null | IrValue::Bool(false) => {}
+            IrValue::Bool(true) if self.uses_native_output_buffer_operation => {
+                self.emit_native_scalar_value_stdout("@phpc_native_bool(i1 true)");
+            }
             IrValue::Bool(true) => {
                 let global = self.add_string("1");
                 self.body.push(format!(
                     "call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @{global})"
                 ));
+            }
+            IrValue::BoolExpr(value) if self.uses_native_output_buffer_operation => {
+                self.emit_native_scalar_value_stdout(&format!("@phpc_native_bool(i1 {value})"));
             }
             IrValue::BoolExpr(value) => {
                 let true_global = self.add_string("1");
@@ -8443,9 +8569,17 @@ impl LlvmGenerator {
                     "call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr {temp})"
                 ));
             }
+            IrValue::Int(value) if self.uses_native_output_buffer_operation => {
+                self.emit_native_scalar_value_stdout(&format!("@phpc_native_int(i64 {value})"));
+            }
             IrValue::Int(value) => {
                 self.body.push(format!(
                     "call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 {value})"
+                ));
+            }
+            IrValue::Float(value) if self.uses_native_output_buffer_operation => {
+                self.emit_native_scalar_value_stdout(&format!(
+                    "@phpc_native_float(double {value})"
                 ));
             }
             IrValue::Float(value) => {
@@ -8472,6 +8606,11 @@ impl LlvmGenerator {
             IrValue::String(value) => self.emit_native_value_string_stdout(&value),
             value => self.emit_echo(value),
         }
+    }
+
+    fn emit_native_scalar_value_stdout(&mut self, scalar_call: &str) {
+        let handle = self.emit_native_value_from_scalar_call(scalar_call);
+        self.emit_native_value_handle_stdout(&handle);
     }
 
     fn emit_native_value_string_stdout(&mut self, value: &str) {
@@ -9231,6 +9370,7 @@ struct CGenerator {
     uses_native_exit_helpers: bool,
     uses_native_call_type_helpers: bool,
     uses_native_dynamic_call_helpers: bool,
+    uses_native_output_buffer_operation: bool,
     next_static_data: usize,
     next_native_temp: usize,
     native_value_cleanup_handles: Vec<String>,
@@ -10803,6 +10943,7 @@ impl CGenerator {
         self.uses_native_exit_helpers |= branch.uses_native_exit_helpers;
         self.uses_native_call_type_helpers |= branch.uses_native_call_type_helpers;
         self.uses_native_dynamic_call_helpers |= branch.uses_native_dynamic_call_helpers;
+        self.uses_native_output_buffer_operation |= branch.uses_native_output_buffer_operation;
     }
 
     fn merge_scoped_branch_codegen(&mut self, branch: &Self) {
@@ -10822,6 +10963,7 @@ impl CGenerator {
             || self.uses_native_reference_helpers
             || self.uses_native_call_type_helpers
             || self.uses_native_dynamic_call_helpers
+            || self.uses_native_output_buffer_operation
             || !self.function_definitions.is_empty()
     }
 
@@ -11584,6 +11726,9 @@ impl CGenerator {
             if self.uses_native_dynamic_call_helpers {
                 output.push_str("extern _Bool phpc_native_value_dynamic_call_name_matches(phpc_NativeValueHandle value, const uint8_t *name_ptr, size_t name_len);\n");
                 output.push_str("extern void phpc_native_value_dynamic_call_failure_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *reason_ptr, size_t reason_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            }
+            if self.uses_native_output_buffer_operation {
+                output.push_str("extern phpc_NativeValueHandle phpc_native_output_buffer_operation_with_diagnostic(phpc_NativeValueHandle first, phpc_NativeValueHandle second, phpc_NativeValueHandle third, uint8_t argc, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             output.push_str("extern void phpc_native_value_free(phpc_NativeValueHandle value);\n");
             output.push_str("extern size_t phpc_native_diagnostic_message_stderr(phpc_NativeDiagnosticHandle diagnostic);\n");
@@ -17314,9 +17459,14 @@ impl CGenerator {
             Expr::Call { name, args, span } if is_session_state_builtin(name) => Err(
                 self.unsupported_direct_named_call(args, *span, ASSEMBLY_SESSION_STATE_REJECTION)
             ),
-            Expr::Call { name, args, span } if is_output_buffer_builtin(name) => Err(
-                self.unsupported_direct_named_call(args, *span, ASSEMBLY_OUTPUT_BUFFER_REJECTION)
-            ),
+            Expr::Call { name, args, span } if is_output_buffer_builtin(name) => {
+                let operation = native_output_buffer_operation_for_call(name)
+                    .expect("output-buffer guard should provide operation");
+                let value = self
+                    .materialize_native_output_buffer_operation_expr(operation, args, *span, "")?;
+                self.retain_native_value_cleanup_handle(&value.handle);
+                Ok(CValue::NativeValueHandle(value.handle))
+            }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("function_exists") => {
                 self.emit_function_exists_call(args, *span)
             }
@@ -26847,6 +26997,16 @@ impl CGenerator {
                         )
                         .map(Some);
                 }
+                if let Some(operation) = native_output_buffer_operation_for_call(name) {
+                    return self
+                        .materialize_native_output_buffer_operation_expr(
+                            operation,
+                            args,
+                            *span,
+                            failure_cleanup,
+                        )
+                        .map(Some);
+                }
                 if let Some(builtin) = native_array_pointer_builtin(name, args) {
                     return self
                         .materialize_native_array_pointer_call(
@@ -27797,6 +27957,91 @@ impl CGenerator {
         self.body
             .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
         self.body.extend(subject.cleanup_after_use);
+
+        CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }
+    }
+
+    fn materialize_native_output_buffer_operation_expr(
+        &mut self,
+        operation: NativeOutputBufferOperation,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        if !native_output_buffer_operation_accepts_arg_count(operation, args.len()) {
+            return Err(self.unsupported_direct_named_call(
+                args,
+                span,
+                ASSEMBLY_OUTPUT_BUFFER_REJECTION,
+            ));
+        }
+        if let Some(superglobal_span) = request_superglobal_consumed_args_span(args) {
+            return Err(self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+        }
+
+        let mut values = Vec::new();
+        let mut cleanup_so_far = Vec::new();
+        for arg in args {
+            let arg_failure_cleanup =
+                format!("{}{}", c_cleanup_sequence(&cleanup_so_far), failure_cleanup);
+            let value = self.materialize_native_value_result_operand(arg, &arg_failure_cleanup)?;
+            cleanup_so_far.extend(value.cleanup_after_use.clone());
+            values.push(value);
+        }
+
+        Ok(self.emit_native_output_buffer_operation_result_handle(
+            operation,
+            values,
+            failure_cleanup,
+        ))
+    }
+
+    fn emit_native_output_buffer_operation_result_handle(
+        &mut self,
+        operation: NativeOutputBufferOperation,
+        values: Vec<CNativeValueMaterialization>,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        self.uses_native_string_helpers = true;
+        self.uses_native_output_buffer_operation = true;
+
+        let argc = values.len();
+        let mut handles = [
+            "(phpc_NativeValueHandle){0}".to_string(),
+            "(phpc_NativeValueHandle){0}".to_string(),
+            "(phpc_NativeValueHandle){0}".to_string(),
+        ];
+        let mut cleanup_after_use = Vec::new();
+        for (index, value) in values.into_iter().enumerate() {
+            handles[index] = value.handle;
+            cleanup_after_use.extend(value.cleanup_after_use);
+        }
+
+        let diagnostic = self.next_native_name("output_buffer_diagnostic");
+        let result = self.next_native_name(native_output_buffer_operation_result_prefix(operation));
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_output_buffer_operation_with_diagnostic({}, {}, {}, {}, {}, &{diagnostic});",
+            handles[0],
+            handles[1],
+            handles[2],
+            argc,
+            operation as u8
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&cleanup_after_use),
+            failure_cleanup
+        );
+        let error_exit = self.native_error_exit(&cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.body.extend(cleanup_after_use);
 
         CNativeValueMaterialization {
             handle: result.clone(),

@@ -3,8 +3,9 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 use php_compiler::{
-    emit_asm_source, emit_ir_source, error::Phase, native_runtime_scalar_echo_probe_ir,
-    native_runtime_scalar_echo_probe_ir_for_target, NativeRuntimeIrTarget,
+    codegen::emit_native_executable_c_source, emit_asm_source, emit_ir_source, error::Phase,
+    native_runtime_scalar_echo_probe_ir, native_runtime_scalar_echo_probe_ir_for_target, parse,
+    NativeRuntimeIrTarget,
 };
 
 const STRING_INT_IR_SOURCE: &str = "<?php\n$payload = \"A\\0bA\\0b\";\necho strcasecmp($payload, \"a\\0B\");\necho strcmp($payload, \"A\\0c\");\necho strncmp($payload, \"A\\0bZ\", \"3\");\necho strncasecmp($payload, \"a\\0Bz\", 3);\necho ord(\"A\");\necho crc32($payload);\n";
@@ -12,6 +13,7 @@ const STRING_PREDICATE_IR_SOURCE: &str = "<?php\n$payload = \"A\\0B\";\necho str
 const STRING_SEARCH_IR_SOURCE: &str = "<?php\n$payload = \"A\\0bA\\0b\";\necho strpos($payload, \"\\0b\", 2);\necho strpos($payload, \"missing\");\necho substr_count($payload, \"A\", false, \"5\");\n";
 const STRING_RESULT_IR_SOURCE: &str = "<?php\n$payload = \"A\\0B\";\necho strrev($payload), \"|\";\nprint str_rot13(\"Az-09\");\necho \"|\";\necho bin2hex($payload), \"|\";\necho strtolower(\"MiXeD\"), \"|\";\necho strtoupper(\"MiXeD\"), \"|\";\necho ucfirst(\"word\"), \"|\";\necho lcfirst(\"Word\"), \"|\";\necho escapeshellarg(\"X ;\\$'Q\\\"\"), \"|\";\necho escapeshellcmd(\"X ;\\$'Q\\\"\"), \"|\";\necho strrev(42042);\n";
 const VALUE_OFFSET_IR_SOURCE: &str = "<?php\n$payload = \"A\\0B\\xff\";\necho $payload[1];\necho isset($payload[2]);\necho empty($payload[3]);\necho strlen($payload[0]);\necho strcmp($payload[0], \"A\");\n";
+const OUTPUT_BUFFER_RUNTIME_SOURCE: &str = "<?php\nob_start(null, strlen(\"aa\"), strlen(\"flags\"));\necho \"A\\0B\";\necho 42;\nob_get_contents();\nob_get_length();\nob_list_handlers();\nob_get_status(true);\nob_clean();\necho strtolower(\"HIDDEN\");\nob_get_clean();\nob_start();\necho \"A\";\nob_start();\necho \"B\";\nob_end_flush();\nob_get_clean();\nob_get_level();\n";
 
 #[test]
 fn scalar_echo_probe_ir_matches_committed_snapshot() {
@@ -120,6 +122,57 @@ fn generated_ir_routes_nul_strings_through_formatter_stdout_abi() {
     assert!(
         ir.contains("@phpc_native_string_from_bytes(ptr @.str.0, i64 3)"),
         "{ir}"
+    );
+}
+
+#[test]
+fn native_output_buffer_builtins_share_runtime_boundary_across_backends() {
+    let ir = emit_ir_source(OUTPUT_BUFFER_RUNTIME_SOURCE).unwrap();
+
+    assert!(
+        ir.contains(
+            "declare %phpc.NativeValueHandle @phpc_native_output_buffer_operation_with_diagnostic"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.matches("@phpc_native_output_buffer_operation_with_diagnostic")
+            .count()
+            >= 13,
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i64 @phpc_native_value_format_stdout_with_diagnostic"),
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 42)"),
+        "{ir}"
+    );
+    assert!(!ir.contains("output-buffer lowering rejects"), "{ir}");
+
+    let program = parse(OUTPUT_BUFFER_RUNTIME_SOURCE).unwrap();
+    let c_source = emit_native_executable_c_source(&program).unwrap();
+    assert!(
+        c_source.contains(
+            "extern phpc_NativeValueHandle phpc_native_output_buffer_operation_with_diagnostic"
+        ),
+        "{c_source}"
+    );
+    assert!(
+        c_source
+            .matches("phpc_native_output_buffer_operation_with_diagnostic(")
+            .count()
+            >= 13,
+        "{c_source}"
+    );
+    assert!(
+        c_source.contains("phpc_native_value_format_stdout_with_diagnostic"),
+        "{c_source}"
+    );
+    assert!(
+        !c_source.contains("output-buffer lowering rejects"),
+        "{c_source}"
     );
 }
 

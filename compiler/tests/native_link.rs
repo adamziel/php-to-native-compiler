@@ -61,6 +61,35 @@ const NATIVE_LEADING_NUMERIC_ARITHMETIC_SOURCE: &str = concat!(
     "echo -(\"6tail\");\n",
 );
 
+const NATIVE_OUTPUT_BUFFER_SOURCE: &str = concat!(
+    "<?php\n",
+    "ob_start();\n",
+    "echo \"A\\0B\";\n",
+    "echo 42;\n",
+    "$contents = ob_get_contents();\n",
+    "$length = ob_get_length();\n",
+    "ob_clean();\n",
+    "echo strtolower(\"HIDDEN\");\n",
+    "$hidden = ob_get_clean();\n",
+    "echo $contents;\n",
+    "echo \":\";\n",
+    "echo $length;\n",
+    "echo \":\";\n",
+    "echo $hidden;\n",
+    "echo \"|\";\n",
+    "ob_start(null, strlen(\"aa\"), strlen(\"flags\"));\n",
+    "ob_list_handlers();\n",
+    "ob_get_status(true);\n",
+    "echo \"A\";\n",
+    "ob_start();\n",
+    "echo \"B\";\n",
+    "ob_end_flush();\n",
+    "echo ob_get_clean();\n",
+    "echo \"|\";\n",
+    "echo ob_get_level();\n",
+    "echo \"\\n\";\n",
+);
+
 const NATIVE_BRANCH_STATE_MERGE_SOURCE: &str = concat!(
     "<?php\n",
     "$flags = [\"go\" => \"1\", \"stop\" => \"0\"];\n",
@@ -783,6 +812,32 @@ fn emit_exe_links_and_runs_scalar_runtime_value_echo_program() {
 
     let _ = fs::remove_file(&source_path);
     let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_output_buffer_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("native_output_buffer", NATIVE_OUTPUT_BUFFER_SOURCE);
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native output-buffer executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"A0B42:5:hidden|AB|0\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
 }
 
 #[test]
@@ -1509,6 +1564,34 @@ fn native_executable_c_source_routes_leading_numeric_arithmetic_through_value_re
         !source.contains("assembly arithmetic lowering rejects")
             && !source.contains("assembly scalar arithmetic coercion rejects"),
         "leading-numeric arithmetic should not fall through arithmetic blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_output_buffers_through_shared_runtime_abi() {
+    let program = parse(NATIVE_OUTPUT_BUFFER_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "extern phpc_NativeValueHandle phpc_native_output_buffer_operation_with_diagnostic"
+        ),
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_output_buffer_operation_with_diagnostic(")
+            .count()
+            >= 12,
+        "all lowerable output-buffer operations should route through the shared runtime ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_format_stdout_with_diagnostic"),
+        "captured output should continue through the diagnostic-aware stdout formatter:\n{source}"
+    );
+    assert!(
+        !source.contains("output-buffer lowering rejects"),
+        "{source}"
     );
 }
 

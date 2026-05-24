@@ -25,6 +25,23 @@ pub enum NativeValueFormatterTag {
     Echo = 0,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeOutputBufferOperation {
+    Start = 0,
+    GetLevel = 1,
+    GetContents = 2,
+    GetLength = 3,
+    ListHandlers = 4,
+    GetStatus = 5,
+    GetClean = 6,
+    GetFlush = 7,
+    Clean = 8,
+    Flush = 9,
+    EndClean = 10,
+    EndFlush = 11,
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NativeScalarValue {
@@ -11797,6 +11814,241 @@ fn similar_text_score_bytes(left: &[u8], right: &[u8]) -> usize {
         + similar_text_score_bytes(&left[left_pos + max_len..], &right[right_pos + max_len..])
 }
 
+unsafe fn native_output_buffer_args(
+    first: NativeValueHandle,
+    second: NativeValueHandle,
+    third: NativeValueHandle,
+    argc: u8,
+) -> RuntimeResult<Vec<Value>> {
+    if argc > 3 {
+        return Err(RuntimeError::arity_mismatch(
+            "native output-buffer operation",
+            ArityExpectation::Between { min: 0, max: 3 },
+            argc as usize,
+        ));
+    }
+
+    let mut args = Vec::new();
+    for handle in [first, second, third].into_iter().take(argc as usize) {
+        let Some(value) = (unsafe { handle.as_ref() }) else {
+            return Err(RuntimeError::unsupported_call(
+                "native output-buffer operation",
+                "argument value handle is null",
+            ));
+        };
+        args.push(value.clone());
+    }
+    Ok(args)
+}
+
+fn native_output_buffer_operation_value(
+    operation: NativeOutputBufferOperation,
+    args: &[Value],
+) -> RuntimeResult<Value> {
+    if !operation.accepts_arity(args.len()) {
+        return Err(RuntimeError::arity_mismatch(
+            operation.callable(),
+            operation.expected_arity(),
+            args.len(),
+        ));
+    }
+
+    match operation {
+        NativeOutputBufferOperation::Start => {
+            if let Some(callback) = args.first() {
+                if !matches!(callback, Value::Null) {
+                    return Err(RuntimeError::unsupported_call(
+                        operation.callable(),
+                        "callback output handlers await callable dispatch, chunk phase ownership, and exact output-buffer diagnostics",
+                    ));
+                }
+            }
+            if let Some(chunk_size) = args.get(1) {
+                let _ =
+                    value_to_native_int64(chunk_size, NativeIntConversionOperation::StringLength)?;
+            }
+            if let Some(flags) = args.get(2) {
+                let _ = value_to_native_int64(flags, NativeIntConversionOperation::StringLength)?;
+            }
+            NATIVE_OUTPUT_BUFFERS
+                .with(|buffers| buffers.borrow_mut().push(NativeOutputBuffer::default()));
+            Ok(Value::Bool(true))
+        }
+        NativeOutputBufferOperation::GetLevel => {
+            let level = NATIVE_OUTPUT_BUFFERS.with(|buffers| buffers.borrow().len());
+            Ok(Value::Int(i64::try_from(level).unwrap_or(i64::MAX)))
+        }
+        NativeOutputBufferOperation::GetContents => NATIVE_OUTPUT_BUFFERS.with(|buffers| {
+            buffers
+                .borrow()
+                .last()
+                .map(|buffer| value_from_output_buffer_bytes(buffer.bytes.clone(), operation))
+                .unwrap_or(Ok(Value::Bool(false)))
+        }),
+        NativeOutputBufferOperation::GetLength => Ok(NATIVE_OUTPUT_BUFFERS.with(|buffers| {
+            buffers
+                .borrow()
+                .last()
+                .map(|buffer| Value::Int(i64::try_from(buffer.bytes.len()).unwrap_or(i64::MAX)))
+                .unwrap_or(Value::Bool(false))
+        })),
+        NativeOutputBufferOperation::ListHandlers => Ok(NATIVE_OUTPUT_BUFFERS.with(|buffers| {
+            let mut handlers = PhpArray::new();
+            for _ in buffers.borrow().iter() {
+                handlers
+                    .append(Value::String("default output handler".to_string()))
+                    .expect("output buffer handler list append should use integer keys");
+            }
+            Value::Array(handlers)
+        })),
+        NativeOutputBufferOperation::GetStatus => {
+            let full_status = args.first().is_some_and(Value::is_truthy);
+            Ok(NATIVE_OUTPUT_BUFFERS.with(|buffers| {
+                let buffers = buffers.borrow();
+                if full_status {
+                    let mut statuses = PhpArray::new();
+                    for (index, buffer) in buffers.iter().enumerate() {
+                        statuses
+                            .append(native_output_buffer_status_value(index + 1, buffer))
+                            .expect("output buffer full status append should use integer keys");
+                    }
+                    Value::Array(statuses)
+                } else {
+                    buffers
+                        .last()
+                        .map(|buffer| native_output_buffer_status_value(buffers.len(), buffer))
+                        .unwrap_or_else(|| Value::Array(PhpArray::new()))
+                }
+            }))
+        }
+        NativeOutputBufferOperation::GetClean => native_output_buffer_pop_value(false),
+        NativeOutputBufferOperation::GetFlush => native_output_buffer_pop_value(true),
+        NativeOutputBufferOperation::Clean => Ok(NATIVE_OUTPUT_BUFFERS.with(|buffers| {
+            let mut buffers = buffers.borrow_mut();
+            if let Some(buffer) = buffers.last_mut() {
+                buffer.bytes.clear();
+                Value::Bool(true)
+            } else {
+                Value::Bool(false)
+            }
+        })),
+        NativeOutputBufferOperation::Flush => NATIVE_OUTPUT_BUFFERS.with(|buffers| {
+            let mut buffers = buffers.borrow_mut();
+            let Some(buffer) = buffers.last_mut() else {
+                return Ok(Value::Bool(false));
+            };
+            let bytes = std::mem::take(&mut buffer.bytes);
+            drop(buffers);
+            native_output_flush_active_bytes(&bytes).map(|_| Value::Bool(true))
+        }),
+        NativeOutputBufferOperation::EndClean => native_output_buffer_pop_bool(false),
+        NativeOutputBufferOperation::EndFlush => native_output_buffer_pop_bool(true),
+    }
+}
+
+fn native_output_buffer_status_value(level: usize, buffer: &NativeOutputBuffer) -> Value {
+    let mut status = PhpArray::new();
+    status.insert("name", Value::String("default output handler".to_string()));
+    status.insert("type", Value::Int(0));
+    status.insert("flags", Value::Int(112));
+    status.insert(
+        "level",
+        Value::Int(i64::try_from(level).unwrap_or(i64::MAX)),
+    );
+    status.insert(
+        "buffer_used",
+        Value::Int(i64::try_from(buffer.bytes.len()).unwrap_or(i64::MAX)),
+    );
+    Value::Array(status)
+}
+
+fn native_output_buffer_pop_value(flush: bool) -> RuntimeResult<Value> {
+    NATIVE_OUTPUT_BUFFERS.with(|buffers| {
+        let Some(buffer) = buffers.borrow_mut().pop() else {
+            return Ok(Value::Bool(false));
+        };
+        let bytes = buffer.bytes;
+        if flush {
+            native_output_write_bytes(&bytes)?;
+        }
+        value_from_output_buffer_bytes(
+            bytes,
+            if flush {
+                NativeOutputBufferOperation::GetFlush
+            } else {
+                NativeOutputBufferOperation::GetClean
+            },
+        )
+    })
+}
+
+fn native_output_buffer_pop_bool(flush: bool) -> RuntimeResult<Value> {
+    NATIVE_OUTPUT_BUFFERS.with(|buffers| {
+        let Some(buffer) = buffers.borrow_mut().pop() else {
+            return Ok(Value::Bool(false));
+        };
+        if flush {
+            native_output_write_bytes(&buffer.bytes)?;
+        }
+        Ok(Value::Bool(true))
+    })
+}
+
+fn native_output_write_bytes(bytes: &[u8]) -> RuntimeResult<usize> {
+    native_output_write_bytes_to_buffer(bytes, false)
+}
+
+fn native_output_flush_active_bytes(bytes: &[u8]) -> RuntimeResult<usize> {
+    native_output_write_bytes_to_buffer(bytes, true)
+}
+
+fn native_output_write_bytes_to_buffer(bytes: &[u8], skip_active: bool) -> RuntimeResult<usize> {
+    let buffered = NATIVE_OUTPUT_BUFFERS.with(|buffers| {
+        let mut buffers = buffers.borrow_mut();
+        let target = if skip_active {
+            buffers.len().checked_sub(2)
+        } else {
+            buffers.len().checked_sub(1)
+        };
+        if let Some(index) = target {
+            buffers[index].bytes.extend_from_slice(bytes);
+            true
+        } else {
+            false
+        }
+    });
+
+    if buffered {
+        return Ok(bytes.len());
+    }
+
+    let mut stdout = io::stdout();
+    stdout
+        .write_all(bytes)
+        .and_then(|()| stdout.flush())
+        .map_err(|_| {
+            RuntimeError::unsupported_call("native output buffer", "native output write failed")
+        })?;
+    Ok(bytes.len())
+}
+
+fn value_from_output_buffer_bytes(
+    bytes: Vec<u8>,
+    operation: NativeOutputBufferOperation,
+) -> RuntimeResult<Value> {
+    String::from_utf8(bytes).map(Value::String).map_err(|_| {
+        RuntimeError::unsupported_call(
+            operation.callable(),
+            "captured output contains non-UTF-8 bytes; binary PHP string values need a native byte-string value representation",
+        )
+    })
+}
+
+#[cfg(test)]
+fn native_clear_output_buffers() {
+    NATIVE_OUTPUT_BUFFERS.with(|buffers| buffers.borrow_mut().clear());
+}
+
 /// # Safety
 ///
 /// `handle` must be null or a value handle previously returned by the runtime
@@ -11813,8 +12065,9 @@ pub unsafe extern "C" fn phpc_native_value_format_stdout_with_diagnostic(
     diagnostic: *mut NativeDiagnosticHandle,
 ) -> usize {
     unsafe { native_clear_diagnostic_slot(diagnostic) };
-    let mut stdout = io::stdout();
-    match unsafe { native_value_format_stdout_result(handle, formatter, &mut stdout) } {
+    match unsafe { native_value_format_stdout_bytes(handle, formatter) }
+        .and_then(|bytes| native_output_write_bytes(&bytes))
+    {
         Ok(written) => written,
         Err(error) => {
             unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
@@ -11823,11 +12076,10 @@ pub unsafe extern "C" fn phpc_native_value_format_stdout_with_diagnostic(
     }
 }
 
-unsafe fn native_value_format_stdout_result<W: Write>(
+unsafe fn native_value_format_stdout_bytes(
     handle: NativeValueHandle,
     formatter: u8,
-    writer: &mut W,
-) -> RuntimeResult<usize> {
+) -> RuntimeResult<Vec<u8>> {
     let formatter = NativeValueFormatterTag::from_tag(formatter)?;
     let Some(value) = (unsafe { handle.as_ref() }) else {
         return Err(RuntimeError::unsupported_call(
@@ -11835,13 +12087,23 @@ unsafe fn native_value_format_stdout_result<W: Write>(
             "native value formatting failed: value handle is null",
         ));
     };
-    let output = value.echo_string();
+    Ok(value.echo_string().into_bytes())
+}
+
+#[cfg(test)]
+unsafe fn native_value_format_stdout_result<W: Write>(
+    handle: NativeValueHandle,
+    formatter: u8,
+    writer: &mut W,
+) -> RuntimeResult<usize> {
+    let formatter_tag = NativeValueFormatterTag::from_tag(formatter)?;
+    let output = unsafe { native_value_format_stdout_bytes(handle, formatter) }?;
     writer
-        .write_all(output.as_bytes())
+        .write_all(&output)
         .and_then(|()| writer.flush())
         .map_err(|_| {
             RuntimeError::unsupported_call(
-                formatter.surface_name(),
+                formatter_tag.surface_name(),
                 "native value formatter stdout write failed",
             )
         })?;
@@ -11857,11 +12119,46 @@ unsafe fn native_value_format_stdout_result<W: Write>(
 /// `phpc_native_value_format_stdout_with_diagnostic`.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_value_echo_stdout(handle: NativeValueHandle) -> usize {
-    let mut stdout = io::stdout();
     unsafe {
-        native_value_format_stdout_result(handle, NativeValueFormatterTag::Echo as u8, &mut stdout)
+        native_value_format_stdout_bytes(handle, NativeValueFormatterTag::Echo as u8)
+            .and_then(|bytes| native_output_write_bytes(&bytes))
     }
     .unwrap_or(0)
+}
+
+/// # Safety
+///
+/// Argument handles up to `argc` must be non-null value handles previously
+/// returned by the runtime ABI and not yet freed. Missing argument handles are
+/// ignored. `diagnostic` may be null; when non-null, it must point to writable
+/// storage for one `NativeDiagnosticHandle`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_output_buffer_operation_with_diagnostic(
+    first: NativeValueHandle,
+    second: NativeValueHandle,
+    third: NativeValueHandle,
+    argc: u8,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result: RuntimeResult<Value> = (|| {
+        let operation = NativeOutputBufferOperation::from_tag(operation).ok_or_else(|| {
+            RuntimeError::unsupported_call(
+                "native output-buffer operation",
+                "unsupported operation tag",
+            )
+        })?;
+        let args = unsafe { native_output_buffer_args(first, second, third, argc) }?;
+        native_output_buffer_operation_value(operation, &args)
+    })();
+    match result {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
 }
 
 #[no_mangle]
@@ -20247,6 +20544,77 @@ impl NativeValueFormatterTag {
     }
 }
 
+impl NativeOutputBufferOperation {
+    fn from_tag(tag: u8) -> Option<Self> {
+        match tag {
+            tag if tag == Self::Start as u8 => Some(Self::Start),
+            tag if tag == Self::GetLevel as u8 => Some(Self::GetLevel),
+            tag if tag == Self::GetContents as u8 => Some(Self::GetContents),
+            tag if tag == Self::GetLength as u8 => Some(Self::GetLength),
+            tag if tag == Self::ListHandlers as u8 => Some(Self::ListHandlers),
+            tag if tag == Self::GetStatus as u8 => Some(Self::GetStatus),
+            tag if tag == Self::GetClean as u8 => Some(Self::GetClean),
+            tag if tag == Self::GetFlush as u8 => Some(Self::GetFlush),
+            tag if tag == Self::Clean as u8 => Some(Self::Clean),
+            tag if tag == Self::Flush as u8 => Some(Self::Flush),
+            tag if tag == Self::EndClean as u8 => Some(Self::EndClean),
+            tag if tag == Self::EndFlush as u8 => Some(Self::EndFlush),
+            _ => None,
+        }
+    }
+
+    fn callable(self) -> &'static str {
+        match self {
+            Self::Start => "ob_start()",
+            Self::GetLevel => "ob_get_level()",
+            Self::GetContents => "ob_get_contents()",
+            Self::GetLength => "ob_get_length()",
+            Self::ListHandlers => "ob_list_handlers()",
+            Self::GetStatus => "ob_get_status()",
+            Self::GetClean => "ob_get_clean()",
+            Self::GetFlush => "ob_get_flush()",
+            Self::Clean => "ob_clean()",
+            Self::Flush => "ob_flush()",
+            Self::EndClean => "ob_end_clean()",
+            Self::EndFlush => "ob_end_flush()",
+        }
+    }
+
+    fn expected_arity(self) -> ArityExpectation {
+        match self {
+            Self::Start => ArityExpectation::Between { min: 0, max: 3 },
+            Self::GetStatus => ArityExpectation::Between { min: 0, max: 1 },
+            Self::GetLevel
+            | Self::GetContents
+            | Self::GetLength
+            | Self::ListHandlers
+            | Self::GetClean
+            | Self::GetFlush
+            | Self::Clean
+            | Self::Flush
+            | Self::EndClean
+            | Self::EndFlush => ArityExpectation::Exactly(0),
+        }
+    }
+
+    fn accepts_arity(self, actual: usize) -> bool {
+        match self.expected_arity() {
+            ArityExpectation::Exactly(expected) => actual == expected,
+            ArityExpectation::AtLeast(expected) => actual >= expected,
+            ArityExpectation::Between { min, max } => (min..=max).contains(&actual),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct NativeOutputBuffer {
+    bytes: Vec<u8>,
+}
+
+thread_local! {
+    static NATIVE_OUTPUT_BUFFERS: RefCell<Vec<NativeOutputBuffer>> = RefCell::new(Vec::new());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -20450,6 +20818,144 @@ mod tests {
     }
 
     #[test]
+    fn native_output_buffers_capture_echo_formatter_and_buffer_operations() {
+        native_clear_output_buffers();
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        fn call(
+            operation: NativeOutputBufferOperation,
+            args: &[NativeValueHandle],
+            diagnostic: &mut NativeDiagnosticHandle,
+        ) -> NativeValueHandle {
+            let mut handles = [
+                NativeValueHandle::null(),
+                NativeValueHandle::null(),
+                NativeValueHandle::null(),
+            ];
+            for (index, arg) in args.iter().enumerate() {
+                handles[index] = *arg;
+            }
+            unsafe {
+                phpc_native_output_buffer_operation_with_diagnostic(
+                    handles[0],
+                    handles[1],
+                    handles[2],
+                    args.len() as u8,
+                    operation as u8,
+                    diagnostic,
+                )
+            }
+        }
+
+        let started = call(NativeOutputBufferOperation::Start, &[], &mut diagnostic);
+        assert_eq!(unsafe { started.as_ref() }, Some(&Value::Bool(true)));
+        assert!(diagnostic.is_null());
+
+        let payload = NativeValueHandle::from_value(Value::String("A\0B".to_string()));
+        assert_eq!(
+            unsafe { phpc_native_value_format_stdout_with_diagnostic(payload, 0, &mut diagnostic) },
+            3
+        );
+        assert!(diagnostic.is_null());
+        let number = phpc_native_value_from_scalar(phpc_native_int(7));
+        assert_eq!(
+            unsafe { phpc_native_value_format_stdout_with_diagnostic(number, 0, &mut diagnostic) },
+            1
+        );
+        assert!(diagnostic.is_null());
+
+        let contents = call(
+            NativeOutputBufferOperation::GetContents,
+            &[],
+            &mut diagnostic,
+        );
+        assert_eq!(native_value_string_bytes_for_test(contents), b"A\0B7");
+        let length = call(NativeOutputBufferOperation::GetLength, &[], &mut diagnostic);
+        assert_eq!(unsafe { length.as_ref() }, Some(&Value::Int(4)));
+        let handlers = call(
+            NativeOutputBufferOperation::ListHandlers,
+            &[],
+            &mut diagnostic,
+        );
+        assert_eq!(native_value_array_for_test(handlers).len(), 1);
+        let status = call(NativeOutputBufferOperation::GetStatus, &[], &mut diagnostic);
+        assert_eq!(
+            native_value_array_for_test(status).get("buffer_used"),
+            Some(&Value::Int(4))
+        );
+
+        let cleaned = call(NativeOutputBufferOperation::Clean, &[], &mut diagnostic);
+        assert_eq!(unsafe { cleaned.as_ref() }, Some(&Value::Bool(true)));
+        let hidden = NativeValueHandle::from_value(Value::String("hidden".to_string()));
+        assert_eq!(
+            unsafe { phpc_native_value_format_stdout_with_diagnostic(hidden, 0, &mut diagnostic) },
+            6
+        );
+        let captured = call(NativeOutputBufferOperation::GetClean, &[], &mut diagnostic);
+        assert_eq!(native_value_string_bytes_for_test(captured), b"hidden");
+
+        let outer = call(NativeOutputBufferOperation::Start, &[], &mut diagnostic);
+        let outer_byte = NativeValueHandle::from_value(Value::String("A".to_string()));
+        assert_eq!(
+            unsafe {
+                phpc_native_value_format_stdout_with_diagnostic(outer_byte, 0, &mut diagnostic)
+            },
+            1
+        );
+        let inner = call(NativeOutputBufferOperation::Start, &[], &mut diagnostic);
+        let inner_byte = NativeValueHandle::from_value(Value::String("B".to_string()));
+        assert_eq!(
+            unsafe {
+                phpc_native_value_format_stdout_with_diagnostic(inner_byte, 0, &mut diagnostic)
+            },
+            1
+        );
+        let flushed = call(NativeOutputBufferOperation::EndFlush, &[], &mut diagnostic);
+        assert_eq!(unsafe { flushed.as_ref() }, Some(&Value::Bool(true)));
+        let final_contents = call(NativeOutputBufferOperation::GetClean, &[], &mut diagnostic);
+        assert_eq!(native_value_string_bytes_for_test(final_contents), b"AB");
+        let level = call(NativeOutputBufferOperation::GetLevel, &[], &mut diagnostic);
+        assert_eq!(unsafe { level.as_ref() }, Some(&Value::Int(0)));
+
+        let callback = NativeValueHandle::from_value(Value::String("strlen".to_string()));
+        let callback_start = call(
+            NativeOutputBufferOperation::Start,
+            &[callback],
+            &mut diagnostic,
+        );
+        assert!(callback_start.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "unsupported call ob_start(): callback output handlers await callable dispatch, chunk phase ownership, and exact output-buffer diagnostics"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        for handle in [
+            started,
+            payload,
+            number,
+            contents,
+            length,
+            handlers,
+            status,
+            cleaned,
+            hidden,
+            captured,
+            outer,
+            outer_byte,
+            inner,
+            inner_byte,
+            flushed,
+            final_contents,
+            level,
+            callback,
+        ] {
+            unsafe { phpc_native_value_free(handle) };
+        }
+        native_clear_output_buffers();
+    }
+
+    #[test]
     fn native_exit_value_result_accepts_bounded_status_values() {
         let null = NativeValueHandle::from_value(Value::Null);
         let null_result = unsafe { phpc_native_exit_value_result_and_free(null) };
@@ -20577,6 +21083,20 @@ mod tests {
         };
         unsafe { phpc_native_byte_buffer_free(buffer) };
         String::from_utf8(bytes).expect("runtime diagnostics should be valid UTF-8")
+    }
+
+    fn native_value_string_bytes_for_test(handle: NativeValueHandle) -> Vec<u8> {
+        match unsafe { handle.as_ref() } {
+            Some(Value::String(value)) => value.as_bytes().to_vec(),
+            other => panic!("expected native string value, got {other:?}"),
+        }
+    }
+
+    fn native_value_array_for_test(handle: NativeValueHandle) -> PhpArray {
+        match unsafe { handle.as_ref() } {
+            Some(Value::Array(value)) => value.clone(),
+            other => panic!("expected native array value, got {other:?}"),
+        }
     }
 
     fn native_object_handle_for_test(raw: usize) -> NativeObjectHandle {
