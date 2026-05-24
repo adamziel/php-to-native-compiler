@@ -4,8 +4,9 @@ use std::process::{Command, Stdio};
 
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, ClassDecl, ClassMember, ClassMethodDecl,
-    ClassVisibility, CompoundAssignOp, Expr, ForAction, FunctionDecl, FunctionParam,
-    IncrementDecrementOp, IncrementDecrementPosition, NewClassName, Program, ReferenceSource, Span,
+    ClassVisibility, ClosureCapture, CompoundAssignOp, Expr, ForAction, FunctionDecl,
+    FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, InterpolatedAccessSegment,
+    InterpolatedArrayKey, InterpolatedStringPart, NewClassName, Program, ReferenceSource, Span,
     Stmt, SwitchCase, TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
@@ -63,7 +64,7 @@ const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lo
 const LLVM_STATIC_LOCAL_REJECTION: &str = "LLVM static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const ASSEMBLY_STATIC_LOCAL_REJECTION: &str = "assembly static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const LLVM_CLOSURE_REJECTION: &str = "LLVM closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
-const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including arrow functions, by-reference closure captures, implicit arrow captures, typed/default/variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, and untyped by-reference closure parameters through dynamic callable dispatch";
+const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including static arrow functions, by-reference closure captures, typed/default/variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, implicit by-value arrow captures, and untyped by-reference closure parameters through dynamic callable dispatch";
 const LLVM_REQUIRE_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
 const ASSEMBLY_REQUIRE_REJECTION: &str = "assembly include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
 const LLVM_REQUIRE_EXPRESSION_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution for expression forms with include return values, _once de-duplication results, and caller-scope side effects until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles current include/require expression behavior";
@@ -2854,6 +2855,269 @@ fn collect_direct_call_names_from_expr(expr: &Expr, names: &mut Vec<String>) {
         | Expr::String(_, _)
         | Expr::InterpolatedString { .. }
         | Expr::Variable(_, _)
+        | Expr::MagicLine { .. }
+        | Expr::MagicFile { .. }
+        | Expr::MagicDir { .. }
+        | Expr::MagicFunction { .. }
+        | Expr::MagicClass { .. }
+        | Expr::MagicMethod { .. }
+        | Expr::GlobalConstant { .. }
+        | Expr::ClassNameConstant { .. }
+        | Expr::SelfClassNameConstant { .. }
+        | Expr::ParentClassNameConstant { .. }
+        | Expr::StaticClassNameConstant { .. }
+        | Expr::ClassConstant { .. }
+        | Expr::SelfClassConstant { .. }
+        | Expr::ParentClassConstant { .. }
+        | Expr::LateStaticClassConstant { .. }
+        | Expr::StaticProperty { .. }
+        | Expr::SelfStaticProperty { .. }
+        | Expr::ParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. } => {}
+    }
+}
+
+fn collect_native_arrow_capture_candidates_from_stmts(
+    statements: &[Stmt],
+    captures: &mut Vec<(String, Span)>,
+) {
+    for statement in statements {
+        if let Stmt::Return {
+            value: Some(value), ..
+        } = statement
+        {
+            collect_native_arrow_capture_candidates_from_expr(value, captures);
+        }
+    }
+}
+
+fn collect_native_arrow_capture_candidates_from_assign_target(
+    target: &AssignTarget,
+    captures: &mut Vec<(String, Span)>,
+) {
+    match target {
+        AssignTarget::Variable { name, span } => captures.push((name.clone(), *span)),
+        AssignTarget::List { names, span } => {
+            for name in names.iter().flatten() {
+                captures.push((name.clone(), *span));
+            }
+        }
+        AssignTarget::ArrayIndex { name, index, span } => {
+            captures.push((name.clone(), *span));
+            if let Some(index) = index {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
+        AssignTarget::NestedArrayIndex {
+            name,
+            indices,
+            span,
+        }
+        | AssignTarget::ObjectPropertyArrayIndex {
+            object: name,
+            indices,
+            span,
+            ..
+        } => {
+            captures.push((name.clone(), *span));
+            for index in indices {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
+        AssignTarget::NestedArrayAppend {
+            name,
+            indices,
+            suffix_indices,
+            span,
+        }
+        | AssignTarget::ObjectPropertyArrayAppend {
+            object: name,
+            indices,
+            suffix_indices,
+            span,
+            ..
+        } => {
+            captures.push((name.clone(), *span));
+            for index in indices.iter().chain(suffix_indices.iter()) {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
+        AssignTarget::Property { object, span, .. } => {
+            captures.push((object.clone(), *span));
+        }
+        AssignTarget::DynamicProperty {
+            object,
+            property,
+            span,
+        }
+        | AssignTarget::DynamicObjectPropertyArrayIndex {
+            object,
+            property,
+            span,
+            ..
+        }
+        | AssignTarget::DynamicObjectPropertyArrayAppend {
+            object,
+            property,
+            span,
+            ..
+        } => {
+            captures.push((object.clone(), *span));
+            collect_native_arrow_capture_candidates_from_expr(property, captures);
+        }
+        AssignTarget::NonDirectProperty { holder, .. }
+        | AssignTarget::ObjectStaticProperty { target: holder, .. }
+        | AssignTarget::NonDirectObjectPropertyArrayIndex { holder, .. }
+        | AssignTarget::NonDirectObjectPropertyArrayAppend { holder, .. } => {
+            collect_native_arrow_capture_candidates_from_expr(holder, captures);
+        }
+        AssignTarget::NonDirectDynamicProperty {
+            holder, property, ..
+        }
+        | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder, property, ..
+        }
+        | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+            holder, property, ..
+        } => {
+            collect_native_arrow_capture_candidates_from_expr(holder, captures);
+            collect_native_arrow_capture_candidates_from_expr(property, captures);
+        }
+        AssignTarget::StaticProperty { .. }
+        | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::ParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. } => {}
+    }
+}
+
+fn collect_native_arrow_capture_candidates_from_expr(
+    expr: &Expr,
+    captures: &mut Vec<(String, Span)>,
+) {
+    match expr {
+        Expr::Variable(name, span) => captures.push((name.clone(), *span)),
+        Expr::InterpolatedString { parts, span } => {
+            for part in parts {
+                match part {
+                    InterpolatedStringPart::Literal(_) => {}
+                    InterpolatedStringPart::Variable(name)
+                    | InterpolatedStringPart::ArrayOffset { variable: name, .. }
+                    | InterpolatedStringPart::ObjectProperty { variable: name, .. }
+                    | InterpolatedStringPart::AccessChain { variable: name, .. } => {
+                        captures.push((name.clone(), *span));
+                    }
+                }
+                if let InterpolatedStringPart::ArrayOffset {
+                    key: InterpolatedArrayKey::Variable(name),
+                    ..
+                } = part
+                {
+                    captures.push((name.clone(), *span));
+                }
+            }
+        }
+        Expr::Call { args, .. }
+        | Expr::StaticMethodCall { args, .. }
+        | Expr::ParentMethodCall { args, .. }
+        | Expr::SelfMethodCall { args, .. }
+        | Expr::LateStaticMethodCall { args, .. }
+        | Expr::New { args, .. } => {
+            for arg in args {
+                collect_native_arrow_capture_candidates_from_expr(arg, captures);
+            }
+        }
+        Expr::DynamicCall { callee, args, .. } => {
+            collect_native_arrow_capture_candidates_from_expr(callee, captures);
+            for arg in args {
+                collect_native_arrow_capture_candidates_from_expr(arg, captures);
+            }
+        }
+        Expr::MethodCall { target, args, .. }
+        | Expr::ObjectStaticMethodCall { target, args, .. } => {
+            collect_native_arrow_capture_candidates_from_expr(target, captures);
+            for arg in args {
+                collect_native_arrow_capture_candidates_from_expr(arg, captures);
+            }
+        }
+        Expr::DynamicMethodCall {
+            target,
+            method,
+            args,
+            ..
+        } => {
+            collect_native_arrow_capture_candidates_from_expr(target, captures);
+            collect_native_arrow_capture_candidates_from_expr(method, captures);
+            for arg in args {
+                collect_native_arrow_capture_candidates_from_expr(arg, captures);
+            }
+        }
+        Expr::Array { items, .. } => {
+            for item in items {
+                if let Some(key) = &item.key {
+                    collect_native_arrow_capture_candidates_from_expr(key, captures);
+                }
+                collect_native_arrow_capture_candidates_from_expr(&item.value, captures);
+            }
+        }
+        Expr::Index { target, index, .. } => {
+            collect_native_arrow_capture_candidates_from_expr(target, captures);
+            collect_native_arrow_capture_candidates_from_expr(index, captures);
+        }
+        Expr::AppendIndex { target, .. }
+        | Expr::Property { target, .. }
+        | Expr::ObjectStaticProperty { target, .. }
+        | Expr::InstanceOf { expr: target, .. }
+        | Expr::Clone { expr: target, .. }
+        | Expr::Unary { expr: target, .. }
+        | Expr::ErrorControl { expr: target, .. }
+        | Expr::Include { path: target, .. }
+        | Expr::Require { path: target, .. }
+        | Expr::Cast { expr: target, .. } => {
+            collect_native_arrow_capture_candidates_from_expr(target, captures);
+        }
+        Expr::DynamicProperty {
+            target, property, ..
+        } => {
+            collect_native_arrow_capture_candidates_from_expr(target, captures);
+            collect_native_arrow_capture_candidates_from_expr(property, captures);
+        }
+        Expr::Binary { left, right, .. } => {
+            collect_native_arrow_capture_candidates_from_expr(left, captures);
+            collect_native_arrow_capture_candidates_from_expr(right, captures);
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            collect_native_arrow_capture_candidates_from_expr(condition, captures);
+            collect_native_arrow_capture_candidates_from_expr(if_true, captures);
+            collect_native_arrow_capture_candidates_from_expr(if_false, captures);
+        }
+        Expr::ShortTernary {
+            condition,
+            if_false,
+            ..
+        } => {
+            collect_native_arrow_capture_candidates_from_expr(condition, captures);
+            collect_native_arrow_capture_candidates_from_expr(if_false, captures);
+        }
+        Expr::Assign { target, expr, .. }
+        | Expr::CompoundAssign { target, expr, .. }
+        | Expr::NullCoalesceAssign { target, expr, .. } => {
+            collect_native_arrow_capture_candidates_from_assign_target(target, captures);
+            collect_native_arrow_capture_candidates_from_expr(expr, captures);
+        }
+        Expr::IncrementDecrement { target, .. } => {
+            collect_native_arrow_capture_candidates_from_assign_target(target, captures);
+        }
+        Expr::Closure { .. }
+        | Expr::Null(_)
+        | Expr::Bool(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::String(_, _)
         | Expr::MagicLine { .. }
         | Expr::MagicFile { .. }
         | Expr::MagicDir { .. }
@@ -11583,7 +11847,7 @@ impl CGenerator {
         return_type: Option<&TypeDecl>,
         returns_by_reference: bool,
         is_static: bool,
-        is_arrow: bool,
+        _is_arrow: bool,
         body: &[Stmt],
         span: Span,
     ) -> CompileResult<()> {
@@ -11596,7 +11860,6 @@ impl CGenerator {
         });
 
         if is_static
-            || is_arrow
             || captures.iter().any(|capture| capture.by_reference)
             || returns_by_reference
             || stmt_list_contains_global_import(body)
@@ -11622,6 +11885,39 @@ impl CGenerator {
         }
 
         Ok(())
+    }
+
+    fn native_arrow_implicit_captures(
+        &self,
+        params: &[FunctionParam],
+        body: &[Stmt],
+    ) -> Vec<ClosureCapture> {
+        let parameter_names = params
+            .iter()
+            .map(|param| param.name.as_str())
+            .collect::<HashSet<_>>();
+        let mut candidates = Vec::new();
+        collect_native_arrow_capture_candidates_from_stmts(body, &mut candidates);
+
+        let mut seen = HashSet::new();
+        let mut captures = Vec::new();
+        for (name, span) in candidates {
+            if parameter_names.contains(name.as_str())
+                || name.eq_ignore_ascii_case("this")
+                || is_request_superglobal_name(&name)
+                || is_globals_superglobal_name(&name)
+                || !self.variables.contains_key(&name)
+                || !seen.insert(name.clone())
+            {
+                continue;
+            }
+            captures.push(ClosureCapture {
+                name,
+                by_reference: false,
+                span,
+            });
+        }
+        captures
     }
 
     fn accept_recursive_user_function_frames(&self) -> CompileResult<()> {
@@ -11774,6 +12070,9 @@ impl CGenerator {
         self.merge_branch_feature_flags(&generator);
 
         let mut definition = String::new();
+        for nested in &generator.function_definitions {
+            definition.push_str(nested);
+        }
         definition.push_str(&Self::c_user_function_signature(
             &function.c_name,
             &function.decl.params,
@@ -11800,9 +12099,16 @@ impl CGenerator {
         body: &[Stmt],
         span: Span,
     ) -> CompileResult<CNativeValueMaterialization> {
+        let synthesized_captures = if is_arrow {
+            Some(self.native_arrow_implicit_captures(params, body))
+        } else {
+            None
+        };
+        let descriptor_captures = synthesized_captures.as_deref().unwrap_or(captures);
+
         self.validate_closure_descriptor_frame(
             params,
-            captures,
+            descriptor_captures,
             return_type,
             returns_by_reference,
             is_static,
@@ -11818,7 +12124,7 @@ impl CGenerator {
         let definition = self.emit_closure_frame_callback_definition(
             &callback_name,
             params,
-            captures,
+            descriptor_captures,
             return_type.cloned(),
             body,
             span,
@@ -11854,14 +12160,14 @@ impl CGenerator {
             params.len()
         ));
         let value = self.next_native_name("closure_value");
-        if captures.is_empty() {
+        if descriptor_captures.is_empty() {
             self.body.push(format!(
                 "phpc_NativeValueHandle {value} = phpc_native_value_from_closure_descriptor({descriptor});"
             ));
         } else {
-            let mut capture_names = Vec::with_capacity(captures.len());
-            let mut capture_values = Vec::with_capacity(captures.len());
-            for capture in captures {
+            let mut capture_names = Vec::with_capacity(descriptor_captures.len());
+            let mut capture_values = Vec::with_capacity(descriptor_captures.len());
+            for capture in descriptor_captures {
                 let name_handle = self.next_native_name("closure_capture_name");
                 let (bytes, byte_len) = if capture.name.is_empty() {
                     ("NULL".to_string(), "0".to_string())
@@ -11898,7 +12204,7 @@ impl CGenerator {
             ));
             self.body.push(format!(
                 "phpc_NativeValueHandle {value} = phpc_native_value_from_closure_descriptor_captures_and_free({descriptor}, {names}, {values}, {});",
-                captures.len()
+                descriptor_captures.len()
             ));
         }
         let error_exit = self.native_error_exit("");
@@ -12043,6 +12349,9 @@ impl CGenerator {
         self.merge_branch_feature_flags(&generator);
 
         let mut definition = String::new();
+        for nested in &generator.function_definitions {
+            definition.push_str(nested);
+        }
         definition.push_str(&Self::c_declared_class_method_signature(
             &method.c_name,
             &method.decl.params,

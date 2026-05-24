@@ -4,7 +4,7 @@ use std::process::Command;
 
 use php_compiler::{codegen::emit_native_executable_c_source, error::Phase, parse};
 
-const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including arrow functions, by-reference closure captures, implicit arrow captures, typed/default/variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, and untyped by-reference closure parameters through dynamic callable dispatch";
+const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including static arrow functions, by-reference closure captures, typed/default/variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, implicit by-value arrow captures, and untyped by-reference closure parameters through dynamic callable dispatch";
 
 const NATIVE_VALUE_TRUTHINESS_SOURCE: &str = concat!(
     "<?php\n",
@@ -5188,6 +5188,93 @@ fn emit_exe_links_and_runs_descriptor_closure_by_reference_parameter_program() {
         run.stdout,
         b"direct:direct|frame:frame|dynamic:dynamic|relay:relay|array:nested"
     );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_executable_c_source_captures_arrow_variables_through_descriptor_abi() {
+    let source = concat!(
+        "<?php\n",
+        "function invoke_arrow($callback, $value) { return $callback($value); }\n",
+        "function make_arrow($prefix) { return fn($suffix) => $prefix . $suffix; }\n",
+        "class ArrowApply {\n",
+        "    public static function apply($callback, $value) { return $callback($value); }\n",
+        "}\n",
+        "$top = \"T\";\n",
+        "$direct = fn($suffix) => $top . $suffix;\n",
+        "$nested = fn() => fn($suffix) => $top . $suffix;\n",
+        "echo $direct(\"0\"), \"|\";\n",
+        "echo invoke_arrow(fn($suffix) => $top . $suffix, \"1\"), \"|\";\n",
+        "echo ArrowApply::apply(fn($suffix) => $top . $suffix, \"2\"), \"|\";\n",
+        "$made = make_arrow(\"M\");\n",
+        "echo $made(\"3\"), \"|\";\n",
+        "$top = \"changed\";\n",
+        "echo $direct(\"4\"), \"|\";\n",
+        "echo $nested()(\"5\");\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_from_closure_descriptor_captures_and_free"),
+        "arrow closures should reuse the descriptor capture ABI:\n{source}"
+    );
+    assert!(
+        source.contains("closure_capture_names_") && source.contains("closure_capture_values_"),
+        "implicit arrow captures should materialize ordinary capture metadata:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_user_function_0_invoke_arrow(")
+            && source.contains("phpc_user_function_1_make_arrow(")
+            && source.contains("phpc_declared_method_"),
+        "arrow closures should flow through function, returned-closure, and static-method consumers:\n{source}"
+    );
+    assert!(
+        !source.contains(ASSEMBLY_CLOSURE_REJECTION),
+        "supported arrow closure captures should not hit the closure blocker:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_arrow_closure_implicit_capture_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function invoke_arrow($callback, $value) { return $callback($value); }\n",
+        "function make_arrow($prefix) { return fn($suffix) => $prefix . $suffix; }\n",
+        "class ArrowApply {\n",
+        "    public static function apply($callback, $value) { return $callback($value); }\n",
+        "}\n",
+        "$top = \"T\";\n",
+        "$direct = fn($suffix) => $top . $suffix;\n",
+        "$nested = fn() => fn($suffix) => $top . $suffix;\n",
+        "echo $direct(\"0\"), \"|\";\n",
+        "echo invoke_arrow(fn($suffix) => $top . $suffix, \"1\"), \"|\";\n",
+        "echo ArrowApply::apply(fn($suffix) => $top . $suffix, \"2\"), \"|\";\n",
+        "$made = make_arrow(\"M\");\n",
+        "echo $made(\"3\"), \"|\";\n",
+        "$top = \"changed\";\n",
+        "echo $direct(\"4\"), \"|\";\n",
+        "echo $nested()(\"5\");\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("arrow_closure_implicit_captures", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"T0|T1|T2|M3|T4|T5");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);
