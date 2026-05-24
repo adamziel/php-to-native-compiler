@@ -507,16 +507,47 @@ fn generated_ir_blocks_string_predicate_unsupported_forms_at_shared_boundary() {
 }
 
 #[test]
-fn generated_ir_keeps_nested_string_result_operands_on_call_result_blocker() {
-    let error = emit_ir_source("<?php\necho strtoupper(strtolower('MiXeD'));\n").unwrap_err();
+fn generated_ir_routes_nested_string_call_results_through_native_value_operands() {
+    let ir = emit_ir_source(
+        r#"<?php
+echo strtoupper(strtolower("MiXeD")), "|";
+echo str_contains(strrev("abc"), "b"), "|";
+echo strlen(strrev("abc")), "|";
+echo strrev(strlen(strrev("abc"))), "|";
+echo strcasecmp(strrev("AbC"), strtolower("abc")), "|";
+echo strrev(strpos("abc", "b"));
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains(
-            "LLVM function-call lowering rejects function calls, including user functions"
-        ),
-        "{}",
-        error.message
+        ir.matches("phpc_native_value_string_result_operation_with_diagnostic")
+            .count()
+            >= 4,
+        "{ir}"
+    );
+    assert!(
+        ir.contains("phpc_native_value_string_predicate_with_diagnostic"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("phpc_native_value_string_search_result_with_diagnostic"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("phpc_native_value_string_int_operation_with_diagnostic"),
+        "{ir}"
+    );
+    assert!(ir.contains("phpc_native_value_to_string_bytes"), "{ir}");
+    assert!(
+        ir.matches("call void @phpc_native_value_free(%phpc.NativeValueHandle")
+            .count()
+            >= 7,
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("function-call lowering rejects function calls"),
+        "{ir}"
     );
 }
 

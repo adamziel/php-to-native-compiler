@@ -508,6 +508,315 @@ fn native_direct_call_argument_result_operation(
         .map(|blocker| NativeCallOperation::direct_named_value(span, blocker))
 }
 
+fn llvm_lowerable_direct_string_call_argument_result_operation(
+    args: &[Expr],
+    span: Span,
+) -> Option<NativeCallOperation> {
+    args.iter()
+        .any(native_expr_contains_call_result)
+        .then_some(())
+        .filter(|_| {
+            !args
+                .iter()
+                .all(llvm_expr_call_results_are_lowerable_direct_string_values)
+        })
+        .map(|_| {
+            NativeCallOperation::direct_named_value(
+                span,
+                NativeCallBlocker::ArgumentEvaluationCleanup,
+            )
+        })
+}
+
+fn llvm_lowerable_strlen_argument_result_operation(
+    args: &[Expr],
+    span: Span,
+) -> Option<NativeCallOperation> {
+    args.iter()
+        .any(native_expr_contains_call_result)
+        .then_some(())
+        .filter(|_| {
+            !args
+                .iter()
+                .all(llvm_expr_call_results_are_lowerable_native_values)
+        })
+        .map(|_| {
+            NativeCallOperation::direct_named_value(
+                span,
+                NativeCallBlocker::ArgumentEvaluationCleanup,
+            )
+        })
+}
+
+fn llvm_expr_call_results_are_lowerable_direct_string_values(expr: &Expr) -> bool {
+    llvm_expr_call_results_are_lowerable(expr, true)
+}
+
+fn llvm_expr_call_results_are_lowerable_native_values(expr: &Expr) -> bool {
+    llvm_expr_call_results_are_lowerable(expr, false)
+}
+
+fn llvm_expr_call_results_are_lowerable(expr: &Expr, allow_scalar_results: bool) -> bool {
+    match expr {
+        Expr::Call { name, args, .. } => {
+            if !llvm_direct_call_result_is_lowerable(name, args, allow_scalar_results) {
+                return false;
+            }
+            args.iter()
+                .all(|arg| llvm_expr_call_results_are_lowerable(arg, allow_scalar_results))
+        }
+        Expr::DynamicCall { .. }
+        | Expr::MethodCall { .. }
+        | Expr::DynamicMethodCall { .. }
+        | Expr::ParentMethodCall { .. }
+        | Expr::StaticMethodCall { .. }
+        | Expr::ObjectStaticMethodCall { .. }
+        | Expr::SelfMethodCall { .. }
+        | Expr::LateStaticMethodCall { .. }
+        | Expr::New { .. }
+        | Expr::Closure { .. } => false,
+        Expr::Array { items, .. } => items.iter().all(|item| {
+            item.key.as_ref().map_or(true, |key| {
+                llvm_expr_call_results_are_lowerable(key, allow_scalar_results)
+            }) && llvm_expr_call_results_are_lowerable(&item.value, allow_scalar_results)
+        }),
+        Expr::Index { target, index, .. } => {
+            llvm_expr_call_results_are_lowerable(target, allow_scalar_results)
+                && llvm_expr_call_results_are_lowerable(index, allow_scalar_results)
+        }
+        Expr::AppendIndex { target, .. }
+        | Expr::Property { target, .. }
+        | Expr::ObjectStaticProperty { target, .. }
+        | Expr::InstanceOf { expr: target, .. } => {
+            llvm_expr_call_results_are_lowerable(target, allow_scalar_results)
+        }
+        Expr::DynamicProperty {
+            target, property, ..
+        } => {
+            llvm_expr_call_results_are_lowerable(target, allow_scalar_results)
+                && llvm_expr_call_results_are_lowerable(property, allow_scalar_results)
+        }
+        Expr::Clone { expr, .. }
+        | Expr::Unary { expr, .. }
+        | Expr::ErrorControl { expr, .. }
+        | Expr::Include { path: expr, .. }
+        | Expr::Require { path: expr, .. }
+        | Expr::Cast { expr, .. } => {
+            llvm_expr_call_results_are_lowerable(expr, allow_scalar_results)
+        }
+        Expr::Binary { left, right, .. } => {
+            llvm_expr_call_results_are_lowerable(left, allow_scalar_results)
+                && llvm_expr_call_results_are_lowerable(right, allow_scalar_results)
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            llvm_expr_call_results_are_lowerable(condition, allow_scalar_results)
+                && llvm_expr_call_results_are_lowerable(if_true, allow_scalar_results)
+                && llvm_expr_call_results_are_lowerable(if_false, allow_scalar_results)
+        }
+        Expr::ShortTernary {
+            condition,
+            if_false,
+            ..
+        } => {
+            llvm_expr_call_results_are_lowerable(condition, allow_scalar_results)
+                && llvm_expr_call_results_are_lowerable(if_false, allow_scalar_results)
+        }
+        Expr::Assign { target, expr, .. }
+        | Expr::CompoundAssign { target, expr, .. }
+        | Expr::NullCoalesceAssign { target, expr, .. } => {
+            llvm_assign_target_call_results_are_lowerable(target, allow_scalar_results)
+                && llvm_expr_call_results_are_lowerable(expr, allow_scalar_results)
+        }
+        Expr::IncrementDecrement { target, .. } => {
+            llvm_assign_target_call_results_are_lowerable(target, allow_scalar_results)
+        }
+        Expr::Null(_)
+        | Expr::Bool(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::String(_, _)
+        | Expr::InterpolatedString { .. }
+        | Expr::Variable(_, _)
+        | Expr::MagicLine { .. }
+        | Expr::MagicFile { .. }
+        | Expr::MagicDir { .. }
+        | Expr::MagicFunction { .. }
+        | Expr::MagicClass { .. }
+        | Expr::MagicMethod { .. }
+        | Expr::GlobalConstant { .. }
+        | Expr::ClassNameConstant { .. }
+        | Expr::SelfClassNameConstant { .. }
+        | Expr::ParentClassNameConstant { .. }
+        | Expr::StaticClassNameConstant { .. }
+        | Expr::ClassConstant { .. }
+        | Expr::SelfClassConstant { .. }
+        | Expr::ParentClassConstant { .. }
+        | Expr::LateStaticClassConstant { .. }
+        | Expr::StaticProperty { .. }
+        | Expr::SelfStaticProperty { .. }
+        | Expr::ParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. } => true,
+    }
+}
+
+fn llvm_direct_call_result_is_lowerable(
+    name: &str,
+    args: &[Expr],
+    allow_scalar_results: bool,
+) -> bool {
+    if native_string_result_operation_for_name(name).is_some() && args.len() == 1 {
+        return true;
+    }
+    if native_string_search_operation_for_name(name).is_some() {
+        return match native_string_search_operation_for_name(name) {
+            Some(NativeStringSearchOperation::Position) => (2..=3).contains(&args.len()),
+            Some(NativeStringSearchOperation::Count) => (2..=4).contains(&args.len()),
+            None => false,
+        };
+    }
+    if !allow_scalar_results {
+        return false;
+    }
+    if name.eq_ignore_ascii_case("strlen") && args.len() == 1 {
+        return true;
+    }
+    if native_string_predicate_for_name(name).is_some() {
+        return args.len() == 2;
+    }
+    match native_string_int_operation_for_name(name) {
+        Some(NativeStringIntOperation::CaseCompare | NativeStringIntOperation::ByteCompare) => {
+            args.len() == 2
+        }
+        Some(
+            NativeStringIntOperation::BytePrefixCompare
+            | NativeStringIntOperation::CasePrefixCompare,
+        ) => args.len() == 3,
+        Some(NativeStringIntOperation::Ordinal | NativeStringIntOperation::Crc32) => {
+            args.len() == 1
+        }
+        Some(NativeStringIntOperation::SubstrCount) | None => false,
+    }
+}
+
+fn llvm_assign_target_call_results_are_lowerable(
+    target: &AssignTarget,
+    allow_scalar_results: bool,
+) -> bool {
+    match target {
+        AssignTarget::ArrayIndex { index, .. } => index.as_ref().map_or(true, |index| {
+            llvm_expr_call_results_are_lowerable(index, allow_scalar_results)
+        }),
+        AssignTarget::NestedArrayIndex { indices, .. }
+        | AssignTarget::ObjectPropertyArrayIndex { indices, .. } => indices
+            .iter()
+            .all(|index| llvm_expr_call_results_are_lowerable(index, allow_scalar_results)),
+        AssignTarget::NestedArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::ObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        } => indices
+            .iter()
+            .chain(suffix_indices.iter())
+            .all(|index| llvm_expr_call_results_are_lowerable(index, allow_scalar_results)),
+        AssignTarget::NonDirectProperty { holder, .. } => {
+            llvm_expr_call_results_are_lowerable(holder, allow_scalar_results)
+        }
+        AssignTarget::NonDirectDynamicProperty {
+            holder, property, ..
+        } => {
+            llvm_expr_call_results_are_lowerable(holder, allow_scalar_results)
+                && llvm_expr_call_results_are_lowerable(property, allow_scalar_results)
+        }
+        AssignTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => {
+            llvm_expr_call_results_are_lowerable(property, allow_scalar_results)
+                && indices
+                    .iter()
+                    .all(|index| llvm_expr_call_results_are_lowerable(index, allow_scalar_results))
+        }
+        AssignTarget::NonDirectObjectPropertyArrayIndex {
+            holder, indices, ..
+        } => {
+            llvm_expr_call_results_are_lowerable(holder, allow_scalar_results)
+                && indices
+                    .iter()
+                    .all(|index| llvm_expr_call_results_are_lowerable(index, allow_scalar_results))
+        }
+        AssignTarget::NonDirectObjectPropertyArrayAppend {
+            holder,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            llvm_expr_call_results_are_lowerable(holder, allow_scalar_results)
+                && indices
+                    .iter()
+                    .chain(suffix_indices.iter())
+                    .all(|index| llvm_expr_call_results_are_lowerable(index, allow_scalar_results))
+        }
+        AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder,
+            property,
+            indices,
+            ..
+        } => {
+            llvm_expr_call_results_are_lowerable(holder, allow_scalar_results)
+                && llvm_expr_call_results_are_lowerable(property, allow_scalar_results)
+                && indices
+                    .iter()
+                    .all(|index| llvm_expr_call_results_are_lowerable(index, allow_scalar_results))
+        }
+        AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+            holder,
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            llvm_expr_call_results_are_lowerable(holder, allow_scalar_results)
+                && llvm_expr_call_results_are_lowerable(property, allow_scalar_results)
+                && indices
+                    .iter()
+                    .chain(suffix_indices.iter())
+                    .all(|index| llvm_expr_call_results_are_lowerable(index, allow_scalar_results))
+        }
+        AssignTarget::DynamicObjectPropertyArrayAppend {
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            llvm_expr_call_results_are_lowerable(property, allow_scalar_results)
+                && indices
+                    .iter()
+                    .chain(suffix_indices.iter())
+                    .all(|index| llvm_expr_call_results_are_lowerable(index, allow_scalar_results))
+        }
+        AssignTarget::DynamicProperty { property, .. }
+        | AssignTarget::ObjectStaticProperty {
+            target: property, ..
+        } => llvm_expr_call_results_are_lowerable(property, allow_scalar_results),
+        AssignTarget::Variable { .. }
+        | AssignTarget::List { .. }
+        | AssignTarget::Property { .. }
+        | AssignTarget::StaticProperty { .. }
+        | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::ParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. } => true,
+    }
+}
+
 fn native_expr_call_result_operation(
     expr: &Expr,
     blocker: NativeCallBlocker,
@@ -4788,7 +5097,7 @@ impl LlvmGenerator {
     }
 
     fn emit_strlen_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
-        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
+        if let Some(operation) = llvm_lowerable_strlen_argument_result_operation(args, span) {
             return Err(self.unsupported_call_operation(operation));
         }
 
@@ -4814,7 +5123,9 @@ impl LlvmGenerator {
         args: &[Expr],
         span: Span,
     ) -> CompileResult<IrValue> {
-        if let Some(call_operation) = native_direct_call_argument_result_operation(args, span) {
+        if let Some(call_operation) =
+            llvm_lowerable_direct_string_call_argument_result_operation(args, span)
+        {
             return Err(self.unsupported_call_operation(call_operation));
         }
 
@@ -4923,7 +5234,9 @@ impl LlvmGenerator {
         args: &[Expr],
         span: Span,
     ) -> CompileResult<IrValue> {
-        if let Some(call_operation) = native_direct_call_argument_result_operation(args, span) {
+        if let Some(call_operation) =
+            llvm_lowerable_direct_string_call_argument_result_operation(args, span)
+        {
             return Err(self.unsupported_call_operation(call_operation));
         }
 
@@ -4981,7 +5294,9 @@ impl LlvmGenerator {
         args: &[Expr],
         span: Span,
     ) -> CompileResult<IrValue> {
-        if let Some(call_operation) = native_direct_call_argument_result_operation(args, span) {
+        if let Some(call_operation) =
+            llvm_lowerable_direct_string_call_argument_result_operation(args, span)
+        {
             return Err(self.unsupported_call_operation(call_operation));
         }
 
@@ -5143,7 +5458,9 @@ impl LlvmGenerator {
         args: &[Expr],
         span: Span,
     ) -> CompileResult<IrValue> {
-        if let Some(call_operation) = native_direct_call_argument_result_operation(args, span) {
+        if let Some(call_operation) =
+            llvm_lowerable_direct_string_call_argument_result_operation(args, span)
+        {
             return Err(self.unsupported_call_operation(call_operation));
         }
 
@@ -29685,6 +30002,94 @@ echo " 10" < "zeta";
                 span,
             ),
             None
+        );
+    }
+
+    #[test]
+    fn llvm_nested_direct_string_call_classifier_keeps_shared_call_boundary() {
+        let span = test_span();
+
+        let nested_string_results = vec![Expr::Call {
+            name: "strtolower".to_string(),
+            args: vec![Expr::Call {
+                name: "strrev".to_string(),
+                args: vec![Expr::String("MiXeD".to_string(), span)],
+                span,
+            }],
+            span,
+        }];
+        assert_eq!(
+            llvm_lowerable_direct_string_call_argument_result_operation(
+                &nested_string_results,
+                span,
+            ),
+            None
+        );
+
+        let search_result_operand = vec![Expr::Call {
+            name: "strpos".to_string(),
+            args: vec![
+                Expr::Call {
+                    name: "strtoupper".to_string(),
+                    args: vec![Expr::String("abc".to_string(), span)],
+                    span,
+                },
+                Expr::String("B".to_string(), span),
+            ],
+            span,
+        }];
+        assert_eq!(
+            llvm_lowerable_direct_string_call_argument_result_operation(
+                &search_result_operand,
+                span,
+            ),
+            None
+        );
+
+        let dynamic_call_operand = vec![Expr::Call {
+            name: "strtolower".to_string(),
+            args: vec![Expr::DynamicCall {
+                callee: Box::new(test_variable_expr("callback")),
+                args: Vec::new(),
+                span,
+            }],
+            span,
+        }];
+        assert_eq!(
+            llvm_lowerable_direct_string_call_argument_result_operation(
+                &dynamic_call_operand,
+                span,
+            ),
+            Some(NativeCallOperation::direct_named_value(
+                span,
+                NativeCallBlocker::ArgumentEvaluationCleanup,
+            ))
+        );
+
+        let native_value_strlen_operand = vec![Expr::Call {
+            name: "strrev".to_string(),
+            args: vec![Expr::String("abc".to_string(), span)],
+            span,
+        }];
+        assert_eq!(
+            llvm_lowerable_strlen_argument_result_operation(&native_value_strlen_operand, span),
+            None
+        );
+
+        let scalar_strlen_operand = vec![Expr::Call {
+            name: "str_contains".to_string(),
+            args: vec![
+                Expr::String("abc".to_string(), span),
+                Expr::String("b".to_string(), span),
+            ],
+            span,
+        }];
+        assert_eq!(
+            llvm_lowerable_strlen_argument_result_operation(&scalar_strlen_operand, span),
+            Some(NativeCallOperation::direct_named_value(
+                span,
+                NativeCallBlocker::ArgumentEvaluationCleanup,
+            ))
         );
     }
 
