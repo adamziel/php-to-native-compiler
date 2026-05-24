@@ -431,6 +431,57 @@ const NATIVE_FUNCTION_TRY_FINALLY_FRAME_SOURCE: &str = concat!(
     "echo finish(\"go\"), \"|\", fallthrough(\"abc\"), \"|\", nested_finally(\"done\"), \"|after\";\n",
 );
 
+const NATIVE_TRY_FINALLY_LOOP_TRANSFER_SOURCE: &str = concat!(
+    "<?php\n",
+    "$i = 0;\n",
+    "while ($i < 2) {\n",
+    "    try {\n",
+    "        echo \"try\", $i, \"|\";\n",
+    "        if ($i === 0) {\n",
+    "            $i = 1;\n",
+    "            continue;\n",
+    "        }\n",
+    "        break;\n",
+    "    } finally {\n",
+    "        echo \"finally\", $i, \"|\";\n",
+    "    }\n",
+    "    echo \"bad\";\n",
+    "}\n",
+    "echo \"after\", $i;\n",
+);
+
+const NATIVE_TRY_FINALLY_NESTED_LOOP_TRANSFER_SOURCE: &str = concat!(
+    "<?php\n",
+    "$i = 0;\n",
+    "while ($i < 1) {\n",
+    "    $i = 1;\n",
+    "    try {\n",
+    "        try {\n",
+    "            break;\n",
+    "        } finally {\n",
+    "            echo \"inner|\";\n",
+    "        }\n",
+    "    } finally {\n",
+    "        echo \"outer|\";\n",
+    "    }\n",
+    "}\n",
+    "echo \"after\";\n",
+);
+
+const NATIVE_TRY_FINALLY_INNER_LOOP_TRANSFER_SOURCE: &str = concat!(
+    "<?php\n",
+    "$i = 0;\n",
+    "try {\n",
+    "    while ($i < 1) {\n",
+    "        $i = 1;\n",
+    "        break;\n",
+    "    }\n",
+    "    echo \"inside|\";\n",
+    "} finally {\n",
+    "    echo \"finally\";\n",
+    "}\n",
+);
+
 const NATIVE_TOP_LEVEL_RETURN_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [\"flag\" => \"1\"];\n",
@@ -1775,6 +1826,53 @@ fn native_executable_c_source_runs_finally_inside_user_function_frames() {
 }
 
 #[test]
+fn native_executable_c_source_runs_finally_before_loop_transfers() {
+    let program = parse(NATIVE_TRY_FINALLY_LOOP_TRANSFER_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("continue;") && body.contains("break;"),
+        "loop transfers should still lower to their selected C transfer targets:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_value_format_stdout_with_diagnostic")
+            .count()
+            >= 6,
+        "try bodies, finally bodies, and post-loop output should all emit through stdout:\n{source}"
+    );
+    assert!(
+        !source.contains("try/catch/finally lowering rejects")
+            && !source.contains("assembly control-flow lowering rejects"),
+        "break/continue through active finally should not hit try/control blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_distinguishes_exiting_and_inner_loop_transfers() {
+    for source_text in [
+        NATIVE_TRY_FINALLY_NESTED_LOOP_TRANSFER_SOURCE,
+        NATIVE_TRY_FINALLY_INNER_LOOP_TRANSFER_SOURCE,
+    ] {
+        let program = parse(source_text).unwrap();
+        let source = emit_native_executable_c_source(&program).unwrap();
+        let body = main_body(&source);
+
+        assert!(
+            body.matches("phpc_native_value_format_stdout_with_diagnostic")
+                .count()
+                >= 2,
+            "nested/inner transfer programs should preserve finally output paths:\n{source}"
+        );
+        assert!(
+            !source.contains("try/catch/finally lowering rejects")
+                && !source.contains("assembly control-flow lowering rejects"),
+            "transfer finalizer depth should be accepted for supported loop targets:\n{source}"
+        );
+    }
+}
+
+#[test]
 fn native_executable_c_source_rejects_try_unwind_transfers() {
     for source in [
         "<?php\ntry { return; } catch (Exception $e) { echo \"catch\"; }\n",
@@ -1783,8 +1881,8 @@ fn native_executable_c_source_rejects_try_unwind_transfers() {
         "<?php\ntry { echo \"try\"; } finally { return; }\n",
         "<?php\ntry { throw new Exception(\"boom\"); } catch (Exception $e) { echo \"catch\"; } finally { echo \"finally\"; }\n",
         "<?php\ntry { goto done; } finally { echo \"finally\"; }\ndone:\necho \"after\";\n",
-        "<?php\n$items = [\"x\"];\nwhile (current($items) !== false) { try { break; } finally { echo \"finally\"; } }\n",
-        "<?php\n$items = [\"x\"];\nwhile (current($items) !== false) { try { continue; } finally { echo \"finally\"; } }\n",
+        "<?php\n$i = 0;\nwhile ($i < 1) { try { echo \"try\"; } finally { break; } }\n",
+        "<?php\n$i = 0;\nwhile ($i < 1) { try { echo \"try\"; } finally { continue; } }\n",
     ] {
         let program = parse(source).unwrap();
         let error = emit_native_executable_c_source(&program).unwrap_err();
@@ -1803,7 +1901,7 @@ fn native_executable_c_source_rejects_unsupported_function_try_unwind_transfers(
     for source in [
         "<?php\nfunction bad() { try { exit(\"bye\"); } finally { echo \"finally\"; } }\necho bad();\n",
         "<?php\nfunction bad() { try { return \"ok\"; } finally { return \"override\"; } }\necho bad();\n",
-        "<?php\nfunction bad() { while (true) { try { break; } finally { echo \"finally\"; } } }\necho bad();\n",
+        "<?php\nfunction bad() { $i = 0; while ($i < 1) { try { echo \"try\"; } finally { break; } } }\necho bad();\n",
     ] {
         let program = parse(source).unwrap();
         let error = emit_native_executable_c_source(&program).unwrap_err();
@@ -3042,6 +3140,90 @@ fn emit_exe_links_and_runs_function_try_finally_frame_program() {
         run.stdout,
         b"try:finally:GO|body:cleanup:cba|inner:outer:done|after"
     );
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_try_finally_loop_transfer_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "try_finally_loop_transfer",
+        NATIVE_TRY_FINALLY_LOOP_TRANSFER_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native try/finally loop-transfer executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"try0|finally1|try1|finally1|after1");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_nested_try_finally_loop_transfer_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "try_finally_nested_loop_transfer",
+        NATIVE_TRY_FINALLY_NESTED_LOOP_TRANSFER_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native nested try/finally loop-transfer executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"inner|outer|after");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_inner_loop_transfer_inside_try_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "try_finally_inner_loop_transfer",
+        NATIVE_TRY_FINALLY_INNER_LOOP_TRANSFER_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native inner-loop try/finally executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"inside|finally");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);

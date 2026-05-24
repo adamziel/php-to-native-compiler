@@ -1813,25 +1813,40 @@ fn stmt_list_contains_try_unwind_blocker(statements: &[Stmt]) -> bool {
     stmt_list_contains_try_unwind_blocker_with_return(statements, false)
 }
 
-fn stmt_list_contains_try_unwind_blocker_allowing_return(statements: &[Stmt]) -> bool {
-    stmt_list_contains_try_unwind_blocker_with_return(statements, true)
-}
-
 fn stmt_list_contains_try_unwind_blocker_with_return(
     statements: &[Stmt],
     allow_return: bool,
 ) -> bool {
-    statements
-        .iter()
-        .any(|stmt| stmt_contains_try_unwind_blocker(stmt, allow_return))
+    stmt_list_contains_try_unwind_blocker_with_options(statements, allow_return, false)
 }
 
-fn stmt_contains_try_unwind_blocker(stmt: &Stmt, allow_return: bool) -> bool {
+fn stmt_list_contains_try_unwind_blocker_allowing_return_and_loop_transfer(
+    statements: &[Stmt],
+) -> bool {
+    stmt_list_contains_try_unwind_blocker_with_options(statements, true, true)
+}
+
+fn stmt_list_contains_try_unwind_blocker_with_options(
+    statements: &[Stmt],
+    allow_return: bool,
+    allow_loop_transfer: bool,
+) -> bool {
+    statements
+        .iter()
+        .any(|stmt| stmt_contains_try_unwind_blocker(stmt, allow_return, allow_loop_transfer))
+}
+
+fn stmt_contains_try_unwind_blocker(
+    stmt: &Stmt,
+    allow_return: bool,
+    allow_loop_transfer: bool,
+) -> bool {
     match stmt {
         Stmt::Return { value, .. } => {
             !allow_return || value.as_ref().is_some_and(expr_contains_exit_construct)
         }
-        Stmt::Throw { .. } | Stmt::Goto { .. } | Stmt::Break { .. } | Stmt::Continue { .. } => true,
+        Stmt::Throw { .. } | Stmt::Goto { .. } => true,
+        Stmt::Break { .. } | Stmt::Continue { .. } => !allow_loop_transfer,
         Stmt::Echo { exprs, .. } => exprs.iter().any(expr_contains_exit_construct),
         Stmt::Print { expr, .. } | Stmt::Expr { expr, .. } => expr_contains_exit_construct(expr),
         Stmt::Assign { target, expr, .. }
@@ -1848,8 +1863,16 @@ fn stmt_contains_try_unwind_blocker(stmt: &Stmt, allow_return: bool) -> bool {
             ..
         } => {
             expr_contains_exit_construct(condition)
-                || stmt_list_contains_try_unwind_blocker_with_return(then_branch, allow_return)
-                || stmt_list_contains_try_unwind_blocker_with_return(else_branch, allow_return)
+                || stmt_list_contains_try_unwind_blocker_with_options(
+                    then_branch,
+                    allow_return,
+                    allow_loop_transfer,
+                )
+                || stmt_list_contains_try_unwind_blocker_with_options(
+                    else_branch,
+                    allow_return,
+                    allow_loop_transfer,
+                )
         }
         Stmt::While {
             condition, body, ..
@@ -1858,7 +1881,11 @@ fn stmt_contains_try_unwind_blocker(stmt: &Stmt, allow_return: bool) -> bool {
             condition, body, ..
         } => {
             expr_contains_exit_construct(condition)
-                || stmt_list_contains_try_unwind_blocker_with_return(body, allow_return)
+                || stmt_list_contains_try_unwind_blocker_with_options(
+                    body,
+                    allow_return,
+                    allow_loop_transfer,
+                )
         }
         Stmt::For {
             initializers,
@@ -1870,7 +1897,11 @@ fn stmt_contains_try_unwind_blocker(stmt: &Stmt, allow_return: bool) -> bool {
             initializers.iter().any(for_action_contains_exit_construct)
                 || conditions.iter().any(expr_contains_exit_construct)
                 || increments.iter().any(for_action_contains_exit_construct)
-                || stmt_list_contains_try_unwind_blocker_with_return(body, allow_return)
+                || stmt_list_contains_try_unwind_blocker_with_options(
+                    body,
+                    allow_return,
+                    allow_loop_transfer,
+                )
         }
         Stmt::Switch { value, cases, .. } => {
             expr_contains_exit_construct(value)
@@ -1878,15 +1909,20 @@ fn stmt_contains_try_unwind_blocker(stmt: &Stmt, allow_return: bool) -> bool {
                     case.condition
                         .as_ref()
                         .is_some_and(expr_contains_exit_construct)
-                        || stmt_list_contains_try_unwind_blocker_with_return(
+                        || stmt_list_contains_try_unwind_blocker_with_options(
                             &case.body,
                             allow_return,
+                            allow_loop_transfer,
                         )
                 })
         }
         Stmt::Foreach { iterable, body, .. } => {
             expr_contains_exit_construct(iterable)
-                || stmt_list_contains_try_unwind_blocker_with_return(body, allow_return)
+                || stmt_list_contains_try_unwind_blocker_with_options(
+                    body,
+                    allow_return,
+                    allow_loop_transfer,
+                )
         }
         Stmt::UnsetArrayIndex { index, .. } => expr_contains_exit_construct(index),
         Stmt::UnsetNestedArrayIndex { indices, .. } => {
@@ -1903,10 +1939,13 @@ fn stmt_contains_try_unwind_blocker(stmt: &Stmt, allow_return: bool) -> bool {
         Stmt::Try {
             body, finally_body, ..
         } => {
-            stmt_list_contains_try_unwind_blocker_with_return(body, allow_return)
-                || finally_body
-                    .as_ref()
-                    .is_some_and(|body| stmt_list_contains_try_unwind_blocker(body))
+            stmt_list_contains_try_unwind_blocker_with_options(
+                body,
+                allow_return,
+                allow_loop_transfer,
+            ) || finally_body
+                .as_ref()
+                .is_some_and(|body| stmt_list_contains_try_unwind_blocker(body))
         }
         Stmt::StaticLocal { declarations, .. } => declarations
             .iter()
@@ -2165,7 +2204,7 @@ fn expr_contains_exit_construct(expr: &Expr) -> bool {
 }
 
 fn function_body_contains_native_frame_blocker(statements: &[Stmt]) -> bool {
-    stmt_list_contains_try_unwind_blocker_allowing_return(statements)
+    stmt_list_contains_try_unwind_blocker_allowing_return_and_loop_transfer(statements)
         || statements.iter().any(stmt_contains_function_frame_blocker)
 }
 
@@ -8840,6 +8879,7 @@ struct CLoopTransferTarget {
     continue_label: Option<String>,
     depth_one_break: Option<String>,
     break_label: String,
+    finally_depth: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -15528,6 +15568,7 @@ impl CGenerator {
                 continue_label: Some(continue_label.clone()),
                 depth_one_break: None,
                 break_label: break_label.clone(),
+                finally_depth: body_generator.active_finally_bodies.len(),
             });
         for statement in body {
             body_generator.emit_statement(statement)?;
@@ -15619,6 +15660,7 @@ impl CGenerator {
                 continue_label: Some(continue_label.clone()),
                 depth_one_break: None,
                 break_label: break_label.clone(),
+                finally_depth: body_generator.active_finally_bodies.len(),
             });
         for statement in body {
             body_generator.emit_statement(statement)?;
@@ -15686,6 +15728,7 @@ impl CGenerator {
                 continue_label: Some(continue_label.clone()),
                 depth_one_break: None,
                 break_label: break_label.clone(),
+                finally_depth: body_generator.active_finally_bodies.len(),
             });
         for statement in body {
             body_generator.emit_statement(statement)?;
@@ -15791,6 +15834,7 @@ impl CGenerator {
             continue_label: None,
             depth_one_break: Some(break_label.clone()),
             break_label: break_label.clone(),
+            finally_depth: self.active_finally_bodies.len(),
         };
         let mut generated_cases = Vec::with_capacity(cases.len());
         let mut next_native_temp = self.next_native_temp;
@@ -15917,6 +15961,8 @@ impl CGenerator {
         let Some(target) = self.loop_transfer_targets.get(target_index).cloned() else {
             return Err(self.unsupported(span, ASSEMBLY_CONTROL_FLOW_REJECTION));
         };
+
+        self.emit_active_finally_bodies_exiting_to_depth(target.finally_depth)?;
 
         if statement == "continue" {
             if depth > 1 {
@@ -16052,8 +16098,18 @@ impl CGenerator {
     }
 
     fn emit_active_finally_bodies_before_terminal_transfer(&mut self) -> CompileResult<()> {
+        self.emit_active_finally_bodies_exiting_to_depth(0)
+    }
+
+    fn emit_active_finally_bodies_exiting_to_depth(
+        &mut self,
+        target_depth: usize,
+    ) -> CompileResult<()> {
+        if target_depth > self.active_finally_bodies.len() {
+            return Err(self.unsupported(Span::new(0, 0), ASSEMBLY_TRY_BLOCK_REJECTION));
+        }
         let active_finally_bodies = self.active_finally_bodies.clone();
-        for finally_body in active_finally_bodies.iter().rev() {
+        for finally_body in active_finally_bodies[target_depth..].iter().rev() {
             for statement in finally_body {
                 self.emit_statement(statement)?;
             }
@@ -16070,7 +16126,7 @@ impl CGenerator {
     ) -> CompileResult<()> {
         let can_schedule_return = finally_body.is_some() || !self.active_finally_bodies.is_empty();
         let body_has_blocker = if can_schedule_return {
-            stmt_list_contains_try_unwind_blocker_allowing_return(body)
+            stmt_list_contains_try_unwind_blocker_allowing_return_and_loop_transfer(body)
         } else {
             stmt_list_contains_try_unwind_blocker(body)
         };
