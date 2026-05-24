@@ -75,9 +75,9 @@ const ASSEMBLY_GLOBAL_CONSTANT_REJECTION: &str = "assembly global-constant lower
 const LLVM_GLOBAL_DECLARATION_REJECTION: &str = "LLVM global-declaration lowering rejects global declarations until native root symbol-table imports, local/global aliasing, $GLOBALS interactions, references/copy-on-write, included-file scope interactions, and exact native diagnostics exist; phpc run handles current bounded global declaration behavior";
 const ASSEMBLY_GLOBAL_DECLARATION_REJECTION: &str = "assembly global-declaration lowering rejects global declarations until native root symbol-table imports, local/global aliasing, $GLOBALS interactions, references/copy-on-write, included-file scope interactions, and exact native diagnostics exist; phpc run handles current bounded global declaration behavior";
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
-const ASSEMBLY_OBJECT_CLASS_REJECTION: &str = "assembly object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
+const ASSEMBLY_OBJECT_CLASS_REJECTION: &str = "assembly object/class lowering rejects class declarations outside the bounded generated-C declared-object subset, including inheritance metadata, unsupported constructor dispatch, unsupported public property and instance method forms, object metadata builtins, visibility contexts, references/copy-on-write, and exact native object errors; generated-native C lowers supported declared object allocation, public properties, named instanceof, public declared instance methods, and supported constructors";
 const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
-const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
+const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions outside the bounded generated-C declared-object constructor subset, including dynamic class names, constructorless argument lists, unsupported constructor declarations, non-public constructors, constructor returns, visibility contexts, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors; generated-native C lowers supported declared object allocation and public constructors with $this frame binding";
 const LLVM_OBJECT_PROPERTY_REJECTION: &str = "LLVM object-property lowering rejects instance property reads/writes and dynamic property-name access until native object layout, property tables/slots, visibility checks, magic property hooks, dynamic property policy, references/copy-on-write, and exact native object-property errors exist; phpc run handles current bounded object-property behavior";
 const ASSEMBLY_OBJECT_PROPERTY_REJECTION: &str = "assembly object-property lowering rejects instance property reads/writes and dynamic property-name access until native object layout, property tables/slots, visibility checks, magic property hooks, dynamic property policy, references/copy-on-write, and exact native object-property errors exist; phpc run handles current bounded object-property behavior";
 const LLVM_OBJECT_METADATA_REJECTION: &str = "LLVM object-metadata lowering rejects object/class metadata builtins until native class metadata tables, object handles, inheritance/interface/trait/enum registries, property/method tables, autoload interaction, references/copy-on-write, and exact native object-metadata errors exist; phpc run handles current bounded object metadata behavior";
@@ -2290,6 +2290,40 @@ fn expr_contains_exit_construct(expr: &Expr) -> bool {
 fn function_body_contains_native_frame_blocker(statements: &[Stmt]) -> bool {
     stmt_list_contains_try_unwind_blocker_allowing_return_and_loop_transfer(statements)
         || statements.iter().any(stmt_contains_function_frame_blocker)
+}
+
+fn stmt_list_contains_return_statement(statements: &[Stmt]) -> bool {
+    statements.iter().any(stmt_contains_return_statement)
+}
+
+fn stmt_contains_return_statement(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Return { .. } => true,
+        Stmt::If {
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            stmt_list_contains_return_statement(then_branch)
+                || stmt_list_contains_return_statement(else_branch)
+        }
+        Stmt::While { body, .. } | Stmt::DoWhile { body, .. } | Stmt::Foreach { body, .. } => {
+            stmt_list_contains_return_statement(body)
+        }
+        Stmt::For { body, .. } => stmt_list_contains_return_statement(body),
+        Stmt::Switch { cases, .. } => cases
+            .iter()
+            .any(|case| stmt_list_contains_return_statement(&case.body)),
+        Stmt::Try {
+            body, finally_body, ..
+        } => {
+            stmt_list_contains_return_statement(body)
+                || finally_body
+                    .as_ref()
+                    .is_some_and(|body| stmt_list_contains_return_statement(body))
+        }
+        _ => false,
+    }
 }
 
 fn stmt_list_contains_global_import(statements: &[Stmt]) -> bool {
@@ -9491,6 +9525,7 @@ struct CDeclaredClass {
     class_id: usize,
     name: String,
     properties: Vec<CDeclaredClassProperty>,
+    constructor: Option<CDeclaredClassMethod>,
     methods: Vec<CDeclaredClassMethod>,
 }
 
@@ -11144,6 +11179,7 @@ impl CGenerator {
 
         let mut seen_properties = HashSet::new();
         let mut properties = Vec::new();
+        let mut constructor = None;
         let mut seen_methods = HashSet::new();
         let mut methods = Vec::new();
         let class_index = self.declared_class_order.len();
@@ -11169,21 +11205,43 @@ impl CGenerator {
                     });
                 }
                 ClassMember::Method(method) => {
-                    self.validate_declared_class_method_for_native_frame(method)?;
-                    let key = Self::declared_method_key(&method.function.name);
-                    if !seen_methods.insert(key) {
-                        return Err(self.unsupported(method.span, ASSEMBLY_METHOD_CALL_REJECTION));
+                    if method.function.name.eq_ignore_ascii_case("__construct") {
+                        self.validate_declared_class_constructor_for_native_frame(method)?;
+                        if constructor.is_some() {
+                            return Err(self.unsupported(
+                                method.span,
+                                ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
+                            ));
+                        }
+                        let c_name = Self::c_declared_class_method_name(
+                            class_index,
+                            methods.len(),
+                            &class.name,
+                            &method.function.name,
+                        );
+                        constructor = Some(CDeclaredClassMethod {
+                            c_name,
+                            decl: method.function.clone(),
+                        });
+                    } else {
+                        self.validate_declared_class_method_for_native_frame(method)?;
+                        let key = Self::declared_method_key(&method.function.name);
+                        if !seen_methods.insert(key) {
+                            return Err(
+                                self.unsupported(method.span, ASSEMBLY_METHOD_CALL_REJECTION)
+                            );
+                        }
+                        let c_name = Self::c_declared_class_method_name(
+                            class_index,
+                            methods.len(),
+                            &class.name,
+                            &method.function.name,
+                        );
+                        methods.push(CDeclaredClassMethod {
+                            c_name,
+                            decl: method.function.clone(),
+                        });
                     }
-                    let c_name = Self::c_declared_class_method_name(
-                        class_index,
-                        methods.len(),
-                        &class.name,
-                        &method.function.name,
-                    );
-                    methods.push(CDeclaredClassMethod {
-                        c_name,
-                        decl: method.function.clone(),
-                    });
                 }
                 ClassMember::Constant(_) => {
                     return Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
@@ -11195,17 +11253,42 @@ impl CGenerator {
             class_id: self.declared_class_order.len(),
             name: class.name.clone(),
             properties,
+            constructor,
             methods,
         })
+    }
+
+    fn validate_declared_class_constructor_for_native_frame(
+        &self,
+        method: &ClassMethodDecl,
+    ) -> CompileResult<()> {
+        if method.visibility != ClassVisibility::Public
+            || method.is_static
+            || method.is_abstract
+            || stmt_list_contains_global_import(&method.function.body)
+            || stmt_list_contains_return_statement(&method.function.body)
+            || method.function.is_nested
+            || method.function.returns_by_reference
+            || method.function.return_type.is_some()
+            || native_user_function_has_malformed_variadic_params(&method.function)
+            || method.function.params.iter().any(|param| {
+                native_user_function_param_has_unsupported_by_reference_shape(param)
+                    || param
+                        .type_decl
+                        .as_ref()
+                        .is_some_and(|decl| !native_function_type_decl_is_supported(decl))
+            })
+            || function_body_contains_native_frame_blocker(&method.function.body)
+        {
+            return Err(self.unsupported(method.span, ASSEMBLY_OBJECT_INSTANTIATION_REJECTION));
+        }
+        Ok(())
     }
 
     fn validate_declared_class_method_for_native_frame(
         &self,
         method: &ClassMethodDecl,
     ) -> CompileResult<()> {
-        if method.function.name.eq_ignore_ascii_case("__construct") {
-            return Err(self.unsupported(method.span, ASSEMBLY_OBJECT_INSTANTIATION_REJECTION));
-        }
         if method.visibility != ClassVisibility::Public
             || method.is_static
             || method.is_abstract
@@ -11416,6 +11499,9 @@ impl CGenerator {
                 .declared_classes
                 .get(key)
                 .expect("registered class key has metadata");
+            if let Some(constructor) = class.constructor.clone() {
+                methods.push((class.name.clone(), constructor));
+            }
             methods.extend(
                 class
                     .methods
@@ -11430,7 +11516,7 @@ impl CGenerator {
     fn has_declared_class_methods(&self) -> bool {
         self.declared_classes
             .values()
-            .any(|class| !class.methods.is_empty())
+            .any(|class| class.constructor.is_some() || !class.methods.is_empty())
     }
 
     fn emit_declared_class_method_definitions(&mut self) -> CompileResult<()> {
@@ -12465,14 +12551,83 @@ impl CGenerator {
         let Some(class) = self.declared_classes.get(&key).cloned() else {
             return Ok(None);
         };
-        if !args.is_empty() {
+        if class.constructor.is_none() && !args.is_empty() {
             return Err(self.unsupported(span, ASSEMBLY_OBJECT_INSTANTIATION_REJECTION));
         }
 
-        Ok(Some(self.materialize_declared_class_instantiation(
-            class,
+        let value = self.materialize_declared_class_instantiation(class.clone(), failure_cleanup);
+        if let Some(constructor) = &class.constructor {
+            let constructor_failure_cleanup = format!(
+                "{}{}",
+                c_cleanup_sequence(&value.cleanup_after_use),
+                failure_cleanup
+            );
+            self.emit_declared_class_constructor_call(
+                &class.name,
+                constructor,
+                &value.handle,
+                args,
+                span,
+                &constructor_failure_cleanup,
+            )?;
+        }
+
+        Ok(Some(value))
+    }
+
+    fn emit_declared_class_constructor_call(
+        &mut self,
+        class_name: &str,
+        constructor: &CDeclaredClassMethod,
+        receiver_handle: &str,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        self.uses_native_object_method_helpers = true;
+
+        if !native_user_function_accepts_arg_count(&constructor.decl, args.len()) {
+            self.emit_method_dispatch_failure(
+                receiver_handle,
+                "__construct",
+                "argument count is outside the generated public constructor frame arity/default/variadic subset",
+                failure_cleanup,
+                "",
+            );
+            return Ok(());
+        }
+
+        let (mut call_args, argument_cleanup) = self.materialize_declared_method_frame_arguments(
+            class_name,
+            constructor,
+            receiver_handle,
+            args,
+            span,
             failure_cleanup,
-        )))
+            NativeCallCallee::ConstructorDispatch,
+        )?;
+        let status = self.next_native_name("constructor_status");
+        let result = self.next_native_name("constructor_result");
+        self.body.push(format!("int {status} = 0;"));
+        call_args.push(format!("&{status}"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = {}({});",
+            constructor.c_name,
+            call_args.join(", ")
+        ));
+        let call_failure_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&argument_cleanup),
+            failure_cleanup
+        );
+        let error_exit = self.native_error_exit(&call_failure_cleanup);
+        self.body.push(format!(
+            "if ({status} != 1 || {result}.ptr == NULL) {{ {error_exit} }}"
+        ));
+        self.body.push(format!("phpc_native_value_free({result});"));
+        self.body.extend(argument_cleanup);
+
+        Ok(())
     }
 
     fn materialize_object_public_property_operation_expr(
@@ -19347,6 +19502,75 @@ impl CGenerator {
         candidates
     }
 
+    fn materialize_declared_method_frame_arguments(
+        &mut self,
+        class_name: &str,
+        method: &CDeclaredClassMethod,
+        receiver_handle: &str,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+        callee: NativeCallCallee,
+    ) -> CompileResult<(Vec<String>, Vec<String>)> {
+        let mut cleanup_after_use = Vec::new();
+        let mut call_args = vec![
+            self.user_function_call_depth_argument(),
+            receiver_handle.to_string(),
+        ];
+        let fixed_count = native_user_function_fixed_param_count(&method.decl);
+        for (index, param) in method.decl.params.iter().take(fixed_count).enumerate() {
+            let value_expr = if let Some(arg) = args.get(index) {
+                arg
+            } else {
+                param.default.as_ref().ok_or_else(|| {
+                    self.unsupported_call_operation(NativeCallOperation::value_result(
+                        span,
+                        callee,
+                        NativeCallBlocker::UnknownCalleeDiagnostics,
+                    ))
+                })?
+            };
+            let value_failure_cleanup = format!(
+                "{}{}",
+                c_cleanup_sequence(&cleanup_after_use),
+                failure_cleanup
+            );
+            if param.by_reference {
+                let reference = self.materialize_call_reference_argument(
+                    value_expr,
+                    span,
+                    &value_failure_cleanup,
+                    callee,
+                )?;
+                cleanup_after_use.extend(reference.cleanup_after_use);
+                call_args.push(reference.handle);
+            } else {
+                let value = self
+                    .materialize_native_value_result_operand(value_expr, &value_failure_cleanup)?;
+                cleanup_after_use.extend(value.cleanup_after_use.clone());
+                call_args.push(value.handle);
+            }
+        }
+        if let Some((_, variadic_param)) = native_user_function_variadic_param(&method.decl) {
+            let variadic_failure_cleanup = format!(
+                "{}{}",
+                c_cleanup_sequence(&cleanup_after_use),
+                failure_cleanup
+            );
+            let callable_name = format!("{}::{}()", class_name, method.decl.name);
+            let variadic_value = self.materialize_variadic_argument_array_from_exprs(
+                variadic_param,
+                &args[fixed_count..],
+                &callable_name,
+                &variadic_failure_cleanup,
+            )?;
+            cleanup_after_use.extend(variadic_value.cleanup_after_use.clone());
+            call_args.push(variadic_value.handle);
+        }
+
+        Ok((call_args, cleanup_after_use))
+    }
+
     fn try_materialize_declared_class_method_call(
         &mut self,
         target: &Expr,
@@ -19414,65 +19638,17 @@ impl CGenerator {
                 continue;
             }
 
-            let mut branch_cleanup = Vec::new();
-            let mut call_args = vec![
-                self.user_function_call_depth_argument(),
-                receiver.handle.clone(),
-            ];
-            let fixed_count = native_user_function_fixed_param_count(&method.decl);
-            for (index, param) in method.decl.params.iter().take(fixed_count).enumerate() {
-                let value_expr = if let Some(arg) = args.get(index) {
-                    arg
-                } else {
-                    param.default.as_ref().ok_or_else(|| {
-                        self.unsupported_call_operation(NativeCallOperation::value_result(
-                            span,
-                            NativeCallCallee::MethodDispatch,
-                            NativeCallBlocker::UnknownCalleeDiagnostics,
-                        ))
-                    })?
-                };
-                let value_failure_cleanup = format!(
-                    "{}{}{}",
-                    c_cleanup_sequence(&branch_cleanup),
-                    receiver_cleanup,
-                    failure_cleanup
-                );
-                if param.by_reference {
-                    let reference = self.materialize_call_reference_argument(
-                        value_expr,
-                        span,
-                        &value_failure_cleanup,
-                        NativeCallCallee::MethodDispatch,
-                    )?;
-                    branch_cleanup.extend(reference.cleanup_after_use);
-                    call_args.push(reference.handle);
-                } else {
-                    let value = self.materialize_native_value_result_operand(
-                        value_expr,
-                        &value_failure_cleanup,
-                    )?;
-                    branch_cleanup.extend(value.cleanup_after_use.clone());
-                    call_args.push(value.handle);
-                }
-            }
-            if let Some((_, variadic_param)) = native_user_function_variadic_param(&method.decl) {
-                let variadic_failure_cleanup = format!(
-                    "{}{}{}",
-                    c_cleanup_sequence(&branch_cleanup),
-                    receiver_cleanup,
-                    failure_cleanup
-                );
-                let callable_name = format!("{}::{}()", class.name, method.decl.name);
-                let variadic_value = self.materialize_variadic_argument_array_from_exprs(
-                    variadic_param,
-                    &args[fixed_count..],
-                    &callable_name,
-                    &variadic_failure_cleanup,
+            let argument_failure_cleanup = format!("{receiver_cleanup}{failure_cleanup}");
+            let (mut call_args, branch_cleanup) = self
+                .materialize_declared_method_frame_arguments(
+                    &class.name,
+                    &method,
+                    &receiver.handle,
+                    args,
+                    span,
+                    &argument_failure_cleanup,
+                    NativeCallCallee::MethodDispatch,
                 )?;
-                branch_cleanup.extend(variadic_value.cleanup_after_use.clone());
-                call_args.push(variadic_value.handle);
-            }
 
             self.body.push(format!("{status} = 0;"));
             call_args.push(format!("&{status}"));

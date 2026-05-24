@@ -172,6 +172,28 @@ const NATIVE_DECLARED_CLASS_METHOD_SOURCE: &str = concat!(
     "echo $box->store(\"Tail\"), \"\\n\";\n",
 );
 
+const NATIVE_DECLARED_CLASS_CONSTRUCTOR_SOURCE: &str = concat!(
+    "<?php\n",
+    "class Box {\n",
+    "    public $name;\n",
+    "    public function __construct($value = \"Ada\") {\n",
+    "        $this->name = strtoupper($value);\n",
+    "    }\n",
+    "    public function label() { return $this->name; }\n",
+    "}\n",
+    "class Packet {\n",
+    "    public $code;\n",
+    "    public function __construct($code) { $this->code = $code; }\n",
+    "}\n",
+    "$box = new Box();\n",
+    "echo $box->name, \"|\";\n",
+    "$named = new Box(\"Grace\");\n",
+    "echo $named->label(), \"|\";\n",
+    "$packet = new Packet(7);\n",
+    "echo $packet->code, \"|\";\n",
+    "echo (new Box(\"Temp\"))->label(), \"\\n\";\n",
+);
+
 const NATIVE_BRANCH_STATE_MERGE_SOURCE: &str = concat!(
     "<?php\n",
     "$flags = [\"go\" => \"1\", \"stop\" => \"0\"];\n",
@@ -1066,6 +1088,67 @@ fn emit_exe_declared_class_method_dispatch_reports_runtime_misses() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_declared_class_constructor_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "declared_class_constructor",
+        NATIVE_DECLARED_CLASS_CONSTRUCTOR_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run declared-class-constructor executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ADA|GRACE|7|TEMP\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_declared_class_constructor_reports_runtime_arity_misses() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class Box { public function __construct($value) { $this->value = $value; } }\n",
+        "new Box();\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("declared_class_constructor_miss", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run declared-class-constructor miss executable: {error}")
+    });
+
+    assert!(
+        !run.status.success(),
+        "constructor arity miss should fail through the shared runtime diagnostic"
+    );
+    assert!(
+        String::from_utf8_lossy(&run.stderr)
+            .contains("native method dispatch for Box::__construct is not supported"),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn emit_exe_runs_leading_numeric_arithmetic_value_results_with_diagnostics() {
     if !has_cc() {
         return;
@@ -1935,10 +2018,42 @@ fn native_executable_c_source_routes_declared_methods_through_frame_dispatch() {
 }
 
 #[test]
+fn native_executable_c_source_routes_declared_constructors_through_frame_dispatch() {
+    let program = parse(NATIVE_DECLARED_CLASS_CONSTRUCTOR_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_declared_method_")
+            && source.contains("phpc_NativeValueHandle phpc_this"),
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_new_declared_class_with_diagnostic"),
+        "constructors should still allocate through the shared object ABI:\n{source}"
+    );
+    assert!(
+        body.contains("constructor_status") && body.contains("__construct"),
+        "new expressions should dispatch supported constructors through generated frames:\n{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_value_object_public_property_operation_with_diagnostic")
+            .count()
+            >= 5,
+        "$this constructor writes and method reads should stay on the shared property ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("object-instantiation lowering rejects")
+            && !source.contains("method-call lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_keeps_unsupported_declared_class_features_blocked() {
     for source in [
         "<?php\nclass Base {}\nclass Child extends Base {}\nnew Child();\n",
-        "<?php\nclass Box { public function __construct() {} }\nnew Box();\n",
         "<?php\nclass Box { public static $count; }\nnew Box();\n",
         "<?php\nclass Box { public $name = \"Ada\"; }\nnew Box();\n",
         "<?php\nclass Box {}\nnew Box(\"Ada\");\n",
@@ -1951,6 +2066,26 @@ fn native_executable_c_source_keeps_unsupported_declared_class_features_blocked(
                 || error
                     .message
                     .contains("object-instantiation lowering rejects"),
+            "{source}\n{error:?}"
+        );
+    }
+}
+
+#[test]
+fn native_executable_c_source_keeps_unsupported_constructor_shapes_blocked() {
+    for source in [
+        "<?php\nclass Box { private function __construct() {} }\nnew Box();\n",
+        "<?php\nclass Box { public function __construct() { return 1; } }\nnew Box();\n",
+        "<?php\nclass Box { public function __construct() { global $x; } }\nnew Box();\n",
+    ] {
+        let program = parse(source).expect("unsupported constructor source parses");
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert!(
+            error
+                .message
+                .contains("object-instantiation lowering rejects")
+                || error.message.contains("object/class lowering rejects"),
             "{source}\n{error:?}"
         );
     }
