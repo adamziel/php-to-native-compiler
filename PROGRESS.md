@@ -1,15 +1,15 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 11:54 CEST
-Evaluation marker: `20260524T091140Z`
+Updated: 2026-05-24 12:00 CEST
+Evaluation marker: `20260524T100021Z`
 
-Latest primary semantic/test baseline:
+Latest counted primary semantic/test baseline:
 `b099039e codegen: route declared object property unset`
 
 Latest primary head before this progress update:
-`b099039e codegen: route declared object property unset`
+`bc43f7c0 docs: update progress after object property unset`
 
-Only pushed primary work counts here. Dirty WIP, lane-local candidates, parked diffs, exact-shape fixtures, and status-file claims are not counted until selected, gated, committed, and pushed through primary.
+Only pushed primary work counts here. Dirty WIP, lane-local candidates, parked diffs, exact-shape fixtures, and status-file claims are not product capability until selected, gated, committed, and pushed through primary.
 
 ## Executive Read
 
@@ -17,80 +17,68 @@ Overall estimated progress: **70%** `[##############------]`
 
 Executable PHP semantics: **67%** `[#############-------]`
 
-The primary branch has made solid integrated progress on selected native PHP execution islands. Since the last durable progress marker, primary landed leading-numeric arithmetic recovery through the shared native value-operation result ABI, LLVM consumption of the same arithmetic result path, direct-variable assignment expressions through assignment-target semantics, LLVM direct-variable compound assignments through the existing primitive binary lowering path, C assembly fallback consumption of the shared unary string-result and two-operand string-predicate ABIs, generated-C `$GLOBALS` self-imports in user-function frames through the shared root symbol table, a runtime output-buffer stack consumed by LLVM and generated-C `ob_*` calls, generated-C allocation of supported declared class objects through a shared runtime object-construction ABI, generated-C public property read/write/`isset`/`empty`/`unset` execution through a shared runtime object-property ABI, named `instanceof` checks through a shared runtime object/class relation ABI, public declared instance-method frames with `$this` binding through generated-C receiver dispatch, and supported public constructors through the same method-frame boundary after object allocation.
+Primary is making real integrated progress in selected native PHP execution islands. The strongest recent momentum is the generated-C object path: declared class allocation, public property read/write/`isset`/`empty`/`unset`, named `instanceof`, public instance methods with `$this`, and supported public constructors now share runtime/frame/property ABIs and have focused source/link proof.
 
-The product is still not close to "general PHP." The remaining work is concentrated in the real semantic cliffs: full callable lookup/invocation, closures, general methods, general constructors, broad objects/properties, contextual `self`/`parent`/`static`, named/unpacked arguments, typed/default/variadic by-reference binding, by-reference returns, reference/COW identity, request/global alias parity, source-ordered diagnostics, cleanup/unwind/finally/destructors/output-buffer shutdown and SAPI behavior, and backend parity.
+This is not general PHP yet. The remaining cliffs are still large: full callable lookup/invocation, closures, dynamic/static/non-public methods, inheritance/interfaces/traits, contextual `self`/`parent`/`static`, dynamic/static properties, magic methods, references/COW identity, by-reference returns, request/global alias parity, includes, variable variables, exact/source-ordered diagnostics, cleanup/unwind/finally/destructors/output-buffer shutdown, and backend parity.
 
-The latest object slice extends the generated-C public object-property operation family to `unset($object->property)`. Direct named property unsets and chained named property unsets route through the same runtime object-property ABI as reads, writes, `isset`, and `empty`, including object-handle materialization, property-name ABI validation, visibility diagnostics, missing-property no-op behavior, result cleanup, and linked execution proof. Dynamic property names, property array/ArrayAccess paths, static properties, magic `__unset`, exact diagnostics, LLVM/direct assembly object lowering, and broad object/reference/COW semantics remain blocked.
+Current live primary has uncommitted `compiler/src/codegen.rs`, `compiler/tests/native_link.rs`, and `compiler/tests/native_function_call_boundary.rs` WIP that appears to target declared static method calls. It is **not counted** here.
 
 ## Primary-Integrated Capability
 
-- [x] Shared runtime value, array, string, comparison, truthiness, diagnostic, request, reference, symbol, and call-frame ABI foundations exist for many selected paths.
-- [x] Generated-C can execute many focused programs across direct variables, arrays, function frames, dynamic calls, selected globals, by-reference parameters, direct-variable compound assignment, assignment expressions, leading-numeric arithmetic warnings, and bounded finalizer transfers.
-- [x] LLVM consumes selected shared ABIs for strings, predicates, searches, integer/string helpers, primitive direct-variable assignment expressions, and value-operation arithmetic that cannot be primitive-folded safely.
-- [x] The C assembly fallback consumes shared string-result and string-predicate ABIs for lowerable direct and nested operands.
-- [x] LLVM lowers lowerable primitive direct-variable compound-assignment statements and expressions through direct variable storage and existing binary operator semantics.
-- [x] Function-scope ordinary `global $name` imports and `$GLOBALS` self-imports work through generated-C frames for direct calls, transitive wrapper calls, and runtime string-valued dynamic calls.
-- [x] Direct-variable assignment expressions update lowerable primitive LLVM locals and generated-C ordinary/native-value/reference-backed/active-symbol direct variables.
-- [x] Lowerable output-buffer calls route through a shared runtime stack ABI from LLVM and generated-C, and runtime stdout formatting writes into active buffers.
-- [x] Generated-C can allocate supported declared class objects through a shared runtime object ABI, observe their object/type/class-exists identity, execute public property reads/writes/`isset`/`empty`/`unset` through a shared runtime object-property ABI, evaluate named `instanceof` checks through a shared object/class relation ABI, execute supported public declared instance-method frames with `$this`, and run supported public constructors after allocation.
-- [ ] Full PHP callable, object, reference/COW, cleanup/unwind, diagnostic, request/global, include, variable-variable, and backend-parity behavior remains incomplete.
+- [x] Runtime/value foundations: shared native value, array, string, comparison, truthiness, diagnostic, request, reference, symbol, call-frame, output-buffer, object, object-property, and method-diagnostic ABI surfaces exist for selected paths.
+- [x] Generated-C execution: direct variables, arrays/lvalues, selected dynamic calls, function frames, function-scope globals, `$GLOBALS` self-imports, by-reference parameter writes, assignment expressions, direct-variable compound assignments, output buffers, finalizer transfer slices, and the bounded declared-object family are executable.
+- [x] LLVM consumers: selected string, predicate, search, integer/string helper, primitive assignment-expression, primitive compound-assignment, output-buffer, and native value-operation arithmetic paths consume shared ABIs.
+- [x] C assembly fallback: selected unary string-result and two-operand string-predicate helpers consume shared runtime ABIs.
+- [x] Object slice: generated-C can allocate supported declared class objects, preserve type/class identity, execute public properties including `unset`, evaluate named `instanceof`, call supported public instance methods with `$this`, and run supported public constructors.
+- [ ] Not complete: full PHP callable, object, reference/COW, cleanup/unwind, diagnostic, request/global, include, variable-variable, and backend-parity behavior.
 
-## Current Dirty Primary WIP
+## Current Primary State
 
-- [x] No counted dirty primary WIP before this progress update; the object-property unset semantic slice was gated and committed as `b099039e`.
-- [ ] After this review, only this `PROGRESS.md` update should be dirty for the wrapper commit.
+- [x] Primary `master` and `origin/master` were live-checked synced at `bc43f7c0`.
+- [x] Latest counted semantic commit is `b099039e`.
+- [ ] Uncounted dirty WIP exists in `compiler/src/codegen.rs`, `compiler/tests/native_link.rs`, and `compiler/tests/native_function_call_boundary.rs` with a declared static-method-call direction. It must remain uncounted until gated, committed, and pushed.
+- [ ] After this review, `PROGRESS.md` is expected to be dirty for the wrapper commit; unrelated product diffs should remain untouched.
 
 ## Lane-Local Candidate Work
 
-Recent worker-status updates show active candidate inventory, including `$this` receiver slots for descriptor-ready method/constructor frames, function-return value handoff through cleanup targets, function-frame symbol-table result blockers, array/reference owner-slot classifiers, string-position operand diagnostics, static-property storage blockers, request value-handle broadening, comparison blockers for external I/O/dynamic-code/request-lifecycle calls, and object release/precheck carriers.
+Fresh worker statuses show broad candidate inventory, including static-property blockers, contextual `self`/`parent`/`static` receiver carriers, callable result egress dispatch, non-local symbol candidate sequencing, request/global diagnostics, parameter-aware conversion diagnostics, reference/COW metadata, and cleanup/CFG transfer planning.
 
-These are not product capability yet. Treat them as a queue of possible integration inputs, and prefer only the candidates that can land with primary source/IR/link proof or remove a real shared execution blocker.
+These are useful inputs, not product capability. Prefer candidates that land as primary source/link proof or remove a real shared execution blocker. Treat blocker-only or metadata-only slices as lower priority unless they unlock an immediate executable consumer.
 
 ## Roadmap Position
 
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | **88%** | `[##################--]` | Strong shared surfaces exist, now including consumed output-buffer, declared-class object allocation, public object-property operation with unset, object/class relation, and method-dispatch diagnostic ABIs, but some surfaces are still scaffolding until consumed end to end. |
-| Compiler/backend consumers | **88%** | `[##################--]` | Generated-C is broad in selected areas, now including supported declared-class allocation, public constructors, public property read/write/presence/unset operations, named `instanceof`, and public declared instance methods; LLVM covers primitive direct-variable compound assignments and lowerable output-buffer calls; the C assembly fallback covers selected string-result and string-predicate ABI consumers; direct assembly and many nested consumers remain blocked. |
-| Executable PHP semantics | **67%** | `[#############-------]` | Many focused linked programs run, including generated-C declared-class object allocation, public constructor/property reads/writes/presence/unsets, named `instanceof`, and public instance-method calls with `$this`, but behavior is still selected islands. |
-| Arrays, lvalues, references, COW | **64%** | `[#############-------]` | Good selected lvalue/reference paths; full COW, arbitrary roots, foreach, object joins, and wider alias composition remain open. |
-| Symbols, globals, request state | **72%** | `[##############------]` | Ordinary function-scope globals and `$GLOBALS` self-imports are much better; request superglobal imports, includes, variable variables, and exact unset behavior remain incomplete. |
-| Calls, functions, frames | **59%** | `[############--------]` | Bounded generated-C function, public declared instance-method, and constructor frames work for selected surfaces; closures, callable arrays/objects, named/unpacked args, and by-reference returns remain open. |
-| Objects, properties, methods | **33%** | `[#######-------------]` | Primary now has generated-C allocation for supported declared classes, public constructors, object type identity, public property reads/writes/`isset`/`empty`/`unset`, named `instanceof`, and public declared instance-method calls with `$this`; dynamic methods, static/self/parent/static calls, inheritance/interfaces, dynamic/static properties, visibility contexts, magic methods, and broad object execution remain open. |
+| Runtime and ABI foundations | **88%** | `[##################--]` | Strong shared surfaces exist, now consumed by output buffers and the declared-object/property/method family; some surfaces remain scaffolding until broader consumers land. |
+| Compiler/backend consumers | **88%** | `[##################--]` | Generated-C is broad in selected areas; LLVM and C assembly consume selected ABI families. Direct assembly and many nested/object consumers remain blocked. |
+| Executable PHP semantics | **67%** | `[#############-------]` | Many focused linked programs run, but semantics are still selected islands rather than general PHP. |
+| Arrays, lvalues, references, COW | **64%** | `[#############-------]` | Good selected lvalue/reference paths; full COW, arbitrary roots, foreach, object joins, and alias composition remain open. |
+| Symbols, globals, request state | **72%** | `[##############------]` | Function globals and `$GLOBALS` self-imports improved; request superglobal imports, includes, variable variables, and exact unset behavior remain incomplete. |
+| Calls, functions, frames | **59%** | `[############--------]` | Bounded functions, public instance methods, and constructors work for selected generated-C paths; closures, callable arrays/objects, named/unpacked args, static methods, and by-reference returns remain open. |
+| Objects, properties, methods | **33%** | `[#######-------------]` | Primary now has a useful declared-object subset; dynamic/static/non-public methods, inheritance/interfaces, magic methods, dynamic/static properties, visibility contexts, references/COW, and backend parity remain open. |
 | Control flow, cleanup, diagnostics | **49%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, and diagnostics exist; broad unwind, handlers, destructors, shutdown flushing, and exact ordering remain open. |
-| Broad integrated verification | **63%** | `[#############-------]` | Focused gates are strong, now including output-buffer runtime/LLVM/source/link proof and declared-class object/property/`instanceof`/method/constructor runtime/source/link proof, plus linked public property unset coverage; cross-feature linked programs, backend parity, and full end-to-end PHP proof lag. |
+| Broad integrated verification | **63%** | `[#############-------]` | Focused gates are strong; cross-feature linked programs, backend parity, and full end-to-end PHP proof lag. |
 
 ## Done / In Progress / Not Done
 
-- [x] Bounded generated-C direct variables, array/lvalue paths, selected dynamic calls, function globals, `$GLOBALS` self-imports, by-reference parameter writes, assignment expressions, direct-variable compound assignment, declared-class object allocation/constructors/properties including public property unset/`instanceof`/public instance methods, output buffers, and finalizer transfer slices.
-- [x] LLVM value-operation arithmetic, primitive direct-variable assignment-expression, primitive direct-variable compound-assignment, and C assembly fallback string-result/string-predicate slices.
-- [ ] In progress: lane-local candidates for callable dispatch, object/property metadata, frame contracts, symbol/reference transport, diagnostics, and cleanup boundaries.
+- [x] Done in primary: bounded generated-C direct variables, arrays/lvalues, selected dynamic calls, function globals, `$GLOBALS` self-imports, by-reference parameter writes, assignment expressions, direct-variable compound assignments, output buffers, finalizer transfer slices, declared-class allocation, public constructors, public instance methods, public properties including unset, and named `instanceof`.
+- [x] Done in primary: LLVM value-operation arithmetic, primitive direct-variable assignment-expression and compound-assignment paths, lowerable output-buffer calls, and C assembly fallback string-result/string-predicate slices.
+- [ ] In progress but uncounted: dirty primary static-method-call WIP plus lane-local candidates for callable dispatch, object/static property metadata, frame contracts, symbol/reference transport, diagnostics, and cleanup boundaries.
 - [ ] Not done: general object model, dynamic/static/non-public methods, general constructor semantics, contextual class names, closures, callable-array/object invocation, complete references/COW, by-reference returns, complete mutation/unset, full diagnostics, full cleanup/unwind, includes, variable variables, request/global parity, and direct assembly parity.
 
 ## Recent Primary-Integrated Work
 
-- `b099039e`: generated-C named public object-property unsets now route through the shared `phpc_native_value_object_public_property_operation_with_diagnostic(...)` ABI using a new `UNSET` operation tag. Runtime/source/link proof covers direct public property unset, chained named property unset through an object-valued property, missing-property no-op behavior, post-unset `isset`/`empty`, reassignment after unset, non-public visibility diagnostics, and non-object diagnostics. Dynamic property names, property array/ArrayAccess unset, static properties, magic `__unset`, property references/COW identity, exact diagnostics, LLVM object lowering, and direct assembly object parity remain blocked.
-- `c00780c3`: generated-C `new NamedClass(...)` now runs supported public `__construct(...)` declarations after object allocation through the declared-method frame boundary. Constructor execution binds `$this`, reuses the shared argument/default/variadic cleanup helper used by instance methods, frees the ignored constructor frame return, and keeps constructorless argument lists plus unsupported constructor declarations blocked. Source/link proof covers default constructor arguments, explicit constructor arguments, multiple classes, `$this` property writes, constructor-initialized method reads, temporary constructed receivers, and runtime constructor arity misses.
-- `a792e8b5`: generated-C public declared instance-method calls now dispatch over registered declared-class method candidates, bind `$this` into generated method frames, reuse existing argument/default/return cleanup paths, and report runtime method misses through `phpc_native_value_object_method_failure_with_diagnostic(...)`. Source/link proof covers multiple classes sharing a method name, default arguments, `$this` public-property read/write, temporary receivers, nested builtin calls from methods, runtime receiver misses, and blockers for dynamic/static/private/duplicate method shapes. Unsupported constructors, dynamic method names, contextual `self`/`parent`/`static`, inheritance/interfaces/traits, magic methods, references/COW, exact diagnostics, LLVM object lowering, and direct assembly object parity remain blocked.
-- `06f699f8`: generated-C named `instanceof` checks now route through `phpc_native_value_instanceof_class_with_diagnostic(...)` over native value handles and class-name bytes. Runtime/source/link proof covers object variables, temporary objects, case-insensitive class names, mismatched classes, scalar subjects, and invalid class-name ABI diagnostics. Contextual class names, interfaces, inheritance/autoload, exact diagnostics, LLVM object lowering, and direct assembly object parity remain blocked.
-- `9d637923`: generated-C public instance property reads, assignment statements/expressions, `isset`, and `empty` now route through `phpc_native_value_object_public_property_operation_with_diagnostic(...)` over native object handles and property-name bytes. Runtime operation proof covers read/write/presence/empty behavior, visibility diagnostics, and non-object diagnostics. Dynamic properties, static members, property array/ArrayAccess paths, private/protected method contexts, constructors, methods, `$this`, references/COW identity, LLVM object lowering, and direct assembly object parity remain blocked.
-- `07516bc3`: generated-C registers supported top-level class declarations and lowers no-argument `new NamedClass()` through `phpc_native_value_new_declared_class_with_diagnostic(...)`. Runtime object allocation preserves class identity and declared untyped instance property slots, and generated-C `is_object`, `gettype`, `get_debug_type`, and `class_exists` consume the resulting object/type metadata. Constructors, methods, static members, inheritance/interfaces/traits, property access, dynamic class names, autoload, exact diagnostics, LLVM/direct assembly object lowering, and broad object/reference/COW semantics remain blocked.
-- `f6d9ad0a`: runtime output buffers now use a shared operation ABI consumed by LLVM and generated-C for lowerable `ob_*` calls. Runtime stdout formatting writes into active buffers, supports nested buffer flush/clean operations, and preserves diagnostics/cleanup. Callback handlers, shutdown/SAPI behavior, binary non-UTF strings, and exact PHP output-buffer diagnostics remain blocked.
-- `a27bb444`: generated-C user-function frames allow `global $GLOBALS` as the PHP self-import case. Direct and runtime string-valued dynamic calls pass the caller root symbol table into those frames, `$GLOBALS[...]` reads and writes stay on the shared symbol-path ABI, and request superglobal imports remain blocked until request state is threaded through frames.
-- `b1f3c546`: C assembly fallback lowering now routes lowerable `str_starts_with(...)`, `str_contains(...)`, and `str_ends_with(...)` calls through `phpc_native_value_string_predicate_with_diagnostic(...)`, including nested lowerable value-result operands and arity blockers.
-- `91bc2f4a`: C assembly fallback lowering now routes lowerable unary string-result builtins through `phpc_native_value_string_result_operation_with_diagnostic(...)` for direct and nested operands, preserving owned result cleanup and arity blockers. This covers the existing string-result runtime/compiler family, not broader direct assembly parity.
-- `b3625c8a`: LLVM direct-variable compound assignments now lower through `AssignTarget::Variable` storage and existing binary operator semantics for lowerable primitive arithmetic, bitwise, shift, modulo, and expression-result forms. Undefined direct variables, native-owned result storage, non-direct lvalues, request/global roots, object/static properties, `??=`, increment/decrement, unset, references/COW, exact mutation diagnostics, and direct assembly parity remain blocked.
-- `ea6ebcf2`: direct-variable assignment expressions lower through assignment-target semantics. LLVM supports lowerable primitive direct variables and chained direct assignment expressions. Generated-C supports ordinary scalar, native-value result, reference-backed, and active symbol-table direct-variable owners.
-- `c7e35c50`: LLVM routes scalar/native-value arithmetic that cannot be primitive-folded safely through the shared native value-operation result ABI, including diagnostics and owned result handling.
-- `40838cef`: native value binary/unary arithmetic result ABIs recover leading-numeric string operands and carry warning diagnostics through generated-C consumers.
-- `84d33e6f`, `f0b22da2`, `482e7c76`: generated-C function-scope ordinary globals now compose through direct frames, transitive wrapper frames, and runtime string-valued dynamic calls.
-- `e9ba63d0`: generated-C `break`/`continue` through supported active `finally` scopes execute the finalizers they leave.
-- `a7ffdcd2`: generated-C direct-variable compound assignment writes back through ordinary local, reference-backed, and active symbol-table owners.
+- `b099039e`: generated-C named public object-property `unset` routes through the shared object-property ABI, with runtime/source/link proof for direct, chained, missing-property, post-unset `isset`/`empty`, reassignment, visibility diagnostics, and non-object diagnostics.
+- `c00780c3`: generated-C `new NamedClass(...)` runs supported public constructors after allocation through the declared-method frame boundary, with `$this` binding and constructor argument/default cleanup proof.
+- `a792e8b5`: generated-C public declared instance-method calls dispatch over declared-class method candidates, bind `$this`, reuse argument/default/return cleanup, and report runtime method misses through shared diagnostics.
+- `06f699f8`: generated-C named `instanceof` checks consume the shared object/class relation ABI.
+- `9d637923`: generated-C public property read/write/`isset`/`empty` consume the shared object-property ABI.
+- `07516bc3`: generated-C registers supported top-level classes and allocates no-argument declared objects through the runtime object ABI.
+- `f6d9ad0a`: LLVM and generated-C lowerable output-buffer calls consume a shared runtime output-buffer stack ABI.
 
 ## Current Review Notes
 
-- Primary semantic baseline is `b099039e`; live verification found `master` and `origin/master` synced at `ec8bbb95` before this object-property unset integration.
-- The supervisor dashboard is stale relative to current primary; the latest visible dashboard update is around 2026-05-24 01:09 CEST and does not reflect the current declared-class allocation, public property, `instanceof`, method-frame, and constructor integrations.
-- `/dev/shm` has recovered enough for ordinary work but remains worth watching: 22G total, 16G used, about 6.7G free, 70% used at this progress update. Prefer disk-backed `/tmp` targets for broad primary gates if it falls near the dispatcher floor, and reclaim shared-memory target dirs only after owner checks.
-- Lane-local status output is broad and fresh, including closure capture binding, text-membership reference slots, source-transfer cleanup scanning, symbol/reference classifiers, and object/class metadata carriers. None of that counts as product capability until selected, gated, committed, and pushed through primary.
+- The supervisor dashboard tail is stale relative to current primary; it still centers on the earlier formatter-diagnostics era and should be refreshed before strategic steering relies on it.
+- `/dev/shm` live check: 22G total, 15G used, 7.4G available, 67% used. Use disk-backed `/tmp` targets for broad gates if it approaches the 6G floor, and only reclaim shared-memory targets after owner checks.
+- `/home` live check: 459G total, 210G used, 231G available, 48% used. `du -sh /home` reported about 110G but exited nonzero with stderr suppressed.
+- Do not raise percentages for the current dirty static-method WIP or lane-local status claims until primary lands gated source/link proof.
