@@ -37,14 +37,14 @@ references/COW identity, source-ordered diagnostics, cleanup/unwinding, and
 LLVM/assembly parity.
 
 Current primary state: primary semantic head is `3cc56bfd`. The protected
-`runtime/src/lib.rs` null-slot hunk remains unowned and unstaged; a separate
-unowned `compiler/src/interpreter.rs` formatting diff is also present locally
-and is not counted. The narrow generated-C user-function WIP was parked and is
-not counted.
+`runtime/src/lib.rs` null-slot hunk remains unowned and unstaged. The earlier
+unowned `compiler/src/interpreter.rs` formatting spillover was restored and is
+not present. The narrow generated-C user-function WIP was parked and is not
+counted.
 
-Current resource read: `/dev/shm` is above the dispatch floor but tight at
-about 7.2G free. Keep broad waves conservative and reclaim large inactive
-target dirs only after live-owner checks.
+Current resource read: `/dev/shm` is above the dispatch floor after reclaiming
+an inactive call-semantics build cache. Keep broad waves conservative and
+reclaim large inactive target dirs only after live-owner checks.
 
 ## Roadmap Snapshot
 
