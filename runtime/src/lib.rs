@@ -3516,6 +3516,65 @@ fn native_array_is_callable_syntax_only(array: &PhpArray) -> bool {
     }
 }
 
+pub const NATIVE_CALLABLE_ARRAY_PARTS_NONE: u8 = 0;
+pub const NATIVE_CALLABLE_ARRAY_PARTS_OK: u8 = 1;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct NativeCallableArrayParts {
+    target: NativeValueHandle,
+    method: NativeValueHandle,
+    status: u8,
+}
+
+impl NativeCallableArrayParts {
+    fn none() -> Self {
+        Self {
+            target: NativeValueHandle::null(),
+            method: NativeValueHandle::null(),
+            status: NATIVE_CALLABLE_ARRAY_PARTS_NONE,
+        }
+    }
+
+    fn ok(target: Value, method: Value) -> Self {
+        Self {
+            target: NativeValueHandle::from_value(target),
+            method: NativeValueHandle::from_value(method),
+            status: NATIVE_CALLABLE_ARRAY_PARTS_OK,
+        }
+    }
+
+    pub fn status(&self) -> u8 {
+        self.status
+    }
+}
+
+fn native_callable_array_parts(value: &Value) -> NativeCallableArrayParts {
+    let Value::Array(array) = value else {
+        return NativeCallableArrayParts::none();
+    };
+    if array.len() != 2 {
+        return NativeCallableArrayParts::none();
+    }
+
+    let Some(target) = array.get_cloned(ArrayKey::Int(0)) else {
+        return NativeCallableArrayParts::none();
+    };
+    let Some(method @ Value::String(_)) = array.get_cloned(ArrayKey::Int(1)) else {
+        return NativeCallableArrayParts::none();
+    };
+    match target {
+        Value::String(_) | Value::Object(_) => NativeCallableArrayParts::ok(target, method),
+        Value::Null
+        | Value::Bool(_)
+        | Value::Int(_)
+        | Value::Float(_)
+        | Value::Array(_)
+        | Value::Closure(_)
+        | Value::Resource(_) => NativeCallableArrayParts::none(),
+    }
+}
+
 /// # Safety
 ///
 /// `handle` must be null or an array handle previously returned by the runtime
@@ -3540,6 +3599,29 @@ pub unsafe extern "C" fn phpc_native_value_is_callable_syntax_only(
     unsafe { handle.as_ref() }
         .map(native_value_is_callable_syntax_only)
         .unwrap_or(false)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. The returned target and method handles are owned by
+/// the caller when status is `NATIVE_CALLABLE_ARRAY_PARTS_OK` and must be
+/// released with `phpc_native_callable_array_parts_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_callable_array_parts(
+    handle: NativeValueHandle,
+) -> NativeCallableArrayParts {
+    unsafe { handle.as_ref() }
+        .map(native_callable_array_parts)
+        .unwrap_or_else(NativeCallableArrayParts::none)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_array_parts_free(parts: NativeCallableArrayParts) {
+    unsafe {
+        phpc_native_value_free(parts.target);
+        phpc_native_value_free(parts.method);
+    }
 }
 
 /// # Safety
@@ -22163,6 +22245,63 @@ mod tests {
         assert!(!unsafe { phpc_native_value_is_callable_syntax_only(scalar_handle) });
         unsafe { phpc_native_value_free(scalar_handle) };
         assert!(!unsafe { phpc_native_value_is_callable_syntax_only(NativeValueHandle::null()) });
+    }
+
+    #[test]
+    fn native_callable_array_parts_extract_string_and_object_targets() {
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("CallableBox").unwrap();
+        let object = Value::Object(PhpObject::from_class(classes.get(class_id).unwrap()));
+
+        for (label, value, expected_target_type) in [
+            (
+                "class string target",
+                Value::Array(callable_pair(
+                    Value::String("CallableBox".to_string()),
+                    Value::String("run".to_string()),
+                )),
+                "string",
+            ),
+            (
+                "object target",
+                Value::Array(callable_pair(object, Value::String("run".to_string()))),
+                "object",
+            ),
+        ] {
+            let value_handle = NativeValueHandle::from_value(value);
+            let parts = unsafe { phpc_native_value_callable_array_parts(value_handle) };
+            assert_eq!(parts.status(), NATIVE_CALLABLE_ARRAY_PARTS_OK, "{label}");
+            assert_eq!(
+                unsafe { parts.target.as_ref() }.map(Value::type_name),
+                Some(expected_target_type),
+                "{label}"
+            );
+            assert_eq!(
+                unsafe { parts.method.as_ref() },
+                Some(&Value::String("run".to_string())),
+                "{label}"
+            );
+            unsafe { phpc_native_callable_array_parts_free(parts) };
+            unsafe { phpc_native_value_free(value_handle) };
+        }
+
+        for value in [
+            Value::String("strlen".to_string()),
+            Value::Array(callable_pair(
+                Value::Int(7),
+                Value::String("run".to_string()),
+            )),
+            Value::Array(callable_pair(
+                Value::String("CallableBox".to_string()),
+                Value::Int(7),
+            )),
+        ] {
+            let value_handle = NativeValueHandle::from_value(value);
+            let parts = unsafe { phpc_native_value_callable_array_parts(value_handle) };
+            assert_eq!(parts.status(), NATIVE_CALLABLE_ARRAY_PARTS_NONE);
+            unsafe { phpc_native_callable_array_parts_free(parts) };
+            unsafe { phpc_native_value_free(value_handle) };
+        }
     }
 
     #[test]

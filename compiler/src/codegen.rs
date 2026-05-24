@@ -13345,6 +13345,10 @@ impl CGenerator {
                 output.push_str("typedef phpc_NativeValueHandle (*phpc_NativeClosureFrameCallback)(int, const phpc_NativeClosureArgument *, size_t, int *);\n");
                 output.push_str("typedef struct { phpc_NativeClosureFrameCallback callback; size_t required_arg_count; size_t param_count; const uint8_t *param_flags; } phpc_NativeClosureDescriptor;\n");
             }
+            if self.uses_native_dynamic_call_helpers {
+                output.push_str("#define PHPC_NATIVE_CALLABLE_ARRAY_PARTS_OK 1\n");
+                output.push_str("typedef struct { phpc_NativeValueHandle target; phpc_NativeValueHandle method; uint8_t status; } phpc_NativeCallableArrayParts;\n");
+            }
             if self.uses_native_array_helpers || self.uses_native_request_state_helpers {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeArrayHandle;\n");
             }
@@ -13684,6 +13688,8 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_coerce_call_type_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *callable_ptr, size_t callable_len, const uint8_t *label_ptr, size_t label_len, const uint8_t *type_ptr, size_t type_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_dynamic_call_helpers {
+                output.push_str("extern phpc_NativeCallableArrayParts phpc_native_value_callable_array_parts(phpc_NativeValueHandle value);\n");
+                output.push_str("extern void phpc_native_callable_array_parts_free(phpc_NativeCallableArrayParts parts);\n");
                 output.push_str("extern _Bool phpc_native_value_dynamic_call_name_matches(phpc_NativeValueHandle value, const uint8_t *name_ptr, size_t name_len);\n");
                 output.push_str("extern void phpc_native_value_dynamic_call_failure_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *reason_ptr, size_t reason_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
@@ -20949,6 +20955,15 @@ impl CGenerator {
             &matched,
             &result,
         )?;
+        self.emit_runtime_dynamic_callable_array_branch(
+            &callee.handle,
+            args,
+            span,
+            &shared_cleanup,
+            failure_cleanup,
+            &matched,
+            &result,
+        )?;
 
         'function_branches: for function in functions {
             let (name_bytes, name_len) =
@@ -21193,6 +21208,214 @@ impl CGenerator {
         for cleanup in branch_cleanup {
             self.body.push(format!("  {cleanup}"));
         }
+        self.body.push("}".to_string());
+
+        Ok(())
+    }
+
+    fn emit_runtime_dynamic_callable_array_branch(
+        &mut self,
+        callee_handle: &str,
+        args: &[Expr],
+        span: Span,
+        shared_cleanup: &[String],
+        failure_cleanup: &str,
+        matched: &str,
+        result: &str,
+    ) -> CompileResult<()> {
+        let instance_candidates = self.declared_class_dynamic_method_candidates();
+        let static_candidates = self.declared_class_dynamic_static_method_candidates();
+        if instance_candidates.is_empty() && static_candidates.is_empty() {
+            return Ok(());
+        }
+
+        self.uses_native_dynamic_call_helpers = true;
+        self.uses_native_object_instanceof_helpers = true;
+        self.uses_native_object_method_helpers = true;
+
+        let parts = self.next_native_name("callable_array_parts");
+        let array_matched = self.next_native_name("callable_array_matched");
+        let status = self.next_native_name("callable_array_status");
+        self.body.push(format!("if (!{matched}) {{"));
+        self.body.push(format!(
+            "  phpc_NativeCallableArrayParts {parts} = phpc_native_value_callable_array_parts({callee_handle});"
+        ));
+        self.body.push(format!(
+            "  if ({parts}.status == PHPC_NATIVE_CALLABLE_ARRAY_PARTS_OK) {{"
+        ));
+        self.body.push(format!("    {matched} = 1;"));
+        self.body.push(format!("    _Bool {array_matched} = 0;"));
+        self.body.push(format!("    int {status} = 0;"));
+
+        for (target_class_name, method_class, method) in static_candidates {
+            let (class_name, class_name_len) = self
+                .emit_call_type_static_bytes("callable_array_class_name_bytes", &target_class_name);
+            let (method_name, method_name_len) = self
+                .emit_call_type_static_bytes("callable_array_method_name_bytes", &method.decl.name);
+            self.body.push(format!(
+                "    if (!{array_matched} && phpc_native_value_dynamic_call_name_matches({parts}.target, {class_name}, {class_name_len}) && phpc_native_value_dynamic_call_name_matches({parts}.method, {method_name}, {method_name_len})) {{"
+            ));
+            self.body.push(format!("      {array_matched} = 1;"));
+
+            let parts_cleanup = format!("phpc_native_callable_array_parts_free({parts});");
+            if !native_user_function_accepts_arg_count(&method.decl, args.len()) {
+                let branch_failure_cleanup = format!(
+                    "{parts_cleanup}{}{}",
+                    c_cleanup_sequence(shared_cleanup),
+                    failure_cleanup
+                );
+                self.emit_runtime_dynamic_call_failure(
+                    callee_handle,
+                    "callable array resolved to a generated public static method but argument count is outside the generated frame arity/default/variadic subset",
+                    &branch_failure_cleanup,
+                    "      ",
+                );
+                self.body.push("    }".to_string());
+                continue;
+            }
+
+            let argument_failure_cleanup = format!(
+                "{parts_cleanup}{}{}",
+                c_cleanup_sequence(shared_cleanup),
+                failure_cleanup
+            );
+            let (mut call_args, branch_cleanup) = self
+                .materialize_declared_method_frame_arguments(
+                    &method_class.name,
+                    &method,
+                    None,
+                    args,
+                    span,
+                    &argument_failure_cleanup,
+                    NativeCallCallee::DynamicExpression,
+                )?;
+            self.body.push(format!("      {status} = 0;"));
+            call_args.push(format!("&{status}"));
+            self.body.push(format!(
+                "      {result} = {}({});",
+                method.c_name,
+                call_args.join(", ")
+            ));
+            let call_failure_cleanup = format!(
+                "{}{parts_cleanup}{}{}",
+                c_cleanup_sequence(&branch_cleanup),
+                c_cleanup_sequence(shared_cleanup),
+                failure_cleanup
+            );
+            let error_exit = self.native_error_exit(&call_failure_cleanup);
+            self.body.push(format!(
+                "      if ({status} != 1 || {result}.ptr == NULL) {{ {error_exit} }}"
+            ));
+            for cleanup in branch_cleanup {
+                self.body.push(format!("      {cleanup}"));
+            }
+            self.body.push("    }".to_string());
+        }
+
+        for (class, method) in instance_candidates {
+            let (method_name, method_name_len) = self
+                .emit_call_type_static_bytes("callable_array_method_name_bytes", &method.decl.name);
+            let (class_name, class_name_len) =
+                self.emit_call_type_static_bytes("callable_array_class_name_bytes", &class.name);
+            let diagnostic = self.next_native_name("callable_array_receiver_diagnostic");
+            let class_match = self.next_native_name("callable_array_receiver_match");
+            self.body.push(format!(
+                "    if (!{array_matched} && phpc_native_value_dynamic_call_name_matches({parts}.method, {method_name}, {method_name_len})) {{"
+            ));
+            self.body.push(format!(
+                "      phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"
+            ));
+            self.body.push(format!(
+                "      _Bool {class_match} = phpc_native_value_instanceof_class_with_diagnostic({parts}.target, {class_name}, {class_name_len}, &{diagnostic});"
+            ));
+            let parts_cleanup = format!("phpc_native_callable_array_parts_free({parts});");
+            let class_failure_cleanup = format!(
+                "phpc_native_diagnostic_report({diagnostic}); {parts_cleanup}{}{}",
+                c_cleanup_sequence(shared_cleanup),
+                failure_cleanup
+            );
+            let class_error_exit = self.native_error_exit(&class_failure_cleanup);
+            self.body.push(format!(
+                "      if ({diagnostic}.ptr != NULL) {{ {class_error_exit} }}"
+            ));
+            self.body
+                .push(format!("      phpc_native_diagnostic_free({diagnostic});"));
+            self.body.push(format!("      if ({class_match}) {{"));
+            self.body.push(format!("        {array_matched} = 1;"));
+
+            if !native_user_function_accepts_arg_count(&method.decl, args.len()) {
+                let branch_failure_cleanup = format!(
+                    "{parts_cleanup}{}{}",
+                    c_cleanup_sequence(shared_cleanup),
+                    failure_cleanup
+                );
+                self.emit_runtime_dynamic_call_failure(
+                    callee_handle,
+                    "callable array resolved to a generated public instance method but argument count is outside the generated frame arity/default/variadic subset",
+                    &branch_failure_cleanup,
+                    "        ",
+                );
+                self.body.push("      }".to_string());
+                self.body.push("    }".to_string());
+                continue;
+            }
+
+            let argument_failure_cleanup = format!(
+                "{parts_cleanup}{}{}",
+                c_cleanup_sequence(shared_cleanup),
+                failure_cleanup
+            );
+            let (mut call_args, branch_cleanup) = self
+                .materialize_declared_method_frame_arguments(
+                    &class.name,
+                    &method,
+                    Some(&format!("{parts}.target")),
+                    args,
+                    span,
+                    &argument_failure_cleanup,
+                    NativeCallCallee::DynamicExpression,
+                )?;
+            self.body.push(format!("        {status} = 0;"));
+            call_args.push(format!("&{status}"));
+            self.body.push(format!(
+                "        {result} = {}({});",
+                method.c_name,
+                call_args.join(", ")
+            ));
+            let call_failure_cleanup = format!(
+                "{}{parts_cleanup}{}{}",
+                c_cleanup_sequence(&branch_cleanup),
+                c_cleanup_sequence(shared_cleanup),
+                failure_cleanup
+            );
+            let error_exit = self.native_error_exit(&call_failure_cleanup);
+            self.body.push(format!(
+                "        if ({status} != 1 || {result}.ptr == NULL) {{ {error_exit} }}"
+            ));
+            for cleanup in branch_cleanup {
+                self.body.push(format!("        {cleanup}"));
+            }
+            self.body.push("      }".to_string());
+            self.body.push("    }".to_string());
+        }
+
+        let array_failure_cleanup = format!(
+            "phpc_native_callable_array_parts_free({parts}); {}{}",
+            c_cleanup_sequence(shared_cleanup),
+            failure_cleanup
+        );
+        self.body.push(format!("    if (!{array_matched}) {{"));
+        self.emit_runtime_dynamic_call_failure(
+            callee_handle,
+            "callable array did not resolve to a supported generated public method frame",
+            &array_failure_cleanup,
+            "      ",
+        );
+        self.body.push("    }".to_string());
+        self.body.push(format!(
+            "    phpc_native_callable_array_parts_free({parts});"
+        ));
+        self.body.push("  }".to_string());
         self.body.push("}".to_string());
 
         Ok(())
@@ -21648,6 +21871,37 @@ impl CGenerator {
             for method in &class.methods {
                 if !method.is_static {
                     candidates.push((class.clone(), method.clone()));
+                }
+            }
+        }
+        candidates
+    }
+
+    fn declared_class_dynamic_static_method_candidates(
+        &self,
+    ) -> Vec<(String, CDeclaredClass, CDeclaredClassMethod)> {
+        let mut candidates = Vec::new();
+        for class_key in &self.declared_class_order {
+            let target_class = self
+                .declared_classes
+                .get(class_key)
+                .expect("registered class key has metadata");
+            let Some(lookup_keys) = self.declared_class_lookup_keys(class_key) else {
+                continue;
+            };
+            for lookup_key in lookup_keys {
+                let method_class = self
+                    .declared_classes
+                    .get(&lookup_key)
+                    .expect("declared class lookup key has metadata");
+                for method in &method_class.methods {
+                    if method.is_static {
+                        candidates.push((
+                            target_class.name.clone(),
+                            method_class.clone(),
+                            method.clone(),
+                        ));
+                    }
                 }
             }
         }

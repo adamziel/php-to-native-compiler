@@ -16872,6 +16872,110 @@ fn native_executable_c_source_lowers_finite_mixed_dynamic_calls() {
 }
 
 #[test]
+fn native_executable_c_source_invokes_callable_arrays_through_method_frames() {
+    let source = concat!(
+        "<?php\n",
+        "class CallableArrayTarget {\n",
+        "    public static function stat($value) { return \"S\" . $value; }\n",
+        "    public function inst($value) { return \"I\" . $value; }\n",
+        "    public function mutate(&$slot, $value) { $slot = $value; return $slot; }\n",
+        "}\n",
+        "class CallableArrayChild extends CallableArrayTarget {}\n",
+        "function apply_callable($callback, $value) { return $callback($value); }\n",
+        "function apply_ref_callable($callback, &$slot, $value) { return $callback($slot, $value); }\n",
+        "$static = [\"CallableArrayTarget\", \"stat\"];\n",
+        "echo $static(\"A\"), \"|\", apply_callable($static, \"B\"), \"|\";\n",
+        "$childStatic = [\"CallableArrayChild\", \"stat\"];\n",
+        "echo $childStatic(\"C\"), \"|\";\n",
+        "$object = new CallableArrayTarget();\n",
+        "$instance = [$object, \"inst\"];\n",
+        "echo $instance(\"D\"), \"|\", apply_callable($instance, \"E\"), \"|\";\n",
+        "$child = new CallableArrayChild();\n",
+        "$childInstance = [$child, \"inst\"];\n",
+        "echo $childInstance(\"F\"), \"|\";\n",
+        "$slot = \"old\";\n",
+        "$mutator = [$object, \"mutate\"];\n",
+        "echo $mutator($slot, \"direct\"), \":\", $slot, \"|\";\n",
+        "echo apply_ref_callable($mutator, $slot, \"relay\"), \":\", $slot;\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_callable_array_parts")
+            && source.contains("phpc_native_callable_array_parts_free")
+            && source.contains("PHPC_NATIVE_CALLABLE_ARRAY_PARTS_OK"),
+        "callable arrays should be decomposed through the shared runtime callable-array ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_dynamic_call_name_matches")
+            && source.contains("phpc_native_value_instanceof_class_with_diagnostic")
+            && source.contains("phpc_declared_method_"),
+        "callable array invocation should reuse runtime name matching, object class checks, and generated method frames:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_user_function_0_apply_callable(")
+            && source.contains("phpc_user_function_1_apply_ref_callable(")
+            && source.contains("phpc_native_reference_set_value"),
+        "callable arrays should flow through direct calls, by-value relay, and by-reference relay consumers:\n{source}"
+    );
+    assert!(
+        !source.contains(ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION)
+            && !source.contains("callable must be a string for generated-C runtime dispatch"),
+        "supported callable arrays should not hit the dynamic-call string-only blocker:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_callable_array_invocation_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class CallableArrayTarget {\n",
+        "    public static function stat($value) { return \"S\" . $value; }\n",
+        "    public function inst($value) { return \"I\" . $value; }\n",
+        "    public function mutate(&$slot, $value) { $slot = $value; return $slot; }\n",
+        "}\n",
+        "class CallableArrayChild extends CallableArrayTarget {}\n",
+        "function apply_callable($callback, $value) { return $callback($value); }\n",
+        "function apply_ref_callable($callback, &$slot, $value) { return $callback($slot, $value); }\n",
+        "$static = [\"CallableArrayTarget\", \"stat\"];\n",
+        "echo $static(\"A\"), \"|\", apply_callable($static, \"B\"), \"|\";\n",
+        "$childStatic = [\"CallableArrayChild\", \"stat\"];\n",
+        "echo $childStatic(\"C\"), \"|\";\n",
+        "$object = new CallableArrayTarget();\n",
+        "$instance = [$object, \"inst\"];\n",
+        "echo $instance(\"D\"), \"|\", apply_callable($instance, \"E\"), \"|\";\n",
+        "$child = new CallableArrayChild();\n",
+        "$childInstance = [$child, \"inst\"];\n",
+        "echo $childInstance(\"F\"), \"|\";\n",
+        "$slot = \"old\";\n",
+        "$mutator = [$object, \"mutate\"];\n",
+        "echo $mutator($slot, \"direct\"), \":\", $slot, \"|\";\n",
+        "echo apply_ref_callable($mutator, $slot, \"relay\"), \":\", $slot;\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("callable_array_invocation", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native callable-array executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"SA|SB|SC|ID|IE|IF|direct:direct|relay:relay");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn native_executable_c_source_keeps_unsupported_dynamic_builtin_targets_blocked() {
     for source in [
         "<?php\n$call = \"count\";\necho $call([1]);\n",
