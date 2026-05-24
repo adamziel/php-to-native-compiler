@@ -1,7 +1,7 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, non-direct assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 
 #[test]
 fn direct_variable_assignment_expressions_return_assigned_values() {
@@ -516,14 +516,20 @@ fn append_offsets_remain_unsupported_as_reads() {
 }
 
 #[test]
-fn emit_ir_rejects_assignment_expressions_until_native_lowering_exists() {
-    let error = emit_ir_source("<?php\n$value = 1;\necho ($value = 2);\n").unwrap_err();
+fn emit_ir_lowers_direct_assignment_expressions() {
+    let ir = emit_ir_source(
+        "<?php\n$value = 1;\necho ($value = 2), $value;\necho ($text = \"php\"), $text;\n",
+    )
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.line, 3);
-    assert_eq!(error.column, 7);
-    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
+    assert!(ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 2)"));
+    assert!(ir.contains("phpc_native_value_format_stdout_with_diagnostic"));
+    assert!(ir.contains("php\\00"));
+    assert!(!ir.contains(LLVM_MUTATION_REJECTION));
+}
 
+#[test]
+fn emit_ir_rejects_non_direct_assignment_expressions_until_native_lowering_exists() {
     let error = emit_ir_source("<?php\n$items = 1;\necho ($items['outer']['inner'] = 'value');\n")
         .unwrap_err();
 
@@ -542,13 +548,15 @@ fn emit_ir_rejects_assignment_expressions_until_native_lowering_exists() {
 }
 
 #[test]
-fn emit_ir_rejects_chained_assignment_expressions_until_native_lowering_exists() {
-    let error = emit_ir_source("<?php\n$left = $right = 1;\n").unwrap_err();
+fn emit_ir_lowers_chained_direct_assignment_expressions() {
+    let ir = emit_ir_source("<?php\n$left = $right = 1;\necho $left, $right;\n").unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 9);
-    assert_eq!(error.message, LLVM_MUTATION_REJECTION);
+    assert!(
+        ir.matches("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 1)")
+            .count()
+            >= 2
+    );
+    assert!(!ir.contains(LLVM_MUTATION_REJECTION));
 }
 
 #[test]

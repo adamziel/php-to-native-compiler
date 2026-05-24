@@ -6,7 +6,7 @@ use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
-const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, non-direct assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 
 #[test]
@@ -85,7 +85,6 @@ fn emit_ir_rejects_mutation_forms_with_specific_boundary() {
         "<?php\n$value = 1;\n$value += 2;\n",
         "<?php\n$value = null;\n$value ??= 2;\n",
         "<?php\n$value = 1;\n$value++;\n",
-        "<?php\n$value = 1;\necho ($value = 2);\n",
         "<?php\n$value = 1;\necho ($value += 2);\n",
         "<?php\n$value = null;\necho ($value ??= 2);\n",
         "<?php\n$value = 1;\necho ++$value;\n",
@@ -98,6 +97,36 @@ fn emit_ir_rejects_mutation_forms_with_specific_boundary() {
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, LLVM_MUTATION_REJECTION);
     }
+}
+
+#[test]
+fn emit_ir_lowers_direct_variable_assignment_expression_values() {
+    let ir = emit_ir_source(
+        "<?php\n$left = 1;\necho ($left = 2), $left;\n$right = (($middle = 3) + 4);\necho $middle, $right;\n$text = \"old\";\necho ($text = \"new\"), $text;\n$flag = false;\necho ($flag = true);\n",
+    )
+    .expect("direct variable assignment expressions should lower for primitive value families");
+
+    assert!(
+        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 2)")
+            && ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 3)")
+            && ir.contains(" = add i64 3, 4")
+            && ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_int, i64 %"),
+        "integer assignment-expression values and later reads should be emitted:\n{ir}"
+    );
+    assert!(
+        ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @")
+            && ir.matches("new\\00").count() >= 1,
+        "string assignment-expression values should be emitted through ordinary string output:\n{ir}"
+    );
+    assert!(
+        ir.contains("c\"1\\00\"")
+            && ir.contains("call i32 (ptr, ...) @printf(ptr @.fmt_str, ptr @"),
+        "bool assignment-expression values should remain available to echo:\n{ir}"
+    );
+    assert!(
+        !ir.contains(LLVM_MUTATION_REJECTION),
+        "direct variable assignment expressions should not fall through the mutation blocker:\n{ir}"
+    );
 }
 
 #[test]
@@ -158,7 +187,7 @@ fn emit_ir_routes_statement_mutation_rhs_calls_through_call_boundary() {
         ),
         (
             "<?php\necho ($value = missing_call());\n",
-            LLVM_MUTATION_REJECTION,
+            LLVM_FUNCTION_CALL_REJECTION,
         ),
         (
             "<?php\necho ($value += missing_call());\n",

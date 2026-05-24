@@ -4140,6 +4140,31 @@ const DIRECT_VARIABLE_COMPOUND_ASSIGNMENT_SOURCE: &str = concat!(
     "echo \":\", $value;\n",
 );
 
+const DIRECT_VARIABLE_ASSIGNMENT_EXPRESSION_SOURCE: &str = concat!(
+    "<?php\n",
+    "function overwrite(&$alias) {\n",
+    "    echo ($alias = 9), \":\";\n",
+    "}\n",
+    "$value = 1;\n",
+    "echo ($value = 2), \":\", $value, \"|\";\n",
+    "$sum = (($left = 3) + ($right = 4));\n",
+    "echo $left, \":\", $right, \":\", $sum, \"|\";\n",
+    "$word = ($copy = strtoupper(\"go\"));\n",
+    "echo $word, \":\", $copy, \"|\";\n",
+    "$slot = 5;\n",
+    "overwrite($slot);\n",
+    "echo $slot, \"|\";\n",
+    "$g = \"old\";\n",
+    "echo $GLOBALS[\"g\"], \"|\";\n",
+    "echo ($g = strtoupper(\"new\")), \":\", $GLOBALS[\"g\"];\n",
+);
+
+const DIRECT_VARIABLE_NATIVE_RESULT_ASSIGNMENT_EXPRESSION_SOURCE: &str = concat!(
+    "<?php\n",
+    "echo ($upper = strtoupper(\"go\")), \":\", $upper, \"|\";\n",
+    "echo ($pos = strpos(\"abc\", \"b\")), \":\", $pos;\n",
+);
+
 const ARRAY_LVALUE_COMPOUND_ARRAY_UNION_SOURCE: &str = "<?php\n$box = [];\n$box[\"left\"] = [0 => \"left-zero\", \"name\" => \"left-name\"];\n$box[\"left\"] += [0 => \"right-zero\", 1 => \"right-one\", \"name\" => \"right-name\", \"role\" => \"right-role\"];\n$outer = \"outer\";\n$slot = \"slot\";\n$box[$outer][$slot] = [\"keep\" => \"nested-left\"];\n$box[$outer][$slot] += [\"keep\" => \"nested-right\", \"add\" => \"nested-add\"];\necho $box[\"left\"][0], \"|\", $box[\"left\"][1], \"|\", $box[\"left\"][\"name\"], \"|\", $box[\"left\"][\"role\"], \"|\", $box[$outer][$slot][\"keep\"], \"|\", $box[$outer][$slot][\"add\"];\n";
 
 const ARRAY_LVALUE_INCREMENT_DECREMENT_SOURCE: &str = "<?php\n$key = \"slot\";\n$float = \"float\";\n$items = [$key => 4, $float => 1.5, \"other\" => 9];\n$items[$key]++;\necho ++$items[$key], \"|\", $items[$key]--, \"|\", $items[$key], \"|\";\n$oldFloat = $items[$float]--;\necho $oldFloat, \"|\", $items[$float], \"|\";\n$out = [];\n$out[++$items[$key]] = $items[$key]--;\necho $out[6], \"|\", $items[$key];\n";
@@ -5366,6 +5391,62 @@ fn native_executable_c_source_routes_direct_variable_compound_assignments_throug
     assert!(
         !source.contains("assembly mutation lowering rejects"),
         "lowerable direct variable compound assignments should not fall through the blanket mutation blocker:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_direct_variable_assignment_expressions_through_storage_owners()
+{
+    let program = parse(DIRECT_VARIABLE_ASSIGNMENT_EXPRESSION_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_value_clone(")
+            && body.contains("phpc_native_symbol_table_set_value_by_path_with_diagnostic("),
+        "direct variable assignment expressions should store ordinary and active symbol-table variables through shared owner paths:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_reference_set_value("),
+        "direct variable assignment expressions inside reference-backed frame variables should write through the shared reference owner path:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_free(native_value_clone_"),
+        "cloned native assignment-expression result handles should remain tracked for cleanup:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_format_stdout_with_diagnostic"),
+        "native-value assignment-expression results should remain available to expression consumers:\n{source}"
+    );
+    assert!(
+        !body.contains("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE"),
+        "direct variable assignment expressions should not route through array-lvalue write operations:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly mutation lowering rejects"),
+        "lowerable direct variable assignment expressions should not fall through the blanket mutation blocker:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_direct_variable_assignment_expressions_from_native_results_without_prior_helpers(
+) {
+    let program = parse(DIRECT_VARIABLE_NATIVE_RESULT_ASSIGNMENT_EXPRESSION_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_string_result_operation_with_diagnostic")
+            && source.contains("phpc_native_value_string_search_result_with_diagnostic"),
+        "native-result assignment-expression RHS values should route through shared value-result materializers without depending on prior helper state:\n{source}"
+    );
+    assert!(
+        source.matches("phpc_native_value_clone(").count() >= 2
+            && source.contains("phpc_native_value_free(native_value_clone_"),
+        "native-result assignment expressions should clone assigned values for storage while tracking both stored and expression-result cleanup:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly mutation lowering rejects"),
+        "native-result direct variable assignment expressions should not fall through the mutation blocker:\n{source}"
     );
 }
 
@@ -9891,6 +9972,64 @@ fn emit_exe_links_and_runs_direct_variable_compound_assignment_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"8:8|Ab|18|1:2|10:10:11");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_direct_variable_assignment_expression_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "direct_variable_assignment_expression",
+        DIRECT_VARIABLE_ASSIGNMENT_EXPRESSION_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native direct variable assignment-expression executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"2:2|3:4:7|GO:GO|9:9|old|NEW:NEW");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_direct_variable_assignment_expression_native_result_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "direct_variable_assignment_expression_native_result",
+        DIRECT_VARIABLE_NATIVE_RESULT_ASSIGNMENT_EXPRESSION_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native direct variable native-result assignment-expression executable: {error}"
+        )
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"GO:GO|1:1");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

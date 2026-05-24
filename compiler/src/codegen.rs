@@ -112,8 +112,8 @@ const ASSEMBLY_TRY_BLOCK_REJECTION: &str = "assembly try/catch/finally lowering 
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_GLOBALS_ROOT_APPEND_REJECTION: &str = "Cannot append to $GLOBALS";
-const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
-const ASSEMBLY_MUTATION_REJECTION: &str = "assembly mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions outside lowerable direct and nested array offset write/append values and request-superglobal assignment values, non-symbol unset, object property unset, static property unset, mixed-target unset, and request/global-root unset until native read-modify-write ordering, null-aware mutation, unset writeback effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, non-direct assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
+const ASSEMBLY_MUTATION_REJECTION: &str = "assembly mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions outside lowerable direct variable, direct and nested array offset write/append values, and request-superglobal assignment values, non-symbol unset, object property unset, static property unset, mixed-target unset, and request/global-root unset until native read-modify-write ordering, null-aware mutation, unset writeback effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const LLVM_ISSET_REJECTION: &str = "LLVM isset lowering rejects array offset operands, object property operands, static property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
 const ASSEMBLY_ISSET_REJECTION: &str = "assembly isset lowering rejects array offset operands, object property operands, complex operands, multiple operands, and unset/mutation interactions until native symbol-table storage, null-aware lookup, references/copy-on-write, and exact native error behavior exist; phpc run handles current isset behavior";
 const LLVM_EMPTY_REJECTION: &str = "LLVM empty lowering rejects array offset operands, object property operands, static property operands, complex operands, arrays, unset/mutation interactions, and ambiguous truthiness until native symbol-table storage, PHP truthiness, references/copy-on-write, and exact native error behavior exist; phpc run handles current empty behavior";
@@ -5185,7 +5185,7 @@ impl LlvmGenerator {
                 }
                 Err(self.unsupported(*span, LLVM_CAST_REJECTION))
             }
-            Expr::Assign { target, span, .. } => {
+            Expr::Assign { target, expr, span } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
@@ -5194,6 +5194,9 @@ impl LlvmGenerator {
                 }
                 if is_static_member_assign_target(target) {
                     return Err(self.unsupported(*span, LLVM_STATIC_MEMBER_REJECTION));
+                }
+                if let Some(value) = self.emit_direct_variable_assignment_expr(target, expr)? {
+                    return Ok(value);
                 }
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
@@ -6151,6 +6154,28 @@ impl LlvmGenerator {
             }
             _ => None,
         }
+    }
+
+    fn emit_direct_variable_assignment_expr(
+        &mut self,
+        target: &AssignTarget,
+        expr: &Expr,
+    ) -> CompileResult<Option<IrValue>> {
+        let AssignTarget::Variable { name, .. } = target else {
+            return Ok(None);
+        };
+        if is_request_superglobal_name(name) || is_globals_superglobal_name(name) {
+            return Ok(None);
+        }
+
+        let value = self.emit_expr(expr)?;
+        if matches!(value, IrValue::NativeValue(_)) {
+            return Err(
+                self.unsupported_direct_call(expr.span(), NativeCallBlocker::ReturnValueOwnership)
+            );
+        }
+        self.variables.insert(name.clone(), value.clone());
+        Ok(Some(value))
     }
 
     fn emit_assignment(&mut self, target: &AssignTarget, expr: &Expr) -> CompileResult<()> {
@@ -14042,6 +14067,67 @@ impl CGenerator {
             .insert(name.to_string(), CValue::NativeValueHandle(value.handle));
     }
 
+    fn checked_clone_native_value_handle(&mut self, handle: &str, failure_cleanup: &str) -> String {
+        let cloned = self.clone_native_value_handle(handle);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({cloned}.ptr == NULL) {{ {error_exit} }}"));
+        cloned
+    }
+
+    fn store_cloned_native_assignment_result(
+        &mut self,
+        name: &str,
+        result_handle: &str,
+        failure_cleanup: &str,
+    ) {
+        let stored = self.checked_clone_native_value_handle(
+            result_handle,
+            &format!("phpc_native_value_free({result_handle}); {failure_cleanup}"),
+        );
+        self.store_native_value_result_variable(
+            name,
+            CNativeValueMaterialization {
+                handle: stored,
+                cleanup_after_use: Vec::new(),
+            },
+        );
+    }
+
+    fn direct_variable_assignment_expr_from_native_handle(
+        &mut self,
+        name: &str,
+        handle: &str,
+        failure_cleanup: &str,
+    ) -> CValue {
+        self.store_cloned_native_assignment_result(name, handle, failure_cleanup);
+        self.retain_native_value_cleanup_handle(handle);
+        CValue::NativeValueHandle(handle.to_string())
+    }
+
+    fn direct_variable_assignment_expr_from_borrowed_native_handle(
+        &mut self,
+        name: &str,
+        handle: &str,
+        failure_cleanup: &str,
+    ) -> CValue {
+        let result = self.checked_clone_native_value_handle(handle, failure_cleanup);
+        self.direct_variable_assignment_expr_from_native_handle(name, &result, failure_cleanup)
+    }
+
+    fn direct_variable_assignment_expr_from_reference_handle(
+        &mut self,
+        name: &str,
+        reference: &str,
+        failure_cleanup: &str,
+    ) -> CValue {
+        let result = self.clone_native_reference_value_handle(reference);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.direct_variable_assignment_expr_from_native_handle(name, &result, failure_cleanup)
+    }
+
     fn emit_active_symbol_table_root_value_write(
         &mut self,
         name: &str,
@@ -17276,26 +17362,10 @@ impl CGenerator {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
-                if let AssignTarget::Variable { name, .. } = target.as_ref() {
-                    if self.by_reference_foreach_linger_variables.contains(name) {
-                        return Err(self.unsupported(
-                            *span,
-                            ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION,
-                        ));
-                    }
-                    if let Some(CValue::NativeReferenceHandle(reference)) =
-                        self.variables.get(name).cloned()
-                    {
-                        let (result_value, replacement) =
-                            self.materialize_assignment_expression_replacement_value(expr, "")?;
-                        self.emit_reference_variable_assignment_from_materialized(
-                            &reference,
-                            replacement,
-                            *span,
-                            "",
-                        )?;
-                        return Ok(result_value);
-                    }
+                if let Some(value) =
+                    self.emit_direct_variable_assignment_expr_for_target(target, expr, *span, "")?
+                {
+                    return Ok(value);
                 }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
@@ -18467,6 +18537,78 @@ impl CGenerator {
             }
             _ => Ok(None),
         }
+    }
+
+    fn emit_direct_variable_assignment_expr_for_target(
+        &mut self,
+        target: &AssignTarget,
+        expr: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CValue>> {
+        let AssignTarget::Variable { name, .. } = target else {
+            return Ok(None);
+        };
+
+        if self.by_reference_foreach_linger_variables.contains(name) {
+            return Err(
+                self.unsupported(span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
+            );
+        }
+
+        if let Some(CValue::NativeReferenceHandle(reference)) = self.variables.get(name).cloned() {
+            let (result_value, replacement) =
+                self.materialize_assignment_expression_replacement_value(expr, failure_cleanup)?;
+            self.emit_reference_variable_assignment_from_materialized(
+                &reference,
+                replacement,
+                span,
+                failure_cleanup,
+            )?;
+            return Ok(Some(result_value));
+        }
+
+        if is_request_superglobal_name(name)
+            || is_globals_superglobal_name(name)
+            || (self.direct_variables_route_through_global_symbol_table()
+                && !is_globals_superglobal_name(name))
+        {
+            return Ok(None);
+        }
+
+        if !self.mutable_scalar_slots.contains_key(name) {
+            if let Some(value) =
+                self.try_materialize_native_value_result_expr(expr, failure_cleanup)?
+            {
+                let result = self.direct_variable_assignment_expr_from_native_handle(
+                    name,
+                    &value.handle,
+                    failure_cleanup,
+                );
+                return Ok(Some(result));
+            }
+        }
+
+        let value = self.emit_expr(expr)?;
+        let result = match value {
+            CValue::NativeValueHandle(handle) => self
+                .direct_variable_assignment_expr_from_borrowed_native_handle(
+                    name,
+                    &handle,
+                    failure_cleanup,
+                ),
+            CValue::NativeReferenceHandle(reference) => self
+                .direct_variable_assignment_expr_from_reference_handle(
+                    name,
+                    &reference,
+                    failure_cleanup,
+                ),
+            value => {
+                self.store_variable_value(name, value.clone());
+                value
+            }
+        };
+        Ok(Some(result))
     }
 
     fn emit_isset_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
