@@ -12039,6 +12039,7 @@ impl CGenerator {
                 output.push_str("#define PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_WRITE 2\n");
                 output.push_str("#define PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_ISSET 3\n");
                 output.push_str("#define PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_EMPTY 4\n");
+                output.push_str("#define PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_UNSET 5\n");
             }
             output.push_str("#define PHPC_NATIVE_VALUE_FORMAT_ECHO 0\n");
             output.push('\n');
@@ -12789,6 +12790,24 @@ impl CGenerator {
         let truthy = self.emit_native_value_handle_truthiness(&value.handle);
         self.body.extend(value.cleanup_after_use);
         Ok(Some(CValue::BoolExpr(truthy)))
+    }
+
+    fn emit_object_public_property_unset_expr(
+        &mut self,
+        object: &Expr,
+        property: &str,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let value = self.materialize_object_public_property_operation_expr(
+            object,
+            property,
+            None,
+            "PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_UNSET",
+            "object_property_unset",
+            failure_cleanup,
+        )?;
+        self.body.extend(value.cleanup_after_use);
+        Ok(())
     }
 
     fn emit_object_instanceof_expr(
@@ -18015,8 +18034,13 @@ impl CGenerator {
             | Stmt::UnsetLateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
             }
-            Stmt::UnsetObjectProperty { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
+            Stmt::UnsetObjectProperty {
+                object,
+                property,
+                span,
+            } => {
+                let object = Expr::Variable(object.clone(), *span);
+                self.emit_object_public_property_unset_expr(&object, property, "")
             }
             Stmt::UnsetDynamicObjectProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
@@ -23074,6 +23098,19 @@ impl CGenerator {
                     span,
                 } => {
                     self.emit_unset_nested_array_index(name, indices, *span)?;
+                }
+                UnsetTarget::ObjectProperty {
+                    object,
+                    property,
+                    span,
+                } => {
+                    let object = Expr::Variable(object.clone(), *span);
+                    self.emit_object_public_property_unset_expr(&object, property, "")?;
+                }
+                UnsetTarget::NonDirectObjectProperty {
+                    holder, property, ..
+                } => {
+                    self.emit_object_public_property_unset_expr(holder, property, "")?;
                 }
                 _ => return Err(self.unsupported(span, ASSEMBLY_MUTATION_REJECTION)),
             }

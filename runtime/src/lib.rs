@@ -709,6 +709,7 @@ const NATIVE_OBJECT_PUBLIC_PROPERTY_READ: u8 = 1;
 const NATIVE_OBJECT_PUBLIC_PROPERTY_WRITE: u8 = 2;
 const NATIVE_OBJECT_PUBLIC_PROPERTY_ISSET: u8 = 3;
 const NATIVE_OBJECT_PUBLIC_PROPERTY_EMPTY: u8 = 4;
+const NATIVE_OBJECT_PUBLIC_PROPERTY_UNSET: u8 = 5;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19856,6 +19857,10 @@ unsafe fn native_value_object_public_property_operation(
             .is_public_property_empty(property_name)
             .map(Value::Bool)
             .map_err(|error| error.message().to_string()),
+        NATIVE_OBJECT_PUBLIC_PROPERTY_UNSET => object
+            .unset_property_from_context(property_name, None, &[])
+            .map(|_| Value::Null)
+            .map_err(|error| error.message().to_string()),
         tag => Err(format!(
             "native object property operation tag {tag} is not supported"
         )),
@@ -22031,7 +22036,7 @@ mod tests {
     }
 
     #[test]
-    fn native_object_public_property_operation_handles_read_write_presence_and_empty() {
+    fn native_object_public_property_operation_handles_read_write_presence_empty_and_unset() {
         let class_name = b"NativeBox";
         let property_id = b"id";
         let property_secret = b"secret";
@@ -22163,6 +22168,78 @@ mod tests {
         assert_eq!(unsafe { empty_written.as_ref() }, Some(&Value::Bool(false)));
         unsafe { phpc_native_value_free(empty_written) };
 
+        let unset_written = unsafe {
+            phpc_native_value_object_public_property_operation_with_diagnostic(
+                object,
+                property_id.as_ptr(),
+                property_id.len(),
+                NativeValueHandle::null(),
+                NATIVE_OBJECT_PUBLIC_PROPERTY_UNSET,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(unsafe { unset_written.as_ref() }, Some(&Value::Null));
+        unsafe { phpc_native_value_free(unset_written) };
+
+        let isset_unset = unsafe {
+            phpc_native_value_object_public_property_operation_with_diagnostic(
+                object,
+                property_id.as_ptr(),
+                property_id.len(),
+                NativeValueHandle::null(),
+                NATIVE_OBJECT_PUBLIC_PROPERTY_ISSET,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(unsafe { isset_unset.as_ref() }, Some(&Value::Bool(false)));
+        unsafe { phpc_native_value_free(isset_unset) };
+
+        let empty_unset = unsafe {
+            phpc_native_value_object_public_property_operation_with_diagnostic(
+                object,
+                property_id.as_ptr(),
+                property_id.len(),
+                NativeValueHandle::null(),
+                NATIVE_OBJECT_PUBLIC_PROPERTY_EMPTY,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(unsafe { empty_unset.as_ref() }, Some(&Value::Bool(true)));
+        unsafe { phpc_native_value_free(empty_unset) };
+
+        let missing_unset = unsafe {
+            phpc_native_value_object_public_property_operation_with_diagnostic(
+                object,
+                b"missing".as_ptr(),
+                b"missing".len(),
+                NativeValueHandle::null(),
+                NATIVE_OBJECT_PUBLIC_PROPERTY_UNSET,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(unsafe { missing_unset.as_ref() }, Some(&Value::Null));
+        unsafe { phpc_native_value_free(missing_unset) };
+
+        let rewritten_replacement = NativeValueHandle::from_value(Value::Int(9));
+        let rewritten = unsafe {
+            phpc_native_value_object_public_property_operation_with_diagnostic(
+                object,
+                property_id.as_ptr(),
+                property_id.len(),
+                rewritten_replacement,
+                NATIVE_OBJECT_PUBLIC_PROPERTY_WRITE,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(unsafe { rewritten.as_ref() }, Some(&Value::Int(9)));
+        unsafe { phpc_native_value_free(rewritten) };
+        unsafe { phpc_native_value_free(rewritten_replacement) };
+
         let private_read = unsafe {
             phpc_native_value_object_public_property_operation_with_diagnostic(
                 object,
@@ -22177,6 +22254,23 @@ mod tests {
         assert!(
             native_diagnostic_message_for_test(diagnostic).contains("non-public property"),
             "diagnostic should preserve visibility failure"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let private_unset = unsafe {
+            phpc_native_value_object_public_property_operation_with_diagnostic(
+                object,
+                property_secret.as_ptr(),
+                property_secret.len(),
+                NativeValueHandle::null(),
+                NATIVE_OBJECT_PUBLIC_PROPERTY_UNSET,
+                &mut diagnostic,
+            )
+        };
+        assert!(private_unset.is_null());
+        assert!(
+            native_diagnostic_message_for_test(diagnostic).contains("non-public property"),
+            "diagnostic should preserve visibility failure for unset"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
 

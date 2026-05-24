@@ -130,6 +130,26 @@ const NATIVE_DECLARED_CLASS_PROPERTY_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_DECLARED_CLASS_PROPERTY_UNSET_SOURCE: &str = concat!(
+    "<?php\n",
+    "class Box { public $name; public $peer; private $secret; }\n",
+    "$box = new Box();\n",
+    "$box->name = \"Ada\";\n",
+    "$box->peer = new Box();\n",
+    "$box->peer->name = \"Bee\";\n",
+    "unset($box->name);\n",
+    "echo isset($box->name) ? \"1\" : \"0\";\n",
+    "echo empty($box->name) ? \"1\" : \"0\";\n",
+    "echo \"|\";\n",
+    "unset($box->peer->name, $box->missing);\n",
+    "echo isset($box->peer->name) ? \"1\" : \"0\";\n",
+    "echo empty($box->missing) ? \"1\" : \"0\";\n",
+    "echo \"|\";\n",
+    "$box->name = \"Z\";\n",
+    "echo $box->name;\n",
+    "echo \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_INSTANCEOF_SOURCE: &str = concat!(
     "<?php\n",
     "class Box {}\n",
@@ -992,6 +1012,34 @@ fn emit_exe_links_and_runs_declared_object_property_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"EM|Ada:Ada:S:N|7\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_declared_object_property_unset_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "declared_object_property_unset",
+        NATIVE_DECLARED_CLASS_PROPERTY_UNSET_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run declared-object-property-unset executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"01|01|Z\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -1970,6 +2018,39 @@ fn native_executable_c_source_routes_declared_object_properties_through_runtime_
 }
 
 #[test]
+fn native_executable_c_source_routes_declared_object_property_unsets_through_runtime_abi() {
+    let program = parse(NATIVE_DECLARED_CLASS_PROPERTY_UNSET_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_value_object_public_property_operation_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        source.contains("PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_UNSET"),
+        "generated C should declare the shared object property unset operation tag:\n{source}"
+    );
+    assert!(
+        body.matches("PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_UNSET")
+            .count()
+            >= 3,
+        "direct, chained, and missing public property unsets should share the public property ABI:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_value_object_public_property_operation_with_diagnostic")
+            .count()
+            >= 10,
+        "property read/write/isset/empty/unset should compose through one ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("mutation lowering rejects")
+            && !source.contains("object-property lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_declared_instanceof_through_runtime_abi() {
     let program = parse(NATIVE_DECLARED_CLASS_INSTANCEOF_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -2114,7 +2195,9 @@ fn native_executable_c_source_keeps_unsupported_method_shapes_blocked() {
 fn native_executable_c_source_keeps_unsupported_object_property_shapes_blocked() {
     for source in [
         "<?php\nclass Box { public $name; }\n$box = new Box();\n$prop = \"name\";\necho $box->$prop;\n",
+        "<?php\nclass Box { public $name; }\n$box = new Box();\n$prop = \"name\";\nunset($box->$prop);\n",
         "<?php\nclass Box { public $items; }\n$box = new Box();\n$box->items[\"x\"] = 1;\n",
+        "<?php\nclass Box { public $items; }\n$box = new Box();\nunset($box->items[\"x\"]);\n",
         "<?php\nclass Box { public $name; }\necho Box::$name;\n",
     ] {
         let program = parse(source).expect("unsupported object-property source parses");
@@ -2123,7 +2206,8 @@ fn native_executable_c_source_keeps_unsupported_object_property_shapes_blocked()
         assert!(
             error.message.contains("object-property lowering rejects")
                 || error.message.contains("ArrayAccess lowering rejects")
-                || error.message.contains("static-member lowering rejects"),
+                || error.message.contains("static-member lowering rejects")
+                || error.message.contains("mutation lowering rejects"),
             "{source}\n{error:?}"
         );
     }
