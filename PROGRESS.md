@@ -1,13 +1,13 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 12:15 CEST
-Evaluation marker: `20260524T100021Z`
+Updated: 2026-05-24 12:27 CEST
+Evaluation marker: `20260524T102700Z`
 
 Latest counted primary semantic/test baseline:
-`5e5ab57c codegen: lower object static method receivers`
+`99b0fa3f codegen: lower dynamic declared instance methods`
 
 Latest primary head before this progress update:
-`5e5ab57c codegen: lower object static method receivers`
+`99b0fa3f codegen: lower dynamic declared instance methods`
 
 Only pushed primary work counts here. Dirty WIP, lane-local candidates, parked diffs, exact-shape fixtures, and status-file claims are not product capability until selected, gated, committed, and pushed through primary.
 
@@ -17,15 +17,15 @@ The current headline number is **overall compiler completion**, estimated agains
 
 ## Executive Read
 
-Overall estimated progress: **70%** `[##############------]`
+Overall estimated progress: **71%** `[##############------]`
 
-Executable PHP semantics: **68%** `[##############------]`
+Executable PHP semantics: **69%** `[##############------]`
 
-Primary is making real integrated progress in selected native PHP execution islands. The strongest recent momentum is the generated-C object path: declared class allocation, public property read/write/`isset`/`empty`/`unset`, named `instanceof`, public instance methods with `$this`, supported public constructors, named public static methods, and public object static-receiver method calls now share runtime/frame/property, object/class relation, or declared-method frame boundaries and have focused source/link proof.
+Primary is making real integrated progress in selected native PHP execution islands. The strongest recent momentum is the generated-C object path: declared class allocation, public property read/write/`isset`/`empty`/`unset`, named `instanceof`, public instance methods with `$this`, runtime string-valued public dynamic instance methods, supported public constructors, named public static methods, and public object static-receiver method calls now share runtime/frame/property, object/class relation, dynamic-call name, or declared-method frame boundaries and have focused source/link proof.
 
-This is not general PHP yet. The remaining cliffs are still large: full callable lookup/invocation, closures, dynamic/non-public methods, unsupported object static-receiver forms, inheritance/interfaces/traits, contextual `self`/`parent`/`static`, dynamic/static properties, magic methods, references/COW identity, by-reference returns, request/global alias parity, includes, variable variables, exact/source-ordered diagnostics, cleanup/unwind/finally/destructors/output-buffer shutdown, and backend parity.
+This is not general PHP yet. The remaining cliffs are still large: full callable lookup/invocation, closures, dynamic method forms outside the declared public instance subset, non-public methods, unsupported object static-receiver forms, inheritance/interfaces/traits, contextual `self`/`parent`/`static`, dynamic/static properties, magic methods, references/COW identity, by-reference returns, request/global alias parity, includes, variable variables, exact/source-ordered diagnostics, cleanup/unwind/finally/destructors/output-buffer shutdown, and backend parity.
 
-The latest method slice extends generated-C declared method frames to public object static-receiver calls. `$object::method(...)` materializes the receiver once as a native value, dispatches across declared public static method candidates by method name, checks receiver class identity through `phpc_native_value_instanceof_class_with_diagnostic(...)`, emits receiverless static method frames, and reuses the same argument/default/variadic materialization and result cleanup path as direct static methods, instance methods, and constructors. Dynamic method names, non-public static visibility contexts, inherited object static lookup, object static receivers outside the declared generated-C subset, `self::`/`parent::`/`static::`, autoload/late-static binding, exact diagnostics, LLVM/direct assembly object lowering, and broad object/reference/COW semantics remain blocked.
+The latest method slice extends generated-C declared method frames to runtime string-valued public dynamic instance-method calls. `$object->$method(...)` materializes the receiver and method expression as native values, compares method names through `phpc_native_value_dynamic_call_name_matches(...)`, checks receiver class identity through `phpc_native_value_instanceof_class_with_diagnostic(...)`, dispatches over all declared public instance-method candidates, binds `$this`, and reuses the existing argument/default/variadic/result cleanup path. Non-public methods, inherited lookup, magic `__call`, contextual `self`/`parent`/`static`, callable arrays/objects/closures, exact diagnostics, LLVM/direct assembly object lowering, and broad object/reference/COW semantics remain blocked.
 
 ## Primary-Integrated Capability
 
@@ -33,14 +33,14 @@ The latest method slice extends generated-C declared method frames to public obj
 - [x] Generated-C execution: direct variables, arrays/lvalues, selected dynamic calls, function frames, function-scope globals, `$GLOBALS` self-imports, by-reference parameter writes, assignment expressions, direct-variable compound assignments, output buffers, finalizer transfer slices, and the bounded declared-object family are executable.
 - [x] LLVM consumers: selected string, predicate, search, integer/string helper, primitive assignment-expression, primitive compound-assignment, output-buffer, and native value-operation arithmetic paths consume shared ABIs.
 - [x] C assembly fallback: selected unary string-result and two-operand string-predicate helpers consume shared runtime ABIs.
-- [x] Object slice: generated-C can allocate supported declared class objects, preserve type/class identity, execute public properties including `unset`, evaluate named `instanceof`, call supported public instance methods with `$this`, run supported public constructors, call supported named public static methods without `$this`, and call supported public static methods through object receivers.
+- [x] Object slice: generated-C can allocate supported declared class objects, preserve type/class identity, execute public properties including `unset`, evaluate named `instanceof`, call supported public instance methods with `$this` using static or runtime string method names, run supported public constructors, call supported named public static methods without `$this`, and call supported public static methods through object receivers.
 - [ ] Not complete: full PHP callable, object, reference/COW, cleanup/unwind, diagnostic, request/global, include, variable-variable, and backend-parity behavior.
 
 ## Current Primary State
 
-- [x] Primary semantic work is committed as `5e5ab57c`.
-- [x] Latest counted semantic commit is `5e5ab57c`.
-- [x] No uncounted dirty primary WIP remains from the declared object static-receiver method-call slice before this progress update.
+- [x] Primary semantic work is committed as `99b0fa3f`.
+- [x] Latest counted semantic commit is `99b0fa3f`.
+- [x] No uncounted dirty primary WIP remains from the declared dynamic instance-method slice before this progress update.
 - [x] This progress update is expected to be committed as a wrapper docs commit; unrelated product diffs should remain untouched.
 
 ## Lane-Local Candidate Work
@@ -53,25 +53,26 @@ These are useful inputs, not product capability. Prefer candidates that land as 
 
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | **88%** | `[##################--]` | Strong shared surfaces exist, now consumed by output buffers and the declared-object/property/method family; some surfaces remain scaffolding until broader consumers land. |
-| Compiler/backend consumers | **89%** | `[##################--]` | Generated-C is broad in selected areas, now including named public static declared methods and public object static-receiver dispatch; LLVM and C assembly consume selected ABI families. Direct assembly and many nested/object consumers remain blocked. |
-| Executable PHP semantics | **68%** | `[##############------]` | Many focused linked programs run, now including named public static methods and public object static-receiver calls, but semantics are still selected islands rather than general PHP. |
+| Runtime and ABI foundations | **89%** | `[##################--]` | Strong shared surfaces exist, now consumed by output buffers and the declared-object/property/method family, including dynamic method-name miss diagnostics; some surfaces remain scaffolding until broader consumers land. |
+| Compiler/backend consumers | **90%** | `[##################--]` | Generated-C is broad in selected areas, now including named and runtime string-valued public instance/static declared method paths; LLVM and C assembly consume selected ABI families. Direct assembly and many nested/object consumers remain blocked. |
+| Executable PHP semantics | **69%** | `[##############------]` | Many focused linked programs run, now including named public static methods, public object static-receiver calls, and runtime string-valued public dynamic instance methods, but semantics are still selected islands rather than general PHP. |
 | Arrays, lvalues, references, COW | **64%** | `[#############-------]` | Good selected lvalue/reference paths; full COW, arbitrary roots, foreach, object joins, and alias composition remain open. |
 | Symbols, globals, request state | **72%** | `[##############------]` | Function globals and `$GLOBALS` self-imports improved; request superglobal imports, includes, variable variables, and exact unset behavior remain incomplete. |
-| Calls, functions, frames | **61%** | `[############--------]` | Bounded functions, public instance methods, constructors, named public static methods, and public object static-receiver calls work for selected generated-C paths; closures, callable arrays/objects, named/unpacked args, unsupported object static-receiver forms, and by-reference returns remain open. |
-| Objects, properties, methods | **36%** | `[#######-------------]` | Primary now has a useful declared-object subset with public instance/static method execution, including public object static-receiver dispatch; dynamic/non-public methods, inherited object static receivers, inheritance/interfaces, magic methods, dynamic/static properties, visibility contexts, references/COW, and backend parity remain open. |
+| Calls, functions, frames | **63%** | `[#############-------]` | Bounded functions, public instance methods, runtime string-valued dynamic public instance methods, constructors, named public static methods, and public object static-receiver calls work for selected generated-C paths; closures, callable arrays/objects, named/unpacked args, unsupported object static-receiver forms, and by-reference returns remain open. |
+| Objects, properties, methods | **38%** | `[########------------]` | Primary now has a useful declared-object subset with public instance/static method execution, including public dynamic instance-method names and public object static-receiver dispatch; non-public methods, inherited object static receivers, inheritance/interfaces, magic methods, dynamic/static properties, visibility contexts, references/COW, and backend parity remain open. |
 | Control flow, cleanup, diagnostics | **49%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, and diagnostics exist; broad unwind, handlers, destructors, shutdown flushing, and exact ordering remain open. |
-| Broad integrated verification | **65%** | `[#############-------]` | Focused gates are strong, including source/link proof for named public static methods and object static-receiver dispatch; cross-feature linked programs, backend parity, and full end-to-end PHP proof lag. |
+| Broad integrated verification | **66%** | `[#############-------]` | Focused gates are strong, including source/link proof for named public static methods, object static-receiver dispatch, and runtime string-valued public dynamic instance methods; cross-feature linked programs, backend parity, and full end-to-end PHP proof lag. |
 
 ## Done / In Progress / Not Done
 
-- [x] Done in primary: bounded generated-C direct variables, arrays/lvalues, selected dynamic calls, function globals, `$GLOBALS` self-imports, by-reference parameter writes, assignment expressions, direct-variable compound assignments, output buffers, finalizer transfer slices, declared-class allocation, public constructors, public instance/static methods, public object static-receiver methods, public properties including unset, and named `instanceof`.
+- [x] Done in primary: bounded generated-C direct variables, arrays/lvalues, selected dynamic calls, function globals, `$GLOBALS` self-imports, by-reference parameter writes, assignment expressions, direct-variable compound assignments, output buffers, finalizer transfer slices, declared-class allocation, public constructors, public instance/static methods including runtime string-valued public dynamic instance methods, public object static-receiver methods, public properties including unset, and named `instanceof`.
 - [x] Done in primary: LLVM value-operation arithmetic, primitive direct-variable assignment-expression and compound-assignment paths, lowerable output-buffer calls, and C assembly fallback string-result/string-predicate slices.
 - [ ] In progress but uncounted: lane-local candidates for callable dispatch, object/static property metadata, frame contracts, symbol/reference transport, diagnostics, and cleanup boundaries.
-- [ ] Not done: general object model, dynamic/non-public methods, unsupported object static-receiver forms, general constructor semantics, contextual class names, closures, callable-array/object invocation, complete references/COW, by-reference returns, complete mutation/unset, full diagnostics, full cleanup/unwind, includes, variable variables, request/global parity, and direct assembly parity.
+- [ ] Not done: general object model, dynamic method forms outside declared public instance dispatch, non-public methods, unsupported object static-receiver forms, general constructor semantics, contextual class names, closures, callable-array/object invocation, complete references/COW, by-reference returns, complete mutation/unset, full diagnostics, full cleanup/unwind, includes, variable variables, request/global parity, and direct assembly parity.
 
 ## Recent Primary-Integrated Work
 
+- `99b0fa3f`: generated-C runtime string-valued public dynamic instance-method calls now materialize the receiver and method expression as native values, compare method names through the shared dynamic-call name ABI, validate receiver class identity through the shared object/class relation ABI, and invoke declared instance-method frames with `$this` plus the existing argument/default/variadic/result cleanup path. Source/link/runtime proof covers multiple receiver classes sharing a method name, multiple method names, default and explicit arguments, ternary method-name expressions, assignment/value/discard consumers, method-body property writes/reads, dynamic miss diagnostics, and unsupported static/non-public method shapes staying blocked.
 - `5e5ab57c`: generated-C public object static-receiver calls now evaluate the receiver as a native object value, dispatch over declared public static method candidates by method name, validate receiver class identity through the shared object/class relation ABI, and invoke receiverless declared-method frames with the existing argument/default/variadic/result cleanup path. Source/link proof covers multiple receiver classes sharing a method name, default and explicit arguments, nested object-static call arguments, assignment RHS values, ordinary value consumers, discard statements with method-body output, and non-static object static-receiver shapes staying blocked.
 - `de8e9634`: generated-C named public static method calls now resolve declared-class static method metadata, emit receiverless declared-method frames, and reuse the same argument/default/variadic materialization, call-depth/status handling, return ownership, and cleanup machinery used by public instance methods and constructors. Source/link proof covers defaults, explicit arguments, multiple classes, nested static-call arguments, assignment RHS values, and discard statements with method-body output.
 - `b099039e`: generated-C named public object-property `unset` routes through the shared object-property ABI, with runtime/source/link proof for direct, chained, missing-property, post-unset `isset`/`empty`, reassignment, visibility diagnostics, and non-object diagnostics.
@@ -84,7 +85,9 @@ These are useful inputs, not product capability. Prefer candidates that land as 
 
 ## Current Review Notes
 
-- Primary semantic baseline is `5e5ab57c`; the progress wrapper should be the only dirty primary file before the docs commit.
+- Primary semantic baseline is `99b0fa3f`; the progress wrapper should be the only dirty primary file before the docs commit.
+- Focused gates for the latest dynamic method slice passed using `CARGO_TARGET_DIR=/tmp/php-to-native-compiler-target`: `cargo check -q -p phpc -p php_runtime`, `cargo test -q -p php_runtime native_object_method_failure_reports_receiver_and_method_families`, `cargo test -q -p phpc --test native_link dynamic_method`, `cargo test -q -p phpc --test native_link declared_class_method`, and `cargo test -q -p phpc --test native_link native_executable_c_source_keeps_unsupported_method_shapes_blocked`.
+- The broader `cargo test -q -p phpc --test native_function_call_boundary` gate still has unrelated direct-call column expectation failures in `emit_ir_routes_unsupported_direct_call_argument_results_through_call_boundary` and `native_executable_c_source_routes_unsupported_direct_call_argument_results_through_call_boundary`; this dynamic method slice did not patch those exact diagnostic fixtures.
 - The supervisor dashboard tail is stale relative to current primary; it still centers on the earlier formatter-diagnostics era and should be refreshed before strategic steering relies on it.
 - `/dev/shm` live check briefly hit 100% during worker activity, then recovered to about 64% used with roughly 8G available. Use disk-backed `/tmp` targets for primary gates when shared memory is near the 6G floor, and only reclaim shared-memory targets after owner checks.
 - `/home` live check: 459G total, 211G used, 230G available, 48% used. The disk-backed primary target `/tmp/phpc-primary-target-object-static` is about 335M.
