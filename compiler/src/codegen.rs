@@ -25,7 +25,7 @@ const NATIVE_FILESYSTEM_PATH_HAS_PATH: u8 = 8;
 const LLVM_CONDITIONAL_REJECTION: &str = "LLVM conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
-const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, unsupported dynamic string-valued calls, and non-top-level dynamic frame dispatch, until native runtime lookup, full arity/type diagnostics, recursion, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value direct user-function frames and finite known-string dynamic dispatch to registered frames";
+const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, and unsupported dynamic string-valued calls, until native runtime lookup, full arity/type diagnostics, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value direct and finite known-string dynamic user-function frames";
 const LLVM_STRING_PREDICATE_REJECTION: &str = "LLVM string-predicate lowering rejects str_starts_with(), str_ends_with(), and str_contains() until native PHP string conversion, empty-needle handling, binary string byte semantics, argument diagnostics, references/copy-on-write, and exact native predicate diagnostics exist; generated-native C routes lowerable predicate operands through the shared runtime contract";
 const ASSEMBLY_STRING_PREDICATE_REJECTION: &str = "assembly string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; generated-native C routes lowerable str_starts_with(), str_ends_with(), and str_contains() operands through the shared runtime contract";
 const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int/search builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), strpos(), substr_count(), ord(), and crc32() forms outside the reusable native string operation contracts, including unsupported arity, non-lowerable operands, nested call cleanup, references/copy-on-write, and exact native builtin diagnostics; lowerable LLVM and generated-native C string operands route through shared runtime contracts";
@@ -51,11 +51,11 @@ const ASSEMBLY_CLEARSTATCACHE_REJECTION: &str = "assembly clearstatcache lowerin
 const LLVM_FILESYSTEM_PATH_OPERATION_REJECTION: &str = "LLVM filesystem-path builtin lowering rejects realpath_cache_get() and realpath_cache_size() until native filesystem realpath-cache ABI, request-local cache state, binary path byte fidelity, policy checks, warning-plus-false recovery, references/copy-on-write, and exact native diagnostics exist; generated-native C routes realpath-cache introspection through the shared runtime blocker";
 const ASSEMBLY_FILESYSTEM_PATH_OPERATION_REJECTION: &str = "assembly filesystem-path builtin lowering rejects forms outside the reusable native filesystem path operation blocker, including unsupported arity, stream contexts, file_get_contents() offset/length forms, non-lowerable operands, filesystem policy, stat cache/current-directory state, realpath-cache introspection return ownership, references/copy-on-write, and exact native diagnostics; lowerable stream, canonicalization, stat-predicate, stat-value, current-directory, stat-cache, and realpath-cache operands route through byte-preserving value-to-string conversion, optional truthiness, diagnostics, and cleanup";
 const LLVM_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "LLVM dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
-const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions outside the bounded generated-C finite known-string dispatch to registered by-value user-function frames, including unknown or non-string callables, callable builtins, dynamic calls inside generated function frames, mixed target/default arity, runtime lookup, callbacks, methods, closures, and exact native callable errors; phpc run handles broader string-valued dynamic function calls";
+const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions outside the bounded generated-C finite known-string dispatch to registered by-value user-function frames, including unknown or non-string callables, callable builtins, mixed target/default arity, runtime lookup, callbacks, methods, closures, and exact native callable errors; phpc run handles broader string-valued dynamic function calls";
 const LLVM_TERMINATION_REJECTION: &str = "LLVM termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const ASSEMBLY_TERMINATION_REJECTION: &str = "assembly termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
-const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations outside the bounded generated-C direct by-value frame subset, including nested functions, typed/by-reference/variadic parameters, return types, recursion, static locals, dynamic calls, and unsupported body cleanup, until full native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; generated-native C lowers supported by-value direct user-function frames";
+const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations outside the bounded generated-C by-value frame subset, including nested functions, typed/by-reference/variadic parameters, return types, static locals, and unsupported body cleanup, until full native function symbol tables, stack-frame layout, default parameter binding, complete dynamic lookup, return-value flow, and exact native error behavior exist; generated-native C lowers supported by-value direct and finite known-string dynamic user-function frames";
 const LLVM_STATIC_LOCAL_REJECTION: &str = "LLVM static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const ASSEMBLY_STATIC_LOCAL_REJECTION: &str = "assembly static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const LLVM_CLOSURE_REJECTION: &str = "LLVM closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
@@ -8264,6 +8264,7 @@ struct CGenerator {
     user_function_order: Vec<String>,
     function_definitions: Vec<String>,
     function_return_status: Option<String>,
+    function_call_depth: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -9807,9 +9808,12 @@ impl CGenerator {
     }
 
     fn c_user_function_signature(c_name: &str, param_count: usize) -> String {
-        let mut params = (0..param_count)
-            .map(|index| format!("phpc_NativeValueHandle arg_{index}"))
-            .collect::<Vec<_>>();
+        let mut params = vec!["int phpc_call_depth".to_string()];
+        params.extend(
+            (0..param_count)
+                .map(|index| format!("phpc_NativeValueHandle arg_{index}"))
+                .collect::<Vec<_>>(),
+        );
         params.push("int *phpc_call_status".to_string());
         format!(
             "static phpc_NativeValueHandle {c_name}({})",
@@ -9841,7 +9845,7 @@ impl CGenerator {
                 },
             );
         }
-        self.reject_recursive_user_function_frames()
+        self.accept_recursive_user_function_frames()
     }
 
     fn validate_user_function_frame(&self, function: &FunctionDecl) -> CompileResult<()> {
@@ -9863,7 +9867,7 @@ impl CGenerator {
         Ok(())
     }
 
-    fn reject_recursive_user_function_frames(&self) -> CompileResult<()> {
+    fn accept_recursive_user_function_frames(&self) -> CompileResult<()> {
         let mut graph = HashMap::<String, Vec<String>>::new();
         for key in &self.user_function_order {
             let function = self
@@ -9884,15 +9888,7 @@ impl CGenerator {
         let mut visited = HashSet::new();
         for key in &self.user_function_order {
             if self.user_function_call_graph_has_cycle(key, &graph, &mut visiting, &mut visited) {
-                let function = self
-                    .user_functions
-                    .get(key)
-                    .expect("registered function key has metadata");
-                return Err(native_function_declaration_fallback_diagnostic(
-                    NativeCallBackend::Assembly,
-                    &function.decl,
-                    ASSEMBLY_STATIC_LOCAL_REJECTION,
-                ));
+                break;
             }
         }
         Ok(())
@@ -9948,12 +9944,16 @@ impl CGenerator {
             user_functions: self.user_functions.clone(),
             user_function_order: self.user_function_order.clone(),
             function_return_status: Some("phpc_call_status".to_string()),
+            function_call_depth: Some("phpc_call_depth".to_string()),
             next_static_data: self.next_static_data,
             next_native_temp: self.next_native_temp,
             ..CGenerator::default()
         };
 
         generator.body.push("*phpc_call_status = 0;".to_string());
+        generator.body.push(format!(
+            "if (phpc_call_depth > PHPC_NATIVE_USER_FUNCTION_MAX_CALL_DEPTH) {{ fprintf(stderr, \"phpc native user-function call depth exceeded\\n\"); return (phpc_NativeValueHandle){{0}}; }}"
+        ));
         for (index, param) in function.decl.params.iter().enumerate() {
             let handle = generator.next_native_name("frame_param");
             generator.body.push(format!(
@@ -10139,8 +10139,10 @@ impl CGenerator {
                 }
                 output.push_str("#define PHPC_NATIVE_REQUEST_STATE_OP_VALUE 1\n");
                 output.push_str("#define PHPC_NATIVE_REQUEST_STATE_OP_PRESENCE 3\n");
+                output.push_str("#define PHPC_NATIVE_REQUEST_STATE_OP_ROOT_VALUE 10\n");
                 output.push_str("#define PHPC_NATIVE_REQUEST_STATE_STATUS_OK 1\n");
                 output.push_str("#define PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_KEY 2\n");
+                output.push_str("#define PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_ROOT 11\n");
                 output.push_str("#define PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE 1\n");
                 output.push_str("#define PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET 2\n");
                 output.push_str("#define PHPC_NATIVE_REQUEST_STATE_MUTATION_APPEND 3\n");
@@ -10333,6 +10335,7 @@ impl CGenerator {
                 output.push_str("extern _Bool phpc_native_request_state_key_matches_superglobal(phpc_NativeRequestStateKeyResult key, const uint8_t *bag, size_t bag_len);\n");
                 output.push_str("extern phpc_NativeRequestStateOperationResult phpc_native_request_state_superglobal_operation(phpc_NativeRequestStateHandle request_state, uint8_t operation, const uint8_t *bag, size_t bag_len, const uint8_t *key, size_t key_len, uint8_t key_status);\n");
                 output.push_str("extern phpc_NativeRequestStateOperationResult phpc_native_request_state_superglobal_path_operation(phpc_NativeRequestStateHandle request_state, uint8_t operation, const uint8_t *bag, size_t bag_len, const uint8_t **key_ptrs, const size_t *key_lens, size_t key_count, uint8_t key_status);\n");
+                output.push_str("extern phpc_NativeRequestStateOperationResult phpc_native_request_state_superglobal_bag_mutation_operation(phpc_NativeRequestStateHandle request_state, uint8_t operation, const uint8_t *bag, size_t bag_len, phpc_NativeValueHandle value);\n");
                 output.push_str("extern phpc_NativeRequestStateOperationResult phpc_native_request_state_superglobal_keyed_mutation_operation(phpc_NativeRequestStateHandle request_state, uint8_t operation, const uint8_t *bag, size_t bag_len, const uint8_t *key, size_t key_len, uint8_t key_status, phpc_NativeValueHandle value);\n");
                 output.push_str("extern phpc_NativeRequestStateOperationResult phpc_native_request_state_superglobal_path_mutation_operation(phpc_NativeRequestStateHandle request_state, uint8_t operation, const uint8_t *bag, size_t bag_len, const uint8_t **key_ptrs, const size_t *key_lens, size_t key_count, uint8_t key_status, phpc_NativeValueHandle value);\n");
                 output.push_str("extern size_t phpc_native_request_state_operation_result_report_diagnostic(phpc_NativeRequestStateOperationResult result);\n");
@@ -10498,6 +10501,9 @@ impl CGenerator {
         }
         if self.uses_strcmp {
             output.push_str("#include <string.h>\n\n");
+        }
+        if !self.user_function_order.is_empty() {
+            output.push_str("#define PHPC_NATIVE_USER_FUNCTION_MAX_CALL_DEPTH 1024\n\n");
         }
         for line in &self.static_data {
             output.push_str(line);
@@ -13045,7 +13051,7 @@ impl CGenerator {
 
     fn request_superglobal_operation_failure_condition(&self, result: &str) -> String {
         format!(
-            "{result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK && {result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_KEY"
+            "{result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK && {result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_KEY && {result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_ROOT"
         )
     }
 
@@ -13915,22 +13921,60 @@ impl CGenerator {
         failure_cleanup: &str,
     ) -> CNativeValueMaterialization {
         let request_state = self.ensure_native_request_state_handle();
-        let bag = self.emit_request_superglobal_bag_handle(name);
+        let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
+        let result = self.next_native_name("request_superglobal_root_value");
         let value = self.next_native_name("request_superglobal_snapshot");
         self.body.push(format!(
-            "phpc_NativeValueHandle {value} = phpc_native_request_state_superglobal_snapshot_value({request_state}, {bag});"
+            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_OP_ROOT_VALUE, {bag_bytes}, {}, NULL, 0, PHPC_NATIVE_REQUEST_STATE_STATUS_OK);",
+            name.len()
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_report_diagnostic({result});"
         ));
         let error_exit = self.native_error_exit(&format!(
-            "phpc_native_string_free({bag}); {failure_cleanup}"
+            "phpc_native_request_state_operation_result_free({result}); {failure_cleanup}"
+        ));
+        self.body.push(format!(
+            "if ({result}.value.ptr == NULL) {{ {error_exit} }}"
         ));
         self.body
-            .push(format!("if ({value}.ptr == NULL) {{ {error_exit} }}"));
-        self.body.push(format!("phpc_native_string_free({bag});"));
+            .push(format!("phpc_NativeValueHandle {value} = {result}.value;"));
+        self.body.push(format!("{result}.value.ptr = NULL;"));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_free({result});"
+        ));
 
         CNativeValueMaterialization {
             handle: value.clone(),
             cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
         }
+    }
+
+    fn emit_request_superglobal_root_unset(
+        &mut self,
+        name: &str,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let request_state = self.ensure_native_request_state_handle();
+        let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
+        let result = self.next_native_name("request_superglobal_root_unset");
+        self.body.push(format!(
+            "phpc_NativeRequestStateOperationResult {result} = phpc_native_request_state_superglobal_bag_mutation_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET, {bag_bytes}, {}, (phpc_NativeValueHandle){{0}});",
+            name.len()
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_report_diagnostic({result});"
+        ));
+        let result_error_exit = self.native_error_exit(&format!(
+            "phpc_native_request_state_operation_result_free({result}); {failure_cleanup}"
+        ));
+        self.body.push(format!(
+            "if ({result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK) {{ {result_error_exit} }}"
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_free({result});"
+        ));
+        Ok(())
     }
 
     fn emit_request_superglobal_root_assignment(
@@ -14473,12 +14517,29 @@ impl CGenerator {
     }
 
     fn emit_request_superglobal_isset_expr(&mut self, name: &str, failure_cleanup: &str) -> CValue {
-        let value = self.materialize_request_superglobal_snapshot_value(name, failure_cleanup);
+        let request_state = self.ensure_native_request_state_handle();
+        let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
+        let operation_result = self.next_native_name("request_superglobal_isset_root");
         let result = self.next_native_name("request_superglobal_isset");
-        let handle = value.handle.clone();
+        self.body.push(format!(
+            "phpc_NativeRequestStateOperationResult {operation_result} = phpc_native_request_state_superglobal_operation({request_state}, PHPC_NATIVE_REQUEST_STATE_OP_ROOT_VALUE, {bag_bytes}, {}, NULL, 0, PHPC_NATIVE_REQUEST_STATE_STATUS_OK);",
+            name.len()
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_report_diagnostic({operation_result});"
+        ));
+        let cleanup = format!(
+            "phpc_native_request_state_operation_result_free({operation_result}); {failure_cleanup}"
+        );
+        let error_exit = self.native_error_exit(&cleanup);
+        self.body.push(format!(
+            "if ({operation_result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK && {operation_result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_ROOT) {{ {error_exit} }}"
+        ));
         self.body
-            .push(format!("_Bool {result} = {handle}.ptr != NULL;"));
-        self.body.extend(value.cleanup_after_use);
+            .push(format!("_Bool {result} = {operation_result}.is_set != 0;"));
+        self.body.push(format!(
+            "phpc_native_request_state_operation_result_free({operation_result});"
+        ));
         CValue::BoolExpr(result)
     }
 
@@ -15419,7 +15480,7 @@ impl CGenerator {
                     return Ok(());
                 }
                 if is_request_superglobal_name(name) {
-                    return Err(self.unsupported(*span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+                    return self.emit_request_superglobal_root_unset(name, "");
                 }
                 if is_globals_superglobal_name(name) {
                     return Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION));
@@ -16088,10 +16149,6 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        if self.function_return_status.is_some() {
-            return Ok(None);
-        }
-
         let callee_value = self.emit_expr(callee)?;
         let Some(candidate) = self.dynamic_user_function_candidate_for_value(&callee_value) else {
             return Ok(None);
@@ -16187,10 +16244,13 @@ impl CGenerator {
         let status = self.next_native_name("user_function_status");
         let result = self.next_native_name("user_function_result");
         self.body.push(format!("int {status} = 0;"));
-        let mut call_args = values
-            .iter()
-            .map(|value| value.handle.clone())
-            .collect::<Vec<_>>();
+        let mut call_args = vec![self.user_function_call_depth_argument()];
+        call_args.extend(
+            values
+                .iter()
+                .map(|value| value.handle.clone())
+                .collect::<Vec<_>>(),
+        );
         call_args.push(format!("&{status}"));
         self.body.push(format!(
             "phpc_NativeValueHandle {result} = {}({});",
@@ -16212,6 +16272,13 @@ impl CGenerator {
             handle: result.clone(),
             cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
         })
+    }
+
+    fn user_function_call_depth_argument(&self) -> String {
+        self.function_call_depth
+            .as_ref()
+            .map(|depth| format!("(({depth}) + 1)"))
+            .unwrap_or_else(|| "1".to_string())
     }
 
     fn emit_request_superglobal_assignment_expr(
@@ -19458,7 +19525,8 @@ impl CGenerator {
             match target {
                 UnsetTarget::Variable { name, span } => {
                     if is_request_superglobal_name(name) {
-                        return Err(self.unsupported(*span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+                        self.emit_request_superglobal_root_unset(name, "")?;
+                        continue;
                     }
                     if is_globals_superglobal_name(name) {
                         return Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION));
@@ -25733,7 +25801,7 @@ impl CGenerator {
             "phpc_native_value_format_stdout_with_diagnostic({value}, PHPC_NATIVE_VALUE_FORMAT_ECHO, &{diagnostic});"
         ));
         self.body.push(format!(
-            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {diagnostic}.ptr = NULL; }}"
+            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); {diagnostic}.ptr = NULL; }}"
         ));
     }
 
@@ -25768,7 +25836,7 @@ impl CGenerator {
             "phpc_NativeValueHandle value_{index} = phpc_native_value_from_string_with_diagnostic(string_{index}, &diagnostic_{index});"
         ));
         self.body.push(format!(
-            "if (value_{index}.ptr == NULL) {{ phpc_native_diagnostic_report(diagnostic_{index}); }} else {{ phpc_native_value_format_stdout_with_diagnostic(value_{index}, PHPC_NATIVE_VALUE_FORMAT_ECHO, &diagnostic_{index}); if (diagnostic_{index}.ptr != NULL) {{ phpc_native_diagnostic_report(diagnostic_{index}); phpc_native_diagnostic_free(diagnostic_{index}); diagnostic_{index}.ptr = NULL; }} }}"
+            "if (value_{index}.ptr == NULL) {{ phpc_native_diagnostic_report(diagnostic_{index}); }} else {{ phpc_native_value_format_stdout_with_diagnostic(value_{index}, PHPC_NATIVE_VALUE_FORMAT_ECHO, &diagnostic_{index}); if (diagnostic_{index}.ptr != NULL) {{ phpc_native_diagnostic_report(diagnostic_{index}); diagnostic_{index}.ptr = NULL; }} }}"
         ));
         self.body
             .push(format!("phpc_native_value_free(value_{index});"));

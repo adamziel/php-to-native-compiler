@@ -4229,6 +4229,24 @@ const REQUEST_SUPERGLOBAL_ROOT_ASSIGNMENT_SOURCE: &str = concat!(
     "echo $_SERVER;\n",
 );
 
+const REQUEST_SUPERGLOBAL_ROOT_UNSET_SOURCE: &str = concat!(
+    "<?php\n",
+    "$_GET = \"alpha\";\n",
+    "echo isset($_GET) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "unset($_GET);\n",
+    "echo isset($_GET) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "echo empty($_GET) ? 1 : 0;\n",
+    "echo \"|\";\n",
+    "echo $_GET;\n",
+    "echo \"|\";\n",
+    "$_GET[\"name\"] = \"Ada\";\n",
+    "echo $_GET[\"name\"];\n",
+    "echo \"|\";\n",
+    "echo gettype($_GET);\n",
+);
+
 const REQUEST_SUPERGLOBAL_REFERENCE_BACKED_ROOT_ASSIGNMENT_SOURCE: &str = concat!(
     "<?php\n",
     "$slot = \"seed\";\n",
@@ -5448,7 +5466,7 @@ fn native_executable_c_source_routes_nested_null_coalesce_assign_through_lvalue_
 }
 
 #[test]
-fn native_executable_c_source_routes_request_roots_through_request_state_snapshot() {
+fn native_executable_c_source_routes_request_roots_through_root_value_boundary() {
     let program = parse(REQUEST_SUPERGLOBAL_ROOT_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
     let body = main_body(&source);
@@ -5459,7 +5477,7 @@ fn native_executable_c_source_routes_request_roots_through_request_state_snapsho
         "{source}"
     );
     assert!(
-        source.contains("phpc_native_request_state_superglobal_snapshot_value"),
+        source.contains("PHPC_NATIVE_REQUEST_STATE_OP_ROOT_VALUE"),
         "{source}"
     );
     assert!(
@@ -5475,10 +5493,38 @@ fn native_executable_c_source_routes_request_roots_through_request_state_snapsho
         "{source}"
     );
     assert!(
-        body.matches("phpc_native_request_state_superglobal_snapshot_value")
+        body.matches("PHPC_NATIVE_REQUEST_STATE_OP_ROOT_VALUE")
             .count()
             >= 5,
         "{source}"
+    );
+    assert!(
+        !source.contains("request-superglobal lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_request_root_unset_through_bag_mutation_boundary() {
+    let program = parse(REQUEST_SUPERGLOBAL_ROOT_UNSET_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_bag_mutation_operation"),
+        "{source}"
+    );
+    assert!(
+        source.contains("PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET"),
+        "{source}"
+    );
+    assert!(
+        body.contains("PHPC_NATIVE_REQUEST_STATE_OP_ROOT_VALUE"),
+        "root isset/empty/read should share the root-value operation:\n{source}"
+    );
+    assert!(
+        body.contains("PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_ROOT"),
+        "root probes should accept the missing-root status after unset:\n{source}"
     );
     assert!(
         !source.contains("request-superglobal lowering rejects"),
@@ -6964,7 +7010,7 @@ fn native_executable_c_source_routes_request_root_assignments_through_replace_va
         "{source}"
     );
     assert!(
-        body.matches("phpc_native_request_state_superglobal_snapshot_value")
+        body.matches("PHPC_NATIVE_REQUEST_STATE_OP_ROOT_VALUE")
             .count()
             >= 5,
         "{source}"
@@ -10285,6 +10331,53 @@ fn emit_exe_links_and_runs_request_root_assignment_program() {
 }
 
 #[test]
+fn emit_exe_unsets_and_reseeds_request_roots_through_shared_state_boundary() {
+    if !has_cc() {
+        return;
+    }
+
+    let output_path = native_link_output_path("request_root_unset");
+    let source_path = native_link_output_path("request_root_unset_source.php");
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+    fs::write(&source_path, REQUEST_SUPERGLOBAL_ROOT_UNSET_SOURCE)
+        .expect("native request root unset source fixture can be written");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native request root unset source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native request root unset executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"1|0|1||Ada|array");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
 fn emit_exe_links_and_runs_reference_backed_request_root_assignment_program() {
     if !has_cc() {
         return;
@@ -13259,6 +13352,37 @@ const NATIVE_DYNAMIC_USER_FUNCTION_CALL_SOURCE: &str = concat!(
     "echo (true ? \"pick\" : \"PICK\")(\"tail\");\n",
 );
 
+const NATIVE_RECURSIVE_USER_FUNCTION_FRAME_SOURCE: &str = concat!(
+    "<?php\n",
+    "function countdown($n) {\n",
+    "    if ($n <= 0) {\n",
+    "        return \"done\";\n",
+    "    }\n",
+    "    echo $n, \":\";\n",
+    "    return countdown($n - 1);\n",
+    "}\n",
+    "function even_label($n) {\n",
+    "    if ($n <= 0) {\n",
+    "        return \"even\";\n",
+    "    }\n",
+    "    return odd_label($n - 1);\n",
+    "}\n",
+    "function odd_label($n) {\n",
+    "    if ($n <= 0) {\n",
+    "        return \"odd\";\n",
+    "    }\n",
+    "    return even_label($n - 1);\n",
+    "}\n",
+    "function dynamic_step($n) {\n",
+    "    if ($n <= 0) {\n",
+    "        return \"dyn\";\n",
+    "    }\n",
+    "    $call = ($n <= 1) ? \"dynamic_step\" : \"DYNAMIC_STEP\";\n",
+    "    return $call($n - 1);\n",
+    "}\n",
+    "echo countdown(3), \"|\", even_label(4), \":\", even_label(3), \"|\", dynamic_step(2);\n",
+);
+
 #[test]
 fn native_executable_c_source_lowers_direct_user_function_frames() {
     let program = parse(NATIVE_USER_FUNCTION_FRAME_SOURCE).unwrap();
@@ -13289,6 +13413,35 @@ fn native_executable_c_source_lowers_direct_user_function_frames() {
     assert!(
         !source.contains("assembly user-function lowering rejects"),
         "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_recursive_user_function_frames() {
+    let program = parse(NATIVE_RECURSIVE_USER_FUNCTION_FRAME_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("#define PHPC_NATIVE_USER_FUNCTION_MAX_CALL_DEPTH 1024"),
+        "recursive frames should emit the shared depth guard:\n{source}"
+    );
+    assert!(
+        source.contains("int phpc_call_depth")
+            && source.contains("((phpc_call_depth) + 1)")
+            && source.contains("phpc native user-function call depth exceeded"),
+        "recursive and in-frame calls should thread the generated call depth:\n{source}"
+    );
+    assert!(
+        source.matches("phpc_user_function_0_countdown(").count() >= 3
+            && source.matches("phpc_user_function_1_even_label(").count() >= 3
+            && source.matches("phpc_user_function_2_odd_label(").count() >= 3
+            && source.matches("phpc_user_function_3_dynamic_step(").count() >= 3,
+        "direct recursion, mutual recursion, and known-string in-frame dynamic recursion should lower through frame entries:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly user-function lowering rejects")
+            && !source.contains("assembly dynamic function-call lowering rejects"),
+        "recursive frames and in-frame known dynamic calls should not hit call blockers:\n{source}"
     );
 }
 
@@ -13388,6 +13541,34 @@ fn emit_exe_links_and_runs_dynamic_user_function_call_program() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_recursive_user_function_frame_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "recursive_user_function_frame",
+        NATIVE_RECURSIVE_USER_FUNCTION_FRAME_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native recursive user-function executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"3:2:1:done|even:odd|dyn");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
 fn emit_exe_links_and_runs_user_function_introspection_program() {
     if !has_cc() {
         return;
@@ -13422,7 +13603,6 @@ fn native_executable_c_source_rejects_unsupported_user_function_frame_shapes() {
         "<?php\nfunction variadic(...$values) { return 1; }\n",
         "<?php\nfunction typed(int $value) { return $value; }\n",
         "<?php\nfunction ret(): int { return 1; }\n",
-        "<?php\nfunction rec() { return rec(); }\necho rec();\n",
         "<?php\nfunction bad_exit() { exit(\"bad\"); }\necho bad_exit();\n",
         "<?php\nfunction outer() { function inner() { return 1; } return inner(); }\necho outer();\n",
     ] {
@@ -13432,7 +13612,26 @@ fn native_executable_c_source_rejects_unsupported_user_function_frame_shapes() {
         assert!(
             error
                 .message
-                .contains("direct by-value frame subset"),
+                .contains("by-value frame subset"),
+            "{source}\n{error:?}"
+        );
+    }
+}
+
+#[test]
+fn native_executable_c_source_rejects_unsupported_dynamic_calls_inside_user_function_frames() {
+    for source in [
+        "<?php\nfunction bad() { $call = \"strlen\"; return $call(\"x\"); }\necho bad();\n",
+        "<?php\nfunction bad() { $call = \"missing\"; return $call(); }\nfunction known() { return 1; }\necho bad();\n",
+        "<?php\nfunction bad($call) { return $call(); }\necho bad(\"known\");\nfunction known() { return 1; }\n",
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert!(
+            error
+                .message
+                .contains("finite known-string dispatch to registered by-value user-function frames"),
             "{source}\n{error:?}"
         );
     }

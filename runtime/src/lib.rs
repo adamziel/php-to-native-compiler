@@ -878,6 +878,7 @@ pub const PHPC_NATIVE_REQUEST_STATE_OP_VALUE: u8 = 1;
 pub const PHPC_NATIVE_REQUEST_STATE_OP_ARRAY: u8 = 2;
 pub const PHPC_NATIVE_REQUEST_STATE_OP_PRESENCE: u8 = 3;
 pub const PHPC_NATIVE_REQUEST_STATE_OP_BAG_PRESENCE: u8 = 4;
+pub const PHPC_NATIVE_REQUEST_STATE_OP_ROOT_VALUE: u8 = 10;
 pub const PHPC_NATIVE_REQUEST_STATE_STATUS_OK: u8 = 1;
 pub const PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_KEY: u8 = 2;
 pub const PHPC_NATIVE_REQUEST_STATE_STATUS_INVALID_OPERATION: u8 = 3;
@@ -887,6 +888,7 @@ pub const PHPC_NATIVE_REQUEST_STATE_STATUS_UNKNOWN_BAG: u8 = 6;
 pub const PHPC_NATIVE_REQUEST_STATE_STATUS_UNSUPPORTED_KEYED_BAG: u8 = 7;
 pub const PHPC_NATIVE_REQUEST_STATE_STATUS_UNSUPPORTED_KEY_COERCION: u8 = 8;
 pub const PHPC_NATIVE_REQUEST_STATE_STATUS_UNSUPPORTED_KEYED_VALUE: u8 = 9;
+pub const PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_ROOT: u8 = 11;
 pub const PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE: u8 = 1;
 pub const PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET: u8 = 2;
 pub const PHPC_NATIVE_REQUEST_STATE_MUTATION_APPEND: u8 = 3;
@@ -953,6 +955,7 @@ struct NativeReference {
 struct NativeRequestState {
     superglobals: HashMap<NativeRequestStateBag, PhpArray>,
     root_values: HashMap<NativeRequestStateBag, ArraySlot>,
+    unset_roots: HashSet<NativeRequestStateBag>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -996,6 +999,7 @@ enum NativeRequestStateOperationKind {
     Array,
     Presence,
     BagPresence,
+    RootValue,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1018,6 +1022,7 @@ impl NativeRequestStateOperationKind {
             PHPC_NATIVE_REQUEST_STATE_OP_ARRAY => Self::Array,
             PHPC_NATIVE_REQUEST_STATE_OP_PRESENCE => Self::Presence,
             PHPC_NATIVE_REQUEST_STATE_OP_BAG_PRESENCE => Self::BagPresence,
+            PHPC_NATIVE_REQUEST_STATE_OP_ROOT_VALUE => Self::RootValue,
             _ => return None,
         })
     }
@@ -1027,7 +1032,7 @@ impl NativeRequestStateOperationKind {
             Self::Value | Self::Presence => {
                 NativeRequestStateOperationAddressFamily::KeyedScalarSnapshot
             }
-            Self::Array | Self::BagPresence => {
+            Self::Array | Self::BagPresence | Self::RootValue => {
                 NativeRequestStateOperationAddressFamily::BagSnapshot
             }
         }
@@ -1048,7 +1053,7 @@ impl NativeRequestStateOperationKind {
     }
 
     fn owns_value_handle(self) -> bool {
-        matches!(self, Self::Value)
+        matches!(self, Self::Value | Self::RootValue)
     }
 
     fn owns_array_handle(self) -> bool {
@@ -1079,6 +1084,7 @@ impl NativeRequestStateMutationKind {
 enum NativeRequestStateOperationStatus {
     Ok,
     MissingKey,
+    MissingRoot,
     InvalidOperation,
     InvalidAbi,
     NullState,
@@ -1093,6 +1099,7 @@ impl NativeRequestStateOperationStatus {
         Some(match value {
             PHPC_NATIVE_REQUEST_STATE_STATUS_OK => Self::Ok,
             PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_KEY => Self::MissingKey,
+            PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_ROOT => Self::MissingRoot,
             PHPC_NATIVE_REQUEST_STATE_STATUS_INVALID_OPERATION => Self::InvalidOperation,
             PHPC_NATIVE_REQUEST_STATE_STATUS_INVALID_ABI => Self::InvalidAbi,
             PHPC_NATIVE_REQUEST_STATE_STATUS_NULL_STATE => Self::NullState,
@@ -1110,6 +1117,7 @@ impl NativeRequestStateOperationStatus {
         match self {
             Self::Ok => PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
             Self::MissingKey => PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_KEY,
+            Self::MissingRoot => PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_ROOT,
             Self::InvalidOperation => PHPC_NATIVE_REQUEST_STATE_STATUS_INVALID_OPERATION,
             Self::InvalidAbi => PHPC_NATIVE_REQUEST_STATE_STATUS_INVALID_ABI,
             Self::NullState => PHPC_NATIVE_REQUEST_STATE_STATUS_NULL_STATE,
@@ -1124,7 +1132,7 @@ impl NativeRequestStateOperationStatus {
 
     fn diagnostic_message(self) -> Option<&'static str> {
         match self {
-            Self::Ok | Self::MissingKey => None,
+            Self::Ok | Self::MissingKey | Self::MissingRoot => None,
             Self::InvalidOperation => {
                 Some("native request-state operation failed: invalid operation tag")
             }
@@ -1162,6 +1170,10 @@ enum NativeRequestStateOperation<'a> {
 }
 
 enum NativeRequestStateMutation<'a> {
+    Bag {
+        request_state: &'a mut NativeRequestState,
+        bag: NativeRequestStateBag,
+    },
     Keyed {
         request_state: &'a mut NativeRequestState,
         bag: NativeRequestStateBag,
@@ -2212,7 +2224,13 @@ impl NativeRequestState {
         Self {
             superglobals: HashMap::new(),
             root_values: HashMap::new(),
+            unset_roots: HashSet::new(),
         }
+    }
+
+    fn clear_superglobal_root_override(&mut self, bag: NativeRequestStateBag) {
+        self.root_values.remove(&bag);
+        self.unset_roots.remove(&bag);
     }
 
     fn insert_superglobal_value(
@@ -2224,9 +2242,29 @@ impl NativeRequestState {
         let Some(key) = request_state_array_key(key.as_ref()) else {
             return false;
         };
-        self.root_values.remove(&bag);
+        self.clear_superglobal_root_override(bag);
         self.superglobals.entry(bag).or_default().insert(key, value);
         true
+    }
+
+    fn superglobal_root_value(
+        &self,
+        bag: NativeRequestStateBag,
+    ) -> Result<Value, NativeRequestStateOperationStatus> {
+        if self.unset_roots.contains(&bag) {
+            return Err(NativeRequestStateOperationStatus::MissingRoot);
+        }
+        Ok(self.superglobal_snapshot_value(bag))
+    }
+
+    fn superglobal_root_exists(&self, bag: NativeRequestStateBag) -> bool {
+        !self.unset_roots.contains(&bag)
+    }
+
+    fn superglobal_root_is_set(&self, bag: NativeRequestStateBag) -> bool {
+        self.superglobal_root_value(bag)
+            .ok()
+            .is_some_and(|value| !matches!(value, Value::Null))
     }
 
     fn superglobal_value(
@@ -2236,6 +2274,9 @@ impl NativeRequestState {
     ) -> Result<Option<Value>, NativeRequestStateOperationStatus> {
         let key =
             request_state_array_key(key).ok_or(NativeRequestStateOperationStatus::InvalidAbi)?;
+        if self.unset_roots.contains(&bag) {
+            return Err(NativeRequestStateOperationStatus::MissingRoot);
+        }
         if let Some(root_value) = self.root_values.get(&bag).map(ArraySlot::value_cloned) {
             return request_state_get_path_cloned_from_root(&root_value, &[key]);
         }
@@ -2250,6 +2291,9 @@ impl NativeRequestState {
         bag: NativeRequestStateBag,
         keys: &[ArrayKey],
     ) -> Result<Option<Value>, NativeRequestStateOperationStatus> {
+        if self.unset_roots.contains(&bag) {
+            return Err(NativeRequestStateOperationStatus::MissingRoot);
+        }
         if let Some(root_value) = self.root_values.get(&bag).map(ArraySlot::value_cloned) {
             return request_state_get_path_cloned_from_root(&root_value, keys);
         }
@@ -2268,6 +2312,9 @@ impl NativeRequestState {
     }
 
     fn superglobal_array(&self, bag: NativeRequestStateBag) -> PhpArray {
+        if self.unset_roots.contains(&bag) {
+            return PhpArray::new();
+        }
         self.superglobals
             .get(&bag)
             .cloned()
@@ -2275,6 +2322,9 @@ impl NativeRequestState {
     }
 
     fn superglobal_snapshot_value(&self, bag: NativeRequestStateBag) -> Value {
+        if self.unset_roots.contains(&bag) {
+            return Value::Null;
+        }
         self.root_values
             .get(&bag)
             .map(ArraySlot::value_cloned)
@@ -2282,6 +2332,7 @@ impl NativeRequestState {
     }
 
     fn replace_superglobal_value(&mut self, bag: NativeRequestStateBag, value: Value) {
+        self.unset_roots.remove(&bag);
         if let Some(root_value) = self.root_values.get_mut(&bag) {
             if root_value.is_reference() {
                 root_value.set_value(value);
@@ -2307,12 +2358,14 @@ impl NativeRequestState {
         bag: NativeRequestStateBag,
         reference: PhpReferenceCell,
     ) {
+        self.unset_roots.remove(&bag);
         self.superglobals.remove(&bag);
         self.root_values
             .insert(bag, ArraySlot::from_reference_cell(reference));
     }
 
     fn superglobal_root_reference(&mut self, bag: NativeRequestStateBag) -> PhpReferenceCell {
+        self.unset_roots.remove(&bag);
         if !self.root_values.contains_key(&bag) {
             let snapshot = self.superglobal_array(bag);
             self.superglobals.remove(&bag);
@@ -2377,6 +2430,7 @@ impl NativeRequestState {
         &mut self,
         bag: NativeRequestStateBag,
     ) -> Result<(), NativeRequestStateOperationStatus> {
+        self.unset_roots.remove(&bag);
         let Some(root_value) = self.root_values.get(&bag) else {
             return Ok(());
         };
@@ -2559,6 +2613,20 @@ impl NativeRequestState {
         request_state_path_mutation_result(self, bag, keys, status)
     }
 
+    fn unset_superglobal_root(
+        &mut self,
+        bag: NativeRequestStateBag,
+    ) -> NativeRequestStateOperationResult {
+        self.superglobals.remove(&bag);
+        self.root_values.remove(&bag);
+        self.unset_roots.insert(bag);
+        NativeRequestStateOperationResult::presence(
+            false,
+            false,
+            NativeRequestStateOperationStatus::Ok,
+        )
+    }
+
     fn reference_superglobal_path(
         &mut self,
         bag: NativeRequestStateBag,
@@ -2568,6 +2636,7 @@ impl NativeRequestState {
             return Err(NativeRequestStateOperationStatus::InvalidAbi);
         }
 
+        self.unset_roots.remove(&bag);
         if self.superglobal_root_is_reference(bag) {
             let Some(root_value) = self.root_values.get_mut(&bag) else {
                 return Err(NativeRequestStateOperationStatus::UnsupportedKeyedValue);
@@ -4777,6 +4846,35 @@ pub unsafe extern "C" fn phpc_native_request_state_superglobal_path_operation(
 /// # Safety
 ///
 /// `handle` must be null or a request-state handle previously returned by the
+/// runtime ABI and not yet freed. `bag_ptr` must either be valid for `bag_len`
+/// bytes or null with a zero length. For root writes, `value` must be a live
+/// value handle and the request-state root takes a clone. Root unsets ignore
+/// `value`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_state_superglobal_bag_mutation_operation(
+    handle: NativeRequestStateHandle,
+    mutation_kind: u8,
+    bag_ptr: *const u8,
+    bag_len: usize,
+    value: NativeValueHandle,
+) -> NativeRequestStateOperationResult {
+    let Some(mutation_kind) = NativeRequestStateMutationKind::from_abi_tag(mutation_kind) else {
+        return NativeRequestStateOperationResult::unsupported(
+            NativeRequestStateOperationStatus::InvalidOperation,
+        );
+    };
+    let mutation = unsafe { NativeRequestStateMutation::from_bag_abi(handle, bag_ptr, bag_len) };
+
+    match mutation {
+        Ok(mutation) => unsafe { mutation.apply(mutation_kind, value) }
+            .unwrap_or_else(NativeRequestStateOperationResult::unsupported),
+        Err(status) => NativeRequestStateOperationResult::unsupported(status),
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a request-state handle previously returned by the
 /// runtime ABI and not yet freed. `bag_ptr` and `key_ptr` must either be valid
 /// for their respective lengths or null with a zero length. `key_status` must
 /// carry the result of resolving the key through the request key ABI, or OK for
@@ -6337,6 +6435,22 @@ impl NativeRequestStateOperationResult {
         }
     }
 
+    fn root_value(
+        value: Value,
+        is_set: bool,
+        exists: bool,
+        status: NativeRequestStateOperationStatus,
+    ) -> Self {
+        Self {
+            value: NativeValueHandle::from_value(value),
+            array: NativeArrayHandle::null(),
+            is_set: u8::from(is_set),
+            result_kind: PHPC_NATIVE_REQUEST_STATE_OP_ROOT_VALUE,
+            status: status.abi_tag(),
+            exists: u8::from(exists),
+        }
+    }
+
     fn array(array: PhpArray, is_set: bool, status: NativeRequestStateOperationStatus) -> Self {
         Self {
             value: NativeValueHandle::null(),
@@ -6590,6 +6704,15 @@ impl<'a> NativeRequestStateOperation<'a> {
         }
     }
 
+    fn root_value(&self) -> Result<Value, NativeRequestStateOperationStatus> {
+        match self {
+            Self::Bag { request_state, bag } => request_state.superglobal_root_value(*bag),
+            Self::Keyed { .. } | Self::KeyPath { .. } => {
+                Err(NativeRequestStateOperationStatus::InvalidOperation)
+            }
+        }
+    }
+
     fn runtime_value(&self) -> Value {
         match self {
             Self::Keyed {
@@ -6625,7 +6748,17 @@ impl<'a> NativeRequestStateOperation<'a> {
     }
 
     fn bag_is_set(&self) -> bool {
-        matches!(self, Self::Bag { .. })
+        match self {
+            Self::Bag { request_state, bag } => request_state.superglobal_root_is_set(*bag),
+            Self::Keyed { .. } | Self::KeyPath { .. } => false,
+        }
+    }
+
+    fn bag_exists(&self) -> bool {
+        match self {
+            Self::Bag { request_state, bag } => request_state.superglobal_root_exists(*bag),
+            Self::Keyed { .. } | Self::KeyPath { .. } => false,
+        }
     }
 
     fn status(&self) -> NativeRequestStateOperationStatus {
@@ -6635,7 +6768,13 @@ impl<'a> NativeRequestStateOperation<'a> {
                 Ok(None) => NativeRequestStateOperationStatus::MissingKey,
                 Err(status) => status,
             },
-            _ => NativeRequestStateOperationStatus::Ok,
+            Self::Bag { request_state, bag } => {
+                if request_state.superglobal_root_exists(*bag) {
+                    NativeRequestStateOperationStatus::Ok
+                } else {
+                    NativeRequestStateOperationStatus::MissingRoot
+                }
+            }
         }
     }
 
@@ -6660,11 +6799,37 @@ impl<'a> NativeRequestStateOperation<'a> {
             NativeRequestStateOperationKind::BagPresence => {
                 NativeRequestStateOperationResult::bag_presence(self.bag_is_set(), status)
             }
+            NativeRequestStateOperationKind::RootValue => match self.root_value() {
+                Ok(value) => NativeRequestStateOperationResult::root_value(
+                    value,
+                    self.bag_is_set(),
+                    self.bag_exists(),
+                    NativeRequestStateOperationStatus::Ok,
+                ),
+                Err(status) => {
+                    NativeRequestStateOperationResult::root_value(Value::Null, false, false, status)
+                }
+            },
         }
     }
 }
 
 impl<'a> NativeRequestStateMutation<'a> {
+    unsafe fn from_bag_abi(
+        handle: NativeRequestStateHandle,
+        bag_ptr: *const u8,
+        bag_len: usize,
+    ) -> Result<Self, NativeRequestStateOperationStatus> {
+        let request_state =
+            unsafe { handle.ptr.as_mut() }.ok_or(NativeRequestStateOperationStatus::NullState)?;
+        let bag = unsafe { native_abi_bytes(bag_ptr, bag_len) }
+            .ok_or(NativeRequestStateOperationStatus::InvalidAbi)?;
+        let bag = NativeRequestStateBag::from_abi_bytes(bag)
+            .ok_or(NativeRequestStateOperationStatus::UnknownBag)?;
+
+        Ok(Self::Bag { request_state, bag })
+    }
+
     unsafe fn from_keyed_abi(
         handle: NativeRequestStateHandle,
         bag_ptr: *const u8,
@@ -6732,6 +6897,22 @@ impl<'a> NativeRequestStateMutation<'a> {
         value: NativeValueHandle,
     ) -> Result<NativeRequestStateOperationResult, NativeRequestStateOperationStatus> {
         match (self, mutation_kind) {
+            (Self::Bag { request_state, bag }, NativeRequestStateMutationKind::Write) => {
+                let value = unsafe { value.as_ref() }
+                    .ok_or(NativeRequestStateOperationStatus::InvalidAbi)?;
+                request_state.replace_superglobal_value(bag, value.clone());
+                Ok(NativeRequestStateOperationResult::presence(
+                    !matches!(value, Value::Null),
+                    true,
+                    NativeRequestStateOperationStatus::Ok,
+                ))
+            }
+            (Self::Bag { request_state, bag }, NativeRequestStateMutationKind::Unset) => {
+                Ok(request_state.unset_superglobal_root(bag))
+            }
+            (Self::Bag { .. }, NativeRequestStateMutationKind::Append) => {
+                Err(NativeRequestStateOperationStatus::InvalidOperation)
+            }
             (
                 Self::Keyed {
                     request_state,
@@ -22009,6 +22190,23 @@ mod tests {
         }
     }
 
+    unsafe fn request_state_bag_mutation_for_test(
+        request_state: NativeRequestStateHandle,
+        mutation_kind: u8,
+        bag: &[u8],
+        value: NativeValueHandle,
+    ) -> NativeRequestStateOperationResult {
+        unsafe {
+            phpc_native_request_state_superglobal_bag_mutation_operation(
+                request_state,
+                mutation_kind,
+                bag.as_ptr(),
+                bag.len(),
+                value,
+            )
+        }
+    }
+
     unsafe fn request_state_path_mutation_for_test(
         request_state: NativeRequestStateHandle,
         mutation_kind: u8,
@@ -22087,6 +22285,14 @@ mod tests {
                 NativeRequestStateOperationAddressFamily::BagSnapshot,
                 false,
                 false,
+                false,
+            ),
+            (
+                PHPC_NATIVE_REQUEST_STATE_OP_ROOT_VALUE,
+                NativeRequestStateOperationKind::RootValue,
+                NativeRequestStateOperationAddressFamily::BagSnapshot,
+                false,
+                true,
                 false,
             ),
         ] {
@@ -22966,6 +23172,122 @@ mod tests {
         unsafe { phpc_native_string_free(post_root) };
         unsafe { phpc_native_string_free(get_root) };
         unsafe { phpc_native_request_state_free(request_state) };
+    }
+
+    #[test]
+    fn native_request_state_root_value_operation_tracks_unset_and_reseeded_roots() {
+        unsafe {
+            let request_state = phpc_native_request_state_empty();
+
+            let scalar_root = NativeValueHandle::from_value(Value::String("root".into()));
+            let scalar_write = request_state_bag_mutation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE,
+                b"_GET",
+                scalar_root,
+            );
+            assert_request_state_presence_result_for_test(
+                scalar_write,
+                1,
+                1,
+                PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+            );
+            phpc_native_value_free(scalar_root);
+
+            let scalar_read = request_state_operation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_OP_ROOT_VALUE,
+                b"_GET",
+                None,
+            );
+            assert_eq!(
+                scalar_read.result_kind,
+                PHPC_NATIVE_REQUEST_STATE_OP_ROOT_VALUE
+            );
+            assert_eq!(scalar_read.status, PHPC_NATIVE_REQUEST_STATE_STATUS_OK);
+            assert_eq!(scalar_read.is_set, 1);
+            assert_eq!(scalar_read.exists, 1);
+            assert_eq!(
+                scalar_read.value.as_ref(),
+                Some(&Value::String("root".into()))
+            );
+            phpc_native_request_state_operation_result_free(scalar_read);
+
+            let unset = request_state_bag_mutation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_MUTATION_UNSET,
+                b"_GET",
+                NativeValueHandle::null(),
+            );
+            assert_request_state_presence_result_for_test(
+                unset,
+                0,
+                0,
+                PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+            );
+
+            let keyed_after_unset = request_state_operation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_OP_VALUE,
+                b"_GET",
+                Some(b"name"),
+            );
+            assert_eq!(
+                keyed_after_unset.status,
+                PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_ROOT
+            );
+            phpc_native_request_state_operation_result_free(keyed_after_unset);
+
+            let root_after_unset = request_state_operation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_OP_ROOT_VALUE,
+                b"_GET",
+                None,
+            );
+            assert_eq!(
+                root_after_unset.result_kind,
+                PHPC_NATIVE_REQUEST_STATE_OP_ROOT_VALUE
+            );
+            assert_eq!(
+                root_after_unset.status,
+                PHPC_NATIVE_REQUEST_STATE_STATUS_MISSING_ROOT
+            );
+            assert_eq!(root_after_unset.is_set, 0);
+            assert_eq!(root_after_unset.exists, 0);
+            assert_eq!(root_after_unset.value.as_ref(), Some(&Value::Null));
+            phpc_native_request_state_operation_result_free(root_after_unset);
+
+            let restored_value = NativeValueHandle::from_value(Value::String("restored".into()));
+            let restored_write = request_state_keyed_mutation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_MUTATION_WRITE,
+                b"_GET",
+                b"name",
+                restored_value,
+            );
+            assert_request_state_presence_result_for_test(
+                restored_write,
+                1,
+                1,
+                PHPC_NATIVE_REQUEST_STATE_STATUS_OK,
+            );
+            phpc_native_value_free(restored_value);
+
+            let restored_read = request_state_operation_for_test(
+                request_state,
+                PHPC_NATIVE_REQUEST_STATE_OP_VALUE,
+                b"_GET",
+                Some(b"name"),
+            );
+            assert_eq!(restored_read.status, PHPC_NATIVE_REQUEST_STATE_STATUS_OK);
+            assert_eq!(
+                restored_read.value.as_ref(),
+                Some(&Value::String("restored".into()))
+            );
+            phpc_native_request_state_operation_result_free(restored_read);
+
+            phpc_native_request_state_free(request_state);
+        }
     }
 
     #[test]
