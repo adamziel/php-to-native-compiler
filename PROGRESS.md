@@ -24,6 +24,16 @@ native compiler. They are not test pass rates. Only primary-integrated, pushed
 work counts; lane-local candidates, dirty WIP, parked diffs, and exact-shape
 fixtures do not.
 
+## Progress Accounting Note
+
+The older **88%** figure is retired and is not comparable with the current
+numbers. It counted strong foundations, lane-local candidates, and selected
+generated-C execution islands too much like broad PHP completion. The current
+percentages use the stricter rubric above: pushed primary work toward
+generalized, end-to-end PHP semantics. The move from 88% to the current
+60% overall / 57% executable estimate was a measurement correction, not a code
+rollback.
+
 ## Executive Read
 
 Overall estimated progress: **60%** `[############--------]`
