@@ -11091,6 +11091,8 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeArrayHandle phpc_native_array_empty(void);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_array(phpc_NativeArrayHandle array);\n");
                 output.push_str("extern phpc_NativeArrayHandle phpc_native_value_array_clone(phpc_NativeValueHandle value);\n");
+                output.push_str("extern bool phpc_native_array_is_callable_syntax_only(phpc_NativeArrayHandle array);\n");
+                output.push_str("extern bool phpc_native_value_is_callable_syntax_only(phpc_NativeValueHandle value);\n");
                 output.push_str("extern bool phpc_native_array_append_value(phpc_NativeArrayHandle array, phpc_NativeValueHandle value);\n");
                 output.push_str("extern bool phpc_native_array_append_value_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeArrayKeyMaterializationResult phpc_native_value_to_array_key(phpc_NativeValueHandle value);\n");
@@ -22165,6 +22167,14 @@ impl CGenerator {
             false
         };
 
+        if syntax_only {
+            if let Some(result) =
+                self.emit_runtime_callable_syntax_only_result(value.clone(), span)?
+            {
+                return Ok(result);
+            }
+        }
+
         self.is_callable_result_for_value(&value, syntax_only)
             .map(CValue::Bool)
             .ok_or_else(|| {
@@ -22466,6 +22476,39 @@ impl CGenerator {
                 known_strings_have_uniform_byte_length(&values)
             }
             _ => None,
+        }
+    }
+
+    fn emit_runtime_callable_syntax_only_result(
+        &mut self,
+        value: CValue,
+        span: Span,
+    ) -> CompileResult<Option<CValue>> {
+        match value {
+            CValue::ArrayHandle(handle) => {
+                self.uses_native_array_helpers = true;
+                Ok(Some(CValue::BoolExpr(format!(
+                    "phpc_native_array_is_callable_syntax_only({handle})"
+                ))))
+            }
+            value @ (CValue::NativeValueHandle(_) | CValue::NativeReferenceHandle(_)) => {
+                self.uses_native_array_helpers = true;
+                let handle = self.emit_native_value_for_cvalue(value, span)?;
+                let result = self.next_native_name("callable_syntax_only");
+                self.body.push(format!(
+                    "_Bool {result} = phpc_native_value_is_callable_syntax_only({handle});"
+                ));
+                self.body.push(format!("phpc_native_value_free({handle});"));
+                Ok(Some(CValue::BoolExpr(result)))
+            }
+            CValue::Int(_)
+            | CValue::Float(_)
+            | CValue::String(_)
+            | CValue::StringExpr(_)
+            | CValue::Bool(_)
+            | CValue::BoolExpr(_)
+            | CValue::ComparisonDecision(_)
+            | CValue::Null => Ok(None),
         }
     }
 

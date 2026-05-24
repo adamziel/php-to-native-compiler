@@ -13452,6 +13452,26 @@ const NATIVE_USER_FUNCTION_INTROSPECTION_SOURCE: &str = concat!(
     "echo pick();\n",
 );
 
+const NATIVE_CALLABLE_ARRAY_SYNTAX_SOURCE: &str = concat!(
+    "<?php\n",
+    "$class = \"CallableBox\";\n",
+    "$method = \"run\";\n",
+    "$pair = [$class, $method];\n",
+    "$badTarget = [42, $method];\n",
+    "$badMethod = [$class, 42];\n",
+    "$extra = [$class, $method, \"tail\"];\n",
+    "$query = array_change_key_case([$class, $method]);\n",
+    "echo is_callable($pair, true) ? \"T\" : \"F\";\n",
+    "echo \"|\";\n",
+    "echo is_callable([\"Inline\", \"go\"], true) ? \"T\" : \"F\";\n",
+    "echo \"|\";\n",
+    "echo is_callable($query, true) ? \"T\" : \"F\";\n",
+    "echo \"|\";\n",
+    "echo is_callable($badTarget, true) ? \"T\" : \"F\";\n",
+    "echo is_callable($badMethod, true) ? \"T\" : \"F\";\n",
+    "echo is_callable($extra, true) ? \"T\" : \"F\";\n",
+);
+
 const NATIVE_DYNAMIC_USER_FUNCTION_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "function pick($value = \"ok\") {\n",
@@ -13940,6 +13960,53 @@ fn native_executable_c_source_routes_user_function_introspection_through_registe
             && !source.contains("assembly user-function lowering rejects"),
         "function introspection over registered direct frames should not hit call blockers:\n{source}"
     );
+}
+
+#[test]
+fn native_executable_c_source_routes_callable_array_syntax_only_through_runtime_abi() {
+    let program = parse(NATIVE_CALLABLE_ARRAY_SYNTAX_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_array_is_callable_syntax_only"),
+        "direct array callable syntax should route through the shared runtime array helper:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_is_callable_syntax_only"),
+        "array values loaded from storage should route through the shared runtime value helper:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly function-call lowering rejects"),
+        "syntax-only callable arrays should not hit callable invocation blockers:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_callable_array_syntax_only_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "callable_array_syntax_only",
+        NATIVE_CALLABLE_ARRAY_SYNTAX_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native callable-array syntax executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"T|T|T|FFF");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
 }
 
 #[test]

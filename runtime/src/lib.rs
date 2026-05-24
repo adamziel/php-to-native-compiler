@@ -3023,6 +3023,68 @@ pub unsafe extern "C" fn phpc_native_value_dynamic_call_failure_with_diagnostic(
     unsafe { native_store_diagnostic_message(diagnostic, message) };
 }
 
+fn native_value_is_callable_syntax_only(value: &Value) -> bool {
+    match value {
+        Value::String(_) => true,
+        Value::Array(array) => native_array_is_callable_syntax_only(array),
+        Value::Closure(_) => true,
+        Value::Object(_) => false,
+        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::Resource(_) => {
+            false
+        }
+    }
+}
+
+fn native_array_is_callable_syntax_only(array: &PhpArray) -> bool {
+    if array.len() != 2 {
+        return false;
+    }
+
+    let Some(target) = array.get_cloned(ArrayKey::Int(0)) else {
+        return false;
+    };
+    let Some(Value::String(_)) = array.get_cloned(ArrayKey::Int(1)) else {
+        return false;
+    };
+    match target {
+        Value::String(_) => true,
+        Value::Object(_) => true,
+        Value::Null
+        | Value::Bool(_)
+        | Value::Int(_)
+        | Value::Float(_)
+        | Value::Array(_)
+        | Value::Closure(_)
+        | Value::Resource(_) => false,
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or an array handle previously returned by the runtime
+/// ABI and not yet freed. Null handles are not callable.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_is_callable_syntax_only(
+    handle: NativeArrayHandle,
+) -> bool {
+    unsafe { handle.as_ref() }
+        .map(|array| native_array_is_callable_syntax_only(&array.value))
+        .unwrap_or(false)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. Null handles are not callable.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_is_callable_syntax_only(
+    handle: NativeValueHandle,
+) -> bool {
+    unsafe { handle.as_ref() }
+        .map(native_value_is_callable_syntax_only)
+        .unwrap_or(false)
+}
+
 /// # Safety
 ///
 /// `handle` must be null or a value handle previously returned by the runtime
@@ -19918,6 +19980,122 @@ mod tests {
     fn native_value_echo_bytes_for_test(handle: NativeValueHandle) -> Vec<u8> {
         let buffer = unsafe { phpc_native_value_echo_bytes(handle) };
         native_byte_buffer_to_vec_for_test(buffer)
+    }
+
+    fn callable_pair(target: Value, method: Value) -> PhpArray {
+        let mut array = PhpArray::new();
+        array.insert(0, target);
+        array.insert(1, method);
+        array
+    }
+
+    #[test]
+    fn native_callable_syntax_helpers_cover_array_and_value_families() {
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("CallableBox").unwrap();
+        let object = Value::Object(PhpObject::from_class(classes.get(class_id).unwrap()));
+
+        for (label, array, expected) in [
+            (
+                "class string pair",
+                callable_pair(
+                    Value::String("CallableBox".to_string()),
+                    Value::String("run".to_string()),
+                ),
+                true,
+            ),
+            (
+                "object receiver pair",
+                callable_pair(object, Value::String("run".to_string())),
+                true,
+            ),
+            (
+                "non-string target",
+                callable_pair(Value::Int(7), Value::String("run".to_string())),
+                false,
+            ),
+            (
+                "non-string method",
+                callable_pair(Value::String("CallableBox".to_string()), Value::Int(7)),
+                false,
+            ),
+            (
+                "empty method",
+                callable_pair(
+                    Value::String("CallableBox".to_string()),
+                    Value::String(String::new()),
+                ),
+                true,
+            ),
+        ] {
+            let array_handle = NativeArrayHandle::from_array(array.clone());
+            assert_eq!(
+                unsafe { phpc_native_array_is_callable_syntax_only(array_handle) },
+                expected,
+                "{label} array handle"
+            );
+            unsafe { phpc_native_array_free(array_handle) };
+
+            let value_handle = NativeValueHandle::from_value(Value::Array(array));
+            assert_eq!(
+                unsafe { phpc_native_value_is_callable_syntax_only(value_handle) },
+                expected,
+                "{label} value handle"
+            );
+            unsafe { phpc_native_value_free(value_handle) };
+        }
+
+        let mut string_key_pair = PhpArray::new();
+        string_key_pair.insert("0", Value::String("CallableBox".to_string()));
+        string_key_pair.insert("1", Value::String("run".to_string()));
+        let value_handle = NativeValueHandle::from_value(Value::Array(string_key_pair));
+        assert!(unsafe { phpc_native_value_is_callable_syntax_only(value_handle) });
+        unsafe { phpc_native_value_free(value_handle) };
+
+        let mut extra = callable_pair(
+            Value::String("CallableBox".to_string()),
+            Value::String("run".to_string()),
+        );
+        extra.insert(2, Value::String("extra".to_string()));
+        let value_handle = NativeValueHandle::from_value(Value::Array(extra));
+        assert!(!unsafe { phpc_native_value_is_callable_syntax_only(value_handle) });
+        unsafe { phpc_native_value_free(value_handle) };
+
+        for value in [
+            Value::String("strlen".to_string()),
+            Value::String(String::new()),
+            Value::Closure(PhpClosure::new(17, false, Vec::new())),
+        ] {
+            let value_handle = NativeValueHandle::from_value(value);
+            assert!(unsafe { phpc_native_value_is_callable_syntax_only(value_handle) });
+            unsafe { phpc_native_value_free(value_handle) };
+        }
+
+        for array in [
+            callable_pair(
+                Value::String(String::new()),
+                Value::String("run".to_string()),
+            ),
+            callable_pair(
+                Value::String("CallableBox".to_string()),
+                Value::String(String::new()),
+            ),
+        ] {
+            let value_handle = NativeValueHandle::from_value(Value::Array(array));
+            assert!(unsafe { phpc_native_value_is_callable_syntax_only(value_handle) });
+            unsafe { phpc_native_value_free(value_handle) };
+        }
+
+        let object_handle = NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+            classes.get(class_id).unwrap(),
+        )));
+        assert!(!unsafe { phpc_native_value_is_callable_syntax_only(object_handle) });
+        unsafe { phpc_native_value_free(object_handle) };
+
+        let scalar_handle = NativeValueHandle::from_value(Value::Int(1));
+        assert!(!unsafe { phpc_native_value_is_callable_syntax_only(scalar_handle) });
+        unsafe { phpc_native_value_free(scalar_handle) };
+        assert!(!unsafe { phpc_native_value_is_callable_syntax_only(NativeValueHandle::null()) });
     }
 
     #[test]
