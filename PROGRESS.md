@@ -1,13 +1,13 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 10:17 CEST
-Evaluation marker: `20260524T072649Z`
+Updated: 2026-05-24 10:24 CEST
+Evaluation marker: `20260524T082135Z`
 
 Latest primary semantic/test baseline:
 `f6d9ad0a runtime: route native output buffers through shared ABI`
 
 Latest primary head before this progress update:
-`f6d9ad0a runtime: route native output buffers through shared ABI`
+`a2e20a39 docs: update progress after output buffers`
 
 Only pushed primary work counts here. Dirty WIP, lane-local candidates, parked diffs, exact-shape fixtures, and status-file claims are not counted until selected, gated, committed, and pushed through primary.
 
@@ -41,9 +41,9 @@ The latest output-buffer slice implements a shared runtime operation ABI for low
 
 ## Lane-Local Candidate Work
 
-Recent worker-status updates show active candidate inventory, including interface-member cleanup blockers, static-property storage blockers, callable numeric dispatch through existing numeric ABI, reference-held array key/value operation slots, function-frame contract-result blockers, and expression-result transport for includes, closures, and selection conditions.
+Recent worker-status updates show active candidate inventory, including `$this` receiver slots for descriptor-ready method/constructor frames, function-return value handoff through cleanup targets, function-frame symbol-table result blockers, array/reference owner-slot classifiers, string-position operand diagnostics, static-property storage blockers, request value-handle broadening, comparison blockers for external I/O/dynamic-code/request-lifecycle calls, and object release/precheck carriers.
 
-These are not product capability yet. Treat them as a queue of possible integration inputs.
+These are not product capability yet. Treat them as a queue of possible integration inputs, and prefer only the candidates that can land with primary source/IR/link proof or remove a real shared execution blocker.
 
 ## Roadmap Position
 
@@ -82,7 +82,8 @@ These are not product capability yet. Treat them as a queue of possible integrat
 
 ## Current Review Notes
 
-- Primary repo had just landed `f6d9ad0a` when this progress file was refreshed.
-- `/dev/shm` at review was 22G total, 15G used, 7.6G available. This is above the 6G floor but tight for broad concurrent link/test waves.
-- The largest visible target was `/dev/shm/phpc-target-native-object-property-runtime` at about 8.8G. Reclaim only after owner checks.
-- Dashboard evidence is stale relative to current primary and worker status files; live state should be preferred for steering.
+- Primary repo is clean and synced with `origin/master` at `a2e20a39`; the latest counted semantic baseline remains `f6d9ad0a`.
+- The supervisor dashboard is stale relative to current primary; it still centers `0fff5f68` / `a27bb444` and should be refreshed before steering from it.
+- `/dev/shm` is now the active operational risk. The bounded snapshot showed 22G total, 19G used, 3.2G available; a live recheck showed 22G total, 22G used, 656M available, 98% used, below the 6G dispatcher floor.
+- The largest visible targets were `/dev/shm/phpc-target-native-exit-seed` at about 9.6G and `/dev/shm/phpc-target-native-object-property-runtime` at about 6.9G. Reclaim only after owner checks; otherwise use disk-backed `/tmp` targets for broad gates.
+- Lane-local status output is broad and fresh, but primary-integrated progress remains the only counted capability.
