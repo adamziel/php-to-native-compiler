@@ -318,6 +318,36 @@ const NATIVE_DECLARED_CLASS_CONSTRUCTOR_SOURCE: &str = concat!(
     "echo (new Box(\"Temp\"))->label(), \"\\n\";\n",
 );
 
+const NATIVE_DECLARED_CLASS_DYNAMIC_CONSTRUCTOR_NEW_SOURCE: &str = concat!(
+    "<?php\n",
+    "class DefaultBox {\n",
+    "    public $name;\n",
+    "    public function __construct($value = \"Ada\") { $this->name = strtoupper($value); }\n",
+    "}\n",
+    "class Packet {\n",
+    "    public $code;\n",
+    "    public function __construct($code) { $this->code = $code; }\n",
+    "}\n",
+    "class BaseCtor {\n",
+    "    public $value;\n",
+    "    public function __construct($value = \"base\") { $this->value = $value; }\n",
+    "}\n",
+    "class ChildCtor extends BaseCtor { public $own; }\n",
+    "function mark($value) { echo $value; return $value; }\n",
+    "$class = \"defaultbox\";\n",
+    "$box = new $class();\n",
+    "echo $box->name, \":\", get_debug_type($box), \"|\";\n",
+    "$class = \"Packet\";\n",
+    "$packet = new $class(mark(\"side\"));\n",
+    "echo \":\", $packet->code, \":\", get_debug_type($packet), \"|\";\n",
+    "$class = \"ChildCtor\";\n",
+    "$child = new $class(\"kid\");\n",
+    "echo ($child instanceof BaseCtor) ? \"base\" : \"no\";\n",
+    "echo \":\", $child->value, \":\", get_debug_type($child), \"|\";\n",
+    "$class = \"DefaultBox\";\n",
+    "echo (new $class(\"Grace\"))->name, \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_INHERITANCE_SOURCE: &str = concat!(
     "<?php\n",
     "class Other {}\n",
@@ -1423,6 +1453,37 @@ fn emit_exe_links_and_runs_declared_class_constructor_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"ADA|GRACE|7|TEMP\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_declared_class_dynamic_constructor_new_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "declared_class_dynamic_constructor_new",
+        NATIVE_DECLARED_CLASS_DYNAMIC_CONSTRUCTOR_NEW_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run declared-class dynamic-constructor-new executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"ADA:DefaultBox|side:side:Packet|base:kid:ChildCtor|GRACE\n"
+    );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -2540,6 +2601,40 @@ fn native_executable_c_source_routes_declared_constructors_through_frame_dispatc
 }
 
 #[test]
+fn native_executable_c_source_routes_dynamic_declared_constructors_through_frame_dispatch() {
+    let program = parse(NATIVE_DECLARED_CLASS_DYNAMIC_CONSTRUCTOR_NEW_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_value_dynamic_call_name_matches"),
+        "dynamic class-name new should match generated declared-class candidates through the shared dynamic-name helper:\n{source}"
+    );
+    assert!(
+        body.matches("constructor_status").count() >= 4
+            && source.contains("phpc_NativeValueHandle phpc_this"),
+        "dynamic constructor new should dispatch matched public constructors through generated frames with $this:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_new_declared_class_with_diagnostic")
+            && body.contains("phpc_native_value_new_declared_class_with_ancestors_and_diagnostic"),
+        "dynamic constructor new should keep declared allocation on shared object helpers, including inherited constructor receivers:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_object_public_property_operation_with_diagnostic")
+            && source.contains("phpc_native_value_type_name_result")
+            && source.contains("phpc_native_value_instanceof_class_with_diagnostic"),
+        "dynamic constructor results should compose with property reads, debug type, and ancestor checks:\n{source}"
+    );
+    assert!(
+        !source.contains("object-instantiation lowering rejects")
+            && !source.contains("object/class lowering rejects")
+            && !source.contains("method-call lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_declared_inheritance_through_ancestor_metadata() {
     let program = parse(NATIVE_DECLARED_CLASS_INHERITANCE_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -2601,7 +2696,7 @@ fn native_executable_c_source_keeps_unsupported_constructor_shapes_blocked() {
         "<?php\nclass Box { private function __construct() {} }\nnew Box();\n",
         "<?php\nclass Box { public function __construct() { return 1; } }\nnew Box();\n",
         "<?php\nclass Box { public function __construct() { global $x; } }\nnew Box();\n",
-        "<?php\nclass Box { public function __construct($value) {} }\n$class = \"Box\";\nnew $class(\"Ada\");\n",
+        "<?php\nclass Box { private function __construct() {} }\n$class = \"Box\";\nnew $class();\n",
     ] {
         let program = parse(source).expect("unsupported constructor source parses");
         let error = emit_native_executable_c_source(&program).unwrap_err();

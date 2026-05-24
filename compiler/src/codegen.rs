@@ -77,7 +77,7 @@ const ASSEMBLY_GLOBAL_DECLARATION_REJECTION: &str = "assembly global-declaration
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const ASSEMBLY_OBJECT_CLASS_REJECTION: &str = "assembly object/class lowering rejects class declarations outside the bounded generated-C declared-object subset, including inheritance metadata, unsupported constructor dispatch, unsupported public property and instance method forms, object metadata builtins, visibility contexts, references/copy-on-write, and exact native object errors; generated-native C lowers supported declared object allocation, public properties, named instanceof, public declared instance methods, and supported constructors";
 const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
-const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions outside the bounded generated-C declared-object constructor subset, including dynamic class names that require constructor dispatch, unsupported constructor declarations, non-public constructors, constructor returns, visibility contexts, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors; generated-native C lowers supported named declared object allocation, dynamic declared-class allocation for constructorless classes, constructorless argument evaluation, and public constructors with $this frame binding";
+const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions outside the bounded generated-C declared-object constructor subset, including unsupported constructor declarations, non-public constructors, constructor returns, visibility contexts, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors; generated-native C lowers supported named and runtime string-valued declared object allocation, constructorless argument evaluation, and public constructors with $this frame binding";
 const LLVM_OBJECT_PROPERTY_REJECTION: &str = "LLVM object-property lowering rejects instance property reads/writes and dynamic property-name access until native object layout, property tables/slots, visibility checks, magic property hooks, dynamic property policy, references/copy-on-write, and exact native object-property errors exist; phpc run handles current bounded object-property behavior";
 const ASSEMBLY_OBJECT_PROPERTY_REJECTION: &str = "assembly object-property lowering rejects instance property reads/writes and dynamic property-name access until native object layout, property tables/slots, visibility checks, magic property hooks, dynamic property policy, references/copy-on-write, and exact native object-property errors exist; phpc run handles current bounded object-property behavior";
 const LLVM_OBJECT_METADATA_REJECTION: &str = "LLVM object-metadata lowering rejects object/class metadata builtins until native class metadata tables, object handles, inheritance/interface/trait/enum registries, property/method tables, autoload interaction, references/copy-on-write, and exact native object-metadata errors exist; phpc run handles current bounded object metadata behavior";
@@ -12891,10 +12891,6 @@ impl CGenerator {
                     .get(key)
                     .expect("registered class key has metadata")
             })
-            .filter(|class| {
-                self.declared_class_constructor_for_instantiation(class)
-                    .is_none()
-            })
             .cloned()
             .collect::<Vec<_>>();
         if candidates.is_empty() {
@@ -12921,21 +12917,42 @@ impl CGenerator {
             ));
             self.body.push(format!("{matched} = 1;"));
 
-            let branch_failure_cleanup = format!("{class_name_cleanup}{failure_cleanup}");
-            let constructor_args =
-                self.materialize_constructor_argument_value_array(args, &branch_failure_cleanup)?;
-            let arg_cleanup = c_cleanup_sequence(&constructor_args.cleanup_after_use);
-            let allocation_failure_cleanup = format!("{arg_cleanup}{branch_failure_cleanup}");
-            self.emit_declared_class_instantiation_assignment(
-                &class,
-                &result,
-                &allocation_failure_cleanup,
-            );
-            if constructor_args.count > 0 {
-                self.body
-                    .push(format!("(void){};", constructor_args.handles));
+            let constructor = self.declared_class_constructor_for_instantiation(&class);
+            if let Some((constructor_class, constructor)) = constructor {
+                let allocation_failure_cleanup = format!("{class_name_cleanup}{failure_cleanup}");
+                self.emit_declared_class_instantiation_assignment(
+                    &class,
+                    &result,
+                    &allocation_failure_cleanup,
+                );
+                let constructor_failure_cleanup = format!(
+                    "phpc_native_value_free({result}); {class_name_cleanup}{failure_cleanup}"
+                );
+                self.emit_declared_class_constructor_call(
+                    &constructor_class.name,
+                    &constructor,
+                    &result,
+                    args,
+                    span,
+                    &constructor_failure_cleanup,
+                )?;
+            } else {
+                let branch_failure_cleanup = format!("{class_name_cleanup}{failure_cleanup}");
+                let constructor_args = self
+                    .materialize_constructor_argument_value_array(args, &branch_failure_cleanup)?;
+                let arg_cleanup = c_cleanup_sequence(&constructor_args.cleanup_after_use);
+                let allocation_failure_cleanup = format!("{arg_cleanup}{branch_failure_cleanup}");
+                self.emit_declared_class_instantiation_assignment(
+                    &class,
+                    &result,
+                    &allocation_failure_cleanup,
+                );
+                if constructor_args.count > 0 {
+                    self.body
+                        .push(format!("(void){};", constructor_args.handles));
+                }
+                self.body.extend(constructor_args.cleanup_after_use);
             }
-            self.body.extend(constructor_args.cleanup_after_use);
             self.body.push("}".to_string());
         }
 
@@ -12943,7 +12960,7 @@ impl CGenerator {
         let no_match_error_exit =
             self.native_error_exit(&format!("{class_name_cleanup}{failure_cleanup}"));
         self.body.push(format!(
-            "fprintf(stderr, \"runtime error: unsupported object instantiation: class name did not match a generated constructorless declared class\\n\"); {no_match_error_exit}"
+            "fprintf(stderr, \"runtime error: unsupported object instantiation: class name did not match a generated declared class\\n\"); {no_match_error_exit}"
         ));
         self.body.push("}".to_string());
         self.body.extend(class_name_value.cleanup_after_use);
