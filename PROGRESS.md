@@ -1,28 +1,28 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 08:14 CEST
+Updated: 2026-05-24 08:21 CEST
 Evaluation marker: `20260524T045209Z`
 
 Latest primary semantic/test baseline:
-`f0b22da2 codegen: dispatch dynamic global-import frames`
+`84d33e6f codegen: thread globals through frame callers`
 
-Latest integrated semantic baseline: `f0b22da2 codegen: dispatch dynamic global-import frames`
+Latest integrated semantic baseline: `84d33e6f codegen: thread globals through frame callers`
 Latest evaluator report: `20260524T045209Z`
 
 Current primary git state at review:
 
 - Current primary head before this progress update was
-  `f0b22da2 codegen: dispatch dynamic global-import frames`.
-- `482e7c76` is now the previous counted semantic commit.
-- Generated-C runtime string-valued dynamic dispatch now includes registered
-  user-function frames that declare ordinary `global $name` imports, threading
-  the caller root symbol table through the same generated frame ABI used by
-  direct calls.
+  `84d33e6f codegen: thread globals through frame callers`.
+- `f0b22da2` is now the previous counted semantic commit.
+- Generated-C user-function frames now propagate the caller root symbol table
+  through direct wrapper frames that can reach an ordinary global-import
+  callee, so wrappers do not create isolated function-local symbol tables for
+  callee `global $name` imports.
 - This is a compact call/frame plus request/global alias execution slice, not
   full global environment or callable parity: request superglobal imports,
-  `$GLOBALS` self-import, includes, variable variables, callable arrays,
-  methods/closures/objects, and exact unset/global alias behavior remain
-  blocked.
+  `$GLOBALS` self-import, dynamic-wrapper reachability, includes, variable
+  variables, callable arrays, methods/closures/objects, and exact unset/global
+  alias behavior remain blocked.
 
 These are candid engineering estimates toward generalized PHP semantics in the
 native compiler. They are not test pass rates. Only primary-integrated, pushed
@@ -63,6 +63,8 @@ reference handles, and preserve ordinary frame locals separately.
 Runtime string-valued and finite mixed dynamic calls can now dispatch to those
 global-import frames through the shared dynamic-call table while preserving the
 same root symbol environment.
+Direct wrapper frames that can reach global-import callees now receive and
+forward the same caller root symbol table through the frame call graph.
 Request-key result accessors remove generated backend dependence on the
 concrete key-result return layout across request keyed/path consumers.
 Generated-C also has a first shared runtime consumer for syntax-only callable
@@ -82,17 +84,27 @@ destructors, and backend parity.
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **83%** | `[#################---]` | Strong shared value, array, reference, symbol, request, comparison, truthiness, string, diagnostic, cleanup, request-root, call-frame type-coercion, dynamic-call, and reference-clone surfaces. Some remain scaffolding until consumed end to end. |
-| Compiler/backend consumers | **81%** | `[################----]` | Generated-C has broad selected coverage, including direct-variable compound assignment, function-scope ordinary `global` imports reached by direct and runtime dynamic dispatch, `break`/`continue` through active `finally` scopes, and untyped by-reference frame parameters reached by runtime string-valued dispatch. LLVM now consumes shared direct string-result, string-predicate, string-search, string-int, and selected `strlen()` nested operand ABIs. Direct assembly and many nested/backend consumers still stop at blockers. |
-| Executable PHP semantics | **62%** | `[############--------]` | Many focused linked programs run, including direct-variable compound assignment through local, reference-backed, and active symbol-table variables plus function-local bounded `try`/`finally`, loop transfer through finalizers, direct and runtime dynamic function-scope global imports, and alias-visible by-reference frame writes, but behavior is still selected islands rather than a complete PHP execution model. |
+| Compiler/backend consumers | **81%** | `[################----]` | Generated-C has broad selected coverage, including direct-variable compound assignment, function-scope ordinary `global` imports reached by direct, transitive wrapper, and runtime dynamic dispatch, `break`/`continue` through active `finally` scopes, and untyped by-reference frame parameters reached by runtime string-valued dispatch. LLVM now consumes shared direct string-result, string-predicate, string-search, string-int, and selected `strlen()` nested operand ABIs. Direct assembly and many nested/backend consumers still stop at blockers. |
+| Executable PHP semantics | **62%** | `[############--------]` | Many focused linked programs run, including direct-variable compound assignment through local, reference-backed, and active symbol-table variables plus function-local bounded `try`/`finally`, loop transfer through finalizers, direct/transitive/runtime dynamic function-scope global imports, and alias-visible by-reference frame writes, but behavior is still selected islands rather than a complete PHP execution model. |
 | Arrays, lvalues, references, COW | **63%** | `[#############-------]` | Strong selected array/lvalue/reference paths now include generated-C direct-variable compound assignment, function-scope global imports of scalar variables and array paths, by-reference call binding for direct variables and nested symbol-table paths, and PHP array-union value addition through generated-C array-offset and direct-variable `+=`. Full COW, arbitrary writable roots, foreach parity, object/reference joins, and broader frame/reference composition remain open. |
-| Symbols, globals, request state | **72%** | `[##############------]` | Request roots and selected `$GLOBALS` paths are strong. Generated-C function-scope ordinary `global` imports now borrow the caller root symbol table and bind imported locals through shared references across direct and runtime dynamic frame calls. Generated-C by-reference calls and direct-variable compound assignments also reuse symbol-table paths for ordinary variables and nested array slots. Reconciliation across requests, includes, variable variables, aliases, and broader reference frames remains incomplete. |
-| Calls, functions, frames | **57%** | `[###########---------]` | Bounded generated-C by-value fixed/default/variadic frames, typed params/returns, recursion guards, registered introspection, syntax-only callable-array checks, dynamic user calls including global-import frames, dynamic builtin calls, finite mixed user/builtin sets, function-local bounded `try`/`finally`, function-scope ordinary `global` imports, and untyped by-reference direct/compiler-known/runtime string-valued frame calls are integrated. |
+| Symbols, globals, request state | **72%** | `[##############------]` | Request roots and selected `$GLOBALS` paths are strong. Generated-C function-scope ordinary `global` imports now borrow the caller root symbol table and bind imported locals through shared references across direct, transitive wrapper, and runtime dynamic frame calls. Generated-C by-reference calls and direct-variable compound assignments also reuse symbol-table paths for ordinary variables and nested array slots. Reconciliation across requests, includes, variable variables, aliases, and broader reference frames remains incomplete. |
+| Calls, functions, frames | **57%** | `[###########---------]` | Bounded generated-C by-value fixed/default/variadic frames, typed params/returns, recursion guards, registered introspection, syntax-only callable-array checks, dynamic user calls including global-import frames, dynamic builtin calls, finite mixed user/builtin sets, transitive root-symbol wrapper frames, function-local bounded `try`/`finally`, function-scope ordinary `global` imports, and untyped by-reference direct/compiler-known/runtime string-valued frame calls are integrated. |
 | Objects, properties, methods | **10%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary lacks general compiled object construction, property access, method dispatch, `$this`, visibility, static context, and magic behavior. |
 | Control flow, cleanup, diagnostics | **48%** | `[##########----------]` | Bounded generated-C branches, loops, transfers, switch/goto, normal-flow `try`/`finally`, return-through-finally inside supported by-value frames, `break`/`continue` through active finalizers, diagnostic-aware stdout formatting, and selected cleanup paths exist. Broad unwind, handlers, destructors, output buffers, and exact ordering remain open. |
-| Broad integrated verification | **54%** | `[###########---------]` | Focused gates are strong, including function-frame `try`/`finally`, loop-transfer-through-finally source/linked execution, direct and runtime dynamic function-scope global import source/linked execution, by-reference frame source/linked execution, and dynamic by-reference blocker proof. Cross-feature composition, end-to-end PHP programs, backend parity, and the unfiltered `native_runtime_abi` debt need broader proof. |
+| Broad integrated verification | **54%** | `[###########---------]` | Focused gates are strong, including function-frame `try`/`finally`, loop-transfer-through-finally source/linked execution, direct/transitive/runtime dynamic function-scope global import source/linked execution, by-reference frame source/linked execution, and dynamic by-reference blocker proof. Cross-feature composition, end-to-end PHP programs, backend parity, and the unfiltered `native_runtime_abi` debt need broader proof. |
 
 ## Recent Primary-Integrated Work
 
+- `84d33e6f`: generated-C user-function frame metadata now tracks whether a
+  frame requires the caller root symbol table, not only whether its own body
+  declares `global`. The requirement propagates through the direct registered
+  user-function call graph, so wrapper frames that call global-import callees
+  receive and forward `phpc_root_symbols` instead of materializing isolated
+  function-local symbol tables. Linked proof covers nested direct wrappers and
+  global array-path writes observed by the top-level caller. Runtime dynamic
+  wrapper reachability, request superglobal imports, `$GLOBALS` self-import,
+  includes, variable variables, exact `unset` alias behavior, LLVM, and direct
+  assembly remain blocked.
 - `f0b22da2`: generated-C runtime string-valued dynamic calls now dispatch to
   registered user-function frames that declare ordinary function-scope
   `global $name` imports. The dynamic lookup table no longer excludes those
@@ -230,6 +242,8 @@ Primary-integrated capability:
   runtime string-valued frame calls for supported ordinary lvalue arguments.
 - Supported dynamic dispatch to registered user frames, including
   global-import frames, and selected native builtin families.
+- Transitive direct wrapper frames that can reach ordinary global-import
+  callees receive and forward the caller root symbol table.
 - Direct-variable compound assignment through shared native binary value
   results for ordinary local variables, reference-backed variables, and active
   ordinary symbol-table variables.
@@ -276,8 +290,9 @@ Done:
   imports, and stdout diagnostics.
 - [x] Generated-C bounded by-value direct, recursive, typed, variadic, dynamic
   user, dynamic builtin, finite mixed user/builtin calls, runtime dynamic
-  global-import frame calls, untyped by-reference direct/compiler-known/runtime
-  string-valued frame calls, and bounded function-local `try`/`finally`.
+  global-import frame calls, transitive global-import wrapper frames, untyped
+  by-reference direct/compiler-known/runtime string-valued frame calls, and
+  bounded function-local `try`/`finally`.
 - [x] Generated-C syntax-only callable-array checks through shared runtime
   array/value syntax helpers.
 - [x] Runtime/native value array union for `array + array`, consumed by
@@ -322,15 +337,14 @@ Not done:
 
 ## Steering Read
 
-The runtime dynamic global-import slice was accepted because it removes an
-executable call/frame exclusion by threading the existing root-symbol frame ABI
-through the shared dynamic-call dispatch table, not by recognizing one call
-shape. The next primary direction should attack a different cliff: actual
-callable-array/object invocation, closures/methods/object execution,
-references/COW through calls or real control-flow joins, broader structured
-unwind/cleanup, source-ordered diagnostics, object/property execution, request/
-global alias behavior beyond ordinary imports, or backend parity for an
-already integrated semantic family.
+The transitive global-import wrapper slice was accepted because it fixes root
+symbol environment propagation through the registered user-function call graph,
+not because it recognizes one wrapper shape. The next primary direction should
+attack a different cliff: actual callable-array/object invocation,
+closures/methods/object execution, references/COW through calls or real
+control-flow joins, broader structured unwind/cleanup, source-ordered
+diagnostics, object/property execution, request/global alias behavior beyond
+ordinary imports, or backend parity for an already integrated semantic family.
 
 Resource note from this review: `/dev/shm` has recovered above the dispatcher
 floor at about 5.2G used and 17G free. The largest visible target dirs are now
@@ -339,5 +353,7 @@ ordinary lane-local build targets under 600M. `/home` remains healthy at about
 disk-backed `/tmp/phpc-primary-target-runtime-dynamic-byref` and
 `/tmp/phpc-primary-target-direct-variable-rmw`; this cleanup batch used
 `/tmp/phpc-primary-target-try-finally-loop-transfer`, and the latest dynamic
-global-import batch used `/tmp/phpc-primary-target-dynamic-global-import`.
-Keep checking resource ownership before broad dispatch.
+global-import batch used `/tmp/phpc-primary-target-dynamic-global-import`;
+the latest transitive wrapper batch used
+`/tmp/phpc-primary-target-transitive-global-import`. Keep checking resource
+ownership before broad dispatch.
