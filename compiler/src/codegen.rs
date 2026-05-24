@@ -8988,7 +8988,7 @@ struct CGotoTransfer {
 struct CUserFunction {
     c_name: String,
     decl: FunctionDecl,
-    uses_global_import: bool,
+    requires_root_symbols: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -10515,10 +10515,10 @@ impl CGenerator {
     fn c_user_function_signature(
         c_name: &str,
         function_params: &[FunctionParam],
-        uses_global_import: bool,
+        requires_root_symbols: bool,
     ) -> String {
         let mut params = vec!["int phpc_call_depth".to_string()];
-        if uses_global_import {
+        if requires_root_symbols {
             params.push("phpc_NativeSymbolTableHandle phpc_root_symbols".to_string());
         }
         params.extend(function_params.iter().enumerate().map(|(index, param)| {
@@ -10556,11 +10556,48 @@ impl CGenerator {
                 CUserFunction {
                     c_name,
                     decl: function.clone(),
-                    uses_global_import: stmt_list_contains_global_import(&function.body),
+                    requires_root_symbols: stmt_list_contains_global_import(&function.body),
                 },
             );
         }
+        self.propagate_user_function_root_symbol_requirements();
         self.accept_recursive_user_function_frames()
+    }
+
+    fn propagate_user_function_root_symbol_requirements(&mut self) {
+        loop {
+            let mut changed = false;
+            for key in self.user_function_order.clone() {
+                if self
+                    .user_functions
+                    .get(&key)
+                    .is_some_and(|function| function.requires_root_symbols)
+                {
+                    continue;
+                }
+
+                let mut calls = Vec::new();
+                if let Some(function) = self.user_functions.get(&key) {
+                    collect_direct_call_names_from_stmts(&function.decl.body, &mut calls);
+                }
+
+                let requires_root_symbols = calls.into_iter().any(|name| {
+                    self.user_functions
+                        .get(&Self::user_function_key(&name))
+                        .is_some_and(|callee| callee.requires_root_symbols)
+                });
+                if requires_root_symbols {
+                    if let Some(function) = self.user_functions.get_mut(&key) {
+                        function.requires_root_symbols = true;
+                        changed = true;
+                    }
+                }
+            }
+
+            if !changed {
+                break;
+            }
+        }
     }
 
     fn validate_user_function_frame(&self, function: &FunctionDecl) -> CompileResult<()> {
@@ -10684,10 +10721,10 @@ impl CGenerator {
             next_static_data: self.next_static_data,
             next_native_temp: self.next_native_temp,
             native_globals_symbol_table_handle: function
-                .uses_global_import
+                .requires_root_symbols
                 .then(|| "phpc_root_symbols".to_string()),
             native_globals_symbol_table_owned: false,
-            uses_native_symbol_table_helpers: function.uses_global_import,
+            uses_native_symbol_table_helpers: function.requires_root_symbols,
             ..CGenerator::default()
         };
 
@@ -10757,7 +10794,7 @@ impl CGenerator {
         definition.push_str(&Self::c_user_function_signature(
             &function.c_name,
             &function.decl.params,
-            function.uses_global_import,
+            function.requires_root_symbols,
         ));
         definition.push_str(" {\n");
         for line in &generator.body {
@@ -11311,7 +11348,7 @@ impl CGenerator {
                 output.push_str(&Self::c_user_function_signature(
                     &function.c_name,
                     &function.decl.params,
-                    function.uses_global_import,
+                    function.requires_root_symbols,
                 ));
                 output.push_str(";\n");
             }
@@ -17552,7 +17589,9 @@ impl CGenerator {
             })
             .collect::<Vec<_>>();
 
-        if functions.iter().any(|function| function.uses_global_import)
+        if functions
+            .iter()
+            .any(|function| function.requires_root_symbols)
             || self.runtime_dynamic_call_needs_symbol_table_for_reference_args(&functions, args)
         {
             let symbol_table_failure_cleanup =
@@ -17664,7 +17703,7 @@ impl CGenerator {
                 branch_cleanup.extend(variadic_value.cleanup_after_use.clone());
                 call_args.push(variadic_value.handle);
             }
-            if function.uses_global_import {
+            if function.requires_root_symbols {
                 let table_failure_cleanup = format!(
                     "{}{}{}",
                     c_cleanup_sequence(&branch_cleanup),
@@ -18000,7 +18039,7 @@ impl CGenerator {
             cleanup_after_use.extend(variadic_value.cleanup_after_use.clone());
             call_args.push(variadic_value.handle);
         }
-        if function.uses_global_import {
+        if function.requires_root_symbols {
             let table_failure_cleanup = format!(
                 "{}{}",
                 c_cleanup_sequence(&cleanup_after_use),

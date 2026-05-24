@@ -14082,6 +14082,33 @@ const NATIVE_RUNTIME_DYNAMIC_GLOBAL_IMPORT_USER_FUNCTION_SOURCE: &str = concat!(
     "echo $mixed(\"mix\");\n",
 );
 
+const NATIVE_TRANSITIVE_GLOBAL_IMPORT_USER_FUNCTION_SOURCE: &str = concat!(
+    "<?php\n",
+    "$slot = \"root\";\n",
+    "$bag = [\"k\" => \"root\"];\n",
+    "function set_global($value) {\n",
+    "    global $slot;\n",
+    "    $slot = $value;\n",
+    "    return $slot;\n",
+    "}\n",
+    "function set_key($value) {\n",
+    "    global $bag;\n",
+    "    $bag[\"k\"] = $value;\n",
+    "    return $bag[\"k\"];\n",
+    "}\n",
+    "function relay_global($value) {\n",
+    "    return set_global($value);\n",
+    "}\n",
+    "function nested_relay($value) {\n",
+    "    return relay_global($value);\n",
+    "}\n",
+    "function relay_key($value) {\n",
+    "    return set_key($value);\n",
+    "}\n",
+    "echo nested_relay(\"wrapped\"), \":\", $slot, \"|\";\n",
+    "echo relay_key(\"via\"), \":\", $bag[\"k\"];\n",
+);
+
 #[test]
 fn native_executable_c_source_lowers_direct_user_function_frames() {
     let program = parse(NATIVE_USER_FUNCTION_FRAME_SOURCE).unwrap();
@@ -14342,6 +14369,39 @@ fn native_executable_c_source_lowers_runtime_dynamic_global_import_user_function
         !source.contains("assembly dynamic function-call lowering rejects")
             && !source.contains("assembly global-declaration lowering rejects"),
         "ordinary global-import frames should no longer be excluded from runtime dynamic dispatch:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_threads_global_import_roots_through_wrapper_frames() {
+    let program = parse(NATIVE_TRANSITIVE_GLOBAL_IMPORT_USER_FUNCTION_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "phpc_user_function_2_relay_global(int phpc_call_depth, phpc_NativeSymbolTableHandle phpc_root_symbols"
+        ) && source.contains(
+            "phpc_user_function_3_nested_relay(int phpc_call_depth, phpc_NativeSymbolTableHandle phpc_root_symbols"
+        ) && source.contains(
+            "phpc_user_function_4_relay_key(int phpc_call_depth, phpc_NativeSymbolTableHandle phpc_root_symbols"
+        ),
+        "wrapper frames that can reach global-import callees should receive the caller root symbol table:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_symbol_table_new()")
+            && body.contains("phpc_user_function_3_nested_relay(")
+            && body.contains("phpc_user_function_4_relay_key("),
+        "top-level calls to transitive global-import wrappers should share one caller root symbol table:\n{source}"
+    );
+    assert!(
+        source.matches("phpc_native_symbol_table_new()").count() == 1,
+        "wrapper frames should pass the borrowed root table instead of creating nested symbol tables:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly user-function lowering rejects")
+            && !source.contains("assembly global-declaration lowering rejects"),
+        "transitive global-import frame calls should not hit frame/global blockers:\n{source}"
     );
 }
 
@@ -14638,6 +14698,34 @@ fn emit_exe_links_and_runs_global_import_user_function_frame_program() {
         run.stdout,
         b"seen:root|direct:direct|seen:direct|again:again|G:G|SO:S:O"
     );
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_transitive_global_import_user_function_frame_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "transitive_global_import_user_function_frame",
+        NATIVE_TRANSITIVE_GLOBAL_IMPORT_USER_FUNCTION_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native transitive global-import executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"wrapped:wrapped|via:via");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
