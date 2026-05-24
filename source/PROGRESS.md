@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 22:25 CEST
-Evaluation marker: `20260524T202526Z`
+Updated: 2026-05-24 23:15 CEST
+Evaluation marker: `20260524T211514Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as product capability. Dirty primary WIP, probe-only commits,
@@ -10,30 +10,34 @@ blocker-only classifiers, and status-file claims are excluded until selected,
 gated, committed, pushed, and reflected here as semantic product progress.
 
 Current live pushed primary head:
-`16209c55 docs: update progress dashboard`
+`12fe04ea docs: update progress dashboard`
 
 Latest counted semantic/test baseline:
 `b217e2b4 codegen: block destructor-observable native allocation`
 
 Recent pushed but uncounted primary state:
 
+- `28bb7423 docs: update progress after destructor blocker` records the
+  destructor-blocker semantic commit in this dashboard.
 - `2967110c codegen: expose symbol table abi probe` exposes ABI/probe
   visibility only. It does not implement generalized PHP variable
   assignment/readback through symbol-table storage.
 - `59343e11 docs: update progress dashboard` is management metadata only.
 - `16209c55 docs: update progress dashboard` is management metadata only.
+- `12fe04ea docs: update progress dashboard` is management metadata only.
 
 Current dirty primary WIP:
 
 - `compiler/src/interpreter.rs`
 - `compiler/tests/preg_replace_callback_builtin.rs`
 
-The dirty `preg_replace_callback()` work appears to have moved from a
-WordPress-only branch toward bounded slash-delimited literal/character-class
-callback execution, and `git diff --check` passes on the dirty files. It is
-still uncounted because it remains dirty, lacks current-head cargo gate
-evidence in this review, and still needs an owner no-exact-shape audit plus a
-decision on legacy multiline extended regex behavior.
+The dirty `preg_replace_callback()` work is still uncounted. Current diff hash
+is `3df34a396549d950bba3dbf21f9b79d7932ae9903fa304cf0c10318f28f0c3d0`, and
+`git diff --check` passes on the dirty files. The work appears to be moving
+toward bounded regex/callback execution, but it remains dirty and lacks a
+current owner status plus current-head cargo gate evidence. The dashboard says
+an active preg fixer exists, but live tmux and worker-status checks did not
+confirm that owner during this review.
 
 ## Executive Read
 
@@ -69,18 +73,19 @@ parity.
 | Calls, functions, frames | **82%** | `[################----]` | Bounded functions, descriptor closures, callable arrays, callable objects, public method frames, and constructor frames work in selected generated-C cases. |
 | Objects, properties, methods | **45%** | `[#########-----------]` | Useful public declared-object subset exists and supported public `__invoke` frames are callable. Non-public/contextual visibility, overrides, interfaces/traits, broader magic methods, dynamic/static properties, destructors, references/COW, and backend parity remain open. |
 | Control flow, cleanup, diagnostics | **49%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, and destructor blockers exist; broad unwind, handlers, destructor execution, shutdown flushing, and source-ordered diagnostics remain open. |
-| Broad integrated verification | **84%** | `[#################---]` | Focused gates are strong for recent slices. Broad dirty-checkout gates are currently blocked by unrelated preg WIP, and backend parity gaps remain. |
+| Broad integrated verification | **84%** | `[#################---]` | Focused gates are strong for recent counted slices. Broad dirty-checkout gates are currently blocked by preg WIP, and backend parity gaps remain. |
 
 ## Active Roadmap Items
 
 | Item | Toward Primary Integration | Toward Full Feature | Status |
 | --- | ---: | ---: | --- |
-| Object-offset ArrayAccess error-control classifier | **90%** `[##################--]` | **10%** `[##------------------]` | GO candidate at hash `9637c2c66471017bbd31d602913f3480d44ef5cc414e885f36589f5807a29ebd`. Clean one-file compiler diff with current-primary apply/rustfmt/diff-check evidence. Diagnostic/blocker progress only; no runtime `ArrayAccess` dispatch. |
+| Object-offset ArrayAccess error-control classifier | **90%** `[##################--]` | **10%** `[##------------------]` | GO candidate at hash `9637c2c66471017bbd31d602913f3480d44ef5cc414e885f5807a29ebd`. Clean one-file compiler diff with current-primary apply/rustfmt/diff-check evidence. Diagnostic/blocker progress only; no runtime `ArrayAccess` dispatch. |
 | Object-property reference-slot mutation | **75%** `[###############-----]` | **35%** `[#######-------------]` | Strong executable candidate at hash `c60ed1c30dc1d979da1fc44641ae4378a3629e45c42da0d9621faf10519e56e8`, but newer triage still reports scoped rustfmt failure. Needs formatting, new hash, and focused `/tmp` gate reruns. |
-| Dirty `preg_replace_callback()` WIP | **45%** `[#########-----------]` | **20%** `[####----------------]` | Current diff-check passes and bounded character-class callback execution is more reusable than the old WordPress-only path, but it is dirty and ungated at current head. Not counted. |
+| Dirty `preg_replace_callback()` WIP | **40%** `[########------------]` | **20%** `[####----------------]` | Current diff-check passes and the direction is more reusable than the old WordPress-only shortcut, but the WIP is dirty, ungated at current head, and current ownership was not confirmed. Not counted. |
 | Symbol-table executable storage | **20%** `[####----------------]` | **20%** `[####----------------]` | ABI/runtime helper visibility exists through `2967110c`; generalized PHP variable assignment/readback through symbol tables is still not implemented. |
+| JSON/type-conversion extraction | **40%** `[########------------]` | **25%** `[#####---------------]` | Lane-local JSON line-terminator and related conversion-result work has broad consumers; extract one focused candidate and audit overlap before primary review. |
+| Constructor visibility/call preflight extraction | **35%** `[#######-------------]` | **20%** `[####----------------]` | Lane-local constructor visibility preflight looks semantically useful but remains buried in cumulative call-semantics work. |
 | Control-flow target-state extraction | **35%** `[#######-------------]` | **45%** `[#########-----------]` | Lane-local switch/loop target-state and recursive backend work has useful gates, but needs a narrow current-primary candidate. |
-| JSON/global-constant conversion extraction | **35%** `[#######-------------]` | **25%** `[#####---------------]` | Lane-local JSON constants and conversion source/result work has broad consumers; extract one focused candidate before primary review. |
 | Broad lane extraction backlog | **30%** `[######--------------]` | **30%** `[######--------------]` | Many lanes report useful generalized work, but most remain broad dirty worktrees without stable primary-base candidates. |
 
 ## Done / In Progress / Not Done
@@ -103,10 +108,10 @@ Primary-integrated and counted:
 In progress but uncounted:
 
 - [ ] Pushed symbol-table ABI probe `2967110c`; useful visibility, not generalized PHP symbol storage.
-- [ ] Dirty bounded `preg_replace_callback()` callback-execution WIP; promising but still ungated and unowned for primary accounting.
+- [ ] Dirty bounded `preg_replace_callback()` callback-execution WIP; promising but still dirty, ungated, and ownership-unconfirmed for primary accounting.
 - [ ] Lane-local `object-arrayaccess-error-control-retry` diagnostic classifier candidate at hash `9637c2c66471017bbd31d602913f3480d44ef5cc414e885f36589f5807a29ebd`.
 - [ ] Lane-local `object-property-reference-slots` mutation/reference-slot candidate at hash `c60ed1c30dc1d979da1fc44641ae4378a3629e45c42da0d9621faf10519e56e8`, pending formatting and rerun gates.
-- [ ] Lane-local control-flow, JSON/type-conversion, call-semantics, cleanup-contract, diagnostic sequencing, comparison, object-policy, symbol/global, and array/reference candidates that need clean extraction.
+- [ ] Lane-local JSON/type-conversion, constructor/call preflight, control-flow, cleanup-contract, diagnostic sequencing, comparison, object-policy, symbol/global, and array/reference candidates that need clean extraction.
 
 Not done:
 
@@ -145,31 +150,29 @@ Primary-integrated and counted:
 
 Pushed but uncounted:
 
-- [ ] `2967110c codegen: expose symbol table abi probe` exposes helper
-  declarations/probe calls but does not execute generalized PHP symbol storage.
+- [ ] `28bb7423 docs: update progress after destructor blocker` is progress metadata.
+- [ ] `2967110c codegen: expose symbol table abi probe` exposes helper declarations/probe calls but does not execute generalized PHP symbol storage.
 - [ ] `59343e11 docs: update progress dashboard` is progress metadata.
 - [ ] `16209c55 docs: update progress dashboard` is progress metadata.
+- [ ] `12fe04ea docs: update progress dashboard` is progress metadata.
 
 Dirty primary but uncounted:
 
-- [ ] `preg_replace_callback()` WIP remains unrelated to the next candidate and
-  not ready for primary accounting.
+- [ ] `preg_replace_callback()` WIP remains unrelated to the next candidate and not ready for primary accounting.
+- [ ] Dashboard ownership of the preg fixer was not confirmed by live tmux/status checks during this review.
 
 Lane-local but uncounted:
 
-- [ ] `object-arrayaccess-error-control-retry` is the current GO candidate for
-  centralized unsupported object-offset diagnostics.
-- [ ] `object-property-reference-slots` is the next stronger executable
-  candidate once formatted and re-gated.
-- [ ] Broad active lanes should be extracted into narrow candidates before
-  primary review.
+- [ ] `object-arrayaccess-error-control-retry` is the current GO candidate for centralized unsupported object-offset diagnostics.
+- [ ] `object-property-reference-slots` is the next stronger executable candidate once formatted and re-gated.
+- [ ] JSON/type-conversion, constructor visibility, and control-flow lanes should be extracted into narrow current-primary candidates before primary review.
 
 ## Review Notes
 
 Resource pressure remains a steering constraint. `/dev/shm` is `22G` total,
 `21G` used, `1.8G` available, `92%` used; `du -sh /dev/shm` reports `21G`.
-`/home` has ample filesystem headroom at `459G` total, `154G` used, `287G`
-available, `35%` used; `du -sh /home` reported `118G` before exiting nonzero
-because some container overlay entries were unreadable. New gates should use
-disk-backed `/tmp` targets, `CARGO_BUILD_JOBS=1`, `CARGO_INCREMENTAL=0`, and
-focused filters until shared memory recovers.
+`/home` has filesystem headroom at `459G` total, `166G` used, `275G`
+available, `38%` used. Live `du -sh /home` did not complete within 25 seconds
+and emitted permission errors in container overlay directories. New gates
+should use disk-backed `/tmp` targets, `CARGO_BUILD_JOBS=1`,
+`CARGO_INCREMENTAL=0`, and focused filters until shared memory recovers.
