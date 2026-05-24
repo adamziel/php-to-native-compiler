@@ -14109,6 +14109,16 @@ impl PhpArray {
         array
     }
 
+    pub fn union_preserving_left(&self, other: &Self) -> Self {
+        let mut array = self.clone();
+        for entry in other.entries() {
+            if !array.contains_key(entry.key.clone()) {
+                array.insert_slot(entry.key.clone(), entry.slot().clone());
+            }
+        }
+        array
+    }
+
     pub fn unshift_values(&mut self, values: &[Value]) -> RuntimeResult<i64> {
         let mut array = Self::new();
         for value in values {
@@ -18186,6 +18196,10 @@ impl Value {
     }
 
     pub fn php_add(&self, other: &Value) -> RuntimeResult<Value> {
+        if let (Value::Array(left), Value::Array(right)) = (self, other) {
+            return Ok(Value::Array(left.union_preserving_left(right)));
+        }
+
         let operands = convert_binary_arithmetic_numbers(self, other, ArithmeticOp::Add)?;
         match (operands.left, operands.right) {
             (Number::Int(left), Number::Int(right)) => Ok(Value::Int(left.wrapping_add(right))),
@@ -18619,7 +18633,7 @@ pub unsafe extern "C" fn phpc_native_value_binary_result(
     let left = unsafe { left.as_ref() }.unwrap_or(&null_left);
     let right = unsafe { right.as_ref() }.unwrap_or(&null_right);
 
-    if let Some(message) = native_value_binary_blocker(left, right) {
+    if let Some(message) = native_value_binary_blocker(left, op, right) {
         return NativeValueOperationResult::diagnostic(message);
     }
 
@@ -18669,7 +18683,12 @@ fn native_value_binary_value(left: &Value, op: u8, right: &Value) -> RuntimeResu
     }
 }
 
-fn native_value_binary_blocker(left: &Value, right: &Value) -> Option<String> {
+fn native_value_binary_blocker(left: &Value, op: u8, right: &Value) -> Option<String> {
+    if op == NATIVE_VALUE_BINARY_ADD && matches!((left, right), (Value::Array(_), Value::Array(_)))
+    {
+        return None;
+    }
+
     let unsupported = match (left, right) {
         (Value::Array(_), _) | (_, Value::Array(_)) => "arrays",
         (Value::Object(_), _)
@@ -20448,6 +20467,45 @@ mod tests {
         assert!(null_added.succeeded());
         assert_eq!(native_value_echo_bytes_for_test(null_added.value), b"7");
         unsafe { phpc_native_value_operation_result_free(null_added) };
+
+        let mut union_left = PhpArray::new();
+        union_left.insert(0, Value::String("left-zero".to_string()));
+        union_left.insert("name", Value::String("left-name".to_string()));
+        let mut union_right = PhpArray::new();
+        union_right.insert(0, Value::String("right-zero".to_string()));
+        union_right.insert(1, Value::String("right-one".to_string()));
+        union_right.insert("name", Value::String("right-name".to_string()));
+        union_right.insert("role", Value::String("right-role".to_string()));
+        let union_left = NativeValueHandle::from_value(Value::Array(union_left));
+        let union_right = NativeValueHandle::from_value(Value::Array(union_right));
+        let array_added = unsafe {
+            phpc_native_value_binary_result(union_left, NATIVE_VALUE_BINARY_ADD, union_right)
+        };
+        assert!(array_added.succeeded());
+        let Value::Array(array_added_value) =
+            unsafe { array_added.value.as_ref() }.expect("array union result is present")
+        else {
+            panic!("array + array should produce an array value");
+        };
+        assert_eq!(
+            array_added_value.get(0),
+            Some(&Value::String("left-zero".to_string()))
+        );
+        assert_eq!(
+            array_added_value.get(1),
+            Some(&Value::String("right-one".to_string()))
+        );
+        assert_eq!(
+            array_added_value.get("name"),
+            Some(&Value::String("left-name".to_string()))
+        );
+        assert_eq!(
+            array_added_value.get("role"),
+            Some(&Value::String("right-role".to_string()))
+        );
+        unsafe { phpc_native_value_operation_result_free(array_added) };
+        unsafe { phpc_native_value_free(union_right) };
+        unsafe { phpc_native_value_free(union_left) };
 
         let array_value = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
         let array_blocked = unsafe {
@@ -36094,6 +36152,52 @@ mod tests {
         assert_eq!(
             Value::Int(7).php_div(&Value::Int(2)).unwrap(),
             Value::Float(3.5)
+        );
+    }
+
+    #[test]
+    fn array_addition_unions_arrays_without_overwriting_left_keys() {
+        let mut left = PhpArray::new();
+        left.insert(0, Value::String("left-zero".to_string()));
+        left.insert("name", Value::String("left-name".to_string()));
+
+        let mut right = PhpArray::new();
+        right.insert(0, Value::String("right-zero".to_string()));
+        right.insert("1", Value::String("right-one".to_string()));
+        right.insert("name", Value::String("right-name".to_string()));
+        right.insert("role", Value::String("right-role".to_string()));
+
+        let result = Value::Array(left)
+            .php_add(&Value::Array(right))
+            .expect("array union addition succeeds");
+        let Value::Array(result) = result else {
+            panic!("array + array should produce an array");
+        };
+
+        assert_eq!(result.get(0), Some(&Value::String("left-zero".to_string())));
+        assert_eq!(
+            result.get("name"),
+            Some(&Value::String("left-name".to_string()))
+        );
+        assert_eq!(result.get(1), Some(&Value::String("right-one".to_string())));
+        assert_eq!(
+            result.get("role"),
+            Some(&Value::String("right-role".to_string()))
+        );
+
+        let shared = PhpReferenceCell::new(Value::String("right-ref".to_string()));
+        let mut referenced_right = PhpArray::new();
+        referenced_right.insert_reference("ref", shared.clone());
+        let result = PhpArray::new().union_preserving_left(&referenced_right);
+        let result_reference = result
+            .get_slot("ref")
+            .and_then(ArraySlot::reference_cell)
+            .expect("union should preserve inserted reference slots");
+        assert!(result_reference.shares_reference_with(&shared));
+        shared.set_value(Value::String("updated-ref".to_string()));
+        assert_eq!(
+            result.get_cloned("ref"),
+            Some(Value::String("updated-ref".to_string()))
         );
     }
 

@@ -3837,6 +3837,8 @@ const ARRAY_LVALUE_NESTED_READ_SOURCE: &str = "<?php\n$outer = \"outer\";\n$inne
 
 const ARRAY_LVALUE_COMPOUND_ASSIGNMENT_SOURCE: &str = "<?php\n$key = \"slot\";\n$alt = \"alt\";\n$items = [$key => 2, $alt => 10, \"text\" => \"A\"];\n$out = [];\n$items[$key] += 3;\n$twenty = ($items[$alt] *= 2);\necho $twenty;\n$out[($items[$key] .= \"x\")] = ($items[$alt] -= 5);\necho \"|\", $out[\"5x\"], \"|\", $items[$alt], \"|\", $items[$key];\n";
 
+const ARRAY_LVALUE_COMPOUND_ARRAY_UNION_SOURCE: &str = "<?php\n$box = [];\n$box[\"left\"] = [0 => \"left-zero\", \"name\" => \"left-name\"];\n$box[\"left\"] += [0 => \"right-zero\", 1 => \"right-one\", \"name\" => \"right-name\", \"role\" => \"right-role\"];\n$outer = \"outer\";\n$slot = \"slot\";\n$box[$outer][$slot] = [\"keep\" => \"nested-left\"];\n$box[$outer][$slot] += [\"keep\" => \"nested-right\", \"add\" => \"nested-add\"];\necho $box[\"left\"][0], \"|\", $box[\"left\"][1], \"|\", $box[\"left\"][\"name\"], \"|\", $box[\"left\"][\"role\"], \"|\", $box[$outer][$slot][\"keep\"], \"|\", $box[$outer][$slot][\"add\"];\n";
+
 const ARRAY_LVALUE_INCREMENT_DECREMENT_SOURCE: &str = "<?php\n$key = \"slot\";\n$float = \"float\";\n$items = [$key => 4, $float => 1.5, \"other\" => 9];\n$items[$key]++;\necho ++$items[$key], \"|\", $items[$key]--, \"|\", $items[$key], \"|\";\n$oldFloat = $items[$float]--;\necho $oldFloat, \"|\", $items[$float], \"|\";\n$out = [];\n$out[++$items[$key]] = $items[$key]--;\necho $out[6], \"|\", $items[$key];\n";
 
 const ARRAY_LVALUE_INCREMENT_DECREMENT_MISSING_SOURCE: &str = "<?php\n$key = \"missing\";\n$leaf = \"leaf\";\n$items = [\"nil\" => null, \"outer\" => [\"null_leaf\" => null]];\n$post = $items[$key]++;\n$pre = ++$items[\"outer\"][$leaf];\n$items[\"down\"]--;\n$nullPost = $items[\"nil\"]++;\n$nullPre = ++$items[\"outer\"][\"null_leaf\"];\necho $post, \"|\", $items[$key], \"|\", $pre, \"|\", $items[\"outer\"][$leaf], \"|\", empty($items[\"down\"]) ? 1 : 0, \"|\", $nullPost, \"|\", $items[\"nil\"], \"|\", $nullPre, \"|\", $items[\"outer\"][\"null_leaf\"];\n";
@@ -5034,6 +5036,33 @@ fn native_executable_c_source_routes_array_lvalue_compound_assignments_through_r
     assert!(
         !body.contains("assembly mutation lowering rejects"),
         "lowerable array lvalue compound assignments should not fall through the blanket mutation blocker:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_array_compound_union_through_value_result_boundary() {
+    let program = parse(ARRAY_LVALUE_COMPOUND_ARRAY_UNION_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_array_lvalue_owner_value_operation_result"),
+        "array += should route through the shared lvalue owner boundary:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_binary_result"),
+        "array += should compute through the shared native binary value-result ABI:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_array_lvalue_owner_array")
+            .count()
+            >= 2,
+        "array union compound assignment should cover direct and nested array-offset owners:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly arithmetic lowering rejects")
+            && !source.contains("assembly mutation lowering rejects"),
+        "array union compound assignment should not hit arithmetic or mutation blockers:\n{source}"
     );
 }
 
@@ -9504,6 +9533,37 @@ fn emit_exe_links_and_runs_array_lvalue_compound_assignment_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"20|15|15|5x");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_array_compound_assignment_unions_through_value_result_boundary() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "array_compound_assignment_union_value_result_boundary",
+        ARRAY_LVALUE_COMPOUND_ARRAY_UNION_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native array-union executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"left-zero|right-one|left-name|right-role|nested-left|nested-add"
+    );
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
