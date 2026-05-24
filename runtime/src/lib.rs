@@ -3044,6 +3044,42 @@ pub unsafe extern "C" fn phpc_native_value_from_closure_descriptor_captures_and_
 
 /// # Safety
 ///
+/// `capture_names` and `capture_args` must be null when `capture_count` is
+/// zero, or point to `capture_count` initialized handles previously returned
+/// by the runtime ABI and not yet freed. By-value capture arguments are cloned
+/// into fresh closure capture cells. By-reference capture arguments store the
+/// same reference cell in the closure object. The helper frees all provided
+/// capture name/value/reference handles before returning.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_from_closure_descriptor_capture_arguments_and_free(
+    descriptor: NativeClosureDescriptor,
+    capture_names: *const NativeStringHandle,
+    capture_args: *const NativeClosureArgument,
+    capture_count: usize,
+) -> NativeValueHandle {
+    let captures = unsafe {
+        native_closure_captures_from_arguments(capture_names, capture_args, capture_count)
+    };
+    unsafe { native_closure_capture_arguments_free(capture_names, capture_args, capture_count) };
+
+    if !descriptor.is_invokable() {
+        return NativeValueHandle::null();
+    }
+
+    let Some(captures) = captures else {
+        return NativeValueHandle::null();
+    };
+
+    NativeValueHandle::from_value(Value::Closure(PhpClosure::new_with_descriptor(
+        NEXT_NATIVE_CLOSURE_ID.fetch_add(1, AtomicOrdering::Relaxed),
+        false,
+        captures,
+        descriptor,
+    )))
+}
+
+/// # Safety
+///
 /// `handle` must be null or a value handle previously returned by the runtime
 /// ABI and not yet freed.
 #[no_mangle]
@@ -3224,21 +3260,24 @@ pub unsafe extern "C" fn phpc_native_closure_invoke_value_with_diagnostic(
         }
     }
 
-    let capture_values = closure
+    let capture_args = closure
         .captures()
         .iter()
-        .map(|capture| NativeValueHandle::from_value(capture.value()))
+        .map(|capture| {
+            let value = NativeValueHandle::from_value(capture.value());
+            if capture.by_reference() {
+                let reference = NativeReferenceHandle::from_cell(capture.cell());
+                NativeClosureArgument::from_reference(value, reference)
+            } else {
+                NativeClosureArgument::from_value(value)
+            }
+        })
         .collect::<Vec<_>>();
-    let mut callback_args = Vec::with_capacity(arg_count.saturating_add(capture_values.len()));
+    let mut callback_args = Vec::with_capacity(arg_count.saturating_add(capture_args.len()));
     if arg_count > 0 {
         callback_args.extend_from_slice(args_slice);
     }
-    callback_args.extend(
-        capture_values
-            .iter()
-            .copied()
-            .map(NativeClosureArgument::from_value),
-    );
+    callback_args.extend(capture_args.iter().copied());
 
     let mut status = 0;
     let result = unsafe {
@@ -3253,8 +3292,9 @@ pub unsafe extern "C" fn phpc_native_closure_invoke_value_with_diagnostic(
             &mut status,
         )
     };
-    for capture in capture_values {
-        unsafe { phpc_native_value_free(capture) };
+    for capture in capture_args {
+        unsafe { phpc_native_value_free(capture.value) };
+        unsafe { phpc_native_reference_free(capture.reference) };
     }
     if status != 1 || result.is_null() {
         unsafe {
@@ -3298,6 +3338,39 @@ unsafe fn native_closure_captures_from_handles(
     Some(captures)
 }
 
+unsafe fn native_closure_captures_from_arguments(
+    capture_names: *const NativeStringHandle,
+    capture_args: *const NativeClosureArgument,
+    capture_count: usize,
+) -> Option<Vec<PhpClosureCapture>> {
+    if capture_count == 0 {
+        return Some(Vec::new());
+    }
+    if capture_names.is_null() || capture_args.is_null() {
+        return None;
+    }
+
+    let names = unsafe { std::slice::from_raw_parts(capture_names, capture_count) };
+    let args = unsafe { std::slice::from_raw_parts(capture_args, capture_count) };
+    let mut captures = Vec::with_capacity(capture_count);
+    for (name, arg) in names.iter().zip(args.iter()) {
+        let name = unsafe { name.as_ref() }?;
+        let name = String::from_utf8(name.bytes.clone()).ok()?;
+        if arg.is_reference() {
+            let reference = unsafe { arg.reference.as_ref() }?;
+            captures.push(PhpClosureCapture::new_reference(
+                name,
+                true,
+                reference.cell.clone(),
+            ));
+        } else {
+            let value = unsafe { arg.value.as_ref() }?.clone();
+            captures.push(PhpClosureCapture::new(name, false, value));
+        }
+    }
+    Some(captures)
+}
+
 unsafe fn native_closure_capture_handles_free(
     capture_names: *const NativeStringHandle,
     capture_values: *const NativeValueHandle,
@@ -3314,6 +3387,27 @@ unsafe fn native_closure_capture_handles_free(
     if !capture_values.is_null() {
         for handle in unsafe { std::slice::from_raw_parts(capture_values, capture_count) } {
             unsafe { phpc_native_value_free(*handle) };
+        }
+    }
+}
+
+unsafe fn native_closure_capture_arguments_free(
+    capture_names: *const NativeStringHandle,
+    capture_args: *const NativeClosureArgument,
+    capture_count: usize,
+) {
+    if capture_count == 0 {
+        return;
+    }
+    if !capture_names.is_null() {
+        for handle in unsafe { std::slice::from_raw_parts(capture_names, capture_count) } {
+            unsafe { phpc_native_string_free(*handle) };
+        }
+    }
+    if !capture_args.is_null() {
+        for arg in unsafe { std::slice::from_raw_parts(capture_args, capture_count) } {
+            unsafe { phpc_native_value_free(arg.value) };
+            unsafe { phpc_native_reference_free(arg.reference) };
         }
     }
 }
@@ -25514,6 +25608,78 @@ mod tests {
         };
         assert!(diagnostic.is_null());
         assert_eq!(unsafe { result.as_ref() }, Some(&Value::Int(15)));
+
+        unsafe { phpc_native_value_free(result) };
+        unsafe { phpc_native_value_free(arg) };
+        unsafe { phpc_native_value_free(closure) };
+    }
+
+    #[test]
+    fn native_descriptor_closure_reference_captures_share_cells_through_frame_callback() {
+        unsafe extern "C" fn mutate_capture_closure_callback(
+            _call_depth: c_int,
+            args: *const NativeClosureArgument,
+            arg_count: usize,
+            status: *mut c_int,
+        ) -> NativeValueHandle {
+            assert_eq!(arg_count, 2);
+            let parameter = unsafe { (*args).value.as_ref() };
+            let capture = unsafe { (*args.add(1)).reference };
+            assert!(!capture.is_null());
+            let Some(Value::String(parameter)) = parameter else {
+                return NativeValueHandle::null();
+            };
+            let replacement = NativeValueHandle::from_value(Value::String(parameter.clone()));
+            assert!(unsafe { phpc_native_reference_set_value(capture, replacement) });
+            unsafe { phpc_native_value_free(replacement) };
+            unsafe { *status = 1 };
+            unsafe { phpc_native_reference_value_clone(capture) }
+        }
+
+        let descriptor = NativeClosureDescriptor::new(mutate_capture_closure_callback, 1, 1);
+        let capture_name = unsafe { phpc_native_string_from_bytes(b"slot".as_ptr(), 4) };
+        let cell = PhpReferenceCell::new(Value::String("old".to_string()));
+        let reference = NativeReferenceHandle::from_cell(cell.clone());
+        let capture_args = [NativeClosureArgument::from_reference(
+            NativeValueHandle::null(),
+            reference,
+        )];
+        let closure = unsafe {
+            phpc_native_value_from_closure_descriptor_capture_arguments_and_free(
+                descriptor,
+                [capture_name].as_ptr(),
+                capture_args.as_ptr(),
+                1,
+            )
+        };
+
+        let Value::Closure(closure_ref) = unsafe { closure.as_ref() }.expect("closure value")
+        else {
+            panic!("descriptor capture helper should produce a closure value");
+        };
+        assert_eq!(closure_ref.captures().len(), 1);
+        assert_eq!(closure_ref.captures()[0].name(), "slot");
+        assert!(closure_ref.captures()[0].by_reference());
+        assert_eq!(closure_ref.captures()[0].cell().id(), cell.id());
+
+        let arg = NativeValueHandle::from_value(Value::String("new".to_string()));
+        let args = [NativeClosureArgument::from_value(arg)];
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let result = unsafe {
+            phpc_native_closure_invoke_value_with_diagnostic(
+                closure,
+                1,
+                args.as_ptr(),
+                args.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { result.as_ref() },
+            Some(&Value::String("new".to_string()))
+        );
+        assert_eq!(cell.value_cloned(), Value::String("new".to_string()));
 
         unsafe { phpc_native_value_free(result) };
         unsafe { phpc_native_value_free(arg) };

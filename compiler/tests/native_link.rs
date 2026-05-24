@@ -4,7 +4,7 @@ use std::process::Command;
 
 use php_compiler::{codegen::emit_native_executable_c_source, error::Phase, parse};
 
-const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including static arrow functions, by-reference closure captures, by-reference variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, implicit by-value arrow captures, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
+const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including static arrow functions, by-reference closure captures that cannot be materialized through root symbol/reference handles, by-reference variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, supported by-reference captures, implicit by-value arrow captures, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
 
 const NATIVE_VALUE_TRUTHINESS_SOURCE: &str = concat!(
     "<?php\n",
@@ -4983,6 +4983,53 @@ fn native_executable_c_source_routes_by_value_closure_captures_through_descripto
 }
 
 #[test]
+fn native_executable_c_source_routes_by_reference_closure_captures_through_descriptor_abi() {
+    let source = concat!(
+        "<?php\n",
+        "function invoke_capture($callback, $suffix) { return $callback($suffix); }\n",
+        "function make_ref_capture(&$slot) { return function ($suffix) use (&$slot) { $slot = $slot . $suffix; return $slot; }; }\n",
+        "class CaptureRelay { public static function apply($callback, $suffix) { return $callback($suffix); } }\n",
+        "$slot = \"A\";\n",
+        "$direct = function ($suffix) use (&$slot) { $slot = $slot . $suffix; return $slot; };\n",
+        "echo $direct(\"0\"), \":\", $slot, \"|\";\n",
+        "$slot = \"B\";\n",
+        "echo invoke_capture($direct, \"1\"), \":\", $slot, \"|\";\n",
+        "$outer = \"O\";\n",
+        "$nested = function ($suffix) use (&$outer) { $inner = function ($tail) use (&$outer) { $outer = $outer . $tail; return $outer; }; return $inner($suffix); };\n",
+        "echo CaptureRelay::apply($nested, \"2\"), \":\", $outer, \"|\";\n",
+        "$target = \"T\";\n",
+        "$mix = function (&$target, $value) use (&$slot) { $target = $slot . $value; $slot = $target; return $slot; };\n",
+        "echo $mix($target, \"3\"), \":\", $target, \":\", $slot, \"|\";\n",
+        "$factorySlot = \"F\";\n",
+        "$factory = make_ref_capture($factorySlot);\n",
+        "echo $factory(\"4\"), \":\", $factorySlot;\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_from_closure_descriptor_capture_arguments_and_free")
+            && source.contains("closure_capture_args_"),
+        "by-reference captured descriptor closures should use the shared capture-argument ABI:\n{source}"
+    );
+    assert!(
+        source.contains("PHPC_NATIVE_CLOSURE_ARGUMENT_BY_REFERENCE")
+            && source.contains("phpc_native_reference_clone(phpc_closure_args"),
+        "by-reference captures should bind through native closure reference carriers:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_user_function_0_invoke_capture(")
+            && source.contains("phpc_user_function_1_make_ref_capture(")
+            && source.contains("phpc_declared_method_"),
+        "by-reference captures should flow through direct, user-function, nested, by-reference-parameter, and static-method consumers:\n{source}"
+    );
+    assert!(
+        !source.contains(ASSEMBLY_CLOSURE_REJECTION),
+        "supported by-reference capture closures should not hit the closure blocker:\n{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_immediate_descriptor_closure_invocation() {
     if !has_cc() {
         return;
@@ -5142,6 +5189,50 @@ fn emit_exe_links_and_runs_by_value_captured_descriptor_closure_invocation() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"15|17|13|42");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_by_reference_captured_descriptor_closure_invocation() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function invoke_capture($callback, $suffix) { return $callback($suffix); }\n",
+        "function make_ref_capture(&$slot) { return function ($suffix) use (&$slot) { $slot = $slot . $suffix; return $slot; }; }\n",
+        "class CaptureRelay { public static function apply($callback, $suffix) { return $callback($suffix); } }\n",
+        "$slot = \"A\";\n",
+        "$direct = function ($suffix) use (&$slot) { $slot = $slot . $suffix; return $slot; };\n",
+        "echo $direct(\"0\"), \":\", $slot, \"|\";\n",
+        "$slot = \"B\";\n",
+        "echo invoke_capture($direct, \"1\"), \":\", $slot, \"|\";\n",
+        "$outer = \"O\";\n",
+        "$nested = function ($suffix) use (&$outer) { $inner = function ($tail) use (&$outer) { $outer = $outer . $tail; return $outer; }; return $inner($suffix); };\n",
+        "echo CaptureRelay::apply($nested, \"2\"), \":\", $outer, \"|\";\n",
+        "$target = \"T\";\n",
+        "$mix = function (&$target, $value) use (&$slot) { $target = $slot . $value; $slot = $target; return $slot; };\n",
+        "echo $mix($target, \"3\"), \":\", $target, \":\", $slot, \"|\";\n",
+        "$factorySlot = \"F\";\n",
+        "$factory = make_ref_capture($factorySlot);\n",
+        "echo $factory(\"4\"), \":\", $factorySlot;\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("descriptor_closure_by_reference_captures", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native by-reference capture closure executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"A0:A0|B1:B1|O2:O2|B13:B13:B13|F4:F4");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);
@@ -5495,8 +5586,8 @@ fn native_executable_c_source_keeps_unsupported_closure_shapes_on_shared_blocker
     for source in [
         concat!(
             "<?php\n",
-            "$value = 1;\n",
-            "$callback = function () use (&$value) { return $value; };\n",
+            "function make_capture($value) { return function () use (&$value) { return $value; }; }\n",
+            "$callback = make_capture(1);\n",
             "echo $callback();\n",
         ),
         concat!(
