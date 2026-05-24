@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 17:26 CEST
+Updated: 2026-05-24 17:29 CEST
 Evaluation marker: `20260524T145851Z`
 
 Latest counted primary semantic/test baseline:
@@ -10,7 +10,7 @@ Latest primary head before this progress update:
 `7a43e1ac codegen: invoke callable arrays through method frames`
 
 Latest observed `origin/master` during this review:
-`8e0b9192 docs: update progress after local ref captures`
+`594d4504 docs: update progress after callable arrays`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work counts. Current primary is synced to `origin/master`; dirty primary WIP, lane-local candidates, parked diffs, blocker-only classifiers, and status-file claims are not product capability until selected, gated, committed, and pushed through primary.
 
@@ -110,6 +110,6 @@ This is still not general PHP. The remaining cliffs are large: full callable loo
 
 ## Current Review Notes
 
-- Primary semantic work is committed at `7a43e1ac`; this progress update is the separate documentation wrapper before push.
-- Focused gates for the latest callable-array method-frame slice passed using disk-backed `/tmp/phpc-primary-target`: `cargo check -q -p phpc -p php_runtime`, `cargo test -q -p php_runtime native_callable_array_parts_extract_string_and_object_targets`, `cargo test -q -p php_runtime native_callable_syntax_helpers_cover_array_and_value_families`, `cargo test -q -p phpc --test native_link native_executable_c_source_invokes_callable_arrays_through_method_frames`, `cargo test -q -p phpc --test native_link emit_exe_links_and_runs_callable_array_invocation_program`, `cargo test -q -p phpc --test native_link callable_array`, adjacent runtime string/fixed mixed dynamic-call source gates, callable-array syntax-only source/link gates, descriptor closure source gate, frame-local by-reference capture source/link gates, by-reference capture link gate, typed/default and variadic closure source gates, focused unsupported-shape and call-boundary gates, full `cargo test -q -p php_runtime`, scoped `rustfmt --edition 2021 --check compiler/src/codegen.rs compiler/tests/native_link.rs runtime/src/lib.rs`, and `git diff --check`.
+- Primary semantic work is committed at `7a43e1ac`; this progress update is committed at `594d4504` and pushed.
+- Focused gates for the latest callable-array method-frame slice passed using disk-backed `/tmp/phpc-primary-target`: `cargo check -q -p phpc -p php_runtime`, `cargo test -q -p php_runtime native_callable_array_parts_extract_string_and_object_targets`, `cargo test -q -p php_runtime native_callable_syntax_helpers_cover_array_and_value_families`, `cargo test -q -p phpc --test native_link native_executable_c_source_invokes_callable_arrays_through_method_frames`, `cargo test -q -p phpc --test native_link emit_exe_links_and_runs_callable_array_invocation_program`, `cargo test -q -p phpc --test native_link callable_array`, adjacent runtime string/fixed mixed dynamic-call source gates, callable-array syntax-only source/link gates, descriptor closure source gate, frame-local by-reference capture source/link gates, by-reference capture link gate, typed/default and variadic closure source gates, focused unsupported-shape and call-boundary gates, scoped `rustfmt --edition 2021 --check compiler/src/codegen.rs compiler/tests/native_link.rs runtime/src/lib.rs`, and `git diff --check`. A separate supervisor verification ran `cargo test -q -p php_runtime --lib -- --test-threads=1` and passed 284 runtime tests; the plain package invocation in the worker pane printed zero tests and is not counted as the full runtime gate.
 - Broad attempted gates on the same `/tmp` target are still not fully clean on this baseline: full `native_link` reported 394 passed and 8 failed in unrelated string-offset/global-path/diagnostic tests plus one brittle by-value closure generated-source substring assertion; full `native_function_call_boundary` reported 38 passed and 2 failed in unsupported direct-call argument result count assertions.
