@@ -1,13 +1,13 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 09:35 CEST
+Updated: 2026-05-24 09:41 CEST
 Evaluation marker: `20260524T072649Z`
 
 Latest primary semantic/test baseline:
-`b3625c8a codegen: lower llvm direct variable compounds`
+`91bc2f4a codegen: route assembly string results`
 
-Latest primary head at review:
-`8c9e83e4 docs: update progress after llvm compounds`
+Latest primary head before this progress update:
+`91bc2f4a codegen: route assembly string results`
 
 Only pushed primary work counts here. Dirty WIP, lane-local candidates, parked diffs, exact-shape fixtures, and status-file claims are not counted until selected, gated, committed, and pushed through primary.
 
@@ -17,17 +17,18 @@ Overall estimated progress: **66%** `[#############-------]`
 
 Executable PHP semantics: **63%** `[#############-------]`
 
-The primary branch has made solid integrated progress on selected native PHP execution islands. Since the last durable progress marker, primary landed leading-numeric arithmetic recovery through the shared native value-operation result ABI, LLVM consumption of the same arithmetic result path, direct-variable assignment expressions through assignment-target semantics, and LLVM direct-variable compound assignments through the existing primitive binary lowering path.
+The primary branch has made solid integrated progress on selected native PHP execution islands. Since the last durable progress marker, primary landed leading-numeric arithmetic recovery through the shared native value-operation result ABI, LLVM consumption of the same arithmetic result path, direct-variable assignment expressions through assignment-target semantics, LLVM direct-variable compound assignments through the existing primitive binary lowering path, and C assembly fallback consumption of the shared unary string-result ABI.
 
 The product is still not close to "general PHP." The remaining work is concentrated in the real semantic cliffs: full callable lookup/invocation, closures, methods, objects/properties, `$this`, named/unpacked arguments, typed/default/variadic by-reference binding, by-reference returns, reference/COW identity, request/global alias parity, source-ordered diagnostics, cleanup/unwind/finally/destructors/output buffers, and backend parity.
 
-The latest LLVM compound-assignment slice is backend parity for lowerable primitive direct variables. It does not change the broader call/object/reference/COW cliffs.
+The latest C assembly fallback string-result slice is backend parity for an existing runtime/compiler string family. It does not change the broader call/object/reference/COW cliffs.
 
 ## Primary-Integrated Capability
 
 - [x] Shared runtime value, array, string, comparison, truthiness, diagnostic, request, reference, symbol, and call-frame ABI foundations exist for many selected paths.
 - [x] Generated-C can execute many focused programs across direct variables, arrays, function frames, dynamic calls, selected globals, by-reference parameters, direct-variable compound assignment, assignment expressions, leading-numeric arithmetic warnings, and bounded finalizer transfers.
 - [x] LLVM consumes selected shared ABIs for strings, predicates, searches, integer/string helpers, primitive direct-variable assignment expressions, and value-operation arithmetic that cannot be primitive-folded safely.
+- [x] The C assembly fallback consumes the shared unary string-result ABI for lowerable direct and nested string-result operations.
 - [x] LLVM lowers lowerable primitive direct-variable compound-assignment statements and expressions through direct variable storage and existing binary operator semantics.
 - [x] Function-scope ordinary `global $name` imports work through generated-C frames for direct calls, transitive wrapper calls, and runtime string-valued dynamic calls.
 - [x] Direct-variable assignment expressions update lowerable primitive LLVM locals and generated-C ordinary/native-value/reference-backed/active-symbol direct variables.
@@ -48,7 +49,7 @@ These are not product capability yet. Treat them as a queue of possible integrat
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **83%** | `[#################---]` | Strong shared surfaces exist, but some are still scaffolding until consumed end to end. |
-| Compiler/backend consumers | **83%** | `[#################---]` | Generated-C is broad in selected areas; LLVM now also covers primitive direct-variable compound assignments; direct assembly and many nested consumers remain blocked. |
+| Compiler/backend consumers | **83%** | `[#################---]` | Generated-C is broad in selected areas; LLVM covers primitive direct-variable compound assignments, and the C assembly fallback now covers unary string-result ABI consumers; direct assembly and many nested consumers remain blocked. |
 | Executable PHP semantics | **63%** | `[#############-------]` | Many focused linked programs run, but behavior is still selected islands. |
 | Arrays, lvalues, references, COW | **64%** | `[#############-------]` | Good selected lvalue/reference paths; full COW, arbitrary roots, foreach, object joins, and wider alias composition remain open. |
 | Symbols, globals, request state | **72%** | `[##############------]` | Ordinary function-scope globals are much better; request/global alias parity, includes, variable variables, and exact unset behavior remain incomplete. |
@@ -60,12 +61,13 @@ These are not product capability yet. Treat them as a queue of possible integrat
 ## Done / In Progress / Not Done
 
 - [x] Bounded generated-C direct variables, array/lvalue paths, selected dynamic calls, function globals, by-reference parameter writes, assignment expressions, direct-variable compound assignment, and finalizer transfer slices.
-- [x] LLVM value-operation arithmetic, primitive direct-variable assignment-expression, and primitive direct-variable compound-assignment slices.
+- [x] LLVM value-operation arithmetic, primitive direct-variable assignment-expression, primitive direct-variable compound-assignment, and C assembly fallback unary string-result slices.
 - [ ] In progress: lane-local candidates for callable dispatch, object/property metadata, frame contracts, symbol/reference transport, diagnostics, and cleanup boundaries.
 - [ ] Not done: general object model, methods, `$this`, closures, callable-array/object invocation, complete references/COW, by-reference returns, complete mutation/unset, full diagnostics, full cleanup/unwind, includes, variable variables, request/global parity, and direct assembly parity.
 
 ## Recent Primary-Integrated Work
 
+- `91bc2f4a`: C assembly fallback lowering now routes lowerable unary string-result builtins through `phpc_native_value_string_result_operation_with_diagnostic(...)` for direct and nested operands, preserving owned result cleanup and arity blockers. This covers the existing string-result runtime/compiler family, not broader direct assembly parity.
 - `b3625c8a`: LLVM direct-variable compound assignments now lower through `AssignTarget::Variable` storage and existing binary operator semantics for lowerable primitive arithmetic, bitwise, shift, modulo, and expression-result forms. Undefined direct variables, native-owned result storage, non-direct lvalues, request/global roots, object/static properties, `??=`, increment/decrement, unset, references/COW, exact mutation diagnostics, and direct assembly parity remain blocked.
 - `ea6ebcf2`: direct-variable assignment expressions lower through assignment-target semantics. LLVM supports lowerable primitive direct variables and chained direct assignment expressions. Generated-C supports ordinary scalar, native-value result, reference-backed, and active symbol-table direct-variable owners.
 - `c7e35c50`: LLVM routes scalar/native-value arithmetic that cannot be primitive-folded safely through the shared native value-operation result ABI, including diagnostics and owned result handling.
@@ -76,7 +78,7 @@ These are not product capability yet. Treat them as a queue of possible integrat
 
 ## Current Review Notes
 
-- Primary repo had just landed `b3625c8a` when this dashboard was refreshed.
+- Primary repo had just landed `91bc2f4a` when this dashboard was refreshed.
 - `/dev/shm` at review was 22G total, 15G used, 7.6G available. This is above the 6G floor but tight for broad concurrent link/test waves.
 - The largest visible target was `/dev/shm/phpc-target-native-object-property-runtime` at about 8.8G. Reclaim only after owner checks.
 - Dashboard evidence is stale relative to current primary and worker status files; live state should be preferred for steering.
