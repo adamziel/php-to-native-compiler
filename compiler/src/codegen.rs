@@ -2882,11 +2882,184 @@ fn collect_native_arrow_capture_candidates_from_stmts(
     captures: &mut Vec<(String, Span)>,
 ) {
     for statement in statements {
-        if let Stmt::Return {
-            value: Some(value), ..
-        } = statement
-        {
+        collect_native_arrow_capture_candidates_from_stmt(statement, captures);
+    }
+}
+
+fn collect_native_arrow_capture_candidates_from_stmt(
+    stmt: &Stmt,
+    captures: &mut Vec<(String, Span)>,
+) {
+    match stmt {
+        Stmt::Echo { exprs, .. } => {
+            for expr in exprs {
+                collect_native_arrow_capture_candidates_from_expr(expr, captures);
+            }
+        }
+        Stmt::Print { expr, .. }
+        | Stmt::Expr { expr, .. }
+        | Stmt::Require { path: expr, .. }
+        | Stmt::Include { path: expr, .. }
+        | Stmt::Throw { expr, .. } => {
+            collect_native_arrow_capture_candidates_from_expr(expr, captures);
+        }
+        Stmt::Assign { target, expr, .. }
+        | Stmt::CompoundAssign { target, expr, .. }
+        | Stmt::NullCoalesceAssign { target, expr, .. } => {
+            collect_native_arrow_capture_candidates_from_assign_target(target, captures);
+            collect_native_arrow_capture_candidates_from_expr(expr, captures);
+        }
+        Stmt::ReferenceAssign { target, source, .. } => {
+            collect_native_arrow_capture_candidates_from_assign_target(target, captures);
+            collect_native_arrow_capture_candidates_from_reference_source(source, captures);
+        }
+        Stmt::IncrementDecrement { target, .. } => {
+            collect_native_arrow_capture_candidates_from_assign_target(target, captures);
+        }
+        Stmt::If {
+            condition,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            collect_native_arrow_capture_candidates_from_expr(condition, captures);
+            collect_native_arrow_capture_candidates_from_stmts(then_branch, captures);
+            collect_native_arrow_capture_candidates_from_stmts(else_branch, captures);
+        }
+        Stmt::While {
+            condition, body, ..
+        }
+        | Stmt::DoWhile {
+            condition, body, ..
+        } => {
+            collect_native_arrow_capture_candidates_from_expr(condition, captures);
+            collect_native_arrow_capture_candidates_from_stmts(body, captures);
+        }
+        Stmt::For {
+            initializers,
+            conditions,
+            increments,
+            body,
+            ..
+        } => {
+            for action in initializers.iter().chain(increments.iter()) {
+                collect_native_arrow_capture_candidates_from_for_action(action, captures);
+            }
+            for condition in conditions {
+                collect_native_arrow_capture_candidates_from_expr(condition, captures);
+            }
+            collect_native_arrow_capture_candidates_from_stmts(body, captures);
+        }
+        Stmt::Switch { value, cases, .. } => {
             collect_native_arrow_capture_candidates_from_expr(value, captures);
+            for case in cases {
+                if let Some(condition) = &case.condition {
+                    collect_native_arrow_capture_candidates_from_expr(condition, captures);
+                }
+                collect_native_arrow_capture_candidates_from_stmts(&case.body, captures);
+            }
+        }
+        Stmt::Foreach { iterable, body, .. } => {
+            collect_native_arrow_capture_candidates_from_expr(iterable, captures);
+            collect_native_arrow_capture_candidates_from_stmts(body, captures);
+        }
+        Stmt::UnsetArrayIndex { name, index, span } => {
+            captures.push((name.clone(), *span));
+            collect_native_arrow_capture_candidates_from_expr(index, captures);
+        }
+        Stmt::UnsetNestedArrayIndex {
+            name,
+            indices,
+            span,
+        } => {
+            captures.push((name.clone(), *span));
+            for index in indices {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
+        Stmt::UnsetObjectProperty { object, span, .. } => {
+            captures.push((object.clone(), *span));
+        }
+        Stmt::UnsetDynamicObjectProperty {
+            object,
+            property,
+            span,
+        } => {
+            captures.push((object.clone(), *span));
+            collect_native_arrow_capture_candidates_from_expr(property, captures);
+        }
+        Stmt::UnsetMany { targets, .. } => {
+            for target in targets {
+                collect_native_arrow_capture_candidates_from_unset_target(target, captures);
+            }
+        }
+        Stmt::ConstDeclaration { declarations, .. } => {
+            for declaration in declarations {
+                collect_native_arrow_capture_candidates_from_expr(&declaration.value, captures);
+            }
+        }
+        Stmt::Return { value, .. } => {
+            if let Some(value) = value {
+                collect_native_arrow_capture_candidates_from_expr(value, captures);
+            }
+        }
+        Stmt::Try {
+            body,
+            catches,
+            finally_body,
+            ..
+        } => {
+            collect_native_arrow_capture_candidates_from_stmts(body, captures);
+            for catch in catches {
+                collect_native_arrow_capture_candidates_from_stmts(&catch.body, captures);
+            }
+            if let Some(finally_body) = finally_body {
+                collect_native_arrow_capture_candidates_from_stmts(finally_body, captures);
+            }
+        }
+        Stmt::StaticLocal { declarations, .. } => {
+            for declaration in declarations {
+                if let Some(default) = &declaration.default {
+                    collect_native_arrow_capture_candidates_from_expr(default, captures);
+                }
+            }
+        }
+        Stmt::UnsetVariable { name, span } => {
+            captures.push((name.clone(), *span));
+        }
+        Stmt::Namespace { .. }
+        | Stmt::Use { .. }
+        | Stmt::Goto { .. }
+        | Stmt::Label { .. }
+        | Stmt::UnsetStaticProperty { .. }
+        | Stmt::UnsetSelfStaticProperty { .. }
+        | Stmt::UnsetParentStaticProperty { .. }
+        | Stmt::UnsetLateStaticProperty { .. }
+        | Stmt::Function(_)
+        | Stmt::Interface(_)
+        | Stmt::Trait(_)
+        | Stmt::Enum(_)
+        | Stmt::Class(_)
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. }
+        | Stmt::Global { .. } => {}
+    }
+}
+
+fn collect_native_arrow_capture_candidates_from_for_action(
+    action: &ForAction,
+    captures: &mut Vec<(String, Span)>,
+) {
+    match action {
+        ForAction::Assign { target, expr } | ForAction::CompoundAssign { target, expr, .. } => {
+            collect_native_arrow_capture_candidates_from_assign_target(target, captures);
+            collect_native_arrow_capture_candidates_from_expr(expr, captures);
+        }
+        ForAction::IncrementDecrement { target, .. } => {
+            collect_native_arrow_capture_candidates_from_assign_target(target, captures);
+        }
+        ForAction::Expr { expr } => {
+            collect_native_arrow_capture_candidates_from_expr(expr, captures)
         }
     }
 }
@@ -2949,44 +3122,296 @@ fn collect_native_arrow_capture_candidates_from_assign_target(
             object,
             property,
             span,
-        }
-        | AssignTarget::DynamicObjectPropertyArrayIndex {
-            object,
-            property,
-            span,
-            ..
-        }
-        | AssignTarget::DynamicObjectPropertyArrayAppend {
-            object,
-            property,
-            span,
-            ..
         } => {
             captures.push((object.clone(), *span));
             collect_native_arrow_capture_candidates_from_expr(property, captures);
         }
+        AssignTarget::DynamicObjectPropertyArrayIndex {
+            object,
+            property,
+            indices,
+            span,
+        } => {
+            captures.push((object.clone(), *span));
+            collect_native_arrow_capture_candidates_from_expr(property, captures);
+            for index in indices {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
+        AssignTarget::DynamicObjectPropertyArrayAppend {
+            object,
+            property,
+            indices,
+            suffix_indices,
+            span,
+        } => {
+            captures.push((object.clone(), *span));
+            collect_native_arrow_capture_candidates_from_expr(property, captures);
+            for index in indices.iter().chain(suffix_indices.iter()) {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
         AssignTarget::NonDirectProperty { holder, .. }
-        | AssignTarget::ObjectStaticProperty { target: holder, .. }
-        | AssignTarget::NonDirectObjectPropertyArrayIndex { holder, .. }
-        | AssignTarget::NonDirectObjectPropertyArrayAppend { holder, .. } => {
+        | AssignTarget::ObjectStaticProperty { target: holder, .. } => {
             collect_native_arrow_capture_candidates_from_expr(holder, captures);
         }
+        AssignTarget::NonDirectObjectPropertyArrayIndex {
+            holder, indices, ..
+        } => {
+            collect_native_arrow_capture_candidates_from_expr(holder, captures);
+            for index in indices {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
+        AssignTarget::NonDirectObjectPropertyArrayAppend {
+            holder,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            collect_native_arrow_capture_candidates_from_expr(holder, captures);
+            for index in indices.iter().chain(suffix_indices.iter()) {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
         AssignTarget::NonDirectDynamicProperty {
-            holder, property, ..
-        }
-        | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
-            holder, property, ..
-        }
-        | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
             holder, property, ..
         } => {
             collect_native_arrow_capture_candidates_from_expr(holder, captures);
             collect_native_arrow_capture_candidates_from_expr(property, captures);
+        }
+        AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+            holder,
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            collect_native_arrow_capture_candidates_from_expr(holder, captures);
+            collect_native_arrow_capture_candidates_from_expr(property, captures);
+            for index in indices.iter().chain(suffix_indices.iter()) {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
+        AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder,
+            property,
+            indices,
+            ..
+        } => {
+            collect_native_arrow_capture_candidates_from_expr(holder, captures);
+            collect_native_arrow_capture_candidates_from_expr(property, captures);
+            for index in indices {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
         }
         AssignTarget::StaticProperty { .. }
         | AssignTarget::SelfStaticProperty { .. }
         | AssignTarget::ParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. } => {}
+    }
+}
+
+fn collect_native_arrow_capture_candidates_from_unset_target(
+    target: &UnsetTarget,
+    captures: &mut Vec<(String, Span)>,
+) {
+    match target {
+        UnsetTarget::Variable { name, span } => captures.push((name.clone(), *span)),
+        UnsetTarget::ArrayIndex { name, index, span } => {
+            captures.push((name.clone(), *span));
+            collect_native_arrow_capture_candidates_from_expr(index, captures);
+        }
+        UnsetTarget::NestedArrayIndex {
+            name,
+            indices,
+            span,
+        }
+        | UnsetTarget::ObjectPropertyArrayIndex {
+            object: name,
+            indices,
+            span,
+            ..
+        } => {
+            captures.push((name.clone(), *span));
+            for index in indices {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
+        UnsetTarget::ObjectProperty { object, span, .. } => {
+            captures.push((object.clone(), *span));
+        }
+        UnsetTarget::DynamicObjectProperty {
+            object,
+            property,
+            span,
+        } => {
+            captures.push((object.clone(), *span));
+            collect_native_arrow_capture_candidates_from_expr(property, captures);
+        }
+        UnsetTarget::DynamicObjectPropertyArrayIndex {
+            object,
+            property,
+            indices,
+            span,
+        } => {
+            captures.push((object.clone(), *span));
+            collect_native_arrow_capture_candidates_from_expr(property, captures);
+            for index in indices {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
+        UnsetTarget::NonDirectObjectProperty { holder, .. } => {
+            collect_native_arrow_capture_candidates_from_expr(holder, captures);
+        }
+        UnsetTarget::NonDirectObjectPropertyArrayIndex {
+            holder, indices, ..
+        } => {
+            collect_native_arrow_capture_candidates_from_expr(holder, captures);
+            for index in indices {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
+        UnsetTarget::NonDirectDynamicObjectProperty {
+            holder, property, ..
+        } => {
+            collect_native_arrow_capture_candidates_from_expr(holder, captures);
+            collect_native_arrow_capture_candidates_from_expr(property, captures);
+        }
+        UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder,
+            property,
+            indices,
+            ..
+        } => {
+            collect_native_arrow_capture_candidates_from_expr(holder, captures);
+            collect_native_arrow_capture_candidates_from_expr(property, captures);
+            for index in indices {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
+        UnsetTarget::StaticProperty { .. }
+        | UnsetTarget::SelfStaticProperty { .. }
+        | UnsetTarget::ParentStaticProperty { .. }
+        | UnsetTarget::LateStaticProperty { .. } => {}
+    }
+}
+
+fn collect_native_arrow_capture_candidates_from_reference_source(
+    source: &ReferenceSource,
+    captures: &mut Vec<(String, Span)>,
+) {
+    match source {
+        ReferenceSource::Variable { name, span }
+        | ReferenceSource::ArrayIndex { name, span, .. }
+        | ReferenceSource::ArrayAppend { name, span, .. }
+        | ReferenceSource::NestedArrayIndex { name, span, .. } => {
+            captures.push((name.clone(), *span));
+        }
+        ReferenceSource::ObjectPropertyArrayIndex {
+            object,
+            index,
+            span,
+            ..
+        } => {
+            captures.push((object.clone(), *span));
+            collect_native_arrow_capture_candidates_from_expr(index, captures);
+        }
+        ReferenceSource::DynamicObjectPropertyArrayIndex {
+            object,
+            property,
+            index,
+            span,
+        } => {
+            captures.push((object.clone(), *span));
+            collect_native_arrow_capture_candidates_from_expr(property, captures);
+            collect_native_arrow_capture_candidates_from_expr(index, captures);
+        }
+        ReferenceSource::ObjectPropertyArrayAppend {
+            object,
+            indices,
+            span,
+            ..
+        }
+        | ReferenceSource::ObjectPropertyNestedArrayIndex {
+            object,
+            indices,
+            span,
+            ..
+        } => {
+            captures.push((object.clone(), *span));
+            for index in indices {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
+        ReferenceSource::DynamicObjectPropertyArrayAppend {
+            object,
+            property,
+            indices,
+            span,
+        }
+        | ReferenceSource::DynamicObjectPropertyNestedArrayIndex {
+            object,
+            property,
+            indices,
+            span,
+        } => {
+            captures.push((object.clone(), *span));
+            collect_native_arrow_capture_candidates_from_expr(property, captures);
+            for index in indices {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
+        ReferenceSource::NonDirectObjectPropertyArrayAppend {
+            holder, indices, ..
+        }
+        | ReferenceSource::NonDirectObjectPropertyNestedArrayIndex {
+            holder, indices, ..
+        } => {
+            collect_native_arrow_capture_candidates_from_expr(holder, captures);
+            for index in indices {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
+        ReferenceSource::NonDirectDynamicObjectPropertyArrayAppend {
+            holder,
+            property,
+            indices,
+            ..
+        }
+        | ReferenceSource::NonDirectDynamicObjectPropertyNestedArrayIndex {
+            holder,
+            property,
+            indices,
+            ..
+        } => {
+            collect_native_arrow_capture_candidates_from_expr(holder, captures);
+            collect_native_arrow_capture_candidates_from_expr(property, captures);
+            for index in indices {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
+        ReferenceSource::Property { expr, .. }
+        | ReferenceSource::StaticProperty { expr, .. }
+        | ReferenceSource::MethodCall { expr, .. } => {
+            collect_native_arrow_capture_candidates_from_expr(expr, captures);
+        }
+        ReferenceSource::StaticPropertyArrayIndex { expr, indices, .. }
+        | ReferenceSource::ExpressionArrayIndex {
+            target: expr,
+            indices,
+            ..
+        }
+        | ReferenceSource::ExpressionArrayAppend {
+            target: expr,
+            indices,
+            ..
+        } => {
+            collect_native_arrow_capture_candidates_from_expr(expr, captures);
+            for index in indices {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
     }
 }
 
@@ -3002,9 +3427,19 @@ fn collect_native_arrow_capture_candidates_from_expr(
                     InterpolatedStringPart::Literal(_) => {}
                     InterpolatedStringPart::Variable(name)
                     | InterpolatedStringPart::ArrayOffset { variable: name, .. }
-                    | InterpolatedStringPart::ObjectProperty { variable: name, .. }
-                    | InterpolatedStringPart::AccessChain { variable: name, .. } => {
+                    | InterpolatedStringPart::ObjectProperty { variable: name, .. } => {
                         captures.push((name.clone(), *span));
+                    }
+                    InterpolatedStringPart::AccessChain { variable, segments } => {
+                        captures.push((variable.clone(), *span));
+                        for segment in segments {
+                            if let InterpolatedAccessSegment::ArrayOffset(
+                                InterpolatedArrayKey::Variable(name),
+                            ) = segment
+                            {
+                                captures.push((name.clone(), *span));
+                            }
+                        }
                     }
                 }
                 if let InterpolatedStringPart::ArrayOffset {
@@ -3020,8 +3455,19 @@ fn collect_native_arrow_capture_candidates_from_expr(
         | Expr::StaticMethodCall { args, .. }
         | Expr::ParentMethodCall { args, .. }
         | Expr::SelfMethodCall { args, .. }
-        | Expr::LateStaticMethodCall { args, .. }
-        | Expr::New { args, .. } => {
+        | Expr::LateStaticMethodCall { args, .. } => {
+            for arg in args {
+                collect_native_arrow_capture_candidates_from_expr(arg, captures);
+            }
+        }
+        Expr::New {
+            class_name,
+            args,
+            span,
+        } => {
+            if let NewClassName::DynamicVariable(name) = class_name {
+                captures.push((name.clone(), *span));
+            }
             for arg in args {
                 collect_native_arrow_capture_candidates_from_expr(arg, captures);
             }
@@ -3112,8 +3558,31 @@ fn collect_native_arrow_capture_candidates_from_expr(
         Expr::IncrementDecrement { target, .. } => {
             collect_native_arrow_capture_candidates_from_assign_target(target, captures);
         }
-        Expr::Closure { .. }
-        | Expr::Null(_)
+        Expr::Closure {
+            params,
+            captures: lexical_captures,
+            body,
+            is_arrow,
+            ..
+        } => {
+            for capture in lexical_captures {
+                captures.push((capture.name.clone(), capture.span));
+            }
+            if *is_arrow {
+                let parameter_names = params
+                    .iter()
+                    .map(|param| param.name.as_str())
+                    .collect::<HashSet<_>>();
+                let mut nested = Vec::new();
+                collect_native_arrow_capture_candidates_from_stmts(body, &mut nested);
+                for (name, span) in nested {
+                    if !parameter_names.contains(name.as_str()) {
+                        captures.push((name, span));
+                    }
+                }
+            }
+        }
+        Expr::Null(_)
         | Expr::Bool(_, _)
         | Expr::Int(_, _)
         | Expr::Float(_, _)

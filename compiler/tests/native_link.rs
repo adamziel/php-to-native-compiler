@@ -5204,16 +5204,25 @@ fn native_executable_c_source_captures_arrow_variables_through_descriptor_abi() 
         "    public static function apply($callback, $value) { return $callback($value); }\n",
         "}\n",
         "$top = \"T\";\n",
+        "$items = [\"slot\" => \"A\"];\n",
+        "$key = \"slot\";\n",
         "$direct = fn($suffix) => $top . $suffix;\n",
+        "$array = fn($suffix) => $items[$key] . $suffix;\n",
+        "$setter = fn(&$target, $value) => $target = $value;\n",
         "$nested = fn() => fn($suffix) => $top . $suffix;\n",
+        "$regularUse = fn() => function($suffix) use ($top) { return $top . $suffix; };\n",
         "echo $direct(\"0\"), \"|\";\n",
         "echo invoke_arrow(fn($suffix) => $top . $suffix, \"1\"), \"|\";\n",
         "echo ArrowApply::apply(fn($suffix) => $top . $suffix, \"2\"), \"|\";\n",
         "$made = make_arrow(\"M\");\n",
         "echo $made(\"3\"), \"|\";\n",
+        "echo $array(\"4\"), \"|\";\n",
+        "$slot = \"old\";\n",
+        "echo $setter($slot, \"new\"), \":\", $slot, \"|\";\n",
         "$top = \"changed\";\n",
-        "echo $direct(\"4\"), \"|\";\n",
-        "echo $nested()(\"5\");\n",
+        "echo $direct(\"5\"), \"|\";\n",
+        "echo $nested()(\"6\"), \"|\";\n",
+        "echo $regularUse()(\"7\");\n",
     );
     let program = parse(source).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -5227,6 +5236,10 @@ fn native_executable_c_source_captures_arrow_variables_through_descriptor_abi() 
         "implicit arrow captures should materialize ordinary capture metadata:\n{source}"
     );
     assert!(
+        source.contains("PHPC_NATIVE_CLOSURE_ARGUMENT_BY_REFERENCE"),
+        "arrow closure parameters should reuse descriptor by-reference metadata:\n{source}"
+    );
+    assert!(
         source.contains("phpc_user_function_0_invoke_arrow(")
             && source.contains("phpc_user_function_1_make_arrow(")
             && source.contains("phpc_declared_method_"),
@@ -5235,6 +5248,24 @@ fn native_executable_c_source_captures_arrow_variables_through_descriptor_abi() 
     assert!(
         !source.contains(ASSEMBLY_CLOSURE_REJECTION),
         "supported arrow closure captures should not hit the closure blocker:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_does_not_invent_regular_closure_captures_inside_arrow() {
+    let source = concat!(
+        "<?php\n",
+        "$top = \"T\";\n",
+        "$maker = fn() => function () { return $top; };\n",
+        "echo $maker()();\n",
+    );
+    let program = parse(source).unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("variable-read lowering rejects"),
+        "regular closures without use() inside arrows must not receive invented captures:\n{source}\n{error:?}"
     );
 }
 
@@ -5252,16 +5283,25 @@ fn emit_exe_links_and_runs_arrow_closure_implicit_capture_program() {
         "    public static function apply($callback, $value) { return $callback($value); }\n",
         "}\n",
         "$top = \"T\";\n",
+        "$items = [\"slot\" => \"A\"];\n",
+        "$key = \"slot\";\n",
         "$direct = fn($suffix) => $top . $suffix;\n",
+        "$array = fn($suffix) => $items[$key] . $suffix;\n",
+        "$setter = fn(&$target, $value) => $target = $value;\n",
         "$nested = fn() => fn($suffix) => $top . $suffix;\n",
+        "$regularUse = fn() => function($suffix) use ($top) { return $top . $suffix; };\n",
         "echo $direct(\"0\"), \"|\";\n",
         "echo invoke_arrow(fn($suffix) => $top . $suffix, \"1\"), \"|\";\n",
         "echo ArrowApply::apply(fn($suffix) => $top . $suffix, \"2\"), \"|\";\n",
         "$made = make_arrow(\"M\");\n",
         "echo $made(\"3\"), \"|\";\n",
+        "echo $array(\"4\"), \"|\";\n",
+        "$slot = \"old\";\n",
+        "echo $setter($slot, \"new\"), \":\", $slot, \"|\";\n",
         "$top = \"changed\";\n",
-        "echo $direct(\"4\"), \"|\";\n",
-        "echo $nested()(\"5\");\n",
+        "echo $direct(\"5\"), \"|\";\n",
+        "echo $nested()(\"6\"), \"|\";\n",
+        "echo $regularUse()(\"7\");\n",
     );
     let (source_path, output_path) =
         compile_native_link_fixture("arrow_closure_implicit_captures", source);
@@ -5274,7 +5314,7 @@ fn emit_exe_links_and_runs_arrow_closure_implicit_capture_program() {
     });
 
     assert!(run.status.success(), "native executable failed");
-    assert_eq!(run.stdout, b"T0|T1|T2|M3|T4|T5");
+    assert_eq!(run.stdout, b"T0|T1|T2|M3|A4|new:new|T5|T6|T7");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);
@@ -5293,6 +5333,11 @@ fn native_executable_c_source_keeps_unsupported_closure_shapes_on_shared_blocker
         concat!(
             "<?php\n",
             "$callback = function ($value = 1) { return $value; };\n",
+            "echo $callback();\n",
+        ),
+        concat!(
+            "<?php\n",
+            "$callback = fn($value = 1) => $value;\n",
             "echo $callback();\n",
         ),
         concat!(
