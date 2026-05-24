@@ -90,6 +90,25 @@ const NATIVE_OUTPUT_BUFFER_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_DECLARED_CLASS_OBJECT_SOURCE: &str = concat!(
+    "<?php\n",
+    "class Box { public $name; private $secret; }\n",
+    "class Packet {}\n",
+    "$box = new Box();\n",
+    "echo class_exists(\"Box\") ? \"Y\" : \"N\";\n",
+    "echo class_exists(\"packet\") ? \"Y\" : \"N\";\n",
+    "echo class_exists(\"Missing\") ? \"Y\" : \"N\";\n",
+    "echo \"|\";\n",
+    "echo is_object($box) ? \"object\" : \"not\";\n",
+    "echo \":\";\n",
+    "echo gettype($box);\n",
+    "echo \":\";\n",
+    "echo get_debug_type($box);\n",
+    "echo \"|\";\n",
+    "echo is_object(new Packet()) ? get_debug_type(new Packet()) : \"bad\";\n",
+    "echo \"\\n\";\n",
+);
+
 const NATIVE_BRANCH_STATE_MERGE_SOURCE: &str = concat!(
     "<?php\n",
     "$flags = [\"go\" => \"1\", \"stop\" => \"0\"];\n",
@@ -834,6 +853,32 @@ fn emit_exe_links_and_runs_native_output_buffer_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"A0B42:5:hidden|AB|0\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_declared_class_object_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("declared_class_object", NATIVE_DECLARED_CLASS_OBJECT_SOURCE);
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run declared-class executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"YYN|object:object:Box|Packet\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -1593,6 +1638,64 @@ fn native_executable_c_source_routes_output_buffers_through_shared_runtime_abi()
         !source.contains("output-buffer lowering rejects"),
         "{source}"
     );
+}
+
+#[test]
+fn native_executable_c_source_routes_declared_class_objects_through_runtime_abi() {
+    let program = parse(NATIVE_DECLARED_CLASS_OBJECT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_new_declared_class_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_value_new_declared_class_with_diagnostic")
+            .count()
+            >= 3,
+        "{source}"
+    );
+    assert!(
+        source.contains("declared_class_property_name_ptrs")
+            && source.contains("declared_class_property_visibilities"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_type_predicate"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_type_name_result"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("object-instantiation lowering rejects")
+            && !source.contains("object/class lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_keeps_unsupported_declared_class_features_blocked() {
+    for source in [
+        "<?php\nclass Base {}\nclass Child extends Base {}\nnew Child();\n",
+        "<?php\nclass Box { public function __construct() {} }\nnew Box();\n",
+        "<?php\nclass Box { public static $count; }\nnew Box();\n",
+        "<?php\nclass Box { public $name = \"Ada\"; }\nnew Box();\n",
+        "<?php\nclass Box {}\nnew Box(\"Ada\");\n",
+    ] {
+        let program = parse(source).expect("unsupported declared-class source parses");
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert!(
+            error.message.contains("object/class lowering rejects")
+                || error
+                    .message
+                    .contains("object-instantiation lowering rejects"),
+            "{source}\n{error:?}"
+        );
+    }
 }
 
 #[test]

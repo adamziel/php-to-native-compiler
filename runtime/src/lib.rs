@@ -702,6 +702,9 @@ const NATIVE_VALUE_TYPE_IS_ITERABLE: u8 = 9;
 const NATIVE_VALUE_TYPE_IS_OBJECT: u8 = 10;
 const NATIVE_VALUE_TYPE_NAME_GETTYPE: u8 = 0;
 const NATIVE_VALUE_TYPE_NAME_DEBUG: u8 = 1;
+const NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC: u8 = 1;
+const NATIVE_DECLARED_CLASS_PROPERTY_PROTECTED: u8 = 2;
+const NATIVE_DECLARED_CLASS_PROPERTY_PRIVATE: u8 = 3;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -6423,6 +6426,16 @@ unsafe fn native_abi_bytes<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8]> {
     Some(unsafe { std::slice::from_raw_parts(ptr, len) })
 }
 
+unsafe fn native_abi_slice<'a, T>(ptr: *const T, len: usize) -> Option<&'a [T]> {
+    if len == 0 {
+        return Some(&[]);
+    }
+    if ptr.is_null() {
+        return None;
+    }
+    Some(unsafe { std::slice::from_raw_parts(ptr, len) })
+}
+
 unsafe fn native_abi_utf8<'a>(ptr: *const u8, len: usize, label: &str) -> RuntimeResult<&'a str> {
     let bytes = unsafe { native_abi_bytes(ptr, len) }.ok_or_else(|| {
         RuntimeError::unsupported_call(
@@ -12087,7 +12100,7 @@ unsafe fn native_value_format_stdout_bytes(
             "native value formatting failed: value handle is null",
         ));
     };
-    Ok(value.echo_string().into_bytes())
+    value.try_echo_string().map(String::into_bytes)
 }
 
 #[cfg(test)]
@@ -19521,14 +19534,14 @@ pub unsafe extern "C" fn phpc_native_value_type_name_result(
     let null_value = Value::Null;
     let value = unsafe { value.as_ref() }.unwrap_or(&null_value);
     match native_value_type_name(value, kind) {
-        Ok(name) => NativeValueOperationResult::value(Value::String(name.to_string())),
+        Ok(name) => NativeValueOperationResult::value(Value::String(name)),
         Err(message) => NativeValueOperationResult::diagnostic(message),
     }
 }
 
-fn native_value_type_name(value: &Value, kind: u8) -> Result<&'static str, String> {
+fn native_value_type_name(value: &Value, kind: u8) -> Result<String, String> {
     match kind {
-        NATIVE_VALUE_TYPE_NAME_GETTYPE => Ok(value.gettype_name()),
+        NATIVE_VALUE_TYPE_NAME_GETTYPE => Ok(value.gettype_name().to_string()),
         NATIVE_VALUE_TYPE_NAME_DEBUG => native_value_debug_type_name(value),
         _ => Err(format!(
             "native value type-name operation tag {kind} is not supported"
@@ -19536,18 +19549,125 @@ fn native_value_type_name(value: &Value, kind: u8) -> Result<&'static str, Strin
     }
 }
 
-fn native_value_debug_type_name(value: &Value) -> Result<&'static str, String> {
+fn native_value_debug_type_name(value: &Value) -> Result<String, String> {
     match value {
-        Value::Object(_) | Value::Closure(_) => Err(
-            "native value get_debug_type rejects object debug names until native class metadata, closure names, object handles, copy-on-write/reference identity, cleanup ownership, and exact diagnostics exist"
+        Value::Object(object) => Ok(object.class_name().to_string()),
+        Value::Closure(_) => Err(
+            "native value get_debug_type rejects closure debug names until native closure names, object handles, copy-on-write/reference identity, cleanup ownership, and exact diagnostics exist"
                 .to_string(),
         ),
         Value::Resource(_) => Err(
             "native value get_debug_type rejects resource debug names until native resource type names, resource lifecycle state, cleanup ownership, and exact diagnostics exist"
                 .to_string(),
         ),
-        _ => Ok(value.type_name()),
+        _ => Ok(value.type_name().to_string()),
     }
+}
+
+/// # Safety
+///
+/// `class_name` must be null only when `class_name_len` is zero. Property
+/// arrays must either all be null with a zero property count or point to
+/// `property_count` entries. Returned object values are owned by the caller and
+/// must be freed with `phpc_native_value_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_new_declared_class_with_diagnostic(
+    class_id: usize,
+    class_name: *const u8,
+    class_name_len: usize,
+    property_names: *const *const u8,
+    property_name_lens: *const usize,
+    property_visibilities: *const u8,
+    property_count: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe {
+        native_value_new_declared_class(
+            class_id,
+            class_name,
+            class_name_len,
+            property_names,
+            property_name_lens,
+            property_visibilities,
+            property_count,
+        )
+    } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+unsafe fn native_value_new_declared_class(
+    class_id: usize,
+    class_name: *const u8,
+    class_name_len: usize,
+    property_names: *const *const u8,
+    property_name_lens: *const usize,
+    property_visibilities: *const u8,
+    property_count: usize,
+) -> Result<Value, String> {
+    let class_name_bytes =
+        unsafe { native_abi_bytes(class_name, class_name_len) }.ok_or_else(|| {
+            "native declared class allocation received invalid class-name ABI".to_string()
+        })?;
+    let class_name = std::str::from_utf8(class_name_bytes)
+        .map_err(|_| "native declared class allocation requires UTF-8 class names".to_string())?;
+    if class_name.is_empty() {
+        return Err("native declared class allocation requires a non-empty class name".to_string());
+    }
+
+    let property_names =
+        unsafe { native_abi_slice(property_names, property_count) }.ok_or_else(|| {
+            "native declared class allocation received invalid property-name ABI".to_string()
+        })?;
+    let property_name_lens = unsafe { native_abi_slice(property_name_lens, property_count) }
+        .ok_or_else(|| {
+            "native declared class allocation received invalid property-name length ABI".to_string()
+        })?;
+    let property_visibilities = unsafe { native_abi_slice(property_visibilities, property_count) }
+        .ok_or_else(|| {
+            "native declared class allocation received invalid property-visibility ABI".to_string()
+        })?;
+
+    let mut class = PhpClassMetadata::new(ClassId(class_id), class_name.to_string());
+    for index in 0..property_count {
+        let name_bytes =
+            unsafe { native_abi_bytes(property_names[index], property_name_lens[index]) }
+                .ok_or_else(|| {
+                    "native declared class allocation received invalid property-name bytes"
+                        .to_string()
+                })?;
+        let property_name = std::str::from_utf8(name_bytes).map_err(|_| {
+            "native declared class allocation requires UTF-8 property names".to_string()
+        })?;
+        if property_name.is_empty() {
+            return Err(
+                "native declared class allocation requires non-empty property names".to_string(),
+            );
+        }
+
+        let visibility = match property_visibilities[index] {
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC => Visibility::Public,
+            NATIVE_DECLARED_CLASS_PROPERTY_PROTECTED => Visibility::Protected,
+            NATIVE_DECLARED_CLASS_PROPERTY_PRIVATE => Visibility::Private,
+            tag => {
+                return Err(format!(
+                    "native declared class allocation received unsupported property visibility tag {tag}"
+                ))
+            }
+        };
+
+        class
+            .add_property(PhpPropertyMetadata::instance(property_name, visibility))
+            .map_err(|error| error.message().to_string())?;
+    }
+
+    Ok(Value::Object(PhpObject::from_class(&class)))
 }
 
 fn bitwise_strings(
@@ -21656,6 +21776,66 @@ mod tests {
         unsafe { phpc_native_value_free(smaller_value) };
         unsafe { phpc_native_value_free(numeric_string) };
         unsafe { phpc_native_value_free(int_value) };
+    }
+
+    #[test]
+    fn native_declared_class_allocation_preserves_object_shape_and_type_names() {
+        let class_name = b"NativeBox";
+        let property_id = b"id";
+        let property_secret = b"secret";
+        let property_names = [property_id.as_ptr(), property_secret.as_ptr()];
+        let property_name_lens = [property_id.len(), property_secret.len()];
+        let property_visibilities = [
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+            NATIVE_DECLARED_CLASS_PROPERTY_PRIVATE,
+        ];
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let object = unsafe {
+            phpc_native_value_new_declared_class_with_diagnostic(
+                17,
+                class_name.as_ptr(),
+                class_name.len(),
+                property_names.as_ptr(),
+                property_name_lens.as_ptr(),
+                property_visibilities.as_ptr(),
+                property_names.len(),
+                &mut diagnostic,
+            )
+        };
+
+        assert!(diagnostic.is_null());
+        let value = unsafe { object.as_ref() }.expect("object allocation returns a handle");
+        let Value::Object(object_value) = value else {
+            panic!("declared class allocation should return an object value");
+        };
+        assert_eq!(object_value.class_id().index(), 17);
+        assert_eq!(object_value.class_name(), "NativeBox");
+        let properties = object_value.properties();
+        assert_eq!(properties.len(), 2);
+        assert_eq!(properties[0].name(), "id");
+        assert_eq!(properties[0].visibility(), Visibility::Public);
+        assert_eq!(properties[0].value(), &Value::Null);
+        assert_eq!(properties[1].name(), "secret");
+        assert_eq!(properties[1].visibility(), Visibility::Private);
+
+        let gettype =
+            unsafe { phpc_native_value_type_name_result(object, NATIVE_VALUE_TYPE_NAME_GETTYPE) };
+        assert!(gettype.succeeded());
+        assert_eq!(native_value_echo_bytes_for_test(gettype.value), b"object");
+        unsafe { phpc_native_value_operation_result_free(gettype) };
+
+        let debug_type =
+            unsafe { phpc_native_value_type_name_result(object, NATIVE_VALUE_TYPE_NAME_DEBUG) };
+        assert!(debug_type.succeeded());
+        assert_eq!(
+            native_value_echo_bytes_for_test(debug_type.value),
+            b"NativeBox"
+        );
+        unsafe { phpc_native_value_operation_result_free(debug_type) };
+
+        assert!(unsafe { phpc_native_value_type_predicate(object, NATIVE_VALUE_TYPE_IS_OBJECT) });
+        unsafe { phpc_native_value_free(object) };
     }
 
     #[test]

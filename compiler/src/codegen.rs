@@ -3,9 +3,10 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use crate::ast::{
-    ArrayItem, AssignTarget, BinaryOp, CastKind, ClassMember, CompoundAssignOp, Expr, ForAction,
-    FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, Program,
-    ReferenceSource, Span, Stmt, SwitchCase, TypeDecl, UnaryOp, UnsetTarget,
+    ArrayItem, AssignTarget, BinaryOp, CastKind, ClassDecl, ClassMember, ClassVisibility,
+    CompoundAssignOp, Expr, ForAction, FunctionDecl, FunctionParam, IncrementDecrementOp,
+    IncrementDecrementPosition, NewClassName, Program, ReferenceSource, Span, Stmt, SwitchCase,
+    TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
@@ -22,6 +23,9 @@ const MAX_KNOWN_FLOAT_VALUES: usize = 4;
 const MAX_KNOWN_STRING_VALUES: usize = 4;
 const NATIVE_FILESYSTEM_PATH_HAS_BOOLEAN_OPTION: u8 = 1;
 const NATIVE_FILESYSTEM_PATH_HAS_PATH: u8 = 8;
+const NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC: u8 = 1;
+const NATIVE_DECLARED_CLASS_PROPERTY_PROTECTED: u8 = 2;
+const NATIVE_DECLARED_CLASS_PROPERTY_PRIVATE: u8 = 3;
 const LLVM_CONDITIONAL_REJECTION: &str = "LLVM conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
@@ -9371,6 +9375,7 @@ struct CGenerator {
     uses_native_call_type_helpers: bool,
     uses_native_dynamic_call_helpers: bool,
     uses_native_output_buffer_operation: bool,
+    uses_native_object_instantiation_helpers: bool,
     next_static_data: usize,
     next_native_temp: usize,
     native_value_cleanup_handles: Vec<String>,
@@ -9382,6 +9387,8 @@ struct CGenerator {
     active_finally_bodies: Vec<Vec<Stmt>>,
     user_functions: HashMap<String, CUserFunction>,
     user_function_order: Vec<String>,
+    declared_classes: HashMap<String, CDeclaredClass>,
+    declared_class_order: Vec<String>,
     function_definitions: Vec<String>,
     function_return_status: Option<String>,
     function_call_depth: Option<String>,
@@ -9461,6 +9468,19 @@ struct CUserFunction {
     c_name: String,
     decl: FunctionDecl,
     requires_root_symbols: bool,
+}
+
+#[derive(Debug, Clone)]
+struct CDeclaredClass {
+    class_id: usize,
+    name: String,
+    properties: Vec<CDeclaredClassProperty>,
+}
+
+#[derive(Debug, Clone)]
+struct CDeclaredClassProperty {
+    name: String,
+    visibility: ClassVisibility,
 }
 
 #[derive(Debug, Clone)]
@@ -10944,6 +10964,8 @@ impl CGenerator {
         self.uses_native_call_type_helpers |= branch.uses_native_call_type_helpers;
         self.uses_native_dynamic_call_helpers |= branch.uses_native_dynamic_call_helpers;
         self.uses_native_output_buffer_operation |= branch.uses_native_output_buffer_operation;
+        self.uses_native_object_instantiation_helpers |=
+            branch.uses_native_object_instantiation_helpers;
     }
 
     fn merge_scoped_branch_codegen(&mut self, branch: &Self) {
@@ -10964,6 +10986,7 @@ impl CGenerator {
             || self.uses_native_call_type_helpers
             || self.uses_native_dynamic_call_helpers
             || self.uses_native_output_buffer_operation
+            || self.uses_native_object_instantiation_helpers
             || !self.function_definitions.is_empty()
     }
 
@@ -11007,6 +11030,78 @@ impl CGenerator {
             "static phpc_NativeValueHandle {c_name}({})",
             params.join(", ")
         )
+    }
+
+    fn declared_class_key(name: &str) -> String {
+        name.to_ascii_lowercase()
+    }
+
+    fn register_top_level_declared_classes(&mut self, statements: &[Stmt]) -> CompileResult<()> {
+        if !self.uses_native_string_helpers {
+            return Ok(());
+        }
+
+        for stmt in statements {
+            let Stmt::Class(class) = stmt else {
+                continue;
+            };
+            let declared = self.validate_declared_class_for_native_allocation(class)?;
+            let key = Self::declared_class_key(&class.name);
+            if self.declared_classes.contains_key(&key) {
+                return Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+            }
+            self.declared_class_order.push(key.clone());
+            self.declared_classes.insert(key, declared);
+        }
+
+        Ok(())
+    }
+
+    fn validate_declared_class_for_native_allocation(
+        &self,
+        class: &ClassDecl,
+    ) -> CompileResult<CDeclaredClass> {
+        if class.is_nested
+            || class.parent.is_some()
+            || !class.interfaces.is_empty()
+            || !class.trait_uses.is_empty()
+            || class.is_abstract
+            || class.is_readonly
+        {
+            return Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+        }
+
+        let mut seen_properties = HashSet::new();
+        let mut properties = Vec::new();
+        for member in &class.members {
+            let ClassMember::Property(property) = member else {
+                return Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+            };
+            if property.is_static || property.type_decl.is_some() || property.default.is_some() {
+                return Err(self.unsupported(property.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+            }
+            if !seen_properties.insert(property.name.clone()) {
+                return Err(self.unsupported(property.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+            }
+            properties.push(CDeclaredClassProperty {
+                name: property.name.clone(),
+                visibility: property.visibility,
+            });
+        }
+
+        Ok(CDeclaredClass {
+            class_id: self.declared_class_order.len(),
+            name: class.name.clone(),
+            properties,
+        })
+    }
+
+    fn declared_class_property_visibility_tag(visibility: ClassVisibility) -> u8 {
+        match visibility {
+            ClassVisibility::Public => NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+            ClassVisibility::Protected => NATIVE_DECLARED_CLASS_PROPERTY_PROTECTED,
+            ClassVisibility::Private => NATIVE_DECLARED_CLASS_PROPERTY_PRIVATE,
+        }
     }
 
     fn register_top_level_user_functions(&mut self, statements: &[Stmt]) -> CompileResult<()> {
@@ -11184,6 +11279,8 @@ impl CGenerator {
             uses_native_value_clone: true,
             user_functions: self.user_functions.clone(),
             user_function_order: self.user_function_order.clone(),
+            declared_classes: self.declared_classes.clone(),
+            declared_class_order: self.declared_class_order.clone(),
             function_return_status: Some("phpc_call_status".to_string()),
             function_call_depth: Some("phpc_call_depth".to_string()),
             function_callable_name: Some(format!("{}()", function.decl.name)),
@@ -11349,6 +11446,7 @@ impl CGenerator {
     }
 
     fn emit_program(&mut self, program: &Program) -> CompileResult<String> {
+        self.register_top_level_declared_classes(&program.statements)?;
         self.register_top_level_user_functions(&program.statements)?;
         self.emit_registered_user_function_definitions()?;
         self.emit_program_statements(&program.statements)?;
@@ -11730,6 +11828,9 @@ impl CGenerator {
             if self.uses_native_output_buffer_operation {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_output_buffer_operation_with_diagnostic(phpc_NativeValueHandle first, phpc_NativeValueHandle second, phpc_NativeValueHandle third, uint8_t argc, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
+            if self.uses_native_object_instantiation_helpers {
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_new_declared_class_with_diagnostic(size_t class_id, const uint8_t *class_name, size_t class_name_len, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, size_t property_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            }
             output.push_str("extern void phpc_native_value_free(phpc_NativeValueHandle value);\n");
             output.push_str("extern size_t phpc_native_diagnostic_message_stderr(phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern size_t phpc_native_diagnostic_report(phpc_NativeDiagnosticHandle diagnostic);\n");
@@ -11995,6 +12096,118 @@ impl CGenerator {
             "static const uint8_t {bytes_name}[] = {{{bytes}}};"
         ));
         (bytes_name, value.len().to_string())
+    }
+
+    fn emit_declared_class_property_metadata_arrays(
+        &mut self,
+        class: &CDeclaredClass,
+    ) -> (String, String, String, usize) {
+        if class.properties.is_empty() {
+            return (
+                "NULL".to_string(),
+                "NULL".to_string(),
+                "NULL".to_string(),
+                0,
+            );
+        }
+
+        let mut name_ptrs = Vec::new();
+        let mut name_lens = Vec::new();
+        let mut visibilities = Vec::new();
+        for property in &class.properties {
+            let (bytes, len) = self
+                .emit_call_type_static_bytes("declared_class_property_name_bytes", &property.name);
+            name_ptrs.push(bytes);
+            name_lens.push(len);
+            visibilities.push(Self::declared_class_property_visibility_tag(
+                property.visibility,
+            ));
+        }
+
+        let index = self.next_static_data;
+        self.next_static_data += 1;
+        let ptrs_name = format!("declared_class_property_name_ptrs_{index}");
+        let lens_name = format!("declared_class_property_name_lens_{index}");
+        let visibility_name = format!("declared_class_property_visibilities_{index}");
+        self.static_data.push(format!(
+            "static const uint8_t *{ptrs_name}[] = {{{}}};",
+            name_ptrs.join(", ")
+        ));
+        self.static_data.push(format!(
+            "static const size_t {lens_name}[] = {{{}}};",
+            name_lens.join(", ")
+        ));
+        self.static_data.push(format!(
+            "static const uint8_t {visibility_name}[] = {{{}}};",
+            visibilities
+                .iter()
+                .map(u8::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+
+        (
+            ptrs_name,
+            lens_name,
+            visibility_name,
+            class.properties.len(),
+        )
+    }
+
+    fn materialize_declared_class_instantiation(
+        &mut self,
+        class: CDeclaredClass,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        self.uses_native_string_helpers = true;
+        self.uses_native_object_instantiation_helpers = true;
+
+        let (class_name, class_name_len) =
+            self.emit_call_type_static_bytes("declared_class_name_bytes", &class.name);
+        let (property_names, property_name_lens, property_visibilities, property_count) =
+            self.emit_declared_class_property_metadata_arrays(&class);
+
+        let diagnostic = self.next_native_name("declared_class_diagnostic");
+        let result = self.next_native_name("declared_class_object");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_value_new_declared_class_with_diagnostic({}, {class_name}, {class_name_len}, {property_names}, {property_name_lens}, {property_visibilities}, {property_count}, &{diagnostic});",
+            class.class_id
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+
+        CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }
+    }
+
+    fn try_materialize_declared_class_new_expr(
+        &mut self,
+        class_name: &NewClassName,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let NewClassName::Named(name) = class_name else {
+            return Ok(None);
+        };
+        let key = Self::declared_class_key(name);
+        let Some(class) = self.declared_classes.get(&key).cloned() else {
+            return Ok(None);
+        };
+        if !args.is_empty() {
+            return Err(self.unsupported(span, ASSEMBLY_OBJECT_INSTANTIATION_REJECTION));
+        }
+
+        Ok(Some(self.materialize_declared_class_instantiation(
+            class,
+            failure_cleanup,
+        )))
     }
 
     fn emit_call_frame_type_coercion_assignment(
@@ -17105,7 +17318,12 @@ impl CGenerator {
                 if let Some(span) = find_static_local_span(std::slice::from_ref(stmt)) {
                     return Err(self.unsupported(span, ASSEMBLY_STATIC_LOCAL_REJECTION));
                 }
-                Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION))
+                let key = Self::declared_class_key(&class.name);
+                if self.declared_classes.contains_key(&key) && !class.is_nested {
+                    Ok(())
+                } else {
+                    Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION))
+                }
             }
             Stmt::If {
                 condition,
@@ -17542,7 +17760,20 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_INSTANCEOF_REJECTION))
             }
             Expr::Closure { .. } => Err(self.native_call_diagnostics().call_root(expr)),
-            Expr::New { .. } => Err(self.unsupported_value_call(expr)),
+            Expr::New {
+                class_name,
+                args,
+                span,
+            } => {
+                if let Some(value) =
+                    self.try_materialize_declared_class_new_expr(class_name, args, *span, "")?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    Ok(CValue::NativeValueHandle(value.handle))
+                } else {
+                    Err(self.unsupported_value_call(expr))
+                }
+            }
             Expr::Clone { span, .. } => {
                 if let Some(operation) = native_value_operand_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
@@ -23250,6 +23481,14 @@ impl CGenerator {
                     return Ok(self.emit_native_value_type_predicate(value, predicate_tag));
                 }
             }
+            if let Some(type_name_tag) = native_value_type_name_tag(name) {
+                if let Some(value) = self.try_materialize_native_value_result_expr(&args[0], "")? {
+                    let type_name =
+                        self.emit_native_value_type_name_result_handle(value, type_name_tag, "");
+                    self.retain_native_value_cleanup_handle(&type_name.handle);
+                    return Ok(CValue::NativeValueHandle(type_name.handle));
+                }
+            }
         }
 
         if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
@@ -23257,7 +23496,7 @@ impl CGenerator {
         }
 
         if is_native_metadata_exists_builtin(name) {
-            return self.emit_native_metadata_exists_call(args, span);
+            return self.emit_native_metadata_exists_call(name, args, span);
         }
         if is_native_member_metadata_exists_builtin(name) {
             return self.emit_native_member_metadata_exists_call(args, span);
@@ -23349,6 +23588,7 @@ impl CGenerator {
 
     fn emit_native_metadata_exists_call(
         &mut self,
+        builtin_name: &str,
         args: &[Expr],
         span: Span,
     ) -> CompileResult<CValue> {
@@ -23374,6 +23614,15 @@ impl CGenerator {
                 return Err(self
                     .unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup));
             }
+        }
+
+        if builtin_name.eq_ignore_ascii_case("class_exists") {
+            return self
+                .class_exists_result_for_value(&name)
+                .map(CValue::Bool)
+                .ok_or_else(|| {
+                    self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+                });
         }
 
         Ok(CValue::Bool(false))
@@ -23478,12 +23727,28 @@ impl CGenerator {
                 .contains_key(&Self::user_function_key(name))
     }
 
+    fn is_known_declared_class_available(&self, name: &str) -> bool {
+        self.declared_classes
+            .contains_key(&Self::declared_class_key(name))
+    }
+
     fn function_exists_result_for_value(&self, value: &CValue) -> Option<bool> {
         match value {
             CValue::String(value) => Some(self.is_known_function_available(value)),
             CValue::StringExpr(_) => {
                 let values = self.known_string_values_for_value(value)?;
                 self.known_strings_have_uniform_function_exists_result(&values)
+            }
+            _ => None,
+        }
+    }
+
+    fn class_exists_result_for_value(&self, value: &CValue) -> Option<bool> {
+        match value {
+            CValue::String(value) => Some(self.is_known_declared_class_available(value)),
+            CValue::StringExpr(_) => {
+                let values = self.known_string_values_for_value(value)?;
+                self.known_strings_have_uniform_class_exists_result(&values)
             }
             _ => None,
         }
@@ -23496,6 +23761,21 @@ impl CGenerator {
         let mut result = None;
         for value in values.values() {
             let current = self.is_known_function_available(value);
+            if let Some(previous) = result {
+                if previous != current {
+                    return None;
+                }
+            } else {
+                result = Some(current);
+            }
+        }
+        result
+    }
+
+    fn known_strings_have_uniform_class_exists_result(&self, values: &KnownString) -> Option<bool> {
+        let mut result = None;
+        for value in values.values() {
+            let current = self.is_known_declared_class_available(value);
             if let Some(previous) = result {
                 if previous != current {
                     return None;
@@ -27058,6 +27338,16 @@ impl CGenerator {
             }
             Expr::DynamicCall { callee, args, span } => self
                 .try_materialize_dynamic_user_function_call(callee, args, *span, failure_cleanup),
+            Expr::New {
+                class_name,
+                args,
+                span,
+            } => self.try_materialize_declared_class_new_expr(
+                class_name,
+                args,
+                *span,
+                failure_cleanup,
+            ),
             Expr::NullCoalesceAssign { target, expr, span } => self
                 .materialize_array_offset_null_coalesce_assignment_expr(
                     target,
