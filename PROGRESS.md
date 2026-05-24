@@ -1,16 +1,18 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 06:51 CEST
-Evaluation marker: `20260524T040111Z`
+Updated: 2026-05-24 06:53 CEST
+Evaluation marker: `20260524T045209Z`
 
 Latest primary semantic/test baseline:
 `fb27be7d runtime: union arrays through value addition`
 
 Latest integrated semantic baseline: `fb27be7d runtime: union arrays through value addition`
-Latest evaluator report: `20260524T040111Z`
+Latest evaluator report: `20260524T045209Z`
 
 Current primary git state at review:
 
+- Current primary head is `3304d653 docs: update progress after array union`,
+  clean and synced with `origin/master` in the live evaluator check.
 - `fb27be7d` is the latest counted semantic commit in this progress update.
 - Runtime native value addition now implements PHP array union for
   array-plus-array values, preserving left-hand keys and reference slots.
@@ -168,10 +170,12 @@ Primary-integrated capability:
 
 Candidate work not counted:
 
-- Lane-local foreach root rebinding, reference-slot operation families,
-  branch-decision diagnostic cleanup, call-frame carrier cleanup,
-  object/interface metadata contracts, and many array/string/diagnostic builtin
-  candidates.
+- Lane-local direct array-variable RMW through value-slot owners, broad
+  reference-slot operation families, object/magic/autoload prechecks, and
+  cleanup resume capability models.
+- Lane-local foreach root rebinding, branch-decision diagnostic cleanup,
+  call-frame carrier cleanup, object/interface metadata contracts, and many
+  array/string/diagnostic builtin candidates.
 - Broad lane diffs that are conflict-heavy or metadata/preflight oriented
   unless a small selected contract lands in primary with executable proof.
 
@@ -237,8 +241,10 @@ object forms, closures/methods/object execution, references/COW through real
 control-flow joins, structured unwind/cleanup/finally, or source-ordered
 diagnostics.
 
-Resource note from this review: `/dev/shm` has recovered to about 16G free
-and `/home` remains healthy. Primary gates for these batches used disk-backed
-`/tmp/phpc-primary-target-callable-syntax` and
+Resource note from this review: `/dev/shm` is under pressure again at about
+18G used and 4.2G free. The largest visible target dirs are the lane-local
+array-value and object-property runtime targets; `/home` remains healthy at
+about 90G used on a 459G filesystem. Primary gates for the latest batches used
+disk-backed `/tmp/phpc-primary-target-callable-syntax` and
 `/tmp/phpc-primary-target-array-union`; keep checking resource ownership before
 broad dispatch.
