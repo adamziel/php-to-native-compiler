@@ -1,32 +1,31 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 08:56 CEST
+Updated: 2026-05-24 09:18 CEST
 Evaluation marker: `20260524T045209Z`
 
 Latest primary semantic/test baseline:
-`c7e35c50 codegen: route llvm arithmetic value results`
+`ea6ebcf2 codegen: lower direct variable assignment expressions`
 
-Latest integrated semantic baseline: `c7e35c50 codegen: route llvm arithmetic value results`
+Latest integrated semantic baseline: `ea6ebcf2 codegen: lower direct variable assignment expressions`
 Latest evaluator report: `20260524T045209Z`
 
 Current primary git state at review:
 
 - Current primary head before this progress update was
-  `c7e35c50 codegen: route llvm arithmetic value results`.
-- `40838cef` is now the previous counted semantic commit.
-- LLVM IR now consumes the shared native value-operation result ABI for
-  scalar/native-value arithmetic when static primitive lowering is insufficient:
-  leading/non-numeric string operands, null/bool scalar coercion operands,
-  non-integer modulo operands, string division/modulo operands, native
-  value-result producers, and unary negation flow through
-  `phpc_native_value_binary_result(...)` /
-  `phpc_native_value_unary_result(...)` with diagnostic reporting and a
-  generated error edge.
-- This is backend parity for an already integrated value-operation arithmetic
-  semantic family. It is not direct numeric LLVM division, dynamic integer
-  modulo runtime checks, callable lookup, callable-array/object invocation,
-  closure/method/object execution, reference/COW parity, source-ordered
-  diagnostics, broad unwind cleanup, or direct assembly parity.
+  `ea6ebcf2 codegen: lower direct variable assignment expressions`.
+- `c7e35c50` is now the previous counted semantic commit.
+- Direct-variable assignment expressions now execute through assignment-target
+  semantics instead of the blanket mutation blocker. LLVM supports lowerable
+  primitive direct variables and chained direct assignment expressions.
+  Generated-C supports scalar/native-value direct assignment-expression
+  results, clones owned native handles for storage while preserving expression
+  cleanup, writes reference-backed variables through
+  `phpc_native_reference_set_value(...)`, and leaves active symbol-table/global
+  variables on the existing symbol-path assignment path.
+- This is a bounded direct-variable assignment-expression slice. It is not
+  compound assignment, `??=`, increment/decrement, request/global root
+  assignment, non-direct lvalues, object/static properties, unset behavior,
+  full COW/reference identity, or direct assembly parity.
 
 These are candid engineering estimates toward generalized PHP semantics in the
 native compiler. They are not test pass rates. Only primary-integrated, pushed
@@ -40,14 +39,14 @@ numbers. It counted strong foundations, lane-local candidates, and selected
 generated-C execution islands too much like broad PHP completion. The current
 percentages use the stricter rubric above: pushed primary work toward
 generalized, end-to-end PHP semantics. The move from 88% to the current
-65% overall / 62% executable estimate is a measurement correction plus later
+66% overall / 63% executable estimate is a measurement correction plus later
 primary semantic integration, not a code rollback.
 
 ## Executive Read
 
-Overall estimated progress: **65%** `[#############-------]`
+Overall estimated progress: **66%** `[#############-------]`
 
-Executable PHP semantics: **62%** `[############--------]`
+Executable PHP semantics: **63%** `[#############-------]`
 
 The primary branch has made useful integrated progress since the last evaluator
 marker: bounded generated-C variadic by-value frames landed, bounded
@@ -58,6 +57,10 @@ dynamic calls now bind those by-reference frame parameters for supported
 ordinary symbol-table lvalue arguments. Direct-variable compound assignments
 now use the shared native binary value-result ABI across local variables,
 reference-backed variables, and active ordinary symbol-table variables.
+Direct-variable assignment expressions now return assigned values while
+updating lowerable primitive LLVM locals and generated-C ordinary, native
+value, reference-backed, and active symbol-table direct variables through their
+existing owner paths.
 Loop `break`/`continue` through supported active `finally` scopes now execute
 the finalizers they leave, while inner-loop transfers that stay inside a try
 body avoid premature finalizer execution.
@@ -96,17 +99,33 @@ destructors, and backend parity.
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **83%** | `[#################---]` | Strong shared value, array, reference, symbol, request, comparison, truthiness, string, diagnostic, cleanup, request-root, call-frame type-coercion, dynamic-call, and reference-clone surfaces. Some remain scaffolding until consumed end to end. |
-| Compiler/backend consumers | **81%** | `[################----]` | Generated-C has broad selected coverage, including direct-variable compound assignment, function-scope ordinary `global` imports reached by direct, transitive wrapper, and runtime dynamic dispatch, `break`/`continue` through active `finally` scopes, untyped by-reference frame parameters reached by runtime string-valued dispatch, and warning-bearing leading-numeric arithmetic through the native value-result ABI. LLVM now consumes shared direct string-result, string-predicate, string-search, string-int, selected `strlen()` nested operand ABIs, and scalar/native-value arithmetic through the native value-operation result ABI where primitive IR lowering is insufficient. Direct assembly and many nested/backend consumers still stop at blockers. |
-| Executable PHP semantics | **62%** | `[############--------]` | Many focused linked programs run, including direct-variable compound assignment through local, reference-backed, and active symbol-table variables plus function-local bounded `try`/`finally`, loop transfer through finalizers, direct/transitive/runtime dynamic function-scope global imports, warning-bearing leading-numeric arithmetic expressions, and alias-visible by-reference frame writes, but behavior is still selected islands rather than a complete PHP execution model. |
-| Arrays, lvalues, references, COW | **63%** | `[#############-------]` | Strong selected array/lvalue/reference paths now include generated-C direct-variable compound assignment, function-scope global imports of scalar variables and array paths, by-reference call binding for direct variables and nested symbol-table paths, and PHP array-union value addition through generated-C array-offset and direct-variable `+=`. Full COW, arbitrary writable roots, foreach parity, object/reference joins, and broader frame/reference composition remain open. |
+| Compiler/backend consumers | **82%** | `[################----]` | Generated-C has broad selected coverage, including direct-variable assignment expressions, direct-variable compound assignment, function-scope ordinary `global` imports reached by direct, transitive wrapper, and runtime dynamic dispatch, `break`/`continue` through active `finally` scopes, untyped by-reference frame parameters reached by runtime string-valued dispatch, and warning-bearing leading-numeric arithmetic through the native value-result ABI. LLVM now consumes shared direct string-result, string-predicate, string-search, string-int, selected `strlen()` nested operand ABIs, scalar/native-value arithmetic through the native value-operation result ABI where primitive IR lowering is insufficient, and primitive direct-variable assignment expressions. Direct assembly and many nested/backend consumers still stop at blockers. |
+| Executable PHP semantics | **63%** | `[#############-------]` | Many focused linked programs run, including direct-variable assignment expressions through ordinary, native-value, reference-backed, and active symbol-table owners; direct-variable compound assignment through local, reference-backed, and active symbol-table variables; function-local bounded `try`/`finally`; loop transfer through finalizers; direct/transitive/runtime dynamic function-scope global imports; warning-bearing leading-numeric arithmetic expressions; and alias-visible by-reference frame writes. Behavior is still selected islands rather than a complete PHP execution model. |
+| Arrays, lvalues, references, COW | **64%** | `[#############-------]` | Strong selected array/lvalue/reference paths now include generated-C direct-variable assignment expressions and compound assignment, function-scope global imports of scalar variables and array paths, by-reference call binding for direct variables and nested symbol-table paths, and PHP array-union value addition through generated-C array-offset and direct-variable `+=`. Full COW, arbitrary writable roots, foreach parity, object/reference joins, and broader frame/reference composition remain open. |
 | Symbols, globals, request state | **72%** | `[##############------]` | Request roots and selected `$GLOBALS` paths are strong. Generated-C function-scope ordinary `global` imports now borrow the caller root symbol table and bind imported locals through shared references across direct, transitive wrapper, and runtime dynamic frame calls. Generated-C by-reference calls and direct-variable compound assignments also reuse symbol-table paths for ordinary variables and nested array slots. Reconciliation across requests, includes, variable variables, aliases, and broader reference frames remains incomplete. |
 | Calls, functions, frames | **57%** | `[###########---------]` | Bounded generated-C by-value fixed/default/variadic frames, typed params/returns, recursion guards, registered introspection, syntax-only callable-array checks, dynamic user calls including global-import frames, dynamic builtin calls, finite mixed user/builtin sets, transitive root-symbol wrapper frames, function-local bounded `try`/`finally`, function-scope ordinary `global` imports, and untyped by-reference direct/compiler-known/runtime string-valued frame calls are integrated. |
 | Objects, properties, methods | **10%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary lacks general compiled object construction, property access, method dispatch, `$this`, visibility, static context, and magic behavior. |
 | Control flow, cleanup, diagnostics | **48%** | `[##########----------]` | Bounded generated-C branches, loops, transfers, switch/goto, normal-flow `try`/`finally`, return-through-finally inside supported by-value frames, `break`/`continue` through active finalizers, diagnostic-aware stdout formatting, and selected cleanup paths exist. Broad unwind, handlers, destructors, output buffers, and exact ordering remain open. |
-| Broad integrated verification | **54%** | `[###########---------]` | Focused gates are strong, including function-frame `try`/`finally`, loop-transfer-through-finally source/linked execution, direct/transitive/runtime dynamic function-scope global import source/linked execution, by-reference frame source/linked execution, and dynamic by-reference blocker proof. Cross-feature composition, end-to-end PHP programs, backend parity, and the unfiltered `native_runtime_abi` debt need broader proof. |
+| Broad integrated verification | **55%** | `[###########---------]` | Focused gates are strong, including direct-variable assignment-expression source/linked execution across primitive, native-value, reference-backed, and active symbol-table owners; function-frame `try`/`finally`; loop-transfer-through-finally source/linked execution; direct/transitive/runtime dynamic function-scope global import source/linked execution; by-reference frame source/linked execution; and dynamic by-reference blocker proof. Cross-feature composition, end-to-end PHP programs, backend parity, and the unfiltered `native_runtime_abi` debt need broader proof. |
 
 ## Recent Primary-Integrated Work
 
+- `ea6ebcf2`: direct-variable assignment expressions now lower through
+  `AssignTarget::Variable` semantics instead of the blanket mutation blocker.
+  LLVM supports lowerable primitive direct variables and chained direct
+  assignment expressions while still rejecting native-value ownership results
+  and non-direct lvalues. Generated-C direct-variable assignment expressions
+  store ordinary scalar values directly, clone owned native result handles for
+  variable storage while preserving expression-result cleanup, write
+  reference-backed variables through `phpc_native_reference_set_value(...)`,
+  and leave active ordinary symbol-table/global variables on the shared
+  symbol-path write/read path. Source and linked proof covers scalar and
+  native-result assignment-expression values, no-prior-helper native result
+  materialization, by-reference frame variables, active symbol-table writes,
+  chained LLVM assignment expressions, cleanup of cloned native handles, and
+  continued blockers for compound assignment, `??=`, increment/decrement,
+  non-direct lvalues, request/global roots, object/static properties, unset,
+  full COW, and direct assembly.
 - `c7e35c50`: LLVM IR now routes scalar/native-value arithmetic that cannot be
   safely folded as primitive IR through the shared native value-operation
   result ABI. Lowered families include leading/non-numeric string operands for
