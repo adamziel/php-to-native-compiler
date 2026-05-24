@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 06:53 CEST
+Updated: 2026-05-24 07:00 CEST
 Evaluation marker: `20260524T045209Z`
 
 Latest primary semantic/test baseline:
@@ -11,8 +11,11 @@ Latest evaluator report: `20260524T045209Z`
 
 Current primary git state at review:
 
-- Current primary head is `3304d653 docs: update progress after array union`,
-  clean and synced with `origin/master` in the live evaluator check.
+- Current primary head at the start of this refresh was
+  `bd18a7c9 docs: refresh progress after strategy review`, clean and synced
+  with `origin/master`.
+- `bd18a7c9` is docs-only and does not change the latest counted semantic
+  baseline.
 - `fb27be7d` is the latest counted semantic commit in this progress update.
 - Runtime native value addition now implements PHP array union for
   array-plus-array values, preserving left-hand keys and reference slots.
@@ -241,10 +244,10 @@ object forms, closures/methods/object execution, references/COW through real
 control-flow joins, structured unwind/cleanup/finally, or source-ordered
 diagnostics.
 
-Resource note from this review: `/dev/shm` is under pressure again at about
-18G used and 4.2G free. The largest visible target dirs are the lane-local
-array-value and object-property runtime targets; `/home` remains healthy at
-about 90G used on a 459G filesystem. Primary gates for the latest batches used
+Resource note from this review: `/dev/shm` has recovered above the dispatcher
+floor at about 11G used and 12G free. The largest visible target dir remains
+the lane-local array-value runtime target. `/home` remains healthy at about
+179G used on a 459G filesystem. Primary gates for the latest batches used
 disk-backed `/tmp/phpc-primary-target-callable-syntax` and
 `/tmp/phpc-primary-target-array-union`; keep checking resource ownership before
 broad dispatch.
