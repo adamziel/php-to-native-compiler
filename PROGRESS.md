@@ -80,7 +80,7 @@ These are not product capability yet. Treat them as a queue of possible integrat
 
 ## Current Review Notes
 
-- Primary repo had just landed `b1f3c546` when this dashboard was refreshed.
+- Primary repo had just landed `a27bb444` when this progress file was refreshed.
 - `/dev/shm` at review was 22G total, 15G used, 7.6G available. This is above the 6G floor but tight for broad concurrent link/test waves.
 - The largest visible target was `/dev/shm/phpc-target-native-object-property-runtime` at about 8.8G. Reclaim only after owner checks.
 - Dashboard evidence is stale relative to current primary and worker status files; live state should be preferred for steering.
