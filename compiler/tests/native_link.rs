@@ -13242,6 +13242,23 @@ const NATIVE_USER_FUNCTION_INTROSPECTION_SOURCE: &str = concat!(
     "echo pick();\n",
 );
 
+const NATIVE_DYNAMIC_USER_FUNCTION_CALL_SOURCE: &str = concat!(
+    "<?php\n",
+    "function pick($value = \"ok\") {\n",
+    "    return strtoupper($value);\n",
+    "}\n",
+    "function relay($value) {\n",
+    "    return strtolower($value);\n",
+    "}\n",
+    "$call = \"pick\";\n",
+    "echo $call(\"go\"), \"|\";\n",
+    "$case = \"PICK\";\n",
+    "echo $case(), \"|\";\n",
+    "$nested = \"relay\";\n",
+    "echo pick($nested(\"mix\")), \"|\";\n",
+    "echo (true ? \"pick\" : \"PICK\")(\"tail\");\n",
+);
+
 #[test]
 fn native_executable_c_source_lowers_direct_user_function_frames() {
     let program = parse(NATIVE_USER_FUNCTION_FRAME_SOURCE).unwrap();
@@ -13272,6 +13289,29 @@ fn native_executable_c_source_lowers_direct_user_function_frames() {
     assert!(
         !source.contains("assembly user-function lowering rejects"),
         "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_known_string_dynamic_user_function_calls() {
+    let program = parse(NATIVE_DYNAMIC_USER_FUNCTION_CALL_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("static phpc_NativeValueHandle phpc_user_function_0_pick(")
+            && source.contains("static phpc_NativeValueHandle phpc_user_function_1_relay("),
+        "registered dynamic call targets should still lower to reusable frames:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_user_function_0_pick(").count() >= 3
+            && body.contains("phpc_user_function_1_relay("),
+        "known-string dynamic calls should dispatch through registered frame entries:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly dynamic function-call lowering rejects")
+            && !source.contains("assembly function-call lowering rejects"),
+        "registered known-string dynamic calls should not hit call blockers:\n{source}"
     );
 }
 
@@ -13313,6 +13353,34 @@ fn emit_exe_links_and_runs_direct_user_function_frame_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"GO|alt|d|relay|side:effect|done");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_dynamic_user_function_call_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "dynamic_user_function_call",
+        NATIVE_DYNAMIC_USER_FUNCTION_CALL_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native dynamic user-function executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"GO|OK|MIX|TAIL");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
