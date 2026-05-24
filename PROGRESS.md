@@ -7,7 +7,7 @@ Latest primary semantic/test baseline:
 `b3625c8a codegen: lower llvm direct variable compounds`
 
 Latest primary head at review:
-`b3625c8a codegen: lower llvm direct variable compounds`
+`8c9e83e4 docs: update progress after llvm compounds`
 
 Only pushed primary work counts here. Dirty WIP, lane-local candidates, parked diffs, exact-shape fixtures, and status-file claims are not counted until selected, gated, committed, and pushed through primary.
 
