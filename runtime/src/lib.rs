@@ -19708,6 +19708,47 @@ pub unsafe extern "C" fn phpc_native_value_object_public_property_operation_with
     }
 }
 
+/// # Safety
+///
+/// `value` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. `class_name` must be null only when `class_name_len`
+/// is zero.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_instanceof_class_with_diagnostic(
+    value: NativeValueHandle,
+    class_name: *const u8,
+    class_name_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe { native_value_instanceof_class(value, class_name, class_name_len) } {
+        Ok(result) => result,
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            false
+        }
+    }
+}
+
+unsafe fn native_value_instanceof_class(
+    value: NativeValueHandle,
+    class_name: *const u8,
+    class_name_len: usize,
+) -> Result<bool, String> {
+    let class_name =
+        unsafe { native_abi_utf8(class_name, class_name_len, "instanceof class name") }
+            .map_err(|error| error.message().to_string())?;
+    if class_name.is_empty() {
+        return Err("native instanceof operation requires a non-empty class name".to_string());
+    }
+
+    Ok(matches!(
+        unsafe { value.as_ref() },
+        Some(Value::Object(object)) if object.is_instance_of_class_name(class_name)
+    ))
+}
+
 unsafe fn native_value_object_public_property_operation(
     object: NativeValueHandle,
     property_name: *const u8,
@@ -22086,6 +22127,89 @@ mod tests {
         assert!(
             native_diagnostic_message_for_test(diagnostic).contains("requires an object"),
             "diagnostic should reject non-object handles"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(scalar) };
+        unsafe { phpc_native_value_free(object) };
+    }
+
+    #[test]
+    fn native_value_instanceof_class_checks_object_class_names() {
+        let box_class = b"NativeBox";
+        let packet_class = b"Packet";
+        let property_id = b"id";
+        let property_names = [property_id.as_ptr()];
+        let property_name_lens = [property_id.len()];
+        let property_visibilities = [NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC];
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let object = unsafe {
+            phpc_native_value_new_declared_class_with_diagnostic(
+                31,
+                box_class.as_ptr(),
+                box_class.len(),
+                property_names.as_ptr(),
+                property_name_lens.as_ptr(),
+                property_visibilities.as_ptr(),
+                property_names.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+
+        assert!(unsafe {
+            phpc_native_value_instanceof_class_with_diagnostic(
+                object,
+                box_class.as_ptr(),
+                box_class.len(),
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let lowercase_box = b"nativebox";
+        assert!(unsafe {
+            phpc_native_value_instanceof_class_with_diagnostic(
+                object,
+                lowercase_box.as_ptr(),
+                lowercase_box.len(),
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        assert!(!unsafe {
+            phpc_native_value_instanceof_class_with_diagnostic(
+                object,
+                packet_class.as_ptr(),
+                packet_class.len(),
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let scalar = NativeValueHandle::from_value(Value::Int(7));
+        assert!(!unsafe {
+            phpc_native_value_instanceof_class_with_diagnostic(
+                scalar,
+                box_class.as_ptr(),
+                box_class.len(),
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        assert!(!unsafe {
+            phpc_native_value_instanceof_class_with_diagnostic(
+                object,
+                std::ptr::null(),
+                1,
+                &mut diagnostic,
+            )
+        });
+        assert!(
+            native_diagnostic_message_for_test(diagnostic).contains("instanceof class name"),
+            "diagnostic should reject invalid class-name ABI"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(scalar) };

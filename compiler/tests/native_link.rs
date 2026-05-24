@@ -130,6 +130,19 @@ const NATIVE_DECLARED_CLASS_PROPERTY_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_DECLARED_CLASS_INSTANCEOF_SOURCE: &str = concat!(
+    "<?php\n",
+    "class Box {}\n",
+    "class Packet {}\n",
+    "$box = new Box();\n",
+    "echo $box instanceof Box ? \"Y\" : \"N\";\n",
+    "echo $box instanceof box ? \"Y\" : \"N\";\n",
+    "echo $box instanceof Packet ? \"Y\" : \"N\";\n",
+    "echo (new Packet()) instanceof Packet ? \"Y\" : \"N\";\n",
+    "echo 7 instanceof Box ? \"Y\" : \"N\";\n",
+    "echo \"\\n\";\n",
+);
+
 const NATIVE_BRANCH_STATE_MERGE_SOURCE: &str = concat!(
     "<?php\n",
     "$flags = [\"go\" => \"1\", \"stop\" => \"0\"];\n",
@@ -928,6 +941,34 @@ fn emit_exe_links_and_runs_declared_object_property_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"EM|Ada:Ada:S:N|7\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_declared_class_instanceof_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "declared_class_instanceof",
+        NATIVE_DECLARED_CLASS_INSTANCEOF_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run declared-class-instanceof executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"YYNYN\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -1753,6 +1794,25 @@ fn native_executable_c_source_routes_declared_object_properties_through_runtime_
         !source.contains("object-property lowering rejects"),
         "{source}"
     );
+}
+
+#[test]
+fn native_executable_c_source_routes_declared_instanceof_through_runtime_abi() {
+    let program = parse(NATIVE_DECLARED_CLASS_INSTANCEOF_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_value_instanceof_class_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_value_instanceof_class_with_diagnostic")
+            .count()
+            >= 5,
+        "named instanceof expressions should share the object-class relation ABI:\n{source}"
+    );
+    assert!(!source.contains("instanceof lowering rejects"), "{source}");
 }
 
 #[test]

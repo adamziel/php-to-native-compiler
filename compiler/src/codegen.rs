@@ -9390,6 +9390,7 @@ struct CGenerator {
     uses_native_output_buffer_operation: bool,
     uses_native_object_instantiation_helpers: bool,
     uses_native_object_property_helpers: bool,
+    uses_native_object_instanceof_helpers: bool,
     next_static_data: usize,
     next_native_temp: usize,
     native_value_cleanup_handles: Vec<String>,
@@ -10981,6 +10982,7 @@ impl CGenerator {
         self.uses_native_object_instantiation_helpers |=
             branch.uses_native_object_instantiation_helpers;
         self.uses_native_object_property_helpers |= branch.uses_native_object_property_helpers;
+        self.uses_native_object_instanceof_helpers |= branch.uses_native_object_instanceof_helpers;
     }
 
     fn merge_scoped_branch_codegen(&mut self, branch: &Self) {
@@ -11003,6 +11005,7 @@ impl CGenerator {
             || self.uses_native_output_buffer_operation
             || self.uses_native_object_instantiation_helpers
             || self.uses_native_object_property_helpers
+            || self.uses_native_object_instanceof_helpers
             || !self.function_definitions.is_empty()
     }
 
@@ -11856,6 +11859,9 @@ impl CGenerator {
             if self.uses_native_object_property_helpers {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_public_property_operation_with_diagnostic(phpc_NativeValueHandle object, const uint8_t *property_name, size_t property_name_len, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
+            if self.uses_native_object_instanceof_helpers {
+                output.push_str("extern _Bool phpc_native_value_instanceof_class_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *class_name, size_t class_name_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            }
             output.push_str("extern void phpc_native_value_free(phpc_NativeValueHandle value);\n");
             output.push_str("extern size_t phpc_native_diagnostic_message_stderr(phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern size_t phpc_native_diagnostic_report(phpc_NativeDiagnosticHandle diagnostic);\n");
@@ -12394,6 +12400,46 @@ impl CGenerator {
         let truthy = self.emit_native_value_handle_truthiness(&value.handle);
         self.body.extend(value.cleanup_after_use);
         Ok(Some(CValue::BoolExpr(truthy)))
+    }
+
+    fn emit_object_instanceof_expr(
+        &mut self,
+        expr: &Expr,
+        class_name: &str,
+        span: Span,
+    ) -> CompileResult<CValue> {
+        if matches!(
+            class_name.to_ascii_lowercase().as_str(),
+            "self" | "parent" | "static"
+        ) {
+            return Err(self.unsupported(span, ASSEMBLY_INSTANCEOF_REJECTION));
+        }
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_object_instanceof_helpers = true;
+
+        let value = self.materialize_native_value_result_operand(expr, "")?;
+        let (class_name, class_name_len) =
+            self.emit_call_type_static_bytes("instanceof_class_name_bytes", class_name);
+        let diagnostic = self.next_native_name("instanceof_diagnostic");
+        let result = self.next_native_name("instanceof_result");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "_Bool {result} = phpc_native_value_instanceof_class_with_diagnostic({}, {class_name}, {class_name_len}, &{diagnostic});",
+            value.handle
+        ));
+        let cleanup = c_cleanup_sequence(&value.cleanup_after_use);
+        let error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_report({diagnostic}); {cleanup}"
+        ));
+        self.body
+            .push(format!("if ({diagnostic}.ptr != NULL) {{ {error_exit} }}"));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.body.extend(value.cleanup_after_use);
+
+        Ok(CValue::BoolExpr(result))
     }
 
     fn emit_call_frame_type_coercion_assignment(
@@ -17947,12 +17993,11 @@ impl CGenerator {
                     Err(self.unsupported_value_call(expr))
                 }
             }
-            Expr::InstanceOf { span, .. } => {
-                if let Some(operation) = native_value_operand_call_result_operation(expr) {
-                    return Err(self.unsupported_call_operation(operation));
-                }
-                Err(self.unsupported(*span, ASSEMBLY_INSTANCEOF_REJECTION))
-            }
+            Expr::InstanceOf {
+                expr,
+                class_name,
+                span,
+            } => self.emit_object_instanceof_expr(expr, class_name, *span),
             Expr::Closure { .. } => Err(self.native_call_diagnostics().call_root(expr)),
             Expr::New {
                 class_name,
