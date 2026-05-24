@@ -1,23 +1,25 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 06:41 CEST
+Updated: 2026-05-24 06:51 CEST
 Evaluation marker: `20260524T040111Z`
 
 Latest primary semantic/test baseline:
-`993e96d2 codegen: lower callable array syntax checks`
+`fb27be7d runtime: union arrays through value addition`
 
-Latest integrated semantic baseline: `993e96d2 codegen: lower callable array syntax checks`
+Latest integrated semantic baseline: `fb27be7d runtime: union arrays through value addition`
 Latest evaluator report: `20260524T040111Z`
 
 Current primary git state at review:
 
-- `993e96d2` is the latest counted semantic commit in this progress update.
-- Generated-C `is_callable(..., true)` now routes callable-array syntax checks
-  over direct native array handles and owned native values through shared
-  runtime callable-syntax helpers.
-- This is a compact callable-form execution slice, not full callable lookup,
-  method dispatch, object invocation, or callable-array invocation; the overall
-  estimate deliberately remains unchanged.
+- `fb27be7d` is the latest counted semantic commit in this progress update.
+- Runtime native value addition now implements PHP array union for
+  array-plus-array values, preserving left-hand keys and reference slots.
+  Generated-C array-offset compound assignment consumes the same native binary
+  value-result boundary for direct and nested array owners.
+- This is a compact value-operation/lvalue execution slice, not full COW,
+  arbitrary direct-variable compound assignment, ArrayAccess, object/resource
+  offset execution, or broad array parity; the overall estimate deliberately
+  remains unchanged.
 
 These are candid engineering estimates toward generalized PHP semantics in the
 native compiler. They are not test pass rates. Only primary-integrated, pushed
@@ -48,9 +50,10 @@ generated-C frames now have a first alias-visible by-reference parameter path.
 The latest request-key result accessor slice removes generated backend
 dependence on the concrete key-result return layout across request keyed/path
 consumers. Generated-C also has a first shared runtime consumer for syntax-only
-callable array forms. This broadens real executable calls/frames and tightens
-request/callable ABI encapsulation without pretending the selected generated-C
-subset equals full PHP.
+callable array forms, and native value addition now carries PHP array union
+through generated-C array-offset compound assignments. This broadens real
+executable calls/frames and array value/lvalue behavior without pretending the
+selected generated-C subset equals full PHP.
 
 The main remaining work is still central language semantics: full callable
 lookup, closures, methods, objects/properties, `$this`, typed/default/variadic
@@ -65,7 +68,7 @@ destructors, and backend parity.
 | Runtime and ABI foundations | **83%** | `[#################---]` | Strong shared value, array, reference, symbol, request, comparison, truthiness, string, diagnostic, cleanup, request-root, call-frame type-coercion, dynamic-call, and reference-clone surfaces. Some remain scaffolding until consumed end to end. |
 | Compiler/backend consumers | **76%** | `[###############-----]` | Generated-C has broad selected coverage, including untyped by-reference frame parameters. LLVM now consumes shared direct string-result, string-predicate, string-search, string-int, and selected `strlen()` nested operand ABIs. Direct assembly and many nested/backend consumers still stop at blockers. |
 | Executable PHP semantics | **57%** | `[###########---------]` | Many focused linked programs run, including function-local bounded `try`/`finally` and alias-visible by-reference writes in selected generated-C frames, but behavior is still selected islands rather than a complete PHP execution model. |
-| Arrays, lvalues, references, COW | **60%** | `[############--------]` | Strong selected array/lvalue/reference paths now include generated-C by-reference call binding for direct variables and nested symbol-table paths. Full COW, arbitrary writable roots, foreach parity, object/reference joins, and broader frame/reference composition remain open. |
+| Arrays, lvalues, references, COW | **60%** | `[############--------]` | Strong selected array/lvalue/reference paths now include generated-C by-reference call binding for direct variables and nested symbol-table paths plus PHP array-union value addition through generated-C array-offset `+=`. Full COW, arbitrary writable roots, foreach parity, object/reference joins, and broader frame/reference composition remain open. |
 | Symbols, globals, request state | **67%** | `[#############-------]` | Request roots and selected `$GLOBALS` paths are strong. Generated-C by-reference calls now reuse symbol-table reference paths for ordinary variables and nested array slots. Reconciliation across calls, requests, includes, aliases, and broader reference frames remains incomplete. |
 | Calls, functions, frames | **54%** | `[###########---------]` | Bounded generated-C by-value fixed/default/variadic frames, typed params/returns, recursion guards, registered introspection, syntax-only callable-array checks, dynamic user calls, dynamic builtin calls, finite mixed user/builtin sets, function-local bounded `try`/`finally`, and untyped by-reference direct/compiler-known single-target frame calls are integrated. |
 | Objects, properties, methods | **10%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary lacks general compiled object construction, property access, method dispatch, `$this`, visibility, static context, and magic behavior. |
@@ -74,6 +77,15 @@ destructors, and backend parity.
 
 ## Recent Primary-Integrated Work
 
+- `fb27be7d`: runtime `Value::php_add()` and
+  `phpc_native_value_binary_result(...)` now implement PHP array union for
+  array-plus-array values. Union preserves left-hand keys, appends missing
+  right-hand keys, and preserves right-side reference slots when inserted.
+  Generated-C array-offset `+=` already computes through the shared native
+  binary value-result ABI, so linked proof now executes direct and nested
+  array-owner compound union without source-shape lowering. Array-plus-scalar,
+  full direct-variable compound assignment, ArrayAccess/object/resource offset
+  behavior, broad COW/reference identity, and exact diagnostics remain blocked.
 - `993e96d2`: generated-C `is_callable(..., true)` now consumes shared runtime
   helpers for callable-array syntax over direct native array handles and owned
   native values. Runtime proof covers string, closure, object-receiver array,
@@ -146,6 +158,8 @@ Primary-integrated capability:
   binding for ordinary symbol-table variables and nested array-slot paths.
 - Shared request-state key-result buffer/status accessors consumed by LLVM ABI
   proof and generated-C request keyed/path/reference/global dispatch paths.
+- PHP array-union value addition consumed by generated-C array-offset compound
+  assignment through the shared native binary value-result ABI.
 - Function-local bounded no-throw `try`/`finally` inside supported by-value
   frames.
 - LLVM consumption of selected shared string/native-value runtime contracts.
@@ -176,6 +190,8 @@ Done:
   function-local `try`/`finally`.
 - [x] Generated-C syntax-only callable-array checks through shared runtime
   array/value syntax helpers.
+- [x] Runtime/native value array union for `array + array`, consumed by
+  generated-C array-offset `+=` through shared native value-result operations.
 - [x] Generated-native `strpos()` and `substr_count()` through a shared
   PHP-shaped string-search ABI.
 - [x] LLVM direct string-result and string-predicate builtin families through
@@ -213,15 +229,16 @@ Not done:
 
 ## Steering Read
 
-The callable-array syntax slice was accepted because it adds an executable
-generated-C consumer for a shared callable-form runtime boundary without
-pretending syntax-only checks are callable lookup or invocation. The next
+The array-union slice was accepted because it adds executable PHP value
+semantics to the shared native binary operation boundary and proves an existing
+generated-C lvalue consumer without adding a source-shape recognizer. The next
 primary direction should attack a different cliff: callable invocation and
 object forms, closures/methods/object execution, references/COW through real
 control-flow joins, structured unwind/cleanup/finally, or source-ordered
 diagnostics.
 
 Resource note from this review: `/dev/shm` has recovered to about 16G free
-and `/home` remains healthy. Primary gates for this batch used disk-backed
-`/tmp/phpc-primary-target`; keep checking resource ownership before broad
-dispatch.
+and `/home` remains healthy. Primary gates for these batches used disk-backed
+`/tmp/phpc-primary-target-callable-syntax` and
+`/tmp/phpc-primary-target-array-union`; keep checking resource ownership before
+broad dispatch.
