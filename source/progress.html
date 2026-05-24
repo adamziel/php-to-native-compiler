@@ -82,6 +82,6 @@
 <p>Historical or already-landed surfaces should not be repeated: callable-array public method-frame invocation, callable-object public <code>__invoke</code> dispatch, static anonymous descriptor closures, static arrow descriptor closures, non-static closure <code>$this</code> binding, and dynamic declared-class <code>new</code> variants unless they are rebased around a new unresolved boundary.</p>
 <h3 id="review-notes">Review Notes</h3>
 <p>Focused destructor-observable allocation-blocker gates passed on disk-backed <code>/tmp/phpc-primary-destructor-blocker</code>: <code>cargo check -q -p phpc -p php_runtime</code>, the <code>native_function_call_boundary</code> destructor filter, adjacent call-boundary routing regressions, declared-object and callable-object generated-C regressions, scoped <code>rustfmt --edition 2021 --check</code>, and <code>git diff --check</code> / <code>git diff --cached --check</code>. Whole-repo <code>cargo fmt --check</code> still reports unrelated existing formatting drift in <code>compiler/src/interpreter.rs</code>; the touched Rust files pass scoped rustfmt. This blocker remains cleanup/unwind safety only, not destructor execution.</p></section></main>
-  <footer><span>Generated 2026-05-24T17:47:27.618Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
+  <footer><span>Generated 2026-05-24T17:48:14.741Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
 </body>
 </html>
