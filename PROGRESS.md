@@ -1,22 +1,23 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 06:25 CEST
+Updated: 2026-05-24 06:41 CEST
 Evaluation marker: `20260524T040111Z`
 
 Latest primary semantic/test baseline:
-`f7050310 runtime: expose request key result accessors`
+`993e96d2 codegen: lower callable array syntax checks`
 
-Latest integrated semantic baseline: `f7050310 runtime: expose request key result accessors`
+Latest integrated semantic baseline: `993e96d2 codegen: lower callable array syntax checks`
 Latest evaluator report: `20260524T040111Z`
 
 Current primary git state at review:
 
-- `f7050310` is the latest counted semantic commit in this progress update.
-- Request-state key results now expose buffer/status through runtime ABI
-  accessors consumed by the LLVM ABI probe and generated-C dynamic request-key
-  paths.
-- This is a small ABI/layout encapsulation slice, not a broad new user-visible
-  PHP feature; the overall estimate deliberately remains unchanged.
+- `993e96d2` is the latest counted semantic commit in this progress update.
+- Generated-C `is_callable(..., true)` now routes callable-array syntax checks
+  over direct native array handles and owned native values through shared
+  runtime callable-syntax helpers.
+- This is a compact callable-form execution slice, not full callable lookup,
+  method dispatch, object invocation, or callable-array invocation; the overall
+  estimate deliberately remains unchanged.
 
 These are candid engineering estimates toward generalized PHP semantics in the
 native compiler. They are not test pass rates. Only primary-integrated, pushed
@@ -36,9 +37,10 @@ consumed more shared direct string/native-value operand contracts, and
 generated-C frames now have a first alias-visible by-reference parameter path.
 The latest request-key result accessor slice removes generated backend
 dependence on the concrete key-result return layout across request keyed/path
-consumers. This broadens real executable calls/frames and tightens request ABI
-encapsulation without pretending the selected generated-C subset equals full
-PHP.
+consumers. Generated-C also has a first shared runtime consumer for syntax-only
+callable array forms. This broadens real executable calls/frames and tightens
+request/callable ABI encapsulation without pretending the selected generated-C
+subset equals full PHP.
 
 The main remaining work is still central language semantics: full callable
 lookup, closures, methods, objects/properties, `$this`, typed/default/variadic
@@ -55,13 +57,22 @@ destructors, and backend parity.
 | Executable PHP semantics | **57%** | `[###########---------]` | Many focused linked programs run, including function-local bounded `try`/`finally` and alias-visible by-reference writes in selected generated-C frames, but behavior is still selected islands rather than a complete PHP execution model. |
 | Arrays, lvalues, references, COW | **60%** | `[############--------]` | Strong selected array/lvalue/reference paths now include generated-C by-reference call binding for direct variables and nested symbol-table paths. Full COW, arbitrary writable roots, foreach parity, object/reference joins, and broader frame/reference composition remain open. |
 | Symbols, globals, request state | **67%** | `[#############-------]` | Request roots and selected `$GLOBALS` paths are strong. Generated-C by-reference calls now reuse symbol-table reference paths for ordinary variables and nested array slots. Reconciliation across calls, requests, includes, aliases, and broader reference frames remains incomplete. |
-| Calls, functions, frames | **54%** | `[###########---------]` | Bounded generated-C by-value fixed/default/variadic frames, typed params/returns, recursion guards, registered introspection, dynamic user calls, dynamic builtin calls, finite mixed user/builtin sets, function-local bounded `try`/`finally`, and untyped by-reference direct/compiler-known single-target frame calls are integrated. |
+| Calls, functions, frames | **54%** | `[###########---------]` | Bounded generated-C by-value fixed/default/variadic frames, typed params/returns, recursion guards, registered introspection, syntax-only callable-array checks, dynamic user calls, dynamic builtin calls, finite mixed user/builtin sets, function-local bounded `try`/`finally`, and untyped by-reference direct/compiler-known single-target frame calls are integrated. |
 | Objects, properties, methods | **10%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary lacks general compiled object construction, property access, method dispatch, `$this`, visibility, static context, and magic behavior. |
 | Control flow, cleanup, diagnostics | **46%** | `[#########-----------]` | Bounded generated-C branches, loops, transfers, switch/goto, normal-flow `try`/`finally`, return-through-finally inside supported by-value frames, diagnostic-aware stdout formatting, and selected cleanup paths exist. Broad unwind, handlers, destructors, output buffers, and exact ordering remain open. |
 | Broad integrated verification | **51%** | `[##########----------]` | Focused gates are strong, including function-frame `try`/`finally`, by-reference frame source/linked execution, and dynamic by-reference blocker proof. Cross-feature composition, end-to-end PHP programs, backend parity, and the unfiltered `native_runtime_abi` debt need broader proof. |
 
 ## Recent Primary-Integrated Work
 
+- `993e96d2`: generated-C `is_callable(..., true)` now consumes shared runtime
+  helpers for callable-array syntax over direct native array handles and owned
+  native values. Runtime proof covers string, closure, object-receiver array,
+  class-string array, normalized numeric-string keys, invalid target/method
+  families, extra elements, scalars, and null handles. Source and linked proof
+  covers direct array operands, native value operands produced by existing
+  array-query value results, and invalid callable-array shapes. Syntax-only
+  callable arrays do not imply callable lookup, method dispatch, object
+  invocation, or actual callable-array invocation.
 - `f7050310`: request-state key results now expose their owned byte buffer and
   status through `phpc_native_request_state_key_result_buffer(...)` and
   `phpc_native_request_state_key_result_status(...)`. The LLVM runtime ABI
@@ -119,6 +130,8 @@ Primary-integrated capability:
   frame calls.
 - Supported dynamic dispatch to registered by-value user frames and selected
   native builtin families.
+- Syntax-only callable-array checks in generated-C through shared runtime
+  array/value callable-syntax helpers.
 - Shared runtime reference-handle cloning and generated-C by-reference argument
   binding for ordinary symbol-table variables and nested array-slot paths.
 - Shared request-state key-result buffer/status accessors consumed by LLVM ABI
@@ -151,6 +164,8 @@ Done:
   user, dynamic builtin, finite mixed user/builtin calls, untyped
   by-reference direct/compiler-known single-target frame calls, and bounded
   function-local `try`/`finally`.
+- [x] Generated-C syntax-only callable-array checks through shared runtime
+  array/value syntax helpers.
 - [x] Generated-native `strpos()` and `substr_count()` through a shared
   PHP-shaped string-search ABI.
 - [x] LLVM direct string-result and string-predicate builtin families through
@@ -169,8 +184,9 @@ In progress / candidates:
 
 Not done:
 
-- [ ] Full callable lookup across strings, arrays, objects, closures, methods,
-  static methods, callbacks, and unsupported builtin families.
+- [ ] Full callable lookup and invocation across strings, arrays, objects,
+  closures, methods, static methods, callbacks, and unsupported builtin
+  families.
 - [ ] General object construction, properties, methods, `$this`, visibility,
   static context, magic methods, and object lifecycle behavior.
 - [ ] Full references/COW identity across calls, arrays, objects, globals,
@@ -187,12 +203,13 @@ Not done:
 
 ## Steering Read
 
-The request-key accessor slice was accepted because it removes a concrete
-backend return-layout dependency from already executable request-key paths; it
-does not change the hard steering picture. The next primary direction should
-attack a different cliff: callable array/object forms, closures/methods/object
-execution, references/COW through real control-flow joins, structured
-unwind/cleanup/finally, or source-ordered diagnostics.
+The callable-array syntax slice was accepted because it adds an executable
+generated-C consumer for a shared callable-form runtime boundary without
+pretending syntax-only checks are callable lookup or invocation. The next
+primary direction should attack a different cliff: callable invocation and
+object forms, closures/methods/object execution, references/COW through real
+control-flow joins, structured unwind/cleanup/finally, or source-ordered
+diagnostics.
 
 Resource note from this review: `/dev/shm` has recovered to about 16G free
 and `/home` remains healthy. Primary gates for this batch used disk-backed
