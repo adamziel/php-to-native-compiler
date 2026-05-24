@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use php_compiler::{codegen::emit_native_executable_c_source, parse};
+use php_compiler::{codegen::emit_native_executable_c_source, error::Phase, parse};
 
 const NATIVE_VALUE_TRUTHINESS_SOURCE: &str = concat!(
     "<?php\n",
@@ -190,6 +190,24 @@ const NATIVE_DECLARED_CLASS_METHOD_SOURCE: &str = concat!(
     "echo $box->label(\"go\"), \"|\";\n",
     "echo (new Box())->store(\"Temp\"), \"|\";\n",
     "echo $box->store(\"Tail\"), \"\\n\";\n",
+);
+
+const NATIVE_DECLARED_CLASS_STATIC_METHOD_SOURCE: &str = concat!(
+    "<?php\n",
+    "class Label {\n",
+    "    public static function text($value = \"Ada\") { return strtoupper($value); }\n",
+    "    public static function note($value) { echo $value; return $value; }\n",
+    "}\n",
+    "class Counter {\n",
+    "    public static function add($left, $right = 1) { return $left + $right; }\n",
+    "}\n",
+    "echo Label::text(), \"|\";\n",
+    "echo Label::text(\"grace\"), \"|\";\n",
+    "echo Counter::add(6), \"|\";\n",
+    "$stored = Label::text(Label::text(\"go\"));\n",
+    "echo $stored, \"|\";\n",
+    "Label::note(\"drop\");\n",
+    "echo \"\\n\";\n",
 );
 
 const NATIVE_DECLARED_CLASS_CONSTRUCTOR_SOURCE: &str = concat!(
@@ -1094,6 +1112,34 @@ fn emit_exe_links_and_runs_declared_class_method_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"Ada:Ada|Grace:Grace|7:7|GO|Temp|Tail\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_declared_class_static_method_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "declared_class_static_method",
+        NATIVE_DECLARED_CLASS_STATIC_METHOD_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run declared-class-static-method executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ADA|GRACE|7|GO|drop\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -2099,6 +2145,29 @@ fn native_executable_c_source_routes_declared_methods_through_frame_dispatch() {
 }
 
 #[test]
+fn native_executable_c_source_routes_declared_static_methods_through_frame_dispatch() {
+    let program = parse(NATIVE_DECLARED_CLASS_STATIC_METHOD_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    let static_text_frame = source
+        .lines()
+        .find(|line| line.contains("phpc_declared_method_") && line.contains("_label_text("))
+        .unwrap_or_else(|| panic!("missing generated static method frame:\n{source}"));
+    assert!(
+        !static_text_frame.contains("phpc_this"),
+        "static method frames must not bind $this:\n{static_text_frame}\n{source}"
+    );
+    assert!(
+        body.contains("static_method_status")
+            && body.contains("phpc_declared_method_")
+            && !body.contains("phpc_native_value_instanceof_class_with_diagnostic"),
+        "named static calls should dispatch directly through declared static frames without receiver class checks:\n{source}"
+    );
+    assert!(!source.contains("method-call lowering rejects"), "{source}");
+}
+
+#[test]
 fn native_executable_c_source_routes_declared_constructors_through_frame_dispatch() {
     let program = parse(NATIVE_DECLARED_CLASS_CONSTRUCTOR_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -2176,7 +2245,8 @@ fn native_executable_c_source_keeps_unsupported_constructor_shapes_blocked() {
 fn native_executable_c_source_keeps_unsupported_method_shapes_blocked() {
     for source in [
         "<?php\nclass Box { public function go() { return 1; } }\n$box = new Box();\n$method = \"go\";\necho $box->$method();\n",
-        "<?php\nclass Box { public static function go() { return 1; } }\nBox::go();\n",
+        "<?php\nclass Box { public function go() { return 1; } }\nBox::go();\n",
+        "<?php\nclass Box { public static function go() { return 1; } }\n$box = new Box();\necho $box::go();\n",
         "<?php\nclass Box { private function go() { return 1; } }\n$box = new Box();\necho $box->go();\n",
         "<?php\nclass Box { public function go() { return 1; } public function GO() { return 2; } }\nnew Box();\n",
     ] {
@@ -2189,6 +2259,20 @@ fn native_executable_c_source_keeps_unsupported_method_shapes_blocked() {
             "{source}\n{error:?}"
         );
     }
+}
+
+#[test]
+fn native_executable_c_source_blocks_declared_static_method_bodies_that_require_this() {
+    let source =
+        "<?php\nclass Box { public static function go() { return $this->x; } }\nBox::go();\n";
+    let program = parse(source).expect("unsupported static method $this source parses");
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("variable-read lowering rejects"),
+        "{source}\n{error:?}"
+    );
 }
 
 #[test]
