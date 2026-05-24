@@ -1,128 +1,145 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-23 06:07 CEST
-Evaluation marker: `20260523T034337Z`
+Updated: 2026-05-24 19:17 CEST
+Evaluation marker: `20260524T1717Z`
 
-Primary HEAD: `97ba85b6 codegen: lower state-stable switch dispatch`
-Latest integrated semantic baseline: `97ba85b6 codegen: lower state-stable switch dispatch`
-Latest evaluator report: `20260523T034337Z`
+Accounting rule: only generalized, tested, committed, and pushed primary work
+counts as product capability. Dirty primary WIP, lane-local candidates,
+historical worktrees, blocker-only classifiers, and status-file claims are
+excluded until selected, gated, committed, pushed, and reflected here.
 
-These are candid engineering estimates toward generalized PHP semantics in the
-native compiler. They are not test pass rates. Only primary-integrated,
-pushed work counts; lane-local candidates, dirty WIP, and exact-shape fixtures
-do not.
+Current counted primary head:
+`b217e2b4 codegen: block destructor-observable native allocation`
+
+Latest counted semantic/test baseline:
+`b217e2b4 codegen: block destructor-observable native allocation`
+
+Current uncounted primary WIP:
+None in primary.
 
 ## Executive Read
 
-Overall estimated progress: **88%** `[##################--]`
+Overall estimated progress: **85%** `[#################---]`
 
-The compiler now has strong generated-C islands for native values, arrays,
-symbol/request state, selected references, diagnostics, cleanup, branch
-ownership, foreach storage, lazy expressions, and bounded generated-C control
-flow. Recent primary integration has been useful because it lands small
-generalized semantic slices and pushes them immediately, rather than
-accumulating lane-local artifacts.
+Executable PHP semantics: **85%** `[#################---]`
 
-This is still not full PHP semantics. The largest remaining gaps are
-generated-native calls/frames, object/property/method execution, complete
-references/COW identity, source-ordered diagnostics, cleanup/unwinding, and
-LLVM/assembly parity.
+Primary has made real recent progress in selected generated-C execution
+islands: descriptor closures, direct and implicit captures, supported
+by-reference closure parameters and captures, typed/default/variadic by-value
+closure parameters, static anonymous closures, static arrows, callable-array
+public method-frame dispatch, supported non-static closure `$this` binding, and
+callable-object `__invoke` dispatch through supported public method frames.
 
-Current primary cleanliness: semantic work is current through state-stable
-switch dispatch/fallthrough/break on the generated-C path. The protected
-`runtime/src/lib.rs` null-slot hunk remains dirty, unstaged, and uncounted.
+This is still not general PHP. The hardest remaining cliffs are full callable
+lookup/invocation beyond the selected generated-C callable families, closure
+rebinding APIs, references/COW identity, request/`$GLOBALS` alias parity,
+object visibility/magic/dynamic/static property behavior, cleanup/unwind/finally
+and destructors, exact diagnostics, includes, variable variables, and backend
+parity.
 
-## Roadmap
+## Primary-Integrated Capability
 
-| Workstream | Estimate | Current read |
-| --- | ---: | --- |
-| Runtime and ABI foundations | **97%** | Strong shared value, array, reference, symbol, request, comparison, truthiness, diagnostic, termination, and cleanup surfaces. |
-| Compiler/backend consumers | **98%** | Generated-C has broad selected coverage. LLVM/assembly parity remains uneven. |
-| Executable PHP semantics | **88%** | Many focused linked programs run, but behavior is still selected islands rather than a complete PHP execution model. |
-| Arrays, lvalues, references, COW | **88%** | Strong selected array/lvalue/reference paths. Full COW, arbitrary writable roots, and by-reference argument/foreach parity remain open. |
-| Symbols, globals, request state | **96%** | Strong request and `$GLOBALS` generated-C coverage. Reconciliation across calls/requests still needs work. |
-| Calls, functions, frames | **27%** | Runtime/interpreter metadata exists, but generated-native call/frame execution is the biggest missing block. |
-| Objects, properties, methods | **11%** | Mostly lane-local/runtime candidate work. Primary lacks general compiled object/property/method execution. |
-| Control flow, cleanup, diagnostics | **49%** | Generated-C now has bounded branches, lazy expressions, top-level return, state-stable loops, scalar loop-carried state, loop-local/multi-level loop transfers, and state-stable switch dispatch/fallthrough/break; owner/reference phis, switch state joins, goto, unwinding, and exact ordering are still missing. |
-| Broad integrated verification | **88%** | Focused gates are strong. Cross-feature composition and backend parity need broader proof. |
+- [x] Descriptor-backed by-value closure invocation.
+- [x] Direct by-value closure captures and non-static arrow implicit captures.
+- [x] Untyped by-reference descriptor closure parameters.
+- [x] Supported root/reference and promoted frame-local by-reference captures.
+- [x] Typed/default/variadic by-value descriptor closure parameters.
+- [x] Supported static anonymous descriptor closures and static arrow closures.
+- [x] Supported non-static closure `$this` binding inside active object frames.
+- [x] Callable-array invocation for supported public static/object method frames.
+- [x] Callable-object invocation through supported public `__invoke` method frames.
+- [x] Runtime string-valued declared-class `new` for constructorless and supported public-constructor classes.
+- [x] Destructor-observable declared-class allocation is blocked before generated-C native allocation through declared-class metadata, hierarchy lookup, and dynamic class-name facts.
+- [x] Bounded public declared-object properties, methods, statics, constructors, named `instanceof`, and same-family aggregate equality.
+- [ ] Not complete: general callable/closure/object/reference/COW/request/global/cleanup/diagnostic/include/backend semantics.
 
-## Recent Integrated Work
+## Grand Roadmap Position
 
-- `97ba85b6`: generated-C `switch` now dispatches accepted state-stable case
-  conditions through shared native value comparison/truthiness, preserves
-  source-order fallthrough/default/break labels, and rejects state-changing
-  case bodies plus switch-local `continue`.
-- `fe73cc3e`: generated-C `while` and bounded `for` loops can carry
-  int/float/bool scalar variables through mutable C slots while preserving
-  blockers for unsupported owner/reference/native-value state.
-- `171fd0f1`: generated-C nested loop `break N`/`continue N`
-  now route through explicit loop target labels for accepted `while`/`for`
-  loops, with focused source and linked executable proof.
-- `d6d5d1cf`: generated-C state-stable `for` loops lower through scoped
-  initializer, single PHP-truthiness condition, body, increment, and loop-local
-  depth-1 `break`/`continue`; `continue` runs the increment section before the
-  next condition check.
-- `315a2ca2`: generated-C accepted `while` bodies execute depth-1 `break` and
-  `continue` without claiming loop-carried state or multi-level transfer
-  semantics.
-- `dcd99134`: generated-C top-level `return` evaluates supported operands for
-  side effects, cleans discarded values and live owners, and terminates the
-  executable path with PHP CLI-compatible success.
-- `6b5e480f`: generated-C state-stable `while` loops execute when the
-  condition and body preserve compiler-visible ownership state.
-- `9a05a58b`: generated-C `strlen()` consumes owned native value-result
-  producers through the shared value-to-string boundary.
-- `4efa12ba`: generated-C native value-operation diagnostics report through
-  the shared diagnostic consumer.
-- Earlier recent primary work also covers native array owner output/truthiness,
-  stored native-value type/presence checks, branch-local owner cleanup,
-  strict value-result comparison, by-reference foreach slots for selected
-  array lvalue owners, statement-discard cleanup, lazy ternaries, logical
-  short-circuiting, request/`$GLOBALS` operations, reference-backed active
-  symbol-root lvalues, and direct termination.
+| Workstream | Estimate | Bar | Current read |
+| --- | ---: | --- | --- |
+| Runtime and ABI foundations | **97%** | `[###################-]` | Strong shared value, array, string, diagnostic, reference, symbol, call-frame, object, method, callable-array, and descriptor-closure surfaces exist for selected paths. |
+| Compiler/backend consumers | **97%** | `[###################-]` | Generated-C consumes many shared ABIs; LLVM and C assembly consume selected ABI families. Object lowering, direct assembly parity, and many nested consumers remain blocked. |
+| Executable PHP semantics | **85%** | `[#################---]` | Focused linked/runtime programs cover many closure/callable islands, now including supported callable objects, but execution is still selected rather than general PHP. |
+| Arrays, lvalues, references, COW | **67%** | `[#############-------]` | Useful selected lvalue/reference paths feed closure parameters and captures; full COW, arbitrary roots, foreach, object joins, and alias composition remain open. |
+| Symbols, globals, request state | **72%** | `[##############------]` | Function globals and `$GLOBALS` self-imports improved; request superglobal imports, includes, variable variables, and exact unset/global alias behavior remain incomplete. |
+| Calls, functions, frames | **82%** | `[################----]` | Bounded functions, descriptor closures, callable arrays, callable objects, public method frames, and constructor frames work in selected generated-C cases. |
+| Objects, properties, methods | **45%** | `[#########-----------]` | Useful public declared-object subset exists and supported public `__invoke` frames are callable. Non-public/contextual visibility, overrides, interfaces/traits, broader magic methods, dynamic/static properties, destructors, references/COW, and backend parity remain open. |
+| Control flow, cleanup, diagnostics | **49%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, and diagnostics exist; broad unwind, handlers, destructors, shutdown flushing, and source-ordered diagnostics remain open. |
+| Broad integrated verification | **84%** | `[#################---]` | Focused gates are strong for recent slices, including callable-object source/link proof; broad `native_link` and call-boundary suites still carry unrelated baseline failures and backend parity gaps. |
 
-## Active Focus
+## Recent Primary-Integrated Work
 
-1. Integrate one small generalized primary slice at a time, with focused
-   gates and immediate push.
-2. Prefer slices that unlock real behavior, not just blocker vocabulary:
-   call/frame execution, object/property/method execution, references/COW
-   through control flow, structured cleanup/unwinding, source-ordered
-   diagnostics, and backend parity.
-3. Keep lane-local work code-writing only and reject exact-shape progress:
-   no one-fixture recognizers, no fixed-key/value branches, no docs-only
-   progress, and no generated-source substring proof without a shared semantic
-   boundary.
-4. Keep the 45-minute candid evaluator cadence active and feed its findings
-   back into the supervisor gates.
-5. Preserve primary hygiene: commit only owned semantic/progress hunks, keep
-   the protected null-slot runtime hunk uncommitted until it has its own
-   reviewed semantics batch.
+- `b217e2b4`: generated-C declared-object allocation now blocks
+  destructor-observable native allocation before emitting allocation branches.
+  Destructor declarations are recorded as declared-class metadata, inherited
+  through class hierarchy lookup, and checked against runtime string-valued
+  dynamic class-name facts. The slice treats this as cleanup/unwind safety, not
+  destructor execution: destructor-free dynamic constructors stay on the
+  bounded declared-class path, while direct, inherited, finite known dynamic,
+  unknown dynamic, and nested constructor-argument destructor-risk allocations
+  fail through the shared constructor call-boundary blocker.
+- `7679dc0e`: generated-C runtime dynamic calls can invoke supported declared
+  callable objects through public `__invoke` method frames. Dispatch is gated
+  by runtime object type, object/class relation checks, and the declared-method
+  candidate table rather than by one source shape. It reuses method-frame
+  argument planning, by-reference argument materialization, static/user
+  function relay paths, method `$this` binding, diagnostics, and cleanup
+  ownership. Source and linked proof cover direct object calls, user-function
+  relay, public static-method relay, method self-call through `$this(...)`,
+  inherited `__invoke`, and by-reference `__invoke` arguments.
+- `53c8a283`: supported non-static regular closures and arrows created inside active object method/constructor frames bind `$this` through the shared descriptor capture/callback path.
+- `8f5d8fb3`: parser and generated-C path now admit supported static arrow descriptor closures while preserving static no-`$this` behavior.
+- `79496862`: supported static anonymous closures reuse descriptor closure creation, invocation, diagnostics, and cleanup ownership.
+- `7a43e1ac`: runtime dynamic calls can invoke syntax-valid callable arrays that resolve to supported generated public static/object method frames.
+- `c9172ca6` and `1aaaac30`: supported by-reference closure captures now preserve root/reference cells and promoted function-frame local cells.
+- `103c0a4e`, `ff1d8ee3`, and `deabcd6d`: descriptor closures support selected variadic, typed/default by-value, and untyped by-reference parameters.
 
-## Major Blockers
+## Current Work Snapshot
 
-- Full generated-native user functions, methods, closures, dynamic calls,
-  arguments, returns, frames, variadics/spreads, by-reference handoff, and
-  cleanup.
-- Real object construction, property/method dispatch, `$this`, static context,
-  visibility, magic hooks, resources, `ArrayAccess`, and object-compatible
-  diagnostics.
-- Full references/COW identity across arbitrary writable roots, function
-  arguments/returns, foreach, arrays, objects, request/global storage, and
-  control-flow joins.
-- Structured control flow beyond the accepted generated-C subset:
-  owner/reference/native-value loop-carried state, switch state joins,
-  goto/labels, cleanup joins, finally/destructors, shutdown behavior, output
-  buffers, and SAPI interactions.
-- Exact diagnostics: severity, ordering, suppression, custom handlers, source
-  spans, recovery values, fatal/throw behavior, and cleanup during diagnostics.
-- LLVM/assembly parity for newer generated-C/runtime ABI consumers.
+Primary-integrated and counted:
 
-## Current Steering
+- [x] Previous synced baseline was `adc1785d`.
+- [x] Local counted semantic baseline is `b217e2b4`; this progress wrapper and push complete the destructor-observable allocation-blocker accounting batch.
+- [x] Progress accounting clarifies that the current source-of-truth estimate is 85%, not older lane-inflated or strict-rebaseline figures.
 
-The direction is right only while primary integration keeps converting shared
-semantic boundaries into executable behavior. The next accepted batches should
-avoid nearby `while`/`for` or state-stable `switch` variants and target one of
-the hard cliffs above.
-If a lane cannot make generalized progress, it should add or tighten a
-centralized blocker with proof instead of introducing exact-shape lowering.
+In progress but uncounted:
+
+- [ ] Lane-local ArrayAccess/object-offset diagnostics and blocker precision.
+- [ ] Lane-local byte-keyed global/symbol storage and request/global work.
+- [ ] Lane-local reference/COW metadata, cleanup/control-flow, callback, and object/property candidates.
+
+Not done:
+
+- [ ] Full callable lookup and invocation beyond selected strings, closures, arrays, and public `__invoke` objects, including magic/visibility/rebinding rules.
+- [ ] Full references/COW identity and arbitrary alias roots.
+- [ ] Request/`$GLOBALS` parity, includes, variable variables, and dynamic symbol behavior.
+- [ ] General object model: non-public methods, overrides, interfaces/traits, magic methods, dynamic/static properties, destructors.
+- [ ] Complete cleanup/unwind/finally/destructor/output-buffer shutdown behavior.
+- [ ] Exact/source-ordered diagnostics and warning/error continuation.
+- [ ] LLVM/direct assembly parity for recent generated-C semantics.
+
+## Lane-Local Versus Primary
+
+Lane-local work is useful only when it feeds a distinct primary integration.
+Current likely-useful evidence includes destructor cleanup blockers,
+ArrayAccess operation-family diagnostics, byte-keyed globals, reference/COW
+owner-slot work, object/property runtime blockers, and control-flow cleanup
+candidates.
+
+Historical or already-landed surfaces should not be repeated: callable-array
+public method-frame invocation, callable-object public `__invoke` dispatch,
+static anonymous descriptor closures, static arrow descriptor closures,
+non-static closure `$this` binding, and dynamic declared-class `new` variants
+unless they are rebased around a new unresolved boundary.
+
+## Review Notes
+
+Focused destructor-observable allocation-blocker gates passed on disk-backed
+`/tmp/phpc-primary-destructor-blocker`: `cargo check -q -p phpc -p
+php_runtime`, the `native_function_call_boundary` destructor filter, adjacent
+call-boundary routing regressions, declared-object and callable-object
+generated-C regressions, scoped `rustfmt --edition 2021 --check`, and `git diff
+--check` / `git diff --cached --check`. Whole-repo `cargo fmt --check` still
+reports unrelated existing formatting drift in `compiler/src/interpreter.rs`;
+the touched Rust files pass scoped rustfmt. This blocker remains cleanup/unwind
+safety only, not destructor execution.
