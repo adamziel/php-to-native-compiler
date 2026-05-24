@@ -5386,6 +5386,26 @@ pub unsafe extern "C" fn phpc_native_reference_clone(
 
 /// # Safety
 ///
+/// `value` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. The returned handle owns a new PHP reference cell
+/// initialized from the current value and must be released independently with
+/// `phpc_native_reference_free`. This function always consumes `value`; null
+/// handles return a null reference handle.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_reference_from_value_and_free(
+    value: NativeValueHandle,
+) -> NativeReferenceHandle {
+    let Some(value_ref) = (unsafe { value.as_ref() }) else {
+        unsafe { phpc_native_value_free(value) };
+        return NativeReferenceHandle::null();
+    };
+    let stored = value_ref.clone();
+    unsafe { phpc_native_value_free(value) };
+    native_reference_from_value(stored)
+}
+
+/// # Safety
+///
 /// `handle` must be null or a reference handle previously returned by the
 /// runtime ABI and not yet freed. `value` must be null or a value handle
 /// previously returned by the runtime ABI and not yet freed. Null handles are
@@ -26160,6 +26180,32 @@ mod tests {
             phpc_native_reference_free(alias);
             phpc_native_reference_free(original);
             phpc_native_reference_free(phpc_native_reference_clone(phpc_native_reference_null()));
+        }
+    }
+
+    #[test]
+    fn native_reference_from_value_and_free_promotes_owned_values_to_reference_cells() {
+        unsafe {
+            let value = NativeValueHandle::from_value(Value::String("seed".to_string()));
+            let reference = phpc_native_reference_from_value_and_free(value);
+            assert!(!phpc_native_reference_is_null(reference));
+
+            let alias = phpc_native_reference_clone(reference);
+            assert!(!phpc_native_reference_is_null(alias));
+            let replacement = NativeValueHandle::from_value(Value::String("changed".to_string()));
+            assert!(phpc_native_reference_set_value(alias, replacement));
+            phpc_native_value_free(replacement);
+
+            let observed = phpc_native_reference_value_clone(reference);
+            assert_eq!(
+                observed.as_ref(),
+                Some(&Value::String("changed".to_string()))
+            );
+
+            phpc_native_value_free(observed);
+            phpc_native_reference_free(alias);
+            phpc_native_reference_free(reference);
+            assert!(phpc_native_reference_from_value_and_free(NativeValueHandle::null()).is_null());
         }
     }
 

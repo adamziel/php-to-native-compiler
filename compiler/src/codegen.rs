@@ -64,7 +64,7 @@ const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lo
 const LLVM_STATIC_LOCAL_REJECTION: &str = "LLVM static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const ASSEMBLY_STATIC_LOCAL_REJECTION: &str = "assembly static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const LLVM_CLOSURE_REJECTION: &str = "LLVM closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
-const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including static arrow functions, by-reference closure captures that cannot be materialized through root symbol/reference handles, by-reference variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, supported by-reference captures, implicit by-value arrow captures, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
+const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including static arrow functions, by-reference closure captures that cannot be materialized through root symbol/reference handles or promoted frame locals, by-reference variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, supported by-reference captures, implicit by-value arrow captures, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
 const LLVM_REQUIRE_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
 const ASSEMBLY_REQUIRE_REJECTION: &str = "assembly include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
 const LLVM_REQUIRE_EXPRESSION_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution for expression forms with include return values, _once de-duplication results, and caller-scope side effects until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles current include/require expression behavior";
@@ -12376,7 +12376,7 @@ impl CGenerator {
             return true;
         }
 
-        self.function_return_status.is_none()
+        self.function_return_status.is_none() || self.variables.contains_key(&capture.name)
     }
 
     fn native_arrow_implicit_captures(
@@ -12764,6 +12764,43 @@ impl CGenerator {
         name_handle
     }
 
+    fn promote_closure_capture_local_reference(
+        &mut self,
+        capture: &ClosureCapture,
+    ) -> CompileResult<()> {
+        if !capture.by_reference || self.function_return_status.is_none() {
+            return Ok(());
+        }
+        if matches!(
+            self.variables.get(&capture.name),
+            Some(CValue::NativeReferenceHandle(_))
+        ) {
+            return Ok(());
+        }
+
+        let Some(captured) = self.variables.get(&capture.name).cloned() else {
+            return Err(self.unsupported(capture.span, ASSEMBLY_CLOSURE_REJECTION));
+        };
+        let value = self.materialize_native_array_c_value_handle(captured, capture.span)?;
+        let reference = self.next_native_name("closure_capture_reference");
+        self.uses_native_reference_helpers = true;
+        self.body.push(format!(
+            "phpc_NativeReferenceHandle {reference} = phpc_native_reference_from_value_and_free({});",
+            value.handle
+        ));
+        let error_exit = self.native_error_exit("");
+        self.body
+            .push(format!("if ({reference}.ptr == NULL) {{ {error_exit} }}"));
+        self.release_variable_native_value_handle(&capture.name);
+        self.mutable_scalar_slots.remove(&capture.name);
+        self.retain_native_reference_cleanup_handle(&reference);
+        self.variables.insert(
+            capture.name.clone(),
+            CValue::NativeReferenceHandle(reference),
+        );
+        Ok(())
+    }
+
     fn materialize_closure_capture_argument(
         &mut self,
         capture: &ClosureCapture,
@@ -12773,6 +12810,7 @@ impl CGenerator {
             "phpc_NativeClosureArgument {argument} = {{ (phpc_NativeValueHandle){{0}}, (phpc_NativeReferenceHandle){{0}}, 0 }};"
         ));
         if capture.by_reference {
+            self.promote_closure_capture_local_reference(capture)?;
             let expr = Expr::Variable(capture.name.clone(), capture.span);
             let reference = self.materialize_call_reference_argument(
                 &expr,
@@ -13685,6 +13723,7 @@ impl CGenerator {
             {
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_reference_clone(phpc_NativeReferenceHandle reference);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_reference_value_clone(phpc_NativeReferenceHandle reference);\n");
+                output.push_str("extern phpc_NativeReferenceHandle phpc_native_reference_from_value_and_free(phpc_NativeValueHandle value);\n");
                 output.push_str("extern bool phpc_native_reference_set_value(phpc_NativeReferenceHandle reference, phpc_NativeValueHandle value);\n");
                 output.push_str("extern void phpc_native_reference_free(phpc_NativeReferenceHandle reference);\n");
             }

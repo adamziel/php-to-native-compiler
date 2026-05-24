@@ -4,7 +4,7 @@ use std::process::Command;
 
 use php_compiler::{codegen::emit_native_executable_c_source, error::Phase, parse};
 
-const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including static arrow functions, by-reference closure captures that cannot be materialized through root symbol/reference handles, by-reference variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, supported by-reference captures, implicit by-value arrow captures, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
+const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including static arrow functions, by-reference closure captures that cannot be materialized through root symbol/reference handles or promoted frame locals, by-reference variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, by-value captures, supported by-reference captures, implicit by-value arrow captures, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
 
 const NATIVE_VALUE_TRUTHINESS_SOURCE: &str = concat!(
     "<?php\n",
@@ -5030,6 +5030,62 @@ fn native_executable_c_source_routes_by_reference_closure_captures_through_descr
 }
 
 #[test]
+fn native_executable_c_source_promotes_frame_local_by_reference_closure_captures() {
+    let source = concat!(
+        "<?php\n",
+        "function make_local_capture($seed) {\n",
+        "    $local = $seed;\n",
+        "    $callback = function ($suffix) use (&$local) { $local = $local . $suffix; return $local; };\n",
+        "    $local = $local . \"!\";\n",
+        "    return $callback;\n",
+        "}\n",
+        "function make_param_capture($seed) {\n",
+        "    $callback = function ($suffix) use (&$seed) { $seed = $seed . $suffix; return $seed; };\n",
+        "    $seed = $seed . \"?\";\n",
+        "    return $callback;\n",
+        "}\n",
+        "function make_nested_local_capture($seed) {\n",
+        "    $local = $seed;\n",
+        "    return function ($suffix) use (&$local) {\n",
+        "        $inner = function ($tail) use (&$local) { $local = $local . $tail; return $local; };\n",
+        "        return $inner($suffix);\n",
+        "    };\n",
+        "}\n",
+        "class LocalCaptureRelay { public static function apply($callback, $suffix) { return $callback($suffix); } }\n",
+        "$local = make_local_capture(\"L\");\n",
+        "echo $local(\"1\"), \":\", $local(\"2\"), \"|\";\n",
+        "$param = make_param_capture(\"P\");\n",
+        "echo $param(\"3\"), \":\", $param(\"4\"), \"|\";\n",
+        "$nested = make_nested_local_capture(\"N\");\n",
+        "echo LocalCaptureRelay::apply($nested, \"5\"), \":\", $nested(\"6\");\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_reference_from_value_and_free")
+            && source.contains("phpc_native_value_from_closure_descriptor_capture_arguments_and_free"),
+        "frame local by-reference captures should promote through the shared reference ABI:\n{source}"
+    );
+    assert!(
+        source.contains("PHPC_NATIVE_CLOSURE_ARGUMENT_BY_REFERENCE")
+            && source.contains("phpc_native_reference_set_value"),
+        "promoted captures should continue through descriptor reference carriers and assignment references:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_user_function_0_make_local_capture(")
+            && source.contains("phpc_user_function_1_make_param_capture(")
+            && source.contains("phpc_user_function_2_make_nested_local_capture(")
+            && source.contains("phpc_declared_method_"),
+        "local, parameter, nested, returned, and static-method relay shapes should share the same lowering path:\n{source}"
+    );
+    assert!(
+        !source.contains(ASSEMBLY_CLOSURE_REJECTION),
+        "supported frame-local by-reference capture closures should not hit the closure blocker:\n{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_immediate_descriptor_closure_invocation() {
     if !has_cc() {
         return;
@@ -5233,6 +5289,60 @@ fn emit_exe_links_and_runs_by_reference_captured_descriptor_closure_invocation()
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"A0:A0|B1:B1|O2:O2|B13:B13:B13|F4:F4");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_frame_local_by_reference_captured_descriptor_closure_invocation() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function make_local_capture($seed) {\n",
+        "    $local = $seed;\n",
+        "    $callback = function ($suffix) use (&$local) { $local = $local . $suffix; return $local; };\n",
+        "    $local = $local . \"!\";\n",
+        "    return $callback;\n",
+        "}\n",
+        "function make_param_capture($seed) {\n",
+        "    $callback = function ($suffix) use (&$seed) { $seed = $seed . $suffix; return $seed; };\n",
+        "    $seed = $seed . \"?\";\n",
+        "    return $callback;\n",
+        "}\n",
+        "function make_nested_local_capture($seed) {\n",
+        "    $local = $seed;\n",
+        "    return function ($suffix) use (&$local) {\n",
+        "        $inner = function ($tail) use (&$local) { $local = $local . $tail; return $local; };\n",
+        "        return $inner($suffix);\n",
+        "    };\n",
+        "}\n",
+        "class LocalCaptureRelay { public static function apply($callback, $suffix) { return $callback($suffix); } }\n",
+        "$local = make_local_capture(\"L\");\n",
+        "echo $local(\"1\"), \":\", $local(\"2\"), \"|\";\n",
+        "$param = make_param_capture(\"P\");\n",
+        "echo $param(\"3\"), \":\", $param(\"4\"), \"|\";\n",
+        "$nested = make_nested_local_capture(\"N\");\n",
+        "echo LocalCaptureRelay::apply($nested, \"5\"), \":\", $nested(\"6\");\n",
+    );
+    let (source_path, output_path) = compile_native_link_fixture(
+        "descriptor_closure_frame_local_by_reference_captures",
+        source,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native frame-local by-reference capture closure executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"L!1:L!12|P?3:P?34|N5:N56");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);
@@ -5586,8 +5696,8 @@ fn native_executable_c_source_keeps_unsupported_closure_shapes_on_shared_blocker
     for source in [
         concat!(
             "<?php\n",
-            "function make_capture($value) { return function () use (&$value) { return $value; }; }\n",
-            "$callback = make_capture(1);\n",
+            "function make_capture() { return function () use (&$missing) { return $missing; }; }\n",
+            "$callback = make_capture();\n",
             "echo $callback();\n",
         ),
         concat!(
