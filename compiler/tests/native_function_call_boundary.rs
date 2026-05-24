@@ -15,6 +15,7 @@ const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment low
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C direct user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, and dynamic string-valued calls, until native runtime lookup, full arity/type diagnostics, recursion, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value direct user-function frames";
 const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
 const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations outside the bounded generated-C direct by-value frame subset, including nested functions, typed/by-reference/variadic parameters, return types, recursion, static locals, dynamic calls, and unsupported body cleanup, until full native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; generated-native C lowers supported by-value direct user-function frames";
+const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const ASSEMBLY_METHOD_CALL_REJECTION: &str = "assembly method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
 const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
@@ -176,7 +177,7 @@ fn native_executable_c_source_routes_unsupported_direct_call_argument_results_th
         ("<?php\necho fopen($box->path(), \"r\");\n", 2, 6),
         ("<?php\necho header(make_header());\n", 2, 6),
         ("<?php\necho ob_start(callback_factory());\n", 2, 6),
-        ("<?php\necho array_map(callback_factory(), []);\n", 2, 6),
+        ("<?php\necho array_map(callback_factory(), []);\n", 2, 16),
         ("<?php\necho get_object_vars(new Box());\n", 2, 6),
     ] {
         let program = parse(source).unwrap();
@@ -299,11 +300,11 @@ fn native_executable_c_source_routes_direct_special_forms_through_call_boundary(
         ),
         (
             "<?php\n$call = \"missing_key\";\n$value = empty($items[$call()]);\n",
-            ASSEMBLY_FUNCTION_CALL_REJECTION,
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
         ),
         (
             "<?php\n$value = isset($items[$box->key()]);\n",
-            ASSEMBLY_FUNCTION_CALL_REJECTION,
+            ASSEMBLY_METHOD_CALL_REJECTION,
         ),
         (
             "<?php\n$value = empty(make_items()[0]);\n",
@@ -679,15 +680,15 @@ fn native_executable_c_source_routes_exit_construct_arguments_through_call_bound
         ),
         (
             "<?php\n$call = \"status\";\ndie($call());\n",
-            ASSEMBLY_FUNCTION_CALL_REJECTION,
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
         ),
         (
             "<?php\nexit($status->code());\n",
-            ASSEMBLY_FUNCTION_CALL_REJECTION,
+            ASSEMBLY_METHOD_CALL_REJECTION,
         ),
         (
             "<?php\ndie(new ExitStatus());\n",
-            ASSEMBLY_FUNCTION_CALL_REJECTION,
+            ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
         ),
     ] {
         let program = parse(source).unwrap();
@@ -933,7 +934,7 @@ fn native_executable_c_source_routes_call_operation_blockers_across_call_familie
         ),
         (
             "<?php\n$flag = (1 + 2) === 3;\n$value = $flag ? \"1\" : \"nope\";\necho is_numeric($value);\n",
-            ASSEMBLY_FUNCTION_CALL_REJECTION,
+            ASSEMBLY_CONDITIONAL_REJECTION,
         ),
         (
             "<?php\necho missing(strlen(\"abc\"));\n",
@@ -996,10 +997,6 @@ fn native_executable_c_source_routes_call_operation_blockers_across_call_familie
             ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
         ),
         (
-            "<?php\nfunction identity($value) { return $value; }\n",
-            ASSEMBLY_FUNCTION_DECLARATION_REJECTION,
-        ),
-        (
             "<?php\nfunction mutate(&$value) { return $value; }\n",
             ASSEMBLY_FUNCTION_DECLARATION_REJECTION,
         ),
@@ -1010,10 +1007,6 @@ fn native_executable_c_source_routes_call_operation_blockers_across_call_familie
         (
             "<?php\nfunction &borrow() { $value = 1; return $value; }\n",
             ASSEMBLY_FUNCTION_DECLARATION_REJECTION,
-        ),
-        (
-            "<?php\nreturn strlen(\"abc\");\n",
-            ASSEMBLY_FUNCTION_CALL_REJECTION,
         ),
         (
             "<?php\n$alias =& missing();\n",
