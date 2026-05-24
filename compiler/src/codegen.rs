@@ -51,7 +51,7 @@ const ASSEMBLY_CLEARSTATCACHE_REJECTION: &str = "assembly clearstatcache lowerin
 const LLVM_FILESYSTEM_PATH_OPERATION_REJECTION: &str = "LLVM filesystem-path builtin lowering rejects realpath_cache_get() and realpath_cache_size() until native filesystem realpath-cache ABI, request-local cache state, binary path byte fidelity, policy checks, warning-plus-false recovery, references/copy-on-write, and exact native diagnostics exist; generated-native C routes realpath-cache introspection through the shared runtime blocker";
 const ASSEMBLY_FILESYSTEM_PATH_OPERATION_REJECTION: &str = "assembly filesystem-path builtin lowering rejects forms outside the reusable native filesystem path operation blocker, including unsupported arity, stream contexts, file_get_contents() offset/length forms, non-lowerable operands, filesystem policy, stat cache/current-directory state, realpath-cache introspection return ownership, references/copy-on-write, and exact native diagnostics; lowerable stream, canonicalization, stat-predicate, stat-value, current-directory, stat-cache, and realpath-cache operands route through byte-preserving value-to-string conversion, optional truthiness, diagnostics, and cleanup";
 const LLVM_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "LLVM dynamic function-call lowering rejects variable-call expressions such as $name(...) until native callable expression evaluation, runtime function lookup, stack frames, arity/type diagnostics, callback dispatch, and exact native callable errors exist; phpc run handles current string-valued dynamic function calls";
-const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions outside the bounded generated-C finite known-string or runtime string-valued dispatch to registered by-value user-function frames, including unknown or non-string callables, callable builtins, mixed finite targets, callbacks, methods, closures, and exact native callable errors; phpc run handles broader string-valued dynamic function calls";
+const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions outside the bounded generated-C finite known-string dispatch to registered by-value user-function frames or supported native builtin families, and runtime string-valued dispatch to registered by-value user-function frames, including unknown or non-string callables, runtime callable builtins, mixed finite targets, callbacks, methods, closures, and exact native callable errors; phpc run handles broader string-valued dynamic function calls";
 const LLVM_TERMINATION_REJECTION: &str = "LLVM termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const ASSEMBLY_TERMINATION_REJECTION: &str = "assembly termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
@@ -8390,6 +8390,12 @@ struct CDynamicUserFunctionCandidate {
     spellings: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
+struct CDynamicCallableBuiltinCandidate {
+    canonical_name: &'static str,
+    spellings: Vec<String>,
+}
+
 impl CMutableScalarSlotKind {
     fn c_type(self) -> &'static str {
         match self {
@@ -16319,6 +16325,19 @@ impl CGenerator {
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
         let callee_value = self.emit_expr(callee)?;
         let Some(candidate) = self.dynamic_user_function_candidate_for_value(&callee_value) else {
+            if let Some(candidate) =
+                self.dynamic_callable_builtin_candidate_for_value(&callee_value)
+            {
+                debug_assert!(!candidate.spellings.is_empty());
+                return self
+                    .materialize_dynamic_callable_builtin_call(
+                        &candidate,
+                        args,
+                        span,
+                        failure_cleanup,
+                    )
+                    .map(Some);
+            }
             if self.known_string_values_for_value(&callee_value).is_some() {
                 return Ok(None);
             }
@@ -16366,6 +16385,54 @@ impl CGenerator {
             }
         }
         candidate.map(|(_, candidate)| candidate)
+    }
+
+    fn dynamic_callable_builtin_candidate_for_value(
+        &self,
+        value: &CValue,
+    ) -> Option<CDynamicCallableBuiltinCandidate> {
+        let values = self.known_string_values_for_value(value)?;
+        let mut candidate: Option<(&'static str, CDynamicCallableBuiltinCandidate)> = None;
+        for spelling in values.values() {
+            let canonical_name = native_dynamic_callable_builtin_canonical_name(spelling)?;
+            if let Some((candidate_name, candidate)) = &mut candidate {
+                if *candidate_name != canonical_name {
+                    return None;
+                }
+                candidate.spellings.push(spelling.clone());
+            } else {
+                candidate = Some((
+                    canonical_name,
+                    CDynamicCallableBuiltinCandidate {
+                        canonical_name,
+                        spellings: vec![spelling.clone()],
+                    },
+                ));
+            }
+        }
+        candidate.map(|(_, candidate)| candidate)
+    }
+
+    fn materialize_dynamic_callable_builtin_call(
+        &mut self,
+        candidate: &CDynamicCallableBuiltinCandidate,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        let call = Expr::Call {
+            name: candidate.canonical_name.to_string(),
+            args: args.to_vec(),
+            span,
+        };
+        if let Some(value) =
+            self.try_materialize_native_value_result_expr(&call, failure_cleanup)?
+        {
+            return Ok(value);
+        }
+
+        let value = self.emit_expr(&call)?;
+        self.materialize_native_array_c_value_handle(value, span)
     }
 
     fn materialize_runtime_dynamic_user_function_call(
@@ -27376,6 +27443,51 @@ fn is_supported_native_constant_name(name: &str) -> bool {
 
     (first == '_' || first.is_ascii_alphabetic())
         && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn native_dynamic_callable_builtin_canonical_name(name: &str) -> Option<&'static str> {
+    match name.to_ascii_lowercase().as_str() {
+        "strlen" => Some("strlen"),
+        "str_contains" => Some("str_contains"),
+        "str_starts_with" => Some("str_starts_with"),
+        "str_ends_with" => Some("str_ends_with"),
+        "strcasecmp" => Some("strcasecmp"),
+        "strcmp" => Some("strcmp"),
+        "strncmp" => Some("strncmp"),
+        "strncasecmp" => Some("strncasecmp"),
+        "ord" => Some("ord"),
+        "crc32" => Some("crc32"),
+        "strpos" => Some("strpos"),
+        "substr_count" => Some("substr_count"),
+        "levenshtein" => Some("levenshtein"),
+        "similar_text" => Some("similar_text"),
+        "strrev" => Some("strrev"),
+        "bin2hex" => Some("bin2hex"),
+        "str_rot13" => Some("str_rot13"),
+        "strtolower" => Some("strtolower"),
+        "strtoupper" => Some("strtoupper"),
+        "ucfirst" => Some("ucfirst"),
+        "lcfirst" => Some("lcfirst"),
+        "escapeshellarg" => Some("escapeshellarg"),
+        "escapeshellcmd" => Some("escapeshellcmd"),
+        "strval" => Some("strval"),
+        "boolval" => Some("boolval"),
+        "floatval" | "doubleval" => Some("floatval"),
+        "gettype" => Some("gettype"),
+        "get_debug_type" => Some("get_debug_type"),
+        "is_null" => Some("is_null"),
+        "is_bool" => Some("is_bool"),
+        "is_int" | "is_integer" | "is_long" => Some("is_int"),
+        "is_float" | "is_double" => Some("is_float"),
+        "is_string" => Some("is_string"),
+        "is_array" => Some("is_array"),
+        "is_scalar" => Some("is_scalar"),
+        "is_numeric" => Some("is_numeric"),
+        "is_countable" => Some("is_countable"),
+        "is_iterable" => Some("is_iterable"),
+        "is_object" => Some("is_object"),
+        _ => None,
+    }
 }
 
 fn is_native_known_function_name(name: &str) -> bool {

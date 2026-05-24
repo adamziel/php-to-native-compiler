@@ -8206,6 +8206,7 @@ echo ($left == "2\x00z") ? 1 : 0;
 "#;
 
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
+const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions outside the bounded generated-C finite known-string dispatch to registered by-value user-function frames or supported native builtin families, and runtime string-valued dispatch to registered by-value user-function frames, including unknown or non-string callables, runtime callable builtins, mixed finite targets, callbacks, methods, closures, and exact native callable errors; phpc run handles broader string-valued dynamic function calls";
 
 #[test]
 fn native_executable_c_source_quarantines_dynamic_string_operand_lengths_at_conditional_boundary() {
@@ -13369,6 +13370,18 @@ const NATIVE_RUNTIME_DYNAMIC_USER_FUNCTION_CALL_SOURCE: &str = concat!(
     "echo invoke(\"pick\", \"go\"), \"|\", invoke(\"relay\", \"MIX\"), \"|\", invoke(\"with_default\", \"D\");\n",
 );
 
+const NATIVE_DYNAMIC_BUILTIN_CALL_SOURCE: &str = concat!(
+    "<?php\n",
+    "$len = \"strlen\";\n",
+    "$upper = \"STRTOUPPER\";\n",
+    "$contains = \"str_contains\";\n",
+    "$pos = \"strpos\";\n",
+    "$type = \"gettype\";\n",
+    "$numeric = \"is_numeric\";\n",
+    "echo $len(\"A\0B\"), \"|\", $upper(\"go\"), \"|\", $contains(\"abc\", \"b\"), \"|\";\n",
+    "echo $pos(\"abcabc\", \"ca\"), \"|\", $type([1]), \"|\", $numeric(\"42\");\n",
+);
+
 const NATIVE_RECURSIVE_USER_FUNCTION_FRAME_SOURCE: &str = concat!(
     "<?php\n",
     "function countdown($n) {\n",
@@ -13565,6 +13578,40 @@ fn native_executable_c_source_lowers_runtime_string_dynamic_user_function_calls(
 }
 
 #[test]
+fn native_executable_c_source_lowers_known_string_dynamic_builtin_calls() {
+    let program = parse(NATIVE_DYNAMIC_BUILTIN_CALL_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_to_string_bytes")
+            && source.contains("phpc_native_value_string_result_operation_with_diagnostic")
+            && source.contains("phpc_native_value_string_predicate_with_diagnostic")
+            && source.contains("phpc_native_value_string_search_result_with_diagnostic")
+            && source.contains("phpc_native_value_type_name_result")
+            && source.contains("phpc_native_value_type_predicate"),
+        "known-string dynamic builtins should reuse the existing native builtin semantic families:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly dynamic function-call lowering rejects")
+            && !source.contains("runtime callable builtins"),
+        "supported finite known-string dynamic builtins should not hit the dynamic-call blocker:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_keeps_unsupported_dynamic_builtin_targets_blocked() {
+    for source in [
+        "<?php\n$call = \"count\";\necho $call([1]);\n",
+        "<?php\n$flag = isset($_GET[\"x\"]);\n$call = $flag ? \"strlen\" : \"gettype\";\necho $call(\"abc\");\n",
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.message, ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION);
+    }
+}
+
+#[test]
 fn native_executable_c_source_routes_user_function_introspection_through_registered_frames() {
     let program = parse(NATIVE_USER_FUNCTION_INTROSPECTION_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -13736,6 +13783,34 @@ fn emit_exe_links_and_runs_runtime_dynamic_user_function_call_program() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_known_string_dynamic_builtin_call_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "known_string_dynamic_builtin_call",
+        NATIVE_DYNAMIC_BUILTIN_CALL_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native dynamic builtin executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"3|GO|1|2|array|1");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
 fn emit_exe_reports_runtime_dynamic_user_function_call_failures() {
     if !has_cc() {
         return;
@@ -13862,7 +13937,7 @@ fn native_executable_c_source_rejects_unsupported_user_function_frame_shapes() {
 #[test]
 fn native_executable_c_source_rejects_unsupported_dynamic_calls_inside_user_function_frames() {
     for source in [
-        "<?php\nfunction bad() { $call = \"strlen\"; return $call(\"x\"); }\necho bad();\n",
+        "<?php\nfunction bad() { $call = \"count\"; return $call([1]); }\necho bad();\n",
         "<?php\nfunction bad() { $call = \"missing\"; return $call(); }\nfunction known() { return 1; }\necho bad();\n",
     ] {
         let program = parse(source).unwrap();
@@ -13871,7 +13946,7 @@ fn native_executable_c_source_rejects_unsupported_dynamic_calls_inside_user_func
         assert!(
             error
                 .message
-                .contains("finite known-string or runtime string-valued dispatch"),
+                .contains("supported native builtin families"),
             "{source}\n{error:?}"
         );
     }
