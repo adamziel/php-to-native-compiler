@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 03:51 CEST
+Updated: 2026-05-24 04:01 CEST
 Evaluation marker: `20260524T013053Z`
 
 Latest primary semantic/test baseline:
@@ -25,6 +25,15 @@ toward generalized end-to-end PHP semantics. Under that stricter rubric,
 runtime/ABI foundations remain high, but user-visible executable PHP semantics
 are still held back by calls/frames, objects/properties/methods, references/COW,
 cleanup/unwinding, diagnostics, and backend parity.
+
+Read the current numbers this way:
+
+- **54% overall**: weighted progress across primary-integrated foundations,
+  compiler/backend consumers, executable semantics, and verification.
+- **50% executable PHP semantics**: the stricter user-visible estimate for how
+  much generalized PHP behavior can actually execute today.
+- **88% is retired**: it was an older, non-comparable estimate that counted too
+  much lane-local and foundation-only work as completion.
 
 ## Executive Read
 
