@@ -1,22 +1,22 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 06:12 CEST
+Updated: 2026-05-24 06:25 CEST
 Evaluation marker: `20260524T040111Z`
 
 Latest primary semantic/test baseline:
-`241e1222 codegen: lower by-reference function frames`
+`f7050310 runtime: expose request key result accessors`
 
-Latest integrated semantic baseline: `241e1222 codegen: lower by-reference function frames`
+Latest integrated semantic baseline: `f7050310 runtime: expose request key result accessors`
 Latest evaluator report: `20260524T040111Z`
 
 Current primary git state at review:
 
-- `241e1222` is the latest counted semantic commit in this progress update.
-- The previous dirty by-reference frame candidate has been trimmed, gated, and
-  committed as a focused generated-C/runtime reference-frame slice.
-- The unrelated `compiler/src/interpreter.rs` formatting-only dirty hunk seen
-  during review was removed before integration and is not part of the counted
-  work.
+- `f7050310` is the latest counted semantic commit in this progress update.
+- Request-state key results now expose buffer/status through runtime ABI
+  accessors consumed by the LLVM ABI probe and generated-C dynamic request-key
+  paths.
+- This is a small ABI/layout encapsulation slice, not a broad new user-visible
+  PHP feature; the overall estimate deliberately remains unchanged.
 
 These are candid engineering estimates toward generalized PHP semantics in the
 native compiler. They are not test pass rates. Only primary-integrated, pushed
@@ -34,8 +34,11 @@ marker: bounded generated-C variadic by-value frames landed, bounded
 function-local `try`/`finally` landed inside supported by-value frames, LLVM
 consumed more shared direct string/native-value operand contracts, and
 generated-C frames now have a first alias-visible by-reference parameter path.
-This broadens real executable calls/frames without pretending the selected
-generated-C subset equals full PHP.
+The latest request-key result accessor slice removes generated backend
+dependence on the concrete key-result return layout across request keyed/path
+consumers. This broadens real executable calls/frames and tightens request ABI
+encapsulation without pretending the selected generated-C subset equals full
+PHP.
 
 The main remaining work is still central language semantics: full callable
 lookup, closures, methods, objects/properties, `$this`, typed/default/variadic
@@ -59,6 +62,16 @@ destructors, and backend parity.
 
 ## Recent Primary-Integrated Work
 
+- `f7050310`: request-state key results now expose their owned byte buffer and
+  status through `phpc_native_request_state_key_result_buffer(...)` and
+  `phpc_native_request_state_key_result_status(...)`. The LLVM runtime ABI
+  probe no longer extracts the concrete `%phpc.NativeRequestStateKeyResult`
+  fields, and generated-C request keyed/path/reference/global-dispatch
+  consumers materialize key buffer/status locals through the same accessors
+  before calling the existing request-state operation ABIs. Focused proof
+  covers scalar/value key coercion, generated-C source paths across keyed
+  storage, nested paths, request-root dispatch, and linked request/global
+  executables.
 - `241e1222`: generated-C user-function frames now accept untyped
   by-reference parameters for direct calls and compiler-known single-target
   dynamic calls. The compiler passes `phpc_NativeReferenceHandle` frame
@@ -108,6 +121,8 @@ Primary-integrated capability:
   native builtin families.
 - Shared runtime reference-handle cloning and generated-C by-reference argument
   binding for ordinary symbol-table variables and nested array-slot paths.
+- Shared request-state key-result buffer/status accessors consumed by LLVM ABI
+  proof and generated-C request keyed/path/reference/global dispatch paths.
 - Function-local bounded no-throw `try`/`finally` inside supported by-value
   frames.
 - LLVM consumption of selected shared string/native-value runtime contracts.
@@ -117,9 +132,9 @@ Primary-integrated capability:
 Candidate work not counted:
 
 - Lane-local foreach root rebinding, reference-slot operation families,
-  request key-result accessors, branch-decision diagnostic cleanup, call-frame
-  carrier cleanup, object/interface metadata contracts, and many array/string/
-  diagnostic builtin candidates.
+  branch-decision diagnostic cleanup, call-frame carrier cleanup,
+  object/interface metadata contracts, and many array/string/diagnostic builtin
+  candidates.
 - Broad lane diffs that are conflict-heavy or metadata/preflight oriented
   unless a small selected contract lands in primary with executable proof.
 
@@ -172,15 +187,14 @@ Not done:
 
 ## Steering Read
 
-The by-reference frame slice earned integration because it proves
-alias-visible behavior through shared reference and symbol-table operations
-rather than only opening a declaration shape. The next primary direction should
-probably leave the call-frame adjacency and attack a different cliff: callable
-array/object forms, closures/methods/object execution, references/COW through
-real control-flow joins, structured unwind/cleanup/finally, or source-ordered
-diagnostics.
+The request-key accessor slice was accepted because it removes a concrete
+backend return-layout dependency from already executable request-key paths; it
+does not change the hard steering picture. The next primary direction should
+attack a different cliff: callable array/object forms, closures/methods/object
+execution, references/COW through real control-flow joins, structured
+unwind/cleanup/finally, or source-ordered diagnostics.
 
 Resource note from this review: `/dev/shm` has recovered to about 16G free
-and `/home` remains healthy at about 264G free. Primary gates for this batch
-used disk-backed `/tmp/phpc-target-primary-byref-frames`; keep checking
-resource ownership before broad dispatch.
+and `/home` remains healthy. Primary gates for this batch used disk-backed
+`/tmp/phpc-primary-target`; keep checking resource ownership before broad
+dispatch.
