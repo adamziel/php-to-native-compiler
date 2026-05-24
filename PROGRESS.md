@@ -11,6 +11,10 @@ Latest primary head before this progress update:
 
 Only pushed primary work counts here. Dirty WIP, lane-local candidates, parked diffs, exact-shape fixtures, and status-file claims are not product capability until selected, gated, committed, and pushed through primary.
 
+## Progress Accounting Note
+
+The current headline number is **overall compiler completion**, estimated against generalized, end-to-end PHP semantics. The **88%** number below is only the Runtime/ABI foundations workstream, not the whole compiler. Older headline estimates near 88% used a looser rubric that counted selected generated-C execution islands too heavily; they are retired and not comparable with the current overall estimate.
+
 ## Executive Read
 
 Overall estimated progress: **70%** `[##############------]`
@@ -34,10 +38,10 @@ The latest method slice extends generated-C declared method frames to public obj
 
 ## Current Primary State
 
-- [x] Primary semantic work is committed locally as `5e5ab57c`.
+- [x] Primary semantic work is committed as `5e5ab57c`.
 - [x] Latest counted semantic commit is `5e5ab57c`.
 - [x] No uncounted dirty primary WIP remains from the declared object static-receiver method-call slice before this progress update.
-- [ ] After this review, `PROGRESS.md` is expected to be dirty for the wrapper commit; unrelated product diffs should remain untouched.
+- [x] This progress update is expected to be committed as a wrapper docs commit; unrelated product diffs should remain untouched.
 
 ## Lane-Local Candidate Work
 
@@ -82,6 +86,6 @@ These are useful inputs, not product capability. Prefer candidates that land as 
 
 - Primary semantic baseline is `5e5ab57c`; the progress wrapper should be the only dirty primary file before the docs commit.
 - The supervisor dashboard tail is stale relative to current primary; it still centers on the earlier formatter-diagnostics era and should be refreshed before strategic steering relies on it.
-- `/dev/shm` live check: 22G total, 22G used, 104M available, 100% used. Use disk-backed `/tmp` targets for primary gates and only reclaim shared-memory targets after owner checks.
+- `/dev/shm` live check briefly hit 100% during worker activity, then recovered to about 64% used with roughly 8G available. Use disk-backed `/tmp` targets for primary gates when shared memory is near the 6G floor, and only reclaim shared-memory targets after owner checks.
 - `/home` live check: 459G total, 211G used, 230G available, 48% used. The disk-backed primary target `/tmp/phpc-primary-target-object-static` is about 335M.
 - Lane-local status claims still do not count until selected, gated, committed, and pushed through primary.
