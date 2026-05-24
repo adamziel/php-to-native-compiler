@@ -63,7 +63,7 @@ const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lo
 const LLVM_STATIC_LOCAL_REJECTION: &str = "LLVM static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const ASSEMBLY_STATIC_LOCAL_REJECTION: &str = "assembly static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const LLVM_CLOSURE_REJECTION: &str = "LLVM closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
-const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including arrow functions, closure captures, implicit arrow captures, by-reference/default/variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported by-value descriptor closures through dynamic callable dispatch";
+const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including arrow functions, by-reference closure captures, implicit arrow captures, by-reference/default/variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported by-value descriptor closures and by-value captures through dynamic callable dispatch";
 const LLVM_REQUIRE_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
 const ASSEMBLY_REQUIRE_REJECTION: &str = "assembly include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
 const LLVM_REQUIRE_EXPRESSION_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution for expression forms with include return values, _once de-duplication results, and caller-scope side effects until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles current include/require expression behavior";
@@ -11589,6 +11589,8 @@ impl CGenerator {
         captures: &[crate::ast::ClosureCapture],
         return_type: Option<&TypeDecl>,
         returns_by_reference: bool,
+        is_static: bool,
+        is_arrow: bool,
         body: &[Stmt],
         span: Span,
     ) -> CompileResult<()> {
@@ -11600,7 +11602,9 @@ impl CGenerator {
                 .is_some_and(|function| function.requires_root_symbols)
         });
 
-        if !captures.is_empty()
+        if is_static
+            || is_arrow
+            || captures.iter().any(|capture| capture.by_reference)
             || returns_by_reference
             || stmt_list_contains_global_import(body)
             || calls_root_symbol_frame
@@ -11798,6 +11802,8 @@ impl CGenerator {
         captures: &[crate::ast::ClosureCapture],
         return_type: Option<&TypeDecl>,
         returns_by_reference: bool,
+        is_static: bool,
+        is_arrow: bool,
         body: &[Stmt],
         span: Span,
     ) -> CompileResult<CNativeValueMaterialization> {
@@ -11806,6 +11812,8 @@ impl CGenerator {
             captures,
             return_type,
             returns_by_reference,
+            is_static,
+            is_arrow,
             body,
             span,
         )?;
@@ -11817,6 +11825,7 @@ impl CGenerator {
         let definition = self.emit_closure_frame_callback_definition(
             &callback_name,
             params,
+            captures,
             return_type.cloned(),
             body,
             span,
@@ -11830,9 +11839,53 @@ impl CGenerator {
             params.len()
         ));
         let value = self.next_native_name("closure_value");
-        self.body.push(format!(
-            "phpc_NativeValueHandle {value} = phpc_native_value_from_closure_descriptor({descriptor});"
-        ));
+        if captures.is_empty() {
+            self.body.push(format!(
+                "phpc_NativeValueHandle {value} = phpc_native_value_from_closure_descriptor({descriptor});"
+            ));
+        } else {
+            let mut capture_names = Vec::with_capacity(captures.len());
+            let mut capture_values = Vec::with_capacity(captures.len());
+            for capture in captures {
+                let name_handle = self.next_native_name("closure_capture_name");
+                let (bytes, byte_len) = if capture.name.is_empty() {
+                    ("NULL".to_string(), "0".to_string())
+                } else {
+                    let bytes = c_byte_array(capture.name.as_bytes());
+                    let data = format!("phpc_closure_capture_name_bytes_{}", self.next_static_data);
+                    self.next_static_data += 1;
+                    self.static_data
+                        .push(format!("static const uint8_t {data}[] = {{{bytes}}};"));
+                    (data, capture.name.len().to_string())
+                };
+                self.body.push(format!(
+                    "phpc_NativeStringHandle {name_handle} = phpc_native_string_from_bytes({bytes}, {byte_len});"
+                ));
+                capture_names.push(name_handle);
+
+                let Some(captured) = self.variables.get(&capture.name).cloned() else {
+                    return Err(self.unsupported(capture.span, ASSEMBLY_CLOSURE_REJECTION));
+                };
+                let value_handle = self.emit_native_value_for_cvalue(captured, capture.span)?;
+                capture_values.push(value_handle);
+            }
+            let names = self.next_native_name("closure_capture_names");
+            let values = self.next_native_name("closure_capture_values");
+            self.body.push(format!(
+                "phpc_NativeStringHandle {names}[{}] = {{{}}};",
+                capture_names.len(),
+                capture_names.join(", ")
+            ));
+            self.body.push(format!(
+                "phpc_NativeValueHandle {values}[{}] = {{{}}};",
+                capture_values.len(),
+                capture_values.join(", ")
+            ));
+            self.body.push(format!(
+                "phpc_NativeValueHandle {value} = phpc_native_value_from_closure_descriptor_captures_and_free({descriptor}, {names}, {values}, {});",
+                captures.len()
+            ));
+        }
         let error_exit = self.native_error_exit("");
         self.body
             .push(format!("if ({value}.ptr == NULL) {{ {error_exit} }}"));
@@ -11847,6 +11900,7 @@ impl CGenerator {
         &mut self,
         c_name: &str,
         params: &[FunctionParam],
+        captures: &[crate::ast::ClosureCapture],
         return_type: Option<TypeDecl>,
         body: &[Stmt],
         span: Span,
@@ -11886,7 +11940,7 @@ impl CGenerator {
         ));
         generator.body.push(format!(
             "if (phpc_closure_arg_count != {}) {{ fprintf(stderr, \"phpc native closure frame argument count mismatch\\n\"); return (phpc_NativeValueHandle){{0}}; }}",
-            params.len()
+            params.len() + captures.len()
         ));
         for index in 0..params.len() {
             generator.body.push(format!(
@@ -11894,6 +11948,7 @@ impl CGenerator {
             ));
         }
         generator.bind_function_frame_parameters(&function);
+        generator.bind_closure_frame_captures(params.len(), captures);
 
         for statement in &function.body {
             generator.emit_statement(statement)?;
@@ -12039,6 +12094,28 @@ impl CGenerator {
             self.variables
                 .insert(param.name.clone(), CValue::NativeValueHandle(handle));
             self.remember_variable_order(&param.name);
+        }
+    }
+
+    fn bind_closure_frame_captures(
+        &mut self,
+        capture_start: usize,
+        captures: &[crate::ast::ClosureCapture],
+    ) {
+        for (index, capture) in captures.iter().enumerate() {
+            let arg_index = capture_start + index;
+            let handle = self.next_native_name("frame_capture");
+            self.uses_native_value_clone = true;
+            self.body.push(format!(
+                "phpc_NativeValueHandle {handle} = phpc_native_value_clone(phpc_closure_args[{arg_index}]);"
+            ));
+            let error_exit = self.native_error_exit("");
+            self.body
+                .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
+            self.retain_native_value_cleanup_handle(&handle);
+            self.variables
+                .insert(capture.name.clone(), CValue::NativeValueHandle(handle));
+            self.remember_variable_order(&capture.name);
         }
     }
 
@@ -12504,6 +12581,7 @@ impl CGenerator {
             }
             if self.uses_native_closure_helpers {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_closure_descriptor(phpc_NativeClosureDescriptor descriptor);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_closure_descriptor_captures_and_free(phpc_NativeClosureDescriptor descriptor, const phpc_NativeStringHandle *capture_names, const phpc_NativeValueHandle *capture_values, size_t capture_count);\n");
                 output.push_str("extern _Bool phpc_native_value_is_descriptor_closure(phpc_NativeValueHandle value);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_closure_invoke_value_with_diagnostic(phpc_NativeValueHandle value, int call_depth, const phpc_NativeValueHandle *args, size_t arg_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
@@ -19128,6 +19206,8 @@ impl CGenerator {
                 captures,
                 return_type,
                 returns_by_reference,
+                is_static,
+                is_arrow,
                 body,
                 span,
                 ..
@@ -19137,6 +19217,8 @@ impl CGenerator {
                     captures,
                     return_type.as_ref(),
                     *returns_by_reference,
+                    *is_static,
+                    *is_arrow,
                     body,
                     *span,
                 )?;
@@ -29509,6 +29591,8 @@ impl CGenerator {
                 captures,
                 return_type,
                 returns_by_reference,
+                is_static,
+                is_arrow,
                 body,
                 span,
                 ..
@@ -29518,6 +29602,8 @@ impl CGenerator {
                     captures,
                     return_type.as_ref(),
                     *returns_by_reference,
+                    *is_static,
+                    *is_arrow,
                     body,
                     *span,
                 )

@@ -4,7 +4,7 @@ use std::process::Command;
 
 use php_compiler::{codegen::emit_native_executable_c_source, error::Phase, parse};
 
-const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including arrow functions, closure captures, implicit arrow captures, by-reference/default/variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported by-value descriptor closures through dynamic callable dispatch";
+const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including arrow functions, by-reference closure captures, implicit arrow captures, by-reference/default/variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported by-value descriptor closures and by-value captures through dynamic callable dispatch";
 
 const NATIVE_VALUE_TRUTHINESS_SOURCE: &str = concat!(
     "<?php\n",
@@ -4950,6 +4950,39 @@ fn native_executable_c_source_routes_descriptor_closures_through_shared_runtime_
 }
 
 #[test]
+fn native_executable_c_source_routes_by_value_closure_captures_through_descriptor_abi() {
+    let source = concat!(
+        "<?php\n",
+        "$base = 10;\n",
+        "$callback = function ($value) use ($base) { return $base + $value; };\n",
+        "echo $callback(5);\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_from_closure_descriptor_captures_and_free"),
+        "captured descriptor closures should use the shared capture-aware descriptor ABI:\n{source}"
+    );
+    assert!(
+        source.contains("closure_capture_names_"),
+        "capture names should be materialized as runtime metadata:\n{source}"
+    );
+    assert!(
+        source.contains("closure_capture_values_"),
+        "capture values should be materialized through value semantics:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_closure_arg_count != 2"),
+        "generated closure callbacks should bind one call argument plus one capture:\n{source}"
+    );
+    assert!(
+        !source.contains(ASSEMBLY_CLOSURE_REJECTION),
+        "by-value captured descriptor closures should not hit the closure blocker:\n{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_immediate_descriptor_closure_invocation() {
     if !has_cc() {
         return;
@@ -5028,12 +5061,50 @@ fn emit_exe_links_and_runs_descriptor_closure_after_by_value_frame_transfer() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_by_value_captured_descriptor_closure_invocation() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function invoke_later($callback, $value) { return $callback($value); }\n",
+        "$base = 10;\n",
+        "$callback = function ($value) use ($base) { $base = $base + $value; return $base; };\n",
+        "$base = 40;\n",
+        "echo $callback(5);\n",
+        "echo \"|\";\n",
+        "echo $callback(7);\n",
+        "echo \"|\";\n",
+        "echo invoke_later($callback, 3);\n",
+        "echo \"|\";\n",
+        "echo (function ($value) use ($base) { return $base + $value; })(2);\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("descriptor_closure_by_value_captures", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"15|17|13|42");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn native_executable_c_source_keeps_unsupported_closure_shapes_on_shared_blocker() {
     for source in [
         concat!(
             "<?php\n",
             "$value = 1;\n",
-            "$callback = function () use ($value) { return $value; };\n",
+            "$callback = function () use (&$value) { return $value; };\n",
             "echo $callback();\n",
         ),
         concat!(
