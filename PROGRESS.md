@@ -1,16 +1,16 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 15:46 CEST
+Updated: 2026-05-24 15:58 CEST
 Evaluation marker: `20260524T132405Z`
 
 Latest counted primary semantic/test baseline:
-`b8029289 codegen: lower arrow closure captures`
+`959dc8b6 codegen: broaden arrow capture discovery`
 
 Latest primary head before this progress update:
-`b8029289 codegen: lower arrow closure captures`
+`959dc8b6 codegen: broaden arrow capture discovery`
 
 Latest observed `origin/master` during this review:
-`b8029289 codegen: lower arrow closure captures`
+`959dc8b6 codegen: broaden arrow capture discovery`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work counts. Current primary is synced to `origin/master`; dirty primary WIP, lane-local candidates, parked diffs, blocker-only classifiers, and status-file claims are not product capability until selected, gated, committed, and pushed through primary.
 
@@ -24,7 +24,7 @@ Executable PHP semantics: **76%** `[###############-----]`
 
 Primary has real integrated progress in selected generated-C execution islands. The current counted baseline includes descriptor-backed closure invocation, direct by-value closure captures, non-static arrow closures with implicit by-value captures, untyped by-reference descriptor closure parameters, same-family aggregate equality, runtime string-valued declared-class `new` for constructorless and supported public-constructor classes, and a bounded public declared-object family.
 
-Generated-C descriptor closures now carry a shared native closure-argument carrier that can hold either an owned value or a reference handle. Runtime descriptor metadata marks untyped by-reference parameters; dynamic closure invocation materializes supported direct-variable and nested array lvalue arguments through the shared symbol/reference ABI. Non-static arrow closures now synthesize by-value captures from return-expression variable use and feed those captures through the same descriptor capture ABI, including nested arrow propagation.
+Generated-C descriptor closures now carry a shared native closure-argument carrier that can hold either an owned value or a reference handle. Runtime descriptor metadata marks untyped by-reference parameters; dynamic closure invocation materializes supported direct-variable and nested array lvalue arguments through the shared symbol/reference ABI. Non-static arrow closures now synthesize by-value captures from generalized AST variable use and feed those captures through the same descriptor capture ABI, including nested arrow propagation, nested regular closures with explicit `use (...)`, array-key captures, and composition with untyped by-reference arrow parameters.
 
 This is still not general PHP. The remaining cliffs are large: full callable lookup/invocation, static/default/variadic/typed closures, by-reference captures and broader returns, callable arrays/objects, arbitrary class-name expressions for `new`, non-public methods, overrides, interfaces/traits, contextual `self`/`parent`/`static`, magic methods, dynamic/static properties, references/COW identity, request/global alias parity, includes, variable variables, exact/source-ordered diagnostics, cleanup/unwind/finally/destructors/output-buffer shutdown, and backend parity.
 
@@ -58,6 +58,7 @@ This is still not general PHP. The remaining cliffs are large: full callable loo
 
 ## Recent Primary-Integrated Work
 
+- `959dc8b6`: arrow capture discovery was broadened from the initial return-expression visitor into an AST-driven capture collector for statement, expression, lvalue, reference-source, unset-target, interpolated access, dynamic class-name, nested arrow, and nested regular-closure lexical-use surfaces. Focused proof now includes array-key implicit captures, nested regular closures with explicit `use (...)`, no invented capture for regular closures without `use`, composition with untyped by-reference arrow parameters, unsupported arrow-default blockers, descriptor-closure regressions, and call-boundary blockers.
 - `b8029289`: generated-C descriptor-ready non-static arrow closures synthesize implicit by-value captures from arrow return-expression variable use, excluding parameters, `$this`, `$GLOBALS`, request superglobals, and unavailable native-frame symbols. The captures reuse the existing descriptor capture ABI and closure-frame binding path, and nested arrow closures propagate implicit captures through descriptor frames. Source and linked proof cover direct arrow calls, user-function relay, public static method relay, returned closures, nested arrows, and by-value isolation after outer-variable mutation while static arrows, by-reference captures, typed/default/variadic closure parameters, exact diagnostics, request/global frame parity, and backend parity remain blocked.
 - `deabcd6d`: generated-C descriptor closures support untyped by-reference parameters through shared descriptor parameter metadata, `phpc_NativeClosureArgument` value/reference carriers, runtime reference-argument diagnostics, and the existing dynamic-call path. Linked proof covers direct closure calls, user-function relay, runtime dynamic relay, direct variable lvalues, and nested array lvalues while by-reference captures, typed/default/variadic closure parameters, static closure behavior, root/global frame handoff, callable arrays/objects, and backend parity remain blocked.
 - `2f306cea`: generated-C descriptor-ready closures support direct by-value `use (...)` captures. Capture values are copied into closure descriptor payloads, rebound as closure-frame locals during invocation, and proven through stored closures, immediate closures, repeated calls, function-frame relay, and outer-variable mutation isolation.
@@ -68,7 +69,7 @@ This is still not general PHP. The remaining cliffs are large: full callable loo
 
 ## Lane-Local Candidate Work
 
-- The arrow implicit by-value capture candidate has landed through primary as `b8029289`; treat `/home/claude/phpc-candidate-closure-arrow-captures` as historical unless it is explicitly rebased/repurposed from current primary.
+- The arrow implicit by-value capture candidate has landed through primary as `b8029289` and was broadened in primary as `959dc8b6`; treat `/home/claude/phpc-candidate-closure-arrow-captures` as historical unless it is explicitly rebased/repurposed from current primary.
 - The by-reference descriptor closure parameter candidate has landed through primary as `deabcd6d`; treat the previous candidate lane as historical unless it is explicitly rebased/repurposed from current primary.
 - `impl-native-call-semantics` has relevant lane-local material around by-reference frame-local returns and broader callable behavior, but it remains broad relative to current primary.
 - `impl-native-object-property-runtime` has ArrayAccess object-offset mutation dispatch evidence, but real method dispatch, references/COW, nested offsets, visibility/magic policy, and exact diagnostics remain blocked.
@@ -77,6 +78,6 @@ This is still not general PHP. The remaining cliffs are large: full callable loo
 
 ## Current Review Notes
 
-- Primary semantic work is committed and pushed at `b8029289`; this progress update is the separate documentation wrapper before push.
-- Focused gates for the latest arrow implicit-capture slice passed using disk-backed `/tmp` targets: `cargo check -q -p phpc -p php_runtime`, `cargo test -q -p phpc --test native_link native_executable_c_source_captures_arrow_variables_through_descriptor_abi`, `cargo test -q -p phpc --test native_link emit_exe_links_and_runs_arrow_closure_implicit_capture_program`, `cargo test -q -p phpc --test native_link descriptor_closure`, `cargo test -q -p phpc --test native_link native_executable_c_source_keeps_unsupported_closure_shapes_on_shared_blocker`, `cargo test -q -p phpc --test native_function_call_boundary native_executable_c_source_routes_call_operation_blockers_across_call_families`, scoped `rustfmt --edition 2021 --check compiler/src/codegen.rs compiler/tests/native_link.rs compiler/tests/native_function_call_boundary.rs`, and `git diff --check`.
+- Primary semantic work is committed and pushed at `959dc8b6`; this progress update is the separate documentation wrapper before push.
+- Focused gates for the latest arrow implicit-capture slice and follow-up hardening passed using disk-backed `/tmp` targets: `cargo check -q -p phpc -p php_runtime`, `cargo test -q -p phpc --test native_link arrow`, `cargo test -q -p phpc --test native_link descriptor_closure`, `cargo test -q -p phpc --test native_link native_executable_c_source_keeps_unsupported_closure_shapes_on_shared_blocker`, `cargo test -q -p phpc --test native_function_call_boundary native_executable_c_source_routes_call_operation_blockers_across_call_families`, scoped `rustfmt --edition 2021 --check compiler/src/codegen.rs compiler/tests/native_link.rs compiler/tests/native_function_call_boundary.rs`, and `git diff --check`.
 - Live resource check: `/dev/shm` 22G total, 14G used, 8.2G available, 63% used; `/home` 459G total, 317G used, 124G available, 73% used. Use disk-backed targets or owner-aware cleanup for broad gates.
