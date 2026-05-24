@@ -13383,6 +13383,27 @@ const NATIVE_RECURSIVE_USER_FUNCTION_FRAME_SOURCE: &str = concat!(
     "echo countdown(3), \"|\", even_label(4), \":\", even_label(3), \"|\", dynamic_step(2);\n",
 );
 
+const NATIVE_TYPED_USER_FUNCTION_FRAME_SOURCE: &str = concat!(
+    "<?php\n",
+    "function typed_pack(int $value, int|string $tag): string {\n",
+    "    return $tag . \":\" . $value;\n",
+    "}\n",
+    "function nullable(?int $value): ?int {\n",
+    "    return $value;\n",
+    "}\n",
+    "function typed_array(array $items = [\"fallback\"]): string {\n",
+    "    return $items[0];\n",
+    "}\n",
+    "function typed_return(int $value): string {\n",
+    "    return $value + 1;\n",
+    "}\n",
+    "function passthrough(mixed $value): mixed {\n",
+    "    return $value;\n",
+    "}\n",
+    "echo typed_pack(\"12\", 7), \"|\", \"[\", nullable(null), \"]:\", nullable(\"5\"), \"|\";\n",
+    "echo typed_array(), \":\", typed_array([\"given\"]), \"|\", typed_return(\"4\"), \"|\", passthrough(\"ok\");\n",
+);
+
 #[test]
 fn native_executable_c_source_lowers_direct_user_function_frames() {
     let program = parse(NATIVE_USER_FUNCTION_FRAME_SOURCE).unwrap();
@@ -13442,6 +13463,35 @@ fn native_executable_c_source_lowers_recursive_user_function_frames() {
         !source.contains("assembly user-function lowering rejects")
             && !source.contains("assembly dynamic function-call lowering rejects"),
         "recursive frames and in-frame known dynamic calls should not hit call blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_enforces_user_function_type_metadata() {
+    let program = parse(NATIVE_TYPED_USER_FUNCTION_FRAME_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_coerce_call_type_with_diagnostic"),
+        "typed parameters and returns should route through the shared call-frame type ABI:\n{source}"
+    );
+    assert!(
+        source
+            .matches(" = phpc_native_value_coerce_call_type_with_diagnostic(")
+            .count()
+            >= 7,
+        "parameters, defaults, and return values should all consume the type ABI:\n{source}"
+    );
+    assert!(
+        source.contains("call_type_decl_bytes_")
+            && source.contains("call_type_label_bytes_")
+            && source.contains("call_type_callable_bytes_"),
+        "type metadata should be passed as data, not source-shape recognition:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly user-function lowering rejects")
+            && !source.contains("unsupported parameter or return type metadata"),
+        "supported scalar/array type metadata should no longer hit frame blockers:\n{source}"
     );
 }
 
@@ -13510,6 +13560,77 @@ fn emit_exe_links_and_runs_direct_user_function_frame_program() {
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_typed_user_function_frame_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "typed_user_function_frame",
+        NATIVE_TYPED_USER_FUNCTION_FRAME_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native typed user-function executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"7:12|[]:5|fallback:given|5|ok");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_reports_typed_user_function_frame_mismatches() {
+    if !has_cc() {
+        return;
+    }
+
+    for (name, source, expected) in [
+        (
+            "typed_user_function_parameter_mismatch",
+            "<?php\nfunction needs_int(int $value): string { return $value; }\necho needs_int([]), \"after\";\n",
+            "unsupported call needs_int(): parameter $value expects int, got array",
+        ),
+        (
+            "typed_user_function_return_mismatch",
+            "<?php\nfunction returns_int(): int { return \"not numeric\"; }\necho returns_int(), \"after\";\n",
+            "unsupported call returns_int(): return value expects int, got string",
+        ),
+    ] {
+        let (source_path, output_path) = compile_native_link_fixture(name, source);
+        let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+            panic!("failed to run native typed user-function mismatch executable: {error}")
+        });
+
+        assert!(
+            !run.status.success(),
+            "{name} should fail through the native diagnostic path"
+        );
+        assert!(
+            run.stdout.is_empty(),
+            "{name} should stop before later side effects, stdout:\n{}",
+            String::from_utf8_lossy(&run.stdout)
+        );
+        assert!(
+            String::from_utf8_lossy(&run.stderr).contains(expected),
+            "{name} stderr should contain {expected:?}, got:\n{}",
+            String::from_utf8_lossy(&run.stderr)
+        );
+
+        let _ = fs::remove_file(&output_path);
+        let _ = fs::remove_file(&source_path);
+    }
 }
 
 #[test]
@@ -13601,8 +13722,9 @@ fn native_executable_c_source_rejects_unsupported_user_function_frame_shapes() {
     for source in [
         "<?php\nfunction byref(&$value) { return $value; }\n",
         "<?php\nfunction variadic(...$values) { return 1; }\n",
-        "<?php\nfunction typed(int $value) { return $value; }\n",
-        "<?php\nfunction ret(): int { return 1; }\n",
+        "<?php\nfunction typed(callable $value) { return 1; }\n",
+        "<?php\nfunction typed_object(object $value) { return 1; }\n",
+        "<?php\nfunction ret(): void { return; }\n",
         "<?php\nfunction bad_exit() { exit(\"bad\"); }\necho bad_exit();\n",
         "<?php\nfunction outer() { function inner() { return 1; } return inner(); }\necho outer();\n",
     ] {

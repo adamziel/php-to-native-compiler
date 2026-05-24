@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, ClassMember, CompoundAssignOp, Expr, ForAction,
     FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, Program,
-    ReferenceSource, Span, Stmt, SwitchCase, UnaryOp, UnsetTarget,
+    ReferenceSource, Span, Stmt, SwitchCase, TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
@@ -55,7 +55,7 @@ const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic functio
 const LLVM_TERMINATION_REJECTION: &str = "LLVM termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const ASSEMBLY_TERMINATION_REJECTION: &str = "assembly termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
-const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations outside the bounded generated-C by-value frame subset, including nested functions, typed/by-reference/variadic parameters, return types, static locals, and unsupported body cleanup, until full native function symbol tables, stack-frame layout, default parameter binding, complete dynamic lookup, return-value flow, and exact native error behavior exist; generated-native C lowers supported by-value direct and finite known-string dynamic user-function frames";
+const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations outside the bounded generated-C by-value frame subset, including nested functions, by-reference/variadic parameters, unsupported parameter or return type metadata, static locals, and unsupported body cleanup, until full native function symbol tables, stack-frame layout, default parameter binding, complete dynamic lookup, return-value flow, and exact native error behavior exist; generated-native C lowers supported by-value direct and finite known-string dynamic user-function frames with bounded scalar/array type enforcement";
 const LLVM_STATIC_LOCAL_REJECTION: &str = "LLVM static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const ASSEMBLY_STATIC_LOCAL_REJECTION: &str = "assembly static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const LLVM_CLOSURE_REJECTION: &str = "LLVM closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
@@ -424,6 +424,49 @@ fn native_function_frame_blocker(function: &FunctionDecl) -> NativeCallBlocker {
 
 fn native_function_frame_call_operation(function: &FunctionDecl) -> NativeCallOperation {
     NativeCallOperation::function_frame(function.span, native_function_frame_blocker(function))
+}
+
+fn native_function_type_decl_is_supported(decl: &TypeDecl) -> bool {
+    native_function_type_text_is_supported(decl.text.trim())
+}
+
+fn native_function_type_decl_is_mixed(decl: &TypeDecl) -> bool {
+    native_function_type_text_is_mixed(decl.text.trim())
+}
+
+fn native_function_type_text_is_mixed(text: &str) -> bool {
+    let without_nullable = text.strip_prefix('?').unwrap_or(text).trim();
+    !without_nullable.contains('|')
+        && !without_nullable.contains('&')
+        && without_nullable
+            .strip_prefix('\\')
+            .unwrap_or(without_nullable)
+            .eq_ignore_ascii_case("mixed")
+}
+
+fn native_function_type_text_is_supported(text: &str) -> bool {
+    if text.is_empty() {
+        return false;
+    }
+
+    let without_nullable = text.strip_prefix('?').unwrap_or(text).trim();
+    if without_nullable.contains('|') {
+        return without_nullable
+            .split('|')
+            .all(native_function_type_text_is_supported);
+    }
+    if without_nullable.contains('&') {
+        return false;
+    }
+
+    let normalized = without_nullable
+        .strip_prefix('\\')
+        .unwrap_or(without_nullable)
+        .to_ascii_lowercase();
+    matches!(
+        normalized.as_str(),
+        "mixed" | "null" | "true" | "false" | "bool" | "int" | "float" | "string" | "array"
+    )
 }
 
 fn native_closure_frame_blocker(
@@ -8252,6 +8295,7 @@ struct CGenerator {
     uses_native_request_state_reference_helpers: bool,
     uses_native_symbol_table_helpers: bool,
     uses_native_exit_helpers: bool,
+    uses_native_call_type_helpers: bool,
     next_static_data: usize,
     next_native_temp: usize,
     native_value_cleanup_handles: Vec<String>,
@@ -8265,6 +8309,8 @@ struct CGenerator {
     function_definitions: Vec<String>,
     function_return_status: Option<String>,
     function_call_depth: Option<String>,
+    function_callable_name: Option<String>,
+    function_return_type: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -9769,6 +9815,7 @@ impl CGenerator {
             branch.uses_native_request_state_reference_helpers;
         self.uses_native_symbol_table_helpers |= branch.uses_native_symbol_table_helpers;
         self.uses_native_exit_helpers |= branch.uses_native_exit_helpers;
+        self.uses_native_call_type_helpers |= branch.uses_native_call_type_helpers;
     }
 
     fn merge_scoped_branch_codegen(&mut self, branch: &Self) {
@@ -9785,6 +9832,7 @@ impl CGenerator {
             || self.uses_native_value_truthiness
             || self.uses_native_exit_helpers
             || self.uses_native_value_clone
+            || self.uses_native_call_type_helpers
             || !self.function_definitions.is_empty()
     }
 
@@ -9851,11 +9899,18 @@ impl CGenerator {
     fn validate_user_function_frame(&self, function: &FunctionDecl) -> CompileResult<()> {
         if function.is_nested
             || function.returns_by_reference
-            || function.return_type.is_some()
             || function
-                .params
-                .iter()
-                .any(|param| param.by_reference || param.is_variadic || param.type_decl.is_some())
+                .return_type
+                .as_ref()
+                .is_some_and(|decl| !native_function_type_decl_is_supported(decl))
+            || function.params.iter().any(|param| {
+                param.by_reference
+                    || param.is_variadic
+                    || param
+                        .type_decl
+                        .as_ref()
+                        .is_some_and(|decl| !native_function_type_decl_is_supported(decl))
+            })
             || function_body_contains_native_frame_blocker(&function.body)
         {
             return Err(native_function_declaration_fallback_diagnostic(
@@ -9945,6 +10000,12 @@ impl CGenerator {
             user_function_order: self.user_function_order.clone(),
             function_return_status: Some("phpc_call_status".to_string()),
             function_call_depth: Some("phpc_call_depth".to_string()),
+            function_callable_name: Some(format!("{}()", function.decl.name)),
+            function_return_type: function
+                .decl
+                .return_type
+                .as_ref()
+                .map(|decl| decl.text.clone()),
             next_static_data: self.next_static_data,
             next_native_temp: self.next_native_temp,
             ..CGenerator::default()
@@ -9956,9 +10017,23 @@ impl CGenerator {
         ));
         for (index, param) in function.decl.params.iter().enumerate() {
             let handle = generator.next_native_name("frame_param");
-            generator.body.push(format!(
-                "phpc_NativeValueHandle {handle} = phpc_native_value_clone(arg_{index});"
-            ));
+            if let Some(type_decl) = param
+                .type_decl
+                .as_ref()
+                .filter(|decl| !native_function_type_decl_is_mixed(decl))
+            {
+                generator.emit_call_frame_type_coercion_assignment(
+                    &handle,
+                    &format!("arg_{index}"),
+                    &format!("parameter ${}", param.name),
+                    &type_decl.text,
+                    "",
+                );
+            } else {
+                generator.body.push(format!(
+                    "phpc_NativeValueHandle {handle} = phpc_native_value_clone(arg_{index});"
+                ));
+            }
             let error_exit = generator.native_error_exit("");
             generator
                 .body
@@ -10432,6 +10507,9 @@ impl CGenerator {
                     "extern phpc_NativeValueHandle phpc_native_value_clone(phpc_NativeValueHandle value);\n",
                 );
             }
+            if self.uses_native_call_type_helpers {
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_coerce_call_type_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *callable_ptr, size_t callable_len, const uint8_t *label_ptr, size_t label_len, const uint8_t *type_ptr, size_t type_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            }
             output.push_str("extern void phpc_native_value_free(phpc_NativeValueHandle value);\n");
             output.push_str("extern size_t phpc_native_diagnostic_message_stderr(phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern size_t phpc_native_diagnostic_report(phpc_NativeDiagnosticHandle diagnostic);\n");
@@ -10664,6 +10742,54 @@ impl CGenerator {
             "static const uint8_t {bytes_name}[] = {{{bytes}}};"
         ));
         bytes_name
+    }
+
+    fn emit_call_type_static_bytes(&mut self, prefix: &str, value: &str) -> (String, String) {
+        if value.is_empty() {
+            return ("NULL".to_string(), "0".to_string());
+        }
+
+        let index = self.next_static_data;
+        self.next_static_data += 1;
+        let bytes = c_byte_array(value.as_bytes());
+        let bytes_name = format!("{prefix}_{index}");
+        self.static_data.push(format!(
+            "static const uint8_t {bytes_name}[] = {{{bytes}}};"
+        ));
+        (bytes_name, value.len().to_string())
+    }
+
+    fn emit_call_frame_type_coercion_assignment(
+        &mut self,
+        target_handle: &str,
+        source_handle: &str,
+        label: &str,
+        type_decl: &str,
+        failure_cleanup: &str,
+    ) {
+        self.uses_native_string_helpers = true;
+        self.uses_native_call_type_helpers = true;
+
+        let callable = self
+            .function_callable_name
+            .clone()
+            .unwrap_or_else(|| "native user function".to_string());
+        let (callable_bytes, callable_len) =
+            self.emit_call_type_static_bytes("call_type_callable_bytes", &callable);
+        let (label_bytes, label_len) =
+            self.emit_call_type_static_bytes("call_type_label_bytes", label);
+        let (type_bytes, type_len) =
+            self.emit_call_type_static_bytes("call_type_decl_bytes", type_decl);
+        let diagnostic = self.next_native_name("call_type_diagnostic");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {target_handle} = phpc_native_value_coerce_call_type_with_diagnostic({source_handle}, {callable_bytes}, {callable_len}, {label_bytes}, {label_len}, {type_bytes}, {type_len}, &{diagnostic});"
+        ));
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!(
+            "if ({diagnostic}.ptr != NULL || {target_handle}.ptr == NULL) {{ if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); {diagnostic}.ptr = NULL; }} if ({target_handle}.ptr != NULL) {{ phpc_native_value_free({target_handle}); }} {error_exit} }}"
+        ));
     }
 
     fn emit_globals_symbol_table_from_current_variables(
@@ -15124,7 +15250,7 @@ impl CGenerator {
     }
 
     fn emit_function_return_statement(&mut self, value: Option<&Expr>) -> CompileResult<()> {
-        let materialized = if let Some(value) = value {
+        let mut materialized = if let Some(value) = value {
             self.materialize_native_value_result_operand(value, "")?
         } else {
             let handle = self.emit_native_value_for_cvalue(CValue::Null, Span::new(0, 0))?;
@@ -15134,6 +15260,7 @@ impl CGenerator {
             }
         };
         self.emit_active_finally_bodies_before_terminal_transfer()?;
+        materialized = self.emit_function_return_type_coercion(materialized);
         let local_cleanup = c_cleanup_sequence(&native_value_aux_cleanup_after_consuming_handle(
             &materialized,
         ));
@@ -15151,14 +15278,48 @@ impl CGenerator {
 
     fn emit_function_default_return(&mut self, span: Span) -> CompileResult<()> {
         let handle = self.emit_native_value_for_cvalue(CValue::Null, span)?;
+        let materialized = self.emit_function_return_type_coercion(CNativeValueMaterialization {
+            handle: handle.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
+        });
         let cleanup = self.native_scope_cleanup_sequence("");
         let status = self
             .function_return_status
             .as_ref()
             .expect("function return status is present in function context");
-        self.body
-            .push(format!("{cleanup} *{status} = 1; return {handle};"));
+        self.body.push(format!(
+            "{cleanup} *{status} = 1; return {};",
+            materialized.handle
+        ));
         Ok(())
+    }
+
+    fn emit_function_return_type_coercion(
+        &mut self,
+        materialized: CNativeValueMaterialization,
+    ) -> CNativeValueMaterialization {
+        let Some(type_decl) = self.function_return_type.clone() else {
+            return materialized;
+        };
+        if native_function_type_text_is_mixed(&type_decl) {
+            return materialized;
+        }
+
+        let handle = self.next_native_name("frame_return");
+        let original_cleanup = materialized.cleanup_after_use.clone();
+        let failure_cleanup = c_cleanup_sequence(&original_cleanup);
+        self.emit_call_frame_type_coercion_assignment(
+            &handle,
+            &materialized.handle,
+            "return value",
+            &type_decl,
+            &failure_cleanup,
+        );
+        self.body.extend(original_cleanup);
+        CNativeValueMaterialization {
+            handle: handle.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
+        }
     }
 
     fn emit_active_finally_bodies_before_terminal_transfer(&mut self) -> CompileResult<()> {

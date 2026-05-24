@@ -2957,6 +2957,81 @@ pub unsafe extern "C" fn phpc_native_value_clone(handle: NativeValueHandle) -> N
 
 /// # Safety
 ///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. The callable, label, and type byte ranges must be
+/// valid UTF-8 byte slices. The returned value handle owns the coerced PHP
+/// value; ownership of `handle` remains with the caller. On failure the helper
+/// stores a diagnostic handle that the caller owns and must release with
+/// `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_coerce_call_type_with_diagnostic(
+    handle: NativeValueHandle,
+    callable_ptr: *const u8,
+    callable_len: usize,
+    label_ptr: *const u8,
+    label_len: usize,
+    type_ptr: *const u8,
+    type_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe {
+        native_value_coerce_call_type_result(
+            handle,
+            callable_ptr,
+            callable_len,
+            label_ptr,
+            label_len,
+            type_ptr,
+            type_len,
+        )
+    } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+unsafe fn native_value_coerce_call_type_result(
+    handle: NativeValueHandle,
+    callable_ptr: *const u8,
+    callable_len: usize,
+    label_ptr: *const u8,
+    label_len: usize,
+    type_ptr: *const u8,
+    type_len: usize,
+) -> RuntimeResult<Value> {
+    let callable = unsafe { native_abi_utf8(callable_ptr, callable_len, "callable name") }?;
+    let label = unsafe { native_abi_utf8(label_ptr, label_len, "type label") }?;
+    let type_decl = unsafe { native_abi_utf8(type_ptr, type_len, "type declaration") }?;
+    let Some(value) = (unsafe { handle.as_ref() }).cloned() else {
+        return Err(RuntimeError::unsupported_call(
+            callable,
+            format!("{label} type enforcement failed: value handle is null"),
+        ));
+    };
+
+    let actual_type = value.type_name();
+    coerce_property_value_with_object_type_resolver(
+        type_decl,
+        value,
+        callable,
+        label,
+        |object, type_name| object.is_instance_of_class_name(type_name),
+    )
+    .map_err(|_| {
+        RuntimeError::unsupported_call(
+            callable,
+            format!("{label} expects {type_decl}, got {actual_type}"),
+        )
+    })
+}
+
+/// # Safety
+///
 /// `handle` must be null or an array handle previously returned by the runtime
 /// ABI and not yet freed.
 #[no_mangle]
@@ -6159,6 +6234,18 @@ unsafe fn native_abi_bytes<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8]> {
         return None;
     }
     Some(unsafe { std::slice::from_raw_parts(ptr, len) })
+}
+
+unsafe fn native_abi_utf8<'a>(ptr: *const u8, len: usize, label: &str) -> RuntimeResult<&'a str> {
+    let bytes = unsafe { native_abi_bytes(ptr, len) }.ok_or_else(|| {
+        RuntimeError::unsupported_call(
+            "native ABI",
+            format!("{label} bytes pointer is null for non-empty input"),
+        )
+    })?;
+    std::str::from_utf8(bytes).map_err(|_| {
+        RuntimeError::unsupported_call("native ABI", format!("{label} bytes must be valid UTF-8"))
+    })
 }
 
 unsafe fn native_diagnostic_source_location_from_abi(
@@ -21832,6 +21919,90 @@ mod tests {
         assert_eq!(null_branch.status(), NativeComparisonStatus::Blocked as u8);
         assert!(!null_branch.value());
         assert!(null_branch.diagnostic_len() > 0);
+    }
+
+    #[test]
+    fn native_call_frame_type_coercion_reuses_shared_value_type_boundary() {
+        unsafe fn coerce_for_test(
+            value: Value,
+            callable: &str,
+            label: &str,
+            type_decl: &str,
+        ) -> (NativeValueHandle, NativeDiagnosticHandle) {
+            let handle = NativeValueHandle::from_value(value);
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let coerced = unsafe {
+                phpc_native_value_coerce_call_type_with_diagnostic(
+                    handle,
+                    callable.as_ptr(),
+                    callable.len(),
+                    label.as_ptr(),
+                    label.len(),
+                    type_decl.as_ptr(),
+                    type_decl.len(),
+                    &mut diagnostic,
+                )
+            };
+            unsafe { phpc_native_value_free(handle) };
+            (coerced, diagnostic)
+        }
+
+        let (coerced_int, int_diagnostic) = unsafe {
+            coerce_for_test(
+                Value::String("42".to_string()),
+                "typed()",
+                "parameter $value",
+                "int",
+            )
+        };
+        assert!(int_diagnostic.is_null());
+        assert_eq!(
+            unsafe { coerced_int.as_ref() },
+            Some(&Value::Int(42)),
+            "numeric strings should use the same weak scalar coercion as runtime calls"
+        );
+        unsafe { phpc_native_value_free(coerced_int) };
+
+        let (coerced_string, string_diagnostic) =
+            unsafe { coerce_for_test(Value::Int(7), "typed()", "return value", "?string") };
+        assert!(string_diagnostic.is_null());
+        assert_eq!(
+            unsafe { coerced_string.as_ref() },
+            Some(&Value::String("7".to_string()))
+        );
+        unsafe { phpc_native_value_free(coerced_string) };
+
+        let mut array = PhpArray::new();
+        array.append(Value::String("ok".to_string())).unwrap();
+        let (coerced_array, array_diagnostic) = unsafe {
+            coerce_for_test(
+                Value::Array(array),
+                "typed()",
+                "parameter $items",
+                "array|null",
+            )
+        };
+        assert!(array_diagnostic.is_null());
+        assert!(matches!(
+            unsafe { coerced_array.as_ref() },
+            Some(Value::Array(_))
+        ));
+        unsafe { phpc_native_value_free(coerced_array) };
+
+        let (bad_value, bad_diagnostic) = unsafe {
+            coerce_for_test(
+                Value::Array(PhpArray::new()),
+                "typed()",
+                "parameter $value",
+                "int",
+            )
+        };
+        assert!(bad_value.is_null());
+        assert_eq!(
+            unsafe { bad_diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some("unsupported call typed(): parameter $value expects int, got array")
+        );
+        unsafe { phpc_native_diagnostic_free(bad_diagnostic) };
     }
 
     #[test]
