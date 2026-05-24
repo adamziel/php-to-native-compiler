@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 17:58 CEST
-Evaluation marker: `20260524T1558Z`
+Updated: 2026-05-24 18:04 CEST
+Evaluation marker: `20260524T1604Z`
 
 Latest counted primary semantic/test baseline:
 `53c8a283 codegen: bind non-static closure this captures`
@@ -9,12 +9,12 @@ Latest counted primary semantic/test baseline:
 Latest primary head before this progress update:
 `53c8a283 codegen: bind non-static closure this captures`
 
-Latest observed `origin/master` during this review:
-`479aa522 docs: update progress after static arrows`
+Latest observed `origin/master` after push:
+`afdca215 docs: update progress after closure this binding`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work counts. Current primary is synced to `origin/master`; dirty primary WIP, lane-local candidates, parked diffs, blocker-only classifiers, and status-file claims are not product capability until selected, gated, committed, and pushed through primary.
 
-Accounting history: the earlier **88%** headline is retired because it counted lane-local candidates, scaffolding, and ABI surface area too generously before they became executable product behavior. The later **50%** figure was a conservative strict-rubric rebaseline, not a code rollback. The current source-of-truth estimate is **84%** under the stricter rule.
+Accounting history: the earlier **88%** headline is retired because it counted lane-local candidates, scaffolding, and ABI surface area too generously before they became executable product behavior. The later **50%** figure was a conservative strict-rubric rebaseline, not a code rollback. The current source-of-truth estimate is **84%**, not 50%, under the stricter primary-integrated/executable-semantics rule.
 
 ## Executive Read
 
