@@ -9524,6 +9524,11 @@ struct CUserFunction {
 struct CDeclaredClass {
     class_id: usize,
     name: String,
+    span: Span,
+    parent_key: Option<String>,
+    ancestor_names: Vec<String>,
+    is_final: bool,
+    own_properties: Vec<CDeclaredClassProperty>,
     properties: Vec<CDeclaredClassProperty>,
     constructor: Option<CDeclaredClassMethod>,
     methods: Vec<CDeclaredClassMethod>,
@@ -9531,8 +9536,29 @@ struct CDeclaredClass {
 
 #[derive(Debug, Clone)]
 struct CDeclaredClassProperty {
+    declaring_class_id: usize,
+    declaring_class_name: String,
     name: String,
     visibility: ClassVisibility,
+    span: Span,
+}
+
+#[derive(Debug, Clone)]
+struct CDeclaredClassPropertyMetadataArrays {
+    declaring_class_ids: String,
+    declaring_class_names: String,
+    declaring_class_name_lens: String,
+    names: String,
+    name_lens: String,
+    visibilities: String,
+    count: usize,
+}
+
+#[derive(Debug, Clone)]
+struct CDeclaredClassAncestorMetadataArrays {
+    names: String,
+    name_lens: String,
+    count: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -11153,14 +11179,19 @@ impl CGenerator {
             let Stmt::Class(class) = stmt else {
                 continue;
             };
-            let declared = self.validate_declared_class_for_native_allocation(class)?;
             let key = Self::declared_class_key(&class.name);
             if self.declared_classes.contains_key(&key) {
                 return Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
             }
+            let declared = self.validate_declared_class_for_native_allocation(
+                class,
+                self.declared_class_order.len(),
+            )?;
             self.declared_class_order.push(key.clone());
             self.declared_classes.insert(key, declared);
         }
+
+        self.resolve_declared_class_inheritance_metadata()?;
 
         Ok(())
     }
@@ -11168,9 +11199,9 @@ impl CGenerator {
     fn validate_declared_class_for_native_allocation(
         &self,
         class: &ClassDecl,
+        class_index: usize,
     ) -> CompileResult<CDeclaredClass> {
         if class.is_nested
-            || class.parent.is_some()
             || !class.interfaces.is_empty()
             || !class.trait_uses.is_empty()
             || class.is_abstract
@@ -11180,11 +11211,10 @@ impl CGenerator {
         }
 
         let mut seen_properties = HashSet::new();
-        let mut properties = Vec::new();
+        let mut own_properties = Vec::new();
         let mut constructor = None;
         let mut seen_methods = HashSet::new();
         let mut methods = Vec::new();
-        let class_index = self.declared_class_order.len();
         for member in &class.members {
             match member {
                 ClassMember::Property(property) => {
@@ -11201,9 +11231,12 @@ impl CGenerator {
                             self.unsupported(property.span, ASSEMBLY_OBJECT_CLASS_REJECTION)
                         );
                     }
-                    properties.push(CDeclaredClassProperty {
+                    own_properties.push(CDeclaredClassProperty {
+                        declaring_class_id: class_index,
+                        declaring_class_name: class.name.clone(),
                         name: property.name.clone(),
                         visibility: property.visibility,
+                        span: property.span,
                     });
                 }
                 ClassMember::Method(method) => {
@@ -11254,12 +11287,118 @@ impl CGenerator {
         }
 
         Ok(CDeclaredClass {
-            class_id: self.declared_class_order.len(),
+            class_id: class_index,
             name: class.name.clone(),
-            properties,
+            span: class.span,
+            parent_key: class
+                .parent
+                .as_ref()
+                .map(|parent| Self::declared_class_key(parent)),
+            ancestor_names: Vec::new(),
+            is_final: class.is_final,
+            properties: own_properties.clone(),
+            own_properties,
             constructor,
             methods,
         })
+    }
+
+    fn resolve_declared_class_inheritance_metadata(&mut self) -> CompileResult<()> {
+        let class_keys = self.declared_class_order.clone();
+        for class_key in class_keys {
+            let ancestor_keys = self.declared_class_ancestor_keys(&class_key)?;
+            let mut ancestor_names = Vec::new();
+            let mut inherited_properties = Vec::new();
+            let mut inherited_property_slots = HashSet::new();
+            let mut inherited_method_keys = HashSet::new();
+
+            for ancestor_key in ancestor_keys.iter().rev() {
+                let ancestor = self
+                    .declared_classes
+                    .get(ancestor_key)
+                    .expect("ancestor class key resolved during traversal");
+                ancestor_names.push(ancestor.name.clone());
+                for property in &ancestor.own_properties {
+                    let slot_key = Self::declared_class_property_inheritance_key(property);
+                    if !inherited_property_slots.insert(slot_key) {
+                        return Err(
+                            self.unsupported(property.span, ASSEMBLY_OBJECT_CLASS_REJECTION)
+                        );
+                    }
+                    inherited_properties.push(property.clone());
+                }
+                for method in &ancestor.methods {
+                    inherited_method_keys.insert(Self::declared_method_key(&method.decl.name));
+                }
+            }
+
+            let class = self
+                .declared_classes
+                .get(&class_key)
+                .expect("class key exists while resolving inheritance");
+            for property in &class.own_properties {
+                let slot_key = Self::declared_class_property_inheritance_key(property);
+                if !inherited_property_slots.insert(slot_key) {
+                    return Err(self.unsupported(property.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+                }
+            }
+            for method in &class.methods {
+                if inherited_method_keys.contains(&Self::declared_method_key(&method.decl.name)) {
+                    return Err(self.unsupported(method.decl.span, ASSEMBLY_METHOD_CALL_REJECTION));
+                }
+            }
+
+            let own_properties = class.own_properties.clone();
+            let class = self
+                .declared_classes
+                .get_mut(&class_key)
+                .expect("class key exists while applying inheritance");
+            class.ancestor_names = ancestor_names;
+            class.properties = inherited_properties;
+            class.properties.extend(own_properties);
+        }
+
+        Ok(())
+    }
+
+    fn declared_class_ancestor_keys(&self, class_key: &str) -> CompileResult<Vec<String>> {
+        let mut ancestor_keys = Vec::new();
+        let mut seen = HashSet::new();
+        let class = self
+            .declared_classes
+            .get(class_key)
+            .expect("class key exists while resolving ancestors");
+        let class_span = class.span;
+        let mut current = class.parent_key.clone();
+
+        while let Some(parent_key) = current {
+            if !seen.insert(parent_key.clone()) {
+                return Err(self.unsupported(class_span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+            }
+            let Some(parent) = self.declared_classes.get(&parent_key) else {
+                return Err(self.unsupported(class_span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+            };
+            if parent.is_final {
+                return Err(self.unsupported(class_span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+            }
+            ancestor_keys.push(parent_key.clone());
+            current = parent.parent_key.clone();
+        }
+
+        Ok(ancestor_keys)
+    }
+
+    fn declared_class_property_inheritance_key(property: &CDeclaredClassProperty) -> String {
+        match property.visibility {
+            ClassVisibility::Private => format!(
+                "private:{}:{}",
+                Self::declared_class_key(&property.declaring_class_name),
+                property.name
+            ),
+            ClassVisibility::Public | ClassVisibility::Protected => {
+                format!("visible:{}", property.name)
+            }
+        }
     }
 
     fn validate_declared_class_constructor_for_native_frame(
@@ -12172,6 +12311,7 @@ impl CGenerator {
             }
             if self.uses_native_object_instantiation_helpers {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_new_declared_class_with_diagnostic(size_t class_id, const uint8_t *class_name, size_t class_name_len, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, size_t property_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_new_declared_class_with_ancestors_and_diagnostic(size_t class_id, const uint8_t *class_name, size_t class_name_len, const size_t *property_declaring_class_ids, const uint8_t *const *property_declaring_class_names, const size_t *property_declaring_class_name_lens, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, size_t property_count, const uint8_t *const *ancestor_class_names, const size_t *ancestor_class_name_lens, size_t ancestor_class_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_object_property_helpers {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_public_property_operation_with_diagnostic(phpc_NativeValueHandle object, const uint8_t *property_name, size_t property_name_len, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -12461,20 +12601,34 @@ impl CGenerator {
     fn emit_declared_class_property_metadata_arrays(
         &mut self,
         class: &CDeclaredClass,
-    ) -> (String, String, String, usize) {
+    ) -> CDeclaredClassPropertyMetadataArrays {
         if class.properties.is_empty() {
-            return (
-                "NULL".to_string(),
-                "NULL".to_string(),
-                "NULL".to_string(),
-                0,
-            );
+            return CDeclaredClassPropertyMetadataArrays {
+                declaring_class_ids: "NULL".to_string(),
+                declaring_class_names: "NULL".to_string(),
+                declaring_class_name_lens: "NULL".to_string(),
+                names: "NULL".to_string(),
+                name_lens: "NULL".to_string(),
+                visibilities: "NULL".to_string(),
+                count: 0,
+            };
         }
 
+        let mut declaring_ids = Vec::new();
+        let mut declaring_name_ptrs = Vec::new();
+        let mut declaring_name_lens = Vec::new();
         let mut name_ptrs = Vec::new();
         let mut name_lens = Vec::new();
         let mut visibilities = Vec::new();
         for property in &class.properties {
+            declaring_ids.push(property.declaring_class_id);
+            let (declaring_bytes, declaring_len) = self.emit_call_type_static_bytes(
+                "declared_class_property_declaring_name_bytes",
+                &property.declaring_class_name,
+            );
+            declaring_name_ptrs.push(declaring_bytes);
+            declaring_name_lens.push(declaring_len);
+
             let (bytes, len) = self
                 .emit_call_type_static_bytes("declared_class_property_name_bytes", &property.name);
             name_ptrs.push(bytes);
@@ -12486,9 +12640,28 @@ impl CGenerator {
 
         let index = self.next_static_data;
         self.next_static_data += 1;
+        let declaring_ids_name = format!("declared_class_property_declaring_ids_{index}");
+        let declaring_ptrs_name = format!("declared_class_property_declaring_name_ptrs_{index}");
+        let declaring_lens_name = format!("declared_class_property_declaring_name_lens_{index}");
         let ptrs_name = format!("declared_class_property_name_ptrs_{index}");
         let lens_name = format!("declared_class_property_name_lens_{index}");
         let visibility_name = format!("declared_class_property_visibilities_{index}");
+        self.static_data.push(format!(
+            "static const size_t {declaring_ids_name}[] = {{{}}};",
+            declaring_ids
+                .iter()
+                .map(usize::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        self.static_data.push(format!(
+            "static const uint8_t *{declaring_ptrs_name}[] = {{{}}};",
+            declaring_name_ptrs.join(", ")
+        ));
+        self.static_data.push(format!(
+            "static const size_t {declaring_lens_name}[] = {{{}}};",
+            declaring_name_lens.join(", ")
+        ));
         self.static_data.push(format!(
             "static const uint8_t *{ptrs_name}[] = {{{}}};",
             name_ptrs.join(", ")
@@ -12506,12 +12679,64 @@ impl CGenerator {
                 .join(", ")
         ));
 
-        (
-            ptrs_name,
-            lens_name,
-            visibility_name,
-            class.properties.len(),
-        )
+        CDeclaredClassPropertyMetadataArrays {
+            declaring_class_ids: declaring_ids_name,
+            declaring_class_names: declaring_ptrs_name,
+            declaring_class_name_lens: declaring_lens_name,
+            names: ptrs_name,
+            name_lens: lens_name,
+            visibilities: visibility_name,
+            count: class.properties.len(),
+        }
+    }
+
+    fn emit_declared_class_ancestor_metadata_arrays(
+        &mut self,
+        class: &CDeclaredClass,
+    ) -> CDeclaredClassAncestorMetadataArrays {
+        if class.ancestor_names.is_empty() {
+            return CDeclaredClassAncestorMetadataArrays {
+                names: "NULL".to_string(),
+                name_lens: "NULL".to_string(),
+                count: 0,
+            };
+        }
+
+        let mut name_ptrs = Vec::new();
+        let mut name_lens = Vec::new();
+        for ancestor_name in &class.ancestor_names {
+            let (bytes, len) = self
+                .emit_call_type_static_bytes("declared_class_ancestor_name_bytes", ancestor_name);
+            name_ptrs.push(bytes);
+            name_lens.push(len);
+        }
+
+        let index = self.next_static_data;
+        self.next_static_data += 1;
+        let ptrs_name = format!("declared_class_ancestor_name_ptrs_{index}");
+        let lens_name = format!("declared_class_ancestor_name_lens_{index}");
+        self.static_data.push(format!(
+            "static const uint8_t *{ptrs_name}[] = {{{}}};",
+            name_ptrs.join(", ")
+        ));
+        self.static_data.push(format!(
+            "static const size_t {lens_name}[] = {{{}}};",
+            name_lens.join(", ")
+        ));
+
+        CDeclaredClassAncestorMetadataArrays {
+            names: ptrs_name,
+            name_lens: lens_name,
+            count: class.ancestor_names.len(),
+        }
+    }
+
+    fn declared_class_requires_ancestor_allocation(class: &CDeclaredClass) -> bool {
+        !class.ancestor_names.is_empty()
+            || class
+                .properties
+                .iter()
+                .any(|property| property.declaring_class_id != class.class_id)
     }
 
     fn materialize_declared_class_instantiation(
@@ -12524,17 +12749,38 @@ impl CGenerator {
 
         let (class_name, class_name_len) =
             self.emit_call_type_static_bytes("declared_class_name_bytes", &class.name);
-        let (property_names, property_name_lens, property_visibilities, property_count) =
-            self.emit_declared_class_property_metadata_arrays(&class);
+        let property_metadata = self.emit_declared_class_property_metadata_arrays(&class);
 
         let diagnostic = self.next_native_name("declared_class_diagnostic");
         let result = self.next_native_name("declared_class_object");
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
-        self.body.push(format!(
-            "phpc_NativeValueHandle {result} = phpc_native_value_new_declared_class_with_diagnostic({}, {class_name}, {class_name_len}, {property_names}, {property_name_lens}, {property_visibilities}, {property_count}, &{diagnostic});",
-            class.class_id
-        ));
+        if Self::declared_class_requires_ancestor_allocation(&class) {
+            let ancestor_metadata = self.emit_declared_class_ancestor_metadata_arrays(&class);
+            self.body.push(format!(
+                "phpc_NativeValueHandle {result} = phpc_native_value_new_declared_class_with_ancestors_and_diagnostic({}, {class_name}, {class_name_len}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, &{diagnostic});",
+                class.class_id,
+                property_metadata.declaring_class_ids,
+                property_metadata.declaring_class_names,
+                property_metadata.declaring_class_name_lens,
+                property_metadata.names,
+                property_metadata.name_lens,
+                property_metadata.visibilities,
+                property_metadata.count,
+                ancestor_metadata.names,
+                ancestor_metadata.name_lens,
+                ancestor_metadata.count
+            ));
+        } else {
+            self.body.push(format!(
+                "phpc_NativeValueHandle {result} = phpc_native_value_new_declared_class_with_diagnostic({}, {class_name}, {class_name_len}, {}, {}, {}, {}, &{diagnostic});",
+                class.class_id,
+                property_metadata.names,
+                property_metadata.name_lens,
+                property_metadata.visibilities,
+                property_metadata.count
+            ));
+        }
         self.emit_report_native_diagnostic(&diagnostic);
         let error_exit = self.native_error_exit(failure_cleanup);
         self.body
@@ -12560,20 +12806,21 @@ impl CGenerator {
         let Some(class) = self.declared_classes.get(&key).cloned() else {
             return Ok(None);
         };
-        if class.constructor.is_none() && !args.is_empty() {
+        let constructor = self.declared_class_constructor_for_instantiation(&class);
+        if constructor.is_none() && !args.is_empty() {
             return Err(self.unsupported(span, ASSEMBLY_OBJECT_INSTANTIATION_REJECTION));
         }
 
         let value = self.materialize_declared_class_instantiation(class.clone(), failure_cleanup);
-        if let Some(constructor) = &class.constructor {
+        if let Some((constructor_class, constructor)) = constructor {
             let constructor_failure_cleanup = format!(
                 "{}{}",
                 c_cleanup_sequence(&value.cleanup_after_use),
                 failure_cleanup
             );
             self.emit_declared_class_constructor_call(
-                &class.name,
-                constructor,
+                &constructor_class.name,
+                &constructor,
                 &value.handle,
                 args,
                 span,
@@ -19601,15 +19848,18 @@ impl CGenerator {
     ) -> Option<(CDeclaredClass, CDeclaredClassMethod)> {
         let class_key = Self::declared_class_key(class_name);
         let method_key = Self::declared_method_key(method_name);
-        let class = self.declared_classes.get(&class_key)?;
-        let method = class
-            .methods
-            .iter()
-            .find(|method| {
+        for lookup_key in self.declared_class_lookup_keys(&class_key)? {
+            let class = self
+                .declared_classes
+                .get(&lookup_key)
+                .expect("declared class lookup key has metadata");
+            if let Some(method) = class.methods.iter().find(|method| {
                 method.is_static && Self::declared_method_key(&method.decl.name) == method_key
-            })?
-            .clone();
-        Some((class.clone(), method))
+            }) {
+                return Some((class.clone(), method.clone()));
+            }
+        }
+        None
     }
 
     fn declared_class_static_method_candidates(
@@ -19630,6 +19880,30 @@ impl CGenerator {
             }
         }
         candidates
+    }
+
+    fn declared_class_lookup_keys(&self, class_key: &str) -> Option<Vec<String>> {
+        self.declared_classes.get(class_key)?;
+        let mut lookup_keys = vec![class_key.to_string()];
+        lookup_keys.extend(self.declared_class_ancestor_keys(class_key).ok()?);
+        Some(lookup_keys)
+    }
+
+    fn declared_class_constructor_for_instantiation(
+        &self,
+        class: &CDeclaredClass,
+    ) -> Option<(CDeclaredClass, CDeclaredClassMethod)> {
+        let class_key = Self::declared_class_key(&class.name);
+        for lookup_key in self.declared_class_lookup_keys(&class_key)? {
+            let candidate_class = self
+                .declared_classes
+                .get(&lookup_key)
+                .expect("declared class lookup key has metadata");
+            if let Some(constructor) = &candidate_class.constructor {
+                return Some((candidate_class.clone(), constructor.clone()));
+            }
+        }
+        None
     }
 
     fn materialize_declared_method_frame_arguments(

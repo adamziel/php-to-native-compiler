@@ -292,6 +292,56 @@ const NATIVE_DECLARED_CLASS_CONSTRUCTOR_SOURCE: &str = concat!(
     "echo (new Box(\"Temp\"))->label(), \"\\n\";\n",
 );
 
+const NATIVE_DECLARED_CLASS_INHERITANCE_SOURCE: &str = concat!(
+    "<?php\n",
+    "class Other {}\n",
+    "class Base {\n",
+    "    public $baseName;\n",
+    "    public function init($value = \"Ada\") {\n",
+    "        $this->baseName = $value;\n",
+    "        return $this->baseName;\n",
+    "    }\n",
+    "    public static function tag($value = \"BASE\") { return strtolower($value); }\n",
+    "}\n",
+    "class Mid extends Base { public $midName; }\n",
+    "class Child extends Mid {\n",
+    "    public $childName;\n",
+    "    public function child($value) {\n",
+    "        $this->childName = $value;\n",
+    "        return $this->baseName . \":\" . $this->childName;\n",
+    "    }\n",
+    "}\n",
+    "class CtorBase {\n",
+    "    public $value;\n",
+    "    public function __construct($value = \"made\") { $this->value = $value; }\n",
+    "}\n",
+    "class CtorChild extends CtorBase { public $own; }\n",
+    "$child = new Child();\n",
+    "echo $child instanceof Base ? \"B\" : \"-\";\n",
+    "echo $child instanceof Mid ? \"M\" : \"-\";\n",
+    "echo $child instanceof Child ? \"C\" : \"-\";\n",
+    "echo $child instanceof Other ? \"O\" : \"-\";\n",
+    "echo \"|\";\n",
+    "echo empty($child->baseName) ? \"E\" : \"N\";\n",
+    "echo \":\";\n",
+    "$child->baseName = \"root\";\n",
+    "echo $child->baseName;\n",
+    "echo \"|\";\n",
+    "echo $child->init(\"next\"), \":\", $child->baseName;\n",
+    "echo \"|\";\n",
+    "echo $child->child(\"leaf\");\n",
+    "echo \"|\";\n",
+    "$method = \"init\";\n",
+    "echo $child->$method(\"dyn\"), \":\", $child->baseName;\n",
+    "echo \"|\";\n",
+    "echo Child::tag(\"LOUD\");\n",
+    "echo \"|\";\n",
+    "echo $child::tag(\"SHOUT\");\n",
+    "echo \"|\";\n",
+    "$ctor = new CtorChild(\"ctor\");\n",
+    "echo $ctor->value, \"\\n\";\n",
+);
+
 const NATIVE_BRANCH_STATE_MERGE_SOURCE: &str = concat!(
     "<?php\n",
     "$flags = [\"go\" => \"1\", \"stop\" => \"0\"];\n",
@@ -1319,6 +1369,37 @@ fn emit_exe_links_and_runs_declared_class_constructor_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"ADA|GRACE|7|TEMP\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_declared_class_inheritance_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "declared_class_inheritance",
+        NATIVE_DECLARED_CLASS_INHERITANCE_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run declared-class-inheritance executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"BMC-|E:root|next:next|next:leaf|dyn:dyn|loud|shout|ctor\n"
+    );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -2360,9 +2441,45 @@ fn native_executable_c_source_routes_declared_constructors_through_frame_dispatc
 }
 
 #[test]
+fn native_executable_c_source_routes_declared_inheritance_through_ancestor_metadata() {
+    let program = parse(NATIVE_DECLARED_CLASS_INHERITANCE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_value_new_declared_class_with_ancestors_and_diagnostic")
+            && source.contains("declared_class_property_declaring_ids")
+            && source.contains("declared_class_property_declaring_name_ptrs")
+            && source.contains("declared_class_ancestor_name_ptrs"),
+        "inherited declared objects should allocate through ancestor-aware object metadata:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_value_instanceof_class_with_diagnostic")
+            .count()
+            >= 6,
+        "inherited instanceof, instance methods, dynamic methods, and object static calls should share class-relation checks:\n{source}"
+    );
+    assert!(
+        body.contains("method_dispatch_status")
+            && body.contains("dynamic_method_dispatch_status")
+            && body.contains("static_method_status")
+            && body.contains("object_static_method_status")
+            && body.contains("constructor_status"),
+        "inherited public methods, dynamic methods, static methods, object static calls, and constructors should reuse declared frames:\n{source}"
+    );
+    assert!(
+        !source.contains("object/class lowering rejects")
+            && !source.contains("object-instantiation lowering rejects")
+            && !source.contains("method-call lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_keeps_unsupported_declared_class_features_blocked() {
     for source in [
-        "<?php\nclass Base {}\nclass Child extends Base {}\nnew Child();\n",
+        "<?php\nclass Child extends Missing {}\nnew Child();\n",
+        "<?php\nfinal class Base {}\nclass Child extends Base {}\nnew Child();\n",
         "<?php\nclass Box { public static $count; }\nnew Box();\n",
         "<?php\nclass Box { public $name = \"Ada\"; }\nnew Box();\n",
         "<?php\nclass Box {}\nnew Box(\"Ada\");\n",

@@ -19607,6 +19607,59 @@ pub unsafe extern "C" fn phpc_native_value_new_declared_class_with_diagnostic(
     }
 }
 
+/// # Safety
+///
+/// `class_name` must be null only when `class_name_len` is zero. Property
+/// arrays must either all be null with a zero property count or point to
+/// `property_count` entries. Declaring-class arrays must follow the same
+/// property-count contract. Ancestor arrays must either all be null with a
+/// zero ancestor count or point to `ancestor_class_count` entries. Returned
+/// object values are owned by the caller and must be freed with
+/// `phpc_native_value_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_new_declared_class_with_ancestors_and_diagnostic(
+    class_id: usize,
+    class_name: *const u8,
+    class_name_len: usize,
+    property_declaring_class_ids: *const usize,
+    property_declaring_class_names: *const *const u8,
+    property_declaring_class_name_lens: *const usize,
+    property_names: *const *const u8,
+    property_name_lens: *const usize,
+    property_visibilities: *const u8,
+    property_count: usize,
+    ancestor_class_names: *const *const u8,
+    ancestor_class_name_lens: *const usize,
+    ancestor_class_count: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe {
+        native_value_new_declared_class_with_ancestors(
+            class_id,
+            class_name,
+            class_name_len,
+            property_declaring_class_ids,
+            property_declaring_class_names,
+            property_declaring_class_name_lens,
+            property_names,
+            property_name_lens,
+            property_visibilities,
+            property_count,
+            ancestor_class_names,
+            ancestor_class_name_lens,
+            ancestor_class_count,
+        )
+    } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
 unsafe fn native_value_new_declared_class(
     class_id: usize,
     class_name: *const u8,
@@ -19673,6 +19726,193 @@ unsafe fn native_value_new_declared_class(
     }
 
     Ok(Value::Object(PhpObject::from_class(&class)))
+}
+
+unsafe fn native_value_new_declared_class_with_ancestors(
+    class_id: usize,
+    class_name: *const u8,
+    class_name_len: usize,
+    property_declaring_class_ids: *const usize,
+    property_declaring_class_names: *const *const u8,
+    property_declaring_class_name_lens: *const usize,
+    property_names: *const *const u8,
+    property_name_lens: *const usize,
+    property_visibilities: *const u8,
+    property_count: usize,
+    ancestor_class_names: *const *const u8,
+    ancestor_class_name_lens: *const usize,
+    ancestor_class_count: usize,
+) -> Result<Value, String> {
+    let class_name = unsafe {
+        native_declared_class_utf8_name(
+            class_name,
+            class_name_len,
+            "class-name",
+            "native declared class inheritance allocation",
+        )
+    }?;
+    if class_name.is_empty() {
+        return Err(
+            "native declared class inheritance allocation requires a non-empty class name"
+                .to_string(),
+        );
+    }
+
+    let property_declaring_class_ids =
+        unsafe { native_abi_slice(property_declaring_class_ids, property_count) }.ok_or_else(
+            || {
+                "native declared class inheritance allocation received invalid property declaring-class id ABI"
+                    .to_string()
+            },
+        )?;
+    let property_declaring_class_names =
+        unsafe { native_abi_slice(property_declaring_class_names, property_count) }.ok_or_else(
+            || {
+                "native declared class inheritance allocation received invalid property declaring-class name ABI"
+                    .to_string()
+            },
+        )?;
+    let property_declaring_class_name_lens =
+        unsafe { native_abi_slice(property_declaring_class_name_lens, property_count) }
+            .ok_or_else(|| {
+                "native declared class inheritance allocation received invalid property declaring-class name length ABI"
+                    .to_string()
+            })?;
+    let property_names =
+        unsafe { native_abi_slice(property_names, property_count) }.ok_or_else(|| {
+            "native declared class inheritance allocation received invalid property-name ABI"
+                .to_string()
+        })?;
+    let property_name_lens = unsafe { native_abi_slice(property_name_lens, property_count) }
+        .ok_or_else(|| {
+            "native declared class inheritance allocation received invalid property-name length ABI"
+                .to_string()
+        })?;
+    let property_visibilities = unsafe { native_abi_slice(property_visibilities, property_count) }
+        .ok_or_else(|| {
+            "native declared class inheritance allocation received invalid property-visibility ABI"
+                .to_string()
+        })?;
+    let ancestor_class_names =
+        unsafe { native_abi_slice(ancestor_class_names, ancestor_class_count) }.ok_or_else(
+            || {
+                "native declared class inheritance allocation received invalid ancestor-name ABI"
+                    .to_string()
+            },
+        )?;
+    let ancestor_class_name_lens = unsafe {
+        native_abi_slice(ancestor_class_name_lens, ancestor_class_count)
+    }
+    .ok_or_else(|| {
+        "native declared class inheritance allocation received invalid ancestor-name length ABI"
+            .to_string()
+    })?;
+
+    let mut class = PhpClassMetadata::new(ClassId(class_id), class_name.clone());
+    let mut inherited_properties = Vec::new();
+    for index in 0..property_count {
+        let declaring_class_name = unsafe {
+            native_declared_class_utf8_name(
+                property_declaring_class_names[index],
+                property_declaring_class_name_lens[index],
+                "property declaring-class name",
+                "native declared class inheritance allocation",
+            )
+        }?;
+        if declaring_class_name.is_empty() {
+            return Err(
+                "native declared class inheritance allocation requires non-empty property declaring-class names"
+                    .to_string(),
+            );
+        }
+        let property_name = unsafe {
+            native_declared_class_utf8_name(
+                property_names[index],
+                property_name_lens[index],
+                "property-name",
+                "native declared class inheritance allocation",
+            )
+        }?;
+        if property_name.is_empty() {
+            return Err(
+                "native declared class inheritance allocation requires non-empty property names"
+                    .to_string(),
+            );
+        }
+
+        let visibility = native_declared_class_property_visibility(property_visibilities[index])
+            .ok_or_else(|| {
+                format!(
+                    "native declared class inheritance allocation received unsupported property visibility tag {}",
+                    property_visibilities[index]
+                )
+            })?;
+        let property = PhpPropertyMetadata::instance(property_name, visibility);
+        let declaring_class_id = ClassId(property_declaring_class_ids[index]);
+        if declaring_class_id == ClassId(class_id)
+            && declaring_class_name.eq_ignore_ascii_case(&class_name)
+        {
+            class
+                .add_property(property)
+                .map_err(|error| error.message().to_string())?;
+        } else {
+            inherited_properties.push(PhpObjectPropertyInitializer::new(
+                declaring_class_id,
+                declaring_class_name,
+                property,
+            ));
+        }
+    }
+
+    let mut ancestors = Vec::with_capacity(ancestor_class_count);
+    for index in 0..ancestor_class_count {
+        let ancestor = unsafe {
+            native_declared_class_utf8_name(
+                ancestor_class_names[index],
+                ancestor_class_name_lens[index],
+                "ancestor class name",
+                "native declared class inheritance allocation",
+            )
+        }?;
+        if ancestor.is_empty() {
+            return Err(
+                "native declared class inheritance allocation requires non-empty ancestor names"
+                    .to_string(),
+            );
+        }
+        ancestors.push(ancestor);
+    }
+
+    Ok(Value::Object(
+        PhpObject::from_class_with_inherited_metadata_with_id(
+            &class,
+            &inherited_properties,
+            ancestors,
+            NEXT_OBJECT_ID.fetch_add(1, AtomicOrdering::Relaxed),
+        ),
+    ))
+}
+
+unsafe fn native_declared_class_utf8_name(
+    name: *const u8,
+    name_len: usize,
+    label: &str,
+    context: &str,
+) -> Result<String, String> {
+    let bytes = unsafe { native_abi_bytes(name, name_len) }
+        .ok_or_else(|| format!("{context} received invalid {label} ABI"))?;
+    std::str::from_utf8(bytes)
+        .map(str::to_string)
+        .map_err(|_| format!("{context} requires UTF-8 {label}s"))
+}
+
+fn native_declared_class_property_visibility(tag: u8) -> Option<Visibility> {
+    match tag {
+        NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC => Some(Visibility::Public),
+        NATIVE_DECLARED_CLASS_PROPERTY_PROTECTED => Some(Visibility::Protected),
+        NATIVE_DECLARED_CLASS_PROPERTY_PRIVATE => Some(Visibility::Private),
+        _ => None,
+    }
 }
 
 /// # Safety
@@ -22105,6 +22345,119 @@ mod tests {
         unsafe { phpc_native_value_operation_result_free(debug_type) };
 
         assert!(unsafe { phpc_native_value_type_predicate(object, NATIVE_VALUE_TYPE_IS_OBJECT) });
+        unsafe { phpc_native_value_free(object) };
+    }
+
+    #[test]
+    fn native_declared_class_inheritance_allocation_preserves_ancestors_and_slots() {
+        let child_class = b"ChildBox";
+        let base_class = b"BaseBox";
+        let root_class = b"RootBox";
+        let base_property = b"baseName";
+        let secret_property = b"secret";
+        let child_property = b"childName";
+        let property_declaring_class_ids = [7usize, 7usize, 11usize];
+        let property_declaring_class_names = [
+            base_class.as_ptr(),
+            base_class.as_ptr(),
+            child_class.as_ptr(),
+        ];
+        let property_declaring_class_name_lens =
+            [base_class.len(), base_class.len(), child_class.len()];
+        let property_names = [
+            base_property.as_ptr(),
+            secret_property.as_ptr(),
+            child_property.as_ptr(),
+        ];
+        let property_name_lens = [
+            base_property.len(),
+            secret_property.len(),
+            child_property.len(),
+        ];
+        let property_visibilities = [
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+            NATIVE_DECLARED_CLASS_PROPERTY_PRIVATE,
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+        ];
+        let ancestor_class_names = [root_class.as_ptr(), base_class.as_ptr()];
+        let ancestor_class_name_lens = [root_class.len(), base_class.len()];
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let object = unsafe {
+            phpc_native_value_new_declared_class_with_ancestors_and_diagnostic(
+                11,
+                child_class.as_ptr(),
+                child_class.len(),
+                property_declaring_class_ids.as_ptr(),
+                property_declaring_class_names.as_ptr(),
+                property_declaring_class_name_lens.as_ptr(),
+                property_names.as_ptr(),
+                property_name_lens.as_ptr(),
+                property_visibilities.as_ptr(),
+                property_names.len(),
+                ancestor_class_names.as_ptr(),
+                ancestor_class_name_lens.as_ptr(),
+                ancestor_class_names.len(),
+                &mut diagnostic,
+            )
+        };
+
+        assert!(diagnostic.is_null());
+        let value = unsafe { object.as_ref() }.expect("inherited object allocation returns handle");
+        let Value::Object(object_value) = value else {
+            panic!("declared class inheritance allocation should return an object value");
+        };
+        assert_eq!(object_value.class_id().index(), 11);
+        assert_eq!(object_value.class_name(), "ChildBox");
+        assert!(object_value.is_instance_of_class_name("childbox"));
+        assert!(object_value.is_instance_of_class_name("BaseBox"));
+        assert!(object_value.is_instance_of_class_name("RootBox"));
+        assert!(!object_value.is_instance_of_class_name("OtherBox"));
+        let properties = object_value.properties();
+        assert_eq!(properties.len(), 3);
+        assert_eq!(properties[0].name(), "baseName");
+        assert_eq!(properties[0].visibility(), Visibility::Public);
+        assert_eq!(properties[1].name(), "secret");
+        assert_eq!(properties[1].visibility(), Visibility::Private);
+        assert_eq!(properties[2].name(), "childName");
+        assert_eq!(properties[2].visibility(), Visibility::Public);
+
+        let replacement = NativeValueHandle::from_value(Value::String("Ada".to_string()));
+        let written = unsafe {
+            phpc_native_value_object_public_property_operation_with_diagnostic(
+                object,
+                base_property.as_ptr(),
+                base_property.len(),
+                replacement,
+                NATIVE_OBJECT_PUBLIC_PROPERTY_WRITE,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { written.as_ref() },
+            Some(&Value::String("Ada".to_string()))
+        );
+        unsafe { phpc_native_value_free(written) };
+        unsafe { phpc_native_value_free(replacement) };
+
+        let private_read = unsafe {
+            phpc_native_value_object_public_property_operation_with_diagnostic(
+                object,
+                secret_property.as_ptr(),
+                secret_property.len(),
+                NativeValueHandle::null(),
+                NATIVE_OBJECT_PUBLIC_PROPERTY_READ,
+                &mut diagnostic,
+            )
+        };
+        assert!(private_read.is_null());
+        assert!(
+            native_diagnostic_message_for_test(diagnostic).contains("non-public property"),
+            "diagnostic should preserve inherited non-public property visibility"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
         unsafe { phpc_native_value_free(object) };
     }
 
