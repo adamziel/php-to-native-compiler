@@ -1,30 +1,22 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 06:06 CEST
+Updated: 2026-05-24 06:12 CEST
 Evaluation marker: `20260524T040111Z`
 
 Latest primary semantic/test baseline:
-`44fd7cea codegen: lower function-frame finally blocks`
+`241e1222 codegen: lower by-reference function frames`
 
-Latest integrated semantic baseline: `44fd7cea codegen: lower function-frame finally blocks`
+Latest integrated semantic baseline: `241e1222 codegen: lower by-reference function frames`
 Latest evaluator report: `20260524T040111Z`
 
 Current primary git state at review:
 
-- `master` and `origin/master` are synced at
-  `d4de901b docs: update progress after function-frame finally`.
-- Latest counted semantic commit remains
-  `44fd7cea codegen: lower function-frame finally blocks`.
-- The primary worktree has uncommitted candidate WIP in
-  `compiler/src/codegen.rs`,
-  `compiler/src/interpreter.rs`,
-  `compiler/tests/native_function_call_boundary.rs`,
-  `compiler/tests/native_link.rs`, and `runtime/src/lib.rs`.
-  The codegen/tests/runtime part appears to target generated-C by-reference
-  user-function frames. `compiler/src/interpreter.rs` appeared dirty during
-  final verification after the initial freshness check and is treated as
-  active implementation WIP. None of this is counted until committed, pushed,
-  and proven.
+- `241e1222` is the latest counted semantic commit in this progress update.
+- The previous dirty by-reference frame candidate has been trimmed, gated, and
+  committed as a focused generated-C/runtime reference-frame slice.
+- The unrelated `compiler/src/interpreter.rs` formatting-only dirty hunk seen
+  during review was removed before integration and is not part of the counted
+  work.
 
 These are candid engineering estimates toward generalized PHP semantics in the
 native compiler. They are not test pass rates. Only primary-integrated, pushed
@@ -33,40 +25,51 @@ fixtures do not.
 
 ## Executive Read
 
-Overall estimated progress: **59%** `[############--------]`
+Overall estimated progress: **60%** `[############--------]`
 
-Executable PHP semantics: **56%** `[###########---------]`
+Executable PHP semantics: **57%** `[###########---------]`
 
 The primary branch has made useful integrated progress since the last evaluator
 marker: bounded generated-C variadic by-value frames landed, bounded
-function-local `try`/`finally` landed inside supported by-value frames, and
-LLVM consumed more shared direct string/native-value operand contracts. This
-keeps broadening executable islands without pretending those islands equal full
-PHP.
+function-local `try`/`finally` landed inside supported by-value frames, LLVM
+consumed more shared direct string/native-value operand contracts, and
+generated-C frames now have a first alias-visible by-reference parameter path.
+This broadens real executable calls/frames without pretending the selected
+generated-C subset equals full PHP.
 
-The current dirty by-reference frame candidate is in a valuable area, but it is
-not integrated progress yet. The main remaining work is still central language
-semantics: callable lookup, closures, methods, objects/properties, `$this`,
-by-reference and named/unpacked argument binding, reference/COW identity,
-source-ordered diagnostics, cleanup/unwind/finally/destructors, and backend
-parity.
+The main remaining work is still central language semantics: full callable
+lookup, closures, methods, objects/properties, `$this`, typed/default/variadic
+by-reference binding, named/unpacked arguments, by-reference returns,
+reference/COW identity, source-ordered diagnostics, cleanup/unwind/finally/
+destructors, and backend parity.
 
 ## Grand Roadmap Position
 
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | **82%** | `[################----]` | Strong shared value, array, reference, symbol, request, comparison, truthiness, string, diagnostic, cleanup, request-root, call-frame type-coercion, and dynamic-call surfaces. Some remain scaffolding until consumed end to end. |
-| Compiler/backend consumers | **75%** | `[###############-----]` | Generated-C has broad selected coverage. LLVM now consumes shared direct string-result, string-predicate, string-search, string-int, and selected `strlen()` nested operand ABIs. Direct assembly and many nested/backend consumers still stop at blockers. |
-| Executable PHP semantics | **56%** | `[###########---------]` | Many focused linked programs run, including function-local bounded `try`/`finally` in by-value frames, but behavior is still selected islands rather than a complete PHP execution model. |
-| Arrays, lvalues, references, COW | **58%** | `[############--------]` | Strong selected array/lvalue/reference paths. Full COW, arbitrary writable roots, by-reference calls, foreach parity, and object/reference joins remain open. |
-| Symbols, globals, request state | **66%** | `[#############-------]` | Request roots and selected `$GLOBALS` paths are strong. Reconciliation across calls, requests, includes, aliases, and by-reference frames remains incomplete. |
-| Calls, functions, frames | **51%** | `[##########----------]` | Bounded generated-C by-value fixed/default/variadic frames, typed params/returns, recursion guards, registered introspection, dynamic user calls, dynamic builtin calls, finite mixed user/builtin sets, and function-local bounded `try`/`finally` are integrated. Current by-reference frame work is candidate WIP, not counted. |
+| Runtime and ABI foundations | **83%** | `[#################---]` | Strong shared value, array, reference, symbol, request, comparison, truthiness, string, diagnostic, cleanup, request-root, call-frame type-coercion, dynamic-call, and reference-clone surfaces. Some remain scaffolding until consumed end to end. |
+| Compiler/backend consumers | **76%** | `[###############-----]` | Generated-C has broad selected coverage, including untyped by-reference frame parameters. LLVM now consumes shared direct string-result, string-predicate, string-search, string-int, and selected `strlen()` nested operand ABIs. Direct assembly and many nested/backend consumers still stop at blockers. |
+| Executable PHP semantics | **57%** | `[###########---------]` | Many focused linked programs run, including function-local bounded `try`/`finally` and alias-visible by-reference writes in selected generated-C frames, but behavior is still selected islands rather than a complete PHP execution model. |
+| Arrays, lvalues, references, COW | **60%** | `[############--------]` | Strong selected array/lvalue/reference paths now include generated-C by-reference call binding for direct variables and nested symbol-table paths. Full COW, arbitrary writable roots, foreach parity, object/reference joins, and broader frame/reference composition remain open. |
+| Symbols, globals, request state | **67%** | `[#############-------]` | Request roots and selected `$GLOBALS` paths are strong. Generated-C by-reference calls now reuse symbol-table reference paths for ordinary variables and nested array slots. Reconciliation across calls, requests, includes, aliases, and broader reference frames remains incomplete. |
+| Calls, functions, frames | **54%** | `[###########---------]` | Bounded generated-C by-value fixed/default/variadic frames, typed params/returns, recursion guards, registered introspection, dynamic user calls, dynamic builtin calls, finite mixed user/builtin sets, function-local bounded `try`/`finally`, and untyped by-reference direct/compiler-known single-target frame calls are integrated. |
 | Objects, properties, methods | **10%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary lacks general compiled object construction, property access, method dispatch, `$this`, visibility, static context, and magic behavior. |
 | Control flow, cleanup, diagnostics | **46%** | `[#########-----------]` | Bounded generated-C branches, loops, transfers, switch/goto, normal-flow `try`/`finally`, return-through-finally inside supported by-value frames, diagnostic-aware stdout formatting, and selected cleanup paths exist. Broad unwind, handlers, destructors, output buffers, and exact ordering remain open. |
-| Broad integrated verification | **50%** | `[##########----------]` | Focused gates are strong, including function-frame `try`/`finally` source and linked execution. Cross-feature composition, end-to-end PHP programs, backend parity, and the unfiltered `native_runtime_abi` debt need broader proof. |
+| Broad integrated verification | **51%** | `[##########----------]` | Focused gates are strong, including function-frame `try`/`finally`, by-reference frame source/linked execution, and dynamic by-reference blocker proof. Cross-feature composition, end-to-end PHP programs, backend parity, and the unfiltered `native_runtime_abi` debt need broader proof. |
 
 ## Recent Primary-Integrated Work
 
+- `241e1222`: generated-C user-function frames now accept untyped
+  by-reference parameters for direct calls and compiler-known single-target
+  dynamic calls. The compiler passes `phpc_NativeReferenceHandle` frame
+  arguments, clones reference handles through the shared
+  `phpc_native_reference_clone(...)` ABI, binds writable direct-variable and
+  nested array-slot arguments through existing symbol-table reference paths,
+  and keeps runtime string-valued by-reference dispatch on a shared dynamic-call
+  failure path. Linked proof covers direct variable writeback, known dynamic
+  call writeback, nested array slot mutation, multi-reference swap behavior,
+  non-lvalue rejection, unsupported by-reference declarations, and runtime
+  dynamic by-reference blockers.
 - `44fd7cea`: generated-C by-value user-function frames now admit bounded
   no-throw `try`/`finally` bodies through the existing active-finalizer
   scheduler. Direct linked proof covers normal flow, return-through-finally,
@@ -99,9 +102,12 @@ parity.
 Primary-integrated capability:
 
 - Bounded generated-C by-value fixed/default/typed/variadic user-function
-  frames.
+  frames plus untyped by-reference direct and compiler-known single-target
+  frame calls.
 - Supported dynamic dispatch to registered by-value user frames and selected
   native builtin families.
+- Shared runtime reference-handle cloning and generated-C by-reference argument
+  binding for ordinary symbol-table variables and nested array-slot paths.
 - Function-local bounded no-throw `try`/`finally` inside supported by-value
   frames.
 - LLVM consumption of selected shared string/native-value runtime contracts.
@@ -110,9 +116,6 @@ Primary-integrated capability:
 
 Candidate work not counted:
 
-- Current dirty primary by-reference user-function frame WIP, including
-  reference-handle frame parameters, symbol-table reference paths, and
-  by-reference tests.
 - Lane-local foreach root rebinding, reference-slot operation families,
   request key-result accessors, branch-decision diagnostic cleanup, call-frame
   carrier cleanup, object/interface metadata contracts, and many array/string/
@@ -130,7 +133,8 @@ Done:
   `$GLOBALS`, lazy expressions, branches, loops, switch/goto, selected
   `try`/`finally`, and stdout diagnostics.
 - [x] Generated-C bounded by-value direct, recursive, typed, variadic, dynamic
-  user, dynamic builtin, finite mixed user/builtin calls, and bounded
+  user, dynamic builtin, finite mixed user/builtin calls, untyped
+  by-reference direct/compiler-known single-target frame calls, and bounded
   function-local `try`/`finally`.
 - [x] Generated-native `strpos()` and `substr_count()` through a shared
   PHP-shaped string-search ABI.
@@ -142,8 +146,6 @@ Done:
 
 In progress / candidates:
 
-- [ ] Primary dirty by-reference generated-C user-function frame candidate,
-  pending integration proof and commit.
 - [ ] Lane-local cleanup/readiness contracts that may support broader
   control-flow and unwind semantics.
 - [ ] Lane-local array, string, diagnostic, call-frame, reference-slot, object
@@ -158,8 +160,9 @@ Not done:
   static context, magic methods, and object lifecycle behavior.
 - [ ] Full references/COW identity across calls, arrays, objects, globals,
   foreach, and control-flow joins.
-- [ ] By-reference, named/unpacked argument, by-reference return, closure
-  capture, and method-frame semantics.
+- [ ] Typed/default/variadic by-reference arguments, runtime string-valued
+  by-reference dispatch, named/unpacked arguments, by-reference returns,
+  closure capture, and method-frame semantics.
 - [ ] Full structured cleanup/unwind/finally/destructor/output-buffer/SAPI
   behavior.
 - [ ] Exact diagnostic severity, ordering, suppression, handlers, spans,
@@ -169,18 +172,15 @@ Not done:
 
 ## Steering Read
 
-The by-reference frame WIP is a legitimate hard semantic target, but it should
-earn integration by proving alias-visible behavior rather than only opening
-another narrow frame shape. Good proof would include direct variable and nested
-path references, rejection of non-lvalue argument sources, unsupported dynamic
-target handling, cleanup on failure, and linked execution showing writeback.
+The by-reference frame slice earned integration because it proves
+alias-visible behavior through shared reference and symbol-table operations
+rather than only opening a declaration shape. The next primary direction should
+probably leave the call-frame adjacency and attack a different cliff: callable
+array/object forms, closures/methods/object execution, references/COW through
+real control-flow joins, structured unwind/cleanup/finally, or source-ordered
+diagnostics.
 
-After that, the next primary direction should probably leave the call-frame
-adjacency and attack a different cliff: callable array/object forms,
-closures/methods/object execution, references/COW through real control-flow
-joins, structured unwind/cleanup/finally, or source-ordered diagnostics.
-
-Resource note from this review: `/dev/shm` is under severe pressure at about
-527M free, 98% used. `/home` remains healthy at about 284G free. Broad new
-dispatch or large gates should wait for owner-aware `/dev/shm` cleanup or for
-active jobs to release space.
+Resource note from this review: `/dev/shm` has recovered to about 16G free
+and `/home` remains healthy at about 264G free. Primary gates for this batch
+used disk-backed `/tmp/phpc-target-primary-byref-frames`; keep checking
+resource ownership before broad dispatch.
