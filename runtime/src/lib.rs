@@ -19749,6 +19749,74 @@ unsafe fn native_value_instanceof_class(
     ))
 }
 
+/// # Safety
+///
+/// `value` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. `method_name` and `reason` must be null only when
+/// their lengths are zero. The diagnostic slot is overwritten with a method
+/// dispatch failure message.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_object_method_failure_with_diagnostic(
+    value: NativeValueHandle,
+    method_name: *const u8,
+    method_name_len: usize,
+    reason: *const u8,
+    reason_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let message = unsafe {
+        native_value_object_method_failure_message(
+            value,
+            method_name,
+            method_name_len,
+            reason,
+            reason_len,
+        )
+    };
+    unsafe { native_store_diagnostic_message(diagnostic, message) };
+}
+
+unsafe fn native_value_object_method_failure_message(
+    value: NativeValueHandle,
+    method_name: *const u8,
+    method_name_len: usize,
+    reason: *const u8,
+    reason_len: usize,
+) -> String {
+    let method_name = match unsafe { native_abi_utf8(method_name, method_name_len, "method name") }
+    {
+        Ok(name) if !name.is_empty() => name.to_string(),
+        Ok(_) => "<empty>".to_string(),
+        Err(error) => return error.message().to_string(),
+    };
+    let reason = match unsafe { native_abi_utf8(reason, reason_len, "method failure reason") } {
+        Ok(reason) if !reason.is_empty() => reason.to_string(),
+        Ok(_) => "method dispatch is not supported for this receiver".to_string(),
+        Err(error) => return error.message().to_string(),
+    };
+
+    match unsafe { value.as_ref() } {
+        Some(Value::Object(object)) => format!(
+            "native method dispatch for {}::{} is not supported: {}",
+            object.class_name(),
+            method_name,
+            reason
+        ),
+        Some(value) => format!(
+            "native method dispatch for {} value to {} is not supported: {}",
+            value.type_name(),
+            method_name,
+            reason
+        ),
+        None => format!(
+            "native method dispatch for null value handle to {} is not supported: {}",
+            method_name, reason
+        ),
+    }
+}
+
 unsafe fn native_value_object_public_property_operation(
     object: NativeValueHandle,
     property_name: *const u8,
@@ -22210,6 +22278,83 @@ mod tests {
         assert!(
             native_diagnostic_message_for_test(diagnostic).contains("instanceof class name"),
             "diagnostic should reject invalid class-name ABI"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(scalar) };
+        unsafe { phpc_native_value_free(object) };
+    }
+
+    #[test]
+    fn native_object_method_failure_reports_receiver_and_method_families() {
+        let class_name = b"NativeBox";
+        let method_name = b"store";
+        let reason = b"receiver class did not provide a supported generated public method";
+        let property_id = b"id";
+        let property_names = [property_id.as_ptr()];
+        let property_name_lens = [property_id.len()];
+        let property_visibilities = [NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC];
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let object = unsafe {
+            phpc_native_value_new_declared_class_with_diagnostic(
+                41,
+                class_name.as_ptr(),
+                class_name.len(),
+                property_names.as_ptr(),
+                property_name_lens.as_ptr(),
+                property_visibilities.as_ptr(),
+                property_names.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+
+        unsafe {
+            phpc_native_value_object_method_failure_with_diagnostic(
+                object,
+                method_name.as_ptr(),
+                method_name.len(),
+                reason.as_ptr(),
+                reason.len(),
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "native method dispatch for NativeBox::store is not supported: receiver class did not provide a supported generated public method"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let scalar = NativeValueHandle::from_value(Value::Int(7));
+        unsafe {
+            phpc_native_value_object_method_failure_with_diagnostic(
+                scalar,
+                method_name.as_ptr(),
+                method_name.len(),
+                reason.as_ptr(),
+                reason.len(),
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "native method dispatch for int value to store is not supported: receiver class did not provide a supported generated public method"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        unsafe {
+            phpc_native_value_object_method_failure_with_diagnostic(
+                object,
+                std::ptr::null(),
+                1,
+                reason.as_ptr(),
+                reason.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(
+            native_diagnostic_message_for_test(diagnostic).contains("method name bytes"),
+            "invalid method-name ABI should be centralized in the runtime helper"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(scalar) };

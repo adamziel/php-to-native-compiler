@@ -3,10 +3,10 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use crate::ast::{
-    ArrayItem, AssignTarget, BinaryOp, CastKind, ClassDecl, ClassMember, ClassVisibility,
-    CompoundAssignOp, Expr, ForAction, FunctionDecl, FunctionParam, IncrementDecrementOp,
-    IncrementDecrementPosition, NewClassName, Program, ReferenceSource, Span, Stmt, SwitchCase,
-    TypeDecl, UnaryOp, UnsetTarget,
+    ArrayItem, AssignTarget, BinaryOp, CastKind, ClassDecl, ClassMember, ClassMethodDecl,
+    ClassVisibility, CompoundAssignOp, Expr, ForAction, FunctionDecl, FunctionParam,
+    IncrementDecrementOp, IncrementDecrementPosition, NewClassName, Program, ReferenceSource, Span,
+    Stmt, SwitchCase, TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
@@ -89,7 +89,7 @@ const ASSEMBLY_CLASS_NAME_CONSTANT_REJECTION: &str = "assembly class-name consta
 const LLVM_STATIC_MEMBER_REJECTION: &str = "LLVM static-member lowering rejects class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
 const ASSEMBLY_STATIC_MEMBER_REJECTION: &str = "assembly static-member lowering rejects class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
 const LLVM_METHOD_CALL_REJECTION: &str = "LLVM method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
-const ASSEMBLY_METHOD_CALL_REJECTION: &str = "assembly method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
+const ASSEMBLY_METHOD_CALL_REJECTION: &str = "assembly method-call lowering rejects method calls outside the bounded generated-C public declared instance-method frame subset, including dynamic method names, named static, object static-receiver, self::, parent::, static::, unsupported method declarations, unsupported receiver classes, visibility contexts, references/copy-on-write, and exact native method-call errors; generated-native C lowers supported public declared instance methods with $this frame binding";
 const LLVM_CLONE_REJECTION: &str = "LLVM clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
 const ASSEMBLY_CLONE_REJECTION: &str = "assembly clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
 const LLVM_INTERFACE_REJECTION: &str = "LLVM interface lowering rejects interface declarations until native class/interface tables, implementation checks, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current interface metadata behavior";
@@ -9391,6 +9391,7 @@ struct CGenerator {
     uses_native_object_instantiation_helpers: bool,
     uses_native_object_property_helpers: bool,
     uses_native_object_instanceof_helpers: bool,
+    uses_native_object_method_helpers: bool,
     next_static_data: usize,
     next_native_temp: usize,
     native_value_cleanup_handles: Vec<String>,
@@ -9490,12 +9491,19 @@ struct CDeclaredClass {
     class_id: usize,
     name: String,
     properties: Vec<CDeclaredClassProperty>,
+    methods: Vec<CDeclaredClassMethod>,
 }
 
 #[derive(Debug, Clone)]
 struct CDeclaredClassProperty {
     name: String,
     visibility: ClassVisibility,
+}
+
+#[derive(Debug, Clone)]
+struct CDeclaredClassMethod {
+    c_name: String,
+    decl: FunctionDecl,
 }
 
 #[derive(Debug, Clone)]
@@ -10983,6 +10991,7 @@ impl CGenerator {
             branch.uses_native_object_instantiation_helpers;
         self.uses_native_object_property_helpers |= branch.uses_native_object_property_helpers;
         self.uses_native_object_instanceof_helpers |= branch.uses_native_object_instanceof_helpers;
+        self.uses_native_object_method_helpers |= branch.uses_native_object_method_helpers;
     }
 
     fn merge_scoped_branch_codegen(&mut self, branch: &Self) {
@@ -11006,6 +11015,7 @@ impl CGenerator {
             || self.uses_native_object_instantiation_helpers
             || self.uses_native_object_property_helpers
             || self.uses_native_object_instanceof_helpers
+            || self.uses_native_object_method_helpers
             || !self.function_definitions.is_empty()
     }
 
@@ -11013,7 +11023,7 @@ impl CGenerator {
         name.to_ascii_lowercase()
     }
 
-    fn c_user_function_name(index: usize, name: &str) -> String {
+    fn c_identifier_suffix(name: &str, fallback: &str) -> String {
         let mut sanitized = String::new();
         for ch in name.chars() {
             if ch.is_ascii_alphanumeric() {
@@ -11023,9 +11033,25 @@ impl CGenerator {
             }
         }
         if sanitized.is_empty() {
-            sanitized.push_str("anonymous");
+            sanitized.push_str(fallback);
         }
+        sanitized
+    }
+
+    fn c_user_function_name(index: usize, name: &str) -> String {
+        let sanitized = Self::c_identifier_suffix(name, "anonymous");
         format!("phpc_user_function_{index}_{sanitized}")
+    }
+
+    fn c_declared_class_method_name(
+        class_index: usize,
+        method_index: usize,
+        class_name: &str,
+        method_name: &str,
+    ) -> String {
+        let class_name = Self::c_identifier_suffix(class_name, "class");
+        let method_name = Self::c_identifier_suffix(method_name, "method");
+        format!("phpc_declared_method_{class_index}_{method_index}_{class_name}_{method_name}")
     }
 
     fn c_user_function_signature(
@@ -11051,7 +11077,33 @@ impl CGenerator {
         )
     }
 
+    fn c_declared_class_method_signature(
+        c_name: &str,
+        function_params: &[FunctionParam],
+    ) -> String {
+        let mut params = vec![
+            "int phpc_call_depth".to_string(),
+            "phpc_NativeValueHandle phpc_this".to_string(),
+        ];
+        params.extend(function_params.iter().enumerate().map(|(index, param)| {
+            if param.by_reference {
+                format!("phpc_NativeReferenceHandle arg_{index}")
+            } else {
+                format!("phpc_NativeValueHandle arg_{index}")
+            }
+        }));
+        params.push("int *phpc_call_status".to_string());
+        format!(
+            "static phpc_NativeValueHandle {c_name}({})",
+            params.join(", ")
+        )
+    }
+
     fn declared_class_key(name: &str) -> String {
+        name.to_ascii_lowercase()
+    }
+
+    fn declared_method_key(name: &str) -> String {
         name.to_ascii_lowercase()
     }
 
@@ -11092,27 +11144,92 @@ impl CGenerator {
 
         let mut seen_properties = HashSet::new();
         let mut properties = Vec::new();
+        let mut seen_methods = HashSet::new();
+        let mut methods = Vec::new();
+        let class_index = self.declared_class_order.len();
         for member in &class.members {
-            let ClassMember::Property(property) = member else {
-                return Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
-            };
-            if property.is_static || property.type_decl.is_some() || property.default.is_some() {
-                return Err(self.unsupported(property.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+            match member {
+                ClassMember::Property(property) => {
+                    if property.is_static
+                        || property.type_decl.is_some()
+                        || property.default.is_some()
+                    {
+                        return Err(
+                            self.unsupported(property.span, ASSEMBLY_OBJECT_CLASS_REJECTION)
+                        );
+                    }
+                    if !seen_properties.insert(property.name.clone()) {
+                        return Err(
+                            self.unsupported(property.span, ASSEMBLY_OBJECT_CLASS_REJECTION)
+                        );
+                    }
+                    properties.push(CDeclaredClassProperty {
+                        name: property.name.clone(),
+                        visibility: property.visibility,
+                    });
+                }
+                ClassMember::Method(method) => {
+                    self.validate_declared_class_method_for_native_frame(method)?;
+                    let key = Self::declared_method_key(&method.function.name);
+                    if !seen_methods.insert(key) {
+                        return Err(self.unsupported(method.span, ASSEMBLY_METHOD_CALL_REJECTION));
+                    }
+                    let c_name = Self::c_declared_class_method_name(
+                        class_index,
+                        methods.len(),
+                        &class.name,
+                        &method.function.name,
+                    );
+                    methods.push(CDeclaredClassMethod {
+                        c_name,
+                        decl: method.function.clone(),
+                    });
+                }
+                ClassMember::Constant(_) => {
+                    return Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+                }
             }
-            if !seen_properties.insert(property.name.clone()) {
-                return Err(self.unsupported(property.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
-            }
-            properties.push(CDeclaredClassProperty {
-                name: property.name.clone(),
-                visibility: property.visibility,
-            });
         }
 
         Ok(CDeclaredClass {
             class_id: self.declared_class_order.len(),
             name: class.name.clone(),
             properties,
+            methods,
         })
+    }
+
+    fn validate_declared_class_method_for_native_frame(
+        &self,
+        method: &ClassMethodDecl,
+    ) -> CompileResult<()> {
+        if method.function.name.eq_ignore_ascii_case("__construct") {
+            return Err(self.unsupported(method.span, ASSEMBLY_OBJECT_INSTANTIATION_REJECTION));
+        }
+        if method.visibility != ClassVisibility::Public
+            || method.is_static
+            || method.is_abstract
+            || stmt_list_contains_global_import(&method.function.body)
+            || method.function.is_nested
+            || method.function.returns_by_reference
+            || native_user_function_has_malformed_variadic_params(&method.function)
+            || method
+                .function
+                .return_type
+                .as_ref()
+                .is_some_and(|decl| !native_function_type_decl_is_supported(decl))
+            || method.function.params.iter().any(|param| {
+                native_user_function_param_has_unsupported_by_reference_shape(param)
+                    || param
+                        .type_decl
+                        .as_ref()
+                        .is_some_and(|decl| !native_function_type_decl_is_supported(decl))
+            })
+            || function_body_contains_native_frame_blocker(&method.function.body)
+        {
+            return Err(self.unsupported(method.span, ASSEMBLY_METHOD_CALL_REJECTION));
+        }
+        Ok(())
     }
 
     fn declared_class_property_visibility_tag(visibility: ClassVisibility) -> u8 {
@@ -11292,6 +11409,39 @@ impl CGenerator {
         Ok(())
     }
 
+    fn declared_class_methods_in_order(&self) -> Vec<(String, CDeclaredClassMethod)> {
+        let mut methods = Vec::new();
+        for key in &self.declared_class_order {
+            let class = self
+                .declared_classes
+                .get(key)
+                .expect("registered class key has metadata");
+            methods.extend(
+                class
+                    .methods
+                    .iter()
+                    .cloned()
+                    .map(|method| (class.name.clone(), method)),
+            );
+        }
+        methods
+    }
+
+    fn has_declared_class_methods(&self) -> bool {
+        self.declared_classes
+            .values()
+            .any(|class| !class.methods.is_empty())
+    }
+
+    fn emit_declared_class_method_definitions(&mut self) -> CompileResult<()> {
+        let methods = self.declared_class_methods_in_order();
+        for (class_name, method) in methods {
+            let definition = self.emit_declared_class_method_definition(&class_name, &method)?;
+            self.function_definitions.push(definition);
+        }
+        Ok(())
+    }
+
     fn emit_user_function_definition(&mut self, function: &CUserFunction) -> CompileResult<String> {
         let mut generator = CGenerator {
             uses_native_string_helpers: true,
@@ -11322,52 +11472,7 @@ impl CGenerator {
         generator.body.push(format!(
             "if (phpc_call_depth > PHPC_NATIVE_USER_FUNCTION_MAX_CALL_DEPTH) {{ fprintf(stderr, \"phpc native user-function call depth exceeded\\n\"); return (phpc_NativeValueHandle){{0}}; }}"
         ));
-        for (index, param) in function.decl.params.iter().enumerate() {
-            let handle = generator.next_native_name("frame_param");
-            if param.by_reference {
-                generator.uses_native_reference_helpers = true;
-                generator.body.push(format!(
-                    "phpc_NativeReferenceHandle {handle} = phpc_native_reference_clone(arg_{index});"
-                ));
-                let error_exit = generator.native_error_exit("");
-                generator
-                    .body
-                    .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
-                generator.retain_native_reference_cleanup_handle(&handle);
-                generator
-                    .variables
-                    .insert(param.name.clone(), CValue::NativeReferenceHandle(handle));
-                generator.remember_variable_order(&param.name);
-                continue;
-            }
-            if let Some(type_decl) = param
-                .type_decl
-                .as_ref()
-                .filter(|_| !param.is_variadic)
-                .filter(|decl| !native_function_type_decl_is_mixed(decl))
-            {
-                generator.emit_call_frame_type_coercion_assignment(
-                    &handle,
-                    &format!("arg_{index}"),
-                    &format!("parameter ${}", param.name),
-                    &type_decl.text,
-                    "",
-                );
-            } else {
-                generator.body.push(format!(
-                    "phpc_NativeValueHandle {handle} = phpc_native_value_clone(arg_{index});"
-                ));
-            }
-            let error_exit = generator.native_error_exit("");
-            generator
-                .body
-                .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
-            generator.retain_native_value_cleanup_handle(&handle);
-            generator
-                .variables
-                .insert(param.name.clone(), CValue::NativeValueHandle(handle));
-            generator.remember_variable_order(&param.name);
-        }
+        generator.bind_function_frame_parameters(&function.decl);
 
         for statement in &function.decl.body {
             generator.emit_statement(statement)?;
@@ -11394,6 +11499,124 @@ impl CGenerator {
         }
         definition.push_str("}\n");
         Ok(definition)
+    }
+
+    fn emit_declared_class_method_definition(
+        &mut self,
+        class_name: &str,
+        method: &CDeclaredClassMethod,
+    ) -> CompileResult<String> {
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            uses_native_value_clone: true,
+            user_functions: self.user_functions.clone(),
+            user_function_order: self.user_function_order.clone(),
+            declared_classes: self.declared_classes.clone(),
+            declared_class_order: self.declared_class_order.clone(),
+            function_return_status: Some("phpc_call_status".to_string()),
+            function_call_depth: Some("phpc_call_depth".to_string()),
+            function_callable_name: Some(format!("{class_name}::{}()", method.decl.name)),
+            function_return_type: method
+                .decl
+                .return_type
+                .as_ref()
+                .map(|decl| decl.text.clone()),
+            next_static_data: self.next_static_data,
+            next_native_temp: self.next_native_temp,
+            ..CGenerator::default()
+        };
+
+        generator.body.push("*phpc_call_status = 0;".to_string());
+        generator.body.push(format!(
+            "if (phpc_call_depth > PHPC_NATIVE_USER_FUNCTION_MAX_CALL_DEPTH) {{ fprintf(stderr, \"phpc native user-function call depth exceeded\\n\"); return (phpc_NativeValueHandle){{0}}; }}"
+        ));
+        generator.bind_method_this_handle();
+        generator.bind_function_frame_parameters(&method.decl);
+
+        for statement in &method.decl.body {
+            generator.emit_statement(statement)?;
+        }
+        generator.emit_function_default_return(method.decl.span)?;
+
+        self.next_static_data = generator.next_static_data;
+        self.next_native_temp = generator.next_native_temp;
+        self.static_data
+            .extend(generator.static_data.iter().cloned());
+        self.merge_branch_feature_flags(&generator);
+
+        let mut definition = String::new();
+        definition.push_str(&Self::c_declared_class_method_signature(
+            &method.c_name,
+            &method.decl.params,
+        ));
+        definition.push_str(" {\n");
+        for line in &generator.body {
+            definition.push_str("  ");
+            definition.push_str(line);
+            definition.push('\n');
+        }
+        definition.push_str("}\n");
+        Ok(definition)
+    }
+
+    fn bind_method_this_handle(&mut self) {
+        self.uses_native_value_clone = true;
+        let handle = self.next_native_name("frame_this");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {handle} = phpc_native_value_clone(phpc_this);"
+        ));
+        let error_exit = self.native_error_exit("");
+        self.body
+            .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
+        self.retain_native_value_cleanup_handle(&handle);
+        self.variables
+            .insert("this".to_string(), CValue::NativeValueHandle(handle));
+        self.remember_variable_order("this");
+    }
+
+    fn bind_function_frame_parameters(&mut self, function: &FunctionDecl) {
+        for (index, param) in function.params.iter().enumerate() {
+            let handle = self.next_native_name("frame_param");
+            if param.by_reference {
+                self.uses_native_reference_helpers = true;
+                self.body.push(format!(
+                    "phpc_NativeReferenceHandle {handle} = phpc_native_reference_clone(arg_{index});"
+                ));
+                let error_exit = self.native_error_exit("");
+                self.body
+                    .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
+                self.retain_native_reference_cleanup_handle(&handle);
+                self.variables
+                    .insert(param.name.clone(), CValue::NativeReferenceHandle(handle));
+                self.remember_variable_order(&param.name);
+                continue;
+            }
+            if let Some(type_decl) = param
+                .type_decl
+                .as_ref()
+                .filter(|_| !param.is_variadic)
+                .filter(|decl| !native_function_type_decl_is_mixed(decl))
+            {
+                self.emit_call_frame_type_coercion_assignment(
+                    &handle,
+                    &format!("arg_{index}"),
+                    &format!("parameter ${}", param.name),
+                    &type_decl.text,
+                    "",
+                );
+            } else {
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {handle} = phpc_native_value_clone(arg_{index});"
+                ));
+            }
+            let error_exit = self.native_error_exit("");
+            self.body
+                .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
+            self.retain_native_value_cleanup_handle(&handle);
+            self.variables
+                .insert(param.name.clone(), CValue::NativeValueHandle(handle));
+            self.remember_variable_order(&param.name);
+        }
     }
 
     fn emit_program_statements(&mut self, statements: &[Stmt]) -> CompileResult<()> {
@@ -11467,6 +11690,7 @@ impl CGenerator {
     fn emit_program(&mut self, program: &Program) -> CompileResult<String> {
         self.register_top_level_declared_classes(&program.statements)?;
         self.register_top_level_user_functions(&program.statements)?;
+        self.emit_declared_class_method_definitions()?;
         self.emit_registered_user_function_definitions()?;
         self.emit_program_statements(&program.statements)?;
 
@@ -11862,6 +12086,9 @@ impl CGenerator {
             if self.uses_native_object_instanceof_helpers {
                 output.push_str("extern _Bool phpc_native_value_instanceof_class_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *class_name, size_t class_name_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
+            if self.uses_native_object_method_helpers {
+                output.push_str("extern void phpc_native_value_object_method_failure_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *method_name, size_t method_name_len, const uint8_t *reason, size_t reason_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            }
             output.push_str("extern void phpc_native_value_free(phpc_NativeValueHandle value);\n");
             output.push_str("extern size_t phpc_native_diagnostic_message_stderr(phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern size_t phpc_native_diagnostic_report(phpc_NativeDiagnosticHandle diagnostic);\n");
@@ -11938,7 +12165,7 @@ impl CGenerator {
         if self.uses_strcmp {
             output.push_str("#include <string.h>\n\n");
         }
-        if !self.user_function_order.is_empty() {
+        if !self.user_function_order.is_empty() || self.has_declared_class_methods() {
             output.push_str("#define PHPC_NATIVE_USER_FUNCTION_MAX_CALL_DEPTH 1024\n\n");
         }
         for line in &self.static_data {
@@ -11948,7 +12175,7 @@ impl CGenerator {
         if !self.static_data.is_empty() {
             output.push('\n');
         }
-        if !self.user_function_order.is_empty() {
+        if !self.user_function_order.is_empty() || self.has_declared_class_methods() {
             for key in &self.user_function_order {
                 let function = self
                     .user_functions
@@ -11958,6 +12185,13 @@ impl CGenerator {
                     &function.c_name,
                     &function.decl.params,
                     function.requires_root_symbols,
+                ));
+                output.push_str(";\n");
+            }
+            for (_, method) in self.declared_class_methods_in_order() {
+                output.push_str(&Self::c_declared_class_method_signature(
+                    &method.c_name,
+                    &method.decl.params,
                 ));
                 output.push_str(";\n");
             }
@@ -17807,8 +18041,22 @@ impl CGenerator {
                 }
                 Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
             }
-            Expr::MethodCall { .. }
-            | Expr::DynamicMethodCall { .. }
+            Expr::MethodCall {
+                target,
+                method,
+                args,
+                span,
+            } => {
+                if let Some(value) = self
+                    .try_materialize_declared_class_method_call(target, method, args, *span, "")?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    Ok(CValue::NativeValueHandle(value.handle))
+                } else {
+                    Err(self.unsupported_value_call(expr))
+                }
+            }
+            Expr::DynamicMethodCall { .. }
             | Expr::ParentMethodCall { .. }
             | Expr::StaticMethodCall { .. }
             | Expr::ObjectStaticMethodCall { .. }
@@ -19077,6 +19325,220 @@ impl CGenerator {
             handle: result.clone(),
             cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
         })
+    }
+
+    fn declared_class_method_candidates(
+        &self,
+        method_name: &str,
+    ) -> Vec<(CDeclaredClass, CDeclaredClassMethod)> {
+        let method_key = Self::declared_method_key(method_name);
+        let mut candidates = Vec::new();
+        for class_key in &self.declared_class_order {
+            let class = self
+                .declared_classes
+                .get(class_key)
+                .expect("registered class key has metadata");
+            for method in &class.methods {
+                if Self::declared_method_key(&method.decl.name) == method_key {
+                    candidates.push((class.clone(), method.clone()));
+                }
+            }
+        }
+        candidates
+    }
+
+    fn try_materialize_declared_class_method_call(
+        &mut self,
+        target: &Expr,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let candidates = self.declared_class_method_candidates(method_name);
+        if candidates.is_empty() {
+            return Ok(None);
+        }
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_object_instanceof_helpers = true;
+        self.uses_native_object_method_helpers = true;
+
+        let receiver = self.materialize_native_value_result_operand(target, failure_cleanup)?;
+        let receiver_cleanup = c_cleanup_sequence(&receiver.cleanup_after_use);
+        let matched = self.next_native_name("method_dispatch_matched");
+        let result = self.next_native_name("method_dispatch_result");
+        let status = self.next_native_name("method_dispatch_status");
+        self.body.push(format!("_Bool {matched} = 0;"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = (phpc_NativeValueHandle){{0}};"
+        ));
+        self.body.push(format!("int {status} = 0;"));
+
+        for (class, method) in candidates {
+            let (class_name, class_name_len) =
+                self.emit_call_type_static_bytes("method_dispatch_class_name_bytes", &class.name);
+            let diagnostic = self.next_native_name("method_dispatch_match_diagnostic");
+            let class_match = self.next_native_name("method_dispatch_class_match");
+            self.body.push(format!("if (!{matched}) {{"));
+            self.body
+                .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+            self.body.push(format!(
+                "_Bool {class_match} = phpc_native_value_instanceof_class_with_diagnostic({}, {class_name}, {class_name_len}, &{diagnostic});",
+                receiver.handle
+            ));
+            let class_failure_cleanup = format!(
+                "phpc_native_diagnostic_report({diagnostic}); {receiver_cleanup}{failure_cleanup}"
+            );
+            let class_error_exit = self.native_error_exit(&class_failure_cleanup);
+            self.body.push(format!(
+                "if ({diagnostic}.ptr != NULL) {{ {class_error_exit} }}"
+            ));
+            self.body
+                .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+            self.body.push(format!("if ({class_match}) {{"));
+            self.body.push(format!("{matched} = 1;"));
+
+            if !native_user_function_accepts_arg_count(&method.decl, args.len()) {
+                let reason =
+                    "argument count is outside the generated public method frame arity/default/variadic subset";
+                self.emit_method_dispatch_failure(
+                    &receiver.handle,
+                    method_name,
+                    reason,
+                    &format!("{receiver_cleanup}{failure_cleanup}"),
+                    "",
+                );
+                self.body.push("}".to_string());
+                self.body.push("}".to_string());
+                continue;
+            }
+
+            let mut branch_cleanup = Vec::new();
+            let mut call_args = vec![
+                self.user_function_call_depth_argument(),
+                receiver.handle.clone(),
+            ];
+            let fixed_count = native_user_function_fixed_param_count(&method.decl);
+            for (index, param) in method.decl.params.iter().take(fixed_count).enumerate() {
+                let value_expr = if let Some(arg) = args.get(index) {
+                    arg
+                } else {
+                    param.default.as_ref().ok_or_else(|| {
+                        self.unsupported_call_operation(NativeCallOperation::value_result(
+                            span,
+                            NativeCallCallee::MethodDispatch,
+                            NativeCallBlocker::UnknownCalleeDiagnostics,
+                        ))
+                    })?
+                };
+                let value_failure_cleanup = format!(
+                    "{}{}{}",
+                    c_cleanup_sequence(&branch_cleanup),
+                    receiver_cleanup,
+                    failure_cleanup
+                );
+                if param.by_reference {
+                    let reference = self.materialize_call_reference_argument(
+                        value_expr,
+                        span,
+                        &value_failure_cleanup,
+                        NativeCallCallee::MethodDispatch,
+                    )?;
+                    branch_cleanup.extend(reference.cleanup_after_use);
+                    call_args.push(reference.handle);
+                } else {
+                    let value = self.materialize_native_value_result_operand(
+                        value_expr,
+                        &value_failure_cleanup,
+                    )?;
+                    branch_cleanup.extend(value.cleanup_after_use.clone());
+                    call_args.push(value.handle);
+                }
+            }
+            if let Some((_, variadic_param)) = native_user_function_variadic_param(&method.decl) {
+                let variadic_failure_cleanup = format!(
+                    "{}{}{}",
+                    c_cleanup_sequence(&branch_cleanup),
+                    receiver_cleanup,
+                    failure_cleanup
+                );
+                let callable_name = format!("{}::{}()", class.name, method.decl.name);
+                let variadic_value = self.materialize_variadic_argument_array_from_exprs(
+                    variadic_param,
+                    &args[fixed_count..],
+                    &callable_name,
+                    &variadic_failure_cleanup,
+                )?;
+                branch_cleanup.extend(variadic_value.cleanup_after_use.clone());
+                call_args.push(variadic_value.handle);
+            }
+
+            self.body.push(format!("{status} = 0;"));
+            call_args.push(format!("&{status}"));
+            self.body.push(format!(
+                "{result} = {}({});",
+                method.c_name,
+                call_args.join(", ")
+            ));
+            let call_failure_cleanup = format!(
+                "{}{}{}",
+                c_cleanup_sequence(&branch_cleanup),
+                receiver_cleanup,
+                failure_cleanup
+            );
+            let error_exit = self.native_error_exit(&call_failure_cleanup);
+            self.body.push(format!(
+                "if ({status} != 1 || {result}.ptr == NULL) {{ {error_exit} }}"
+            ));
+            self.body.extend(branch_cleanup);
+            self.body.push("}".to_string());
+            self.body.push("}".to_string());
+        }
+
+        self.body.push(format!("if (!{matched}) {{"));
+        self.emit_method_dispatch_failure(
+            &receiver.handle,
+            method_name,
+            "receiver class did not provide a supported generated public method",
+            &format!("{receiver_cleanup}{failure_cleanup}"),
+            "",
+        );
+        self.body.push("}".to_string());
+        self.body.extend(receiver.cleanup_after_use);
+
+        Ok(Some(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }))
+    }
+
+    fn emit_method_dispatch_failure(
+        &mut self,
+        receiver_handle: &str,
+        method_name: &str,
+        reason: &str,
+        failure_cleanup: &str,
+        indent: &str,
+    ) {
+        self.uses_native_string_helpers = true;
+        self.uses_native_object_method_helpers = true;
+
+        let (method_bytes, method_len) =
+            self.emit_call_type_static_bytes("method_dispatch_method_name_bytes", method_name);
+        let (reason_bytes, reason_len) =
+            self.emit_call_type_static_bytes("method_dispatch_reason_bytes", reason);
+        let diagnostic = self.next_native_name("method_dispatch_failure_diagnostic");
+        self.body.push(format!(
+            "{indent}phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "{indent}phpc_native_value_object_method_failure_with_diagnostic({receiver_handle}, {method_bytes}, {method_len}, {reason_bytes}, {reason_len}, &{diagnostic});"
+        ));
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!(
+            "{indent}if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); {diagnostic}.ptr = NULL; }} {error_exit}"
+        ));
     }
 
     fn user_function_call_depth_argument(&self) -> String {

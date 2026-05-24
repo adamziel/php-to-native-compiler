@@ -143,6 +143,35 @@ const NATIVE_DECLARED_CLASS_INSTANCEOF_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_DECLARED_CLASS_METHOD_SOURCE: &str = concat!(
+    "<?php\n",
+    "class Box {\n",
+    "    public $name;\n",
+    "    public function store($value = \"Ada\") {\n",
+    "        $this->name = $value;\n",
+    "        return $this->name;\n",
+    "    }\n",
+    "    public function label($prefix) {\n",
+    "        return strtoupper($prefix);\n",
+    "    }\n",
+    "}\n",
+    "class Packet {\n",
+    "    public $code;\n",
+    "    public function store($value) {\n",
+    "        $this->code = $value;\n",
+    "        return $this->code;\n",
+    "    }\n",
+    "}\n",
+    "$box = new Box();\n",
+    "echo $box->store(), \":\", $box->name, \"|\";\n",
+    "echo $box->store(\"Grace\"), \":\", $box->name, \"|\";\n",
+    "$packet = new Packet();\n",
+    "echo $packet->store(7), \":\", $packet->code, \"|\";\n",
+    "echo $box->label(\"go\"), \"|\";\n",
+    "echo (new Box())->store(\"Temp\"), \"|\";\n",
+    "echo $box->store(\"Tail\"), \"\\n\";\n",
+);
+
 const NATIVE_BRANCH_STATE_MERGE_SOURCE: &str = concat!(
     "<?php\n",
     "$flags = [\"go\" => \"1\", \"stop\" => \"0\"];\n",
@@ -970,6 +999,67 @@ fn emit_exe_links_and_runs_declared_class_instanceof_program() {
     );
     assert_eq!(run.stdout, b"YYNYN\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_declared_class_method_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("declared_class_method", NATIVE_DECLARED_CLASS_METHOD_SOURCE);
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run declared-class-method executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"Ada:Ada|Grace:Grace|7:7|GO|Temp|Tail\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_declared_class_method_dispatch_reports_runtime_misses() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class Box { public function open() { return \"open\"; } }\n",
+        "class Packet {}\n",
+        "$packet = new Packet();\n",
+        "echo $packet->open();\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("declared_class_method_miss", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run declared-class-method miss executable: {error}")
+    });
+
+    assert!(
+        !run.status.success(),
+        "method miss should fail through the shared runtime diagnostic"
+    );
+    assert!(
+        String::from_utf8_lossy(&run.stderr)
+            .contains("native method dispatch for Packet::open is not supported"),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
 
     let _ = fs::remove_file(source_path);
     let _ = fs::remove_file(output_path);
@@ -1816,6 +1906,35 @@ fn native_executable_c_source_routes_declared_instanceof_through_runtime_abi() {
 }
 
 #[test]
+fn native_executable_c_source_routes_declared_methods_through_frame_dispatch() {
+    let program = parse(NATIVE_DECLARED_CLASS_METHOD_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_declared_method_")
+            && source.contains("phpc_NativeValueHandle phpc_this"),
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_instanceof_class_with_diagnostic"),
+        "receiver class checks should use the shared object/class ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_object_method_failure_with_diagnostic"),
+        "method misses should use the shared runtime failure ABI:\n{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_value_object_public_property_operation_with_diagnostic")
+            .count()
+            >= 6,
+        "$this property reads and writes should stay on the shared property ABI:\n{source}"
+    );
+    assert!(!source.contains("method-call lowering rejects"), "{source}");
+}
+
+#[test]
 fn native_executable_c_source_keeps_unsupported_declared_class_features_blocked() {
     for source in [
         "<?php\nclass Base {}\nclass Child extends Base {}\nnew Child();\n",
@@ -1832,6 +1951,25 @@ fn native_executable_c_source_keeps_unsupported_declared_class_features_blocked(
                 || error
                     .message
                     .contains("object-instantiation lowering rejects"),
+            "{source}\n{error:?}"
+        );
+    }
+}
+
+#[test]
+fn native_executable_c_source_keeps_unsupported_method_shapes_blocked() {
+    for source in [
+        "<?php\nclass Box { public function go() { return 1; } }\n$box = new Box();\n$method = \"go\";\necho $box->$method();\n",
+        "<?php\nclass Box { public static function go() { return 1; } }\nBox::go();\n",
+        "<?php\nclass Box { private function go() { return 1; } }\n$box = new Box();\necho $box->go();\n",
+        "<?php\nclass Box { public function go() { return 1; } public function GO() { return 2; } }\nnew Box();\n",
+    ] {
+        let program = parse(source).expect("unsupported method source parses");
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert!(
+            error.message.contains("method-call lowering rejects")
+                || error.message.contains("object/class lowering rejects"),
             "{source}\n{error:?}"
         );
     }
