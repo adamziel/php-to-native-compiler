@@ -18,7 +18,7 @@ const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects clos
 const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations outside the bounded generated-C frame subset, including nested functions, unsupported typed/default/variadic by-reference parameters, malformed variadic declarations, unsupported parameter or return type metadata, static locals, and unsupported body cleanup, until full native function symbol tables, stack-frame layout, complete callable lookup, return-value flow, and exact native error behavior exist; generated-native C lowers supported by-value fixed/default/variadic direct, supported direct and compiler-known single-target by-reference frames, finite known-string dynamic, and runtime string-valued dynamic user-function frames with bounded scalar/array type enforcement";
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const ASSEMBLY_METHOD_CALL_REJECTION: &str = "assembly method-call lowering rejects method calls outside the bounded generated-C public declared instance/static method frame subset, including unsupported dynamic method-name dispatch, self::, parent::, static::, unsupported method declarations, unsupported receiver classes, visibility contexts, references/copy-on-write, and exact native method-call errors; generated-native C lowers supported public declared instance methods with $this frame binding, runtime string-valued dynamic public instance methods through declared-frame dispatch, supported named public static methods without $this, and supported object static-receiver calls through static frames";
-const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions outside the bounded generated-C declared-object constructor subset, including unsupported constructor declarations, non-public constructors, constructor returns, visibility contexts, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors; generated-native C lowers supported named and runtime string-valued declared object allocation, constructorless argument evaluation, and public constructors with $this frame binding";
+const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions outside the bounded generated-C declared-object constructor subset, including unsupported constructor declarations, non-public constructors, constructor returns, destructor-observable cleanup, visibility contexts, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors; generated-native C lowers supported named and runtime string-valued declared object allocation for destructor-free declared classes, constructorless argument evaluation, and public constructors with $this frame binding";
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 
 #[test]
@@ -778,6 +778,104 @@ fn native_executable_c_source_routes_statement_operand_call_results_through_call
 
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
+fn native_executable_c_source_blocks_destructor_observable_declared_class_allocation() {
+    for source in [
+        r#"<?php
+class DirectDestructor {
+    public function __destruct() { echo "direct"; }
+}
+new DirectDestructor();
+"#,
+        r#"<?php
+class ParentDestructor {
+    public function __destruct() { echo "parent"; }
+}
+class ChildDestructor extends ParentDestructor {}
+new ChildDestructor();
+"#,
+        r#"<?php
+class KnownDynamicDestructor {
+    public function __destruct() { echo "known"; }
+}
+$name = "KnownDynamicDestructor";
+new $name();
+"#,
+        r#"<?php
+class KnownCleanDynamic {}
+class KnownDynamicChoiceDestructor {
+    public function __destruct() { echo "known-choice"; }
+}
+$name = isset($_GET["class"]) ? "KnownCleanDynamic" : "KnownDynamicChoiceDestructor";
+new $name();
+"#,
+        r#"<?php
+class UnknownDynamicDestructor {
+    public function __destruct() { echo "unknown"; }
+}
+new $name();
+"#,
+        r#"<?php
+class NestedDestructor {
+    public function __destruct() { echo "nested"; }
+}
+class ConstructorSink {
+    public function __construct($value) {}
+}
+$name = "NestedDestructor";
+new ConstructorSink(new $name());
+"#,
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, ASSEMBLY_OBJECT_INSTANTIATION_REJECTION);
+    }
+}
+
+#[test]
+fn native_executable_c_source_keeps_destructor_free_dynamic_constructors_on_declared_path() {
+    for source in [
+        r#"<?php
+class DirtyButUnselected {
+    public function __destruct() { echo "dirty"; }
+}
+class CleanDynamicConstructor {
+    public $value;
+    public function __construct($value) { $this->value = $value; }
+}
+$name = "CleanDynamicConstructor";
+$object = new $name("ok");
+echo $object->value;
+"#,
+        r#"<?php
+class DirtyFiniteUnselected {
+    public function __destruct() { echo "dirty"; }
+}
+class FirstCleanDynamicConstructor {
+    public function __construct($value) { echo $value; }
+}
+class SecondCleanDynamicConstructor {
+    public function __construct($value) { echo $value; }
+}
+$name = isset($_GET["class"]) ? "FirstCleanDynamicConstructor" : "SecondCleanDynamicConstructor";
+new $name("ok");
+"#,
+    ] {
+        let generated = emit_native_executable_c_source(&parse(source).unwrap()).unwrap();
+
+        assert!(
+            generated.contains("phpc_native_value_dynamic_call_name_matches"),
+            "destructor-free dynamic constructors should keep the runtime class-name dispatch path:\n{generated}"
+        );
+        assert!(
+            !generated.contains("object-instantiation lowering rejects"),
+            "destructor-free dynamic constructor should not be blocked:\n{generated}"
+        );
     }
 }
 

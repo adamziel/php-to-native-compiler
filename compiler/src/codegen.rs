@@ -78,7 +78,7 @@ const ASSEMBLY_GLOBAL_DECLARATION_REJECTION: &str = "assembly global-declaration
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const ASSEMBLY_OBJECT_CLASS_REJECTION: &str = "assembly object/class lowering rejects class declarations outside the bounded generated-C declared-object subset, including inheritance metadata, unsupported constructor dispatch, unsupported public property and instance method forms, object metadata builtins, visibility contexts, references/copy-on-write, and exact native object errors; generated-native C lowers supported declared object allocation, public properties, named instanceof, public declared instance methods, and supported constructors";
 const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
-const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions outside the bounded generated-C declared-object constructor subset, including unsupported constructor declarations, non-public constructors, constructor returns, visibility contexts, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors; generated-native C lowers supported named and runtime string-valued declared object allocation, constructorless argument evaluation, and public constructors with $this frame binding";
+const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions outside the bounded generated-C declared-object constructor subset, including unsupported constructor declarations, non-public constructors, constructor returns, destructor-observable cleanup, visibility contexts, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors; generated-native C lowers supported named and runtime string-valued declared object allocation for destructor-free declared classes, constructorless argument evaluation, and public constructors with $this frame binding";
 const LLVM_OBJECT_PROPERTY_REJECTION: &str = "LLVM object-property lowering rejects instance property reads/writes and dynamic property-name access until native object layout, property tables/slots, visibility checks, magic property hooks, dynamic property policy, references/copy-on-write, and exact native object-property errors exist; phpc run handles current bounded object-property behavior";
 const ASSEMBLY_OBJECT_PROPERTY_REJECTION: &str = "assembly object-property lowering rejects instance property reads/writes and dynamic property-name access until native object layout, property tables/slots, visibility checks, magic property hooks, dynamic property policy, references/copy-on-write, and exact native object-property errors exist; phpc run handles current bounded object-property behavior";
 const LLVM_OBJECT_METADATA_REJECTION: &str = "LLVM object-metadata lowering rejects object/class metadata builtins until native class metadata tables, object handles, inheritance/interface/trait/enum registries, property/method tables, autoload interaction, references/copy-on-write, and exact native object-metadata errors exist; phpc run handles current bounded object metadata behavior";
@@ -278,6 +278,7 @@ enum NativeCallBlocker {
     UnknownCalleeDiagnostics,
     MethodDispatch,
     ConstructorDispatch,
+    DestructorObservableCleanup,
     ReferenceBinding,
 }
 
@@ -4375,6 +4376,7 @@ fn native_constructor_call_blocker_message(
         (
             NativeCallResult::Value,
             NativeCallBlocker::ConstructorDispatch
+            | NativeCallBlocker::DestructorObservableCleanup
             | NativeCallBlocker::ArgumentEvaluationCleanup
             | NativeCallBlocker::StatementOperandEvaluationCleanup
             | NativeCallBlocker::ValueOperandEvaluationCleanup
@@ -10259,6 +10261,7 @@ struct CDeclaredClass {
     parent_key: Option<String>,
     ancestor_names: Vec<String>,
     is_final: bool,
+    declares_destructor: bool,
     own_properties: Vec<CDeclaredClassProperty>,
     properties: Vec<CDeclaredClassProperty>,
     constructor: Option<CDeclaredClassMethod>,
@@ -11962,6 +11965,7 @@ impl CGenerator {
         let mut seen_properties = HashSet::new();
         let mut own_properties = Vec::new();
         let mut constructor = None;
+        let mut declares_destructor = false;
         let mut seen_methods = HashSet::new();
         let mut methods = Vec::new();
         for member in &class.members {
@@ -12009,6 +12013,9 @@ impl CGenerator {
                             is_static: false,
                         });
                     } else {
+                        if method.function.name.eq_ignore_ascii_case("__destruct") {
+                            declares_destructor = true;
+                        }
                         self.validate_declared_class_method_for_native_frame(method)?;
                         let key = Self::declared_method_key(&method.function.name);
                         if !seen_methods.insert(key) {
@@ -12045,6 +12052,7 @@ impl CGenerator {
                 .map(|parent| Self::declared_class_key(parent)),
             ancestor_names: Vec::new(),
             is_final: class.is_final,
+            declares_destructor,
             properties: own_properties.clone(),
             own_properties,
             constructor,
@@ -14243,9 +14251,25 @@ impl CGenerator {
                 let Some(class) = self.declared_classes.get(&key).cloned() else {
                     return Ok(None);
                 };
+                if self.declared_class_has_destructor_in_hierarchy(&key) {
+                    return Err(self.unsupported_call_operation(
+                        NativeCallOperation::constructor_value(
+                            span,
+                            NativeCallBlocker::DestructorObservableCleanup,
+                        ),
+                    ));
+                }
                 class
             }
-            NewClassName::DynamicVariable(_) => {
+            NewClassName::DynamicVariable(variable) => {
+                if self.dynamic_declared_class_constructor_has_destructor_risk(variable) {
+                    return Err(self.unsupported_call_operation(
+                        NativeCallOperation::constructor_value(
+                            span,
+                            NativeCallBlocker::DestructorObservableCleanup,
+                        ),
+                    ));
+                }
                 return self.materialize_dynamic_declared_class_new_expr(
                     class_name,
                     args,
@@ -14303,16 +14327,7 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let candidates = self
-            .declared_class_order
-            .iter()
-            .map(|key| {
-                self.declared_classes
-                    .get(key)
-                    .expect("registered class key has metadata")
-            })
-            .cloned()
-            .collect::<Vec<_>>();
+        let candidates = self.dynamic_declared_class_constructor_candidates(class_name);
         if candidates.is_empty() {
             return Ok(None);
         }
@@ -22118,6 +22133,87 @@ impl CGenerator {
         let mut lookup_keys = vec![class_key.to_string()];
         lookup_keys.extend(self.declared_class_ancestor_keys(class_key).ok()?);
         Some(lookup_keys)
+    }
+
+    fn declared_class_has_destructor_in_hierarchy(&self, class_key: &str) -> bool {
+        let mut current = Some(class_key.to_string());
+        let mut seen = HashSet::new();
+        while let Some(key) = current {
+            if !seen.insert(key.clone()) {
+                return true;
+            }
+            let Some(class) = self.declared_classes.get(&key) else {
+                return false;
+            };
+            if class.declares_destructor {
+                return true;
+            }
+            current = class.parent_key.clone();
+        }
+        false
+    }
+
+    fn dynamic_declared_class_known_keys(&self, variable: &str) -> Option<HashSet<String>> {
+        let values = self
+            .variables
+            .get(variable)
+            .and_then(|value| self.known_string_values_for_value(value))?;
+
+        Some(
+            values
+                .values()
+                .iter()
+                .map(|class_name| Self::declared_class_key(class_name))
+                .collect(),
+        )
+    }
+
+    fn dynamic_declared_class_constructor_candidates(
+        &self,
+        class_name: &NewClassName,
+    ) -> Vec<CDeclaredClass> {
+        let known_keys = match class_name {
+            NewClassName::DynamicVariable(variable) => {
+                self.dynamic_declared_class_known_keys(variable)
+            }
+            NewClassName::Named(_)
+            | NewClassName::SelfClass
+            | NewClassName::ParentClass
+            | NewClassName::StaticClass => None,
+        };
+
+        self.declared_class_order
+            .iter()
+            .filter(|key| {
+                known_keys
+                    .as_ref()
+                    .map_or(true, |known_keys| known_keys.contains(*key))
+            })
+            .map(|key| {
+                self.declared_classes
+                    .get(key)
+                    .expect("registered class key has metadata")
+            })
+            .cloned()
+            .collect()
+    }
+
+    fn dynamic_declared_class_constructor_has_destructor_risk(&self, variable: &str) -> bool {
+        if !self
+            .declared_class_order
+            .iter()
+            .any(|key| self.declared_class_has_destructor_in_hierarchy(key))
+        {
+            return false;
+        }
+
+        let Some(known_keys) = self.dynamic_declared_class_known_keys(variable) else {
+            return true;
+        };
+
+        known_keys
+            .iter()
+            .any(|key| self.declared_class_has_destructor_in_hierarchy(key))
     }
 
     fn declared_class_constructor_for_instantiation(
