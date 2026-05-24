@@ -9,6 +9,7 @@ use php_compiler::{
 
 const STRING_INT_IR_SOURCE: &str = "<?php\n$payload = \"A\\0bA\\0b\";\necho strcasecmp($payload, \"a\\0B\");\necho strcmp($payload, \"A\\0c\");\necho strncmp($payload, \"A\\0bZ\", \"3\");\necho strncasecmp($payload, \"a\\0Bz\", 3);\necho ord(\"A\");\necho crc32($payload);\n";
 const STRING_SEARCH_IR_SOURCE: &str = "<?php\n$payload = \"A\\0bA\\0b\";\necho strpos($payload, \"\\0b\", 2);\necho strpos($payload, \"missing\");\necho substr_count($payload, \"A\", false, \"5\");\n";
+const STRING_RESULT_IR_SOURCE: &str = "<?php\n$payload = \"A\\0B\";\necho strrev($payload), \"|\";\nprint str_rot13(\"Az-09\");\necho \"|\";\necho bin2hex($payload), \"|\";\necho strtolower(\"MiXeD\"), \"|\";\necho strtoupper(\"MiXeD\"), \"|\";\necho ucfirst(\"word\"), \"|\";\necho lcfirst(\"Word\"), \"|\";\necho escapeshellarg(\"X ;\\$'Q\\\"\"), \"|\";\necho escapeshellcmd(\"X ;\\$'Q\\\"\"), \"|\";\necho strrev(42042);\n";
 const VALUE_OFFSET_IR_SOURCE: &str = "<?php\n$payload = \"A\\0B\\xff\";\necho $payload[1];\necho isset($payload[2]);\necho empty($payload[3]);\necho strlen($payload[0]);\necho strcmp($payload[0], \"A\");\n";
 
 #[test]
@@ -183,6 +184,43 @@ fn generated_ir_routes_string_search_builtins_through_value_result_contract() {
 }
 
 #[test]
+fn generated_ir_routes_string_result_builtins_through_value_result_contract() {
+    let ir = emit_ir_source(STRING_RESULT_IR_SOURCE).unwrap();
+
+    assert!(
+        ir.contains(
+            "declare %phpc.NativeValueHandle @phpc_native_value_string_result_operation_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, %phpc.NativeValueHandle, i64, i64, i8, i8, ptr)"
+        ),
+        "{ir}"
+    );
+    assert_eq!(
+        ir.matches(
+            "call %phpc.NativeValueHandle @phpc_native_value_string_result_operation_with_diagnostic"
+        )
+        .count(),
+        10,
+        "{ir}"
+    );
+    for tag in [4, 5, 13, 48, 49, 53, 54, 70, 71] {
+        assert!(ir.contains(&format!("i8 {tag}, ptr %")), "{tag}: {ir}");
+    }
+    assert!(
+        ir.matches("call i64 @phpc_native_value_format_stdout_with_diagnostic")
+            .count()
+            >= 10,
+        "{ir}"
+    );
+    assert!(
+        ir.matches("call void @phpc_native_value_free").count() >= 20,
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("LLVM string-result builtin lowering rejects"),
+        "{ir}"
+    );
+}
+
+#[test]
 fn generated_ir_string_int_route_reaches_assembly_backend() {
     if !has_llvm_assembly_backend() {
         return;
@@ -200,6 +238,17 @@ fn generated_ir_string_search_route_reaches_assembly_backend() {
     }
 
     let asm = emit_asm_source(STRING_SEARCH_IR_SOURCE).unwrap();
+
+    assert!(asm.contains("main"), "{asm}");
+}
+
+#[test]
+fn generated_ir_string_result_route_reaches_assembly_backend() {
+    if !has_llvm_assembly_backend() {
+        return;
+    }
+
+    let asm = emit_asm_source(STRING_RESULT_IR_SOURCE).unwrap();
 
     assert!(asm.contains("main"), "{asm}");
 }
@@ -372,6 +421,39 @@ fn generated_ir_blocks_string_int_unsupported_forms_at_shared_boundary() {
             error.message
         );
     }
+}
+
+#[test]
+fn generated_ir_blocks_string_result_unsupported_forms_at_shared_boundary() {
+    for source in [
+        "<?php\nstrrev();\n",
+        "<?php\nstrtolower('a', 'b');\n",
+        "<?php\nescapeshellarg('a', 'b');\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+        assert_eq!(error.phase, Phase::Codegen, "{source}");
+        assert!(
+            error.message.contains(
+                "LLVM string-result builtin lowering rejects forms outside the reusable native string-result operation contract"
+            ),
+            "{source}: {}",
+            error.message
+        );
+    }
+}
+
+#[test]
+fn generated_ir_keeps_nested_string_result_operands_on_call_result_blocker() {
+    let error = emit_ir_source("<?php\necho strtoupper(strtolower('MiXeD'));\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains(
+            "LLVM function-call lowering rejects function calls, including user functions"
+        ),
+        "{}",
+        error.message
+    );
 }
 
 fn has_llvm_assembly_backend() -> bool {

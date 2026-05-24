@@ -32,7 +32,7 @@ const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int/search builti
 const ASSEMBLY_STRING_INT_OPERATION_REJECTION: &str = "assembly string-int/search builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), strpos(), substr_count(), ord(), and crc32() forms outside the reusable native string operation contracts until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
 const LLVM_STRING_DISTANCE_OPERATION_REJECTION: &str = "LLVM string-distance builtin lowering rejects levenshtein() and similar_text() until native PHP value-to-string byte conversion, optional cost conversion, references/copy-on-write, by-reference percent output, and exact native diagnostics exist; generated-native C routes lowerable string-distance operands through the shared runtime contract";
 const ASSEMBLY_STRING_DISTANCE_OPERATION_REJECTION: &str = "assembly string-distance builtin lowering rejects levenshtein() and similar_text() forms outside the reusable native string-distance operation contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
-const LLVM_STRING_RESULT_OPERATION_REJECTION: &str = "LLVM string-result builtin lowering rejects strrev(), str_rot13(), bin2hex(), strtolower(), strtoupper(), ucfirst(), lcfirst(), escapeshellarg(), and escapeshellcmd() until native PHP string result ownership, byte-preserving conversion, diagnostics, references/copy-on-write, and exact native builtin diagnostics exist; generated-native C routes lowerable string-result operands through the shared runtime contract";
+const LLVM_STRING_RESULT_OPERATION_REJECTION: &str = "LLVM string-result builtin lowering rejects forms outside the reusable native string-result operation contract until operands can reach byte-preserving value conversion, diagnostics, result ownership, and cleanup; lowerable LLVM and generated-native C string-result operands route through the shared runtime contract";
 const ASSEMBLY_STRING_RESULT_OPERATION_REJECTION: &str = "assembly string-result builtin lowering rejects forms outside the reusable native string-result operation contract until operands can reach byte-preserving value conversion, diagnostics, result ownership, and cleanup";
 const LLVM_BASENAME_REJECTION: &str = "LLVM basename lowering rejects direct path basename calls until native PHP path string conversion, suffix handling, trailing-separator normalization, Windows/UNC and stream-wrapper path semantics, locale/codepage behavior, argument diagnostics, references/copy-on-write, and exact native basename diagnostics exist; phpc run handles current bounded basename behavior";
 const ASSEMBLY_BASENAME_REJECTION: &str = "assembly basename lowering rejects direct path basename calls until native PHP path string conversion, suffix handling, trailing-separator normalization, Windows/UNC and stream-wrapper path semantics, locale/codepage behavior, argument diagnostics, references/copy-on-write, and exact native basename diagnostics exist; phpc run handles current bounded basename behavior";
@@ -4151,6 +4151,7 @@ impl LlvmGenerator {
             output.push_str("declare i64 @phpc_native_value_to_int64_with_diagnostic(%phpc.NativeValueHandle, i8, ptr)\n");
             output.push_str("declare i64 @phpc_native_value_string_int_operation_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i64, i64, i8, i8, ptr)\n");
             output.push_str("declare %phpc.NativeValueHandle @phpc_native_value_string_search_result_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i64, i64, i8, i8, ptr)\n");
+            output.push_str("declare %phpc.NativeValueHandle @phpc_native_value_string_result_operation_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, %phpc.NativeValueHandle, i64, i64, i8, i8, ptr)\n");
             if !self.uses_native_value_echo_stdout {
                 output.push_str("declare void @phpc_native_value_free(%phpc.NativeValueHandle)\n");
                 output.push_str(&format!(
@@ -4517,11 +4518,9 @@ impl LlvmGenerator {
             Expr::Call { name, args, span }
                 if native_string_result_operation_for_name(name).is_some() =>
             {
-                Err(self.unsupported_direct_named_call(
-                    args,
-                    *span,
-                    LLVM_STRING_RESULT_OPERATION_REJECTION,
-                ))
+                let operation = native_string_result_operation_for_name(name)
+                    .expect("string-result operation checked above");
+                self.emit_llvm_string_result_call(operation, args, *span)
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("basename") => {
                 Err(self.unsupported_direct_named_call(args, *span, LLVM_BASENAME_REJECTION))
@@ -5075,6 +5074,56 @@ impl LlvmGenerator {
         self.body.push(format!(
             "call void @phpc_native_value_free(%phpc.NativeValueHandle {needle})"
         ));
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {subject})"
+        ));
+        Ok(IrValue::NativeValue(result))
+    }
+
+    fn emit_llvm_string_result_call(
+        &mut self,
+        operation: NativeStringResultOperation,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        if let Some(call_operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(call_operation));
+        }
+
+        let [subject] = args else {
+            return Err(self.unsupported_direct_named_call(
+                args,
+                span,
+                LLVM_STRING_RESULT_OPERATION_REJECTION,
+            ));
+        };
+        let subject = self.emit_value_operand_expr(subject)?;
+        self.emit_native_string_result_operation(operation, subject, span)
+    }
+
+    fn emit_native_string_result_operation(
+        &mut self,
+        operation: NativeStringResultOperation,
+        subject: IrValue,
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        let subject = self
+            .emit_native_value_for_ir_value(subject, span)
+            .map_err(|_| self.unsupported(span, LLVM_STRING_RESULT_OPERATION_REJECTION))?;
+        let diagnostic_slot = self.next_temp();
+        let result = self.next_temp();
+        self.uses_native_string_int_operation = true;
+        self.body.push(format!(
+            "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
+        ));
+        self.body.push(format!(
+            "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
+        ));
+        self.body.push(format!(
+            "{result} = call %phpc.NativeValueHandle @phpc_native_value_string_result_operation_with_diagnostic(%phpc.NativeValueHandle {subject}, %phpc.NativeValueHandle zeroinitializer, %phpc.NativeValueHandle zeroinitializer, i64 0, i64 0, i8 0, i8 {}, ptr {diagnostic_slot})",
+            operation as u8
+        ));
+        self.emit_report_native_diagnostic_slot(&diagnostic_slot);
         self.body.push(format!(
             "call void @phpc_native_value_free(%phpc.NativeValueHandle {subject})"
         ));

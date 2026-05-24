@@ -2,8 +2,6 @@ use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
 use php_compiler::run_source;
 
-const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
-
 #[test]
 fn strtolower_executes_current_ascii_string_subset() {
     let execution = run_source(
@@ -60,7 +58,7 @@ fn strtolower_rejects_forms_outside_current_subset() {
 }
 
 #[test]
-fn emit_ir_folds_strtolower_metadata_but_rejects_direct_case_calls() {
+fn emit_ir_folds_strtolower_metadata_and_routes_direct_case_calls() {
     let ir = emit_ir_source(
         r#"<?php
 echo function_exists("strtolower") ? "1" : "0";
@@ -73,9 +71,18 @@ echo is_callable("strtolower") ? "1" : "0";
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 
-    let error = emit_ir_source("<?php\nstrtolower('ABC');\n").unwrap_err();
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
-    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+    let direct_ir = emit_ir_source("<?php\necho strtolower('ABC');\n").unwrap();
+    assert!(
+        direct_ir.contains("phpc_native_value_string_result_operation_with_diagnostic"),
+        "{direct_ir}"
+    );
+    assert!(direct_ir.contains("i8 48, ptr %"), "{direct_ir}");
+    assert!(
+        direct_ir.contains("phpc_native_value_format_stdout_with_diagnostic"),
+        "{direct_ir}"
+    );
+    assert!(
+        !direct_ir.contains("LLVM function-call lowering rejects"),
+        "{direct_ir}"
+    );
 }

@@ -91,6 +91,7 @@ fn emit_ir_rejects_direct_strlen_unsupported_operands() {
 fn emit_ir_routes_supported_direct_call_argument_results_through_call_boundary() {
     for (source, line, column) in [
         ("<?php\necho strlen(missing());\n", 2, 6),
+        ("<?php\necho strrev(missing());\n", 2, 6),
         (
             "<?php\n$factory = \"strlen\";\necho function_exists($factory());\n",
             3,
@@ -117,6 +118,7 @@ fn native_executable_c_source_routes_supported_direct_call_argument_results_thro
 {
     for (source, line, column) in [
         ("<?php\necho strlen(missing());\n", 2, 6),
+        ("<?php\necho strrev(missing());\n", 2, 13),
         (
             "<?php\n$factory = \"strlen\";\necho function_exists($factory());\n",
             3,
