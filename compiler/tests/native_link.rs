@@ -14013,6 +14013,35 @@ const NATIVE_RUNTIME_DYNAMIC_BY_REFERENCE_USER_FUNCTION_FRAME_SOURCE: &str = con
     "echo $wrap(\"ok\");\n",
 );
 
+const NATIVE_GLOBAL_IMPORT_USER_FUNCTION_SOURCE: &str = concat!(
+    "<?php\n",
+    "$slot = \"root\";\n",
+    "$other = \"A\";\n",
+    "$bag = [\"k\" => \"root\"];\n",
+    "function set_global($value) {\n",
+    "    global $slot;\n",
+    "    echo \"seen:\", $slot, \"|\";\n",
+    "    $local = $value;\n",
+    "    $slot = $local;\n",
+    "    return $slot;\n",
+    "}\n",
+    "function swap_globals($left, $right) {\n",
+    "    global $slot, $other;\n",
+    "    $slot = $left;\n",
+    "    $other = $right;\n",
+    "    return $slot . $other;\n",
+    "}\n",
+    "function set_key($value) {\n",
+    "    global $bag;\n",
+    "    $bag[\"k\"] = $value;\n",
+    "    return $bag[\"k\"];\n",
+    "}\n",
+    "echo set_global(\"direct\"), \":\", $slot, \"|\";\n",
+    "echo set_global(\"again\"), \":\", $slot, \"|\";\n",
+    "echo set_key(\"G\"), \":\", $bag[\"k\"], \"|\";\n",
+    "echo swap_globals(\"S\", \"O\"), \":\", $slot, \":\", $other;\n",
+);
+
 #[test]
 fn native_executable_c_source_lowers_direct_user_function_frames() {
     let program = parse(NATIVE_USER_FUNCTION_FRAME_SOURCE).unwrap();
@@ -14154,6 +14183,41 @@ fn native_executable_c_source_lowers_by_reference_user_function_frames() {
         !source.contains("assembly user-function lowering rejects")
             && !source.contains("unsupported typed/default/variadic by-reference parameters"),
         "supported untyped by-reference frames should not hit declaration blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_function_scope_global_imports() {
+    let program = parse(NATIVE_GLOBAL_IMPORT_USER_FUNCTION_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_NativeSymbolTableHandle phpc_root_symbols")
+            && source.contains("phpc_native_symbol_table_reference_for_path")
+            && source.contains("global_import_ref_"),
+        "function-scope global imports should bind local variables to root symbol references:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_symbol_table_new()")
+            && body.contains("phpc_user_function_0_set_global(")
+            && body.contains("phpc_user_function_1_swap_globals("),
+        "callers should materialize one shared root symbol table for global-import frames:\n{source}"
+    );
+    assert!(
+        source.matches("phpc_native_reference_set_value").count() >= 3
+            && source.matches("phpc_native_reference_value_clone").count() >= 2,
+        "global-import variables should read and write through the shared reference ABI:\n{source}"
+    );
+    assert!(
+        source.contains("array_lvalue_symbol_write_result")
+            && source.contains("phpc_native_array_lvalue_owner_reference_slot"),
+        "global-import array paths should reuse symbol-table array lvalue owners:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly global-declaration lowering rejects")
+            && !source.contains("assembly user-function lowering rejects"),
+        "ordinary function-scope global imports should not hit global/frame blockers:\n{source}"
     );
 }
 
@@ -14470,6 +14534,37 @@ fn emit_exe_links_and_runs_by_reference_user_function_frame_program() {
     assert_eq!(
         run.stdout,
         b"dynamic:dynamic|changed:changed|new|deep-new|right:right:left"
+    );
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_global_import_user_function_frame_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "global_import_user_function_frame",
+        NATIVE_GLOBAL_IMPORT_USER_FUNCTION_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native global-import user-function executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"seen:root|direct:direct|seen:direct|again:again|G:G|SO:S:O"
     );
     assert_eq!(run.stderr, b"");
 
@@ -14869,6 +14964,24 @@ fn native_executable_c_source_rejects_unsupported_user_function_frame_shapes() {
             error
                 .message
                 .contains("bounded generated-C frame subset"),
+            "{source}\n{error:?}"
+        );
+    }
+}
+
+#[test]
+fn native_executable_c_source_rejects_unsupported_global_import_roots() {
+    for source in [
+        "<?php\nfunction bad() { global $_GET; return 1; }\necho bad();\n",
+        "<?php\nfunction bad() { global $GLOBALS; return 1; }\necho bad();\n",
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert!(
+            error
+                .message
+                .contains("assembly global-declaration lowering rejects"),
             "{source}\n{error:?}"
         );
     }

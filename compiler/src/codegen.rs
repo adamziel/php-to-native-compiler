@@ -2208,10 +2208,79 @@ fn function_body_contains_native_frame_blocker(statements: &[Stmt]) -> bool {
         || statements.iter().any(stmt_contains_function_frame_blocker)
 }
 
+fn stmt_list_contains_global_import(statements: &[Stmt]) -> bool {
+    statements.iter().any(stmt_contains_global_import)
+}
+
+fn stmt_contains_global_import(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Global { .. } => true,
+        Stmt::If {
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            stmt_list_contains_global_import(then_branch)
+                || stmt_list_contains_global_import(else_branch)
+        }
+        Stmt::While { body, .. } | Stmt::DoWhile { body, .. } | Stmt::Foreach { body, .. } => {
+            stmt_list_contains_global_import(body)
+        }
+        Stmt::For { body, .. } => stmt_list_contains_global_import(body),
+        Stmt::Switch { cases, .. } => cases
+            .iter()
+            .any(|case| stmt_list_contains_global_import(&case.body)),
+        Stmt::Try {
+            body, finally_body, ..
+        } => {
+            stmt_list_contains_global_import(body)
+                || finally_body
+                    .as_ref()
+                    .is_some_and(|body| stmt_list_contains_global_import(body))
+        }
+        _ => false,
+    }
+}
+
+fn stmt_list_unsupported_global_import_span(statements: &[Stmt]) -> Option<Span> {
+    statements
+        .iter()
+        .find_map(stmt_unsupported_global_import_span)
+}
+
+fn stmt_unsupported_global_import_span(stmt: &Stmt) -> Option<Span> {
+    match stmt {
+        Stmt::Global { names, span } => names
+            .iter()
+            .any(|name| is_request_superglobal_name(name) || is_globals_superglobal_name(name))
+            .then_some(*span),
+        Stmt::If {
+            then_branch,
+            else_branch,
+            ..
+        } => stmt_list_unsupported_global_import_span(then_branch)
+            .or_else(|| stmt_list_unsupported_global_import_span(else_branch)),
+        Stmt::While { body, .. } | Stmt::DoWhile { body, .. } | Stmt::Foreach { body, .. } => {
+            stmt_list_unsupported_global_import_span(body)
+        }
+        Stmt::For { body, .. } => stmt_list_unsupported_global_import_span(body),
+        Stmt::Switch { cases, .. } => cases
+            .iter()
+            .find_map(|case| stmt_list_unsupported_global_import_span(&case.body)),
+        Stmt::Try {
+            body, finally_body, ..
+        } => stmt_list_unsupported_global_import_span(body).or_else(|| {
+            finally_body
+                .as_ref()
+                .and_then(|body| stmt_list_unsupported_global_import_span(body))
+        }),
+        _ => None,
+    }
+}
+
 fn stmt_contains_function_frame_blocker(stmt: &Stmt) -> bool {
     match stmt {
-        Stmt::Global { .. }
-        | Stmt::StaticLocal { .. }
+        Stmt::StaticLocal { .. }
         | Stmt::Function(_)
         | Stmt::Interface(_)
         | Stmt::Trait(_)
@@ -2267,6 +2336,7 @@ fn stmt_contains_function_frame_blocker(stmt: &Stmt) -> bool {
         | Stmt::Include { .. }
         | Stmt::Return { .. }
         | Stmt::Throw { .. }
+        | Stmt::Global { .. }
         | Stmt::Break { .. }
         | Stmt::Continue { .. } => false,
     }
@@ -8800,6 +8870,7 @@ struct CGenerator {
     variable_order: Vec<String>,
     mutable_scalar_slots: HashMap<String, CMutableScalarSlot>,
     by_reference_foreach_linger_variables: HashSet<String>,
+    global_import_names: HashSet<String>,
     array_cleanup_handles: Vec<String>,
     owned_native_byte_buffers: Vec<String>,
     known_ints: HashMap<String, KnownInt>,
@@ -8834,6 +8905,7 @@ struct CGenerator {
     native_reference_cleanup_handles: Vec<String>,
     native_request_state_handle: Option<String>,
     native_globals_symbol_table_handle: Option<String>,
+    native_globals_symbol_table_owned: bool,
     loop_transfer_targets: Vec<CLoopTransferTarget>,
     active_finally_bodies: Vec<Vec<Stmt>>,
     user_functions: HashMap<String, CUserFunction>,
@@ -8888,6 +8960,7 @@ struct CGotoStateSnapshot {
     variable_order: Vec<String>,
     mutable_scalar_slots: HashMap<String, CMutableScalarSlot>,
     by_reference_foreach_linger_variables: HashSet<String>,
+    global_import_names: HashSet<String>,
     array_cleanup_handles: Vec<String>,
     owned_native_byte_buffers: Vec<String>,
     native_byte_buffer_string_exprs: HashMap<String, String>,
@@ -8895,6 +8968,7 @@ struct CGotoStateSnapshot {
     native_reference_cleanup_handles: Vec<String>,
     native_request_state_handle: Option<String>,
     native_globals_symbol_table_handle: Option<String>,
+    native_globals_symbol_table_owned: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -8914,6 +8988,7 @@ struct CGotoTransfer {
 struct CUserFunction {
     c_name: String,
     decl: FunctionDecl,
+    uses_global_import: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -9931,6 +10006,7 @@ impl CGenerator {
             && self.mutable_scalar_slots == other.mutable_scalar_slots
             && self.by_reference_foreach_linger_variables
                 == other.by_reference_foreach_linger_variables
+            && self.global_import_names == other.global_import_names
             && self.array_cleanup_handles == other.array_cleanup_handles
             && self.owned_native_byte_buffers == other.owned_native_byte_buffers
             && self.native_byte_buffer_string_exprs == other.native_byte_buffer_string_exprs
@@ -9938,6 +10014,7 @@ impl CGenerator {
             && self.native_reference_cleanup_handles == other.native_reference_cleanup_handles
             && self.native_request_state_handle == other.native_request_state_handle
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
+            && self.native_globals_symbol_table_owned == other.native_globals_symbol_table_owned
     }
 
     fn goto_state_snapshot(&self) -> CGotoStateSnapshot {
@@ -9948,6 +10025,7 @@ impl CGenerator {
             by_reference_foreach_linger_variables: self
                 .by_reference_foreach_linger_variables
                 .clone(),
+            global_import_names: self.global_import_names.clone(),
             array_cleanup_handles: self.array_cleanup_handles.clone(),
             owned_native_byte_buffers: self.owned_native_byte_buffers.clone(),
             native_byte_buffer_string_exprs: self.native_byte_buffer_string_exprs.clone(),
@@ -9955,6 +10033,7 @@ impl CGenerator {
             native_reference_cleanup_handles: self.native_reference_cleanup_handles.clone(),
             native_request_state_handle: self.native_request_state_handle.clone(),
             native_globals_symbol_table_handle: self.native_globals_symbol_table_handle.clone(),
+            native_globals_symbol_table_owned: self.native_globals_symbol_table_owned,
         }
     }
 
@@ -9962,9 +10041,11 @@ impl CGenerator {
         self.mutable_scalar_slots == other.mutable_scalar_slots
             && self.by_reference_foreach_linger_variables
                 == other.by_reference_foreach_linger_variables
+            && self.global_import_names == other.global_import_names
             && self.native_reference_cleanup_handles == other.native_reference_cleanup_handles
             && self.native_request_state_handle == other.native_request_state_handle
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
+            && self.native_globals_symbol_table_owned == other.native_globals_symbol_table_owned
     }
 
     fn merge_scoped_branch_state(
@@ -10431,8 +10512,15 @@ impl CGenerator {
         format!("phpc_user_function_{index}_{sanitized}")
     }
 
-    fn c_user_function_signature(c_name: &str, function_params: &[FunctionParam]) -> String {
+    fn c_user_function_signature(
+        c_name: &str,
+        function_params: &[FunctionParam],
+        uses_global_import: bool,
+    ) -> String {
         let mut params = vec!["int phpc_call_depth".to_string()];
+        if uses_global_import {
+            params.push("phpc_NativeSymbolTableHandle phpc_root_symbols".to_string());
+        }
         params.extend(function_params.iter().enumerate().map(|(index, param)| {
             if param.by_reference {
                 format!("phpc_NativeReferenceHandle arg_{index}")
@@ -10468,6 +10556,7 @@ impl CGenerator {
                 CUserFunction {
                     c_name,
                     decl: function.clone(),
+                    uses_global_import: stmt_list_contains_global_import(&function.body),
                 },
             );
         }
@@ -10475,6 +10564,14 @@ impl CGenerator {
     }
 
     fn validate_user_function_frame(&self, function: &FunctionDecl) -> CompileResult<()> {
+        if let Some(span) = stmt_list_unsupported_global_import_span(&function.body) {
+            return Err(Diagnostic::new(
+                Phase::Codegen,
+                span.line,
+                span.column,
+                ASSEMBLY_GLOBAL_DECLARATION_REJECTION,
+            ));
+        }
         if function.is_nested
             || function.returns_by_reference
             || native_user_function_has_malformed_variadic_params(function)
@@ -10586,6 +10683,11 @@ impl CGenerator {
                 .map(|decl| decl.text.clone()),
             next_static_data: self.next_static_data,
             next_native_temp: self.next_native_temp,
+            native_globals_symbol_table_handle: function
+                .uses_global_import
+                .then(|| "phpc_root_symbols".to_string()),
+            native_globals_symbol_table_owned: false,
+            uses_native_symbol_table_helpers: function.uses_global_import,
             ..CGenerator::default()
         };
 
@@ -10655,6 +10757,7 @@ impl CGenerator {
         definition.push_str(&Self::c_user_function_signature(
             &function.c_name,
             &function.decl.params,
+            function.uses_global_import,
         ));
         definition.push_str(" {\n");
         for line in &generator.body {
@@ -11208,6 +11311,7 @@ impl CGenerator {
                 output.push_str(&Self::c_user_function_signature(
                     &function.c_name,
                     &function.decl.params,
+                    function.uses_global_import,
                 ));
                 output.push_str(";\n");
             }
@@ -11248,10 +11352,12 @@ impl CGenerator {
             output.push_str(&format!("phpc_native_request_state_free({handle});"));
             output.push('\n');
         }
-        if let Some(handle) = &self.native_globals_symbol_table_handle {
-            output.push_str("  ");
-            output.push_str(&format!("phpc_native_symbol_table_free({handle});"));
-            output.push('\n');
+        if self.native_globals_symbol_table_owned {
+            if let Some(handle) = &self.native_globals_symbol_table_handle {
+                output.push_str("  ");
+                output.push_str(&format!("phpc_native_symbol_table_free({handle});"));
+                output.push('\n');
+            }
         }
         output.push_str("  return 0;\n");
         output.push_str("}\n");
@@ -11476,6 +11582,7 @@ impl CGenerator {
 
         let table = self.emit_globals_symbol_table_from_current_variables(failure_cleanup, span)?;
         self.native_globals_symbol_table_handle = Some(table.clone());
+        self.native_globals_symbol_table_owned = true;
         Ok(table)
     }
 
@@ -13462,6 +13569,15 @@ impl CGenerator {
         self.native_globals_symbol_table_handle.is_some()
     }
 
+    fn direct_variables_route_through_global_symbol_table(&self) -> bool {
+        self.function_return_status.is_none() && self.globals_symbol_table_is_active()
+    }
+
+    fn variable_array_path_routes_through_global_symbol_table(&self, name: &str) -> bool {
+        self.direct_variables_route_through_global_symbol_table()
+            || self.global_import_names.contains(name)
+    }
+
     fn emit_symbol_table_variable_value_read(
         &mut self,
         name: &str,
@@ -13670,7 +13786,9 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<()> {
-        if !self.globals_symbol_table_is_active() || is_globals_superglobal_name(name) {
+        if !self.direct_variables_route_through_global_symbol_table()
+            || is_globals_superglobal_name(name)
+        {
             return Ok(());
         }
 
@@ -16149,6 +16267,40 @@ impl CGenerator {
         Ok(())
     }
 
+    fn emit_global_declaration(&mut self, names: &[String], span: Span) -> CompileResult<()> {
+        if names
+            .iter()
+            .any(|name| is_request_superglobal_name(name) || is_globals_superglobal_name(name))
+        {
+            return Err(self.unsupported(span, ASSEMBLY_GLOBAL_DECLARATION_REJECTION));
+        }
+
+        if self.function_return_status.is_none() {
+            return Ok(());
+        }
+
+        let table = self.ensure_globals_symbol_table("", span)?;
+        for name in names {
+            let name_bytes = self.emit_symbol_name_static_bytes(name);
+            let reference = self.next_native_name("global_import_ref");
+            self.body.push(format!(
+                "phpc_NativeReferenceHandle {reference} = phpc_native_symbol_table_reference_for_path({table}, {name_bytes}, {}, NULL, 0, false);",
+                name.len()
+            ));
+            let error_exit = self.native_error_exit("");
+            self.body
+                .push(format!("if ({reference}.ptr == NULL) {{ {error_exit} }}"));
+            self.release_variable_native_value_handle(name);
+            self.retain_native_reference_cleanup_handle(&reference);
+            self.variables
+                .insert(name.clone(), CValue::NativeReferenceHandle(reference));
+            self.global_import_names.insert(name.clone());
+            self.remember_variable_order(name);
+        }
+
+        Ok(())
+    }
+
     fn emit_statement(&mut self, stmt: &Stmt) -> CompileResult<()> {
         if !matches!(
             stmt,
@@ -16485,9 +16637,7 @@ impl CGenerator {
                 span,
             } => self.emit_try_statement(body, catches, finally_body.as_deref(), *span),
             Stmt::Return { value, .. } => self.emit_return_statement(value.as_ref()),
-            Stmt::Global { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_GLOBAL_DECLARATION_REJECTION))
-            }
+            Stmt::Global { names, span } => self.emit_global_declaration(names, *span),
             Stmt::StaticLocal { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_STATIC_LOCAL_REJECTION))
             }
@@ -16645,7 +16795,7 @@ impl CGenerator {
                     self.retain_native_value_cleanup_handle(&value.handle);
                     return Ok(CValue::NativeValueHandle(value.handle));
                 }
-                if self.globals_symbol_table_is_active() {
+                if self.direct_variables_route_through_global_symbol_table() {
                     let value = self.emit_symbol_table_variable_value_read(name, *span, "")?;
                     self.retain_native_value_cleanup_handle(&value.handle);
                     return Ok(CValue::NativeValueHandle(value.handle));
@@ -16653,7 +16803,7 @@ impl CGenerator {
                 if let Some(value) = self.variables.get(name).cloned() {
                     return Ok(value);
                 }
-                if self.uses_native_string_helpers {
+                if self.uses_native_string_helpers && self.function_return_status.is_none() {
                     let value = self.emit_symbol_table_variable_value_read(name, *span, "")?;
                     self.retain_native_value_cleanup_handle(&value.handle);
                     return Ok(CValue::NativeValueHandle(value.handle));
@@ -17187,7 +17337,7 @@ impl CGenerator {
         values.values().iter().all(|spelling| {
             self.user_functions
                 .get(&Self::user_function_key(spelling))
-                .is_some()
+                .is_some_and(|function| !function.uses_global_import)
                 || native_dynamic_callable_builtin_runtime_candidate_for_name(spelling).is_some()
         })
     }
@@ -17400,6 +17550,7 @@ impl CGenerator {
                     .expect("registered function key has metadata")
                     .clone()
             })
+            .filter(|function| !function.uses_global_import)
             .collect::<Vec<_>>();
 
         if self.runtime_dynamic_call_needs_symbol_table_for_reference_args(&functions, args) {
@@ -17838,6 +17989,15 @@ impl CGenerator {
             cleanup_after_use.extend(variadic_value.cleanup_after_use.clone());
             call_args.push(variadic_value.handle);
         }
+        if function.uses_global_import {
+            let table_failure_cleanup = format!(
+                "{}{}",
+                c_cleanup_sequence(&cleanup_after_use),
+                failure_cleanup
+            );
+            let table = self.ensure_globals_symbol_table(&table_failure_cleanup, span)?;
+            call_args.insert(1, table);
+        }
 
         let status = self.next_native_name("user_function_status");
         let result = self.next_native_name("user_function_result");
@@ -18018,7 +18178,8 @@ impl CGenerator {
                 .map(Some)
             }
             AssignTarget::Variable { name, .. }
-                if self.globals_symbol_table_is_active() && !is_globals_superglobal_name(name) =>
+                if self.direct_variables_route_through_global_symbol_table()
+                    && !is_globals_superglobal_name(name) =>
             {
                 self.emit_symbol_table_variable_assignment(name, expr, span, failure_cleanup)?;
                 self.emit_symbol_table_variable_value_read(name, span, failure_cleanup)
@@ -18127,7 +18288,7 @@ impl CGenerator {
                 return Err(self.unsupported(arg.span(), ASSEMBLY_ISSET_REJECTION));
             };
 
-            if self.globals_symbol_table_is_active() {
+            if self.direct_variables_route_through_global_symbol_table() {
                 let path = self.materialize_static_globals_symbol_path_key(name, arg.span(), "")?;
                 let value =
                     self.emit_globals_symbol_path_presence_from_path(path, arg.span(), "")?;
@@ -18231,7 +18392,7 @@ impl CGenerator {
             return Err(self.unsupported(arg.span(), ASSEMBLY_EMPTY_REJECTION));
         };
 
-        if self.globals_symbol_table_is_active() {
+        if self.direct_variables_route_through_global_symbol_table() {
             let path = self.materialize_static_globals_symbol_path_key(name, arg.span(), "")?;
             return self.emit_globals_symbol_path_empty_from_path(path, arg.span(), "");
         }
@@ -21021,7 +21182,7 @@ impl CGenerator {
             }
             return self.emit_globals_symbol_path_unset(&[index_expr], span, "");
         }
-        if self.globals_symbol_table_is_active() {
+        if self.variable_array_path_routes_through_global_symbol_table(name) {
             return self.emit_symbol_table_array_lvalue_unset(name, &[index_expr], span);
         }
 
@@ -21030,13 +21191,6 @@ impl CGenerator {
         }
 
         match self.variables.get(name).cloned() {
-            Some(CValue::ArrayHandle(handle)) if self.globals_symbol_table_is_active() => self
-                .emit_value_offset_path_unset_statement(
-                    name,
-                    CValue::ArrayHandle(handle),
-                    std::slice::from_ref(index_expr),
-                    span,
-                ),
             Some(CValue::ArrayHandle(handle)) => {
                 self.emit_array_lvalue_unset_for_handle(&handle, &[index_expr], span)
             }
@@ -21076,7 +21230,7 @@ impl CGenerator {
             }
             return self.emit_globals_symbol_path_unset(&indices, span, "");
         }
-        if self.globals_symbol_table_is_active() {
+        if self.variable_array_path_routes_through_global_symbol_table(name) {
             let indices = indices.iter().collect::<Vec<_>>();
             return self.emit_symbol_table_array_lvalue_unset(name, &indices, span);
         }
@@ -21086,13 +21240,6 @@ impl CGenerator {
         }
 
         match self.variables.get(name).cloned() {
-            Some(CValue::ArrayHandle(handle)) if self.globals_symbol_table_is_active() => self
-                .emit_value_offset_path_unset_statement(
-                    name,
-                    CValue::ArrayHandle(handle),
-                    indices,
-                    span,
-                ),
             Some(CValue::ArrayHandle(handle)) => {
                 let indices = indices.iter().collect::<Vec<_>>();
                 self.emit_array_lvalue_unset_for_handle(&handle, &indices, span)
@@ -21122,7 +21269,15 @@ impl CGenerator {
                     if is_globals_superglobal_name(name) {
                         return Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION));
                     }
-                    self.emit_symbol_table_variable_unset(name, *span, "")?;
+                    if self.direct_variables_route_through_global_symbol_table() {
+                        self.emit_symbol_table_variable_unset(name, *span, "")?;
+                        continue;
+                    }
+                    if self.global_import_names.contains(name) {
+                        return Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION));
+                    }
+                    self.release_variable_native_value_handle(name);
+                    self.variables.remove(name);
                 }
                 UnsetTarget::ArrayIndex { name, index, span } => {
                     self.emit_unset_array_index(name, index, *span)?;
@@ -21391,7 +21546,7 @@ impl CGenerator {
                 },
                 CDirectVariableCompoundAssignmentOwner::Reference(reference),
             )
-        } else if self.globals_symbol_table_is_active() {
+        } else if self.direct_variables_route_through_global_symbol_table() {
             (
                 self.emit_symbol_table_variable_value_read(name, span, failure_cleanup)?,
                 CDirectVariableCompoundAssignmentOwner::SymbolTable(name.clone()),
@@ -22840,7 +22995,9 @@ impl CGenerator {
                 if is_request_superglobal_name(name) {
                     return self.emit_request_superglobal_root_assignment(name, expr);
                 }
-                if self.globals_symbol_table_is_active() && !is_globals_superglobal_name(name) {
+                if self.direct_variables_route_through_global_symbol_table()
+                    && !is_globals_superglobal_name(name)
+                {
                     return self.emit_symbol_table_variable_assignment(
                         name,
                         expr,
@@ -22852,7 +23009,7 @@ impl CGenerator {
                     && !self.mutable_scalar_slots.contains_key(name)
                 {
                     if let Some(value) = self.try_materialize_native_value_result_expr(expr, "")? {
-                        if self.globals_symbol_table_is_active()
+                        if self.direct_variables_route_through_global_symbol_table()
                             && !is_globals_superglobal_name(name)
                         {
                             return self.emit_symbol_table_variable_assignment_from_materialized(
@@ -22867,7 +23024,9 @@ impl CGenerator {
                     }
                 }
                 let value = self.emit_expr(expr)?;
-                if self.globals_symbol_table_is_active() && !is_globals_superglobal_name(name) {
+                if self.direct_variables_route_through_global_symbol_table()
+                    && !is_globals_superglobal_name(name)
+                {
                     let value = self.materialize_native_array_c_value_handle(value, expr.span())?;
                     return self.emit_symbol_table_variable_assignment_from_materialized(
                         name,
@@ -22909,7 +23068,7 @@ impl CGenerator {
                     }
                     return self.emit_globals_symbol_path_assignment(&[index], expr, *span, "");
                 }
-                if self.globals_symbol_table_is_active() {
+                if self.variable_array_path_routes_through_global_symbol_table(name) {
                     return if let Some(index) = index.as_ref() {
                         self.emit_symbol_table_array_lvalue_write_for_indices(
                             name,
@@ -22995,7 +23154,7 @@ impl CGenerator {
                     }
                     return self.emit_globals_symbol_path_assignment(&indices, expr, *span, "");
                 }
-                if self.globals_symbol_table_is_active() {
+                if self.variable_array_path_routes_through_global_symbol_table(name) {
                     let indices = indices.iter().collect::<Vec<_>>();
                     return self.emit_symbol_table_array_lvalue_write_for_indices(
                         name, &indices, expr, *span,
@@ -23056,7 +23215,7 @@ impl CGenerator {
                         "",
                     );
                 }
-                if self.globals_symbol_table_is_active() {
+                if self.variable_array_path_routes_through_global_symbol_table(name) {
                     let prefix_indices = indices.iter().collect::<Vec<_>>();
                     let suffix_indices = suffix_indices.iter().collect::<Vec<_>>();
                     return self.emit_symbol_table_array_lvalue_append_write(
@@ -25543,10 +25702,14 @@ impl CGenerator {
                 KnownFloat::one(*value),
             ))),
             Expr::String(value, _) => Ok(Some(BackendPrimitiveSource::string_value(value))),
-            Expr::Variable(name, _) if !self.globals_symbol_table_is_active() => Ok(self
-                .variables
-                .get(name)
-                .and_then(|value| self.primitive_source_for_value(value))),
+            Expr::Variable(name, _)
+                if !self.direct_variables_route_through_global_symbol_table() =>
+            {
+                Ok(self
+                    .variables
+                    .get(name)
+                    .and_then(|value| self.primitive_source_for_value(value)))
+            }
             Expr::Variable(_, _) => Ok(None),
             Expr::Unary {
                 op: UnaryOp::Negate,
@@ -25936,7 +26099,9 @@ impl CGenerator {
                     cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
                 }));
             }
-            if self.globals_symbol_table_is_active() && !is_request_superglobal_name(name) {
+            if self.direct_variables_route_through_global_symbol_table()
+                && !is_request_superglobal_name(name)
+            {
                 return self
                     .emit_symbol_table_variable_value_read(name, *span, failure_cleanup)
                     .map(Some);
@@ -26665,7 +26830,10 @@ impl CGenerator {
         let Expr::Variable(name, _) = root else {
             return Ok(None);
         };
-        if is_globals_superglobal_name(name) || is_request_superglobal_name(name) {
+        if is_globals_superglobal_name(name)
+            || is_request_superglobal_name(name)
+            || !self.variable_array_path_routes_through_global_symbol_table(name)
+        {
             return Ok(None);
         }
 
@@ -27475,8 +27643,10 @@ impl CGenerator {
         if let Some(handle) = &self.native_request_state_handle {
             cleanup.push_str(&format!(" phpc_native_request_state_free({handle});"));
         }
-        if let Some(handle) = &self.native_globals_symbol_table_handle {
-            cleanup.push_str(&format!(" phpc_native_symbol_table_free({handle});"));
+        if self.native_globals_symbol_table_owned {
+            if let Some(handle) = &self.native_globals_symbol_table_handle {
+                cleanup.push_str(&format!(" phpc_native_symbol_table_free({handle});"));
+            }
         }
         cleanup
     }
