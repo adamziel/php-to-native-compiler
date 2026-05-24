@@ -13471,6 +13471,32 @@ const NATIVE_TYPED_USER_FUNCTION_FRAME_SOURCE: &str = concat!(
     "echo typed_array(), \":\", typed_array([\"given\"]), \"|\", typed_return(\"4\"), \"|\", passthrough(\"ok\");\n",
 );
 
+const NATIVE_VARIADIC_USER_FUNCTION_FRAME_SOURCE: &str = concat!(
+    "<?php\n",
+    "function rest_state(...$tail) {\n",
+    "    return $tail[0] ?? \"empty\";\n",
+    "}\n",
+    "function first_extra($head, ...$tail) {\n",
+    "    return $tail[0];\n",
+    "}\n",
+    "function second_extra($head = \"base\", ...$tail) {\n",
+    "    return $tail[1];\n",
+    "}\n",
+    "function typed_variadic(int ...$values): int {\n",
+    "    return $values[1];\n",
+    "}\n",
+    "function call_dynamic($name, $value) {\n",
+    "    return $name(\"prefix\", $value, \"last\");\n",
+    "}\n",
+    "echo rest_state(), \"|\", rest_state(\"filled\"), \"|\";\n",
+    "echo first_extra(\"base\", \"A\", \"B\"), \"|\";\n",
+    "echo second_extra(\"base\", \"A\", \"B\", \"C\"), \"|\";\n",
+    "echo typed_variadic(\"4\", \"5\"), \"|\";\n",
+    "$known = \"second_extra\";\n",
+    "echo $known(\"base\", \"K\", \"L\"), \"|\";\n",
+    "echo call_dynamic(\"first_extra\", \"dyn\");\n",
+);
+
 #[test]
 fn native_executable_c_source_lowers_direct_user_function_frames() {
     let program = parse(NATIVE_USER_FUNCTION_FRAME_SOURCE).unwrap();
@@ -13559,6 +13585,34 @@ fn native_executable_c_source_enforces_user_function_type_metadata() {
         !source.contains("assembly user-function lowering rejects")
             && !source.contains("unsupported parameter or return type metadata"),
         "supported scalar/array type metadata should no longer hit frame blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_variadic_user_function_frames() {
+    let program = parse(NATIVE_VARIADIC_USER_FUNCTION_FRAME_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_array_empty")
+            && source.contains("phpc_native_array_append_value_with_diagnostic")
+            && source.contains("phpc_native_value_from_array"),
+        "variadic frame calls should pack surplus arguments through the shared native array/value ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_coerce_call_type_with_diagnostic"),
+        "typed variadic arguments should consume the shared call-frame type ABI per supplied value:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_dynamic_call_name_matches")
+            && source.contains("phpc_user_function_1_first_extra("),
+        "runtime dynamic calls should dispatch into registered variadic frames:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly user-function lowering rejects")
+            && !source.contains("assembly dynamic function-call lowering rejects")
+            && !source.contains("by-value frame subset"),
+        "supported by-value variadic frames should not hit declaration or call blockers:\n{source}"
     );
 }
 
@@ -13777,6 +13831,34 @@ fn emit_exe_links_and_runs_typed_user_function_frame_program() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_variadic_user_function_frame_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "variadic_user_function_frame",
+        NATIVE_VARIADIC_USER_FUNCTION_FRAME_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native variadic user-function executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"empty|filled|A|B|5|L|dyn");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
 fn emit_exe_reports_typed_user_function_frame_mismatches() {
     if !has_cc() {
         return;
@@ -13792,6 +13874,11 @@ fn emit_exe_reports_typed_user_function_frame_mismatches() {
             "typed_user_function_return_mismatch",
             "<?php\nfunction returns_int(): int { return \"not numeric\"; }\necho returns_int(), \"after\";\n",
             "unsupported call returns_int(): return value expects int, got string",
+        ),
+        (
+            "typed_user_function_variadic_mismatch",
+            "<?php\nfunction spread_int(int ...$values): int { return $values[0]; }\necho spread_int([]), \"after\";\n",
+            "unsupported call spread_int(): parameter $values expects int, got array",
         ),
     ] {
         let (source_path, output_path) = compile_native_link_fixture(name, source);
@@ -13974,7 +14061,7 @@ fn emit_exe_reports_runtime_dynamic_user_function_call_failures() {
         (
             "runtime_dynamic_user_function_arity_mismatch",
             "<?php\nfunction needs_two($a, $b) { return $a . $b; }\nfunction invoke($call, $value) { return $call($value); }\necho invoke(\"needs_two\", \"a\"), \"after\";\n",
-            "unsupported call needs_two(): argument count is outside the generated by-value frame arity/default subset",
+            "unsupported call needs_two(): argument count is outside the generated by-value frame arity/default/variadic subset",
         ),
         (
             "runtime_dynamic_user_function_non_string",
@@ -14107,7 +14194,7 @@ fn emit_exe_links_and_runs_user_function_introspection_program() {
 fn native_executable_c_source_rejects_unsupported_user_function_frame_shapes() {
     for source in [
         "<?php\nfunction byref(&$value) { return $value; }\n",
-        "<?php\nfunction variadic(...$values) { return 1; }\n",
+        "<?php\nfunction byref_variadic(&...$values) { return 1; }\n",
         "<?php\nfunction typed(callable $value) { return 1; }\n",
         "<?php\nfunction typed_object(object $value) { return 1; }\n",
         "<?php\nfunction ret(): void { return; }\n",

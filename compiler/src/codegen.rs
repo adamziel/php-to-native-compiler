@@ -25,7 +25,7 @@ const NATIVE_FILESYSTEM_PATH_HAS_PATH: u8 = 8;
 const LLVM_CONDITIONAL_REJECTION: &str = "LLVM conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
-const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, and unsupported dynamic string-valued calls, until full callable lookup, full arity/type diagnostics, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value direct, finite known-string dynamic, and runtime string-valued dynamic user-function frames";
+const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, and unsupported dynamic string-valued calls, until full callable lookup, full arity/type diagnostics, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value fixed/default/variadic direct, finite known-string dynamic, and runtime string-valued dynamic user-function frames";
 const LLVM_STRING_PREDICATE_REJECTION: &str = "LLVM string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; lowerable LLVM and generated-native C str_starts_with(), str_ends_with(), and str_contains() operands route through the shared runtime contract";
 const ASSEMBLY_STRING_PREDICATE_REJECTION: &str = "assembly string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; generated-native C routes lowerable str_starts_with(), str_ends_with(), and str_contains() operands through the shared runtime contract";
 const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int/search builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), strpos(), substr_count(), ord(), and crc32() forms outside the reusable native string operation contracts, including unsupported arity, non-lowerable operands, nested call cleanup, references/copy-on-write, and exact native builtin diagnostics; lowerable LLVM and generated-native C string operands route through shared runtime contracts";
@@ -55,7 +55,7 @@ const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic functio
 const LLVM_TERMINATION_REJECTION: &str = "LLVM termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const ASSEMBLY_TERMINATION_REJECTION: &str = "assembly termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
-const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations outside the bounded generated-C by-value frame subset, including nested functions, by-reference/variadic parameters, unsupported parameter or return type metadata, static locals, and unsupported body cleanup, until full native function symbol tables, stack-frame layout, default parameter binding, complete callable lookup, return-value flow, and exact native error behavior exist; generated-native C lowers supported by-value direct, finite known-string dynamic, and runtime string-valued dynamic user-function frames with bounded scalar/array type enforcement";
+const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations outside the bounded generated-C by-value frame subset, including nested functions, by-reference parameters, malformed variadic declarations, unsupported parameter or return type metadata, static locals, and unsupported body cleanup, until full native function symbol tables, stack-frame layout, complete callable lookup, return-value flow, and exact native error behavior exist; generated-native C lowers supported by-value fixed/default/variadic direct, finite known-string dynamic, and runtime string-valued dynamic user-function frames with bounded scalar/array type enforcement";
 const LLVM_STATIC_LOCAL_REJECTION: &str = "LLVM static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const ASSEMBLY_STATIC_LOCAL_REJECTION: &str = "assembly static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const LLVM_CLOSURE_REJECTION: &str = "LLVM closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
@@ -268,7 +268,6 @@ enum NativeCallBlocker {
     LvalueOperandEvaluationCleanup,
     ReturnValueOwnership,
     ByReferenceArgumentBinding,
-    VariadicArgumentBinding,
     FunctionFrameHandoff,
     ClosureFrameHandoff,
     UnknownCalleeDiagnostics,
@@ -485,13 +484,58 @@ fn native_callable_frame_blocker(
 ) -> NativeCallBlocker {
     if params.iter().any(|param| param.by_reference) {
         NativeCallBlocker::ByReferenceArgumentBinding
-    } else if params.iter().any(|param| param.is_variadic) {
-        NativeCallBlocker::VariadicArgumentBinding
     } else if returns_by_reference {
         NativeCallBlocker::ReturnValueOwnership
     } else {
         NativeCallBlocker::FunctionFrameHandoff
     }
+}
+
+fn native_user_function_variadic_param(function: &FunctionDecl) -> Option<(usize, &FunctionParam)> {
+    function
+        .params
+        .iter()
+        .enumerate()
+        .find(|(_, param)| param.is_variadic)
+}
+
+fn native_user_function_fixed_param_count(function: &FunctionDecl) -> usize {
+    native_user_function_variadic_param(function)
+        .map(|(index, _)| index)
+        .unwrap_or(function.params.len())
+}
+
+fn native_user_function_required_arg_count(function: &FunctionDecl) -> usize {
+    function
+        .params
+        .iter()
+        .take(native_user_function_fixed_param_count(function))
+        .filter(|param| param.default.is_none())
+        .count()
+}
+
+fn native_user_function_accepts_arg_count(function: &FunctionDecl, arg_count: usize) -> bool {
+    let fixed_count = native_user_function_fixed_param_count(function);
+    arg_count >= native_user_function_required_arg_count(function)
+        && (native_user_function_variadic_param(function).is_some() || arg_count <= fixed_count)
+}
+
+fn native_user_function_has_malformed_variadic_params(function: &FunctionDecl) -> bool {
+    let variadic_count = function
+        .params
+        .iter()
+        .filter(|param| param.is_variadic)
+        .count();
+    if variadic_count == 0 {
+        return false;
+    }
+    if variadic_count > 1 {
+        return true;
+    }
+    let Some((index, param)) = native_user_function_variadic_param(function) else {
+        return false;
+    };
+    index + 1 != function.params.len() || param.default.is_some()
 }
 
 fn native_call_argument_list_blocker(args: &[Expr]) -> Option<NativeCallBlocker> {
@@ -3373,7 +3417,6 @@ fn native_function_frame_blocker_message(
             NativeCallResult::FrameHandoff,
             NativeCallBlocker::FunctionFrameHandoff
             | NativeCallBlocker::ByReferenceArgumentBinding
-            | NativeCallBlocker::VariadicArgumentBinding
             | NativeCallBlocker::ReturnValueOwnership,
         )
         | (NativeCallResult::Value, NativeCallBlocker::ReturnValueOwnership) => {
@@ -3392,7 +3435,6 @@ fn native_closure_frame_blocker_message(
             NativeCallResult::FrameHandoff,
             NativeCallBlocker::ClosureFrameHandoff
             | NativeCallBlocker::ByReferenceArgumentBinding
-            | NativeCallBlocker::VariadicArgumentBinding
             | NativeCallBlocker::ReturnValueOwnership,
         ) => backend.closure_rejection(),
         _ => unreachable!("invalid native closure-frame blocker contract"),
@@ -10351,13 +10393,13 @@ impl CGenerator {
     fn validate_user_function_frame(&self, function: &FunctionDecl) -> CompileResult<()> {
         if function.is_nested
             || function.returns_by_reference
+            || native_user_function_has_malformed_variadic_params(function)
             || function
                 .return_type
                 .as_ref()
                 .is_some_and(|decl| !native_function_type_decl_is_supported(decl))
             || function.params.iter().any(|param| {
                 param.by_reference
-                    || param.is_variadic
                     || param
                         .type_decl
                         .as_ref()
@@ -10472,6 +10514,7 @@ impl CGenerator {
             if let Some(type_decl) = param
                 .type_decl
                 .as_ref()
+                .filter(|_| !param.is_variadic)
                 .filter(|decl| !native_function_type_decl_is_mixed(decl))
             {
                 generator.emit_call_frame_type_coercion_assignment(
@@ -11223,15 +11266,34 @@ impl CGenerator {
         type_decl: &str,
         failure_cleanup: &str,
     ) {
-        self.uses_native_string_helpers = true;
-        self.uses_native_call_type_helpers = true;
-
         let callable = self
             .function_callable_name
             .clone()
             .unwrap_or_else(|| "native user function".to_string());
+        self.emit_call_frame_type_coercion_assignment_for_callable(
+            target_handle,
+            source_handle,
+            &callable,
+            label,
+            type_decl,
+            failure_cleanup,
+        );
+    }
+
+    fn emit_call_frame_type_coercion_assignment_for_callable(
+        &mut self,
+        target_handle: &str,
+        source_handle: &str,
+        callable: &str,
+        label: &str,
+        type_decl: &str,
+        failure_cleanup: &str,
+    ) {
+        self.uses_native_string_helpers = true;
+        self.uses_native_call_type_helpers = true;
+
         let (callable_bytes, callable_len) =
-            self.emit_call_type_static_bytes("call_type_callable_bytes", &callable);
+            self.emit_call_type_static_bytes("call_type_callable_bytes", callable);
         let (label_bytes, label_len) =
             self.emit_call_type_static_bytes("call_type_label_bytes", label);
         let (type_bytes, type_len) =
@@ -16894,6 +16956,191 @@ impl CGenerator {
         self.materialize_native_array_c_value_handle(value, span)
     }
 
+    fn materialize_variadic_argument_array_from_exprs(
+        &mut self,
+        param: &FunctionParam,
+        args: &[Expr],
+        callable_name: &str,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        let array = self.emit_empty_variadic_argument_array(failure_cleanup);
+        for arg in args {
+            let arg_failure_cleanup = format!("phpc_native_array_free({array}); {failure_cleanup}");
+            let value = self.materialize_native_value_result_operand(arg, &arg_failure_cleanup)?;
+            self.emit_variadic_argument_array_append(
+                &array,
+                param,
+                value,
+                callable_name,
+                failure_cleanup,
+            );
+        }
+        Ok(self.materialize_variadic_argument_array_value(array, failure_cleanup))
+    }
+
+    fn materialize_variadic_argument_array_from_values(
+        &mut self,
+        param: &FunctionParam,
+        args: &[CNativeValueMaterialization],
+        callable_name: &str,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        let array = self.emit_empty_variadic_argument_array(failure_cleanup);
+        for arg in args {
+            self.emit_variadic_argument_array_append_borrowed(
+                &array,
+                param,
+                &arg.handle,
+                callable_name,
+                failure_cleanup,
+            );
+        }
+        self.materialize_variadic_argument_array_value(array, failure_cleanup)
+    }
+
+    fn emit_empty_variadic_argument_array(&mut self, failure_cleanup: &str) -> String {
+        self.uses_native_array_helpers = true;
+        let array = self.next_native_name("variadic_args");
+        self.body.push(format!(
+            "phpc_NativeArrayHandle {array} = phpc_native_array_empty();"
+        ));
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({array}.ptr == NULL) {{ {error_exit} }}"));
+        array
+    }
+
+    fn emit_variadic_argument_array_append(
+        &mut self,
+        array: &str,
+        param: &FunctionParam,
+        value: CNativeValueMaterialization,
+        callable_name: &str,
+        failure_cleanup: &str,
+    ) {
+        let array_failure_cleanup = format!("phpc_native_array_free({array}); {failure_cleanup}");
+        let value = self.coerce_variadic_argument_value(
+            param,
+            value,
+            callable_name,
+            &array_failure_cleanup,
+        );
+        self.emit_variadic_argument_array_append_materialized(array, value, &array_failure_cleanup);
+    }
+
+    fn emit_variadic_argument_array_append_borrowed(
+        &mut self,
+        array: &str,
+        param: &FunctionParam,
+        value_handle: &str,
+        callable_name: &str,
+        failure_cleanup: &str,
+    ) {
+        let array_failure_cleanup = format!("phpc_native_array_free({array}); {failure_cleanup}");
+        let value = if let Some(type_decl) = param
+            .type_decl
+            .as_ref()
+            .filter(|decl| !native_function_type_decl_is_mixed(decl))
+        {
+            let handle = self.next_native_name("variadic_arg");
+            self.emit_call_frame_type_coercion_assignment_for_callable(
+                &handle,
+                value_handle,
+                callable_name,
+                &format!("parameter ${}", param.name),
+                &type_decl.text,
+                &array_failure_cleanup,
+            );
+            CNativeValueMaterialization {
+                handle: handle.clone(),
+                cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
+            }
+        } else {
+            CNativeValueMaterialization {
+                handle: value_handle.to_string(),
+                cleanup_after_use: Vec::new(),
+            }
+        };
+        self.emit_variadic_argument_array_append_materialized(array, value, &array_failure_cleanup);
+    }
+
+    fn coerce_variadic_argument_value(
+        &mut self,
+        param: &FunctionParam,
+        value: CNativeValueMaterialization,
+        callable_name: &str,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        let Some(type_decl) = param
+            .type_decl
+            .as_ref()
+            .filter(|decl| !native_function_type_decl_is_mixed(decl))
+        else {
+            return value;
+        };
+
+        let handle = self.next_native_name("variadic_arg");
+        let original_cleanup = value.cleanup_after_use.clone();
+        let type_failure_cleanup =
+            format!("{}{failure_cleanup}", c_cleanup_sequence(&original_cleanup));
+        self.emit_call_frame_type_coercion_assignment_for_callable(
+            &handle,
+            &value.handle,
+            callable_name,
+            &format!("parameter ${}", param.name),
+            &type_decl.text,
+            &type_failure_cleanup,
+        );
+        self.body.extend(original_cleanup);
+        CNativeValueMaterialization {
+            handle: handle.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
+        }
+    }
+
+    fn emit_variadic_argument_array_append_materialized(
+        &mut self,
+        array: &str,
+        value: CNativeValueMaterialization,
+        failure_cleanup: &str,
+    ) {
+        let diagnostic = self.next_native_name("variadic_arg_diagnostic");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        let append_failure_cleanup = format!(
+            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); {diagnostic}.ptr = NULL; }} {}{failure_cleanup}",
+            c_cleanup_sequence(&value.cleanup_after_use)
+        );
+        let error_exit = self.native_error_exit(&append_failure_cleanup);
+        self.body.push(format!(
+            "if (!phpc_native_array_append_value_with_diagnostic({array}, {}, &{diagnostic})) {{ {error_exit} }}",
+            value.handle
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body.extend(value.cleanup_after_use);
+    }
+
+    fn materialize_variadic_argument_array_value(
+        &mut self,
+        array: String,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        let value = self.next_native_name("variadic_args_value");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value} = phpc_native_value_from_array({array});"
+        ));
+        let error_exit = self.native_error_exit(&format!(
+            "phpc_native_array_free({array}); {failure_cleanup}"
+        ));
+        self.body
+            .push(format!("if ({value}.ptr == NULL) {{ {error_exit} }}"));
+        self.body.push(format!("phpc_native_array_free({array});"));
+        CNativeValueMaterialization {
+            handle: value.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
+        }
+    }
+
     fn materialize_runtime_dynamic_user_function_call(
         &mut self,
         callee_value: CValue,
@@ -16944,18 +17191,12 @@ impl CGenerator {
             ));
             self.body.push(format!("  {matched} = 1;"));
 
-            let required_count = function
-                .decl
-                .params
-                .iter()
-                .filter(|param| param.default.is_none())
-                .count();
-            if args.len() < required_count || args.len() > function.decl.params.len() {
+            if !native_user_function_accepts_arg_count(&function.decl, args.len()) {
                 let branch_failure_cleanup =
                     format!("{}{}", c_cleanup_sequence(&shared_cleanup), failure_cleanup);
                 self.emit_runtime_dynamic_call_failure(
                     &callee.handle,
-                    "argument count is outside the generated by-value frame arity/default subset",
+                    "argument count is outside the generated by-value frame arity/default/variadic subset",
                     &branch_failure_cleanup,
                     "  ",
                 );
@@ -16965,7 +17206,8 @@ impl CGenerator {
 
             let mut branch_cleanup = Vec::new();
             let mut call_args = vec![self.user_function_call_depth_argument()];
-            for (index, param) in function.decl.params.iter().enumerate() {
+            let fixed_count = native_user_function_fixed_param_count(&function.decl);
+            for (index, param) in function.decl.params.iter().take(fixed_count).enumerate() {
                 if let Some(arg_value) = arg_values.get(index) {
                     call_args.push(arg_value.handle.clone());
                     continue;
@@ -16990,6 +17232,23 @@ impl CGenerator {
                 )?;
                 branch_cleanup.extend(default_value.cleanup_after_use.clone());
                 call_args.push(default_value.handle);
+            }
+            if let Some((_, variadic_param)) = native_user_function_variadic_param(&function.decl) {
+                let variadic_failure_cleanup = format!(
+                    "{}{}{}",
+                    c_cleanup_sequence(&branch_cleanup),
+                    c_cleanup_sequence(&shared_cleanup),
+                    failure_cleanup
+                );
+                let callable_name = format!("{}()", function.decl.name);
+                let variadic_value = self.materialize_variadic_argument_array_from_values(
+                    variadic_param,
+                    &arg_values[fixed_count..],
+                    &callable_name,
+                    &variadic_failure_cleanup,
+                );
+                branch_cleanup.extend(variadic_value.cleanup_after_use.clone());
+                call_args.push(variadic_value.handle);
             }
             self.body.push(format!("  {status} = 0;"));
             call_args.push(format!("&{status}"));
@@ -17180,13 +17439,7 @@ impl CGenerator {
         failure_cleanup: &str,
         callee: NativeCallCallee,
     ) -> CompileResult<CNativeValueMaterialization> {
-        let required_count = function
-            .decl
-            .params
-            .iter()
-            .filter(|param| param.default.is_none())
-            .count();
-        if args.len() < required_count || args.len() > function.decl.params.len() {
+        if !native_user_function_accepts_arg_count(&function.decl, args.len()) {
             return Err(
                 self.unsupported_call_operation(NativeCallOperation::value_result(
                     span,
@@ -17198,7 +17451,8 @@ impl CGenerator {
 
         let mut values = Vec::new();
         let mut cleanup_after_use = Vec::new();
-        for (index, param) in function.decl.params.iter().enumerate() {
+        let fixed_count = native_user_function_fixed_param_count(&function.decl);
+        for (index, param) in function.decl.params.iter().take(fixed_count).enumerate() {
             let value_expr = if let Some(arg) = args.get(index) {
                 arg
             } else {
@@ -17219,6 +17473,22 @@ impl CGenerator {
                 self.materialize_native_value_result_operand(value_expr, &value_failure_cleanup)?;
             cleanup_after_use.extend(value.cleanup_after_use.clone());
             values.push(value);
+        }
+        if let Some((_, variadic_param)) = native_user_function_variadic_param(&function.decl) {
+            let variadic_failure_cleanup = format!(
+                "{}{}",
+                c_cleanup_sequence(&cleanup_after_use),
+                failure_cleanup
+            );
+            let callable_name = format!("{}()", function.decl.name);
+            let variadic_value = self.materialize_variadic_argument_array_from_exprs(
+                variadic_param,
+                &args[fixed_count..],
+                &callable_name,
+                &variadic_failure_cleanup,
+            )?;
+            cleanup_after_use.extend(variadic_value.cleanup_after_use.clone());
+            values.push(variadic_value);
         }
 
         let status = self.next_native_name("user_function_status");
@@ -28762,7 +29032,7 @@ echo " 10" < "zeta";
         ));
         assert!(matches!(
             native_function_frame_blocker(&test_function(vec![test_param(false, true)], false)),
-            NativeCallBlocker::VariadicArgumentBinding
+            NativeCallBlocker::FunctionFrameHandoff
         ));
         assert!(matches!(
             native_function_frame_blocker(&test_function(Vec::new(), true)),
@@ -28778,7 +29048,7 @@ echo " 10" < "zeta";
         ));
         assert!(matches!(
             native_closure_frame_blocker(&[test_param(false, true)], false),
-            NativeCallBlocker::VariadicArgumentBinding
+            NativeCallBlocker::ClosureFrameHandoff
         ));
         assert!(matches!(
             native_closure_frame_blocker(&[], true),
@@ -28804,10 +29074,7 @@ echo " 10" < "zeta";
             ),
             (
                 test_function(vec![test_param(false, true)], false),
-                NativeCallOperation::function_frame(
-                    span,
-                    NativeCallBlocker::VariadicArgumentBinding,
-                ),
+                NativeCallOperation::function_frame(span, NativeCallBlocker::FunctionFrameHandoff),
             ),
             (
                 test_function(Vec::new(), true),
@@ -30466,16 +30733,6 @@ echo " 10" < "zeta";
                     NativeCallOperation::function_frame(
                         span,
                         NativeCallBlocker::ByReferenceArgumentBinding,
-                    ),
-                ),
-                frame
-            );
-            assert_eq!(
-                native_call_blocker_message(
-                    backend,
-                    NativeCallOperation::function_frame(
-                        span,
-                        NativeCallBlocker::VariadicArgumentBinding,
                     ),
                 ),
                 frame
