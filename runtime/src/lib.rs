@@ -157,6 +157,13 @@ pub enum NativeStringIntOperation {
     Crc32 = 6,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeStringSearchOperation {
+    Position = 0,
+    Count = 1,
+}
+
 const NATIVE_STRING_INT_HAS_LENGTH: u8 = 1;
 
 #[repr(u8)]
@@ -7333,6 +7340,84 @@ pub unsafe extern "C" fn phpc_native_value_string_int_operation_with_diagnostic(
     }
 }
 
+/// # Safety
+///
+/// `subject` and `needle` must be null or value handles previously returned by
+/// the runtime ABI and not yet freed. `diagnostic` may be null; when non-null,
+/// it must point to writable storage for one `NativeDiagnosticHandle`. On
+/// failure the helper stores a diagnostic handle that the caller owns and must
+/// release with `phpc_native_diagnostic_free`. Operation `0` returns
+/// `strpos(subject, needle[, offset])` as an owned PHP value; operation `1`
+/// returns `substr_count(subject, needle[, offset[, length]])` as an owned PHP
+/// value.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_string_search_result_with_diagnostic(
+    subject: NativeValueHandle,
+    needle: NativeValueHandle,
+    offset: i64,
+    length: i64,
+    flags: u8,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe {
+        native_value_string_search_result(subject, needle, offset, length, flags, operation)
+    } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            if !diagnostic.is_null() {
+                unsafe { *diagnostic = NativeDiagnosticHandle::from_message(error.message()) };
+            }
+            NativeValueHandle::null()
+        }
+    }
+}
+
+unsafe fn native_value_string_search_result(
+    subject: NativeValueHandle,
+    needle: NativeValueHandle,
+    offset: i64,
+    length: i64,
+    flags: u8,
+    operation: u8,
+) -> RuntimeResult<Value> {
+    if flags & !NATIVE_STRING_INT_HAS_LENGTH != 0 {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native string search operation failed: unsupported operation flags",
+        ));
+    }
+
+    let haystack = unsafe { native_value_to_string_bytes(subject) }?;
+    let needle = unsafe { native_value_to_string_bytes(needle) }?;
+
+    match operation {
+        value if value == NativeStringSearchOperation::Position as u8 => {
+            if flags != 0 {
+                return Err(RuntimeError::invalid_string_conversion(
+                    "native string search operation failed: strpos does not accept length flags",
+                ));
+            }
+            php_strpos_bytes(&haystack, &needle, offset)
+        }
+        value if value == NativeStringSearchOperation::Count as u8 => {
+            let length = (flags & NATIVE_STRING_INT_HAS_LENGTH != 0).then_some(length);
+            php_substr_count_bytes_with_prefix(
+                &haystack,
+                &needle,
+                offset,
+                length,
+                "native string search operation failed",
+            )
+            .map(Value::Int)
+        }
+        _ => Err(RuntimeError::invalid_string_conversion(
+            "native string search operation failed: unsupported operation tag",
+        )),
+    }
+}
+
 unsafe fn native_value_string_int_operation(
     subject: NativeValueHandle,
     operand: NativeValueHandle,
@@ -7708,16 +7793,57 @@ fn php_shell_command_byte_needs_escape(byte: u8) -> bool {
     )
 }
 
+fn php_strpos_bytes(haystack: &[u8], needle: &[u8], offset: i64) -> RuntimeResult<Value> {
+    let haystack_len = i64::try_from(haystack.len()).unwrap_or(i64::MAX);
+    let start = if offset >= 0 {
+        offset
+    } else {
+        haystack_len.saturating_add(offset)
+    };
+    if start < 0 || start > haystack_len {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native string search operation failed: offset must be within the haystack bounds",
+        ));
+    }
+
+    let start = usize::try_from(start).unwrap_or(usize::MAX);
+    if needle.is_empty() {
+        return Ok(Value::Int(i64::try_from(start).unwrap_or(i64::MAX)));
+    }
+
+    Ok(haystack[start..]
+        .windows(needle.len())
+        .position(|window| window == needle)
+        .map(|index| Value::Int(i64::try_from(start + index).unwrap_or(i64::MAX)))
+        .unwrap_or(Value::Bool(false)))
+}
+
 fn php_substr_count_bytes(
     haystack: &[u8],
     needle: &[u8],
     offset: i64,
     length: Option<i64>,
 ) -> RuntimeResult<i64> {
+    php_substr_count_bytes_with_prefix(
+        haystack,
+        needle,
+        offset,
+        length,
+        "native string int operation failed",
+    )
+}
+
+fn php_substr_count_bytes_with_prefix(
+    haystack: &[u8],
+    needle: &[u8],
+    offset: i64,
+    length: Option<i64>,
+    error_prefix: &str,
+) -> RuntimeResult<i64> {
     if needle.is_empty() {
-        return Err(RuntimeError::invalid_string_conversion(
-            "native string int operation failed: empty needles are not supported",
-        ));
+        return Err(RuntimeError::invalid_string_conversion(format!(
+            "{error_prefix}: empty needles are not supported"
+        )));
     }
 
     let haystack_len = i64::try_from(haystack.len()).unwrap_or(i64::MAX);
@@ -7727,9 +7853,9 @@ fn php_substr_count_bytes(
         haystack_len.saturating_add(offset)
     };
     if start < 0 || start > haystack_len {
-        return Err(RuntimeError::invalid_string_conversion(
-            "native string int operation failed: offset must be within the haystack bounds",
-        ));
+        return Err(RuntimeError::invalid_string_conversion(format!(
+            "{error_prefix}: offset must be within the haystack bounds"
+        )));
     }
 
     let end = match length {
@@ -7738,9 +7864,9 @@ fn php_substr_count_bytes(
         None => haystack_len,
     };
     if end < start || end > haystack_len {
-        return Err(RuntimeError::invalid_string_conversion(
-            "native string int operation failed: length must keep the searched slice within the haystack bounds",
-        ));
+        return Err(RuntimeError::invalid_string_conversion(format!(
+            "{error_prefix}: length must keep the searched slice within the haystack bounds"
+        )));
     }
 
     let haystack = &haystack[start as usize..end as usize];
@@ -29661,6 +29787,139 @@ mod tests {
         unsafe { phpc_native_value_free(infix) };
         unsafe { phpc_native_value_free(suffix) };
         unsafe { phpc_native_value_free(prefix) };
+        unsafe { phpc_native_value_free(haystack) };
+    }
+
+    #[test]
+    fn native_string_search_results_return_php_values() {
+        fn string_value_for_test(bytes: &[u8]) -> NativeValueHandle {
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let handle = unsafe {
+                phpc_native_value_from_string_bytes_with_diagnostic(
+                    bytes.as_ptr(),
+                    bytes.len(),
+                    &mut diagnostic,
+                )
+            };
+            assert!(!handle.is_null());
+            assert!(diagnostic.is_null());
+            handle
+        }
+
+        fn search_result(
+            haystack: NativeValueHandle,
+            needle: NativeValueHandle,
+            offset: i64,
+            length: i64,
+            flags: u8,
+            operation: NativeStringSearchOperation,
+        ) -> Value {
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let result = unsafe {
+                phpc_native_value_string_search_result_with_diagnostic(
+                    haystack,
+                    needle,
+                    offset,
+                    length,
+                    flags,
+                    operation as u8,
+                    &mut diagnostic,
+                )
+            };
+            assert!(
+                diagnostic.is_null(),
+                "unexpected diagnostic: {:?}",
+                (!diagnostic.is_null()).then(|| native_diagnostic_message_for_test(diagnostic))
+            );
+            assert!(!result.is_null());
+            let value = unsafe { result.as_ref().expect("string search result").clone() };
+            unsafe { phpc_native_value_free(result) };
+            value
+        }
+
+        let haystack = string_value_for_test(b"A\0BA\0B");
+        let needle = string_value_for_test(b"\0B");
+        let missing = string_value_for_test(b"missing");
+        let empty = string_value_for_test(b"");
+
+        assert_eq!(
+            search_result(
+                haystack,
+                needle,
+                0,
+                0,
+                0,
+                NativeStringSearchOperation::Position,
+            ),
+            Value::Int(1)
+        );
+        assert_eq!(
+            search_result(
+                haystack,
+                needle,
+                2,
+                0,
+                0,
+                NativeStringSearchOperation::Position,
+            ),
+            Value::Int(4)
+        );
+        assert_eq!(
+            search_result(
+                haystack,
+                missing,
+                0,
+                0,
+                0,
+                NativeStringSearchOperation::Position,
+            ),
+            Value::Bool(false)
+        );
+        assert_eq!(
+            search_result(
+                haystack,
+                empty,
+                3,
+                0,
+                0,
+                NativeStringSearchOperation::Position,
+            ),
+            Value::Int(3)
+        );
+        assert_eq!(
+            search_result(
+                haystack,
+                needle,
+                0,
+                5,
+                NATIVE_STRING_INT_HAS_LENGTH,
+                NativeStringSearchOperation::Count,
+            ),
+            Value::Int(1)
+        );
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let invalid = unsafe {
+            phpc_native_value_string_search_result_with_diagnostic(
+                haystack,
+                needle,
+                99,
+                0,
+                0,
+                NativeStringSearchOperation::Position as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(invalid.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid string conversion: native string search operation failed: offset must be within the haystack bounds"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        unsafe { phpc_native_value_free(empty) };
+        unsafe { phpc_native_value_free(missing) };
+        unsafe { phpc_native_value_free(needle) };
         unsafe { phpc_native_value_free(haystack) };
     }
 

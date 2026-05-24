@@ -122,12 +122,20 @@ echo is_callable("substr_count") ? "1" : "0";
 
     let routed = emit_ir_source("<?php\nsubstr_count('abc', 'b');\n").unwrap();
     assert!(
-        routed.contains("declare i64 @phpc_native_value_string_int_operation_with_diagnostic"),
+        routed.contains(
+            "declare %phpc.NativeValueHandle @phpc_native_value_string_search_result_with_diagnostic"
+        ),
         "{routed}"
     );
     assert!(
-        routed.contains("call i64 @phpc_native_value_string_int_operation_with_diagnostic"),
+        routed.contains(
+            "call %phpc.NativeValueHandle @phpc_native_value_string_search_result_with_diagnostic"
+        ),
         "{routed}"
     );
     assert!(routed.contains("i8 1, ptr %"), "{routed}");
+    assert!(
+        routed.contains("call void @phpc_native_value_free"),
+        "{routed}"
+    );
 }

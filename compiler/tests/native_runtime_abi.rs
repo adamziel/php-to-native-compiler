@@ -7,7 +7,8 @@ use php_compiler::{
     native_runtime_scalar_echo_probe_ir_for_target, NativeRuntimeIrTarget,
 };
 
-const STRING_INT_IR_SOURCE: &str = "<?php\n$payload = \"A\\0bA\\0b\";\necho strcasecmp($payload, \"a\\0B\");\necho strcmp($payload, \"A\\0c\");\necho strncmp($payload, \"A\\0bZ\", \"3\");\necho strncasecmp($payload, \"a\\0Bz\", 3);\necho substr_count($payload, \"A\", false, \"5\");\necho ord(\"A\");\necho crc32($payload);\n";
+const STRING_INT_IR_SOURCE: &str = "<?php\n$payload = \"A\\0bA\\0b\";\necho strcasecmp($payload, \"a\\0B\");\necho strcmp($payload, \"A\\0c\");\necho strncmp($payload, \"A\\0bZ\", \"3\");\necho strncasecmp($payload, \"a\\0Bz\", 3);\necho ord(\"A\");\necho crc32($payload);\n";
+const STRING_SEARCH_IR_SOURCE: &str = "<?php\n$payload = \"A\\0bA\\0b\";\necho strpos($payload, \"\\0b\", 2);\necho strpos($payload, \"missing\");\necho substr_count($payload, \"A\", false, \"5\");\n";
 const VALUE_OFFSET_IR_SOURCE: &str = "<?php\n$payload = \"A\\0B\\xff\";\necho $payload[1];\necho isset($payload[2]);\necho empty($payload[3]);\necho strlen($payload[0]);\necho strcmp($payload[0], \"A\");\n";
 
 #[test]
@@ -124,20 +125,20 @@ fn generated_ir_routes_string_int_builtins_through_runtime_contract() {
     assert_eq!(
         ir.matches("call i64 @phpc_native_value_string_int_operation_with_diagnostic")
             .count(),
-        7,
+        6,
         "{ir}"
     );
     assert!(
         ir.matches("call i64 @phpc_native_value_to_int64_with_diagnostic")
             .count()
-            >= 4,
+            >= 2,
         "{ir}"
     );
-    for tag in 0..=6 {
+    for tag in [0, 2, 3, 4, 5, 6] {
         assert!(ir.contains(&format!("i8 {tag}, ptr %")), "{tag}: {ir}");
     }
     assert!(
-        ir.matches("call void @phpc_native_value_free").count() >= 14,
+        ir.matches("call void @phpc_native_value_free").count() >= 12,
         "{ir}"
     );
     assert!(
@@ -147,12 +148,58 @@ fn generated_ir_routes_string_int_builtins_through_runtime_contract() {
 }
 
 #[test]
+fn generated_ir_routes_string_search_builtins_through_value_result_contract() {
+    let ir = emit_ir_source(STRING_SEARCH_IR_SOURCE).unwrap();
+
+    assert!(
+        ir.contains(
+            "declare %phpc.NativeValueHandle @phpc_native_value_string_search_result_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i64, i64, i8, i8, ptr)"
+        ),
+        "{ir}"
+    );
+    assert_eq!(
+        ir.matches(
+            "call %phpc.NativeValueHandle @phpc_native_value_string_search_result_with_diagnostic"
+        )
+        .count(),
+        3,
+        "{ir}"
+    );
+    assert!(
+        ir.contains("i8 0, ptr %") && ir.contains("i8 1, ptr %"),
+        "{ir}"
+    );
+    assert!(
+        ir.matches("call i64 @phpc_native_value_format_stdout_with_diagnostic")
+            .count()
+            >= 3,
+        "{ir}"
+    );
+    assert!(
+        ir.matches("call void @phpc_native_value_free").count() >= 6,
+        "{ir}"
+    );
+    assert!(!ir.contains("LLVM function-call lowering rejects"), "{ir}");
+}
+
+#[test]
 fn generated_ir_string_int_route_reaches_assembly_backend() {
     if !has_llvm_assembly_backend() {
         return;
     }
 
     let asm = emit_asm_source(STRING_INT_IR_SOURCE).unwrap();
+
+    assert!(asm.contains("main"), "{asm}");
+}
+
+#[test]
+fn generated_ir_string_search_route_reaches_assembly_backend() {
+    if !has_llvm_assembly_backend() {
+        return;
+    }
+
+    let asm = emit_asm_source(STRING_SEARCH_IR_SOURCE).unwrap();
 
     assert!(asm.contains("main"), "{asm}");
 }
@@ -313,12 +360,13 @@ fn generated_ir_blocks_string_int_unsupported_forms_at_shared_boundary() {
         "<?php\nstrncmp('a', 'b');\n",
         "<?php\nord('a', 'b');\n",
         "<?php\nsubstr_count('abc');\n",
+        "<?php\nstrpos('abc');\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
         assert_eq!(error.phase, Phase::Codegen, "{source}");
         assert!(
             error.message.contains(
-                "LLVM string-int builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), substr_count(), ord(), and crc32() forms outside the reusable native string-int operation contract"
+                "LLVM string-int/search builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), strpos(), substr_count(), ord(), and crc32() forms outside the reusable native string operation contracts"
             ),
             "{source}: {}",
             error.message

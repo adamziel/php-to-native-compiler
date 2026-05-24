@@ -3458,7 +3458,7 @@ fn native_executable_c_source_routes_string_predicates_through_runtime_contract(
 #[test]
 fn native_executable_c_source_routes_string_int_builtins_through_runtime_contract() {
     let program = parse(
-        "<?php\n$payload = \"A\0B\";\n$repeated = \"A\0BA\0B\";\necho strcasecmp($payload, \"a\0b\");\necho strcmp($payload, \"a\0b\");\necho strncmp($payload, \"A\0C\", 3);\necho strncasecmp($payload, \"a\0c\", \"2\");\necho substr_count($repeated, $payload, 0, 6);\necho substr_count(42042, 42);\necho ord($payload);\necho ord(42042);\necho crc32(\"123456789\");\necho crc32($payload);\necho crc32(null);\n",
+        "<?php\n$payload = \"A\0B\";\necho strcasecmp($payload, \"a\0b\");\necho strcmp($payload, \"a\0b\");\necho strncmp($payload, \"A\0C\", 3);\necho strncasecmp($payload, \"a\0c\", \"2\");\necho ord($payload);\necho ord(42042);\necho crc32(\"123456789\");\necho crc32($payload);\necho crc32(null);\n",
     )
     .unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -3471,32 +3471,31 @@ fn native_executable_c_source_routes_string_int_builtins_through_runtime_contrac
         source
             .matches(" = (long long)phpc_native_value_string_int_operation_with_diagnostic(")
             .count(),
-        11,
+        9,
         "{source}"
     );
     assert_eq!(
         source
             .matches("phpc_NativeDiagnosticHandle string_int_diagnostic_")
             .count(),
-        11,
+        9,
         "{source}"
     );
     assert!(
         source.contains(", 0, &string_int_diagnostic_")
-            && source.contains(", 1, &string_int_diagnostic_")
             && source.contains(", 2, &string_int_diagnostic_")
             && source.contains(", 3, &string_int_diagnostic_")
             && source.contains(", 4, &string_int_diagnostic_")
             && source.contains(", 5, &string_int_diagnostic_")
             && source.contains(", 6, &string_int_diagnostic_"),
-        "byte compare, prefix compare, substring count, ord, and crc32 should share the tagged string-int ABI:\n{source}"
+        "byte compare, prefix compare, ord, and crc32 should share the tagged string-int ABI:\n{source}"
     );
     assert_eq!(
         source
             .matches(" = (long long)phpc_native_value_to_int64_with_diagnostic(")
             .count(),
-        4,
-        "prefix compare lengths and substr_count offset/length should share the native int conversion ABI:\n{source}"
+        2,
+        "prefix compare lengths should share the native int conversion ABI:\n{source}"
     );
     assert!(
         source.contains("phpc_native_value_from_scalar")
@@ -3506,6 +3505,44 @@ fn native_executable_c_source_routes_string_int_builtins_through_runtime_contrac
     assert!(
         !source.contains("strlen((const char *)"),
         "string-int builtins should use PHP value-to-string byte conversion:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_string_search_builtins_through_value_results() {
+    let program = parse(
+        "<?php\n$payload = \"A\0B\";\n$repeated = \"A\0BA\0B\";\necho strpos($repeated, $payload);\necho strpos($repeated, $payload, 2);\necho strpos($repeated, \"missing\");\necho substr_count($repeated, $payload, 0, 6);\necho substr_count(42042, 42);\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_string_search_result_with_diagnostic"),
+        "{source}"
+    );
+    assert_eq!(
+        source
+            .matches(" = phpc_native_value_string_search_result_with_diagnostic(")
+            .count(),
+        5,
+        "{source}"
+    );
+    assert!(
+        source.contains(", 0, &string_search_diagnostic_")
+            && source.contains(", 1, &string_search_diagnostic_"),
+        "strpos and substr_count should share the tagged string-search value-result ABI:\n{source}"
+    );
+    assert_eq!(
+        source
+            .matches(" = (long long)phpc_native_value_to_int64_with_diagnostic(")
+            .count(),
+        3,
+        "strpos offset and substr_count offset/length should share the native int conversion ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_format_stdout_with_diagnostic")
+            && source.contains("phpc_native_value_free"),
+        "string-search results should stay PHP-shaped values through stdout and cleanup:\n{source}"
     );
 }
 
@@ -7894,9 +7931,9 @@ fn native_executable_c_source_routes_string_integer_arguments_through_value_conv
         "string offset, string length, and string distance cost roles should use operation tags:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_value_string_int_operation_with_diagnostic")
+        source.contains("phpc_native_value_string_search_result_with_diagnostic")
             && source.contains("phpc_native_value_string_distance_operation_with_diagnostic"),
-        "converted int arguments should compose with both string-int and string-distance consumers:\n{source}"
+        "converted int arguments should compose with both string-search and string-distance consumers:\n{source}"
     );
 }
 
@@ -8326,7 +8363,7 @@ fn emit_exe_links_and_runs_string_int_operation_program() {
     let _ = fs::remove_file(&source_path);
     fs::write(
         &source_path,
-        "<?php\n$payload = \"A\0B\";\n$repeated = \"A\0BA\0B\";\necho strcasecmp($payload, \"a\0b\");\necho \"\\n\";\necho strcmp($payload, \"a\0b\");\necho \"\\n\";\necho strncmp($payload, \"A\0C\", 3);\necho \"\\n\";\necho strncasecmp($payload, \"a\0c\", \"2\");\necho \"\\n\";\necho substr_count($repeated, $payload, 0, 6);\necho \"\\n\";\necho substr_count(42042, 42);\necho \"\\n\";\necho ord($payload);\necho \"\\n\";\necho ord(42042);\necho \"\\n\";\necho crc32(\"123456789\");\necho \"\\n\";\necho crc32($payload);\necho \"\\n\";\necho crc32(null);\necho \"\\n\";\n",
+        "<?php\n$payload = \"A\0B\";\necho strcasecmp($payload, \"a\0b\");\necho \"\\n\";\necho strcmp($payload, \"a\0b\");\necho \"\\n\";\necho strncmp($payload, \"A\0C\", 3);\necho \"\\n\";\necho strncasecmp($payload, \"a\0c\", \"2\");\necho \"\\n\";\necho ord($payload);\necho \"\\n\";\necho ord(42042);\necho \"\\n\";\necho crc32(\"123456789\");\necho \"\\n\";\necho crc32($payload);\necho \"\\n\";\necho crc32(null);\necho \"\\n\";\n",
     )
     .expect("native string-int source fixture can be written");
 
@@ -8359,8 +8396,31 @@ fn emit_exe_links_and_runs_string_int_operation_program() {
     assert!(run.status.success(), "native executable failed");
     assert_eq!(
         String::from_utf8_lossy(&run.stdout),
-        "0\n-1\n-1\n0\n2\n2\n65\n52\n3421780262\n382410329\n0\n"
+        "0\n-1\n-1\n0\n65\n52\n3421780262\n382410329\n0\n"
     );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_string_search_value_result_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "string_search_value_result",
+        "<?php\n$payload = \"A\0B\";\n$repeated = \"A\0BA\0B\";\necho strpos($repeated, $payload);\necho \"\\n\";\necho strpos($repeated, $payload, 2);\necho \"\\n\";\necho strpos($repeated, \"missing\");\necho \"\\n\";\necho strpos($repeated, \"\", 3);\necho \"\\n\";\necho substr_count($repeated, $payload, 0, 6);\necho \"\\n\";\necho substr_count(42042, 42);\necho \"\\n\";\n",
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native executable: {error}"));
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "0\n3\n\n3\n2\n2\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&output_path);

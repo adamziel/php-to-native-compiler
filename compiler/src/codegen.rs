@@ -13,8 +13,8 @@ use php_runtime::{
     php_strings_use_numeric_comparison, NativeComparisonOp, NativeFilesystemPathOperation,
     NativeIntConversionOperation, NativeStringDistanceOperation, NativeStringIntOperation,
     NativeStringOffsetOperation, NativeStringPredicate, NativeStringResultOperation,
-    PhpPrimitiveArithmeticError, PhpPrimitiveArithmeticOperation, PhpPrimitiveArithmeticValue,
-    PhpPrimitiveValue,
+    NativeStringSearchOperation, PhpPrimitiveArithmeticError, PhpPrimitiveArithmeticOperation,
+    PhpPrimitiveArithmeticValue, PhpPrimitiveValue,
 };
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
@@ -28,8 +28,8 @@ const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects 
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const LLVM_STRING_PREDICATE_REJECTION: &str = "LLVM string-predicate lowering rejects str_starts_with(), str_ends_with(), and str_contains() until native PHP string conversion, empty-needle handling, binary string byte semantics, argument diagnostics, references/copy-on-write, and exact native predicate diagnostics exist; generated-native C routes lowerable predicate operands through the shared runtime contract";
 const ASSEMBLY_STRING_PREDICATE_REJECTION: &str = "assembly string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; generated-native C routes lowerable str_starts_with(), str_ends_with(), and str_contains() operands through the shared runtime contract";
-const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), substr_count(), ord(), and crc32() forms outside the reusable native string-int operation contract, including unsupported arity, non-lowerable operands, nested call cleanup, references/copy-on-write, and exact native builtin diagnostics; lowerable LLVM and generated-native C string-int operands route through the shared runtime contract";
-const ASSEMBLY_STRING_INT_OPERATION_REJECTION: &str = "assembly string-int builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), substr_count(), ord(), and crc32() forms outside the reusable native string-int operation contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
+const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int/search builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), strpos(), substr_count(), ord(), and crc32() forms outside the reusable native string operation contracts, including unsupported arity, non-lowerable operands, nested call cleanup, references/copy-on-write, and exact native builtin diagnostics; lowerable LLVM and generated-native C string operands route through shared runtime contracts";
+const ASSEMBLY_STRING_INT_OPERATION_REJECTION: &str = "assembly string-int/search builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), strpos(), substr_count(), ord(), and crc32() forms outside the reusable native string operation contracts until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
 const LLVM_STRING_DISTANCE_OPERATION_REJECTION: &str = "LLVM string-distance builtin lowering rejects levenshtein() and similar_text() until native PHP value-to-string byte conversion, optional cost conversion, references/copy-on-write, by-reference percent output, and exact native diagnostics exist; generated-native C routes lowerable string-distance operands through the shared runtime contract";
 const ASSEMBLY_STRING_DISTANCE_OPERATION_REJECTION: &str = "assembly string-distance builtin lowering rejects levenshtein() and similar_text() forms outside the reusable native string-distance operation contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
 const LLVM_STRING_RESULT_OPERATION_REJECTION: &str = "LLVM string-result builtin lowering rejects strrev(), str_rot13(), bin2hex(), strtolower(), strtoupper(), ucfirst(), lcfirst(), escapeshellarg(), and escapeshellcmd() until native PHP string result ownership, byte-preserving conversion, diagnostics, references/copy-on-write, and exact native builtin diagnostics exist; generated-native C routes lowerable string-result operands through the shared runtime contract";
@@ -999,6 +999,13 @@ fn native_value_non_strict_comparison_expr(expr: &Expr) -> bool {
     )
 }
 
+fn native_string_search_result_expr(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Call { name, .. } if native_string_search_operation_for_name(name).is_some()
+    )
+}
+
 fn native_value_result_output_expr(expr: &Expr) -> bool {
     match expr {
         Expr::Index { .. } => true,
@@ -1024,6 +1031,7 @@ fn native_value_result_output_expr(expr: &Expr) -> bool {
             native_value_cast_builtin_op_tag(name).is_some()
                 || native_value_type_name_tag(name).is_some()
                 || native_string_result_operation_for_name(name).is_some()
+                || native_string_search_operation_for_name(name).is_some()
                 || native_array_pointer_builtin(name, args).is_some()
                 || native_array_mutation_builtin(name, args).is_some()
                 || native_value_array_callback_builtin(name, args).is_some()
@@ -1060,6 +1068,7 @@ fn native_value_strict_identity_operand_needs_materialization(expr: &Expr) -> bo
             native_value_cast_builtin_op_tag(name).is_some()
                 || native_value_type_name_tag(name).is_some()
                 || native_string_result_operation_for_name(name).is_some()
+                || native_string_search_operation_for_name(name).is_some()
                 || native_array_pointer_builtin(name, args).is_some()
                 || native_array_mutation_builtin(name, args).is_some()
                 || native_value_array_callback_builtin(name, args).is_some()
@@ -3613,6 +3622,7 @@ impl LlvmGenerator {
             ));
             output.push_str("declare i64 @phpc_native_value_to_int64_with_diagnostic(%phpc.NativeValueHandle, i8, ptr)\n");
             output.push_str("declare i64 @phpc_native_value_string_int_operation_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i64, i64, i8, i8, ptr)\n");
+            output.push_str("declare %phpc.NativeValueHandle @phpc_native_value_string_search_result_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i64, i64, i8, i8, ptr)\n");
             if !self.uses_native_value_echo_stdout {
                 output.push_str("declare void @phpc_native_value_free(%phpc.NativeValueHandle)\n");
                 output.push_str(&format!(
@@ -3959,6 +3969,13 @@ impl LlvmGenerator {
                 let operation = native_string_int_operation_for_name(name)
                     .expect("string-int operation checked above");
                 self.emit_llvm_string_int_call(operation, args, *span)
+            }
+            Expr::Call { name, args, span }
+                if native_string_search_operation_for_name(name).is_some() =>
+            {
+                let operation = native_string_search_operation_for_name(name)
+                    .expect("string-search operation checked above");
+                self.emit_llvm_string_search_call(operation, args, *span)
             }
             Expr::Call { name, args, span }
                 if native_string_distance_operation_for_name(name).is_some() =>
@@ -4374,6 +4391,81 @@ impl LlvmGenerator {
         }
     }
 
+    fn emit_llvm_string_search_call(
+        &mut self,
+        operation: NativeStringSearchOperation,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        if let Some(call_operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(call_operation));
+        }
+
+        match operation {
+            NativeStringSearchOperation::Position if (2..=3).contains(&args.len()) => {
+                let subject = self.emit_value_operand_expr(&args[0])?;
+                let needle = self.emit_value_operand_expr(&args[1])?;
+                let offset = if let Some(offset) = args.get(2) {
+                    let offset = self.emit_value_operand_expr(offset)?;
+                    self.emit_native_int_for_ir_value(
+                        offset,
+                        NativeIntConversionOperation::StringOffset,
+                        span,
+                        LLVM_STRING_INT_OPERATION_REJECTION,
+                    )?
+                } else {
+                    "0".to_string()
+                };
+                self.emit_native_string_search_result_operation(
+                    operation,
+                    subject,
+                    needle,
+                    offset,
+                    "0".to_string(),
+                    false,
+                    span,
+                )
+            }
+            NativeStringSearchOperation::Count if (2..=4).contains(&args.len()) => {
+                let subject = self.emit_value_operand_expr(&args[0])?;
+                let needle = self.emit_value_operand_expr(&args[1])?;
+                let offset = if let Some(offset) = args.get(2) {
+                    let offset = self.emit_value_operand_expr(offset)?;
+                    self.emit_native_int_for_ir_value(
+                        offset,
+                        NativeIntConversionOperation::StringOffset,
+                        span,
+                        LLVM_STRING_INT_OPERATION_REJECTION,
+                    )?
+                } else {
+                    "0".to_string()
+                };
+                let (length, has_length) = if let Some(length) = args.get(3) {
+                    let length = self.emit_value_operand_expr(length)?;
+                    (
+                        self.emit_native_int_for_ir_value(
+                            length,
+                            NativeIntConversionOperation::StringLength,
+                            span,
+                            LLVM_STRING_INT_OPERATION_REJECTION,
+                        )?,
+                        true,
+                    )
+                } else {
+                    ("0".to_string(), false)
+                };
+                self.emit_native_string_search_result_operation(
+                    operation, subject, needle, offset, length, has_length, span,
+                )
+            }
+            _ => Err(self.unsupported_direct_named_call(
+                args,
+                span,
+                LLVM_STRING_INT_OPERATION_REJECTION,
+            )),
+        }
+    }
+
     fn emit_native_string_int_operation(
         &mut self,
         operation: NativeStringIntOperation,
@@ -4419,6 +4511,46 @@ impl LlvmGenerator {
             "call void @phpc_native_value_free(%phpc.NativeValueHandle {subject})"
         ));
         Ok(IrValue::Int(result))
+    }
+
+    fn emit_native_string_search_result_operation(
+        &mut self,
+        operation: NativeStringSearchOperation,
+        subject: IrValue,
+        needle: IrValue,
+        offset: String,
+        length: String,
+        has_length: bool,
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        let subject = self
+            .emit_native_value_for_ir_value(subject, span)
+            .map_err(|_| self.unsupported(span, LLVM_STRING_INT_OPERATION_REJECTION))?;
+        let needle = self
+            .emit_native_value_for_ir_value(needle, span)
+            .map_err(|_| self.unsupported(span, LLVM_STRING_INT_OPERATION_REJECTION))?;
+        let flags = u8::from(has_length);
+        let diagnostic_slot = self.next_temp();
+        let result = self.next_temp();
+        self.uses_native_string_int_operation = true;
+        self.body.push(format!(
+            "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
+        ));
+        self.body.push(format!(
+            "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
+        ));
+        self.body.push(format!(
+            "{result} = call %phpc.NativeValueHandle @phpc_native_value_string_search_result_with_diagnostic(%phpc.NativeValueHandle {subject}, %phpc.NativeValueHandle {needle}, i64 {offset}, i64 {length}, i8 {flags}, i8 {}, ptr {diagnostic_slot})",
+            operation as u8
+        ));
+        self.emit_report_native_diagnostic_slot(&diagnostic_slot);
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {needle})"
+        ));
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {subject})"
+        ));
+        Ok(IrValue::NativeValue(result))
     }
 
     fn emit_native_value_offset_operation(
@@ -9537,6 +9669,7 @@ impl CGenerator {
                 output.push_str("extern int64_t phpc_native_value_to_int64_with_diagnostic(phpc_NativeValueHandle value, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern _Bool phpc_native_value_string_predicate_with_diagnostic(phpc_NativeValueHandle haystack, phpc_NativeValueHandle needle, uint8_t predicate, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern int64_t phpc_native_value_string_int_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_string_search_result_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle needle, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern int64_t phpc_native_value_string_distance_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, int64_t insertion_cost, int64_t replacement_cost, int64_t deletion_cost, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_string_result_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, phpc_NativeValueHandle replacement, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_offset_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle offset, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -14761,6 +14894,13 @@ impl CGenerator {
                 self.emit_string_int_operation_call(operation, args, *span)
             }
             Expr::Call { name, args, span }
+                if native_string_search_operation_for_name(name).is_some() =>
+            {
+                let operation = native_string_search_operation_for_name(name)
+                    .expect("string-search guard should provide operation");
+                self.emit_string_search_result_call(operation, args, *span)
+            }
+            Expr::Call { name, args, span }
                 if native_string_distance_operation_for_name(name).is_some() =>
             {
                 let operation = native_string_distance_operation_for_name(name)
@@ -19064,6 +19204,89 @@ impl CGenerator {
         Ok(CValue::Int(result))
     }
 
+    fn emit_string_search_result_call(
+        &mut self,
+        operation: NativeStringSearchOperation,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<CValue> {
+        if let Some(call_operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(call_operation));
+        }
+
+        if !self.uses_native_string_helpers {
+            self.uses_native_string_helpers = true;
+        }
+
+        let (subject_arg, needle_arg, offset_arg, length_arg, has_length) = match operation {
+            NativeStringSearchOperation::Position if (2..=3).contains(&args.len()) => {
+                (&args[0], &args[1], args.get(2), None, false)
+            }
+            NativeStringSearchOperation::Count if (2..=4).contains(&args.len()) => (
+                &args[0],
+                &args[1],
+                args.get(2),
+                args.get(3),
+                args.get(3).is_some(),
+            ),
+            _ => {
+                return Err(self.unsupported_direct_named_call(
+                    args,
+                    span,
+                    ASSEMBLY_STRING_INT_OPERATION_REJECTION,
+                ))
+            }
+        };
+
+        let subject = self.emit_value_operand_expr(subject_arg)?;
+        let subject = self
+            .emit_native_value_for_cvalue(subject, span)
+            .map_err(|_| self.unsupported(span, ASSEMBLY_STRING_INT_OPERATION_REJECTION))?;
+        let needle = self.emit_value_operand_expr(needle_arg)?;
+        let needle = self
+            .emit_native_value_for_cvalue(needle, span)
+            .map_err(|_| self.unsupported(span, ASSEMBLY_STRING_INT_OPERATION_REJECTION))?;
+        let offset = self.emit_optional_native_int_argument(
+            offset_arg,
+            span,
+            "0",
+            NativeIntConversionOperation::StringOffset,
+            ASSEMBLY_STRING_INT_OPERATION_REJECTION,
+        )?;
+        let length = self.emit_optional_native_int_argument(
+            length_arg,
+            span,
+            "0",
+            NativeIntConversionOperation::StringLength,
+            ASSEMBLY_STRING_INT_OPERATION_REJECTION,
+        )?;
+        let result = self.next_native_name(match operation {
+            NativeStringSearchOperation::Position => "strpos_result",
+            NativeStringSearchOperation::Count => "substr_count_result",
+        });
+        let diagnostic = self.next_native_name("string_search_diagnostic");
+        let flags = u8::from(has_length);
+
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_value_string_search_result_with_diagnostic({subject}, {needle}, (int64_t)({offset}), (int64_t)({length}), {flags}, {}, &{diagnostic});",
+            operation as u8
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let error_exit = self.native_error_exit(&format!(
+            "phpc_native_value_free({needle}); phpc_native_value_free({subject});"
+        ));
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.body.push(format!("phpc_native_value_free({needle});"));
+        self.body
+            .push(format!("phpc_native_value_free({subject});"));
+        self.retain_native_value_cleanup_handle(&result);
+
+        Ok(CValue::NativeValueHandle(result))
+    }
+
     fn emit_optional_native_int_argument(
         &mut self,
         expr: Option<&Expr>,
@@ -19800,7 +20023,8 @@ impl CGenerator {
                         "",
                     );
                 }
-                if self.uses_native_string_helpers && !self.mutable_scalar_slots.contains_key(name)
+                if (self.uses_native_string_helpers || native_string_search_result_expr(expr))
+                    && !self.mutable_scalar_slots.contains_key(name)
                 {
                     if let Some(value) = self.try_materialize_native_value_result_expr(expr, "")? {
                         if self.globals_symbol_table_is_active()
@@ -23111,6 +23335,16 @@ impl CGenerator {
                         failure_cleanup,
                     )));
                 }
+                if let Some(operation) = native_string_search_operation_for_name(name) {
+                    return self
+                        .materialize_native_string_search_result_expr(
+                            operation,
+                            args,
+                            *span,
+                            failure_cleanup,
+                        )
+                        .map(Some);
+                }
                 if let Some(builtin) = native_array_pointer_builtin(name, args) {
                     return self
                         .materialize_native_array_pointer_call(
@@ -23708,6 +23942,7 @@ impl CGenerator {
                 native_value_cast_builtin_op_tag(name).is_some()
                     || native_value_type_name_tag(name).is_some()
                     || (args.len() == 1 && native_string_result_operation_for_name(name).is_some())
+                    || native_string_search_operation_for_name(name).is_some()
                     || native_array_pointer_builtin(name, args).is_some()
                     || native_array_mutation_builtin(name, args).is_some()
                     || native_value_array_callback_builtin(name, args).is_some()
@@ -24050,6 +24285,113 @@ impl CGenerator {
         self.body
             .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
         self.body.extend(subject.cleanup_after_use);
+
+        CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }
+    }
+
+    fn materialize_native_string_search_result_expr(
+        &mut self,
+        operation: NativeStringSearchOperation,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        let (subject_expr, needle_expr, offset_expr, length_expr, has_length) = match operation {
+            NativeStringSearchOperation::Position if (2..=3).contains(&args.len()) => {
+                (&args[0], &args[1], args.get(2), None, false)
+            }
+            NativeStringSearchOperation::Count if (2..=4).contains(&args.len()) => (
+                &args[0],
+                &args[1],
+                args.get(2),
+                args.get(3),
+                args.get(3).is_some(),
+            ),
+            _ => {
+                return Err(self.unsupported_direct_named_call(
+                    args,
+                    span,
+                    ASSEMBLY_STRING_INT_OPERATION_REJECTION,
+                ))
+            }
+        };
+
+        let subject =
+            self.materialize_native_value_result_operand(subject_expr, failure_cleanup)?;
+        let needle_failure_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&subject.cleanup_after_use),
+            failure_cleanup
+        );
+        let needle =
+            self.materialize_native_value_result_operand(needle_expr, &needle_failure_cleanup)?;
+        let offset = self.emit_optional_native_int_argument(
+            offset_expr,
+            span,
+            "0",
+            NativeIntConversionOperation::StringOffset,
+            ASSEMBLY_STRING_INT_OPERATION_REJECTION,
+        )?;
+        let length = self.emit_optional_native_int_argument(
+            length_expr,
+            span,
+            "0",
+            NativeIntConversionOperation::StringLength,
+            ASSEMBLY_STRING_INT_OPERATION_REJECTION,
+        )?;
+
+        Ok(self.emit_native_string_search_result_operation_handle(
+            subject,
+            needle,
+            offset,
+            length,
+            has_length,
+            operation,
+            failure_cleanup,
+        ))
+    }
+
+    fn emit_native_string_search_result_operation_handle(
+        &mut self,
+        subject: CNativeValueMaterialization,
+        needle: CNativeValueMaterialization,
+        offset: String,
+        length: String,
+        has_length: bool,
+        operation: NativeStringSearchOperation,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        self.uses_native_string_helpers = true;
+
+        let subject_handle = subject.handle.clone();
+        let needle_handle = needle.handle.clone();
+        let mut operand_cleanup = needle.cleanup_after_use;
+        operand_cleanup.extend(subject.cleanup_after_use);
+        let result = self.next_native_name(match operation {
+            NativeStringSearchOperation::Position => "strpos_result",
+            NativeStringSearchOperation::Count => "substr_count_result",
+        });
+        let diagnostic = self.next_native_name("string_search_diagnostic");
+        let flags = u8::from(has_length);
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_value_string_search_result_with_diagnostic({subject_handle}, {needle_handle}, (int64_t)({offset}), (int64_t)({length}), {flags}, {}, &{diagnostic});",
+            operation as u8
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&operand_cleanup),
+            failure_cleanup
+        );
+        let error_exit = self.native_error_exit(&cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.body.extend(operand_cleanup);
 
         CNativeValueMaterialization {
             handle: result.clone(),
@@ -25348,9 +25690,16 @@ fn native_string_int_operation_for_name(name: &str) -> Option<NativeStringIntOpe
         "strcmp" => Some(NativeStringIntOperation::ByteCompare),
         "strncmp" => Some(NativeStringIntOperation::BytePrefixCompare),
         "strncasecmp" => Some(NativeStringIntOperation::CasePrefixCompare),
-        "substr_count" => Some(NativeStringIntOperation::SubstrCount),
         "ord" => Some(NativeStringIntOperation::Ordinal),
         "crc32" => Some(NativeStringIntOperation::Crc32),
+        _ => None,
+    }
+}
+
+fn native_string_search_operation_for_name(name: &str) -> Option<NativeStringSearchOperation> {
+    match name.to_ascii_lowercase().as_str() {
+        "strpos" => Some(NativeStringSearchOperation::Position),
+        "substr_count" => Some(NativeStringSearchOperation::Count),
         _ => None,
     }
 }

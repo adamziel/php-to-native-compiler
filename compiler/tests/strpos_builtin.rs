@@ -2,8 +2,6 @@ use php_compiler::emit_ir_source;
 use php_compiler::error::Phase;
 use php_compiler::run_source;
 
-const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
-
 #[test]
 fn strpos_executes_current_scalar_string_subset() {
     let execution = run_source(
@@ -99,7 +97,7 @@ fn strpos_rejects_forms_outside_current_subset() {
 }
 
 #[test]
-fn emit_ir_folds_strpos_metadata_but_rejects_direct_calls() {
+fn emit_ir_folds_strpos_metadata_and_routes_direct_calls() {
     let ir = emit_ir_source(
         r#"<?php
 echo function_exists("strpos") ? "1" : "0";
@@ -112,9 +110,20 @@ echo is_callable("strpos") ? "1" : "0";
     assert!(!ir.contains("function_exists"), "{ir}");
     assert!(!ir.contains("is_callable"), "{ir}");
 
-    let error = emit_ir_source("<?php\nstrpos('abc', 'b');\n").unwrap_err();
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
-    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+    let routed =
+        emit_ir_source("<?php\necho strpos('abc', 'b'); echo '|'; echo strpos('abc', 'x');\n")
+            .unwrap();
+    assert!(
+        routed.contains("phpc_native_value_string_search_result_with_diagnostic"),
+        "{routed}"
+    );
+    assert!(routed.contains("i8 0, ptr %"), "{routed}");
+    assert!(
+        routed.contains("phpc_native_value_format_stdout_with_diagnostic"),
+        "{routed}"
+    );
+    assert!(
+        !routed.contains("function-call lowering rejects function calls"),
+        "{routed}"
+    );
 }
