@@ -17290,11 +17290,9 @@ impl CGenerator {
             Expr::Call { name, args, span }
                 if native_string_result_operation_for_name(name).is_some() =>
             {
-                Err(self.unsupported_direct_named_call(
-                    args,
-                    *span,
-                    ASSEMBLY_STRING_RESULT_OPERATION_REJECTION,
-                ))
+                let operation = native_string_result_operation_for_name(name)
+                    .expect("string-result guard should provide operation");
+                self.emit_string_result_operation_call(operation, args, *span)
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("basename") => {
                 Err(self.unsupported_direct_named_call(args, *span, ASSEMBLY_BASENAME_REJECTION))
@@ -22698,6 +22696,26 @@ impl CGenerator {
         self.retain_native_value_cleanup_handle(&result);
 
         Ok(CValue::NativeValueHandle(result))
+    }
+
+    fn emit_string_result_operation_call(
+        &mut self,
+        operation: NativeStringResultOperation,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<CValue> {
+        let [subject] = args else {
+            return Err(self.unsupported_direct_named_call(
+                args,
+                span,
+                ASSEMBLY_STRING_RESULT_OPERATION_REJECTION,
+            ));
+        };
+
+        let value = self.materialize_native_value_result_operand(subject, "")?;
+        let result = self.emit_native_string_result_operation_handle(value, operation, "");
+        self.retain_native_value_cleanup_handle(&result.handle);
+        Ok(CValue::NativeValueHandle(result.handle))
     }
 
     fn emit_optional_native_int_argument(
@@ -30148,6 +30166,63 @@ echo " 10" < "zeta";
             assert_eq!(error.phase, Phase::Codegen);
             assert_eq!(error.message, assembly_comparison_rejection());
         }
+    }
+
+    #[test]
+    fn c_assembly_fallback_routes_string_results_through_runtime_contract() {
+        let program = crate::parse(
+            "<?php\n$payload = \"A\\0B\";\necho strrev($payload), \"|\";\necho strtoupper(strtolower(\"MiXeD\")), \"|\";\nprint bin2hex($payload);\n",
+        )
+        .expect("parse string-result fallback source");
+        let c_source = emit_c_source_for_assembly(&program)
+            .expect("C assembly fallback should lower string-result operations");
+
+        assert!(
+            c_source.contains("phpc_native_value_string_result_operation_with_diagnostic"),
+            "C fallback should consume the shared native string-result ABI:\n{c_source}"
+        );
+        assert!(
+            c_source
+                .matches(" = phpc_native_value_string_result_operation_with_diagnostic(")
+                .count()
+                >= 4,
+            "direct and nested string-result operations should share the runtime contract:\n{c_source}"
+        );
+        for tag in [
+            NativeStringResultOperation::Reverse as u8,
+            NativeStringResultOperation::AsciiLower as u8,
+            NativeStringResultOperation::AsciiUpper as u8,
+            NativeStringResultOperation::BinToHex as u8,
+        ] {
+            assert!(
+                c_source.contains(&format!(", {tag}, &string_result_diagnostic_")),
+                "missing string-result operation tag {tag} in C fallback:\n{c_source}"
+            );
+        }
+        assert!(
+            c_source.matches("phpc_native_value_free(").count() >= 4,
+            "C fallback should retain cleanup for produced string-result handles:\n{c_source}"
+        );
+        assert!(
+            !c_source.contains(ASSEMBLY_STRING_RESULT_OPERATION_REJECTION),
+            "lowerable string-result family should no longer hit the assembly fallback blocker:\n{c_source}"
+        );
+
+        if command_available("cc") {
+            let asm = cc_assembly_from_c(&c_source)
+                .expect("C assembly fallback string-result source should compile to assembly");
+            assert!(asm.contains("main"), "{asm}");
+        }
+    }
+
+    #[test]
+    fn c_assembly_fallback_keeps_string_result_arity_boundary() {
+        let program = crate::parse("<?php\necho strrev(\"abc\", \"extra\");\n")
+            .expect("parse unsupported string-result arity");
+        let error = emit_c_source_for_assembly(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, ASSEMBLY_STRING_RESULT_OPERATION_REJECTION);
     }
 
     fn test_param(by_reference: bool, is_variadic: bool) -> FunctionParam {
