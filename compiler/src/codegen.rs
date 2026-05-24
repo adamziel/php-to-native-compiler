@@ -64,7 +64,7 @@ const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lo
 const LLVM_STATIC_LOCAL_REJECTION: &str = "LLVM static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const ASSEMBLY_STATIC_LOCAL_REJECTION: &str = "assembly static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const LLVM_CLOSURE_REJECTION: &str = "LLVM closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
-const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including by-reference closure captures that cannot be materialized through root symbol/reference handles or promoted frame locals, by-reference variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, supported static arrow closures, by-value captures, supported by-reference captures, implicit by-value arrow captures, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
+const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including by-reference closure captures that cannot be materialized through root symbol/reference handles or promoted frame locals, by-reference variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, supported static arrow closures, by-value captures, supported by-reference captures, implicit by-value arrow captures, non-static $this closure binding, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
 const LLVM_REQUIRE_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
 const ASSEMBLY_REQUIRE_REJECTION: &str = "assembly include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
 const LLVM_REQUIRE_EXPRESSION_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution for expression forms with include return values, _once de-duplication results, and caller-scope side effects until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles current include/require expression behavior";
@@ -12411,6 +12411,37 @@ impl CGenerator {
         captures
     }
 
+    fn native_closure_descriptor_captures(
+        &self,
+        params: &[FunctionParam],
+        captures: &[ClosureCapture],
+        is_static: bool,
+        is_arrow: bool,
+        body: &[Stmt],
+        span: Span,
+    ) -> Vec<ClosureCapture> {
+        let mut descriptor_captures = if is_arrow {
+            self.native_arrow_implicit_captures(params, body)
+        } else {
+            captures.to_vec()
+        };
+
+        if !is_static
+            && self.variables.contains_key("this")
+            && descriptor_captures
+                .iter()
+                .all(|capture| !capture.name.eq_ignore_ascii_case("this"))
+        {
+            descriptor_captures.push(ClosureCapture {
+                name: "this".to_string(),
+                by_reference: false,
+                span,
+            });
+        }
+
+        descriptor_captures
+    }
+
     fn accept_recursive_user_function_frames(&self) -> CompileResult<()> {
         let mut graph = HashMap::<String, Vec<String>>::new();
         for key in &self.user_function_order {
@@ -12590,16 +12621,12 @@ impl CGenerator {
         body: &[Stmt],
         span: Span,
     ) -> CompileResult<CNativeValueMaterialization> {
-        let synthesized_captures = if is_arrow {
-            Some(self.native_arrow_implicit_captures(params, body))
-        } else {
-            None
-        };
-        let descriptor_captures = synthesized_captures.as_deref().unwrap_or(captures);
+        let descriptor_captures = self
+            .native_closure_descriptor_captures(params, captures, is_static, is_arrow, body, span);
 
         self.validate_closure_descriptor_frame(
             params,
-            descriptor_captures,
+            &descriptor_captures,
             return_type,
             returns_by_reference,
             is_static,
@@ -12615,7 +12642,7 @@ impl CGenerator {
         let definition = self.emit_closure_frame_callback_definition(
             &callback_name,
             params,
-            descriptor_captures,
+            &descriptor_captures,
             return_type.cloned(),
             body,
             span,
@@ -12682,7 +12709,7 @@ impl CGenerator {
         {
             let mut capture_names = Vec::with_capacity(descriptor_captures.len());
             let mut capture_args = Vec::with_capacity(descriptor_captures.len());
-            for capture in descriptor_captures {
+            for capture in &descriptor_captures {
                 let name_handle = self.materialize_closure_capture_name(capture);
                 capture_names.push(name_handle);
 
@@ -12708,7 +12735,7 @@ impl CGenerator {
         } else {
             let mut capture_names = Vec::with_capacity(descriptor_captures.len());
             let mut capture_values = Vec::with_capacity(descriptor_captures.len());
-            for capture in descriptor_captures {
+            for capture in &descriptor_captures {
                 let name_handle = self.materialize_closure_capture_name(capture);
                 capture_names.push(name_handle);
 

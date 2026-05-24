@@ -4,7 +4,7 @@ use std::process::Command;
 
 use php_compiler::{codegen::emit_native_executable_c_source, error::Phase, parse};
 
-const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including by-reference closure captures that cannot be materialized through root symbol/reference handles or promoted frame locals, by-reference variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, supported static arrow closures, by-value captures, supported by-reference captures, implicit by-value arrow captures, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
+const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including by-reference closure captures that cannot be materialized through root symbol/reference handles or promoted frame locals, by-reference variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, supported static arrow closures, by-value captures, supported by-reference captures, implicit by-value arrow captures, non-static $this closure binding, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
 
 const NATIVE_VALUE_TRUTHINESS_SOURCE: &str = concat!(
     "<?php\n",
@@ -5685,6 +5685,97 @@ fn emit_exe_links_and_runs_arrow_closure_implicit_capture_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"T0|T1|T2|M3|A4|new:new|T5|T6|T7");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_executable_c_source_binds_non_static_closure_this_through_descriptor_captures() {
+    let source = concat!(
+        "<?php\n",
+        "function invoke_bound_this($callback, $value) { return $callback($value); }\n",
+        "class ClosureThisApply {\n",
+        "    public $value;\n",
+        "    public function __construct($value) { $this->value = $value; }\n",
+        "    public function makeRegular($mark) { return function ($suffix) use ($mark) { $this->value = $this->value . $mark . $suffix; return $this->value; }; }\n",
+        "    public function makeArrow($mark) { return fn($suffix) => $this->value . $mark . $suffix; }\n",
+        "    public function applyOwn($value) { $callback = function ($suffix) { $this->value = $this->value . $suffix; return $this->value; }; return $callback($value); }\n",
+        "    public static function relay($callback, $value) { return $callback($value); }\n",
+        "}\n",
+        "$box = new ClosureThisApply(\"A\");\n",
+        "$regular = $box->makeRegular(\":\");\n",
+        "echo $regular(\"0\"), \":\", $box->value, \"|\";\n",
+        "echo invoke_bound_this($regular, \"1\"), \":\", $box->value, \"|\";\n",
+        "echo ClosureThisApply::relay($box->makeArrow(\"-\"), \"2\"), \"|\";\n",
+        "echo $box->applyOwn(\"3\"), \":\", $box->value;\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_from_closure_descriptor_captures_and_free")
+            && source.contains("closure_capture_names_")
+            && source.contains("closure_capture_values_"),
+        "non-static closures in object frames should carry $this through the descriptor capture ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_NativeValueHandle phpc_this")
+            && source.contains("phpc_native_value_clone(phpc_this)")
+            && source.contains("phpc_native_value_object_public_property_operation_with_diagnostic")
+            && source.contains("PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_READ")
+            && source.contains("PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_WRITE"),
+        "$this should bind as an ordinary object value consumed by the shared property ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_user_function_")
+            && source.contains("invoke_bound_this")
+            && source.contains("phpc_declared_method_"),
+        "$this-bound closures should flow through direct, user-function, static-method, arrow, and in-method callback consumers:\n{source}"
+    );
+    assert!(
+        !source.contains(ASSEMBLY_CLOSURE_REJECTION),
+        "supported non-static $this-bound closures should not hit the closure blocker:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_non_static_closure_this_binding_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function invoke_bound_this($callback, $value) { return $callback($value); }\n",
+        "class ClosureThisApply {\n",
+        "    public $value;\n",
+        "    public function __construct($value) { $this->value = $value; }\n",
+        "    public function makeRegular($mark) { return function ($suffix) use ($mark) { $this->value = $this->value . $mark . $suffix; return $this->value; }; }\n",
+        "    public function makeArrow($mark) { return fn($suffix) => $this->value . $mark . $suffix; }\n",
+        "    public function applyOwn($value) { $callback = function ($suffix) { $this->value = $this->value . $suffix; return $this->value; }; return $callback($value); }\n",
+        "    public static function relay($callback, $value) { return $callback($value); }\n",
+        "}\n",
+        "$box = new ClosureThisApply(\"A\");\n",
+        "$regular = $box->makeRegular(\":\");\n",
+        "echo $regular(\"0\"), \":\", $box->value, \"|\";\n",
+        "echo invoke_bound_this($regular, \"1\"), \":\", $box->value, \"|\";\n",
+        "echo ClosureThisApply::relay($box->makeArrow(\"-\"), \"2\"), \"|\";\n",
+        "echo $box->applyOwn(\"3\"), \":\", $box->value;\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("non_static_closure_this_binding", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native non-static closure $this executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"A:0:A:0|A:0:1:A:0:1|A:0:1-2|A:0:13:A:0:13");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);
