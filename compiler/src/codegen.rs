@@ -20765,15 +20765,40 @@ impl CGenerator {
         }
     }
 
+    fn is_known_function_available(&self, name: &str) -> bool {
+        is_native_known_function_name(name)
+            || self
+                .user_functions
+                .contains_key(&Self::user_function_key(name))
+    }
+
     fn function_exists_result_for_value(&self, value: &CValue) -> Option<bool> {
         match value {
-            CValue::String(value) => Some(is_native_known_function_name(value)),
+            CValue::String(value) => Some(self.is_known_function_available(value)),
             CValue::StringExpr(_) => {
                 let values = self.known_string_values_for_value(value)?;
-                known_strings_have_uniform_function_exists_result(&values)
+                self.known_strings_have_uniform_function_exists_result(&values)
             }
             _ => None,
         }
+    }
+
+    fn known_strings_have_uniform_function_exists_result(
+        &self,
+        values: &KnownString,
+    ) -> Option<bool> {
+        let mut result = None;
+        for value in values.values() {
+            let current = self.is_known_function_available(value);
+            if let Some(previous) = result {
+                if previous != current {
+                    return None;
+                }
+            } else {
+                result = Some(current);
+            }
+        }
+        result
     }
 
     fn strlen_result_for_value(&self, value: &CValue) -> Option<usize> {

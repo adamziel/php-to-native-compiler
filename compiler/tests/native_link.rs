@@ -13229,6 +13229,19 @@ const NATIVE_USER_FUNCTION_FRAME_SOURCE: &str = concat!(
     "echo \"done\";\n",
 );
 
+const NATIVE_USER_FUNCTION_INTROSPECTION_SOURCE: &str = concat!(
+    "<?php\n",
+    "function pick($value = \"ok\") {\n",
+    "    return $value;\n",
+    "}\n",
+    "echo function_exists(\"pick\"), \"|\";\n",
+    "echo function_exists(\"PICK\"), \"|\";\n",
+    "echo is_callable(\"pick\"), \"|\";\n",
+    "echo function_exists(\"strlen\"), \"|\";\n",
+    "echo function_exists(\"missing_user\"), \"|\";\n",
+    "echo pick();\n",
+);
+
 #[test]
 fn native_executable_c_source_lowers_direct_user_function_frames() {
     let program = parse(NATIVE_USER_FUNCTION_FRAME_SOURCE).unwrap();
@@ -13263,6 +13276,22 @@ fn native_executable_c_source_lowers_direct_user_function_frames() {
 }
 
 #[test]
+fn native_executable_c_source_routes_user_function_introspection_through_registered_frames() {
+    let program = parse(NATIVE_USER_FUNCTION_INTROSPECTION_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("static phpc_NativeValueHandle phpc_user_function_0_pick("),
+        "registered user function should still lower to a reusable frame:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly function-call lowering rejects")
+            && !source.contains("assembly user-function lowering rejects"),
+        "function introspection over registered direct frames should not hit call blockers:\n{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_direct_user_function_frame_program() {
     if !has_cc() {
         return;
@@ -13284,6 +13313,34 @@ fn emit_exe_links_and_runs_direct_user_function_frame_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"GO|alt|d|relay|side:effect|done");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_user_function_introspection_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "direct_user_function_introspection",
+        NATIVE_USER_FUNCTION_INTROSPECTION_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native user-function introspection executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"1|1|1|1||ok");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
