@@ -1,30 +1,26 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-24 07:28 CEST
+Updated: 2026-05-24 07:42 CEST
 Evaluation marker: `20260524T045209Z`
 
 Latest primary semantic/test baseline:
-`a7ffdcd2 codegen: lower direct variable compound assignments`
+`e9ba63d0 codegen: run finally before loop transfers`
 
-Latest integrated semantic baseline: `a7ffdcd2 codegen: lower direct variable compound assignments`
+Latest integrated semantic baseline: `e9ba63d0 codegen: run finally before loop transfers`
 Latest evaluator report: `20260524T045209Z`
 
 Current primary git state at review:
 
 - Current primary head before this progress update was
-  `a7ffdcd2 codegen: lower direct variable compound assignments`.
-- Runtime by-reference dispatch progress metadata was pushed as
-  `600b5d9f docs: update progress after runtime by-reference dispatch`; later
-  docs-only clarifications did not change that counted semantic baseline.
-- `c50866c5` is now the previous counted semantic commit.
-- Generated-C direct-variable compound assignments now read the current value,
-  compute through the shared native binary value-result ABI, and write back to
-  local variables, reference-backed variables, or active ordinary symbol-table
-  variables according to the variable owner.
-- This is a compact direct-variable RMW ownership slice, not full COW,
-  undefined-variable parity, request/global root mutation, object/property
-  compound assignment, ArrayAccess, increment/decrement, null coalescing
-  assignment, LLVM, or direct assembly parity.
+  `e9ba63d0 codegen: run finally before loop transfers`.
+- `a7ffdcd2` is now the previous counted semantic commit.
+- Generated-C loop and switch transfer targets now record active `finally`
+  depth, and supported `break`/`continue` emit only the finalizers whose scopes
+  they actually exit before jumping to the selected target.
+- This is a compact loop-transfer cleanup slice, not full unwind semantics:
+  `exit`, `goto`, `throw`, returns from `finally`, exceptions/catches,
+  destructors, output buffers, object cleanup, LLVM, and direct assembly remain
+  blocked.
 
 These are candid engineering estimates toward generalized PHP semantics in the
 native compiler. They are not test pass rates. Only primary-integrated, pushed
@@ -38,14 +34,14 @@ numbers. It counted strong foundations, lane-local candidates, and selected
 generated-C execution islands too much like broad PHP completion. The current
 percentages use the stricter rubric above: pushed primary work toward
 generalized, end-to-end PHP semantics. The move from 88% to the current
-62% overall / 59% executable estimate was a measurement correction, not a code
-rollback.
+63% overall / 60% executable estimate was a measurement correction plus later
+primary semantic integration, not a code rollback.
 
 ## Executive Read
 
-Overall estimated progress: **62%** `[############--------]`
+Overall estimated progress: **63%** `[#############-------]`
 
-Executable PHP semantics: **59%** `[############--------]`
+Executable PHP semantics: **60%** `[############--------]`
 
 The primary branch has made useful integrated progress since the last evaluator
 marker: bounded generated-C variadic by-value frames landed, bounded
@@ -56,6 +52,9 @@ dynamic calls now bind those by-reference frame parameters for supported
 ordinary symbol-table lvalue arguments. Direct-variable compound assignments
 now use the shared native binary value-result ABI across local variables,
 reference-backed variables, and active ordinary symbol-table variables.
+Loop `break`/`continue` through supported active `finally` scopes now execute
+the finalizers they leave, while inner-loop transfers that stay inside a try
+body avoid premature finalizer execution.
 Request-key result accessors remove generated backend dependence on the
 concrete key-result return layout across request keyed/path consumers.
 Generated-C also has a first shared runtime consumer for syntax-only callable
@@ -75,17 +74,27 @@ destructors, and backend parity.
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **83%** | `[#################---]` | Strong shared value, array, reference, symbol, request, comparison, truthiness, string, diagnostic, cleanup, request-root, call-frame type-coercion, dynamic-call, and reference-clone surfaces. Some remain scaffolding until consumed end to end. |
-| Compiler/backend consumers | **78%** | `[################----]` | Generated-C has broad selected coverage, including direct-variable compound assignment and untyped by-reference frame parameters reached by runtime string-valued dispatch. LLVM now consumes shared direct string-result, string-predicate, string-search, string-int, and selected `strlen()` nested operand ABIs. Direct assembly and many nested/backend consumers still stop at blockers. |
-| Executable PHP semantics | **59%** | `[############--------]` | Many focused linked programs run, including direct-variable compound assignment through local, reference-backed, and active symbol-table variables plus function-local bounded `try`/`finally` and alias-visible by-reference frame writes, but behavior is still selected islands rather than a complete PHP execution model. |
+| Compiler/backend consumers | **79%** | `[################----]` | Generated-C has broad selected coverage, including direct-variable compound assignment, `break`/`continue` through active `finally` scopes, and untyped by-reference frame parameters reached by runtime string-valued dispatch. LLVM now consumes shared direct string-result, string-predicate, string-search, string-int, and selected `strlen()` nested operand ABIs. Direct assembly and many nested/backend consumers still stop at blockers. |
+| Executable PHP semantics | **60%** | `[############--------]` | Many focused linked programs run, including direct-variable compound assignment through local, reference-backed, and active symbol-table variables plus function-local bounded `try`/`finally`, loop transfer through finalizers, and alias-visible by-reference frame writes, but behavior is still selected islands rather than a complete PHP execution model. |
 | Arrays, lvalues, references, COW | **62%** | `[############--------]` | Strong selected array/lvalue/reference paths now include generated-C direct-variable compound assignment, by-reference call binding for direct variables and nested symbol-table paths, and PHP array-union value addition through generated-C array-offset and direct-variable `+=`. Full COW, arbitrary writable roots, foreach parity, object/reference joins, and broader frame/reference composition remain open. |
 | Symbols, globals, request state | **69%** | `[##############------]` | Request roots and selected `$GLOBALS` paths are strong. Generated-C by-reference calls and direct-variable compound assignments now reuse symbol-table paths for ordinary variables and nested array slots. Reconciliation across calls, requests, includes, aliases, and broader reference frames remains incomplete. |
 | Calls, functions, frames | **55%** | `[###########---------]` | Bounded generated-C by-value fixed/default/variadic frames, typed params/returns, recursion guards, registered introspection, syntax-only callable-array checks, dynamic user calls, dynamic builtin calls, finite mixed user/builtin sets, function-local bounded `try`/`finally`, and untyped by-reference direct/compiler-known/runtime string-valued frame calls are integrated. |
 | Objects, properties, methods | **10%** | `[##------------------]` | Mostly lane-local/runtime candidate work. Primary lacks general compiled object construction, property access, method dispatch, `$this`, visibility, static context, and magic behavior. |
-| Control flow, cleanup, diagnostics | **46%** | `[#########-----------]` | Bounded generated-C branches, loops, transfers, switch/goto, normal-flow `try`/`finally`, return-through-finally inside supported by-value frames, diagnostic-aware stdout formatting, and selected cleanup paths exist. Broad unwind, handlers, destructors, output buffers, and exact ordering remain open. |
-| Broad integrated verification | **51%** | `[##########----------]` | Focused gates are strong, including function-frame `try`/`finally`, by-reference frame source/linked execution, and dynamic by-reference blocker proof. Cross-feature composition, end-to-end PHP programs, backend parity, and the unfiltered `native_runtime_abi` debt need broader proof. |
+| Control flow, cleanup, diagnostics | **48%** | `[##########----------]` | Bounded generated-C branches, loops, transfers, switch/goto, normal-flow `try`/`finally`, return-through-finally inside supported by-value frames, `break`/`continue` through active finalizers, diagnostic-aware stdout formatting, and selected cleanup paths exist. Broad unwind, handlers, destructors, output buffers, and exact ordering remain open. |
+| Broad integrated verification | **52%** | `[##########----------]` | Focused gates are strong, including function-frame `try`/`finally`, loop-transfer-through-finally source/linked execution, by-reference frame source/linked execution, and dynamic by-reference blocker proof. Cross-feature composition, end-to-end PHP programs, backend parity, and the unfiltered `native_runtime_abi` debt need broader proof. |
 
 ## Recent Primary-Integrated Work
 
+- `e9ba63d0`: generated-C loop and switch transfer targets now carry the
+  active `finally` depth from target creation. Supported `break`/`continue`
+  statements run exactly the active finalizers whose scopes they exit before
+  jumping to the selected loop/switch target, preserving inner-to-outer
+  ordering. Linked proof covers `continue` and `break` through one active
+  finalizer, nested finalizers before an exiting transfer, and an inner-loop
+  break inside a try body that must not run the outer `finally` early. `exit`,
+  `goto`, `throw`, returns from `finally`, exception catch dispatch,
+  destructors/output buffers, reference/COW cleanup joins, LLVM, and direct
+  assembly remain blocked.
 - `a7ffdcd2`: generated-C direct-variable compound assignments now execute
   through a direct-variable RMW boundary. The compiler materializes the
   current variable value, computes `+=`, `-=`, `*=`, `.=` and the other
@@ -200,6 +209,8 @@ Primary-integrated capability:
   assignment through the shared native binary value-result ABI.
 - Function-local bounded no-throw `try`/`finally` inside supported by-value
   frames.
+- Loop `break`/`continue` through supported active `finally` scopes with
+  finalizer-depth tracking for transfers that exit a try body.
 - LLVM consumption of selected shared string/native-value runtime contracts.
 - Selected arrays, lvalues, references, request roots, `$GLOBALS`, lazy
   expressions, branches, loops, switch/goto, and stdout diagnostics.
@@ -223,8 +234,8 @@ Done:
   request-state, and selected cleanup/runtime ABI foundations.
 - [x] Generated-C selected arrays, lvalues, references, request roots,
   `$GLOBALS`, lazy expressions, branches, loops, switch/goto, selected
-  `try`/`finally`, direct-variable compound assignment, and stdout
-  diagnostics.
+  `try`/`finally`, loop transfer through active finalizers,
+  direct-variable compound assignment, and stdout diagnostics.
 - [x] Generated-C bounded by-value direct, recursive, typed, variadic, dynamic
   user, dynamic builtin, finite mixed user/builtin calls, untyped
   by-reference direct/compiler-known/runtime string-valued frame calls, and
@@ -273,18 +284,21 @@ Not done:
 
 ## Steering Read
 
-The direct-variable compound assignment slice was accepted because it adds a
-new direct-variable owner class to the existing native binary value-result
-RMW path and proves local, reference-backed, and active symbol-table writeback
-without adding source-shape recognition. The next primary direction should
-attack a different cliff: actual callable-array/object invocation,
-closures/methods/object execution, references/COW through real control-flow
-joins, structured unwind/cleanup/finally, or source-ordered diagnostics.
+The loop-transfer-through-finally slice was accepted because it adds a real
+transfer-target cleanup boundary: finalizers run according to the active
+`finally` depth of the selected loop/switch target, not according to one source
+shape. The next primary direction should attack a different cliff: actual
+callable-array/object invocation, closures/methods/object execution,
+references/COW through calls or real control-flow joins, broader structured
+unwind/cleanup, source-ordered diagnostics, object/property execution,
+request/global alias execution, or backend parity for an already integrated
+semantic family.
 
 Resource note from this review: `/dev/shm` has recovered above the dispatcher
 floor at about 5.2G used and 17G free. The largest visible target dirs are now
 ordinary lane-local build targets under 600M. `/home` remains healthy at about
 181G used on a 459G filesystem. Primary gates for the latest batches used
 disk-backed `/tmp/phpc-primary-target-runtime-dynamic-byref` and
-`/tmp/phpc-primary-target-direct-variable-rmw`; keep checking resource
+`/tmp/phpc-primary-target-direct-variable-rmw`; this cleanup batch used
+`/tmp/phpc-primary-target-try-finally-loop-transfer`. Keep checking resource
 ownership before broad dispatch.
