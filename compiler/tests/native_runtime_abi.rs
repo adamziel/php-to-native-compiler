@@ -900,6 +900,34 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
         "{ir}"
     );
     assert!(
+        ir.contains("%phpc.NativeSymbolTableHandle = type { ptr }"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare %phpc.NativeSymbolTableHandle @phpc_native_symbol_table_null()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare %phpc.NativeSymbolTableHandle @phpc_native_symbol_table_new()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i1 @phpc_native_symbol_table_is_null(%phpc.NativeSymbolTableHandle)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare %phpc.NativeValueHandle @phpc_native_symbol_table_read_with_diagnostic(%phpc.NativeSymbolTableHandle, ptr, i64, ptr)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i1 @phpc_native_symbol_table_write(%phpc.NativeSymbolTableHandle, ptr, i64, %phpc.NativeValueHandle)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare void @phpc_native_symbol_table_free(%phpc.NativeSymbolTableHandle)"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("declare %phpc.NativeRequestStateHandle @phpc_native_request_state_null()"),
         "{ir}"
     );
@@ -971,6 +999,10 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
     );
     assert!(
         ir.contains("define i1 @phpc_probe_container_handle_null_shapes()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i64 @phpc_probe_symbol_table_write_read()"),
         "{ir}"
     );
     assert!(
@@ -1066,6 +1098,14 @@ fn scalar_echo_probe_ir_names_exported_runtime_helpers() {
         "{ir}"
     );
     assert!(
+        ir.contains("call i1 @phpc_native_symbol_table_write")
+            && ir.contains(
+                "call %phpc.NativeValueHandle @phpc_native_symbol_table_read_with_diagnostic"
+            )
+            && ir.contains("call void @phpc_native_symbol_table_free"),
+        "{ir}"
+    );
+    assert!(
         ir.contains("not production lowering or linked execution"),
         "{ir}"
     );
@@ -1142,6 +1182,18 @@ fn scalar_echo_probe_ir_renders_32_bit_usize_helper_signatures() {
     );
     assert!(
         ir.contains("define i1 @phpc_probe_container_handle_null_shapes()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare %phpc.NativeValueHandle @phpc_native_symbol_table_read_with_diagnostic(%phpc.NativeSymbolTableHandle, ptr, i32, ptr)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i1 @phpc_native_symbol_table_write(%phpc.NativeSymbolTableHandle, ptr, i32, %phpc.NativeValueHandle)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i32 @phpc_probe_symbol_table_write_read()"),
         "{ir}"
     );
     assert!(
@@ -1318,6 +1370,18 @@ fn scalar_echo_probe_ir_renders_64_bit_usize_helper_signatures() {
     );
     assert!(
         ir.contains("define i1 @phpc_probe_container_handle_null_shapes()"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare %phpc.NativeValueHandle @phpc_native_symbol_table_read_with_diagnostic(%phpc.NativeSymbolTableHandle, ptr, i64, ptr)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i1 @phpc_native_symbol_table_write(%phpc.NativeSymbolTableHandle, ptr, i64, %phpc.NativeValueHandle)"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("define i64 @phpc_probe_symbol_table_write_read()"),
         "{ir}"
     );
     assert!(

@@ -68,6 +68,11 @@ pub struct NativeReferenceHandle {
 }
 
 #[repr(C)]
+pub struct NativeSymbolTableHandle {
+    ptr: *mut NativeSymbolTable,
+}
+
+#[repr(C)]
 pub struct NativeRequestStateHandle {
     ptr: *mut NativeRequestState,
 }
@@ -92,6 +97,7 @@ The first scalar output helper symbols are:
 - `phpc_native_string_bytes(NativeStringHandle) -> *const u8`
 - `phpc_native_string_clone_bytes(NativeStringHandle) -> NativeByteBuffer`
 - `phpc_native_string_free(NativeStringHandle)`
+- `phpc_native_value_from_scalar(NativeScalarValue) -> NativeValueHandle`
 - `phpc_native_value_from_string(NativeStringHandle) -> NativeValueHandle`
 - `phpc_native_value_from_string_with_diagnostic(NativeStringHandle, *mut NativeDiagnosticHandle) -> NativeValueHandle`
 - `phpc_native_value_echo_bytes(NativeValueHandle) -> NativeByteBuffer`
@@ -115,6 +121,12 @@ The first scalar output helper symbols are:
 - `phpc_native_resource_is_null(NativeResourceHandle) -> bool`
 - `phpc_native_reference_null() -> NativeReferenceHandle`
 - `phpc_native_reference_is_null(NativeReferenceHandle) -> bool`
+- `phpc_native_symbol_table_null() -> NativeSymbolTableHandle`
+- `phpc_native_symbol_table_new() -> NativeSymbolTableHandle`
+- `phpc_native_symbol_table_is_null(NativeSymbolTableHandle) -> bool`
+- `phpc_native_symbol_table_read_with_diagnostic(NativeSymbolTableHandle, *const u8, usize, *mut NativeDiagnosticHandle) -> NativeValueHandle`
+- `phpc_native_symbol_table_write(NativeSymbolTableHandle, *const u8, usize, NativeValueHandle) -> bool`
+- `phpc_native_symbol_table_free(NativeSymbolTableHandle)`
 - `phpc_native_request_state_null() -> NativeRequestStateHandle`
 - `phpc_native_request_state_is_null(NativeRequestStateHandle) -> bool`
 
@@ -178,6 +190,15 @@ integer keys also return null value handles until native diagnostics have array
 read coverage. `phpc_native_array_append_value` clones the input value, so the
 caller still owns and must free the original value handle.
 
+`NativeSymbolTableHandle` owns a runtime symbol table keyed by variable-name
+bytes. The current helper surface can allocate a table, write a cloned runtime
+value handle into a named slot, read a named slot as a new runtime-owned value
+handle with diagnostics, test nullability, and free the table. The runtime
+family also contains deeper path/reference operations used by generated-native
+C consumers, but this does not make LLVM `--emit-ir` variable lowering general
+and does not implement full PHP `$GLOBALS`, include-scope, or copy-on-write
+parity for every backend.
+
 `NativeObjectHandle`, `NativeResourceHandle`, and `NativeReferenceHandle` are
 still null-only opaque handle shapes in this slice. Their exported null
 constructors and predicates pin the pointer-sized C ABI forms for future
@@ -201,10 +222,11 @@ compatibility. Generated code must eventually hand PHP-shaped values to runtime
 helpers for echo conversion, arithmetic/coercion, arrays, objects, references,
 copy-on-write, calls, diagnostics, and host services.
 
-This scalar ABI slice gives native lowering a small stable target before
-introducing heap-owned strings, arrays, objects, error handles, symbol tables,
-or linked executable commands. The scalar echo helper is the first runtime
-conversion helper; generated LLVM does not call it yet.
+This ABI gives native lowering a stable target before broadening PHP-shaped
+values across every backend. Heap-owned strings, bounded arrays, diagnostics,
+symbol tables, selected generated LLVM helper calls, and a small linked C path
+now exist as separate slices; objects, resources, references/COW, stack frames,
+request/SAPI population, and complete diagnostics remain follow-up work.
 
 ## LLVM Helper Probe
 
@@ -262,6 +284,14 @@ appends a cloned runtime value handle, reads the second slot, echoes it through
 the existing value helper, and frees all owned handles. Normal generated PHP
 array literals still reject in `phpc compile --emit-ir` and `--emit-asm`; this
 is runtime ABI groundwork, not generated array lowering.
+
+Milestone 2302 exposes the native symbol-table handle in the deterministic
+LLVM helper probe. The probe declares the pointer-sized
+`%phpc.NativeSymbolTableHandle`, null/new/null-test, named write, diagnostic
+read, and free helpers, then exercises a write/read/free sequence through
+`NativeValueHandle` ownership. This is shared compiler ABI visibility for the
+runtime symbol-table family; it does not add one-shape LLVM production lowering
+for variable assignment/readback.
 
 Milestone 1579 adds the opaque runtime value handle declaration
 `%phpc.NativeValueHandle = type { ptr }`, a bounded
@@ -450,14 +480,16 @@ This ABI does not yet provide:
   helper, valid UTF-8 string-handle-to-value helpers, the narrow
   statement-form direct string `echo`/`print` stdout helper path, and the
   narrow selected string-pointer `echo`/`print` stdout helper paths;
-- array, object, resource, reference, request-state, or copy-on-write
-  storage/semantics beyond the null-only opaque handle shapes and predicates;
+- object, resource, reference, or copy-on-write storage/semantics beyond the
+  current opaque handle shapes and predicates;
 - runtime helper calls from normal generated LLVM IR beyond direct
   compile-time string `echo`/`print` statements and the currently known
   selected string-pointer `echo`/`print` expressions;
-- symbol tables, stack frames, call lookup, or general diagnostics;
-- a link command or native executable `phpc` mode;
-- PHP request-state storage/population, WordPress host state, or extension
+- full symbol-table parity across every backend, stack frames, call lookup, or
+  general diagnostics;
+- broad native executable PHP parity beyond the current generated-C linked
+  slices;
+- complete PHP request-state population, WordPress host state, or extension
   integration.
 
 Those are follow-up ABI and compiler-output milestones.
