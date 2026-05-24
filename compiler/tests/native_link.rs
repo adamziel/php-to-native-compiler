@@ -17315,6 +17315,115 @@ fn emit_exe_links_and_runs_callable_array_invocation_program() {
 }
 
 #[test]
+fn native_executable_c_source_invokes_callable_objects_through_invoke_frames() {
+    let source = concat!(
+        "<?php\n",
+        "class CallableObjectTarget {\n",
+        "    public $prefix;\n",
+        "    public function __construct($prefix) { $this->prefix = $prefix; }\n",
+        "    public function __invoke($value) { return $this->prefix . $value; }\n",
+        "    public function selfCall($value) { return $this($value); }\n",
+        "}\n",
+        "class CallableObjectChild extends CallableObjectTarget {}\n",
+        "class CallableObjectRelay {\n",
+        "    public static function apply($callback, $value) { return $callback($value); }\n",
+        "}\n",
+        "class CallableObjectMutator {\n",
+        "    public function __invoke(&$slot, $value) { $slot = $value; return $slot; }\n",
+        "}\n",
+        "function apply_callable($callback, $value) { return $callback($value); }\n",
+        "function apply_ref_callable($callback, &$slot, $value) { return $callback($slot, $value); }\n",
+        "$object = new CallableObjectTarget(\"O\");\n",
+        "echo $object(\"A\"), \"|\", apply_callable($object, \"B\"), \"|\";\n",
+        "echo CallableObjectRelay::apply($object, \"C\"), \"|\", $object->selfCall(\"D\"), \"|\";\n",
+        "$child = new CallableObjectChild(\"K\");\n",
+        "echo $child(\"E\"), \"|\";\n",
+        "$slot = \"old\";\n",
+        "$mutator = new CallableObjectMutator();\n",
+        "echo $mutator($slot, \"direct\"), \":\", $slot, \"|\";\n",
+        "echo apply_ref_callable($mutator, $slot, \"relay\"), \":\", $slot;\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_type_predicate")
+            && source.contains("PHPC_NATIVE_VALUE_TYPE_IS_OBJECT")
+            && source.contains("callable_object_matched"),
+        "callable object dispatch should be gated by runtime object type before __invoke lookup:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_instanceof_class_with_diagnostic")
+            && source.contains("phpc_declared_method_")
+            && source.contains("__invoke"),
+        "callable objects should reuse object class checks and generated __invoke method frames:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_user_function_0_apply_callable(")
+            && source.contains("phpc_user_function_1_apply_ref_callable(")
+            && source.contains("static_method_status")
+            && source.contains("phpc_native_reference_set_value"),
+        "callable objects should flow through direct calls, user-function relay, static-method relay, method self-calls, and by-reference argument relay:\n{source}"
+    );
+    assert!(
+        !source.contains(ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION)
+            && !source.contains("callable must be a string for generated-C runtime dispatch"),
+        "supported callable objects should not hit the dynamic-call string-only blocker:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_callable_object_invocation_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class CallableObjectTarget {\n",
+        "    public $prefix;\n",
+        "    public function __construct($prefix) { $this->prefix = $prefix; }\n",
+        "    public function __invoke($value) { return $this->prefix . $value; }\n",
+        "    public function selfCall($value) { return $this($value); }\n",
+        "}\n",
+        "class CallableObjectChild extends CallableObjectTarget {}\n",
+        "class CallableObjectRelay {\n",
+        "    public static function apply($callback, $value) { return $callback($value); }\n",
+        "}\n",
+        "class CallableObjectMutator {\n",
+        "    public function __invoke(&$slot, $value) { $slot = $value; return $slot; }\n",
+        "}\n",
+        "function apply_callable($callback, $value) { return $callback($value); }\n",
+        "function apply_ref_callable($callback, &$slot, $value) { return $callback($slot, $value); }\n",
+        "$object = new CallableObjectTarget(\"O\");\n",
+        "echo $object(\"A\"), \"|\", apply_callable($object, \"B\"), \"|\";\n",
+        "echo CallableObjectRelay::apply($object, \"C\"), \"|\", $object->selfCall(\"D\"), \"|\";\n",
+        "$child = new CallableObjectChild(\"K\");\n",
+        "echo $child(\"E\"), \"|\";\n",
+        "$slot = \"old\";\n",
+        "$mutator = new CallableObjectMutator();\n",
+        "echo $mutator($slot, \"direct\"), \":\", $slot, \"|\";\n",
+        "echo apply_ref_callable($mutator, $slot, \"relay\"), \":\", $slot;\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("callable_object_invocation", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native callable-object executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"OA|OB|OC|OD|KE|direct:direct|relay:relay");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn native_executable_c_source_keeps_unsupported_dynamic_builtin_targets_blocked() {
     for source in [
         "<?php\n$call = \"count\";\necho $call([1]);\n",

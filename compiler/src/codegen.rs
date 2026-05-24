@@ -20990,6 +20990,15 @@ impl CGenerator {
             &matched,
             &result,
         )?;
+        self.emit_runtime_dynamic_callable_object_branch(
+            &callee.handle,
+            args,
+            span,
+            &shared_cleanup,
+            failure_cleanup,
+            &matched,
+            &result,
+        )?;
 
         'function_branches: for function in functions {
             let (name_bytes, name_len) =
@@ -21447,6 +21456,129 @@ impl CGenerator {
         Ok(())
     }
 
+    fn emit_runtime_dynamic_callable_object_branch(
+        &mut self,
+        callee_handle: &str,
+        args: &[Expr],
+        span: Span,
+        shared_cleanup: &[String],
+        failure_cleanup: &str,
+        matched: &str,
+        result: &str,
+    ) -> CompileResult<()> {
+        let candidates = self.declared_class_callable_object_candidates();
+        if candidates.is_empty() {
+            return Ok(());
+        }
+
+        self.uses_native_array_helpers = true;
+        self.uses_native_object_instanceof_helpers = true;
+        self.uses_native_object_method_helpers = true;
+
+        let object_matched = self.next_native_name("callable_object_matched");
+        let status = self.next_native_name("callable_object_status");
+        self.body.push(format!(
+            "if (!{matched} && phpc_native_value_type_predicate({callee_handle}, PHPC_NATIVE_VALUE_TYPE_IS_OBJECT)) {{"
+        ));
+        self.body.push(format!("  {matched} = 1;"));
+        self.body.push(format!("  _Bool {object_matched} = 0;"));
+        self.body.push(format!("  int {status} = 0;"));
+
+        for (class, method) in candidates {
+            let (class_name, class_name_len) =
+                self.emit_call_type_static_bytes("callable_object_class_name_bytes", &class.name);
+            let diagnostic = self.next_native_name("callable_object_match_diagnostic");
+            let class_match = self.next_native_name("callable_object_class_match");
+            self.body.push(format!("  if (!{object_matched}) {{"));
+            self.body.push(format!(
+                "    phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"
+            ));
+            self.body.push(format!(
+                "    _Bool {class_match} = phpc_native_value_instanceof_class_with_diagnostic({callee_handle}, {class_name}, {class_name_len}, &{diagnostic});"
+            ));
+            let class_failure_cleanup = format!(
+                "phpc_native_diagnostic_report({diagnostic}); {}{}",
+                c_cleanup_sequence(shared_cleanup),
+                failure_cleanup
+            );
+            let class_error_exit = self.native_error_exit(&class_failure_cleanup);
+            self.body.push(format!(
+                "    if ({diagnostic}.ptr != NULL) {{ {class_error_exit} }}"
+            ));
+            self.body
+                .push(format!("    phpc_native_diagnostic_free({diagnostic});"));
+            self.body.push(format!("    if ({class_match}) {{"));
+            self.body.push(format!("      {object_matched} = 1;"));
+
+            if !native_user_function_accepts_arg_count(&method.decl, args.len()) {
+                let reason =
+                    "callable object resolved to a generated public __invoke method but argument count is outside the generated frame arity/default/variadic subset";
+                let branch_failure_cleanup =
+                    format!("{}{}", c_cleanup_sequence(shared_cleanup), failure_cleanup);
+                self.emit_method_dispatch_failure(
+                    callee_handle,
+                    "__invoke",
+                    reason,
+                    &branch_failure_cleanup,
+                    "      ",
+                );
+                self.body.push("    }".to_string());
+                self.body.push("  }".to_string());
+                continue;
+            }
+
+            let argument_failure_cleanup =
+                format!("{}{}", c_cleanup_sequence(shared_cleanup), failure_cleanup);
+            let (mut call_args, branch_cleanup) = self
+                .materialize_declared_method_frame_arguments(
+                    &class.name,
+                    &method,
+                    Some(callee_handle),
+                    args,
+                    span,
+                    &argument_failure_cleanup,
+                    NativeCallCallee::DynamicExpression,
+                )?;
+            self.body.push(format!("      {status} = 0;"));
+            call_args.push(format!("&{status}"));
+            self.body.push(format!(
+                "      {result} = {}({});",
+                method.c_name,
+                call_args.join(", ")
+            ));
+            let call_failure_cleanup = format!(
+                "{}{}{}",
+                c_cleanup_sequence(&branch_cleanup),
+                c_cleanup_sequence(shared_cleanup),
+                failure_cleanup
+            );
+            let error_exit = self.native_error_exit(&call_failure_cleanup);
+            self.body.push(format!(
+                "      if ({status} != 1 || {result}.ptr == NULL) {{ {error_exit} }}"
+            ));
+            for cleanup in branch_cleanup {
+                self.body.push(format!("      {cleanup}"));
+            }
+            self.body.push("    }".to_string());
+            self.body.push("  }".to_string());
+        }
+
+        let object_failure_cleanup =
+            format!("{}{}", c_cleanup_sequence(shared_cleanup), failure_cleanup);
+        self.body.push(format!("  if (!{object_matched}) {{"));
+        self.emit_method_dispatch_failure(
+            callee_handle,
+            "__invoke",
+            "object receiver did not provide a supported generated public __invoke method",
+            &object_failure_cleanup,
+            "    ",
+        );
+        self.body.push("  }".to_string());
+        self.body.push("}".to_string());
+
+        Ok(())
+    }
+
     fn materialize_descriptor_closure_argument(
         &mut self,
         callee_handle: &str,
@@ -21883,6 +22015,12 @@ impl CGenerator {
             }
         }
         candidates
+    }
+
+    fn declared_class_callable_object_candidates(
+        &self,
+    ) -> Vec<(CDeclaredClass, CDeclaredClassMethod)> {
+        self.declared_class_method_candidates("__invoke")
     }
 
     fn declared_class_dynamic_method_candidates(
