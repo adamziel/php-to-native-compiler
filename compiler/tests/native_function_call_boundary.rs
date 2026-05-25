@@ -819,7 +819,43 @@ fn native_statement_preflight_routes_try_catch_finally_body_calls_through_call_b
 }
 
 #[test]
-fn native_executable_c_source_blocks_destructor_observable_declared_class_allocation() {
+fn native_executable_c_source_registers_allocatable_classes_only_without_destructor_cleanup_risk() {
+    let source = r#"<?php
+class CleanAllocation {}
+class CleanInheritedAllocation extends CleanAllocation {}
+class DirectDestructorAllocation {
+    public function __destruct() { echo "direct"; }
+}
+class ParentDestructorAllocation {
+    public function __destruct() { echo "parent"; }
+}
+class InheritedDestructorAllocation extends ParentDestructorAllocation {}
+$name = isset($_GET["class"]) ? "CleanAllocation" : "CleanInheritedAllocation";
+new $name();
+"#;
+    let generated = emit_native_executable_c_source(&parse(source).unwrap()).unwrap();
+    let allocation_calls = generated
+        .lines()
+        .filter(|line| line.contains("= phpc_native_value_new_declared_class"))
+        .count();
+
+    assert_eq!(
+        allocation_calls, 2,
+        "only destructor-clean dynamic class candidates should be allocatable:\n{generated}"
+    );
+    assert!(
+        generated.contains("phpc_native_value_dynamic_call_name_matches"),
+        "dynamic allocation should still use the shared runtime class-name matcher:\n{generated}"
+    );
+    assert!(
+        !generated.contains("object-instantiation lowering rejects")
+            && !generated.contains("object/class lowering rejects"),
+        "destructor-clean allocation candidates should not be blocked:\n{generated}"
+    );
+}
+
+#[test]
+fn destructor_observable_allocation_across_call_contexts() {
     for source in [
         r#"<?php
 class DirectDestructor {
@@ -864,6 +900,23 @@ class ConstructorSink {
 }
 $name = "NestedDestructor";
 new ConstructorSink(new $name());
+"#,
+        r#"<?php
+class FunctionArgumentDestructor {
+    public function __destruct() { echo "function-arg"; }
+}
+function sink($value) {}
+sink(new FunctionArgumentDestructor());
+"#,
+        r#"<?php
+class MethodArgumentDestructor {
+    public function __destruct() { echo "method-arg"; }
+}
+class MethodSink {
+    public function take($value) {}
+}
+$sink = new MethodSink();
+$sink->take(new MethodArgumentDestructor());
 "#,
     ] {
         let program = parse(source).unwrap();

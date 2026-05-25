@@ -12027,11 +12027,56 @@ struct CDeclaredClass {
     parent_key: Option<String>,
     ancestor_names: Vec<String>,
     is_final: bool,
-    declares_destructor: bool,
+    allocation_metadata: CDeclaredClassAllocationMetadata,
     own_properties: Vec<CDeclaredClassProperty>,
     properties: Vec<CDeclaredClassProperty>,
     constructor: Option<CDeclaredClassMethod>,
     methods: Vec<CDeclaredClassMethod>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CDeclaredClassAllocationMetadata {
+    cleanup_risk: CDeclaredClassCleanupRisk,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CDeclaredClassCleanupRisk {
+    destructor_observable: bool,
+}
+
+impl CDeclaredClassAllocationMetadata {
+    fn cleanup_safe() -> Self {
+        Self {
+            cleanup_risk: CDeclaredClassCleanupRisk::none(),
+        }
+    }
+
+    fn requires_destructor_observable_cleanup_boundary(&self) -> bool {
+        self.cleanup_risk
+            .requires_destructor_observable_cleanup_boundary()
+    }
+}
+
+impl CDeclaredClassCleanupRisk {
+    fn none() -> Self {
+        Self {
+            destructor_observable: false,
+        }
+    }
+
+    fn destructor_observable() -> Self {
+        Self {
+            destructor_observable: true,
+        }
+    }
+
+    fn include(&mut self, other: Self) {
+        self.destructor_observable |= other.destructor_observable;
+    }
+
+    fn requires_destructor_observable_cleanup_boundary(self) -> bool {
+        self.destructor_observable
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -13776,7 +13821,7 @@ impl CGenerator {
         let mut seen_properties = HashSet::new();
         let mut own_properties = Vec::new();
         let mut constructor = None;
-        let mut declares_destructor = false;
+        let mut allocation_metadata = CDeclaredClassAllocationMetadata::cleanup_safe();
         let mut seen_methods = HashSet::new();
         let mut methods = Vec::new();
         for member in &class.members {
@@ -13825,7 +13870,8 @@ impl CGenerator {
                         });
                     } else {
                         if method.function.name.eq_ignore_ascii_case("__destruct") {
-                            declares_destructor = true;
+                            allocation_metadata.cleanup_risk =
+                                CDeclaredClassCleanupRisk::destructor_observable();
                         }
                         self.validate_declared_class_method_for_native_frame(method)?;
                         let key = Self::declared_method_key(&method.function.name);
@@ -13863,7 +13909,7 @@ impl CGenerator {
                 .map(|parent| Self::declared_class_key(parent)),
             ancestor_names: Vec::new(),
             is_final: class.is_final,
-            declares_destructor,
+            allocation_metadata,
             properties: own_properties.clone(),
             own_properties,
             constructor,
@@ -13879,12 +13925,14 @@ impl CGenerator {
             let mut inherited_properties = Vec::new();
             let mut inherited_property_slots = HashSet::new();
             let mut inherited_method_keys = HashSet::new();
+            let mut inherited_cleanup_risk = CDeclaredClassCleanupRisk::none();
 
             for ancestor_key in ancestor_keys.iter().rev() {
                 let ancestor = self
                     .declared_classes
                     .get(ancestor_key)
                     .expect("ancestor class key resolved during traversal");
+                inherited_cleanup_risk.include(ancestor.allocation_metadata.cleanup_risk);
                 ancestor_names.push(ancestor.name.clone());
                 for property in &ancestor.own_properties {
                     let slot_key = Self::declared_class_property_inheritance_key(property);
@@ -13921,6 +13969,10 @@ impl CGenerator {
                 .declared_classes
                 .get_mut(&class_key)
                 .expect("class key exists while applying inheritance");
+            class
+                .allocation_metadata
+                .cleanup_risk
+                .include(inherited_cleanup_risk);
             class.ancestor_names = ancestor_names;
             class.properties = inherited_properties;
             class.properties.extend(own_properties);
@@ -16168,7 +16220,7 @@ impl CGenerator {
                 let Some(class) = self.declared_classes.get(&key).cloned() else {
                     return Ok(None);
                 };
-                if self.declared_class_has_destructor_in_hierarchy(&key) {
+                if self.declared_class_requires_destructor_observable_cleanup_boundary(&key) {
                     return Err(self.unsupported_call_operation(
                         NativeCallOperation::constructor_value(
                             span,
@@ -25234,22 +25286,15 @@ impl CGenerator {
         Some(lookup_keys)
     }
 
-    fn declared_class_has_destructor_in_hierarchy(&self, class_key: &str) -> bool {
-        let mut current = Some(class_key.to_string());
-        let mut seen = HashSet::new();
-        while let Some(key) = current {
-            if !seen.insert(key.clone()) {
-                return true;
-            }
-            let Some(class) = self.declared_classes.get(&key) else {
-                return false;
-            };
-            if class.declares_destructor {
-                return true;
-            }
-            current = class.parent_key.clone();
-        }
-        false
+    fn declared_class_requires_destructor_observable_cleanup_boundary(
+        &self,
+        class_key: &str,
+    ) -> bool {
+        self.declared_classes.get(class_key).is_some_and(|class| {
+            class
+                .allocation_metadata
+                .requires_destructor_observable_cleanup_boundary()
+        })
     }
 
     fn dynamic_declared_class_known_keys(&self, variable: &str) -> Option<HashSet<String>> {
@@ -25301,7 +25346,7 @@ impl CGenerator {
         if !self
             .declared_class_order
             .iter()
-            .any(|key| self.declared_class_has_destructor_in_hierarchy(key))
+            .any(|key| self.declared_class_requires_destructor_observable_cleanup_boundary(key))
         {
             return false;
         }
@@ -25312,7 +25357,7 @@ impl CGenerator {
 
         known_keys
             .iter()
-            .any(|key| self.declared_class_has_destructor_in_hierarchy(key))
+            .any(|key| self.declared_class_requires_destructor_observable_cleanup_boundary(key))
     }
 
     fn declared_class_constructor_for_instantiation(
