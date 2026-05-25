@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-25 23:24 CEST
-Evaluation marker: `20260525T212436Z`
+Updated: 2026-05-25 23:44 CEST
+Evaluation marker: `20260525T214443Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, candidate worktrees, lane-local
@@ -15,19 +15,18 @@ Overall estimated progress: **94%** `[###################-]`
 Executable PHP semantics: **94%** `[###################-]`
 
 Primary was clean and aligned with `origin/master` at
-`7aa162ca native: add reference-source append lvalue extraction` before this
-`PROGRESS.md` edit.
+`04beebb9 docs: update progress dashboard` before this `PROGRESS.md` edit.
 
 Latest primary-integrated executable capability baseline:
 `7aa162ca native: add reference-source append lvalue extraction`.
 
-This review counts a new primary-integrated semantic packet after the previous
-progress marker. The reference-source append/lvalue packet landed, was pushed,
-and has nonzero focused gates. It is meaningful generalized reference/lvalue
-progress, so overall and executable estimates move from 93% to 94%. The
-remaining gaps are still broad: full references/COW, dynamic symbols,
-request/global writeback, complete callable/method/object behavior, exact
-diagnostics, cleanup/unwind, and backend parity are not done.
+This review counts no new primary-integrated source semantic packet after the
+previous progress marker. The only new current evidence is lane-local candidate
+work for by-value closure capture from reference-backed locals/frame slots, so
+overall and executable estimates remain at 94%. The remaining gaps are still
+broad: full references/COW, dynamic symbols, request/global writeback, complete
+callable/method/object behavior, exact diagnostics, cleanup/unwind, and backend
+parity are not done.
 
 ## Grand Roadmap Position
 
@@ -57,8 +56,8 @@ Primary-integrated items are separated from lane-local candidate work below.
 | Runtime numeric-unary conversion ABI | **100%** `[####################]` | **48%** `[##########----------]` | Integrated at `b13c85c6`. Covered unary `-` routes through `NativeConversionSource` / `NativeConversionResult` across runtime, LLVM, generated C, and focused linked execution. |
 | String operation-family slot consumers | **100%** `[####################]` | **45%** `[#########-----------]` | Integrated at `5307990c`; `explode()` and `str_split()` use shared byte-preserving value/reference-slot contracts. |
 | Byte-preserving PHP string value boundary | **100%** `[####################]` | **40%** `[########------------]` | Integrated at `1c369d0f`; byte-backed PHP values and native pointer-plus-length materialization are available for selected paths. |
-| Dynamic callable class-context / callable-value dispatch | **0%** `[--------------------]` | **42%** `[########------------]` | Ranked fallback after the now-landed reference-source packet. Useful call-lane evidence exists, but no current-primary candidate packet is open for it. |
-| By-value closure capture from reference-backed locals | **0%** `[--------------------]` | **42%** `[########------------]` | Fresh lane-local call-semantics evidence at 2026-05-25 23:13 CEST. It may be a useful compact packet, but it is not primary-integrated. |
+| Dynamic callable class-context / callable-value dispatch | **0%** `[--------------------]` | **42%** `[########------------]` | Ranked fallback after the closure-capture packet. Useful call-lane evidence exists, but no current-primary candidate packet is open for it. |
+| By-value closure capture from reference-backed locals | **70%** `[##############------]` | **43%** `[#########-----------]` | Fresh current-primary candidate is ready for primary review at 2026-05-25 23:44 CEST with two dirty files, stable diff hash `7be7ce69bed7f9b74c8c98e2b6922c92da1d455567f7d0e77cfccfb710c39e0a`, and nonzero focused gates. It is still lane-local and not primary-integrated. |
 | Diagnostic result callable/RMW contracts | **0%** `[--------------------]` | **45%** `[#########-----------]` | `impl-native-error-diagnostic-semantics` has fresh lane-local callable operand preparation and direct symbol RMW completion contracts. They remain broad dirty evidence, not primary progress. |
 | Broader lvalue/reference-slot materializer | **40%** `[########------------]` | **44%** `[#########-----------]` | Improved by `7aa162ca`, but non-variable expression families, static/magic/non-public properties, ArrayAccess, arbitrary alias roots, and broad writeback still need shared materialization. |
 | Object/resource source materialization | **25%** `[#####---------------]` | **30%** `[######--------------]` | Still a recurring blocker for generic conversion and offset/source consumers. Needs a general value reconstruction/materialization boundary. |
@@ -86,8 +85,17 @@ Primary-integrated executable or executable-prerequisite capability:
 
 In progress but lane-local or not yet executable primary support:
 
-- [ ] Fresh post-`7aa162ca` next-candidate triage is needed; the previous top-ranked reference-source packet is now integrated.
-- [ ] `impl-native-call-semantics` has lane-local dynamic callable preflight, callable-value dispatch, reference-assignment, source-call ordering, and by-value closure capture evidence. None of it counts until extracted from current primary with exact scope, review, and nonzero gates.
+- [ ] Fresh post-`7aa162ca` next-candidate triage ranked by-value closure
+  capture from reference-backed locals/frame slots as the best next compact
+  packet.
+- [ ] `closure-capture-reference-backed-prep` is ready for primary review with
+  current-primary apply proof and nonzero focused gates. It does not count until
+  independent review, primary integration, commit, and push.
+- [ ] `impl-native-call-semantics` has broader lane-local dynamic callable
+  preflight, callable-value dispatch, reference-assignment, source-call
+  ordering, and object/call blocker evidence. None of that broader lane state
+  counts until extracted from current primary with exact scope, review, and
+  nonzero gates.
 - [ ] `impl-native-error-diagnostic-semantics` has lane-local diagnostic operation contracts, including callable operand and direct symbol RMW completion contracts. Its huge dirty scope means no direct integration.
 - [ ] Broader closure/call reference returns need reusable consumers beyond descriptor closures: user functions, methods, static calls, constructors, discarded calls, and non-descriptor closure surfaces.
 - [ ] Broad parked lanes remain evidence only until exact current-primary prep, review, and integration.
@@ -135,22 +143,26 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary was clean and synced at `7aa162ca` before this `PROGRESS.md` edit.
-- [x] Latest executable capability head is now `7aa162ca`.
-- [x] Overall and executable percentages move to 94% for this review.
+- [x] Primary was clean and synced at `04beebb9` before this `PROGRESS.md` edit.
+- [x] Latest executable capability head remains `7aa162ca`.
+- [x] Overall and executable percentages remain at 94% for this review.
 - [x] The reference-source append/lvalue packet is a non-repeat guard, not active work.
 
 Lane-local:
 
-- [ ] `impl-native-call-semantics` reported fresh by-value closure capture
-  materialization evidence at 2026-05-25 23:13 CEST. It remains a broad dirty
-  lane and should be mined only through fresh current-primary packets.
-- [ ] `impl-native-error-diagnostic-semantics` reported fresh runtime callable
-  operand preparation evidence after the scheduled marker. It remains broad
-  dirty evidence and should not displace executable semantic packets.
-- [ ] The live dashboard snapshot at 23:21 CEST is stale relative to current
-  primary git state; it still treats `main:34` integration as active even
-  though `7aa162ca` is pushed.
+- [ ] `closure-capture-reference-backed-prep` reported `ready-for-primary-review`
+  at 2026-05-25 23:44 CEST. It is a two-file candidate for by-value closure
+  capture from reference-backed locals/frame slots; it is not integrated.
+- [ ] `impl-native-call-semantics` reported fresh dynamic constructor
+  class-name symbol-environment blocker work at 2026-05-25 23:43 CEST. It
+  remains broad dirty evidence and should be mined only through fresh
+  current-primary packets.
+- [ ] `impl-native-error-diagnostic-semantics` reported fresh diagnostic scanner
+  and callable operand work, but its status includes a future-dated section
+  relative to this 23:44 CEST review. Treat it as evidence only until a fresh
+  sane status exists.
+- [ ] The live supervisor dashboard is stale relative to current primary git
+  state and worker statuses; its visible tail stops at 2026-05-24 01:09 CEST.
 - [ ] Multiple broad lanes are parked or noncompliant-cadence evidence
   repositories. Do not route them to primary without a new narrow extraction.
 
@@ -160,7 +172,7 @@ Resource posture:
   Largest observed targets: `phpc-target-native-call-semantics` 8.9G,
   `phpc-target-native-object-seed` 5.6G,
   `phpc-target-native-diagnostics` 3.0G.
-- `/home`: 459G total, 193G used, 248G available, 44% used.
+- `/home`: 459G total, 188G used, 253G available, 43% used.
   Largest observed lane/work tree:
   `phpc-lane-native-error-diagnostic-semantics` 14G.
 - Memory available is about 41Gi, but swap remains high at 23Gi/29Gi used.
@@ -171,18 +183,19 @@ Resource posture:
 
 Best next action:
 
-- Run fresh next-candidate triage from true current primary `7aa162ca`. The
-  previous top-ranked reference-source packet is now integrated, so old
-  rankings should not be reused mechanically.
+- Run primary review on
+  `closure-capture-reference-backed-prep.status.md` / candidate
+  `/home/claude/phpc-candidate-closure-capture-reference-backed-prep-20260525`.
+  If independent review verifies the two-file scope, hash, apply proof, and
+  nonzero gates, it is the cleanest next executable semantic packet.
 
 Likely executable semantic packets to consider:
 
-- Dynamic callable class-context / callable-value dispatch, if it can be
-  extracted compactly from current primary with exact scope and focused
-  nonzero gates.
 - By-value closure capture materialization from reference-backed locals and
-  frame reference slots, if it proves smaller and distinct from the completed
-  descriptor closure result ABI.
+  frame reference slots, currently ready for primary review but not integrated.
+- Dynamic callable class-context / callable-value dispatch, if closure capture
+  review fails or after it lands, and only if it can be extracted compactly from
+  current primary with exact scope and focused nonzero gates.
 
 Good cleanup discipline to keep:
 
