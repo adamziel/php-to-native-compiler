@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 00:36 CEST
-Evaluation marker: `20260525T223657Z`
+Updated: 2026-05-26 01:00 CEST
+Evaluation marker: `20260525T230002Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, candidate worktrees, lane-local
@@ -15,16 +15,18 @@ Overall estimated progress: **95%** `[###################-]`
 Executable PHP semantics: **95%** `[###################-]`
 
 Primary was clean and aligned with `origin/master` at
-`e32f5735 native: add runtime callable ABI` before this `PROGRESS.md` edit.
+`ea0c7675 native: route symbol-environment constructor names` before this
+`PROGRESS.md` edit.
 
 Latest primary-integrated executable capability baseline:
-`e32f5735 native: add runtime callable ABI`.
+`ea0c7675 native: route symbol-environment constructor names`.
 
-`e32f5735` landed the runtime-only callable table, call
-arguments/result/frame ABI, and caller-scope visibility boundary. This is a
-generalized prerequisite for dynamic callable-value dispatch and compiler
-consumers, not complete callable execution. Overall and executable estimates
-stay flat while the next call work moves from ABI foundation to compiler use.
+`ea0c7675` routes dynamic constructor class-name operands that are PHP symbol
+environments through the shared global/request frame-separation blocker before
+constructor lookup, destructor-risk planning, argument cleanup, or generated-C
+object materialization. This is a generalized blocker/diagnostic consistency
+packet, not executable request/global frame separation, so overall and
+executable estimates stay flat.
 
 ## Grand Roadmap Position
 
@@ -36,13 +38,20 @@ stay flat while the next call work moves from ABI foundation to compiler use.
 | Strings and byte semantics | **62%** | `[############--------]` | Byte-backed values and byte-preserving `explode()` / `str_split()` slots are integrated. Binary source bytes, byte-exact interpreter/session/debug output, `mb_str_split()`, request/global byte keys, and exact diagnostics remain open. |
 | Arrays, lvalues, references, COW | **82%** | `[################----]` | Selected reference-source/lvalue extraction and closure capture from reference-backed slots are integrated. Full COW, arbitrary alias roots, foreach, alias composition, static/magic/non-public properties, ArrayAccess, and broad writeback remain incomplete. |
 | Symbols, globals, request state | **74%** | `[###############-----]` | Selected globals, root-symbol, active symbol-table reference consumers, request-key blockers, and append-shaped symbol reference-source materialization exist. `$GLOBALS` self-cells, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
-| Calls, functions, frames | **89%** | `[##################--]` | Descriptor closures, selected captures, selected by-reference parameters, callable/function-table surfaces, method-frame surfaces, descriptor closure value/reference returns, reference-backed by-value captures, and a runtime callable table/arguments/result/frame ABI are integrated. General callable-value dispatch, compiler table registration/consumers, non-descriptor closures, methods, static calls, constructors, and argument binding breadth remain open. |
+| Calls, functions, frames | **89%** | `[##################--]` | Descriptor closures, selected captures, selected by-reference parameters, callable/function-table surfaces, method-frame surfaces, descriptor closure value/reference returns, reference-backed by-value captures, a runtime callable table/arguments/result/frame ABI, and shared symbol-environment constructor blockers are integrated. General callable-value dispatch, compiler table registration/consumers, non-descriptor closures, methods, static calls, constructors, request/global frame separation, and argument binding breadth remain open. |
 | Objects, properties, methods | **53%** | `[###########---------]` | Public object-property reference-source extraction and object-property reference-slot mutation exist for selected paths. Full visibility, magic, dynamic/static/typed properties, destructors, references/COW, and `ArrayAccess` execution remain open. |
 | Control flow, cleanup, diagnostics | **51%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, truthiness, and conversion consumers exist. Broad unwind/finally/destructor/shutdown and exact source ordering remain open. Current broad diagnostic-lane work is not counted. |
 | Broad integrated verification | **92%** | `[##################--]` | Recent focused gates are strong and nonzero. The full `native_runtime_abi` suite still has known current-primary failures, and broad gates remain constrained by lane extraction cost, stale lane expectations, high swap, and backend parity gaps. |
 
 ## Recent Primary-Integrated Work
 
+- `ea0c7675`: routed dynamic constructor class-name operands that are PHP
+  symbol environments through the shared
+  `NativeCallBlocker::GlobalFrameSeparation` constructor operation before
+  class lookup, destructor-risk planning, argument cleanup, or generated-C
+  object materialization. Integrated exactly `compiler/src/codegen.rs` and
+  `compiler/tests/native_function_call_boundary.rs`; focused nonzero tests,
+  `cargo check -p phpc`, fmt, and diff checks passed.
 - `e32f5735`: added a runtime callable table and shared
   call arguments/result/frame ABI for function, method, and constructor
   callable kinds, including value/reference/failure ownership operations,
@@ -78,6 +87,7 @@ Primary-integrated capability and lane-local candidate work are separated here.
 
 | Item | Toward Primary Integration | Toward Full Feature | Status |
 | --- | ---: | ---: | --- |
+| Dynamic constructor symbol-environment blockers | **100%** `[####################]` | **22%** `[####----------------]` | Integrated at `ea0c7675`. Dynamic constructor class-name operands from `$GLOBALS` and request superglobals now route to `NativeCallBlocker::GlobalFrameSeparation` before constructor lookup, destructor-risk classification, argument cleanup, or generated-C object materialization. Request/global frame separation execution remains unimplemented. |
 | Dynamic callable runtime ABI / callable-value dispatch | **100%** `[####################]` | **47%** `[#########-----------]` | Runtime-only callable table, arguments/result/frame ownership, function/method/constructor invocation callbacks, called-scope propagation, and public/protected/private visibility checks are integrated at `e32f5735`. Callable-value dispatch, compiler table registration, and generated-C consumers remain lane-local/future work. |
 | Reference-backed by-value closure captures | **100%** `[####################]` | **48%** `[##########----------]` | Integrated at `90e53401`. Covers descriptor closure value captures from ordinary locals, native reference handles, and active symbol-table storage across direct function, static method, receiver method, and closure factory frames. Non-static implicit `$this`, secondary-alias writeback, and broad callable/object semantics remain open. |
 | Reference-source append/lvalue extraction | **100%** `[####################]` | **52%** `[##########----------]` | Integrated at `7aa162ca`. Covers selected symbol, native reference local, public object-property, object-property array-path, append, reference assignment, and by-reference call consumers. Static/magic/non-public properties, ArrayAccess, arbitrary alias roots, and full references/COW remain open. |
@@ -128,16 +138,21 @@ Primary-integrated executable or executable-prerequisite capability:
 - [x] Runtime callable table plus shared call arguments/result/frame ABI for
   function, method, and constructor callable kinds, including value/reference/
   failure ownership, called-scope propagation, and caller-scope visibility.
+- [x] Shared dynamic constructor symbol-environment blocker for `$GLOBALS` and
+  request-superglobal class-name operands, routed through
+  `NativeCallBlocker::GlobalFrameSeparation` before constructor execution
+  planning.
 
 In progress but lane-local or not yet executable primary support:
 
 - [ ] Dynamic callable compiler consumers must now use the integrated
   `e32f5735` runtime ABI: table registration, callable-value dispatch, and
   generated-C result/value/reference/discard consumers remain unintegrated.
-- [ ] Three current-primary candidate packets are ready for review but not
-  counted: dynamic constructor symbol-environment blockers,
-  allocatable destructor-risk metadata, and try-body call routing. Each still
-  needs independent review, current-primary apply proof, and focused gates.
+- [ ] Two source candidate packets remain under review and not counted:
+  allocatable destructor-risk metadata and try-body call routing. Conflict
+  evidence says `try-body-call-routing` should land before allocatable if both
+  are accepted, because the reverse order conflicts in the shared boundary test
+  file.
 - [ ] `impl-native-call-semantics` has broad dirty evidence for call ordering,
   dynamic constructor/class-name blockers, callable-value dispatch,
   destructor-risk metadata, source-call ordering, and object/call blockers.
@@ -180,13 +195,15 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary is clean and synced at `e32f5735` before this `PROGRESS.md` edit.
-- [x] Latest executable capability head is `e32f5735`.
+- [x] Primary is clean and synced at `ea0c7675` before this `PROGRESS.md` edit.
+- [x] Latest executable capability head is `ea0c7675`.
 - [x] Overall and executable estimates remain 95% under current project-local
   accounting.
 - [x] Closure capture from reference-backed storage remains a completed
   non-repeat item.
 - [x] Runtime callable ABI is now a completed non-repeat prerequisite.
+- [x] Dynamic constructor symbol-environment blocking is now a completed
+  non-repeat item.
 
 Lane-local:
 
@@ -195,8 +212,8 @@ Lane-local:
   integrated.
 - [ ] Next callable work should target callable-value dispatch and first
   compiler consumer packets over `e32f5735`, not another ABI-only inventory.
-- [ ] Dynamic constructor symbol-environment, allocatable destructor-risk, and
-  try-body call-routing candidates are ready-for-review artifacts only.
+- [ ] Allocatable destructor-risk and try-body call-routing candidates are
+  current review artifacts only; they do not count until integrated and pushed.
 - [ ] Call-lane loop/call ordering work is fresh but broad and dirty.
 - [ ] Diagnostic-lane callable operand, reference-binding, RMW, report dispatch,
   and control-flow scanner contracts are broad and dirty; status chronology is
@@ -220,10 +237,11 @@ Resource posture:
 
 Best next action:
 
-- Review the ready current-primary candidate packets in priority order only
-  after proving clean apply over `e32f5735` and any docs-only progress commit.
-  Favor call/compiler consumer work that uses the integrated runtime callable
-  ABI over cleanup-only diagnostic/scanner work.
+- Finish the current formal reviews on `ea0c7675`. If both remaining candidate
+  packets pass review, integrate `try-body-call-routing` before allocatable
+  destructor-risk to avoid the known test-file apply conflict. Keep callable
+  compiler consumer work focused on consuming the integrated runtime callable
+  ABI, not on extending old dynamic-call branch helpers.
 
 Avoid:
 
