@@ -529,15 +529,13 @@ fn native_function_type_text_is_supported(text: &str) -> bool {
 
 fn native_closure_frame_blocker(
     params: &[FunctionParam],
-    returns_by_reference: bool,
+    _returns_by_reference: bool,
 ) -> NativeCallBlocker {
     if params
         .iter()
         .any(native_user_function_param_has_unsupported_by_reference_shape)
     {
         NativeCallBlocker::ByReferenceArgumentBinding
-    } else if returns_by_reference {
-        NativeCallBlocker::ReturnValueOwnership
     } else {
         NativeCallBlocker::ClosureFrameHandoff
     }
@@ -11783,6 +11781,7 @@ struct CGenerator {
     declared_class_order: Vec<String>,
     function_definitions: Vec<String>,
     function_return_status: Option<String>,
+    function_return_mode: CFunctionReturnMode,
     function_call_depth: Option<String>,
     function_callable_name: Option<String>,
     function_return_type: Option<String>,
@@ -12376,6 +12375,14 @@ struct CNativeConstructorArgumentArray {
 struct CNativeReferenceMaterialization {
     handle: String,
     cleanup_after_use: Vec<String>,
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+enum CFunctionReturnMode {
+    #[default]
+    NativeValue,
+    ClosureValue,
+    ClosureReference,
 }
 
 fn borrowed_native_arg(
@@ -13525,7 +13532,7 @@ impl CGenerator {
 
     fn c_closure_frame_callback_signature(c_name: &str) -> String {
         format!(
-            "static phpc_NativeValueHandle {c_name}(int phpc_call_depth, const phpc_NativeClosureArgument *phpc_closure_args, size_t phpc_closure_arg_count, int *phpc_call_status)"
+            "static phpc_NativeClosureInvocationResult {c_name}(int phpc_call_depth, const phpc_NativeClosureArgument *phpc_closure_args, size_t phpc_closure_arg_count, int *phpc_call_status)"
         )
     }
 
@@ -14015,7 +14022,6 @@ impl CGenerator {
         if captures
             .iter()
             .any(|capture| !self.native_closure_capture_is_supported(capture))
-            || returns_by_reference
             || native_function_params_have_malformed_variadic_params(params)
             || stmt_list_contains_global_import(body)
             || calls_root_symbol_frame
@@ -14324,6 +14330,7 @@ impl CGenerator {
             params,
             &descriptor_captures,
             return_type.cloned(),
+            returns_by_reference,
             body,
             span,
         )?;
@@ -14366,15 +14373,20 @@ impl CGenerator {
             name: "Closure::__invoke".to_string(),
             params: params.to_vec(),
             return_type: return_type.cloned(),
-            returns_by_reference: false,
+            returns_by_reference,
             body: body.to_vec(),
             is_nested: false,
             end_line: span.line,
             doc_comment: None,
             span,
         };
+        let result_flags = if returns_by_reference {
+            "PHPC_NATIVE_CLOSURE_DESCRIPTOR_RETURNS_REFERENCE"
+        } else {
+            "0"
+        };
         self.body.push(format!(
-            "phpc_NativeClosureDescriptor {descriptor} = {{ &{callback_name}, {}, {}, {param_flags} }};",
+            "phpc_NativeClosureDescriptor {descriptor} = {{ &{callback_name}, {}, {}, {param_flags}, {result_flags} }};",
             native_user_function_required_arg_count(&closure_function),
             params.len()
         ));
@@ -14547,6 +14559,7 @@ impl CGenerator {
         params: &[FunctionParam],
         captures: &[crate::ast::ClosureCapture],
         return_type: Option<TypeDecl>,
+        returns_by_reference: bool,
         body: &[Stmt],
         span: Span,
     ) -> CompileResult<String> {
@@ -14554,7 +14567,7 @@ impl CGenerator {
             name: "Closure::__invoke".to_string(),
             params: params.to_vec(),
             return_type,
-            returns_by_reference: false,
+            returns_by_reference,
             body: body.to_vec(),
             is_nested: false,
             end_line: span.line,
@@ -14571,9 +14584,18 @@ impl CGenerator {
             declared_classes: self.declared_classes.clone(),
             declared_class_order: self.declared_class_order.clone(),
             function_return_status: Some("phpc_call_status".to_string()),
+            function_return_mode: if returns_by_reference {
+                CFunctionReturnMode::ClosureReference
+            } else {
+                CFunctionReturnMode::ClosureValue
+            },
             function_call_depth: Some("phpc_call_depth".to_string()),
             function_callable_name: Some("Closure::__invoke()".to_string()),
-            function_return_type: function.return_type.as_ref().map(|decl| decl.text.clone()),
+            function_return_type: if returns_by_reference {
+                None
+            } else {
+                function.return_type.as_ref().map(|decl| decl.text.clone())
+            },
             next_static_data: self.next_static_data,
             next_native_temp: self.next_native_temp,
             ..CGenerator::default()
@@ -14581,17 +14603,17 @@ impl CGenerator {
 
         generator.body.push("*phpc_call_status = 0;".to_string());
         generator.body.push(format!(
-            "if (phpc_call_depth > PHPC_NATIVE_USER_FUNCTION_MAX_CALL_DEPTH) {{ fprintf(stderr, \"phpc native user-function call depth exceeded\\n\"); return (phpc_NativeValueHandle){{0}}; }}"
+            "if (phpc_call_depth > PHPC_NATIVE_USER_FUNCTION_MAX_CALL_DEPTH) {{ fprintf(stderr, \"phpc native user-function call depth exceeded\\n\"); return (phpc_NativeClosureInvocationResult){{0}}; }}"
         ));
         let required_arg_count = native_user_function_required_arg_count(&function);
         if native_user_function_variadic_param(&function).is_some() {
             generator.body.push(format!(
-                "if (phpc_closure_arg_count < {}) {{ fprintf(stderr, \"phpc native closure frame argument count mismatch\\n\"); return (phpc_NativeValueHandle){{0}}; }}",
+                "if (phpc_closure_arg_count < {}) {{ fprintf(stderr, \"phpc native closure frame argument count mismatch\\n\"); return (phpc_NativeClosureInvocationResult){{0}}; }}",
                 required_arg_count + captures.len()
             ));
         } else {
             generator.body.push(format!(
-                "if (phpc_closure_arg_count < {} || phpc_closure_arg_count > {}) {{ fprintf(stderr, \"phpc native closure frame argument count mismatch\\n\"); return (phpc_NativeValueHandle){{0}}; }}",
+                "if (phpc_closure_arg_count < {} || phpc_closure_arg_count > {}) {{ fprintf(stderr, \"phpc native closure frame argument count mismatch\\n\"); return (phpc_NativeClosureInvocationResult){{0}}; }}",
                 required_arg_count + captures.len(),
                 params.len() + captures.len()
             ));
@@ -15052,9 +15074,11 @@ impl CGenerator {
             if self.uses_native_closure_helpers {
                 output.push_str("#define PHPC_NATIVE_CLOSURE_ARGUMENT_BY_REFERENCE 1\n");
                 output.push_str("#define PHPC_NATIVE_CLOSURE_ARGUMENT_VARIADIC 2\n");
+                output.push_str("#define PHPC_NATIVE_CLOSURE_DESCRIPTOR_RETURNS_REFERENCE 1\n");
                 output.push_str("typedef struct { phpc_NativeValueHandle value; phpc_NativeReferenceHandle reference; uint8_t flags; } phpc_NativeClosureArgument;\n");
-                output.push_str("typedef phpc_NativeValueHandle (*phpc_NativeClosureFrameCallback)(int, const phpc_NativeClosureArgument *, size_t, int *);\n");
-                output.push_str("typedef struct { phpc_NativeClosureFrameCallback callback; size_t required_arg_count; size_t param_count; const uint8_t *param_flags; } phpc_NativeClosureDescriptor;\n");
+                output.push_str("typedef struct { phpc_NativeValueHandle value; phpc_NativeReferenceHandle reference; phpc_NativeDiagnosticHandle diagnostic; uint8_t status; } phpc_NativeClosureInvocationResult;\n");
+                output.push_str("typedef phpc_NativeClosureInvocationResult (*phpc_NativeClosureFrameCallback)(int, const phpc_NativeClosureArgument *, size_t, int *);\n");
+                output.push_str("typedef struct { phpc_NativeClosureFrameCallback callback; size_t required_arg_count; size_t param_count; const uint8_t *param_flags; uint8_t result_flags; } phpc_NativeClosureDescriptor;\n");
             }
             if self.uses_native_dynamic_call_helpers {
                 output.push_str("#define PHPC_NATIVE_CALLABLE_ARRAY_PARTS_OK 1\n");
@@ -15457,6 +15481,11 @@ impl CGenerator {
                 output.push_str("extern _Bool phpc_native_value_is_descriptor_closure(phpc_NativeValueHandle value);\n");
                 output.push_str("extern _Bool phpc_native_closure_value_param_is_by_reference(phpc_NativeValueHandle value, size_t index);\n");
                 output.push_str("extern void phpc_native_closure_reference_argument_failure_with_diagnostic(phpc_NativeValueHandle value, size_t index, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeClosureInvocationResult phpc_native_closure_result_from_value(phpc_NativeValueHandle value);\n");
+                output.push_str("extern phpc_NativeClosureInvocationResult phpc_native_closure_result_from_reference(phpc_NativeReferenceHandle reference);\n");
+                output.push_str("extern size_t phpc_native_closure_result_report_diagnostic(phpc_NativeClosureInvocationResult result);\n");
+                output.push_str("extern void phpc_native_closure_result_free(phpc_NativeClosureInvocationResult result);\n");
+                output.push_str("extern phpc_NativeClosureInvocationResult phpc_native_closure_invoke_result(phpc_NativeValueHandle value, int call_depth, const phpc_NativeClosureArgument *args, size_t arg_count);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_closure_invoke_value_with_diagnostic(phpc_NativeValueHandle value, int call_depth, const phpc_NativeClosureArgument *args, size_t arg_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_output_buffer_operation {
@@ -17806,6 +17835,215 @@ impl CGenerator {
         self.body
             .push(format!("phpc_native_reference_free({source_ref});"));
         self.body.extend(target_cleanup_after_use);
+        Ok(true)
+    }
+
+    fn emit_c_symbol_path_reference_assignment_from_source_ref(
+        &mut self,
+        target: &AssignTarget,
+        source_ref: &str,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<bool> {
+        let Some(target_path) = self.c_symbol_reference_path_for_assign_target(target) else {
+            return Ok(false);
+        };
+        if let CSymbolReferencePath::Named(path) = &target_path {
+            self.reject_unsupported_symbol_reference_path_root(path, span)?;
+        }
+
+        let table = self.ensure_globals_symbol_table(failure_cleanup, span)?;
+        let target_failure_cleanup =
+            format!("phpc_native_reference_free({source_ref}); {failure_cleanup}");
+        let bound = self.next_native_name("symbol_reference_bound");
+        let target_cleanup_after_use = match target_path {
+            CSymbolReferencePath::Named(path) => {
+                let target = self.materialize_c_reference_path(path, &target_failure_cleanup)?;
+                let target_append = if target.append { "true" } else { "false" };
+                self.body.push(format!(
+                    "bool {bound} = phpc_native_symbol_table_bind_reference_path({table}, {}, {}, {}, {}, {target_append}, {source_ref});",
+                    target.name_bytes, target.name_len, target.keys, target.key_count
+                ));
+                target.cleanup_after_use
+            }
+            CSymbolReferencePath::Globals(path) => {
+                let target = self.materialize_globals_symbol_value_reference_path(
+                    path,
+                    &target_failure_cleanup,
+                )?;
+                let target_append = if target.append { "true" } else { "false" };
+                self.body.push(format!(
+                    "bool {bound} = phpc_native_symbol_table_bind_reference_value_path({table}, {}, {}, {target_append}, {source_ref});",
+                    target.keys, target.key_count
+                ));
+                target.cleanup_after_use
+            }
+            CSymbolReferencePath::GlobalsDynamic(path) => self
+                .emit_globals_dynamic_reference_target_bind(
+                    &table,
+                    path,
+                    source_ref,
+                    &bound,
+                    &target_failure_cleanup,
+                )?,
+        };
+        let target_cleanup = c_cleanup_sequence(&target_cleanup_after_use);
+        let bind_error_exit = self.native_error_exit(&format!("{target_cleanup}{failure_cleanup}"));
+        self.body
+            .push(format!("if (!{bound}) {{ {bind_error_exit} }}"));
+        self.body.extend(target_cleanup_after_use);
+        Ok(true)
+    }
+
+    fn can_emit_dynamic_descriptor_closure_reference_assignment(
+        &self,
+        target: &AssignTarget,
+        source: &ReferenceSource,
+    ) -> bool {
+        let ReferenceSource::MethodCall { expr, .. } = source else {
+            return false;
+        };
+        if self
+            .c_symbol_reference_path_for_assign_target(target)
+            .is_none()
+        {
+            return false;
+        }
+
+        match expr {
+            Expr::DynamicCall { .. } => true,
+            Expr::Call { name, .. } => self.variables.contains_key(name),
+            _ => false,
+        }
+    }
+
+    fn emit_dynamic_descriptor_closure_reference_assignment(
+        &mut self,
+        target: &AssignTarget,
+        source: &ReferenceSource,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<bool> {
+        if !self.can_emit_dynamic_descriptor_closure_reference_assignment(target, source) {
+            return Ok(false);
+        }
+
+        let ReferenceSource::MethodCall { expr, .. } = source else {
+            return Ok(false);
+        };
+
+        self.uses_native_closure_helpers = true;
+        self.uses_native_reference_helpers = true;
+        let (callee_value, args, call_span) = match expr {
+            Expr::DynamicCall {
+                callee,
+                args,
+                span: call_span,
+            } => (
+                self.materialize_native_value_result_operand(callee, failure_cleanup)?,
+                args.as_slice(),
+                *call_span,
+            ),
+            Expr::Call {
+                name,
+                args,
+                span: call_span,
+            } if self.variables.contains_key(name) => {
+                let value = self
+                    .variables
+                    .get(name)
+                    .cloned()
+                    .expect("checked variable-backed call callee exists");
+                let handle = self.emit_native_value_for_cvalue(value, *call_span)?;
+                (
+                    CNativeValueMaterialization {
+                        handle: handle.clone(),
+                        cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
+                    },
+                    args.as_slice(),
+                    *call_span,
+                )
+            }
+            _ => return Ok(false),
+        };
+        let mut shared_cleanup = callee_value.cleanup_after_use.clone();
+        if let Some(arg) = args
+            .iter()
+            .find(|arg| self.runtime_dynamic_call_reference_argument_needs_symbol_table(arg))
+        {
+            let table_failure_cleanup =
+                format!("{}{}", c_cleanup_sequence(&shared_cleanup), failure_cleanup);
+            self.ensure_globals_symbol_table(&table_failure_cleanup, arg.span())?;
+        }
+
+        let mut branch_cleanup = Vec::new();
+        let mut closure_args = Vec::new();
+        for (index, arg) in args.iter().enumerate() {
+            let argument = self.materialize_descriptor_closure_argument(
+                &callee_value.handle,
+                index,
+                arg,
+                &shared_cleanup,
+                failure_cleanup,
+                &branch_cleanup,
+            )?;
+            branch_cleanup.extend(argument.cleanup_after_use);
+            closure_args.push(argument.handle);
+        }
+
+        let (arg_handles, arg_count) = if closure_args.is_empty() {
+            ("NULL".to_string(), "0".to_string())
+        } else {
+            let handles = self.next_native_name("closure_reference_arg_values");
+            let argument_entries = closure_args
+                .iter()
+                .map(|argument| argument.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.body.push(format!(
+                "phpc_NativeClosureArgument {handles}[] = {{ {argument_entries} }};"
+            ));
+            (handles, closure_args.len().to_string())
+        };
+
+        let invocation = self.next_native_name("closure_reference_invoke_result");
+        self.body.push(format!(
+            "phpc_NativeClosureInvocationResult {invocation} = phpc_native_closure_invoke_result({}, {}, {arg_handles}, {arg_count});",
+            callee_value.handle,
+            self.user_function_call_depth_argument()
+        ));
+        let invoke_failure_cleanup = format!(
+            "{}{}{}",
+            c_cleanup_sequence(&branch_cleanup),
+            c_cleanup_sequence(&shared_cleanup),
+            failure_cleanup
+        );
+        let invoke_error_exit = self.native_error_exit(&format!(
+            "phpc_native_closure_result_report_diagnostic({invocation}); phpc_native_closure_result_free({invocation}); {invoke_failure_cleanup}"
+        ));
+        self.body.push(format!(
+            "if ({invocation}.diagnostic.ptr != NULL || {invocation}.reference.ptr == NULL) {{ {invoke_error_exit} }}"
+        ));
+
+        let bound = self.emit_c_symbol_path_reference_assignment_from_source_ref(
+            target,
+            &format!("{invocation}.reference"),
+            call_span,
+            &format!(
+                "phpc_native_closure_result_free({invocation}); {}{}",
+                c_cleanup_sequence(&branch_cleanup),
+                c_cleanup_sequence(&shared_cleanup)
+            ),
+        )?;
+        if !bound {
+            return Err(self.unsupported(span, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION));
+        }
+        self.body
+            .push(format!("phpc_native_closure_result_free({invocation});"));
+        for cleanup in branch_cleanup {
+            self.body.push(cleanup);
+        }
+        self.body.append(&mut shared_cleanup);
         Ok(true)
     }
 
@@ -21474,6 +21712,10 @@ impl CGenerator {
     }
 
     fn emit_function_return_statement(&mut self, value: Option<&Expr>) -> CompileResult<()> {
+        if self.function_return_mode == CFunctionReturnMode::ClosureReference {
+            return self.emit_closure_reference_return_statement(value);
+        }
+
         let mut materialized = if let Some(value) = value {
             self.materialize_native_value_result_operand(value, "")?
         } else {
@@ -21493,14 +21735,36 @@ impl CGenerator {
             .function_return_status
             .as_ref()
             .expect("function return status is present in function context");
-        self.body.push(format!(
-            "{cleanup} *{status} = 1; return {};",
-            materialized.handle
-        ));
+        let result = match self.function_return_mode {
+            CFunctionReturnMode::NativeValue => materialized.handle,
+            CFunctionReturnMode::ClosureValue => {
+                format!(
+                    "phpc_native_closure_result_from_value({})",
+                    materialized.handle
+                )
+            }
+            CFunctionReturnMode::ClosureReference => {
+                unreachable!("closure reference returns are handled before value materialization")
+            }
+        };
+        self.body
+            .push(format!("{cleanup} *{status} = 1; return {result};"));
         Ok(())
     }
 
     fn emit_function_default_return(&mut self, span: Span) -> CompileResult<()> {
+        if self.function_return_mode == CFunctionReturnMode::ClosureReference {
+            let cleanup = self.native_scope_cleanup_sequence("");
+            let status = self
+                .function_return_status
+                .as_ref()
+                .expect("function return status is present in function context");
+            self.body.push(format!(
+                "{cleanup} *{status} = 0; return (phpc_NativeClosureInvocationResult){{0}};"
+            ));
+            return Ok(());
+        }
+
         let handle = self.emit_native_value_for_cvalue(CValue::Null, span)?;
         let materialized = self.emit_function_return_type_coercion(CNativeValueMaterialization {
             handle: handle.clone(),
@@ -21511,9 +21775,53 @@ impl CGenerator {
             .function_return_status
             .as_ref()
             .expect("function return status is present in function context");
+        let result = match self.function_return_mode {
+            CFunctionReturnMode::NativeValue => materialized.handle,
+            CFunctionReturnMode::ClosureValue => {
+                format!(
+                    "phpc_native_closure_result_from_value({})",
+                    materialized.handle
+                )
+            }
+            CFunctionReturnMode::ClosureReference => {
+                unreachable!("closure reference defaults are handled before value materialization")
+            }
+        };
+        self.body
+            .push(format!("{cleanup} *{status} = 1; return {result};"));
+        Ok(())
+    }
+
+    fn emit_closure_reference_return_statement(
+        &mut self,
+        value: Option<&Expr>,
+    ) -> CompileResult<()> {
+        let Some(value) = value else {
+            let cleanup = self.native_scope_cleanup_sequence("");
+            let status = self
+                .function_return_status
+                .as_ref()
+                .expect("function return status is present in function context");
+            self.body.push(format!(
+                "{cleanup} *{status} = 0; return (phpc_NativeClosureInvocationResult){{0}};"
+            ));
+            return Ok(());
+        };
+        let reference = self.materialize_call_reference_argument(
+            value,
+            value.span(),
+            "",
+            NativeCallCallee::ClosureFrame,
+        )?;
+        self.emit_active_finally_bodies_before_terminal_transfer()?;
+        let cleanup = self.native_scope_cleanup_sequence("");
+        let status = self
+            .function_return_status
+            .as_ref()
+            .expect("function return status is present in function context");
         self.body.push(format!(
-            "{cleanup} *{status} = 1; return {};",
-            materialized.handle
+            "{cleanup} *{status} = 1; return phpc_native_closure_result_from_reference({});",
+            reference.handle
         ));
         Ok(())
     }
@@ -21642,8 +21950,15 @@ impl CGenerator {
                 | Stmt::Return { .. }
                 | Stmt::Try { .. }
         ) {
-            if let Some(operation) = native_statement_operand_call_operation(stmt) {
-                return Err(self.unsupported_call_operation(operation));
+            let closure_reference_source = matches!(
+                stmt,
+                Stmt::ReferenceAssign { target, source, .. }
+                    if self.can_emit_dynamic_descriptor_closure_reference_assignment(target, source)
+            );
+            if !closure_reference_source {
+                if let Some(operation) = native_statement_operand_call_operation(stmt) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
             }
         }
 
@@ -21694,6 +22009,11 @@ impl CGenerator {
                 source,
                 span,
             } => {
+                if self.emit_dynamic_descriptor_closure_reference_assignment(
+                    target, source, *span, "",
+                )? {
+                    return Ok(());
+                }
                 if let Some(operation) = native_reference_assignment_call_operation(target, source)
                 {
                     return Err(self.unsupported_call_operation(operation));
@@ -23383,12 +23703,9 @@ impl CGenerator {
             (handles, closure_args.len().to_string())
         };
 
-        let diagnostic = self.next_native_name("closure_invoke_diagnostic");
+        let invocation = self.next_native_name("closure_invoke_result");
         self.body.push(format!(
-            "  phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"
-        ));
-        self.body.push(format!(
-            "  {result} = phpc_native_closure_invoke_value_with_diagnostic({callee_handle}, {}, {arg_handles}, {arg_count}, &{diagnostic});",
+            "  phpc_NativeClosureInvocationResult {invocation} = phpc_native_closure_invoke_result({callee_handle}, {}, {arg_handles}, {arg_count});",
             self.user_function_call_depth_argument()
         ));
         let branch_failure_cleanup = format!(
@@ -23398,11 +23715,27 @@ impl CGenerator {
             failure_cleanup
         );
         let error_exit = self.native_error_exit(&format!(
-            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); {diagnostic}.ptr = NULL; }} {branch_failure_cleanup}"
+            "phpc_native_closure_result_report_diagnostic({invocation}); phpc_native_closure_result_free({invocation}); {branch_failure_cleanup}"
         ));
         self.body.push(format!(
-            "  if ({diagnostic}.ptr != NULL || {result}.ptr == NULL) {{ {error_exit} }}"
+            "  if ({invocation}.diagnostic.ptr != NULL || ({invocation}.value.ptr == NULL && {invocation}.reference.ptr == NULL)) {{ {error_exit} }}"
         ));
+        self.body
+            .push(format!("  if ({invocation}.value.ptr != NULL) {{"));
+        self.body
+            .push(format!("    {result} = {invocation}.value;"));
+        self.body.push(format!(
+            "    {invocation}.value = (phpc_NativeValueHandle){{0}};"
+        ));
+        self.body.push("  } else {".to_string());
+        self.body.push(format!(
+            "    {result} = phpc_native_reference_value_clone({invocation}.reference);"
+        ));
+        self.body
+            .push(format!("    if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.body.push("  }".to_string());
+        self.body
+            .push(format!("  phpc_native_closure_result_free({invocation});"));
         for cleanup in branch_cleanup {
             self.body.push(format!("  {cleanup}"));
         }
@@ -35433,9 +35766,13 @@ impl CGenerator {
     fn native_error_exit_with_code(&self, local_cleanup: &str, exit_code: &str) -> String {
         let mut cleanup = self.native_scope_cleanup_sequence(local_cleanup);
         if let Some(status) = &self.function_return_status {
-            cleanup.push_str(&format!(
-                " *{status} = 0; return (phpc_NativeValueHandle){{0}};"
-            ));
+            let null_result = match self.function_return_mode {
+                CFunctionReturnMode::NativeValue => "(phpc_NativeValueHandle){0}",
+                CFunctionReturnMode::ClosureValue | CFunctionReturnMode::ClosureReference => {
+                    "(phpc_NativeClosureInvocationResult){0}"
+                }
+            };
+            cleanup.push_str(&format!(" *{status} = 0; return {null_result};"));
         } else {
             cleanup.push_str(&format!(" return {exit_code};"));
         }

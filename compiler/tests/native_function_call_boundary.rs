@@ -1363,6 +1363,147 @@ fn emit_asm_rejects_dynamic_calls_before_backend_execution() {
 }
 
 #[test]
+fn native_executable_c_source_executes_by_reference_closure_captures_across_consumers() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "$slot = \"old\";\n",
+        "$get = function &() use (&$slot) { return $slot; };\n",
+        "$alias =& $get();\n",
+        "$alias = \"new\";\n",
+        "echo $slot, \"|\", $get(), \"|\";\n",
+        "function apply_closure($callback) { return $callback(); }\n",
+        "echo apply_closure($get);\n",
+    );
+    let (source_path, output_path) =
+        compile_native_function_call_fixture("by_reference_closure_captures", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run by-reference closure executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"new|new|new");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_executable_c_source_executes_descriptor_ready_closure_invocation() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "$prefix = \"P\";\n",
+        "$join = function ($value) use ($prefix) { return $prefix . $value; };\n",
+        "function apply_value($callback, $value) { return $callback($value); }\n",
+        "echo $join(\"1\"), \"|\", apply_value($join, \"2\");\n",
+    );
+    let (source_path, output_path) =
+        compile_native_function_call_fixture("descriptor_ready_closure_invocation", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run descriptor closure executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"P1|P2");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_executable_c_source_persists_by_value_closure_captures_across_invocations() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "$prefix = \"A\";\n",
+        "$join = function ($value) use ($prefix) { return $prefix . $value; };\n",
+        "$prefix = \"B\";\n",
+        "echo $join(\"1\"), \"|\", $join(\"2\");\n",
+    );
+    let (source_path, output_path) =
+        compile_native_function_call_fixture("by_value_closure_capture_persistence", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run captured closure executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"A1|A2");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_source_closure_routes_value_and_reference_returns_through_shared_result_contract() {
+    for source in [
+        concat!(
+            "<?php\n",
+            "$prefix = \"P\";\n",
+            "$join = function ($value) use ($prefix) { return $prefix . $value; };\n",
+            "echo $join(\"1\");\n",
+        ),
+        concat!(
+            "<?php\n",
+            "$slot = \"old\";\n",
+            "$get = function &() use (&$slot) { return $slot; };\n",
+            "$alias =& $get();\n",
+            "$alias = \"new\";\n",
+            "echo $get();\n",
+        ),
+    ] {
+        let program = parse(source).unwrap();
+        let generated = emit_native_executable_c_source(&program).unwrap();
+
+        assert!(
+            generated.contains("phpc_NativeClosureInvocationResult")
+                && generated.contains("phpc_native_closure_invoke_result")
+                && generated.contains("phpc_native_closure_result_free"),
+            "closure invocation should use the shared value/reference result contract:\n{generated}"
+        );
+    }
+}
+
+#[test]
 fn native_function_call_emit_ir_cli_snapshot_matches_committed_output() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir
@@ -1492,4 +1633,57 @@ fn render_cli_snapshot(output: &Output) -> String {
     format!(
         "exit: {exit_code}\nstdout:\n{stdout}--- stdout end ---\nstderr:\n{stderr}--- stderr end ---\n"
     )
+}
+
+fn native_function_call_output_path(name: &str) -> std::path::PathBuf {
+    let mut path = std::env::temp_dir();
+    path.push(format!(
+        "phpc-native-function-call-{name}-{}",
+        std::process::id()
+    ));
+    path
+}
+
+fn compile_native_function_call_fixture(
+    name: &str,
+    source: &str,
+) -> (std::path::PathBuf, std::path::PathBuf) {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let source_path = native_function_call_output_path(name).with_extension("php");
+    let output_path = native_function_call_output_path(name);
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(&source_path, source).expect("write native function-call fixture source");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native function-call source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(output_path.exists(), "native executable was not written");
+
+    (source_path, output_path)
+}
+
+fn has_cc() -> bool {
+    Command::new("cc").arg("--version").output().is_ok()
 }

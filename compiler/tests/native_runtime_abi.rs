@@ -167,6 +167,29 @@ fn native_request_state_ordinary_array_key_consumers_share_blocker_across_backen
 }
 
 #[test]
+fn native_closure_invocation_result_abi_carries_value_and_reference_returns() {
+    for source in [
+        "<?php\n$fn = function () { return \"value\"; };\necho $fn();\n",
+        "<?php\n$slot = \"ref\";\n$fn = function &() use (&$slot) { return $slot; };\n$alias =& $fn();\necho $alias;\n",
+    ] {
+        let program = parse(source).unwrap();
+        let c_source = emit_native_executable_c_source(&program).unwrap();
+
+        assert!(
+            c_source.contains("typedef struct { phpc_NativeValueHandle value; phpc_NativeReferenceHandle reference; phpc_NativeDiagnosticHandle diagnostic; uint8_t status; } phpc_NativeClosureInvocationResult;"),
+            "{c_source}"
+        );
+        assert!(
+            c_source.contains("typedef phpc_NativeClosureInvocationResult (*phpc_NativeClosureFrameCallback)")
+                && c_source.contains("extern phpc_NativeClosureInvocationResult phpc_native_closure_invoke_result")
+                && c_source.contains("extern phpc_NativeClosureInvocationResult phpc_native_closure_result_from_value")
+                && c_source.contains("extern phpc_NativeClosureInvocationResult phpc_native_closure_result_from_reference"),
+            "{c_source}"
+        );
+    }
+}
+
+#[test]
 fn generated_ir_blocks_scalar_cast_builtins_at_shared_value_cast_boundary() {
     for source in [
         "<?php\n$payload = \"ABC\";\necho strval($payload);\n",
