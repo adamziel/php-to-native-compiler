@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-25 10:43 CEST
-Evaluation marker: `20260525T084349Z`
+Updated: 2026-05-25 11:03 CEST
+Evaluation marker: `20260525T090330Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, lane-local candidates, broad
@@ -11,18 +11,18 @@ not count as executable PHP feature support unless they execute PHP semantics.
 
 ## Current Primary State
 
-- Primary head:
-  `d5450544 docs: update progress dashboard`.
-- Primary sync: clean and aligned with `origin/master`.
+- Primary head before this dashboard edit:
+  `62b78f18 docs: update progress dashboard`.
+- Primary sync at evaluation start: clean and aligned with `origin/master`.
 - Latest integrated executable semantic baseline:
   `bfbc62c4 native: route object property reference slots`.
 - Latest integrated non-executable classifier:
   `deaf52ca codegen: classify object ArrayAccess receivers`.
 - Current evaluation read:
   no executable semantic code landed after `bfbc62c4`. The best current
-  movement is candidate triage toward a smaller scalar/resource offset-read
-  prerequisite packet from true primary `d5450544`; no prerequisite candidate
-  status artifact was present at this review time.
+  movement is a reviewed scalar/resource offset-read source-result prerequisite
+  candidate. It is `go-for-primary-integrator`, but it is not counted until a
+  dedicated integrator applies, gates, commits, and pushes it on primary.
 
 ## Executive Read
 
@@ -41,19 +41,20 @@ parity, includes, variable variables, full object semantics, real `ArrayAccess`
 dispatch, cleanup/unwind/destructor/shutdown ordering, exact diagnostics, and
 backend parity.
 
-The freshest work is mostly lane-local supply. Candidate triage rejected the
-existing static-property comparison and scalar/resource offset-read extracts as
-too broad or empty, then launched a narrower scalar/resource source-result ABI
-prerequisite task. Count it as promising preparation, not integrated support.
+The freshest movement is candidate readiness, not integrated product support.
+The scalar/resource prerequisite packet now has candidate prep plus independent
+primary review, with a concrete hash, current-primary apply proof, and nonzero
+focused gates. Count it as the next primary-integration opportunity, not as
+landed capability.
 
 ## Grand Roadmap Position
 
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | **97%** | `[###################-]` | Strong selected-path value, array, string, diagnostic, reference, symbol, call-frame, object, comparison, conversion, owner-cell, and request-state surfaces. Many expansions remain lane-local. |
-| Compiler/backend consumers | **98%** | `[####################]` | Generated C and LLVM consume many shared ABIs. Recent executable progress is generated-C/native-link object-property reference-slot mutation; broad parity remains incomplete. |
+| Runtime and ABI foundations | **97%** | `[###################-]` | Strong selected-path value, array, string, diagnostic, reference, symbol, call-frame, object, comparison, conversion, owner-cell, and request-state surfaces. Candidate offset-read source-result ABI is reviewed but not integrated. |
+| Compiler/backend consumers | **98%** | `[####################]` | Generated C and LLVM consume many shared ABIs. Recent executable primary progress is generated-C/native-link object-property reference-slot mutation; broad parity remains incomplete. |
 | Executable PHP semantics | **86%** | `[#################---]` | Primary has closure/callable/object islands, bounded preg callbacks, and focused object-property reference-slot mutation. No new executable semantic commit landed in this review window. |
-| Arrays, lvalues, references, COW | **69%** | `[##############------]` | Reference-backed object-property mutation is integrated. Full COW, arbitrary roots, foreach, property references, and alias composition remain open. |
+| Arrays, lvalues, references, COW | **69%** | `[##############------]` | Reference-backed object-property mutation is integrated. Offset-read source-result work is reviewed for integration but not counted yet. Full COW, arbitrary roots, foreach, property references, and alias composition remain open. |
 | Symbols, globals, request state | **72%** | `[##############------]` | Selected function globals and root-symbol surfaces exist. `$GLOBALS` self-cells, request/global alias parity, includes, variable variables, and exact unset/global behavior remain incomplete. |
 | Calls, functions, frames | **82%** | `[################----]` | Bounded closures, callable arrays/objects, public method frames, and constructors exist in selected paths. Named/unpacked/by-reference/userland frame breadth remains incomplete. |
 | Objects, properties, methods | **50%** | `[##########----------]` | Object-property reference-slot mutation and diagnostic classifiers are integrated. Full visibility, magic, dynamic/static/typed properties, destructors, references/COW, and `ArrayAccess` execution remain open. |
@@ -67,14 +68,13 @@ prerequisite task. Count it as promising preparation, not integrated support.
 | Object-property reference-slot mutation | **100%** `[####################]` | **39%** `[########------------]` | Integrated at `bfbc62c4`. Executable generated-C/native-link support for covered assignment/unset mutation operands. Full object/property/reference semantics remain open. |
 | Bounded `preg_replace_callback()` string callbacks | **100%** `[####################]` | **32%** `[######--------------]` | Integrated at `6aca392d`. Full PCRE, broader captures/modifiers, non-string callables, `limit`/`count`/`flags`, and legacy recognizer cleanup remain open. |
 | Object-offset `ArrayAccess` diagnostic classifier | **100%** `[####################]` | **12%** `[##------------------]` | Integrated at `deaf52ca`. Diagnostic routing only; no `offsetGet`, `offsetExists`, `offsetSet`, or `offsetUnset` execution. |
-| Scalar/resource offset-read source-result prerequisite | **44%** `[#########-----------]` | **40%** `[########------------]` | Candidate triage ranks this first. A manual task is assigned to extract `NativeConversionSource`, offset-read source ABIs, generated consumers, and focused tests from true primary `d5450544`; no result artifact yet. |
-| Static-property comparison operand ABI | **35%** `[#######-------------]` | **37%** `[#######-------------]` | Fresh extraction says `needs-split`: source lane is too broad and entangled; candidate remained empty. Split metadata/operand prerequisites first. |
-| Array-key value/reference-slot ABI | **60%** `[############--------]` | **38%** `[########------------]` | Lane-local generated-C/runtime packet has compact proof and is the recommended fallback if scalar/resource extraction broadens. Needs fresh current-primary extraction. |
-| Root-symbol result comparison consumers | **52%** `[##########----------]` | **35%** `[#######-------------]` | Lane-local result-to-result comparison ABI and LLVM/generated-C consumers remain promising, but need a compact current-primary packet. |
+| Scalar/resource offset-read source-result prerequisite | **86%** `[#################---]` | **42%** `[########------------]` | Candidate is ready and independently reviewed as `go-for-primary-integrator`. Hash `5694f62a...058d3`, files `runtime/src/lib.rs`, `compiler/src/codegen.rs`, `compiler/tests/native_runtime_abi.rs`. Awaiting dedicated primary integration and rerun gates. |
+| Static-property comparison operand ABI | **35%** `[#######-------------]` | **37%** `[#######-------------]` | Prior extraction says `needs-split`: source lane is too broad and entangled; candidate remained empty. Split metadata/operand prerequisites first. |
+| Array-key value/reference-slot ABI | **60%** `[############--------]` | **38%** `[########------------]` | Lane-local generated-C/runtime packet has compact proof and is the recommended fallback if scalar/resource integration fails. Needs fresh current-primary extraction. |
+| Strict identity and bitwise shared value ABI consolidation | **54%** `[###########---------]` | **37%** `[#######-------------]` | Lane-local integration-batch work routes more backend operations through shared value ABIs. Useful, but not extracted to primary and generated-C/LLVM parity remains incomplete. |
 | Post-spread call argument planning | **48%** `[##########----------]` | **42%** `[########------------]` | Lane-local call planner evidence is focused but high sensitivity; extract only with current-primary hash/apply proof and narrow gates. |
-| LLVM/static integer bitwise shared ABI | **44%** `[#########-----------]` | **34%** `[#######-------------]` | Lane-local LLVM routing removes direct integer bitwise folding through a shared value ABI. Generated-C parity and broad conversion/reference gaps remain open. |
-| Diagnostics, request, and cleanup boundaries | **58%** `[############--------]` | **39%** `[########------------]` | Lane-local request handle, writeback, branch cleanup, and result-boundary work is useful infrastructure. Exact Zend ordering and real handler execution remain open. |
-| Broad lane extraction backlog | **31%** `[######--------------]` | **32%** `[######--------------]` | Recent failed extractions show the backlog is real. Treat lanes as sources for compact prerequisite packets, not integration units. |
+| Diagnostics, request, and cleanup boundaries | **59%** `[############--------]` | **39%** `[########------------]` | Lane-local request handle, writeback, branch cleanup, try/catch/finally preflight, and result-boundary work is useful infrastructure. Exact Zend ordering and real handler/exceptions execution remain open. |
+| Broad lane extraction backlog | **32%** `[######--------------]` | **32%** `[######--------------]` | Recent failed extractions show the backlog is real. Treat lanes as sources for compact prerequisite packets, not integration units. |
 
 ## Done / In Progress / Not Done
 
@@ -102,37 +102,51 @@ Primary-integrated non-executable infrastructure:
 - [x] Symbol-table ABI probe is pushed, but remains probe-only until real
   assignment/readback consumers land.
 
-In progress but lane-local or not yet executable support:
+In progress but lane-local or not yet executable primary support:
 
-- [ ] Scalar/resource offset-read prerequisite extraction is active, but no candidate status artifact was present at this review.
-- [ ] Static-property comparison operands need a smaller prerequisite split before primary review.
-- [ ] Array-key value/reference-slot ABI is a promising fallback but needs fresh extraction from current primary.
-- [ ] Root-symbol result-to-result comparison consumers are fresh but broad-lane local.
-- [ ] Array-linked null-coalesce/probe/update-value and owner-operation boundaries remain lane-local.
-- [ ] Formatted-string, stream, numeric conversion, LLVM bitwise, and callback-dispatch work remain lane-local.
-- [ ] Request-backed throw/clone/instanceof blockers and diagnostic writeback/selection boundaries remain lane-local.
-- [ ] Binary-string scanner, text-byte slot, error-handler dispatch, stream, and class-alias surfaces remain lane-local.
+- [ ] Scalar/resource offset-read prerequisite is ready for integrator review,
+  but not yet committed or pushed on primary.
+- [ ] Static-property comparison operands need a smaller prerequisite split
+  before primary review.
+- [ ] Array-key value/reference-slot ABI is a promising fallback but needs
+  fresh extraction from current primary.
+- [ ] Strict identity, LLVM bitwise, string predicate callback dispatch,
+  handler/autoload blockers, and date/time blockers remain lane-local.
+- [ ] Symbol/control-flow try/catch/finally preflight and rejecting-statement
+  result boundaries remain lane-local infrastructure.
+- [ ] Request-backed throw/clone/instanceof blockers and diagnostic
+  writeback/selection boundaries remain lane-local.
+- [ ] Binary-string scanner, text-byte slot, error-handler dispatch, stream,
+  and class-alias surfaces remain lane-local.
 - [ ] Control-flow loop/switch/goto cleanup-state advances remain lane-local.
 
 Not done:
 
-- [ ] Full callable lookup and invocation, including non-string preg callbacks, closures, arrays, invokable objects, magic/visibility, and rebinding rules.
-- [ ] Runtime `ArrayAccess` method dispatch for `offsetGet`, `offsetExists`, `offsetSet`, and `offsetUnset`.
+- [ ] Full callable lookup and invocation, including non-string preg callbacks,
+  closures, arrays, invokable objects, magic/visibility, and rebinding rules.
+- [ ] Runtime `ArrayAccess` method dispatch for `offsetGet`, `offsetExists`,
+  `offsetSet`, and `offsetUnset`.
 - [ ] Full references/COW identity and arbitrary alias roots.
-- [ ] Request and `$GLOBALS` parity, includes, variable variables, and dynamic symbol behavior.
+- [ ] Request and `$GLOBALS` parity, includes, variable variables, and dynamic
+  symbol behavior.
 - [ ] Full PCRE behavior beyond the bounded slash-delimited subset.
-- [ ] Retirement or reframing of unrelated legacy WordPress-named preg/database recognizers behind generalized PHP semantic boundaries.
-- [ ] General object model: non-public methods, overrides, interfaces/traits execution, magic methods, dynamic/static/typed properties, destructors.
+- [ ] Retirement or reframing of unrelated legacy WordPress-named preg/database
+  recognizers behind generalized PHP semantic boundaries.
+- [ ] General object model: non-public methods, overrides, interfaces/traits
+  execution, magic methods, dynamic/static/typed properties, destructors.
 - [ ] Complete cleanup/unwind/finally/destructor/output-buffer shutdown behavior.
-- [ ] Exact/source-ordered diagnostics, custom handler execution, warning/error continuation, and suppression parity.
+- [ ] Exact/source-ordered diagnostics, custom handler execution,
+  warning/error continuation, and suppression parity.
 - [ ] LLVM/direct assembly parity for recent generated-C semantics.
 
 ## Recent Primary-Integrated Work
 
-- `d5450544`: progress-dashboard commit only. No executable
-  compiler/runtime semantic code changed.
-- `d589bf7d`: progress-dashboard commit only. No executable
-  compiler/runtime semantic code changed.
+- `62b78f18`: progress-dashboard commit only. No executable compiler/runtime
+  semantic code changed.
+- `d5450544`: progress-dashboard commit only. No executable compiler/runtime
+  semantic code changed.
+- `d589bf7d`: progress-dashboard commit only. No executable compiler/runtime
+  semantic code changed.
 - `bfbc62c4`: generated-C/native-link object-property assignment and unset
   mutation route subject, property, and replacement operands through shared
   value-or-reference slot handling with runtime dereference boundaries.
@@ -146,7 +160,7 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary clean and synced at `d5450544`.
+- [x] Primary was clean and synced at `62b78f18` at evaluation start.
 - [x] Counted executable semantic baseline remains `bfbc62c4`.
 - [x] Object-property reference-slot mutation remains the latest integrated
   executable support.
@@ -156,24 +170,37 @@ Primary-integrated:
 
 Best next candidate supply:
 
-- [ ] `scalar-resource-offset-read-prereq`: active manual candidate-prep task; status artifact not present at review time.
-- [ ] `impl-native-integration-batch`: array-key value/reference-slot ABI has compact lane-local executable proof and is the recommended fallback.
-- [ ] `static-property-comparison-extract`: `needs-split`; do not integrate the current broad lane hunk as-is.
-- [ ] `scalar-resource-offset-read-extract`: `needs-split`; prior direct extraction had empty diff and zero-test gates.
-- [ ] `impl-native-call-semantics`: post-spread argument planning is useful but high-sensitivity.
-- [ ] Broad symbol/control-flow/diagnostic/reference/binary-string/type-conversion lanes continue producing useful surfaces that are not yet product capability.
+- [ ] `scalar-resource-offset-read-prereq`: ready for dedicated primary
+  integrator. Reviewed candidate hash
+  `5694f62aafc2dcc94aebb7a97a10f3e3a6b8d2587c4266493ed5e766141058d3`;
+  current-primary apply proof and focused gates passed in prep and review.
+- [ ] `main:34 primary-integrator`: should start only after the evaluator
+  wrapper commits/pushes this dashboard update, then recover true primary head
+  and rerun the reviewed gates before committing.
+- [ ] `impl-native-integration-batch`: array-key value/reference-slot ABI has
+  compact lane-local executable proof and remains the recommended fallback.
+- [ ] `static-property-comparison-extract`: `needs-split`; do not integrate
+  the current broad lane hunk as-is.
+- [ ] Older `scalar-resource-offset-read-extract`: `needs-split`; direct
+  extraction had empty diff and zero-test gates. Use the reviewed prerequisite
+  packet instead.
+- [ ] Broad symbol/control-flow/diagnostic/reference/binary-string/type-
+  conversion lanes continue producing useful surfaces that are not yet product
+  capability.
 
 ## Review Notes
 
 Resource pressure is usable but guarded. `/dev/shm` is `40G` total, `24G`
 used, `17G` available (`58%`), and `du -sh /dev/shm` reports `24G`. The
-`/home` filesystem is `459G` total, `217G` used, `224G` available (`50%`) by
-`df`; `du -sh /home` reports `125G` with unreadable overlay-directory
-permission warnings. Memory has about `39Gi` available, but swap remains high
+`/home` filesystem is `459G` total, `215G` used, `226G` available (`49%`) by
+`df`; `du -sh /home` reports `126G` with unreadable overlay-directory
+permission warnings. Memory has about `38Gi` available, but swap remains high
 at `23Gi` used of `29Gi`.
 
-Advisory steering read: keep accounting at primary head `d5450544` with
-executable baseline `bfbc62c4`. Let the scalar/resource prerequisite attempt
-run only as a compact current-primary candidate with real tests. If it broadens
-or remains unreported, pivot to the array-key value/reference-slot ABI packet.
-Keep broad gates disk-backed and single-job while swap remains high.
+Advisory steering read: keep accounting at primary head `62b78f18` with
+executable baseline `bfbc62c4` until a new semantic commit is pushed. The
+scalar/resource prerequisite is now the clear next integrator packet, but the
+integrator must revalidate against the true post-dashboard primary head and
+rerun focused gates. If it conflicts, broadens, or fails gates, pivot to a
+fresh current-primary array-key value/reference-slot ABI extraction rather than
+importing broad lane work.
