@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-25 08:41 CEST
-Evaluation marker: `20260525T064144Z`
+Updated: 2026-05-25 09:15 CEST
+Evaluation marker: `20260525T071500Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as product capability. Dirty primary WIP, probe-only commits,
@@ -9,11 +9,17 @@ dashboard-only commits, lane-local candidates, historical worktrees,
 blocker-only classifiers, and status-file claims are excluded until selected,
 gated, committed, pushed, and reflected here as semantic product progress.
 
-Current live pushed primary head observed by evaluator:
-`34922783 docs: update progress dashboard`
+Current pushed/local accounting for this integration:
+
+- Pre-push `origin/master` observed by the integrator:
+  `84450ef6 docs: update progress dashboard`.
+- Local semantic head before this progress update:
+  `6aca392d interpreter: execute bounded preg callbacks`.
+- This progress document counts the preg capability only after this task pushes
+  both `6aca392d` and this docs commit to `origin/master`.
 
 Latest counted semantic/test baseline:
-`b217e2b4 codegen: block destructor-observable native allocation`
+`6aca392d interpreter: execute bounded preg callbacks`
 
 Latest pushed but uncounted code work:
 `2967110c codegen: expose symbol table abi probe`
@@ -24,19 +30,18 @@ Overall estimated progress: **85%** `[#################---]`
 
 Executable PHP semantics: **85%** `[#################---]`
 
-Primary semantic capability did not move in this review. Primary is synced
-with `origin/master` at `34922783`; the newest pushed primary commit is another
-progress/dashboard update. The latest counted semantic baseline remains
-`b217e2b4`.
+Primary semantic capability moved with `6aca392d`, counted here only because
+this task pushes the semantic commit and this progress commit together. The
+new capability is bounded `preg_replace_callback()` string-callback execution
+over a slash-delimited pattern subset. It is not full PCRE and not generalized
+PHP callable semantics.
 
-The live primary checkout is dirty only in the two `preg_replace_callback()`
-files. The repair remains ready for primary review at hash
-`52973e3185c8874b67c38e245e6b0c6497c2117ac826fcb46d092f4ea655e8b5`, with
-current diffstat `2 files changed, 1367 insertions(+), 312 deletions(-)`.
-Packet gate, independent regression audit, shape audit, focused preg tests,
-milestone841 PHP comparison, `cargo check`, scoped rustfmt, and scoped diff
-checks support review. It remains uncommitted and unpushed, so it is not
-counted here.
+The integrated preg path parses supported slash-delimited patterns centrally,
+executes supported string callbacks through the interpreter call path, passes
+the current matches array shape to the callback, and splices callback string
+results back into the subject. Focused preg tests, milestone841 PHP comparison,
+`cargo check`, scoped rustfmt, and scoped diff checks passed before the semantic
+commit.
 
 Lane-local work is active but uncounted. Fresh statuses include call-argument
 ordering and by-reference capture cleanup, control-flow value-slot and cleanup
@@ -49,12 +54,14 @@ capability, until one compact slice is extracted, rechecked on current primary,
 gated, committed, and pushed.
 
 This is still selected PHP execution, not general PHP. The hard cliffs remain
-full callable lookup/invocation, closure rebinding APIs, full PCRE behavior,
-references/COW identity, request and `$GLOBALS` alias parity, includes,
-variable variables, object visibility/magic/dynamic/static/typed property
-behavior, runtime `ArrayAccess` method execution, userland method/constructor/
-function frames, cleanup/unwind/finally/destructor/output-buffer ordering,
-exact diagnostics, and backend parity.
+full PCRE syntax and modifiers, non-string callback forms, captures beyond the
+current subset, `preg_replace_callback()` `limit`/`count`/`flags`, existing
+unrelated WordPress-named recognizers, broad callable lookup/invocation,
+closure rebinding APIs, references/COW identity, request and `$GLOBALS` alias
+parity, includes, variable variables, object visibility/magic/dynamic/static/
+typed property behavior, runtime `ArrayAccess` method execution, userland
+method/constructor/function frames, cleanup/unwind/finally/destructor/
+output-buffer ordering, exact diagnostics, and backend parity.
 
 ## Grand Roadmap Position
 
@@ -62,19 +69,19 @@ exact diagnostics, and backend parity.
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **97%** | `[###################-]` | Strong shared value, array, string, diagnostic, reference, symbol, call-frame, object, method, callable-array, descriptor-closure, comparison, conversion, owner-cell, and request-state surfaces exist for selected paths. Many fresh lane ABI expansions remain uncounted. |
 | Compiler/backend consumers | **97%** | `[###################-]` | Generated C consumes many shared ABIs; LLVM and C assembly consume selected ABI families. Fresh root-symbol exists/global-import/strict-identity consumers remain lane-local until primary integration. |
-| Executable PHP semantics | **85%** | `[#################---]` | Focused linked/runtime programs cover closure/callable/object islands. Dirty preg work and lane-local callback/ArrayAccess/symbol/control-flow/string progress are not counted yet. |
+| Executable PHP semantics | **85%** | `[#################---]` | Focused linked/runtime programs cover closure/callable/object islands plus bounded preg string-callback execution. Lane-local callback/ArrayAccess/symbol/control-flow/string progress is not counted yet. |
 | Arrays, lvalues, references, COW | **67%** | `[#############-------]` | Useful selected lvalue/reference paths feed closures and lane-local mutation/foreach work. Full COW, arbitrary roots, foreach, property references, and alias composition remain open. |
 | Symbols, globals, request state | **72%** | `[##############------]` | Function globals and `$GLOBALS` self-import blockers improved. Lane work has root-reference import, root-symbol exists, activation diagnostics, dynamic globals append shape, POST body SAPI population, and request-state candidates. Generalized symbol storage, includes, variable variables, exact unset/global alias behavior, and reconciliation remain incomplete. |
 | Calls, functions, frames | **82%** | `[################----]` | Bounded functions, descriptor closures, callable arrays, callable objects, public method frames, and constructor frames work in selected generated-C cases. Spread/named/by-reference planning and structured signature metadata remain lane-local. |
 | Objects, properties, methods | **45%** | `[#########-----------]` | Useful public declared-object subset exists and supported public `__invoke` frames are callable. Lane work adds contextual `self` typed properties, object-valued `instanceof`, and receiver blockers. Non-public/contextual visibility, overrides, interfaces/traits execution, magic methods, dynamic/static/typed properties, destructors, references/COW, and backend parity remain open. |
 | Control flow, cleanup, diagnostics | **49%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, and destructor blockers exist. Request cleanup and diagnostic boundary lanes are active, but broad unwind, handlers, destructor execution, shutdown ordering, and source-ordered diagnostics remain open. |
-| Broad integrated verification | **84%** | `[#################---]` | Focused gates are strong for recent counted slices. Broad dirty-checkout gates remain constrained by preg WIP, stale dashboard state, lane extraction cost, high swap, and backend parity gaps. |
+| Broad integrated verification | **84%** | `[#################---]` | Focused gates are strong for recent counted slices. Broad gates remain constrained by stale dashboard state, lane extraction cost, high swap, and backend parity gaps. |
 
 ## Active Roadmap Items
 
 | Item | Toward Primary Integration | Toward Full Feature | Status |
 | --- | ---: | ---: | --- |
-| Dirty `preg_replace_callback()` repair | **96%** `[###################-]` | **32%** `[######--------------]` | Ready for primary review at hash `52973e3185c8874b67c38e245e6b0c6497c2117ac826fcb46d092f4ea655e8b5`. Executes string callbacks over a bounded slash-delimited regex subset. Still uncounted until committed and pushed. |
+| Bounded `preg_replace_callback()` string callbacks | **100%** `[####################]` | **32%** `[######--------------]` | Integrated at `6aca392d` and counted after this task's push. Executes supported string callbacks over a bounded slash-delimited subset. Full PCRE, non-string callables, captures beyond the current subset, `limit`/`count`/`flags`, and unrelated WordPress-named recognizer retirement remain open. |
 | Compact `impl-native-integration-batch` candidates | **73%** `[###############-----]` | **31%** `[######--------------]` | Lane work adds root-symbol exists, strict identity string/native-value comparison consumers, and generated-C `global` root-reference import. Promising, but conflict-heavy; extract one slice only. |
 | Callable, scanner, stream, and request-state builtins | **66%** `[#############-------]` | **43%** `[#########-----------]` | Lane-local callable recovery values, stream/filesystem paths, shutdown callbacks, echo/print array conversion, class aliases, scanner/reference-output, and request-state candidates are active. Broad callable/userland/method dispatch remains incomplete. |
 | Closure and call-frame correctness | **76%** `[###############-----]` | **51%** `[##########----------]` | Lane-local spread/named/by-reference capture work plus structured function/method signature metadata are strong candidates. Exact fatal timing, cleanup, request/global frames, and broad callability remain open. |
@@ -104,10 +111,10 @@ Primary-integrated and counted:
 - [x] Runtime string-valued declared-class `new` for constructorless and supported public-constructor classes.
 - [x] Destructor-observable declared-class allocation is blocked before generated-C native allocation through declared-class metadata, hierarchy lookup, and dynamic class-name facts.
 - [x] Bounded public declared-object properties, methods, statics, constructors, named `instanceof`, and same-family aggregate equality.
+- [x] Bounded `preg_replace_callback()` string-callback execution over supported slash-delimited patterns.
 
 In progress but uncounted:
 
-- [ ] Dirty bounded `preg_replace_callback()` callback-execution repair; ready for primary review and gated at hash `52973e3185c8874b67c38e245e6b0c6497c2117ac826fcb46d092f4ea655e8b5`.
 - [ ] Pushed symbol-table ABI probe `2967110c`; useful visibility, not generalized PHP symbol storage.
 - [ ] Lane-local root-symbol exists, strict identity comparison consumer, and generated-C `global` root-reference import candidates.
 - [ ] Lane-local callable scanner/reference-output, formatted stream-output, stream-context/resource/filesystem, shutdown, class alias, request-state, bitwise, echo/print array conversion, and dynamic byte-string/string-comparison candidates.
@@ -120,11 +127,12 @@ In progress but uncounted:
 
 Not done:
 
-- [ ] Full callable lookup and invocation beyond selected strings, closures, arrays, and public `__invoke` objects, including magic/visibility/rebinding rules.
+- [ ] Full callable lookup and invocation beyond selected strings, closures, arrays, and public `__invoke` objects, including non-string `preg_replace_callback()` callables, magic/visibility/rebinding rules.
 - [ ] Runtime `ArrayAccess` method dispatch for `offsetGet`, `offsetExists`, `offsetSet`, and `offsetUnset`.
 - [ ] Full references/COW identity and arbitrary alias roots.
 - [ ] Request and `$GLOBALS` parity, includes, variable variables, and dynamic symbol behavior.
-- [ ] Full PCRE behavior beyond bounded literal/prefix/suffix and selected exact regex families.
+- [ ] Full PCRE behavior beyond the bounded slash-delimited subset, including broader syntax/modifiers, captures beyond the current subset, and `preg_replace_callback()` `limit`/`count`/`flags`.
+- [ ] Retirement or reframing of existing unrelated WordPress-named preg/database recognizers behind generalized PHP semantic boundaries.
 - [ ] General object model: non-public methods, overrides, interfaces/traits execution, magic methods, dynamic/static/typed properties, destructors.
 - [ ] Complete cleanup/unwind/finally/destructor/output-buffer shutdown behavior.
 - [ ] Exact/source-ordered diagnostics, custom handler execution, warning/error continuation, and suppression parity.
@@ -132,6 +140,11 @@ Not done:
 
 ## Recent Primary-Integrated Work
 
+- `6aca392d`: interpreter `preg_replace_callback()` executes supported string
+  callbacks over a bounded slash-delimited pattern subset. The semantic surface
+  is still deliberately narrower than full PCRE/callable behavior: non-string
+  callables, captures beyond the current subset, `limit`/`count`/`flags`, and
+  unrelated WordPress-named recognizers remain blockers.
 - `b217e2b4`: generated-C declared-object allocation now blocks
   destructor-observable native allocation before emitting allocation branches.
   Destructor declarations are recorded as declared-class metadata, inherited
@@ -151,21 +164,25 @@ Not done:
 
 Primary-integrated and counted:
 
-- [x] Counted semantic baseline remains `b217e2b4`.
+- [x] Counted semantic baseline is `6aca392d`.
 - [x] Overall and executable-semantics estimates remain 85%.
-- [x] Live `HEAD` and `origin/master` are synced at `34922783`.
+- [x] This progress update counts `6aca392d` only after this task pushes the
+  semantic commit and this docs commit to `origin/master`.
 
 Pushed but uncounted:
 
 - [ ] `2967110c codegen: expose symbol table abi probe` exposes helper declarations/probe calls but does not execute generalized PHP symbol storage.
-- [ ] Dashboard/progress commits through `34922783` update observability only.
+- [ ] Dashboard/progress commits through pre-push `84450ef6` update observability only.
 
-Dirty primary but uncounted:
+Integrated in this push:
 
-- [ ] `preg_replace_callback()` WIP is ready for primary review, but remains dirty and uncounted.
-- [ ] Current verified dirty diff hash is `52973e3185c8874b67c38e245e6b0c6497c2117ac826fcb46d092f4ea655e8b5`.
-- [ ] Dirty files remain exactly `compiler/src/interpreter.rs` and `compiler/tests/preg_replace_callback_builtin.rs`.
-- [ ] Packet gate, regression audit, shape audit, `cargo check`, scoped rustfmt, scoped diff checks, and milestone841 PHP comparison support review at that hash.
+- [x] `6aca392d interpreter: execute bounded preg callbacks` carries the former
+  dirty preg diff hash
+  `52973e3185c8874b67c38e245e6b0c6497c2117ac826fcb46d092f4ea655e8b5`.
+- [x] Packet gate, regression audit, shape audit, `cargo check`, scoped
+  rustfmt, scoped diff checks, and milestone841 PHP comparison supported the
+  preg commit before integration.
+- [x] No compiler/runtime/test source changes are made by this progress update.
 
 Lane-local but uncounted:
 
@@ -192,8 +209,9 @@ last update remains `2026-05-25 01:56 CEST`, while fresh worker statuses reach
 `2026-05-25 08:35 CEST`. Use current git state, worker artifacts, preg packet
 evidence, and evaluator reports for steering until the dashboard is refreshed.
 
-Advisory steering read: resolve the dirty preg decision first. Then integrate
-only one narrow current-primary candidate at a time, with live hash/apply
-verification and focused disk-backed gates. Treat fresh lane reports as
-candidate supply, not counted product capability. Keep broad gates disk-backed
-while swap remains high.
+Advisory steering read: after this push, re-triage the current-primary
+candidate lanes one at a time. Do not extend existing unrelated WordPress-named
+recognizers; retire or reframe them behind shared PHP semantic boundaries before
+using those surfaces for broader preg/database behavior. Treat fresh lane
+reports as candidate supply, not counted product capability. Keep broad gates
+disk-backed while swap remains high.
