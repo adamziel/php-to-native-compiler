@@ -14204,6 +14204,7 @@ impl CGenerator {
                 output.push_str("extern bool phpc_native_array_append_value(phpc_NativeArrayHandle array, phpc_NativeValueHandle value);\n");
                 output.push_str("extern bool phpc_native_array_append_value_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeArrayKeyMaterializationResult phpc_native_value_to_array_key(phpc_NativeValueHandle value);\n");
+                output.push_str("extern phpc_NativeArrayKeyMaterializationResult phpc_native_value_to_array_key_with_reference_slot(phpc_NativeValueHandle value, phpc_NativeReferenceHandle reference);\n");
                 output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_unary_result(phpc_NativeValueHandle value, uint8_t op);\n");
                 output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_binary_result(phpc_NativeValueHandle left, uint8_t op, phpc_NativeValueHandle right);\n");
                 output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_compare_result(phpc_NativeValueHandle left, uint8_t op, phpc_NativeValueHandle right);\n");
@@ -33401,6 +33402,75 @@ impl CGenerator {
         key: &Expr,
         failure_cleanup: &[String],
     ) -> CompileResult<CNativeArrayKeyMaterialization> {
+        if let Expr::Variable(name, span) = key {
+            if self.by_reference_foreach_linger_variables.contains(name) {
+                return Err(
+                    self.unsupported(*span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
+                );
+            }
+            if let Some(CValue::NativeReferenceHandle(reference)) =
+                self.variables.get(name).cloned()
+            {
+                let result = self.next_native_name("array_key");
+                self.body.push(format!(
+                    "phpc_NativeArrayKeyMaterializationResult {result} = phpc_native_value_to_array_key_with_reference_slot((phpc_NativeValueHandle){{0}}, {reference});"
+                ));
+                if !failure_cleanup.is_empty() {
+                    let key_error_exit = self.native_error_exit(&format!(
+                        "phpc_native_array_key_materialization_result_free({result}); {}",
+                        c_cleanup_sequence(failure_cleanup)
+                    ));
+                    self.body.push(format!(
+                        "if ({result}.tag == 2) {{ phpc_native_diagnostic_message_stderr({result}.diagnostic); {key_error_exit} }}"
+                    ));
+                }
+                return Ok(CNativeArrayKeyMaterialization {
+                    result: result.clone(),
+                    cleanup_after_use: vec![format!(
+                        "phpc_native_array_key_materialization_result_free({result});"
+                    )],
+                });
+            }
+            if self.direct_variables_route_through_global_symbol_table()
+                && !is_globals_superglobal_name(name)
+                && !is_request_superglobal_name(name)
+            {
+                let table =
+                    self.ensure_globals_symbol_table(&c_cleanup_sequence(failure_cleanup), *span)?;
+                let name_bytes = self.emit_symbol_name_static_bytes(name);
+                let reference = self.next_native_name("array_key_reference");
+                self.body.push(format!(
+                    "phpc_NativeReferenceHandle {reference} = phpc_native_symbol_table_reference_for_path({table}, {name_bytes}, {}, NULL, 0, false);",
+                    name.len()
+                ));
+                let reference_error_exit =
+                    self.native_error_exit(&c_cleanup_sequence(failure_cleanup));
+                self.body.push(format!(
+                    "if ({reference}.ptr == NULL) {{ {reference_error_exit} }}"
+                ));
+                let result = self.next_native_name("array_key");
+                self.body.push(format!(
+                    "phpc_NativeArrayKeyMaterializationResult {result} = phpc_native_value_to_array_key_with_reference_slot((phpc_NativeValueHandle){{0}}, {reference});"
+                ));
+                if !failure_cleanup.is_empty() {
+                    let key_error_exit = self.native_error_exit(&format!(
+                        "phpc_native_array_key_materialization_result_free({result}); phpc_native_reference_free({reference}); {}",
+                        c_cleanup_sequence(failure_cleanup)
+                    ));
+                    self.body.push(format!(
+                        "if ({result}.tag == 2) {{ phpc_native_diagnostic_message_stderr({result}.diagnostic); {key_error_exit} }}"
+                    ));
+                }
+                return Ok(CNativeArrayKeyMaterialization {
+                    result: result.clone(),
+                    cleanup_after_use: vec![
+                        format!("phpc_native_array_key_materialization_result_free({result});"),
+                        format!("phpc_native_reference_free({reference});"),
+                    ],
+                });
+            }
+        }
+
         let key_failure_cleanup = c_cleanup_sequence(failure_cleanup);
         let key_value =
             self.materialize_native_array_expr_value_handle(key, &key_failure_cleanup)?;

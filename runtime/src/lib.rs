@@ -3993,6 +3993,46 @@ pub unsafe extern "C" fn phpc_native_value_to_array_key(
 
 /// # Safety
 ///
+/// `value` and `reference` are one logical operand slot. `value` must be null
+/// or a value handle previously returned by the runtime ABI and not yet freed;
+/// `reference` must be null or a live reference handle. At most one of the two
+/// handles may be non-null. The returned result owns either array-key bytes or
+/// a diagnostic handle; release owned fields with
+/// `phpc_native_array_key_materialization_result_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_to_array_key_with_reference_slot(
+    value: NativeValueHandle,
+    reference: NativeReferenceHandle,
+) -> NativeArrayKeyMaterializationResult {
+    if reference.is_null() {
+        if value.is_null() {
+            return NativeArrayKeyMaterializationResult::failure(RuntimeError::invalid_array_key(
+                "native array key materialization failed: value handle is null",
+            ));
+        }
+        return unsafe { phpc_native_value_to_array_key(value) };
+    }
+
+    if !value.is_null() {
+        return NativeArrayKeyMaterializationResult::failure(RuntimeError::invalid_array_key(
+            "native array key materialization failed: key slot received both value and reference handles",
+        ));
+    }
+
+    let owned_value = unsafe { phpc_native_reference_value_clone(reference) };
+    if owned_value.is_null() {
+        return NativeArrayKeyMaterializationResult::failure(RuntimeError::invalid_array_key(
+            "native array key materialization failed: key reference handle is null",
+        ));
+    }
+
+    let result = unsafe { phpc_native_value_to_array_key(owned_value) };
+    unsafe { phpc_native_value_free(owned_value) };
+    result
+}
+
+/// # Safety
+///
 /// `handle` must be null or an array handle previously returned by the runtime
 /// ABI and not yet freed. `key` must be a result returned by
 /// `phpc_native_value_to_array_key`. `value` must be null or a value handle
@@ -34711,6 +34751,107 @@ mod tests {
             native_string_conversion_result_for_test(reference_result).unwrap_err(),
             "invalid string conversion: native reference conversion failed: references must be dereferenced before string conversion"
         );
+    }
+
+    #[test]
+    fn native_reference_array_key_and_text_conversion_dereference_shared_value_boundaries() {
+        unsafe fn array_key_for_test(
+            result: NativeArrayKeyMaterializationResult,
+        ) -> Result<ArrayKey, String> {
+            let key = match result.tag {
+                NativeArrayKeyMaterializationTag::Error => Err(unsafe {
+                    native_diagnostic_message_for_key_result(result.diagnostic)
+                        .unwrap_or_else(|| "native array key materialization failed".to_string())
+                }),
+                _ => unsafe { native_array_key_materialization_to_array_key(&result) }
+                    .map_err(|error| error.message().to_string()),
+            };
+            unsafe { phpc_native_array_key_materialization_result_free(result) };
+            key
+        }
+
+        let text_key = NativeValueHandle::from_value(Value::String("k\0tail".to_string()));
+        let text_reference = unsafe { phpc_native_reference_from_value_and_free(text_key) };
+        assert_eq!(
+            unsafe {
+                array_key_for_test(phpc_native_value_to_array_key_with_reference_slot(
+                    NativeValueHandle::null(),
+                    text_reference,
+                ))
+            }
+            .unwrap(),
+            ArrayKey::string("k\0tail")
+        );
+
+        let numeric_key = NativeValueHandle::from_value(Value::String("42".to_string()));
+        let numeric_reference = unsafe { phpc_native_reference_from_value_and_free(numeric_key) };
+        assert_eq!(
+            unsafe {
+                array_key_for_test(phpc_native_value_to_array_key_with_reference_slot(
+                    NativeValueHandle::null(),
+                    numeric_reference,
+                ))
+            }
+            .unwrap(),
+            ArrayKey::Int(42)
+        );
+
+        let direct_key = NativeValueHandle::from_value(Value::String("direct".to_string()));
+        assert_eq!(
+            unsafe {
+                array_key_for_test(phpc_native_value_to_array_key_with_reference_slot(
+                    direct_key,
+                    NativeReferenceHandle::null(),
+                ))
+            }
+            .unwrap(),
+            ArrayKey::string("direct")
+        );
+        unsafe { phpc_native_value_free(direct_key) };
+
+        let mut array = PhpArray::new();
+        array.append(Value::String("item".to_string())).unwrap();
+        let array_value = NativeValueHandle::from_value(Value::Array(array));
+        let array_reference = unsafe { phpc_native_reference_from_value_and_free(array_value) };
+        assert_eq!(
+            unsafe {
+                array_key_for_test(phpc_native_value_to_array_key_with_reference_slot(
+                    NativeValueHandle::null(),
+                    array_reference,
+                ))
+            }
+            .unwrap_err()
+            .as_str(),
+            "invalid array key: array keys are not supported for native array materialization; only null, bool, int, string, and integral finite float keys are implemented"
+        );
+        let conflict_value = NativeValueHandle::from_value(Value::String("conflict".to_string()));
+        assert_eq!(
+            unsafe {
+                array_key_for_test(phpc_native_value_to_array_key_with_reference_slot(
+                    conflict_value,
+                    array_reference,
+                ))
+            }
+            .unwrap_err()
+            .as_str(),
+            "invalid array key: native array key materialization failed: key slot received both value and reference handles"
+        );
+        unsafe { phpc_native_value_free(conflict_value) };
+        assert_eq!(
+            unsafe {
+                array_key_for_test(phpc_native_value_to_array_key_with_reference_slot(
+                    NativeValueHandle::null(),
+                    NativeReferenceHandle::null(),
+                ))
+            }
+            .unwrap_err()
+            .as_str(),
+            "invalid array key: native array key materialization failed: value handle is null"
+        );
+
+        unsafe { phpc_native_reference_free(array_reference) };
+        unsafe { phpc_native_reference_free(numeric_reference) };
+        unsafe { phpc_native_reference_free(text_reference) };
     }
 
     #[test]

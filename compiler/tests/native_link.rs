@@ -2527,6 +2527,69 @@ fn emit_exe_links_and_runs_object_property_mutation_reference_slot_program() {
 }
 
 #[test]
+fn native_executable_c_source_routes_reference_keys_and_text_membership_through_reference_boundaries(
+) {
+    let program = parse(
+        "<?php\n$key = \"A\\0B\";\n$keyRef =& $key;\n$numeric = \"42\";\n$numericRef =& $numeric;\n$items = [$keyRef => \"value\", $numericRef => \"number\"];\necho $items[$key];\necho \"|\";\necho $items[42];\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "extern phpc_NativeArrayKeyMaterializationResult phpc_native_value_to_array_key_with_reference_slot("
+        ),
+        "{source}"
+    );
+    assert!(
+        body.matches(
+            " = phpc_native_value_to_array_key_with_reference_slot((phpc_NativeValueHandle){0}, "
+        )
+        .count()
+            >= 2,
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_native_array_insert_key_value_with_diagnostic("),
+        "{source}"
+    );
+    assert!(
+        !source.contains("assembly native-array value lowering rejects")
+            && !source.contains("reference assignment lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_reference_key_text_membership_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "native_reference_key_text_membership",
+        "<?php\n$key = \"A\\0B\";\n$keyRef =& $key;\n$numeric = \"42\";\n$numericRef =& $numeric;\n$items = [$keyRef => \"value\", $numericRef => \"number\"];\necho $items[$key], \"|\", $items[42], \"\\n\";\n",
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native reference-key executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "native executable failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"value|number\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn native_executable_c_source_routes_declared_instanceof_through_runtime_abi() {
     let program = parse(NATIVE_DECLARED_CLASS_INSTANCEOF_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
