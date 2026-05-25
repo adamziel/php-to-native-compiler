@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-25 04:12 CEST
-Evaluation marker: `20260525T021240Z`
+Updated: 2026-05-25 04:32 CEST
+Evaluation marker: `20260525T023234Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as product capability. Dirty primary WIP, probe-only commits,
@@ -10,7 +10,7 @@ blocker-only classifiers, and status-file claims are excluded until selected,
 gated, committed, pushed, and reflected here as semantic product progress.
 
 Current live pushed primary head observed by evaluator:
-`9abf770f docs: update progress dashboard`
+`0924e669 docs: update progress dashboard`
 
 Latest counted semantic/test baseline:
 `b217e2b4 codegen: block destructor-observable native allocation`
@@ -24,19 +24,28 @@ Overall estimated progress: **85%** `[#################---]`
 
 Executable PHP semantics: **85%** `[#################---]`
 
-Primary semantic capability did not move this review. The branch advanced only
-through dashboard/progress commits after the symbol-table ABI probe, and the
-latest counted semantic baseline remains the destructor-observable allocation
-blocker. The live primary checkout is still dirty only in the two
-`preg_replace_callback()` files.
+Primary semantic capability did not move this review. Primary is synced with
+`origin/master` at `0924e669`, but the commits after the symbol-table ABI probe
+are dashboard/progress commits. The latest counted semantic baseline remains
+the destructor-observable allocation blocker at `b217e2b4`.
 
-The preg repair is ready for a primary integration decision at hash
+The live primary checkout is still dirty only in the two
+`preg_replace_callback()` files. The dirty repair remains ready for primary
+review at hash
 `52973e3185c8874b67c38e245e6b0c6497c2117ac826fcb46d092f4ea655e8b5`.
 Focused preg tests, milestone841 PHP comparison, `cargo check`, scoped
-rustfmt, scoped diff checks, regression audit, and shape audit all support
-review. It is still uncommitted and unpushed, so it is not counted here.
+rustfmt, scoped diff checks, regression audit, and shape audit support review.
+It is still uncommitted and unpushed, so it is not counted here.
 
-The integrated compiler has real islands: descriptor closures, direct and
+Lane-local progress since the prior review is real but uncounted: fresh status
+files report object/ArrayAccess/method-dispatch policy boundaries, diagnostic
+read-presence and terminal-condition helpers, regex parameter validation,
+internal array callbacks, deferred `printf()` stdout continuation, request
+connection-state builtins, call-frame classification/order improvements,
+nested symbol operation-result consumers, and short-ternary value selection.
+None are primary-integrated product capability yet.
+
+The integrated compiler has useful islands: descriptor closures, direct and
 implicit captures, selected by-reference captures and parameters,
 typed/default/variadic by-value closure parameters, static anonymous closures,
 static arrows, non-static closure `$this` binding, callable-array public method
@@ -48,14 +57,15 @@ This is still selected PHP execution, not general PHP. The hard cliffs remain
 full callable lookup/invocation, closure rebinding APIs, full PCRE behavior,
 references/COW identity, request and `$GLOBALS` alias parity, includes,
 variable variables, object visibility/magic/dynamic/static/typed property
-behavior, runtime `ArrayAccess` method execution, cleanup/unwind/finally/
-destructor execution, exact diagnostics, and backend parity.
+behavior, runtime `ArrayAccess` method execution, userland method/constructor
+frames, cleanup/unwind/finally/destructor execution, exact diagnostics, and
+backend parity.
 
 ## Grand Roadmap Position
 
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | **97%** | `[###################-]` | Strong shared value, array, string, diagnostic, reference, symbol, call-frame, object, method, callable-array, and descriptor-closure surfaces exist for selected paths. Symbol-table ABI visibility exists, but executable symbol storage is not generalized. |
+| Runtime and ABI foundations | **97%** | `[###################-]` | Strong shared value, array, string, diagnostic, reference, symbol, call-frame, object, method, callable-array, and descriptor-closure surfaces exist for selected paths. Symbol-table ABI visibility exists, but executable symbol storage is not generalized in counted primary. |
 | Compiler/backend consumers | **97%** | `[###################-]` | Generated C consumes many shared ABIs; LLVM and C assembly consume selected ABI families. Object lowering, direct assembly parity, and many nested consumers remain blocked. |
 | Executable PHP semantics | **85%** | `[#################---]` | Focused linked/runtime programs cover closure/callable/object islands. Dirty preg work and lane-local callback/ArrayAccess/symbol/control-flow progress are not counted yet. |
 | Arrays, lvalues, references, COW | **67%** | `[#############-------]` | Useful selected lvalue/reference paths feed closures and lane-local mutation work; full COW, arbitrary roots, foreach, property references, and alias composition remain open. |
@@ -70,13 +80,13 @@ destructor execution, exact diagnostics, and backend parity.
 | Item | Toward Primary Integration | Toward Full Feature | Status |
 | --- | ---: | ---: | --- |
 | Dirty `preg_replace_callback()` repair | **94%** `[###################-]` | **30%** `[######--------------]` | Ready for primary review at hash `52973e3185c8874b67c38e245e6b0c6497c2117ac826fcb46d092f4ea655e8b5`. Packet gate, regression audit, shape audit, `cargo check`, scoped rustfmt, scoped diff check, and milestone841 PHP comparison passed. Still uncounted until committed and pushed. |
-| Lane-local object-offset `ArrayAccess` dispatch/classification ABI | **48%** `[##########----------]` | **26%** `[#####---------------]` | Fresh lane work now includes backend-neutral receiver blocker consolidation across read/write/null-coalesce/unset families. It still does not execute `offsetGet`, `offsetExists`, `offsetSet`, or `offsetUnset` method frames. |
+| Lane-local object/ArrayAccess/method dispatch policy boundaries | **58%** `[############--------]` | **28%** `[######--------------]` | Fresh lane evidence reports operation-discriminated ArrayAccess dispatch, method-dispatch policy, constructor-dispatch policy, and `$this` context blockers. It still does not execute `offsetGet`, `offsetExists`, `offsetSet`, `offsetUnset`, userland methods, or constructors. |
 | Object-offset `ArrayAccess` error-control classifier | **88%** `[##################--]` | **10%** `[##------------------]` | Best isolated non-preg candidate if the supervisor wants a low-risk diagnostic/blocker slice. This is a one-file compiler classifier, not runtime `ArrayAccess`. Recheck hash/apply state after the preg decision. |
-| Object-property reference-slot mutation | **80%** `[################----]` | **35%** `[#######-------------]` | Strong executable object mutation candidate at hash `c60ed1c30dc1d979da1fc44641ae4378a3629e45c42da0d9621faf10519e56e8`. Evaluator says ready, but it needs fresh current-primary hash/apply proof and gates after the preg decision. |
-| Symbol-table executable storage | **20%** `[####----------------]` | **20%** `[####----------------]` | ABI/runtime helper visibility exists through `2967110c`; lane-local bool/fatal operation-result consumers are useful, but generalized PHP variable assignment/readback through symbol tables is still not implemented in counted primary. |
-| Direct calls, callbacks, and frame extraction | **48%** `[##########----------]` | **36%** `[#######-------------]` | Lane-local linked value-flow carriers, callable registry diagnostics, and internal array callback execution are semantically useful. Real PHP function body execution, callable frames, and by-reference/return propagation remain unintegrated. |
-| Conditional/control-flow value consumers | **40%** `[########------------]` | **36%** `[#######-------------]` | Lane-local state-stable short-ternary value selection has focused gates. It remains selected and needs cleanup-root/state-merge/general ternary work before it represents broad PHP control flow. |
-| JSON/type-conversion/regex/source-result work | **44%** `[#########-----------]` | **29%** `[######--------------]` | Lane-local type-conversion, regex parameter validation, internal array callbacks, byte-string arithmetic, JSON, formatted-output, and debug-output surfaces have useful gates. Extract one focused executable candidate at a time. |
+| Object-property reference-slot mutation | **80%** `[################----]` | **35%** `[#######-------------]` | Strong executable object mutation candidate at hash `c60ed1c30dc1d979da1fc44641ae4378a3629e45c42da0d9621faf10519e56e8`. It needs fresh current-primary hash/apply proof and gates after the preg decision. |
+| Symbol-table executable storage and nested symbol results | **24%** `[#####---------------]` | **22%** `[####----------------]` | ABI/runtime helper visibility exists through `2967110c`; lane-local nested operation-result consumers and diagnostics are useful, but generalized PHP variable assignment/readback through symbol tables is still not implemented in counted primary. |
+| Direct calls, callbacks, and frame extraction | **50%** `[##########----------]` | **38%** `[########------------]` | Lane-local direct-call classification, constructor lookup ordering, callable registry diagnostics, and internal array callback execution are semantically useful. Real PHP function/method body execution, callable frames, and by-reference/return propagation remain unintegrated. |
+| Conditional/control-flow value consumers | **42%** `[########------------]` | **36%** `[#######-------------]` | Lane-local state-stable short-ternary value selection has focused gates. It remains selected and needs cleanup-root/state-merge/general ternary work before it represents broad PHP control flow. |
+| Type-conversion, regex, string, request, and formatted-output work | **48%** `[##########----------]` | **31%** `[######--------------]` | Lane-local surfaces include regex parameter validation, internal array callbacks, request connection-state builtins, byte/string/serialization work, deferred `printf()` continuation, and debug/formatted-output helpers. Extract one focused executable candidate at a time. |
 | Broad lane extraction backlog | **30%** `[######--------------]` | **30%** `[######--------------]` | Many lanes report generalized progress, but most remain broad dirty worktrees or status-only evidence until sliced, applied, gated, and pushed. |
 
 ## Done / In Progress / Not Done
@@ -100,7 +110,7 @@ In progress but uncounted:
 
 - [ ] Pushed symbol-table ABI probe `2967110c`; useful visibility, not generalized PHP symbol storage.
 - [ ] Dirty bounded `preg_replace_callback()` callback-execution repair; ready for primary review and gated at hash `52973e3185c8874b67c38e245e6b0c6497c2117ac826fcb46d092f4ea655e8b5`.
-- [ ] Lane-local object-offset `ArrayAccess` dispatch/classification work; promising but not extracted to current primary and still not executable offset method dispatch.
+- [ ] Lane-local object/ArrayAccess/method-dispatch policy boundaries; promising but still blocker/policy infrastructure, not executable userland methods.
 - [ ] Lane-local `object-arrayaccess-error-control-retry` diagnostic classifier candidate; recheck hash/apply state after the preg decision.
 - [ ] Lane-local `object-property-reference-slots` mutation/reference-slot candidate; refresh current-primary apply proof and rerun gates before integration.
 - [ ] Lane-local direct-call/frame, internal array callback, string-result reference-slot, `http_build_query()`, JSON/type-conversion/debug-output, regex parameter validation, constructor/call preflight, control-flow, cleanup-contract, diagnostic sequencing, comparison, object-policy, symbol/global, and array/reference candidates that need clean extraction.
@@ -139,12 +149,12 @@ Primary-integrated and counted:
 
 - [x] Counted semantic baseline remains `b217e2b4`.
 - [x] Overall and executable-semantics estimates remain 85%.
-- [x] Live `HEAD` and `origin/master` are synced at `9abf770f`.
+- [x] Live `HEAD` and `origin/master` are synced at `0924e669`.
 
 Pushed but uncounted:
 
 - [ ] `2967110c codegen: expose symbol table abi probe` exposes helper declarations/probe calls but does not execute generalized PHP symbol storage.
-- [ ] Dashboard/progress commits through `9abf770f` update observability only.
+- [ ] Dashboard/progress commits through `0924e669` update observability only.
 
 Dirty primary but uncounted:
 
@@ -155,21 +165,21 @@ Dirty primary but uncounted:
 
 Lane-local but uncounted:
 
-- [ ] Object-offset `ArrayAccess` dispatch/classification work has fresh multi-operation evidence, but remains lane-local and not full method-frame execution.
+- [ ] Object/ArrayAccess/method-dispatch policy boundaries have fresh multi-operation evidence, but remain lane-local and not full method-frame execution.
+- [ ] Diagnostic read-presence and terminal-condition helpers have fresh lane evidence, but exact diagnostics and broad control-flow cleanup remain open.
+- [ ] Regex parameter validation, internal array callbacks, request connection-state builtins, deferred `printf()` continuation, string/serialization surfaces, direct-call classification, constructor lookup ordering, nested symbol operation-results, and short-ternary value selection all remain uncounted until compactly extracted, gated, committed, and pushed.
 - [ ] `object-arrayaccess-error-control-retry` remains a low-risk classifier candidate after live hash/apply recheck.
 - [ ] `object-property-reference-slots` remains the stronger executable object candidate after current-primary recheck and rerun gates.
-- [ ] Fresh lanes report useful generalized surfaces including state-stable short ternary value selection, internal array callbacks through source results, regex parameter validation, symbol/call result carriers, direct native-array handle diagnostics, object-offset dispatch blockers, and formatted-output continuation. None count until compactly extracted, gated, committed, and pushed.
 
 ## Review Notes
 
 Resource pressure is serviceable but guarded. Live `/dev/shm` is `40G` total,
 `24G` used, `17G` available, `58%` used; `du -sh /dev/shm` reports `24G`.
-The `/home` filesystem has `459G` total, `175G` used, `266G` available,
-`40%` used. `du -sh /home` returned `122G` with permission warnings, so `df`
+The `/home` filesystem has `459G` total, `212G` used, `228G` available,
+`49%` used. `du -sh /home` returned `122G` with permission warnings, so `df`
 is the better pressure signal. Swap remains high: `23Gi` used out of `29Gi`.
 
 Advisory steering read: resolve the dirty preg decision first. Then integrate
 only one narrow current-primary candidate at a time, with live hash/apply
-verification and focused disk-backed gates. The supervisor dashboard and
-primary-integrator status are stale relative to live git and fresh worker
-statuses, so use current git checks and fresh status artifacts for steering.
+verification and focused disk-backed gates. Treat fresh lane reports as
+candidate supply, not counted product capability.
