@@ -9041,6 +9041,23 @@ fn native_executable_c_source_routes_request_roots_through_root_value_boundary()
 }
 
 #[test]
+fn native_executable_c_source_declares_reference_handle_for_reference_abi_uses() {
+    for (label, php_source) in [
+        ("request-root state", REQUEST_SUPERGLOBAL_ROOT_SOURCE),
+        ("array lvalue owners", ARRAY_LVALUE_NESTED_WRITE_SOURCE),
+        ("value truthiness", NATIVE_VALUE_TRUTHINESS_SOURCE),
+        (
+            "callable by-reference frames",
+            NATIVE_BY_REFERENCE_USER_FUNCTION_FRAME_SOURCE,
+        ),
+    ] {
+        let program = parse(php_source).unwrap();
+        let source = emit_native_executable_c_source(&program).unwrap();
+        assert_reference_handle_typedef_precedes_uses(label, &source);
+    }
+}
+
+#[test]
 fn native_executable_c_source_routes_request_root_unset_through_bag_mutation_boundary() {
     let program = parse(REQUEST_SUPERGLOBAL_ROOT_UNSET_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -18906,6 +18923,23 @@ fn main_body(source: &str) -> &str {
         .split_once("int main(void)")
         .map(|(_, body)| body)
         .unwrap_or(source)
+}
+
+fn assert_reference_handle_typedef_precedes_uses(label: &str, source: &str) {
+    let typedef = "typedef struct { void *ptr; } phpc_NativeReferenceHandle;";
+    let typedef_offset = source
+        .find(typedef)
+        .unwrap_or_else(|| panic!("{label} should declare phpc_NativeReferenceHandle:\n{source}"));
+    let mut offset = 0;
+    for line in source.lines() {
+        if line.contains("phpc_NativeReferenceHandle") && !line.contains(typedef) {
+            assert!(
+                typedef_offset < offset,
+                "{label} should declare phpc_NativeReferenceHandle before use:\n{source}"
+            );
+        }
+        offset += line.len() + 1;
+    }
 }
 
 fn assert_request_key_results_use_accessors(source: &str) {

@@ -13686,6 +13686,22 @@ impl CGenerator {
             || !self.function_definitions.is_empty()
     }
 
+    fn uses_native_reference_handle_type(&self) -> bool {
+        self.uses_native_string_helpers
+            || self.uses_native_array_helpers
+            || self.uses_native_array_lvalue_helpers
+            || self.uses_native_reference_helpers
+            || self.uses_native_text_membership_operation
+            || self.uses_native_value_comparison_operation
+            || self.uses_native_request_state_reference_helpers
+            || self.uses_native_symbol_table_helpers
+            || self.uses_native_callable_helpers
+            || self.uses_native_closure_helpers
+            || self.uses_native_object_property_helpers
+            || self.uses_native_conversion_source_helpers
+            || self.uses_native_value_truthiness
+    }
+
     fn user_function_key(name: &str) -> String {
         name.to_ascii_lowercase()
     }
@@ -15328,17 +15344,7 @@ impl CGenerator {
             output.push_str("typedef struct { void *ptr; } phpc_NativeStringHandle;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeValueHandle;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeDiagnosticHandle;\n");
-            if self.uses_native_closure_helpers
-                || self.uses_native_array_lvalue_helpers
-                || self.uses_native_reference_helpers
-                || self.uses_native_text_membership_operation
-                || self.uses_native_value_comparison_operation
-                || self.uses_native_request_state_reference_helpers
-                || self.uses_native_symbol_table_helpers
-                || self.uses_native_conversion_source_helpers
-                || self.uses_native_value_truthiness
-                || self.uses_native_callable_helpers
-            {
+            if self.uses_native_reference_handle_type() {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeReferenceHandle;\n");
             }
             if self.uses_native_callable_helpers {
