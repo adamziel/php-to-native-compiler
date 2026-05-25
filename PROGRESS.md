@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-25 22:08 CEST
-Evaluation marker: `20260525T200843Z`
+Updated: 2026-05-25 22:31 CEST
+Evaluation marker: `20260525T203101Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, candidate worktrees, lane-local
@@ -15,8 +15,8 @@ Overall estimated progress: **92%** `[##################--]`
 Executable PHP semantics: **92%** `[##################--]`
 
 Primary was clean and aligned with `origin/master` at
-`22f56b67 native: share request key operation selector` before this
-`PROGRESS.md` edit.
+`7095cc88 docs: update progress dashboard` before this `PROGRESS.md` edit.
+Remote `master` was verified at the same commit.
 
 Latest primary-integrated production/prerequisite baseline:
 `22f56b67 native: share request key operation selector`.
@@ -24,41 +24,44 @@ Latest primary-integrated production/prerequisite baseline:
 Latest primary-integrated executable capability baseline:
 `b13c85c6 native: add unary negation source result ABI`.
 
-This review keeps overall and executable percentages flat. `22f56b67` is useful
-primary-integrated cleanup: it centralizes existing request-state operation ABI
-consumer selection across LLVM/generated-C paths. It does not broaden executable
-PHP request/global semantics.
+This review keeps overall and executable percentages flat. No new primary source
+integration landed after the previous progress update. The active closure
+value/reference return ABI work is promising, but remains lane-local candidate
+work until it has a final status, stable diff hash, current-primary apply proof,
+independent review, and focused nonzero gates.
 
 ## Grand Roadmap Position
 
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, byte-string, string-array, array, diagnostic, reference, symbol, call-frame, object, comparison, conversion, numeric-unary, owner-cell, request-state, offset-read, array-key, type/int, text-membership, truthiness, and non-local owner-boundary surfaces. |
-| Compiler/backend consumers | **99%** | `[####################]` | LLVM and generated C share many ABIs. `22f56b67` adds a shared request-state operation selector; direct assembly and some generated-C-only surfaces still lag. |
+| Compiler/backend consumers | **99%** | `[####################]` | LLVM and generated C share many ABIs. Direct assembly and some generated-C-only surfaces still lag. |
 | Executable PHP semantics | **92%** | `[##################--]` | Primary has many selected semantic islands, including closure/callable/object paths, bounded preg callbacks, object-property reference-slot mutation, byte strings, string-array slots, array-key/reference-slot consumers, non-local blockers, and unary negation through the shared conversion ABI. |
 | Strings and byte semantics | **62%** | `[############--------]` | Byte-backed values and byte-preserving `explode()` / `str_split()` slots are integrated. Binary source bytes, byte-exact interpreter output/session/debug formatting, `mb_str_split()` codepoint behavior, request/global byte keys, and exact diagnostics remain open. |
 | Arrays, lvalues, references, COW | **78%** | `[################----]` | Value/reference slot ABIs continue to expand, but full COW, arbitrary lvalue roots, foreach, broader expression reference slots, alias composition, and writeback remain incomplete. |
 | Symbols, globals, request state | **73%** | `[###############-----]` | Selected function globals, root-symbol surfaces, active symbol-table reference consumers, request-backed key blockers, and request-key diagnostics exist. `$GLOBALS` self-cells, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
-| Calls, functions, frames | **83%** | `[#################---]` | Selected direct/callable/function-table, descriptor-closure, capture, and method-frame surfaces exist. The active next packet is closure value/reference return ABI prep, still lane-local. |
+| Calls, functions, frames | **83%** | `[#################---]` | Selected direct/callable/function-table, descriptor-closure, capture, and method-frame surfaces exist. Closure value/reference return ABI prep is active but not integrated. |
 | Objects, properties, methods | **51%** | `[##########----------]` | Object-property reference-slot mutation, diagnostic classifiers, and non-local object/static owner blockers are integrated. Full visibility, magic, dynamic/static/typed properties, destructors, references/COW, and `ArrayAccess` execution remain open. |
 | Control flow, cleanup, diagnostics | **51%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, and truthiness/conversion consumers exist. Broad unwind/finally/destructor/shutdown and exact source ordering remain open. |
 | Broad integrated verification | **91%** | `[##################--]` | Focused primary gates are strong for recent packets. Broad gates remain constrained by lane extraction cost, high swap, stale lane expectations, and backend parity gaps. |
 
 ## Active Roadmap Items
 
+Primary-integrated items are separated from lane-local candidate work below.
+
 | Item | Toward Primary Integration | Toward Full Feature | Status |
 | --- | ---: | ---: | --- |
-| Request-key operation selector cleanup | **100%** `[####################]` | **34%** `[#######-------------]` | Integrated at `22f56b67`. Counts as cleanup/prerequisite only; full request/global behavior remains open. |
+| Request-key operation selector cleanup | **100%** `[####################]` | **34%** `[#######-------------]` | Integrated at `22f56b67`. Cleanup/prerequisite only; full request/global behavior remains open. |
 | Conversion-result helper and shortcut retirement | **100%** `[####################]` | **44%** `[#########-----------]` | Integrated at `2cd78ade` for current LLVM scalar offset-read and numeric-unary source-result consumers. Broader conversion families, object/resource coercions, exact diagnostics, error control, and cleanup/unwind remain open. |
 | Runtime numeric-unary conversion ABI | **100%** `[####################]` | **48%** `[##########----------]` | Integrated at `b13c85c6`. Covered unary `-` routes through `NativeConversionSource` / `NativeConversionResult` across runtime, LLVM, generated C, and focused linked execution. |
 | String operation-family slot consumers | **100%** `[####################]` | **45%** `[#########-----------]` | Integrated at `5307990c`; `explode()` and `str_split()` use shared byte-preserving value/reference-slot contracts. |
 | Byte-preserving PHP string value boundary | **100%** `[####################]` | **40%** `[########------------]` | Integrated at `1c369d0f`; byte-backed PHP values and native pointer-plus-length materialization are available for selected paths. |
-| Closure value/reference return ABI | **25%** `[#####---------------]` | **33%** `[#######-------------]` | Active candidate prep is visible in `main:30`, but not reviewed or integrated. It must prove one reusable closure result contract for value/reference returns. |
-| Native source-call cleanup and reference-source lanes | **20%** `[####----------------]` | **39%** `[########------------]` | `impl-native-call-semantics` has useful lane-local source-call cleanup, dynamic callable, append-reference, and result-consumer evidence; not primary-integrated. |
-| Diagnostic result sink/binary-operation contracts | **25%** `[#####---------------]` | **41%** `[########------------]` | `impl-native-error-diagnostic-semantics` has useful lane-local runtime diagnostic consolidation; adjacent property-family gate failures require fresh extraction/review. |
-| Broader lvalue/reference-slot materializer | **30%** `[######--------------]` | **39%** `[########------------]` | Needed so non-variable expression families that can carry references can enter shared array-key and consumer slot ABIs safely. Current broad lane evidence is parked or lane-local. |
+| Closure value/reference return ABI | **40%** `[########------------]` | **36%** `[#######-------------]` | Active `main:30` candidate prep has a four-file diff and useful value/reference result-consumer direction, but final status, stable hash, apply proof, and review are missing. |
+| Native source-call cleanup and reference-source lanes | **25%** `[#####---------------]` | **40%** `[########------------]` | `impl-native-call-semantics` has useful lane-local source-call target/helper ownership, dynamic callable, append-reference, and result-consumer evidence; not primary-integrated. |
+| Diagnostic result sink/write-operation contracts | **30%** `[######--------------]` | **42%** `[########------------]` | `impl-native-error-diagnostic-semantics` has useful lane-local report-sink, binary-operation, RMW, path-write, and ternary write contracts. Timestamp quality and huge dirty scope mean no direct integration. |
+| Broader lvalue/reference-slot materializer | **30%** `[######--------------]` | **39%** `[########------------]` | Needed so non-variable expression families that can carry references can enter shared array-key and consumer slot ABIs safely. Current broad lane evidence remains parked or lane-local. |
 | Object/resource source materialization | **25%** `[#####---------------]` | **30%** `[######--------------]` | Still a recurring blocker for generic conversion and offset/source consumers. Needs a general value reconstruction/materialization boundary. |
-| Broad lane extraction backlog | **34%** `[#######-------------]` | **35%** `[#######-------------]` | Broad dirty lanes remain useful evidence repositories, not integration units. Several are parked or only current as lane-local artifacts. |
+| Broad lane extraction backlog | **34%** `[#######-------------]` | **35%** `[#######-------------]` | Broad dirty lanes remain useful evidence repositories, not integration units. Several are parked, stale, or only current as lane-local artifacts. |
 
 ## Done / In Progress / Not Done
 
@@ -80,10 +83,10 @@ Primary-integrated executable or executable-prerequisite capability:
 
 In progress but lane-local or not yet executable primary support:
 
-- [ ] `main:30` is actively prepping closure value/reference return ABI work from current primary; it is not reviewed or integrated.
+- [ ] `main:30` is actively prepping closure value/reference return ABI work from current primary; it is not reviewable until final status, hash, apply proof, and focused gates exist.
 - [ ] Closure by-reference returns need a reusable result ABI and reference-result consumers before broader call/reference semantics can count.
 - [ ] `impl-native-call-semantics` has lane-local caller-scope, dynamic callable, source-call cleanup, append-reference, and reference/call evidence; not primary-integrated.
-- [ ] `impl-native-error-diagnostic-semantics` has lane-local report-sink and binary-operation contract evidence; not primary-integrated.
+- [ ] `impl-native-error-diagnostic-semantics` has lane-local report-sink and diagnostic operation contracts; not primary-integrated.
 - [ ] Broad parked lanes remain evidence only until exact current-primary prep, review, and integration.
 
 Not done:
@@ -119,21 +122,25 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary was clean and synced at `22f56b67` before this `PROGRESS.md` edit.
-- [x] Latest production/prerequisite head is `22f56b67`.
+- [x] Primary was clean and synced at `7095cc88` before this `PROGRESS.md` edit.
+- [x] Latest production/prerequisite head remains `22f56b67`.
 - [x] Latest executable capability head remains `b13c85c6`.
 - [x] Overall and executable percentages remain flat for this review.
 
 Lane-local:
 
-- [ ] Closure value/reference return ABI prep is active in a candidate worktree
-  and is the best next executable direction if it stays scoped.
-- [ ] Active call-lane source-call cleanup, dynamic callable, and append-reference
-  evidence should be mined only through fresh current-primary packets.
-- [ ] Active diagnostic-lane report-sink and binary-operation contracts are useful
-  evidence, but adjacent failures mean no direct integration.
-- [ ] The supervisor dashboard is stale relative to 22:00+ CEST status files;
-  use worker statuses and primary git state for current steering until refreshed.
+- [ ] Closure value/reference return ABI prep is active in a candidate worktree.
+  The verified candidate diff is four files with 914 insertions and 137
+  deletions. It is promising but not reviewable yet.
+- [ ] Dashboard evidence says the closure reference-assignment rejection was
+  repaired and the remaining issue narrowed to value/reference result
+  consumption. The status artifact still lacks final gates/hash/apply proof.
+- [ ] Active call-lane source-call cleanup, dynamic callable, and
+  append-reference evidence should be mined only through fresh current-primary
+  packets.
+- [ ] Active diagnostic-lane report-sink/write-operation contracts are useful
+  evidence, but huge dirty scope and timestamp-quality issues mean no direct
+  integration.
 
 Resource posture:
 
@@ -152,10 +159,10 @@ Resource posture:
 
 Best next executable semantic packet to consider:
 
-- Closure value/reference return ABI with a reusable runtime result contract,
-  explicit diagnostic/cleanup ownership, and compiler consumers for value return,
-  reference return, nested call consumers, discarded calls, and reference
-  assignment sources.
+- Closure value/reference return ABI with one reusable runtime result contract,
+  explicit diagnostic/cleanup ownership, and compiler consumers for value
+  return, reference return, nested call consumers, discarded calls, and
+  reference assignment sources.
 
 Good cleanup discipline to keep:
 
