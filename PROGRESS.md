@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-25 01:48 CEST
-Evaluation marker: `20260524T234833Z`
+Updated: 2026-05-25 02:08 CEST
+Evaluation marker: `20260525T000856Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as product capability. Dirty primary WIP, probe-only commits,
@@ -10,7 +10,7 @@ blocker-only classifiers, and status-file claims are excluded until selected,
 gated, committed, pushed, and reflected here as semantic product progress.
 
 Current live pushed primary head:
-`e4ad066f docs: update progress dashboard`
+`1171f1e0 docs: update progress dashboard`
 
 Latest counted semantic/test baseline:
 `b217e2b4 codegen: block destructor-observable native allocation`
@@ -28,6 +28,7 @@ Recent pushed but uncounted primary state:
 - `9417fcfa docs: update progress dashboard` is management metadata only.
 - `4aa6c24c docs: update progress dashboard` is management metadata only.
 - `e4ad066f docs: update progress dashboard` is management metadata only.
+- `1171f1e0 docs: update progress dashboard` is management metadata only.
 
 Current dirty primary WIP:
 
@@ -35,9 +36,10 @@ Current dirty primary WIP:
 - `compiler/tests/preg_replace_callback_builtin.rs`
 
 The dirty `preg_replace_callback()` repair is still uncounted because it is not
-committed or pushed. It is now stronger than the prior review: the packet gate
-and independent evaluator report `ready-for-primary-review` at diff hash
+committed or pushed. It remains the live primary decision. Current dirty diff
+hash was verified at
 `52973e3185c8874b67c38e245e6b0c6497c2117ac826fcb46d092f4ea655e8b5`.
+`primary-preg-callback-evaluator.status.md` reports `ready-for-primary-review`.
 Passed evidence includes `preg_replace_callback_builtin` `6/6`, milestone841
 PHP comparison, `cargo check -p phpc`, scoped `git diff --check`, scoped
 `rustfmt --check`, regression audit, and shape audit.
@@ -57,10 +59,11 @@ supported public method frames, runtime string-valued declared-class
 construction for selected cases, and destructor-observable allocation blocking
 for declared objects.
 
-The critical-path dirty preg repair has moved from "needs evaluator" to "ready
-for primary review", but it is not product capability until committed and
-pushed. This is still not general PHP. The hardest remaining cliffs are full
-callable lookup/invocation beyond selected generated-C families, closure
+Product capability did not move this review. The meaningful current progress is
+that the dirty preg repair has stable, passed, independent readiness evidence
+and should be either integrated deliberately or parked before the next candidate
+is applied. This is still not general PHP. The hardest remaining cliffs are
+full callable lookup/invocation beyond selected generated-C families, closure
 rebinding APIs, references/COW identity, request/`$GLOBALS` alias parity,
 includes, variable variables, object visibility/magic/dynamic/static property
 behavior, real `ArrayAccess`, cleanup/unwind/finally and destructor execution,
@@ -84,9 +87,9 @@ exact diagnostics, and backend parity.
 
 | Item | Toward Primary Integration | Toward Full Feature | Status |
 | --- | ---: | ---: | --- |
-| Dirty `preg_replace_callback()` repair | **85%** `[#################---]` | **30%** `[######--------------]` | Ready for primary review at hash `52973e3185c8874b67c38e245e6b0c6497c2117ac826fcb46d092f4ea655e8b5`. The slice replaces the old WordPress-specific callback shortcut with bounded slash-delimited regex parsing, string-callback execution, result splicing, focused tests, PHP comparison, and audits. Still uncounted until committed and pushed. |
+| Dirty `preg_replace_callback()` repair | **90%** `[##################--]` | **30%** `[######--------------]` | Ready for primary review at hash `52973e3185c8874b67c38e245e6b0c6497c2117ac826fcb46d092f4ea655e8b5`. The slice replaces the old WordPress-specific callback shortcut with bounded slash-delimited regex parsing, string-callback execution, result splicing, focused tests, PHP comparison, and audits. Still uncounted until committed and pushed. |
 | Object-offset ArrayAccess error-control classifier | **90%** `[##################--]` | **10%** `[##------------------]` | Best isolated non-preg candidate after preg is resolved or parked. One-file compiler diagnostic/blocker classifier, not runtime `ArrayAccess`. Recheck live hash/apply state because artifacts mention both `9637c2c66471017bbd31d602913f3480d44ef5cc414e885f36589f5807a29ebd` and stale `813da81a87347c97f16d701a72ed946619fb29ed86a29df911781022a7b9be13`. |
-| Object-property reference-slot mutation | **78%** `[################----]` | **35%** `[#######-------------]` | Strong executable candidate at hash `c60ed1c30dc1d979da1fc44641ae4378a3629e45c42da0d9621faf10519e56e8`, but prior triage still reports scoped rustfmt failure. Needs formatting repair, new hash, and focused `/tmp` gate reruns. |
+| Object-property reference-slot mutation | **78%** `[################----]` | **35%** `[#######-------------]` | Strong executable candidate at hash `c60ed1c30dc1d979da1fc44641ae4378a3629e45c42da0d9621faf10519e56e8`, but triage still reports scoped rustfmt failure against current-primary checks. Needs formatting repair, new hash, and focused `/tmp` gate reruns. |
 | Symbol-table executable storage | **20%** `[####----------------]` | **20%** `[####----------------]` | ABI/runtime helper visibility exists through `2967110c`; generalized PHP variable assignment/readback through symbol tables is still not implemented. |
 | Direct user-function call/frame extraction | **45%** `[#########-----------]` | **35%** `[#######-------------]` | Lane-local direct-call/user-frame consumer work looks semantically useful, but it is cumulative lane work. Extract a compact current-primary candidate with stable hash and apply proof before review. |
 | `http_build_query()` string-result extraction | **40%** `[########------------]` | **25%** `[#####---------------]` | Lane-local runtime/compiler/backend work has executable evidence, but needs a focused candidate and overlap audit against adjacent string, JSON, request, output-buffer, and callable work. |
@@ -114,7 +117,7 @@ Primary-integrated and counted:
 In progress but uncounted:
 
 - [ ] Pushed symbol-table ABI probe `2967110c`; useful visibility, not generalized PHP symbol storage.
-- [ ] Dirty bounded `preg_replace_callback()` callback-execution repair; evaluator-ready and gated at hash `52973e3185c8874b67c38e245e6b0c6497c2117ac826fcb46d092f4ea655e8b5`, but still dirty and uncounted.
+- [ ] Dirty bounded `preg_replace_callback()` callback-execution repair; ready for primary review and gated at hash `52973e3185c8874b67c38e245e6b0c6497c2117ac826fcb46d092f4ea655e8b5`, but still dirty and uncounted.
 - [ ] Lane-local `object-arrayaccess-error-control-retry` diagnostic classifier candidate; recheck hash/apply state before integration because status artifacts disagree.
 - [ ] Lane-local `object-property-reference-slots` mutation/reference-slot candidate at hash `c60ed1c30dc1d979da1fc44641ae4378a3629e45c42da0d9621faf10519e56e8`, pending formatting and rerun gates.
 - [ ] Lane-local direct-call/frame, `http_build_query()`, JSON/type-conversion, constructor/call preflight, control-flow, cleanup-contract, diagnostic sequencing, comparison, object-policy, symbol/global, and array/reference candidates that need clean extraction.
@@ -158,18 +161,19 @@ Pushed but uncounted:
 
 - [ ] `28bb7423 docs: update progress after destructor blocker` is progress metadata.
 - [ ] `2967110c codegen: expose symbol table abi probe` exposes helper declarations/probe calls but does not execute generalized PHP symbol storage.
-- [ ] `59343e11 docs: update progress dashboard` is progress metadata.
-- [ ] `16209c55 docs: update progress dashboard` is progress metadata.
-- [ ] `12fe04ea docs: update progress dashboard` is progress metadata.
-- [ ] `9417fcfa docs: update progress dashboard` is progress metadata.
-- [ ] `4aa6c24c docs: update progress dashboard` is progress metadata.
-- [ ] `e4ad066f docs: update progress dashboard` is progress metadata.
+- [ ] `59343e11 docs: update progress dashboard` is management metadata.
+- [ ] `16209c55 docs: update progress dashboard` is management metadata.
+- [ ] `12fe04ea docs: update progress dashboard` is management metadata.
+- [ ] `9417fcfa docs: update progress dashboard` is management metadata.
+- [ ] `4aa6c24c docs: update progress dashboard` is management metadata.
+- [ ] `e4ad066f docs: update progress dashboard` is management metadata.
+- [ ] `1171f1e0 docs: update progress dashboard` is management metadata.
 
 Dirty primary but uncounted:
 
 - [ ] `preg_replace_callback()` WIP is ready for primary review, but remains dirty and uncounted.
-- [ ] `primary-preg-callback-evaluator.status.md` exists and says `ready-for-primary-review`.
-- [ ] Packet gate, regression audit, and shape audit all support review at hash `52973e3185c8874b67c38e245e6b0c6497c2117ac826fcb46d092f4ea655e8b5`.
+- [ ] Current live diff hash is `52973e3185c8874b67c38e245e6b0c6497c2117ac826fcb46d092f4ea655e8b5`.
+- [ ] Packet gate, regression audit, and shape audit all support review at that hash.
 
 Lane-local but uncounted:
 
@@ -179,10 +183,10 @@ Lane-local but uncounted:
 
 ## Review Notes
 
-Resource pressure improved since the prior report. `/dev/shm` is `40G` total,
-`24G` used, `17G` available, `58%` used; `du -sh /dev/shm` reports `24G`.
-`/home` has filesystem headroom at `459G` total, `200G` used, `240G`
-available, `46%` used. A live `du -sh /home` retry did not complete within an
-8 second timeout. New gates should still prefer disk-backed `/tmp` targets,
+Resource pressure is serviceable but still relevant. `/dev/shm` is `40G`
+total, `24G` used, `17G` available, `58%` used; `du -sh /dev/shm` reports
+`24G`. The `/home` filesystem has `459G` total, `186G` used, `254G`
+available, `43%` used. `du -sh /home` did not complete within an 8 second
+timeout. New gates should still prefer disk-backed `/tmp` targets,
 `CARGO_BUILD_JOBS=1`, `CARGO_INCREMENTAL=0`, and focused filters until the
 dirty primary preg decision is resolved.
