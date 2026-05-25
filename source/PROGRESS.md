@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-25 05:15 CEST
-Evaluation marker: `20260525T031459Z`
+Updated: 2026-05-25 05:35 CEST
+Evaluation marker: `20260525T033541Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as product capability. Dirty primary WIP, probe-only commits,
@@ -10,7 +10,7 @@ blocker-only classifiers, and status-file claims are excluded until selected,
 gated, committed, pushed, and reflected here as semantic product progress.
 
 Current live pushed primary head observed by evaluator:
-`43acc068 docs: update progress dashboard`
+`348f232b docs: update progress dashboard`
 
 Latest counted semantic/test baseline:
 `b217e2b4 codegen: block destructor-observable native allocation`
@@ -25,7 +25,7 @@ Overall estimated progress: **85%** `[#################---]`
 Executable PHP semantics: **85%** `[#################---]`
 
 Primary semantic capability did not move this review. Primary is synced with
-`origin/master` at `43acc068`, and every pushed commit after the symbol-table
+`origin/master` at `348f232b`, and every pushed commit after the symbol-table
 ABI probe is a progress/dashboard commit. The latest counted semantic baseline
 remains the destructor-observable allocation blocker at `b217e2b4`.
 
@@ -36,14 +36,16 @@ Focused preg tests, milestone841 PHP comparison, `cargo check`, scoped
 rustfmt, scoped diff checks, regression audit, and shape audit support review.
 It is still uncommitted and unpushed, so it is not counted here.
 
-Lane-local progress remains real but uncounted. Fresh worker statuses report
-request/root symbol reconciliation, dynamic internal callback execution,
-runtime-selected by-reference call planning, switch/goto/loop cleanup-state
-work, object/ArrayAccess diagnostic classification, object-property
-reference-slot mutation, JSON/resource/INI/object-cast/class-property
-type-conversion work, and more. These are candidate supplies, not product
-capability, until extracted, rechecked on current primary, gated, committed,
-and pushed.
+Lane-local progress remains real but uncounted. Fresh worker statuses sampled
+around this review report request/root symbol reconciliation, dynamic
+`$GLOBALS[$expr]` request-root routing, dynamic internal callback execution,
+runtime-selected by-reference call planning, switch/goto/label cleanup-state
+work, object/ArrayAccess diagnostic classification, object-property and
+reference-cell mutation boundaries, request-state unset/payload conversion,
+dynamic string-comparison conversion, parameter-binding diagnostic
+classification, SPL exception metadata, and more. These are candidate
+supplies, not product capability, until extracted, rechecked on current
+primary, gated, committed, and pushed.
 
 The integrated compiler has useful islands: descriptor closures, direct and
 implicit captures, selected by-reference captures and parameters,
@@ -149,12 +151,12 @@ Primary-integrated and counted:
 
 - [x] Counted semantic baseline remains `b217e2b4`.
 - [x] Overall and executable-semantics estimates remain 85%.
-- [x] Live `HEAD` and `origin/master` are synced at `43acc068`.
+- [x] Live `HEAD` and `origin/master` are synced at `348f232b`.
 
 Pushed but uncounted:
 
 - [ ] `2967110c codegen: expose symbol table abi probe` exposes helper declarations/probe calls but does not execute generalized PHP symbol storage.
-- [ ] Dashboard/progress commits through `43acc068` update observability only.
+- [ ] Dashboard/progress commits through `348f232b` update observability only.
 
 Dirty primary but uncounted:
 
@@ -174,10 +176,10 @@ Lane-local but uncounted:
 
 Resource pressure is serviceable but guarded. Live `/dev/shm` is `40G` total,
 `24G` used, `17G` available, `58%` used; `du -sh /dev/shm` reports `24G`.
-The `/home` filesystem has `459G` total, `230G` used, `210G` available,
-`53%` used by `df`; bounded `du -sh /home` timed out after 8 seconds, so `df`
-is the better current pressure signal. Swap remains high: `23Gi` used out of
-`29Gi`.
+The `/home` filesystem has `459G` total, `222G` used, `219G` available,
+`51%` used by `df`; bounded `du -sh /home` timed out and emitted permission
+noise under container overlay paths, so `df` is the better current pressure
+signal. Swap remains high: `23Gi` used out of `29Gi`.
 
 Advisory steering read: resolve the dirty preg decision first. Then integrate
 only one narrow current-primary candidate at a time, with live hash/apply
