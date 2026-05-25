@@ -5565,6 +5565,14 @@ pub fn native_runtime_scalar_echo_probe_ir_for_target(target: NativeRuntimeIrTar
     .join("\n")
 }
 
+fn emit_llvm_type_once(output: &mut String, emitted: &mut bool, ty: &str) {
+    if !*emitted {
+        output.push_str(ty);
+        output.push('\n');
+        *emitted = true;
+    }
+}
+
 #[derive(Default)]
 struct LlvmGenerator {
     strings: Vec<(String, String)>,
@@ -5776,126 +5784,168 @@ impl LlvmGenerator {
         let mut emitted_native_reference_handle = false;
         let mut emitted_native_scalar_value = false;
         if self.uses_native_value_echo_stdout {
-            output.push_str("%phpc.NativeStringHandle = type { ptr }\n");
-            emitted_native_string_handle = true;
-            output.push_str("%phpc.NativeValueHandle = type { ptr }\n");
-            emitted_native_value_handle = true;
-            output.push_str("%phpc.NativeDiagnosticHandle = type { ptr }\n");
-            emitted_native_diagnostic_handle = true;
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_string_handle,
+                "%phpc.NativeStringHandle = type { ptr }",
+            );
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_value_handle,
+                "%phpc.NativeValueHandle = type { ptr }",
+            );
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_diagnostic_handle,
+                "%phpc.NativeDiagnosticHandle = type { ptr }",
+            );
         }
         if self.uses_native_string_int_operation {
-            if !emitted_native_value_handle {
-                output.push_str("%phpc.NativeValueHandle = type { ptr }\n");
-                emitted_native_value_handle = true;
-            }
-            if !emitted_native_diagnostic_handle {
-                output.push_str("%phpc.NativeDiagnosticHandle = type { ptr }\n");
-                emitted_native_diagnostic_handle = true;
-            }
-            if !emitted_native_scalar_value {
-                output
-                    .push_str("%phpc.NativeScalarValue = type { i8, i8, [6 x i8], i64, double }\n");
-                emitted_native_scalar_value = true;
-            }
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_value_handle,
+                "%phpc.NativeValueHandle = type { ptr }",
+            );
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_diagnostic_handle,
+                "%phpc.NativeDiagnosticHandle = type { ptr }",
+            );
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_scalar_value,
+                "%phpc.NativeScalarValue = type { i8, i8, [6 x i8], i64, double }",
+            );
         }
         if self.uses_native_value_operation_result {
-            if !emitted_native_value_handle {
-                output.push_str("%phpc.NativeValueHandle = type { ptr }\n");
-                emitted_native_value_handle = true;
-            }
-            if !emitted_native_diagnostic_handle {
-                output.push_str("%phpc.NativeDiagnosticHandle = type { ptr }\n");
-                emitted_native_diagnostic_handle = true;
-            }
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_value_handle,
+                "%phpc.NativeValueHandle = type { ptr }",
+            );
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_diagnostic_handle,
+                "%phpc.NativeDiagnosticHandle = type { ptr }",
+            );
             output.push_str("%phpc.NativeValueOperationResult = type { i8, %phpc.NativeValueHandle, %phpc.NativeDiagnosticHandle }\n");
         }
         if self.uses_native_value_comparison_operation {
-            if !emitted_native_value_handle {
-                output.push_str("%phpc.NativeValueHandle = type { ptr }\n");
-                emitted_native_value_handle = true;
-            }
-            if !emitted_native_diagnostic_handle {
-                output.push_str("%phpc.NativeDiagnosticHandle = type { ptr }\n");
-                emitted_native_diagnostic_handle = true;
-            }
-            if !emitted_native_reference_handle {
-                output.push_str("%phpc.NativeReferenceHandle = type { ptr }\n");
-                emitted_native_reference_handle = true;
-            }
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_value_handle,
+                "%phpc.NativeValueHandle = type { ptr }",
+            );
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_diagnostic_handle,
+                "%phpc.NativeDiagnosticHandle = type { ptr }",
+            );
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_reference_handle,
+                "%phpc.NativeReferenceHandle = type { ptr }",
+            );
         }
         if self.uses_native_value_offset_operation {
             let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
-            if !emitted_native_value_handle {
-                output.push_str("%phpc.NativeValueHandle = type { ptr }\n");
-                emitted_native_value_handle = true;
-            }
-            if !emitted_native_diagnostic_handle {
-                output.push_str("%phpc.NativeDiagnosticHandle = type { ptr }\n");
-                emitted_native_diagnostic_handle = true;
-            }
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_value_handle,
+                "%phpc.NativeValueHandle = type { ptr }",
+            );
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_diagnostic_handle,
+                "%phpc.NativeDiagnosticHandle = type { ptr }",
+            );
             output.push_str(&format!(
                 "%phpc.NativeByteBuffer = type {{ ptr, {usize_type}, {usize_type} }}\n"
             ));
             output.push_str("%phpc.NativeStringConversionResult = type { %phpc.NativeByteBuffer, %phpc.NativeDiagnosticHandle }\n");
         }
         if self.uses_native_conversion_source_helpers {
-            if !emitted_native_value_handle {
-                output.push_str("%phpc.NativeValueHandle = type { ptr }\n");
-                emitted_native_value_handle = true;
-            }
-            if !emitted_native_diagnostic_handle {
-                output.push_str("%phpc.NativeDiagnosticHandle = type { ptr }\n");
-                emitted_native_diagnostic_handle = true;
-            }
-            if !emitted_native_string_handle {
-                output.push_str("%phpc.NativeStringHandle = type { ptr }\n");
-            }
-            if !emitted_native_scalar_value {
-                output
-                    .push_str("%phpc.NativeScalarValue = type { i8, i8, [6 x i8], i64, double }\n");
-            }
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_value_handle,
+                "%phpc.NativeValueHandle = type { ptr }",
+            );
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_diagnostic_handle,
+                "%phpc.NativeDiagnosticHandle = type { ptr }",
+            );
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_string_handle,
+                "%phpc.NativeStringHandle = type { ptr }",
+            );
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_scalar_value,
+                "%phpc.NativeScalarValue = type { i8, i8, [6 x i8], i64, double }",
+            );
             output.push_str("%phpc.NativeArrayHandle = type { ptr }\n");
             output.push_str("%phpc.NativeObjectHandle = type { ptr }\n");
             output.push_str("%phpc.NativeResourceHandle = type { ptr }\n");
-            output.push_str("%phpc.NativeReferenceHandle = type { ptr }\n");
-            emitted_native_reference_handle = true;
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_reference_handle,
+                "%phpc.NativeReferenceHandle = type { ptr }",
+            );
             output.push_str("%phpc.NativeConversionSource = type { i8, %phpc.NativeScalarValue, %phpc.NativeValueHandle, %phpc.NativeStringHandle, %phpc.NativeArrayHandle, %phpc.NativeObjectHandle, %phpc.NativeResourceHandle, %phpc.NativeReferenceHandle }\n");
             output.push_str("%phpc.NativeConversionResult = type { %phpc.NativeValueHandle, %phpc.NativeDiagnosticHandle, i8 }\n");
         }
         if self.uses_native_reference_helpers {
-            if !emitted_native_value_handle {
-                output.push_str("%phpc.NativeValueHandle = type { ptr }\n");
-                emitted_native_value_handle = true;
-            }
-            if !emitted_native_diagnostic_handle {
-                output.push_str("%phpc.NativeDiagnosticHandle = type { ptr }\n");
-                emitted_native_diagnostic_handle = true;
-            }
-            if !emitted_native_reference_handle {
-                output.push_str("%phpc.NativeReferenceHandle = type { ptr }\n");
-                emitted_native_reference_handle = true;
-            }
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_value_handle,
+                "%phpc.NativeValueHandle = type { ptr }",
+            );
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_diagnostic_handle,
+                "%phpc.NativeDiagnosticHandle = type { ptr }",
+            );
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_reference_handle,
+                "%phpc.NativeReferenceHandle = type { ptr }",
+            );
         }
         if self.uses_native_text_membership_operation {
-            if !emitted_native_value_handle {
-                output.push_str("%phpc.NativeValueHandle = type { ptr }\n");
-                emitted_native_value_handle = true;
-            }
-            if !emitted_native_diagnostic_handle {
-                output.push_str("%phpc.NativeDiagnosticHandle = type { ptr }\n");
-            }
-            if !emitted_native_reference_handle {
-                output.push_str("%phpc.NativeReferenceHandle = type { ptr }\n");
-            }
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_value_handle,
+                "%phpc.NativeValueHandle = type { ptr }",
+            );
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_diagnostic_handle,
+                "%phpc.NativeDiagnosticHandle = type { ptr }",
+            );
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_reference_handle,
+                "%phpc.NativeReferenceHandle = type { ptr }",
+            );
         }
-        if self.uses_native_value_truthiness
-            && !self.uses_native_value_echo_stdout
-            && !self.uses_native_string_int_operation
-            && !self.uses_native_value_operation_result
-            && !self.uses_native_value_offset_operation
-            && !emitted_native_value_handle
-        {
-            output.push_str("%phpc.NativeValueHandle = type { ptr }\n");
+        if self.uses_native_value_truthiness {
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_value_handle,
+                "%phpc.NativeValueHandle = type { ptr }",
+            );
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_diagnostic_handle,
+                "%phpc.NativeDiagnosticHandle = type { ptr }",
+            );
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_reference_handle,
+                "%phpc.NativeReferenceHandle = type { ptr }",
+            );
         }
         output.push_str("declare i32 @printf(ptr, ...)\n");
         if self.uses_strcmp {
@@ -6022,9 +6072,16 @@ impl LlvmGenerator {
             }
         }
         if self.uses_native_value_truthiness {
-            output.push_str("declare i1 @phpc_native_value_is_truthy(%phpc.NativeValueHandle)\n");
+            output.push_str("declare i1 @phpc_native_value_truthy_with_reference_slot_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeReferenceHandle, ptr)\n");
             if !self.uses_native_value_echo_stdout && !self.uses_native_string_int_operation {
                 output.push_str("declare void @phpc_native_value_free(%phpc.NativeValueHandle)\n");
+                let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+                output.push_str(&format!(
+                    "declare {usize_type} @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle)\n"
+                ));
+                output.push_str(
+                    "declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)\n",
+                );
             }
         }
         output.push('\n');
@@ -6640,10 +6697,23 @@ impl LlvmGenerator {
             return Err(self.unsupported(arg.span(), LLVM_ISSET_REJECTION));
         };
 
-        Ok(IrValue::Bool(!matches!(
-            self.variables.get(name),
-            None | Some(IrValue::Null)
-        )))
+        let Some(value) = self.variables.get(name).cloned() else {
+            return Ok(IrValue::Bool(false));
+        };
+
+        match value {
+            IrValue::Null => Ok(IrValue::Bool(false)),
+            IrValue::NativeValue(_) | IrValue::NativeReference(_) => {
+                let null = self.emit_native_value_type_predicate_slot_for_ir_value(
+                    value,
+                    "PHPC_NATIVE_VALUE_TYPE_IS_NULL",
+                    arg.span(),
+                    LLVM_ISSET_REJECTION,
+                )?;
+                self.emit_bool_not(null, arg.span())
+            }
+            _ => Ok(IrValue::Bool(true)),
+        }
     }
 
     fn emit_empty_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
@@ -6694,9 +6764,32 @@ impl LlvmGenerator {
             return Ok(IrValue::Bool(true));
         };
 
-        self.known_truthiness_for_value(value)
-            .map(|truthy| IrValue::Bool(!truthy))
-            .ok_or_else(|| self.unsupported(arg.span(), LLVM_EMPTY_REJECTION))
+        match value.clone() {
+            IrValue::NativeValue(handle) => {
+                let truthy = self.emit_native_value_reference_slot_truthiness(
+                    handle.clone(),
+                    "zeroinitializer".to_string(),
+                    Some(handle),
+                );
+                self.emit_bool_not(IrValue::BoolExpr(truthy), arg.span())
+            }
+            IrValue::NativeReference(reference) => {
+                let truthy = self.emit_native_value_reference_slot_truthiness(
+                    "zeroinitializer".to_string(),
+                    reference,
+                    None,
+                );
+                self.emit_bool_not(IrValue::BoolExpr(truthy), arg.span())
+            }
+            value if self.known_truthiness_for_value(&value).is_some() => {
+                let handle = self
+                    .emit_native_value_for_ir_value(value, arg.span())
+                    .map_err(|_| self.unsupported(arg.span(), LLVM_EMPTY_REJECTION))?;
+                let truthy = self.emit_native_value_handle_truthiness(handle);
+                self.emit_bool_not(IrValue::BoolExpr(truthy), arg.span())
+            }
+            _ => Err(self.unsupported(arg.span(), LLVM_EMPTY_REJECTION)),
+        }
     }
 
     fn emit_strlen_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
@@ -9315,6 +9408,14 @@ impl LlvmGenerator {
                 let truthy = self.emit_native_value_handle_truthiness(handle);
                 Ok(IrValue::BoolExpr(truthy))
             }
+            IrValue::NativeReference(reference) => {
+                let truthy = self.emit_native_value_reference_slot_truthiness(
+                    "zeroinitializer".to_string(),
+                    reference,
+                    None,
+                );
+                Ok(IrValue::BoolExpr(truthy))
+            }
             _ => Err(self.unsupported(span, llvm_logical_rejection())),
         }
     }
@@ -9938,9 +10039,11 @@ impl LlvmGenerator {
                 Ok(IrValue::BoolExpr(inverted))
             }
             IrValue::NativeReference(reference) => {
-                let value =
-                    self.emit_native_value_for_ir_value(IrValue::NativeReference(reference), span)?;
-                let truthy = self.emit_native_value_handle_truthiness(value);
+                let truthy = self.emit_native_value_reference_slot_truthiness(
+                    "zeroinitializer".to_string(),
+                    reference,
+                    None,
+                );
                 let inverted = self.next_temp();
                 self.body
                     .push(format!("{inverted} = xor i1 {truthy}, true"));
@@ -9950,14 +10053,37 @@ impl LlvmGenerator {
     }
 
     fn emit_native_value_handle_truthiness(&mut self, handle: String) -> String {
+        self.emit_native_value_reference_slot_truthiness(
+            handle.clone(),
+            "zeroinitializer".to_string(),
+            Some(handle),
+        )
+    }
+
+    fn emit_native_value_reference_slot_truthiness(
+        &mut self,
+        value: String,
+        reference: String,
+        owned_value: Option<String>,
+    ) -> String {
+        let diagnostic_slot = self.next_temp();
         let truthy = self.next_temp();
         self.uses_native_value_truthiness = true;
         self.body.push(format!(
-            "{truthy} = call i1 @phpc_native_value_is_truthy(%phpc.NativeValueHandle {handle})"
+            "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
         ));
         self.body.push(format!(
-            "call void @phpc_native_value_free(%phpc.NativeValueHandle {handle})"
+            "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
         ));
+        self.body.push(format!(
+            "{truthy} = call i1 @phpc_native_value_truthy_with_reference_slot_with_diagnostic(%phpc.NativeValueHandle {value}, %phpc.NativeReferenceHandle {reference}, ptr {diagnostic_slot})"
+        ));
+        self.emit_report_native_diagnostic_slot(&diagnostic_slot);
+        if let Some(handle) = owned_value {
+            self.body.push(format!(
+                "call void @phpc_native_value_free(%phpc.NativeValueHandle {handle})"
+            ));
+        }
         truthy
     }
 
@@ -10302,6 +10428,40 @@ impl LlvmGenerator {
             candidates.len()
         ));
         (ptr_data, length_data)
+    }
+
+    fn emit_native_value_type_predicate_slot_for_ir_value(
+        &mut self,
+        value: IrValue,
+        predicate_tag: &str,
+        span: Span,
+        rejection: &'static str,
+    ) -> CompileResult<IrValue> {
+        let (value, reference, cleanup, is_reference) =
+            self.emit_native_value_reference_slot_for_ir_value(value, span, rejection)?;
+        let diagnostic_slot = self.next_temp();
+        let result = self.next_temp();
+        self.uses_native_reference_helpers = true;
+        self.body.push(format!(
+            "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
+        ));
+        self.body.push(format!(
+            "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
+        ));
+        self.body.push(format!(
+            "{result} = call i1 @phpc_native_value_type_predicate_with_reference_slot_with_diagnostic(%phpc.NativeValueHandle {value}, %phpc.NativeReferenceHandle {reference}, i8 {}, ptr {diagnostic_slot})",
+            native_value_type_predicate_abi_value(predicate_tag)
+        ));
+        self.emit_report_native_diagnostic_slot(&diagnostic_slot);
+        if let Some(handle) = cleanup {
+            self.body.push(format!(
+                "call void @phpc_native_value_free(%phpc.NativeValueHandle {handle})"
+            ));
+        }
+        if is_reference {
+            self.uses_native_reference_helpers = true;
+        }
+        Ok(IrValue::BoolExpr(result))
     }
 
     fn emit_native_value_string_len(
@@ -14317,6 +14477,7 @@ impl CGenerator {
                 || self.uses_native_request_state_reference_helpers
                 || self.uses_native_symbol_table_helpers
                 || self.uses_native_conversion_source_helpers
+                || self.uses_native_value_truthiness
             {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeReferenceHandle;\n");
             }
@@ -14696,7 +14857,7 @@ impl CGenerator {
             }
             if self.uses_native_value_truthiness {
                 output.push_str(
-                    "extern _Bool phpc_native_value_is_truthy(phpc_NativeValueHandle value);\n",
+                    "extern _Bool phpc_native_value_truthy_with_reference_slot_with_diagnostic(phpc_NativeValueHandle value, phpc_NativeReferenceHandle reference, phpc_NativeDiagnosticHandle *diagnostic);\n",
                 );
             }
             output.push_str("extern size_t phpc_native_value_format_stdout_with_diagnostic(phpc_NativeValueHandle value, uint8_t formatter, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -24552,9 +24713,16 @@ impl CGenerator {
             return Ok(CValue::BoolExpr(format!("!({truthy})")));
         }
 
-        self.known_truthiness_for_value(value)
-            .map(|truthy| CValue::Bool(!truthy))
-            .ok_or_else(|| self.unsupported(arg.span(), ASSEMBLY_EMPTY_REJECTION))
+        if self.known_truthiness_for_value(value).is_some() {
+            let value = self.materialize_native_array_c_value_handle(value.clone(), arg.span())?;
+            let truthy = self.emit_native_value_reference_slot_truthiness(
+                CNativeValueReferenceSlot::value(value),
+                "native_value_truthy",
+            );
+            return Ok(CValue::BoolExpr(format!("!({truthy})")));
+        }
+
+        Err(self.unsupported(arg.span(), ASSEMBLY_EMPTY_REJECTION))
     }
 
     fn emit_value_offset_bool_operation_expr(
@@ -31553,10 +31721,19 @@ impl CGenerator {
                 let truthy = self.emit_native_value_handle_truthiness(&handle);
                 Ok(CValue::BoolExpr(truthy))
             }
-            value @ (CValue::ArrayHandle(_) | CValue::NativeReferenceHandle(_)) => {
+            CValue::NativeReferenceHandle(reference) => {
+                let truthy = self.emit_native_value_reference_slot_truthiness(
+                    CNativeValueReferenceSlot::reference(reference),
+                    "native_reference_truthy",
+                );
+                Ok(CValue::BoolExpr(truthy))
+            }
+            value @ CValue::ArrayHandle(_) => {
                 let value = self.materialize_native_array_c_value_handle(value, span)?;
-                let truthy = self.emit_native_value_handle_truthiness(&value.handle);
-                self.body.extend(value.cleanup_after_use);
+                let truthy = self.emit_native_value_reference_slot_truthiness(
+                    CNativeValueReferenceSlot::value(value),
+                    "native_value_truthy",
+                );
                 Ok(CValue::BoolExpr(truthy))
             }
             _ => Err(self.unsupported(span, assembly_logical_rejection())),
@@ -32245,26 +32422,50 @@ impl CGenerator {
                 Ok(CValue::BoolExpr(format!("!({truthy})")))
             }
             CValue::NativeReferenceHandle(reference) => {
-                let value = self.clone_native_reference_value_handle(&reference);
-                let truthy = self.emit_native_value_handle_truthiness(&value);
-                self.body.push(format!("phpc_native_value_free({value});"));
+                let truthy = self.emit_native_value_reference_slot_truthiness(
+                    CNativeValueReferenceSlot::reference(reference),
+                    "native_reference_truthy",
+                );
                 Ok(CValue::BoolExpr(format!("!({truthy})")))
             }
             value @ CValue::ArrayHandle(_) => {
                 let value = self.materialize_native_array_c_value_handle(value, span)?;
-                let truthy = self.emit_native_value_handle_truthiness(&value.handle);
-                self.body.extend(value.cleanup_after_use);
+                let truthy = self.emit_native_value_reference_slot_truthiness(
+                    CNativeValueReferenceSlot::value(value),
+                    "native_value_truthy",
+                );
                 Ok(CValue::BoolExpr(format!("!({truthy})")))
             }
         }
     }
 
     fn emit_native_value_handle_truthiness(&mut self, handle: &str) -> String {
-        let truthy = self.next_native_name("native_value_truthy");
+        self.emit_native_value_reference_slot_truthiness(
+            CNativeValueReferenceSlot::value(CNativeValueMaterialization {
+                handle: handle.to_string(),
+                cleanup_after_use: Vec::new(),
+            }),
+            "native_value_truthy",
+        )
+    }
+
+    fn emit_native_value_reference_slot_truthiness(
+        &mut self,
+        value: CNativeValueReferenceSlot,
+        result_prefix: &str,
+    ) -> String {
+        let truthy = self.next_native_name(result_prefix);
+        let diagnostic = self.next_native_name("native_value_truthy_diagnostic");
         self.uses_native_value_truthiness = true;
+        self.uses_native_reference_helpers |= value.is_reference;
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
         self.body.push(format!(
-            "_Bool {truthy} = phpc_native_value_is_truthy({handle});"
+            "_Bool {truthy} = phpc_native_value_truthy_with_reference_slot_with_diagnostic({}, {}, &{diagnostic});",
+            value.value_handle, value.reference_handle
         ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body.extend(value.cleanup_after_use);
         truthy
     }
 

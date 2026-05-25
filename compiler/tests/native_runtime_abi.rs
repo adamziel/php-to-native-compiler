@@ -720,6 +720,138 @@ fn generated_ir_routes_native_value_truthiness_through_runtime_abi() {
 }
 
 #[test]
+fn generated_ir_routes_native_value_variable_isset_empty_through_null_and_truthiness_boundaries() {
+    let source = concat!(
+        "<?php\n",
+        "$payload = \"0\";\n",
+        "$ref =& $payload;\n",
+        "echo isset($ref);\n",
+        "echo empty($ref);\n",
+        "$payload2 = \"A\\0B\";\n",
+        "$ref2 =& $payload2;\n",
+        "echo isset($ref2);\n",
+        "echo empty($ref2);\n",
+    );
+    let ir = emit_ir_source(source).unwrap();
+
+    assert!(
+        ir.contains("declare i1 @phpc_native_value_truthy_with_reference_slot_with_diagnostic")
+            && ir.contains(
+                "declare i1 @phpc_native_value_type_predicate_with_reference_slot_with_diagnostic"
+            ),
+        "{ir}"
+    );
+    assert!(
+        ir.matches("call i1 @phpc_native_value_truthy_with_reference_slot_with_diagnostic")
+            .count()
+            >= 2
+            && ir
+                .matches(
+                    "call i1 @phpc_native_value_type_predicate_with_reference_slot_with_diagnostic"
+                )
+                .count()
+                >= 2,
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("call i1 @phpc_native_value_is_truthy")
+            && !ir.contains("call i1 @phpc_native_value_truthy_with_diagnostic"),
+        "{ir}"
+    );
+}
+
+#[test]
+fn generated_ir_routes_empty_static_values_through_truthiness_boundary() {
+    let source = concat!(
+        "<?php\n",
+        "$zero = \"0\";\n",
+        "$payload = \"A\\0B\";\n",
+        "$intZero = 0;\n",
+        "$intOne = 1;\n",
+        "echo empty($zero);\n",
+        "echo empty($payload);\n",
+        "echo empty($intZero);\n",
+        "echo empty($intOne);\n",
+    );
+    let ir = emit_ir_source(source).unwrap();
+
+    assert!(
+        ir.contains("declare i1 @phpc_native_value_truthy_with_reference_slot_with_diagnostic")
+            && ir.contains("declare %phpc.NativeValueHandle @phpc_native_value_from_scalar"),
+        "{ir}"
+    );
+    assert!(
+        ir.matches("call i1 @phpc_native_value_truthy_with_reference_slot_with_diagnostic")
+            .count()
+            >= 4
+            && !ir.contains("call i1 @phpc_native_value_is_truthy")
+            && !ir.contains("call i1 @phpc_native_value_truthy_with_diagnostic"),
+        "{ir}"
+    );
+}
+
+#[test]
+fn generated_ir_routes_native_value_unary_not_through_truthiness_boundary() {
+    let source = concat!(
+        "<?php\n",
+        "$payload = \"A\\0B|0|\";\n",
+        "echo !$payload[0];\n",
+        "echo !$payload[1];\n",
+        "echo !$payload[4];\n",
+        "$refPayload = \"0\";\n",
+        "$ref =& $refPayload;\n",
+        "echo !$ref;\n",
+    );
+    let ir = emit_ir_source(source).unwrap();
+
+    assert!(
+        ir.contains("declare i1 @phpc_native_value_truthy_with_reference_slot_with_diagnostic")
+            && ir.contains("call %phpc.NativeConversionResult @phpc_native_offset_read_source"),
+        "{ir}"
+    );
+    assert!(
+        ir.matches("call i1 @phpc_native_value_truthy_with_reference_slot_with_diagnostic")
+            .count()
+            >= 4
+            && ir.matches(" = xor i1 ").count() >= 4
+            && !ir.contains("call i1 @phpc_native_value_is_truthy")
+            && !ir.contains("call i1 @phpc_native_value_truthy_with_diagnostic"),
+        "{ir}"
+    );
+}
+
+#[test]
+fn generated_ir_routes_reference_truthiness_operands_without_value_clone_detour() {
+    let source = concat!(
+        "<?php\n",
+        "$payload = \"0\";\n",
+        "$ref =& $payload;\n",
+        "echo !$ref;\n",
+        "echo empty($ref);\n",
+        "$payload2 = \"A\\0B\";\n",
+        "$ref2 =& $payload2;\n",
+        "echo !$ref2;\n",
+        "echo empty($ref2);\n",
+    );
+    let ir = emit_ir_source(source).unwrap();
+
+    assert!(
+        ir.contains("declare i1 @phpc_native_value_truthy_with_reference_slot_with_diagnostic")
+            && ir.contains("declare %phpc.NativeReferenceHandle"),
+        "{ir}"
+    );
+    assert!(
+        ir.matches("call i1 @phpc_native_value_truthy_with_reference_slot_with_diagnostic")
+            .count()
+            >= 4
+            && !ir.contains("call %phpc.NativeValueHandle @phpc_native_reference_value_clone")
+            && !ir.contains("call i1 @phpc_native_value_is_truthy")
+            && !ir.contains("call i1 @phpc_native_value_truthy_with_diagnostic"),
+        "{ir}"
+    );
+}
+
+#[test]
 fn generated_scalar_offset_reads_feed_warning_continuations_across_consumers() {
     let ir_source = concat!(
         "<?php\n",

@@ -9732,6 +9732,69 @@ pub unsafe extern "C" fn phpc_native_value_bool_with_diagnostic(
 /// # Safety
 ///
 /// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. `diagnostic` may be null; when non-null, it must
+/// point to writable storage for one `NativeDiagnosticHandle`. A null handle is
+/// treated as an ABI failure and reported through the diagnostic handle.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_truthy_with_diagnostic(
+    handle: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    if handle.is_null() {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native truthiness conversion failed: value handle is null",
+            )
+        };
+        return false;
+    }
+
+    unsafe { phpc_native_value_is_truthy(handle) }
+}
+
+/// # Safety
+///
+/// `value` and `reference` are one logical operand slot. `value` must be null
+/// or a value handle previously returned by the runtime ABI and not yet freed;
+/// `reference` must be null or a reference handle previously returned by the
+/// runtime ABI and not yet freed. Pass either a value or a reference. A null or
+/// conflicting slot is reported through `diagnostic`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_truthy_with_reference_slot_with_diagnostic(
+    value: NativeValueHandle,
+    reference: NativeReferenceHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let (value, owned) = match unsafe {
+        native_value_reference_slot_owned_value(
+            value,
+            reference,
+            "native truthiness conversion",
+            "value",
+        )
+    } {
+        Ok(slot) => slot,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            return false;
+        }
+    };
+
+    let result = unsafe { phpc_native_value_truthy_with_diagnostic(value, diagnostic) };
+    if owned {
+        unsafe { phpc_native_value_free(value) };
+    }
+    result
+}
+
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
 /// ABI and not yet freed. Null handles follow PHP undefined-read null flow and
 /// are falsey.
 #[no_mangle]

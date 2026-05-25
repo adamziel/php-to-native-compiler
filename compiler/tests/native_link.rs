@@ -2185,6 +2185,133 @@ fn native_executable_c_source_routes_native_value_truthiness_through_runtime_abi
 }
 
 #[test]
+fn native_executable_c_source_routes_truthiness_consumers_through_value_boundary() {
+    let program = parse(NATIVE_VALUE_TRUTHINESS_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source
+            .contains("extern _Bool phpc_native_value_truthy_with_reference_slot_with_diagnostic("),
+        "{source}"
+    );
+    assert!(
+        source
+            .matches(" = phpc_native_value_truthy_with_reference_slot_with_diagnostic(")
+            .count()
+            >= 6
+            && !source.contains(" = phpc_native_value_is_truthy(")
+            && !source.contains(" = phpc_native_value_truthy_with_diagnostic("),
+        "{source}"
+    );
+    assert!(
+        source.contains(" = phpc_native_offset_read_source(")
+            && source.contains(" = phpc_native_value_array_query_operation_with_diagnostic("),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_empty_static_values_through_truthiness_boundary() {
+    let program = parse(concat!(
+        "<?php\n",
+        "$zero = \"0\";\n",
+        "$payload = \"A\\0B\";\n",
+        "$intZero = 0;\n",
+        "$intOne = 1;\n",
+        "echo empty($zero);\n",
+        "echo empty($payload);\n",
+        "echo empty($intZero);\n",
+        "echo empty($intOne);\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source
+            .contains("extern _Bool phpc_native_value_truthy_with_reference_slot_with_diagnostic(")
+            && source.contains("extern phpc_NativeValueHandle phpc_native_value_from_scalar("),
+        "{source}"
+    );
+    assert!(
+        source
+            .matches(" = phpc_native_value_truthy_with_reference_slot_with_diagnostic(")
+            .count()
+            >= 4
+            && !source.contains(" = phpc_native_value_is_truthy(")
+            && !source.contains(" = phpc_native_value_truthy_with_diagnostic("),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_native_value_unary_not_through_truthiness_boundary() {
+    let program = parse(concat!(
+        "<?php\n",
+        "$payload = \"A\\0B|0|\";\n",
+        "echo !$payload[0];\n",
+        "echo !$payload[1];\n",
+        "echo !$payload[4];\n",
+        "$refPayload = \"0\";\n",
+        "$ref =& $refPayload;\n",
+        "echo !$ref;\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source
+            .contains("extern _Bool phpc_native_value_truthy_with_reference_slot_with_diagnostic(")
+            && source
+                .contains("extern phpc_NativeConversionResult phpc_native_offset_read_source("),
+        "{source}"
+    );
+    assert!(
+        source
+            .matches(" = phpc_native_value_truthy_with_reference_slot_with_diagnostic(")
+            .count()
+            >= 4
+            && source.matches("bool_value = ((!(").count() >= 4
+            && !source.contains(" = phpc_native_value_is_truthy(")
+            && !source.contains(" = phpc_native_value_truthy_with_diagnostic("),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_reference_truthiness_operands_without_value_clone_detour() {
+    let program = parse(concat!(
+        "<?php\n",
+        "$payload = \"0\";\n",
+        "$ref =& $payload;\n",
+        "echo !$ref;\n",
+        "echo empty($ref);\n",
+        "$payload2 = \"A\\0B\";\n",
+        "$ref2 =& $payload2;\n",
+        "echo !$ref2;\n",
+        "echo empty($ref2);\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source
+            .contains("extern _Bool phpc_native_value_truthy_with_reference_slot_with_diagnostic(")
+            && source.contains("typedef struct { void *ptr; } phpc_NativeReferenceHandle;"),
+        "{source}"
+    );
+    assert!(
+        source
+            .matches(" = phpc_native_value_truthy_with_reference_slot_with_diagnostic(")
+            .count()
+            >= 2
+            && !source.contains(" = phpc_native_reference_value_clone(")
+            && !source.contains(" = phpc_native_value_is_truthy(")
+            && !source.contains(" = phpc_native_value_truthy_with_diagnostic("),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_dynamic_logical_and_or_through_short_circuit_branches() {
     let program = parse(NATIVE_SHORT_CIRCUIT_LOGICAL_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -4424,6 +4551,32 @@ fn emit_exe_links_and_runs_native_value_truthiness_program() {
     assert!(run.status.success(), "native executable failed");
     assert_eq!(String::from_utf8_lossy(&run.stdout), "TTFTFF");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_truthiness_boundary_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("native_truthiness_boundary", NATIVE_VALUE_TRUTHINESS_SOURCE);
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native truthiness executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"TTFTFF");
+    assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);
     let _ = fs::remove_file(&output_path);
@@ -15930,6 +16083,33 @@ fn native_executable_c_source_routes_stored_value_isset_empty_through_runtime_ab
     assert!(
         !source.contains("assembly empty() lowering rejects")
             && !source.contains("assembly isset() lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_native_value_variable_isset_empty_through_null_and_truthiness_boundaries(
+) {
+    let program = parse(NATIVE_STORED_VALUE_ISSET_EMPTY_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source
+            .contains("extern _Bool phpc_native_value_truthy_with_reference_slot_with_diagnostic(")
+            && source.contains("extern bool phpc_native_value_type_predicate("),
+        "{source}"
+    );
+    assert!(
+        source
+            .matches(" = phpc_native_value_truthy_with_reference_slot_with_diagnostic(")
+            .count()
+            >= 3
+            && source
+                .matches(" = phpc_native_value_type_predicate(")
+                .count()
+                >= 3
+            && !source.contains(" = phpc_native_value_is_truthy(")
+            && !source.contains(" = phpc_native_value_truthy_with_diagnostic("),
         "{source}"
     );
 }
