@@ -235,6 +235,15 @@ pub enum NativeStringResultOperation {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeStringArrayOperation {
+    Explode = 0,
+    Split = 1,
+}
+
+const NATIVE_STRING_ARRAY_HAS_LIMIT: u8 = 1;
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeStringOffsetOperation {
     Read = 0,
     Isset = 1,
@@ -9724,6 +9733,119 @@ pub unsafe extern "C" fn phpc_native_value_string_result_operation_with_diagnost
 
 /// # Safety
 ///
+/// `subject` and `operand` must be null or value handles previously returned
+/// by the runtime ABI and not yet freed. `diagnostic` may be null; when
+/// non-null, it must point to writable storage for one `NativeDiagnosticHandle`.
+/// Operation `0` returns `explode(operand, subject[, limit])`; operation `1`
+/// returns `str_split(subject[, length])`. String result array elements
+/// preserve arbitrary PHP bytes through the byte-backed value boundary.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_string_array_operation_with_diagnostic(
+    subject: NativeValueHandle,
+    operand: NativeValueHandle,
+    limit_or_length: i64,
+    flags: u8,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe {
+        native_value_string_array_operation_value(
+            subject,
+            operand,
+            limit_or_length,
+            flags,
+            operation,
+        )
+    } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// Each value handle must be null or a value handle previously returned by the
+/// runtime ABI and not yet freed. Each reference handle must be null or a
+/// reference handle previously returned by the runtime ABI and not yet freed.
+/// Pass either a value handle or a reference handle for each logical operand
+/// slot. Reference slots are dereferenced at the operation-family boundary.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_string_array_operation_with_reference_slots_with_diagnostic(
+    subject: NativeValueHandle,
+    subject_reference: NativeReferenceHandle,
+    operand: NativeValueHandle,
+    operand_reference: NativeReferenceHandle,
+    limit_or_length: i64,
+    flags: u8,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let (subject, subject_owned) = match unsafe {
+        native_value_reference_slot_owned_value(
+            subject,
+            subject_reference,
+            "native string array operation",
+            "subject",
+        )
+    } {
+        Ok(slot) => slot,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            return NativeValueHandle::null();
+        }
+    };
+    let (operand, operand_owned) = if operation == NativeStringArrayOperation::Explode as u8 {
+        match unsafe {
+            native_value_reference_slot_owned_value(
+                operand,
+                operand_reference,
+                "native string array operation",
+                "operand",
+            )
+        } {
+            Ok(slot) => slot,
+            Err(error) => {
+                if subject_owned {
+                    unsafe { phpc_native_value_free(subject) };
+                }
+                unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+                return NativeValueHandle::null();
+            }
+        }
+    } else {
+        (NativeValueHandle::null(), false)
+    };
+
+    let result = unsafe {
+        phpc_native_value_string_array_operation_with_diagnostic(
+            subject,
+            operand,
+            limit_or_length,
+            flags,
+            operation,
+            diagnostic,
+        )
+    };
+
+    if operand_owned {
+        unsafe { phpc_native_value_free(operand) };
+    }
+    if subject_owned {
+        unsafe { phpc_native_value_free(subject) };
+    }
+
+    result
+}
+
+/// # Safety
+///
 /// `handle` must be null or a value handle previously returned by the runtime
 /// ABI and not yet freed. `diagnostic` may be null; when non-null, it must
 /// point to writable storage for one `NativeDiagnosticHandle`. A null handle or
@@ -13210,6 +13332,135 @@ unsafe fn native_value_string_result_operation_value(
     };
 
     value_from_native_string_result_bytes(bytes)
+}
+
+unsafe fn native_value_string_array_operation_value(
+    subject: NativeValueHandle,
+    operand: NativeValueHandle,
+    limit_or_length: i64,
+    flags: u8,
+    operation: u8,
+) -> RuntimeResult<Value> {
+    match operation {
+        value if value == NativeStringArrayOperation::Explode as u8 => {
+            if flags & !NATIVE_STRING_ARRAY_HAS_LIMIT != 0 {
+                return Err(RuntimeError::invalid_string_conversion(
+                    "native string array operation failed: explode received unsupported flags",
+                ));
+            }
+            let subject = unsafe { native_value_to_string_bytes(subject) }?;
+            let separator = unsafe { native_value_to_string_bytes(operand) }?;
+            let limit = (flags & NATIVE_STRING_ARRAY_HAS_LIMIT != 0).then_some(limit_or_length);
+            Ok(Value::Array(php_explode_bytes(
+                &separator, &subject, limit,
+            )?))
+        }
+        value if value == NativeStringArrayOperation::Split as u8 => {
+            if flags != 0 {
+                return Err(RuntimeError::invalid_string_conversion(
+                    "native string array operation failed: str_split received unsupported flags",
+                ));
+            }
+            let subject = unsafe { native_value_to_string_bytes(subject) }?;
+            Ok(Value::Array(php_str_split_bytes(
+                &subject,
+                limit_or_length,
+            )?))
+        }
+        _ => Err(RuntimeError::invalid_string_conversion(
+            "native string array operation failed: unsupported operation tag",
+        )),
+    }
+}
+
+fn php_explode_bytes(
+    separator: &[u8],
+    subject: &[u8],
+    limit: Option<i64>,
+) -> RuntimeResult<PhpArray> {
+    if separator.is_empty() {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native string array operation failed: explode separator must not be empty",
+        ));
+    }
+
+    let limit = limit.unwrap_or(i64::MAX);
+    if limit < 0 {
+        let mut segments = split_all_bytes(subject, separator);
+        let remove = limit
+            .checked_neg()
+            .and_then(|value| usize::try_from(value).ok())
+            .unwrap_or(usize::MAX);
+        segments.truncate(segments.len().saturating_sub(remove));
+        return Ok(php_array_from_byte_segments(segments));
+    }
+
+    let max_parts = if limit == 0 {
+        1
+    } else {
+        usize::try_from(limit).unwrap_or(usize::MAX)
+    };
+    let mut segments = Vec::new();
+    let mut cursor = 0;
+    while segments.len().saturating_add(1) < max_parts {
+        let Some(position) = find_subslice(&subject[cursor..], separator) else {
+            break;
+        };
+        let end = cursor + position;
+        segments.push(subject[cursor..end].to_vec());
+        cursor = end + separator.len();
+    }
+    segments.push(subject[cursor..].to_vec());
+    Ok(php_array_from_byte_segments(segments))
+}
+
+fn php_str_split_bytes(subject: &[u8], length: i64) -> RuntimeResult<PhpArray> {
+    if length < 1 {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native string array operation failed: str_split length must be greater than or equal to 1",
+        ));
+    }
+
+    let length = usize::try_from(length).unwrap_or(usize::MAX);
+    let mut segments = Vec::new();
+    let mut cursor = 0;
+    while cursor < subject.len() {
+        let end = cursor.saturating_add(length).min(subject.len());
+        segments.push(subject[cursor..end].to_vec());
+        cursor = end;
+    }
+    Ok(php_array_from_byte_segments(segments))
+}
+
+fn split_all_bytes(subject: &[u8], separator: &[u8]) -> Vec<Vec<u8>> {
+    let mut segments = Vec::new();
+    let mut cursor = 0;
+    while let Some(position) = find_subslice(&subject[cursor..], separator) {
+        let end = cursor + position;
+        segments.push(subject[cursor..end].to_vec());
+        cursor = end + separator.len();
+    }
+    segments.push(subject[cursor..].to_vec());
+    segments
+}
+
+fn find_subslice(subject: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    subject
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+fn php_array_from_byte_segments(segments: Vec<Vec<u8>>) -> PhpArray {
+    let mut array = PhpArray::new();
+    for segment in segments {
+        array
+            .append(value_from_php_string_bytes(segment))
+            .expect("append into a fresh array should not fail");
+    }
+    array
 }
 
 fn value_from_native_string_result_bytes(bytes: Vec<u8>) -> RuntimeResult<Value> {
@@ -24205,6 +24456,14 @@ mod tests {
         }
     }
 
+    fn native_value_php_string_bytes_for_test(handle: NativeValueHandle) -> Vec<u8> {
+        match unsafe { handle.as_ref() } {
+            Some(Value::String(value)) => value.as_bytes().to_vec(),
+            Some(Value::BinaryString(value)) => value.clone(),
+            other => panic!("expected native PHP string value, got {other:?}"),
+        }
+    }
+
     fn native_value_array_for_test(handle: NativeValueHandle) -> PhpArray {
         match unsafe { handle.as_ref() } {
             Some(Value::Array(value)) => value.clone(),
@@ -34670,6 +34929,121 @@ mod tests {
         unsafe { phpc_native_value_free(offset) };
         unsafe { phpc_native_value_free(cloned) };
         unsafe { phpc_native_value_free(value) };
+    }
+
+    #[test]
+    fn native_string_array_operations_preserve_byte_backed_values_across_array_offsets() {
+        fn assert_array_element_bytes(array: &PhpArray, index: i64, expected: &[u8]) {
+            match array.get(index) {
+                Some(Value::String(value)) => assert_eq!(value.as_bytes(), expected),
+                Some(Value::BinaryString(value)) => assert_eq!(value, expected),
+                other => panic!("expected PHP string array element at {index}, got {other:?}"),
+            }
+        }
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let subject =
+            NativeValueHandle::from_value(Value::BinaryString(b"A\0B|\xff|tail".to_vec()));
+        let separator = NativeValueHandle::from_value(Value::String("|".to_string()));
+        let exploded = unsafe {
+            phpc_native_value_string_array_operation_with_diagnostic(
+                subject,
+                separator,
+                0,
+                0,
+                NativeStringArrayOperation::Explode as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let exploded_array = native_value_array_for_test(exploded);
+        assert_eq!(exploded_array.len(), 3);
+        assert_array_element_bytes(&exploded_array, 0, b"A\0B");
+        assert_array_element_bytes(&exploded_array, 1, b"\xff");
+        assert_array_element_bytes(&exploded_array, 2, b"tail");
+
+        let offset_one = NativeValueHandle::from_value(Value::Int(1));
+        let read = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                exploded,
+                offset_one,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_php_string_bytes_for_test(read), b"\xff");
+
+        let split_subject =
+            NativeValueHandle::from_value(Value::BinaryString(b"Q\0R\xff".to_vec()));
+        let split = unsafe {
+            phpc_native_value_string_array_operation_with_diagnostic(
+                split_subject,
+                NativeValueHandle::null(),
+                2,
+                0,
+                NativeStringArrayOperation::Split as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let split_array = native_value_array_for_test(split);
+        assert_eq!(split_array.len(), 2);
+        assert_array_element_bytes(&split_array, 0, b"Q\0");
+        assert_array_element_bytes(&split_array, 1, b"R\xff");
+
+        let reference = NativeReferenceHandle::from_cell(PhpReferenceCell::new(
+            Value::BinaryString(b"L|R\xff".to_vec()),
+        ));
+        let reference_separator = NativeValueHandle::from_value(Value::String("|".to_string()));
+        let reference_exploded = unsafe {
+            phpc_native_string_array_operation_with_reference_slots_with_diagnostic(
+                NativeValueHandle::null(),
+                reference,
+                reference_separator,
+                NativeReferenceHandle::null(),
+                0,
+                0,
+                NativeStringArrayOperation::Explode as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let reference_array = native_value_array_for_test(reference_exploded);
+        assert_eq!(reference_array.len(), 2);
+        assert_array_element_bytes(&reference_array, 0, b"L");
+        assert_array_element_bytes(&reference_array, 1, b"R\xff");
+
+        let empty_separator = NativeValueHandle::from_value(Value::String(String::new()));
+        let blocked = unsafe {
+            phpc_native_value_string_array_operation_with_diagnostic(
+                subject,
+                empty_separator,
+                0,
+                0,
+                NativeStringArrayOperation::Explode as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(blocked.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid string conversion: native string array operation failed: explode separator must not be empty"
+        );
+
+        unsafe { phpc_native_value_free(blocked) };
+        unsafe { phpc_native_value_free(empty_separator) };
+        unsafe { phpc_native_value_free(reference_exploded) };
+        unsafe { phpc_native_value_free(reference_separator) };
+        unsafe { phpc_native_reference_free(reference) };
+        unsafe { phpc_native_value_free(split) };
+        unsafe { phpc_native_value_free(split_subject) };
+        unsafe { phpc_native_value_free(read) };
+        unsafe { phpc_native_value_free(offset_one) };
+        unsafe { phpc_native_value_free(exploded) };
+        unsafe { phpc_native_value_free(separator) };
+        unsafe { phpc_native_value_free(subject) };
     }
 
     #[test]

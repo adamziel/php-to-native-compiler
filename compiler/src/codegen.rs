@@ -13,10 +13,11 @@ use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
     classify_php_numeric_string, is_php_truthy_string, php_primitive_arithmetic_result,
     php_strings_use_numeric_comparison, NativeComparisonOp, NativeFilesystemPathOperation,
-    NativeIntConversionOperation, NativeOutputBufferOperation, NativeStringDistanceOperation,
-    NativeStringIntOperation, NativeStringOffsetOperation, NativeStringPredicate,
-    NativeStringResultOperation, NativeStringSearchOperation, PhpPrimitiveArithmeticError,
-    PhpPrimitiveArithmeticOperation, PhpPrimitiveArithmeticValue, PhpPrimitiveValue,
+    NativeIntConversionOperation, NativeOutputBufferOperation, NativeStringArrayOperation,
+    NativeStringDistanceOperation, NativeStringIntOperation, NativeStringOffsetOperation,
+    NativeStringPredicate, NativeStringResultOperation, NativeStringSearchOperation,
+    PhpPrimitiveArithmeticError, PhpPrimitiveArithmeticOperation, PhpPrimitiveArithmeticValue,
+    PhpPrimitiveValue,
 };
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
@@ -54,6 +55,8 @@ const LLVM_STRING_DISTANCE_OPERATION_REJECTION: &str = "LLVM string-distance bui
 const ASSEMBLY_STRING_DISTANCE_OPERATION_REJECTION: &str = "assembly string-distance builtin lowering rejects levenshtein() and similar_text() forms outside the reusable native string-distance operation contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup";
 const LLVM_STRING_RESULT_OPERATION_REJECTION: &str = "LLVM string-result builtin lowering rejects forms outside the reusable native string-result operation contract until operands can reach byte-preserving value conversion, diagnostics, result ownership, and cleanup; lowerable LLVM and generated-native C string-result operands route through the shared runtime contract";
 const ASSEMBLY_STRING_RESULT_OPERATION_REJECTION: &str = "assembly string-result builtin lowering rejects forms outside the reusable native string-result operation contract until operands can reach byte-preserving value conversion, diagnostics, result ownership, and cleanup";
+const LLVM_STRING_ARRAY_OPERATION_REJECTION: &str = "LLVM string-array builtin lowering rejects explode() and str_split() forms outside the reusable native string-array operation contract until operands can reach byte-preserving value/reference-slot conversion, integer argument conversion, diagnostics, result ownership, and cleanup";
+const ASSEMBLY_STRING_ARRAY_OPERATION_REJECTION: &str = "assembly string-array builtin lowering rejects explode() and str_split() forms outside the reusable native string-array operation contract until operands can reach byte-preserving value/reference-slot conversion, integer argument conversion, diagnostics, result ownership, and cleanup";
 const LLVM_BASENAME_REJECTION: &str = "LLVM basename lowering rejects direct path basename calls until native PHP path string conversion, suffix handling, trailing-separator normalization, Windows/UNC and stream-wrapper path semantics, locale/codepage behavior, argument diagnostics, references/copy-on-write, and exact native basename diagnostics exist; phpc run handles current bounded basename behavior";
 const ASSEMBLY_BASENAME_REJECTION: &str = "assembly basename lowering rejects direct path basename calls until native PHP path string conversion, suffix handling, trailing-separator normalization, Windows/UNC and stream-wrapper path semantics, locale/codepage behavior, argument diagnostics, references/copy-on-write, and exact native basename diagnostics exist; phpc run handles current bounded basename behavior";
 const LLVM_FILE_GET_CONTENTS_REJECTION: &str = "LLVM file_get_contents lowering rejects direct filesystem reads until native PHP stream wrapper handling, local file I/O, binary string byte fidelity, warning plus false recovery, stream contexts, include-path lookup, open_basedir/stat-cache behavior, references/copy-on-write, and exact native file_get_contents diagnostics exist; phpc run handles current bounded file_get_contents behavior including UTF-8 offset/length reads and selected warning-plus-false recovery";
@@ -6202,6 +6205,7 @@ impl LlvmGenerator {
             output.push_str("declare i64 @phpc_native_value_string_int_operation_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i64, i64, i8, i8, ptr)\n");
             output.push_str("declare %phpc.NativeValueHandle @phpc_native_value_string_search_result_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i64, i64, i8, i8, ptr)\n");
             output.push_str("declare %phpc.NativeValueHandle @phpc_native_value_string_result_operation_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, %phpc.NativeValueHandle, i64, i64, i8, i8, ptr)\n");
+            output.push_str("declare %phpc.NativeValueHandle @phpc_native_string_array_operation_with_reference_slots_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeReferenceHandle, %phpc.NativeValueHandle, %phpc.NativeReferenceHandle, i64, i8, i8, ptr)\n");
             if !self.uses_native_value_echo_stdout {
                 output.push_str("declare void @phpc_native_value_free(%phpc.NativeValueHandle)\n");
                 output.push_str(&format!(
@@ -6721,6 +6725,13 @@ impl LlvmGenerator {
                 let operation = native_string_result_operation_for_name(name)
                     .expect("string-result operation checked above");
                 self.emit_llvm_string_result_call(operation, args, *span)
+            }
+            Expr::Call { name, args, span }
+                if native_string_array_operation_for_name(name).is_some() =>
+            {
+                let operation = native_string_array_operation_for_name(name)
+                    .expect("string-array operation checked above");
+                self.emit_llvm_string_array_call(operation, args, *span)
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("basename") => {
                 Err(self.unsupported_direct_named_call(args, *span, LLVM_BASENAME_REJECTION))
@@ -7485,6 +7496,127 @@ impl LlvmGenerator {
         self.body.push(format!(
             "call void @phpc_native_value_free(%phpc.NativeValueHandle {subject})"
         ));
+        Ok(IrValue::NativeValue(result))
+    }
+
+    fn emit_llvm_string_array_call(
+        &mut self,
+        operation: NativeStringArrayOperation,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        match operation {
+            NativeStringArrayOperation::Explode => {
+                if !(2..=3).contains(&args.len()) {
+                    return Err(self.unsupported_direct_named_call(
+                        args,
+                        span,
+                        LLVM_STRING_ARRAY_OPERATION_REJECTION,
+                    ));
+                }
+                let separator = self.emit_value_operand_expr(&args[0])?;
+                let subject = self.emit_value_operand_expr(&args[1])?;
+                let (limit, flags) = if let Some(limit) = args.get(2) {
+                    let limit = self.emit_value_operand_expr(limit)?;
+                    (
+                        self.emit_native_int_for_ir_value(
+                            limit,
+                            NativeIntConversionOperation::StringLength,
+                            span,
+                            LLVM_STRING_ARRAY_OPERATION_REJECTION,
+                        )?,
+                        1,
+                    )
+                } else {
+                    ("0".to_string(), 0)
+                };
+                self.emit_native_string_array_operation(
+                    operation,
+                    subject,
+                    Some(separator),
+                    limit,
+                    flags,
+                    span,
+                )
+            }
+            NativeStringArrayOperation::Split => {
+                if !(1..=2).contains(&args.len()) {
+                    return Err(self.unsupported_direct_named_call(
+                        args,
+                        span,
+                        LLVM_STRING_ARRAY_OPERATION_REJECTION,
+                    ));
+                }
+                let subject = self.emit_value_operand_expr(&args[0])?;
+                let length = if let Some(length) = args.get(1) {
+                    let length = self.emit_value_operand_expr(length)?;
+                    self.emit_native_int_for_ir_value(
+                        length,
+                        NativeIntConversionOperation::StringLength,
+                        span,
+                        LLVM_STRING_ARRAY_OPERATION_REJECTION,
+                    )?
+                } else {
+                    "1".to_string()
+                };
+                self.emit_native_string_array_operation(operation, subject, None, length, 0, span)
+            }
+        }
+    }
+
+    fn emit_native_string_array_operation(
+        &mut self,
+        operation: NativeStringArrayOperation,
+        subject: IrValue,
+        operand: Option<IrValue>,
+        limit_or_length: String,
+        flags: u8,
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        let (subject, subject_reference, subject_cleanup, _) = self
+            .emit_native_value_reference_slot_for_ir_value(
+                subject,
+                span,
+                LLVM_STRING_ARRAY_OPERATION_REJECTION,
+            )?;
+        let (operand, operand_reference, operand_cleanup, _) = match operand {
+            Some(value) => self.emit_native_value_reference_slot_for_ir_value(
+                value,
+                span,
+                LLVM_STRING_ARRAY_OPERATION_REJECTION,
+            )?,
+            None => (
+                "zeroinitializer".to_string(),
+                "zeroinitializer".to_string(),
+                None,
+                false,
+            ),
+        };
+        let diagnostic_slot = self.next_temp();
+        let result = self.next_temp();
+        self.uses_native_string_int_operation = true;
+        self.uses_native_reference_helpers = true;
+        self.body.push(format!(
+            "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
+        ));
+        self.body.push(format!(
+            "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
+        ));
+        self.body.push(format!(
+            "{result} = call %phpc.NativeValueHandle @phpc_native_string_array_operation_with_reference_slots_with_diagnostic(%phpc.NativeValueHandle {subject}, %phpc.NativeReferenceHandle {subject_reference}, %phpc.NativeValueHandle {operand}, %phpc.NativeReferenceHandle {operand_reference}, i64 {limit_or_length}, i8 {flags}, i8 {}, ptr {diagnostic_slot})",
+            operation as u8
+        ));
+        self.emit_report_native_diagnostic_slot(&diagnostic_slot);
+        if let Some(handle) = operand_cleanup {
+            self.body.push(format!(
+                "call void @phpc_native_value_free(%phpc.NativeValueHandle {handle})"
+            ));
+        }
+        if let Some(handle) = subject_cleanup {
+            self.body.push(format!(
+                "call void @phpc_native_value_free(%phpc.NativeValueHandle {handle})"
+            ));
+        }
         Ok(IrValue::NativeValue(result))
     }
 
@@ -15117,6 +15249,7 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_string_search_result_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle needle, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern int64_t phpc_native_value_string_distance_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, int64_t insertion_cost, int64_t replacement_cost, int64_t deletion_cost, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_string_result_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, phpc_NativeValueHandle replacement, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_string_array_operation_with_reference_slots_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeReferenceHandle subject_reference, phpc_NativeValueHandle operand, phpc_NativeReferenceHandle operand_reference, int64_t limit_or_length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_offset_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle offset, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_string_offset_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle offset, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern _Bool phpc_native_value_bool_with_diagnostic(phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -22061,6 +22194,13 @@ impl CGenerator {
                     .expect("string-result guard should provide operation");
                 self.emit_string_result_operation_call(operation, args, *span)
             }
+            Expr::Call { name, args, span }
+                if native_string_array_operation_for_name(name).is_some() =>
+            {
+                let operation = native_string_array_operation_for_name(name)
+                    .expect("string-array guard should provide operation");
+                self.emit_string_array_operation_call(operation, args, *span)
+            }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("basename") => {
                 Err(self.unsupported_direct_named_call(args, *span, ASSEMBLY_BASENAME_REJECTION))
             }
@@ -29003,6 +29143,129 @@ impl CGenerator {
         let result = self.emit_native_string_result_operation_handle(value, operation, "");
         self.retain_native_value_cleanup_handle(&result.handle);
         Ok(CValue::NativeValueHandle(result.handle))
+    }
+
+    fn emit_string_array_operation_call(
+        &mut self,
+        operation: NativeStringArrayOperation,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<CValue> {
+        match operation {
+            NativeStringArrayOperation::Explode => {
+                if !(2..=3).contains(&args.len()) {
+                    return Err(self.unsupported_direct_named_call(
+                        args,
+                        span,
+                        ASSEMBLY_STRING_ARRAY_OPERATION_REJECTION,
+                    ));
+                }
+                let separator =
+                    self.materialize_native_value_reference_slot_operand(&args[0], "")?;
+                let separator_cleanup = c_cleanup_sequence(&separator.cleanup_after_use);
+                let subject = self.materialize_native_value_reference_slot_operand(
+                    &args[1],
+                    &separator_cleanup,
+                )?;
+                let (limit, flags) = if let Some(limit) = args.get(2) {
+                    (
+                        self.emit_optional_native_int_argument(
+                            Some(limit),
+                            span,
+                            "0",
+                            NativeIntConversionOperation::StringLength,
+                            ASSEMBLY_STRING_ARRAY_OPERATION_REJECTION,
+                        )?,
+                        "1",
+                    )
+                } else {
+                    ("0".to_string(), "0")
+                };
+                let value = self.emit_native_string_array_operation_handle(
+                    operation,
+                    subject,
+                    Some(separator),
+                    limit,
+                    flags,
+                    "",
+                );
+                self.retain_native_value_cleanup_handle(&value.handle);
+                Ok(CValue::NativeValueHandle(value.handle))
+            }
+            NativeStringArrayOperation::Split => {
+                if !(1..=2).contains(&args.len()) {
+                    return Err(self.unsupported_direct_named_call(
+                        args,
+                        span,
+                        ASSEMBLY_STRING_ARRAY_OPERATION_REJECTION,
+                    ));
+                }
+                let subject = self.materialize_native_value_reference_slot_operand(&args[0], "")?;
+                let (length, flags) = if let Some(length) = args.get(1) {
+                    (
+                        self.emit_optional_native_int_argument(
+                            Some(length),
+                            span,
+                            "1",
+                            NativeIntConversionOperation::StringLength,
+                            ASSEMBLY_STRING_ARRAY_OPERATION_REJECTION,
+                        )?,
+                        "0",
+                    )
+                } else {
+                    ("1".to_string(), "0")
+                };
+                let value = self.emit_native_string_array_operation_handle(
+                    operation, subject, None, length, flags, "",
+                );
+                self.retain_native_value_cleanup_handle(&value.handle);
+                Ok(CValue::NativeValueHandle(value.handle))
+            }
+        }
+    }
+
+    fn emit_native_string_array_operation_handle(
+        &mut self,
+        operation: NativeStringArrayOperation,
+        subject: CNativeValueReferenceSlot,
+        operand: Option<CNativeValueReferenceSlot>,
+        limit_or_length: String,
+        flags: &str,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        self.uses_native_string_helpers = true;
+        self.uses_native_reference_helpers = true;
+
+        let operand = operand.unwrap_or_else(CNativeValueReferenceSlot::null);
+        let result = self.next_native_name(native_string_array_operation_prefix(operation));
+        let diagnostic = self.next_native_name("string_array_operation_diagnostic");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_string_array_operation_with_reference_slots_with_diagnostic({}, {}, {}, {}, (int64_t)({limit_or_length}), {flags}, {}, &{diagnostic});",
+            subject.value_handle,
+            subject.reference_handle,
+            operand.value_handle,
+            operand.reference_handle,
+            operation as u8
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let cleanup = format!(
+            "{}{}{}",
+            c_cleanup_sequence(&operand.cleanup_after_use),
+            c_cleanup_sequence(&subject.cleanup_after_use),
+            failure_cleanup
+        );
+        let error_exit = self.native_error_exit(&cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.body.extend(operand.cleanup_after_use);
+        self.body.extend(subject.cleanup_after_use);
+
+        CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }
     }
 
     fn emit_optional_native_int_argument(
@@ -36500,6 +36763,21 @@ fn native_string_result_operation_prefix(operation: NativeStringResultOperation)
         NativeStringResultOperation::AsciiFirstLower => "lcfirst_result",
         NativeStringResultOperation::ShellArgEscape => "escapeshellarg_result",
         NativeStringResultOperation::ShellCommandEscape => "escapeshellcmd_result",
+    }
+}
+
+fn native_string_array_operation_for_name(name: &str) -> Option<NativeStringArrayOperation> {
+    match name.to_ascii_lowercase().as_str() {
+        "explode" => Some(NativeStringArrayOperation::Explode),
+        "str_split" => Some(NativeStringArrayOperation::Split),
+        _ => None,
+    }
+}
+
+fn native_string_array_operation_prefix(operation: NativeStringArrayOperation) -> &'static str {
+    match operation {
+        NativeStringArrayOperation::Explode => "explode_array_value",
+        NativeStringArrayOperation::Split => "str_split_array_value",
     }
 }
 

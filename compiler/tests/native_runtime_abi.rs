@@ -219,6 +219,41 @@ fn generated_ir_materializes_binary_string_values_with_explicit_lengths() {
 }
 
 #[test]
+fn generated_ir_routes_string_array_family_through_reference_slot_contract() {
+    let ir = emit_ir_source(
+        "<?php\n$payload = \"A\\0B|\\xff|tail\";\necho explode(\"|\", $payload, \"2\");\necho str_split($payload, \"2\");\n",
+    )
+    .unwrap();
+
+    assert!(
+        ir.contains(
+            "declare %phpc.NativeValueHandle @phpc_native_string_array_operation_with_reference_slots_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeReferenceHandle, %phpc.NativeValueHandle, %phpc.NativeReferenceHandle, i64, i8, i8, ptr)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.matches(
+            "call %phpc.NativeValueHandle @phpc_native_string_array_operation_with_reference_slots_with_diagnostic",
+        )
+        .count()
+            >= 2,
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i64 @phpc_native_value_to_int64_with_diagnostic")
+            || ir
+                .contains("call i64 @phpc_native_value_to_int_with_reference_slot_with_diagnostic"),
+        "{ir}"
+    );
+    assert!(
+        ir.matches("call i64 @phpc_native_value_format_stdout_with_diagnostic")
+            .count()
+            >= 2,
+        "{ir}"
+    );
+}
+
+#[test]
 fn native_output_buffer_builtins_share_runtime_boundary_across_backends() {
     let ir = emit_ir_source(OUTPUT_BUFFER_RUNTIME_SOURCE).unwrap();
 

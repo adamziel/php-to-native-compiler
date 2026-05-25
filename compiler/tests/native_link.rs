@@ -1038,6 +1038,39 @@ fn native_executable_c_source_materializes_binary_string_values_with_explicit_le
 }
 
 #[test]
+fn native_executable_c_source_routes_string_array_family_through_runtime_contract() {
+    let program = parse(concat!(
+        "<?php\n$payload = \"A",
+        "\0",
+        "B|\u{00ff}\";\n$parts = explode(\"|\", $payload, 2);\n$chunks = str_split($parts[1], 1);\necho strlen($parts[0]), \":\", bin2hex($parts[0]), \":\", bin2hex($chunks[0]), \":\", bin2hex($chunks[1]), \"\\n\";\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("extern phpc_NativeValueHandle phpc_native_string_array_operation_with_reference_slots_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeReferenceHandle subject_reference, phpc_NativeValueHandle operand, phpc_NativeReferenceHandle operand_reference, int64_t limit_or_length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);"),
+        "{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_string_array_operation_with_reference_slots_with_diagnostic(")
+            .count()
+            >= 3,
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_offset_operation_with_diagnostic")
+            && source.contains("phpc_native_value_format_stdout_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_to_int64_with_diagnostic")
+            || source.contains("phpc_native_value_to_int_with_reference_slot_with_diagnostic"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_reports_owned_diagnostics_through_shared_consumer() {
     let program = parse("<?php\necho \"left\";\n$s = \"AB\";\n$s[0] = \"Z\";\necho $s;\n").unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -1186,6 +1219,38 @@ fn emit_exe_links_and_runs_native_byte_string_value_boundary_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"3:\0:A\0B\n");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_string_array_operation_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "native_string_array_operation",
+        concat!(
+            "<?php\n$payload = \"A",
+            "\0",
+            "B|\u{00ff}\";\n$parts = explode(\"|\", $payload, 2);\n$chunks = str_split($parts[1], 1);\necho strlen($parts[0]), \":\", bin2hex($parts[0]), \":\", bin2hex($chunks[0]), \":\", bin2hex($chunks[1]), \"\\n\";\n"
+        ),
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native string-array executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"3:410042:c3:bf\n");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(source_path);
