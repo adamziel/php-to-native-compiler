@@ -759,6 +759,7 @@ pub const PHPC_NATIVE_CONVERSION_SOURCE_RESOURCE: u8 = 5;
 pub const PHPC_NATIVE_CONVERSION_SOURCE_REFERENCE: u8 = 6;
 pub const PHPC_NATIVE_CONVERSION_STATUS_OK: u8 = 0;
 pub const PHPC_NATIVE_CONVERSION_STATUS_ERROR: u8 = 1;
+pub const PHPC_NATIVE_NUMERIC_UNARY_OP_NEGATE: u8 = 0;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -10463,6 +10464,41 @@ pub unsafe extern "C" fn phpc_native_offset_read_source(
         Err(message) => return NativeConversionResult::error(message),
     };
     native_offset_read_source_result_from_values(target, key)
+}
+
+/// # Safety
+///
+/// `source` must contain null handles or handles returned by the runtime ABI
+/// and not yet freed. The returned value and diagnostic handles are owned by
+/// the caller and must be freed with the matching runtime ABI helpers.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_conversion_source_numeric_unary(
+    source: NativeConversionSource,
+    op: u8,
+) -> NativeConversionResult {
+    if op != PHPC_NATIVE_NUMERIC_UNARY_OP_NEGATE {
+        return NativeConversionResult::error(
+            "native numeric unary operation tag is not supported",
+        );
+    }
+
+    let value = match unsafe { native_conversion_source_value(source) } {
+        Ok(value) => value,
+        Err(message) => return NativeConversionResult::error(message),
+    };
+
+    if let Some(message) = native_value_unary_blocker(&value) {
+        return NativeConversionResult::error(message);
+    }
+
+    match native_value_unary_value_with_diagnostic(&value, NATIVE_VALUE_UNARY_NEGATE) {
+        Ok((value, Some(message))) => NativeConversionResult::value_with_warning(value, message),
+        Ok((value, None)) => NativeConversionResult::value(value),
+        Err(error) => NativeConversionResult::error(format!(
+            "native numeric unary operation rejected by runtime semantics: {}",
+            error.message()
+        )),
+    }
 }
 
 fn native_object_property_name_from_value(value: &Value) -> Result<String, String> {
@@ -37817,6 +37853,149 @@ mod tests {
                 )
             },
             "Warning: Trying to access array offset on value of type resource",
+        );
+    }
+
+    #[test]
+    fn native_numeric_unary_sources_feed_recoveries_consumers_and_cleanup() {
+        fn assert_value(result: NativeConversionResult, expected: &[u8]) {
+            assert_eq!(result.status, PHPC_NATIVE_CONVERSION_STATUS_OK);
+            assert!(
+                result.diagnostic.is_null(),
+                "unexpected diagnostic: {}",
+                native_diagnostic_message_for_test(result.diagnostic)
+            );
+            assert_eq!(native_value_echo_bytes_for_test(result.value), expected);
+            unsafe { phpc_native_value_free(result.value) };
+        }
+
+        fn assert_warning_value(result: NativeConversionResult, expected: &[u8]) {
+            assert_eq!(result.status, PHPC_NATIVE_CONVERSION_STATUS_OK);
+            assert_eq!(native_value_echo_bytes_for_test(result.value), expected);
+            assert!(!result.diagnostic.is_null());
+            assert!(native_diagnostic_message_for_test(result.diagnostic)
+                .contains("leading-numeric string operand"));
+            assert_eq!(
+                unsafe { phpc_native_diagnostic_severity_at(result.diagnostic, 0) },
+                NativeDiagnosticSeverity::Warning.tag()
+            );
+            unsafe { phpc_native_value_free(result.value) };
+            unsafe { phpc_native_diagnostic_free(result.diagnostic) };
+        }
+
+        fn assert_error(result: NativeConversionResult, expected: &str) {
+            assert_eq!(result.status, PHPC_NATIVE_CONVERSION_STATUS_ERROR);
+            assert!(result.value.is_null());
+            assert!(
+                native_diagnostic_message_for_test(result.diagnostic).contains(expected),
+                "diagnostic did not contain {expected:?}"
+            );
+            unsafe { phpc_native_diagnostic_free(result.diagnostic) };
+        }
+
+        assert_value(
+            unsafe {
+                phpc_native_conversion_source_numeric_unary(
+                    NativeConversionSource::scalar(phpc_native_int(9)),
+                    PHPC_NATIVE_NUMERIC_UNARY_OP_NEGATE,
+                )
+            },
+            b"-9",
+        );
+        assert_value(
+            unsafe {
+                phpc_native_conversion_source_numeric_unary(
+                    NativeConversionSource::scalar(phpc_native_bool(true)),
+                    PHPC_NATIVE_NUMERIC_UNARY_OP_NEGATE,
+                )
+            },
+            b"-1",
+        );
+        assert_value(
+            unsafe {
+                phpc_native_conversion_source_numeric_unary(
+                    NativeConversionSource::scalar(phpc_native_null()),
+                    PHPC_NATIVE_NUMERIC_UNARY_OP_NEGATE,
+                )
+            },
+            b"0",
+        );
+
+        let string = NativeStringHandle::from_vec(b"6tail".to_vec());
+        assert_warning_value(
+            unsafe {
+                phpc_native_conversion_source_numeric_unary(
+                    NativeConversionSource::string(string),
+                    PHPC_NATIVE_NUMERIC_UNARY_OP_NEGATE,
+                )
+            },
+            b"-6",
+        );
+        unsafe { phpc_native_string_free(string) };
+
+        let value = NativeValueHandle::from_value(Value::Float(2.5));
+        assert_value(
+            unsafe {
+                phpc_native_conversion_source_numeric_unary(
+                    NativeConversionSource::value(value),
+                    PHPC_NATIVE_NUMERIC_UNARY_OP_NEGATE,
+                )
+            },
+            b"-2.5",
+        );
+        unsafe { phpc_native_value_free(value) };
+
+        let reference =
+            NativeReferenceHandle::from_cell(PhpReferenceCell::new(Value::String("4tail".into())));
+        assert_warning_value(
+            unsafe {
+                phpc_native_conversion_source_numeric_unary(
+                    NativeConversionSource::reference(reference),
+                    PHPC_NATIVE_NUMERIC_UNARY_OP_NEGATE,
+                )
+            },
+            b"-4",
+        );
+        unsafe { phpc_native_reference_free(reference) };
+
+        let array = NativeArrayHandle::from_array(PhpArray::new());
+        assert_error(
+            unsafe {
+                phpc_native_conversion_source_numeric_unary(
+                    NativeConversionSource::array(array),
+                    PHPC_NATIVE_NUMERIC_UNARY_OP_NEGATE,
+                )
+            },
+            "rejects arrays",
+        );
+        unsafe { phpc_native_array_free(array) };
+
+        assert_error(
+            unsafe {
+                phpc_native_conversion_source_numeric_unary(
+                    NativeConversionSource::object(non_null_object_handle_for_test()),
+                    PHPC_NATIVE_NUMERIC_UNARY_OP_NEGATE,
+                )
+            },
+            "object handle materialization awaits",
+        );
+        assert_error(
+            unsafe {
+                phpc_native_conversion_source_numeric_unary(
+                    NativeConversionSource::resource(non_null_resource_handle_for_test()),
+                    PHPC_NATIVE_NUMERIC_UNARY_OP_NEGATE,
+                )
+            },
+            "resource handle materialization awaits",
+        );
+        assert_error(
+            unsafe {
+                phpc_native_conversion_source_numeric_unary(
+                    NativeConversionSource::scalar(phpc_native_int(1)),
+                    255,
+                )
+            },
+            "operation tag is not supported",
         );
     }
 

@@ -1076,6 +1076,103 @@ fn native_executable_scalar_offset_reads_continue_across_conversion_consumers() 
 }
 
 #[test]
+fn generated_static_unary_negation_uses_numeric_source_results() {
+    let source = concat!(
+        "<?php\n",
+        "$int = 7;\n",
+        "$float = 2.5;\n",
+        "$text = \"6tail\";\n",
+        "$truth = true;\n",
+        "$nothing = null;\n",
+        "echo -$int;\n",
+        "echo -$float;\n",
+        "echo -$text;\n",
+        "echo -$truth;\n",
+        "echo -$nothing;\n",
+    );
+    let ir = emit_ir_source(source).unwrap();
+    let program = parse(source).unwrap();
+    let c_source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        ir.contains(
+            "declare %phpc.NativeConversionResult @phpc_native_conversion_source_numeric_unary"
+        ) && ir
+            .matches(
+                "call %phpc.NativeConversionResult @phpc_native_conversion_source_numeric_unary",
+            )
+            .count()
+            >= 5,
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("sub i64 0,")
+            && !ir.contains("fsub double 0.0,")
+            && !ir.contains("phpc_native_value_unary_result"),
+        "{ir}"
+    );
+
+    assert!(
+        c_source.contains("PHPC_NATIVE_NUMERIC_UNARY_OP_NEGATE")
+            && c_source
+                .matches("phpc_native_conversion_source_numeric_unary")
+                .count()
+                >= 5,
+        "{c_source}"
+    );
+    assert!(
+        !c_source.contains("(-") && !c_source.contains("phpc_native_value_unary_result"),
+        "{c_source}"
+    );
+}
+
+#[test]
+fn native_executable_static_unary_negation_runs_across_consumers() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "$int = 7;\n",
+        "$float = 2.5;\n",
+        "$text = \"6tail\";\n",
+        "$truth = true;\n",
+        "echo -$int;\n",
+        "echo \"|\";\n",
+        "echo -$float;\n",
+        "echo \"|\";\n",
+        "echo (-$text) + 2;\n",
+        "echo \"|\";\n",
+        "echo \"v=\" . (-$truth);\n",
+        "echo \"|\";\n",
+        "echo (-$float) < 0;\n",
+        "echo \"|\";\n",
+        "if (-$truth) { echo \"T\"; } else { echo \"F\"; }\n",
+    );
+    let (_source_path, exe_path) =
+        compile_native_runtime_abi_executable("static_unary_negation_source_result", source);
+    let output = Command::new(&exe_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run {exe_path:?}: {error}"));
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "-7|-2.5|-4|v=-1|1|T"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("leading-numeric string operand"),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn generated_object_property_offset_reads_use_shared_source_results() {
     let source = concat!(
         "<?php\n",

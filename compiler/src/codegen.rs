@@ -1107,11 +1107,17 @@ fn native_value_unary_op_tag(op: UnaryOp) -> Option<&'static str> {
     }
 }
 
-fn native_value_unary_op_tag_value(op: UnaryOp) -> Option<u8> {
+fn native_numeric_unary_op_tag(op: UnaryOp) -> Option<&'static str> {
+    match op {
+        UnaryOp::Negate => Some("PHPC_NATIVE_NUMERIC_UNARY_OP_NEGATE"),
+        UnaryOp::Not | UnaryOp::BitwiseNot => None,
+    }
+}
+
+fn native_numeric_unary_op_tag_value(op: UnaryOp) -> Option<u8> {
     match op {
         UnaryOp::Negate => Some(0),
-        UnaryOp::BitwiseNot => Some(1),
-        UnaryOp::Not => None,
+        UnaryOp::Not | UnaryOp::BitwiseNot => None,
     }
 }
 
@@ -5942,6 +5948,7 @@ struct LlvmGenerator {
     uses_native_value_offset_operation: bool,
     uses_native_conversion_source_helpers: bool,
     uses_native_offset_read_source: bool,
+    uses_native_numeric_unary_source: bool,
     uses_native_output_buffer_operation: bool,
     uses_native_value_truthiness: bool,
     uses_native_reference_helpers: bool,
@@ -6418,6 +6425,9 @@ impl LlvmGenerator {
             output.push_str("declare %phpc.NativeConversionSource @phpc_native_conversion_source_value(%phpc.NativeValueHandle)\n");
             if self.uses_native_offset_read_source {
                 output.push_str("declare %phpc.NativeConversionResult @phpc_native_offset_read_source(%phpc.NativeConversionSource, %phpc.NativeConversionSource)\n");
+            }
+            if self.uses_native_numeric_unary_source {
+                output.push_str("declare %phpc.NativeConversionResult @phpc_native_conversion_source_numeric_unary(%phpc.NativeConversionSource, i8)\n");
             }
         }
         if self.uses_native_value_truthiness {
@@ -9275,15 +9285,6 @@ impl LlvmGenerator {
         KnownInt::from_values(results)
     }
 
-    fn static_integer_negate(&self, value: &str) -> Option<KnownInt> {
-        let value = self.known_integer_values(value)?;
-        let mut results = Vec::new();
-        for value in value.values() {
-            results.push(value.checked_neg()?);
-        }
-        KnownInt::from_values(results)
-    }
-
     fn static_integer_bitwise_not(&self, value: &str) -> Option<KnownInt> {
         let value = self.known_integer_values(value)?;
         KnownInt::from_values(value.values().iter().map(|value| !value))
@@ -10464,15 +10465,6 @@ impl LlvmGenerator {
         }
     }
 
-    fn checked_static_primitive_negate_result_for_value(
-        &self,
-        value: &IrValue,
-    ) -> Result<Option<BackendArithmeticResult>, PhpPrimitiveArithmeticError> {
-        self.primitive_source_for_value(value)
-            .map(|source| source.single_arithmetic_result(PhpPrimitiveArithmeticOperation::Negate))
-            .unwrap_or(Ok(None))
-    }
-
     fn checked_static_primitive_arithmetic_result_for_values(
         &self,
         left: &IrValue,
@@ -10492,61 +10484,13 @@ impl LlvmGenerator {
     }
 
     fn emit_numeric_negate(&mut self, value: IrValue, span: Span) -> CompileResult<IrValue> {
-        if !matches!(value, IrValue::Int(_) | IrValue::Float(_)) {
-            match self.checked_static_primitive_negate_result_for_value(&value) {
-                Ok(Some(result)) => {
-                    if let Some(value) = result.into_single_ir_value() {
-                        return Ok(value);
-                    }
-                }
-                Ok(None)
-                | Err(
-                    PhpPrimitiveArithmeticError::MissingRightOperand
-                    | PhpPrimitiveArithmeticError::Conversion(_)
-                    | PhpPrimitiveArithmeticError::IntegerOverflow
-                    | PhpPrimitiveArithmeticError::NonFiniteFloat,
-                ) => {}
-            }
-        }
-
-        if llvm_arithmetic_operand_needs_native_value_result(&value) {
-            return self.emit_native_value_unary_result(
-                value,
-                native_value_unary_op_tag_value(UnaryOp::Negate)
-                    .expect("numeric negation has a native value operation tag"),
-                span,
-                LLVM_UNARY_REJECTION,
-            );
-        }
-
-        match value {
-            IrValue::Int(value) => {
-                let Some(result) = self.static_integer_negate(&value) else {
-                    return Err(self.unsupported(span, LLVM_UNARY_REJECTION));
-                };
-                if result.is_single() {
-                    return Ok(IrValue::Int(result.values()[0].to_string()));
-                }
-                let temp = self.next_temp();
-                self.body.push(format!("{temp} = sub i64 0, {value}"));
-                self.known_ints.insert(temp.clone(), result);
-                Ok(IrValue::Int(temp))
-            }
-            IrValue::Float(value) => {
-                if let Some(result) = self.static_float_negate(&value) {
-                    if result.is_single() && result.values()[0] != 0.0 {
-                        return Ok(IrValue::Float(format_float_literal(result.values()[0])));
-                    }
-                }
-                let temp = self.next_temp();
-                self.body.push(format!("{temp} = fsub double 0.0, {value}"));
-                if let Some(result) = self.static_float_negate(&value) {
-                    self.known_floats.insert(temp.clone(), result);
-                }
-                Ok(IrValue::Float(temp))
-            }
-            _ => Err(self.unsupported(span, LLVM_UNARY_REJECTION)),
-        }
+        self.emit_native_numeric_unary_source_result(
+            value,
+            native_numeric_unary_op_tag_value(UnaryOp::Negate)
+                .expect("numeric negation has a numeric unary operation tag"),
+            span,
+            LLVM_UNARY_REJECTION,
+        )
     }
 
     fn emit_integer_bitwise_not(&mut self, value: IrValue, span: Span) -> CompileResult<IrValue> {
@@ -11082,7 +11026,7 @@ impl LlvmGenerator {
         }
     }
 
-    fn emit_native_value_unary_result(
+    fn emit_native_numeric_unary_source_result(
         &mut self,
         value: IrValue,
         op_tag: u8,
@@ -11092,17 +11036,65 @@ impl LlvmGenerator {
         let value_handle = self
             .emit_native_value_for_ir_value(value, span)
             .map_err(|_| self.unsupported(span, rejection))?;
+        let source = self.next_temp();
         let result = self.next_temp();
-        self.uses_native_value_operation_result = true;
+        self.uses_native_conversion_source_helpers = true;
+        self.uses_native_numeric_unary_source = true;
         self.body.push(format!(
-            "{result} = call %phpc.NativeValueOperationResult @phpc_native_value_unary_result(%phpc.NativeValueHandle {value_handle}, i8 {op_tag})"
+            "{source} = call %phpc.NativeConversionSource @phpc_native_conversion_source_value(%phpc.NativeValueHandle {value_handle})"
+        ));
+        self.body.push(format!(
+            "{result} = call %phpc.NativeConversionResult @phpc_native_conversion_source_numeric_unary(%phpc.NativeConversionSource {source}, i8 {op_tag})"
         ));
         self.body.push(format!(
             "call void @phpc_native_value_free(%phpc.NativeValueHandle {value_handle})"
         ));
         Ok(IrValue::NativeValue(
-            self.emit_native_value_operation_result_value(result),
+            self.emit_native_conversion_result_value(result),
         ))
+    }
+
+    fn emit_native_conversion_result_value(&mut self, result: String) -> String {
+        let value = self.next_temp();
+        let diagnostic = self.next_temp();
+        let status = self.next_temp();
+        let failed = self.next_temp();
+        let value_ptr = self.next_temp();
+        let value_is_null = self.next_temp();
+        let failed_or_null = self.next_temp();
+        let error_label = self.next_label("native_conversion_error");
+        let ok_label = self.next_label("native_conversion_ok");
+
+        self.body.push(format!(
+            "{diagnostic} = extractvalue %phpc.NativeConversionResult {result}, 1"
+        ));
+        self.emit_report_native_diagnostic_handle(&diagnostic);
+        self.body.push(format!(
+            "{status} = extractvalue %phpc.NativeConversionResult {result}, 2"
+        ));
+        self.body.push(format!(
+            "{value} = extractvalue %phpc.NativeConversionResult {result}, 0"
+        ));
+        self.body.push(format!("{failed} = icmp ne i8 {status}, 0"));
+        self.body.push(format!(
+            "{value_ptr} = extractvalue %phpc.NativeValueHandle {value}, 0"
+        ));
+        self.body
+            .push(format!("{value_is_null} = icmp eq ptr {value_ptr}, null"));
+        self.body.push(format!(
+            "{failed_or_null} = or i1 {failed}, {value_is_null}"
+        ));
+        self.body.push(format!(
+            "br i1 {failed_or_null}, label %{error_label}, label %{ok_label}"
+        ));
+        self.body.push(format!("{error_label}:"));
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {value})"
+        ));
+        self.body.push("ret i32 1".to_string());
+        self.body.push(format!("{ok_label}:"));
+
+        value
     }
 
     fn emit_native_value_binary_result(
@@ -11756,6 +11748,7 @@ struct CGenerator {
     uses_native_object_property_helpers: bool,
     uses_native_conversion_source_helpers: bool,
     uses_native_offset_read_source: bool,
+    uses_native_numeric_unary_source: bool,
     uses_native_object_property_offset_read_source: bool,
     uses_native_object_instanceof_helpers: bool,
     uses_native_object_method_helpers: bool,
@@ -12130,24 +12123,6 @@ impl BackendPrimitiveSource {
                     .collect(),
             ),
         }
-    }
-
-    fn single_arithmetic_result(
-        &self,
-        operation: PhpPrimitiveArithmeticOperation,
-    ) -> Result<Option<BackendArithmeticResult>, PhpPrimitiveArithmeticError> {
-        let Some(values) = self.known_primitives() else {
-            return Ok(None);
-        };
-        let mut results = Vec::new();
-        for value in &values {
-            results.push(php_primitive_arithmetic_result(
-                value.as_php_primitive(),
-                operation,
-                None,
-            )?);
-        }
-        Ok(BackendArithmeticResult::from_values(results))
     }
 
     fn pair_arithmetic_result(
@@ -13465,6 +13440,7 @@ impl CGenerator {
         self.uses_native_object_property_helpers |= branch.uses_native_object_property_helpers;
         self.uses_native_conversion_source_helpers |= branch.uses_native_conversion_source_helpers;
         self.uses_native_offset_read_source |= branch.uses_native_offset_read_source;
+        self.uses_native_numeric_unary_source |= branch.uses_native_numeric_unary_source;
         self.uses_native_object_property_offset_read_source |=
             branch.uses_native_object_property_offset_read_source;
         self.uses_native_object_instanceof_helpers |= branch.uses_native_object_instanceof_helpers;
@@ -13496,6 +13472,7 @@ impl CGenerator {
             || self.uses_native_object_property_helpers
             || self.uses_native_conversion_source_helpers
             || self.uses_native_offset_read_source
+            || self.uses_native_numeric_unary_source
             || self.uses_native_object_property_offset_read_source
             || self.uses_native_object_instanceof_helpers
             || self.uses_native_object_method_helpers
@@ -15079,6 +15056,9 @@ impl CGenerator {
                 output.push_str("typedef struct { uint8_t kind; phpc_NativeScalarValue scalar; phpc_NativeValueHandle value; phpc_NativeStringHandle string; phpc_NativeArrayHandle array; phpc_NativeObjectHandle object; phpc_NativeResourceHandle resource; phpc_NativeReferenceHandle reference; } phpc_NativeConversionSource;\n");
                 output.push_str("typedef struct { phpc_NativeValueHandle value; phpc_NativeDiagnosticHandle diagnostic; uint8_t status; } phpc_NativeConversionResult;\n");
                 output.push_str("#define PHPC_NATIVE_CONVERSION_STATUS_OK 0\n");
+                if self.uses_native_numeric_unary_source {
+                    output.push_str("#define PHPC_NATIVE_NUMERIC_UNARY_OP_NEGATE 0\n");
+                }
             }
             if self.uses_native_request_state_helpers {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeRequestStateHandle;\n");
@@ -15320,6 +15300,9 @@ impl CGenerator {
             if self.uses_native_conversion_source_helpers {
                 output.push_str("extern phpc_NativeConversionSource phpc_native_conversion_source_value(phpc_NativeValueHandle handle);\n");
                 output.push_str("extern phpc_NativeConversionResult phpc_native_offset_read_source(phpc_NativeConversionSource target_source, phpc_NativeConversionSource key_source);\n");
+                if self.uses_native_numeric_unary_source {
+                    output.push_str("extern phpc_NativeConversionResult phpc_native_conversion_source_numeric_unary(phpc_NativeConversionSource source, uint8_t op);\n");
+                }
                 if self.uses_native_object_property_offset_read_source {
                     output.push_str("extern phpc_NativeConversionResult phpc_native_object_property_offset_read_source(phpc_NativeConversionSource target_source, phpc_NativeConversionSource property_source, phpc_NativeConversionSource key_source);\n");
                 }
@@ -31831,15 +31814,6 @@ impl CGenerator {
         KnownInt::from_values(results)
     }
 
-    fn static_integer_negate(&self, value: &str) -> Option<KnownInt> {
-        let value = self.known_integer_values(value)?;
-        let mut results = Vec::new();
-        for value in value.values() {
-            results.push(value.checked_neg()?);
-        }
-        KnownInt::from_values(results)
-    }
-
     fn static_integer_bitwise_not(&self, value: &str) -> Option<KnownInt> {
         let value = self.known_integer_values(value)?;
         KnownInt::from_values(value.values().iter().map(|value| !value))
@@ -33034,15 +33008,6 @@ impl CGenerator {
         }
     }
 
-    fn checked_static_primitive_negate_result_for_value(
-        &self,
-        value: &CValue,
-    ) -> Result<Option<BackendArithmeticResult>, PhpPrimitiveArithmeticError> {
-        self.primitive_source_for_value(value)
-            .map(|source| source.single_arithmetic_result(PhpPrimitiveArithmeticOperation::Negate))
-            .unwrap_or(Ok(None))
-    }
-
     fn checked_static_primitive_arithmetic_result_for_values(
         &self,
         left: &CValue,
@@ -33084,18 +33049,6 @@ impl CGenerator {
                     .and_then(|value| self.primitive_source_for_value(value)))
             }
             Expr::Variable(_, _) => Ok(None),
-            Expr::Unary {
-                op: UnaryOp::Negate,
-                expr,
-                ..
-            } => {
-                let Some(source) = self.static_primitive_source_for_expr(expr)? else {
-                    return Ok(None);
-                };
-                Ok(source
-                    .single_arithmetic_result(PhpPrimitiveArithmeticOperation::Negate)?
-                    .map(BackendPrimitiveSource::from_arithmetic_result))
-            }
             Expr::Binary {
                 left, op, right, ..
             } => {
@@ -33119,10 +33072,7 @@ impl CGenerator {
     fn try_emit_static_primitive_arithmetic_output(&mut self, expr: &Expr) -> CompileResult<bool> {
         if !matches!(
             expr,
-            Expr::Unary {
-                op: UnaryOp::Negate,
-                ..
-            } | Expr::Binary {
+            Expr::Binary {
                 op: BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul,
                 ..
             }
@@ -33141,49 +33091,15 @@ impl CGenerator {
     }
 
     fn emit_numeric_negate(&mut self, value: CValue, span: Span) -> CompileResult<CValue> {
-        if !matches!(value, CValue::Int(_) | CValue::Float(_)) {
-            match self.checked_static_primitive_negate_result_for_value(&value) {
-                Ok(Some(result)) => {
-                    if let Some(value) = result.into_single_c_value() {
-                        return Ok(value);
-                    }
-                }
-                Ok(None)
-                | Err(
-                    PhpPrimitiveArithmeticError::MissingRightOperand
-                    | PhpPrimitiveArithmeticError::Conversion(_)
-                    | PhpPrimitiveArithmeticError::IntegerOverflow
-                    | PhpPrimitiveArithmeticError::NonFiniteFloat,
-                ) => {}
-            }
-        }
-
-        match value {
-            CValue::Int(value) => {
-                let Some(result) = self.static_integer_negate(&value) else {
-                    return Err(self.unsupported(span, ASSEMBLY_UNARY_REJECTION));
-                };
-                if result.is_single() {
-                    return Ok(CValue::Int(result.values()[0].to_string()));
-                }
-                let expression = format!("(-{value})");
-                self.known_ints.insert(expression.clone(), result);
-                Ok(CValue::Int(expression))
-            }
-            CValue::Float(value) => {
-                if let Some(result) = self.static_float_negate(&value) {
-                    if result.is_single() && result.values()[0] != 0.0 {
-                        return Ok(CValue::Float(format_float_literal(result.values()[0])));
-                    }
-                }
-                let expression = format!("(-{value})");
-                if let Some(result) = self.static_float_negate(&value) {
-                    self.known_floats.insert(expression.clone(), result);
-                }
-                Ok(CValue::Float(expression))
-            }
-            _ => Err(self.unsupported(span, ASSEMBLY_UNARY_REJECTION)),
-        }
+        let value = self.materialize_native_array_c_value_handle(value, span)?;
+        let result = self.emit_native_numeric_unary_source_result_handle(
+            value,
+            native_numeric_unary_op_tag(UnaryOp::Negate)
+                .expect("numeric negation has a numeric unary operation tag"),
+            "",
+        );
+        self.retain_native_value_cleanup_handle(&result.handle);
+        Ok(CValue::NativeValueHandle(result.handle))
     }
 
     fn emit_integer_bitwise_not(&mut self, value: CValue, span: Span) -> CompileResult<CValue> {
@@ -33551,6 +33467,19 @@ impl CGenerator {
 
         match expr {
             Expr::Unary { op, expr, .. } => {
+                if matches!(op, UnaryOp::Negate) {
+                    let Some(op_tag) = native_numeric_unary_op_tag(*op) else {
+                        return Ok(None);
+                    };
+                    let value =
+                        self.materialize_native_value_result_operand(expr, failure_cleanup)?;
+                    return Ok(Some(self.emit_native_numeric_unary_source_result_handle(
+                        value,
+                        op_tag,
+                        failure_cleanup,
+                    )));
+                }
+
                 if matches!(op, UnaryOp::BitwiseNot) {
                     let value =
                         self.materialize_native_value_result_operand(expr, failure_cleanup)?;
@@ -33565,15 +33494,7 @@ impl CGenerator {
                     ));
                 }
 
-                let Some(op_tag) = native_value_unary_op_tag(*op) else {
-                    return Ok(None);
-                };
-                let value = self.materialize_native_value_result_operand(expr, failure_cleanup)?;
-                Ok(Some(self.emit_native_value_unary_result_handle(
-                    value,
-                    op_tag,
-                    failure_cleanup,
-                )))
+                Ok(None)
             }
             Expr::Binary {
                 left, op, right, ..
@@ -34548,6 +34469,22 @@ impl CGenerator {
         }
     }
 
+    fn emit_native_numeric_unary_source_result_handle(
+        &mut self,
+        value: CNativeValueMaterialization,
+        op_tag: &str,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        self.uses_native_numeric_unary_source = true;
+        let source = self.emit_native_conversion_source_from_value(value);
+        let result = self.next_native_name("numeric_unary_source");
+        self.body.push(format!(
+            "phpc_NativeConversionResult {result} = phpc_native_conversion_source_numeric_unary({}, {op_tag});",
+            source.value
+        ));
+        self.emit_native_conversion_result_value(&result, source.cleanup_after_use, failure_cleanup)
+    }
+
     fn emit_native_value_offset_read_result_handle(
         &mut self,
         subject: CNativeValueMaterialization,
@@ -34704,26 +34641,6 @@ impl CGenerator {
             handle: result.clone(),
             cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
         })
-    }
-
-    fn emit_native_value_unary_result_handle(
-        &mut self,
-        value: CNativeValueMaterialization,
-        op_tag: &str,
-        failure_cleanup: &str,
-    ) -> CNativeValueMaterialization {
-        let value_handle = value.handle.clone();
-        self.emit_native_value_result_handle(
-            "native_value_unary_result",
-            "native_value_unary",
-            value.cleanup_after_use,
-            failure_cleanup,
-            |this, result| {
-                this.body.push(format!(
-                    "phpc_NativeValueOperationResult {result} = phpc_native_value_unary_result({value_handle}, {op_tag});"
-                ));
-            },
-        )
     }
 
     fn emit_native_value_binary_result_handle(
