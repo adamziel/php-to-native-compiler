@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-25 22:48 CEST
-Evaluation marker: `20260525T204819Z`
+Updated: 2026-05-25 23:08 CEST
+Evaluation marker: `20260525T210830Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, candidate worktrees, lane-local
@@ -15,16 +15,16 @@ Overall estimated progress: **93%** `[###################-]`
 Executable PHP semantics: **93%** `[###################-]`
 
 Primary was clean and aligned with `origin/master` at
-`ae93da8c native: add closure reference return result ABI` before this
-`PROGRESS.md` edit. Remote `master` was verified at the same commit.
+`7c8fccba docs: update progress dashboard` before this `PROGRESS.md` edit.
 
 Latest primary-integrated executable capability baseline:
 `ae93da8c native: add closure reference return result ABI`.
 
-This review raises overall and executable estimates from 92% to 93%. The new
-counted work is the closure value/reference return result ABI integrated at
-`ae93da8c`. It is meaningful call/reference progress, but still bounded to the
-descriptor-backed closure surfaces reviewed for this packet.
+This review keeps overall and executable estimates unchanged at 93%. No new
+source-semantic commit landed after the previous progress update. The useful
+new work is steering/current-candidate movement: post-closure triage picked
+reference-source append/lvalue extraction as the next packet, and a fresh
+candidate prep started from current primary with no diff or gates yet.
 
 ## Grand Roadmap Position
 
@@ -32,14 +32,14 @@ descriptor-backed closure surfaces reviewed for this packet.
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, byte-string, string-array, array, diagnostic, reference, symbol, call-frame, object, comparison, conversion, numeric-unary, owner-cell, request-state, offset-read, array-key, type/int, text-membership, truthiness, and closure result surfaces. |
 | Compiler/backend consumers | **99%** | `[####################]` | LLVM and generated C share many ABIs. Generated-C has the freshest executable semantics; direct assembly and some LLVM parity still lag. |
-| Executable PHP semantics | **93%** | `[###################-]` | Primary has many selected semantic islands, now including closure value/reference return consumers, bounded preg callbacks, object-property reference-slot mutation, byte strings, string-array slots, array-key/reference-slot consumers, non-local blockers, and unary negation through shared conversion ABI. |
+| Executable PHP semantics | **93%** | `[###################-]` | Primary has many selected semantic islands, including closure value/reference return consumers, bounded preg callbacks, object-property reference-slot mutation, byte strings, string-array slots, array-key/reference-slot consumers, non-local blockers, request-key blockers, and unary negation through shared conversion ABI. |
 | Strings and byte semantics | **62%** | `[############--------]` | Byte-backed values and byte-preserving `explode()` / `str_split()` slots are integrated. Binary source bytes, byte-exact interpreter output/session/debug formatting, `mb_str_split()` codepoint behavior, request/global byte keys, and exact diagnostics remain open. |
-| Arrays, lvalues, references, COW | **79%** | `[################----]` | Value/reference slot ABIs continue to expand, and closure reference returns can now bind through selected symbol-reference consumers. Full COW, arbitrary lvalue roots, foreach, broader expression reference slots, alias composition, and writeback remain incomplete. |
+| Arrays, lvalues, references, COW | **79%** | `[################----]` | Value/reference slot ABIs continue to expand, and closure reference returns can bind through selected symbol-reference consumers. Full COW, arbitrary lvalue roots, foreach, broader expression reference slots, alias composition, and writeback remain incomplete. |
 | Symbols, globals, request state | **73%** | `[###############-----]` | Selected function globals, root-symbol surfaces, active symbol-table reference consumers, request-backed key blockers, and request-key diagnostics exist. `$GLOBALS` self-cells, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
-| Calls, functions, frames | **86%** | `[#################---]` | Selected direct/callable/function-table, descriptor-closure, capture, method-frame, and now descriptor closure value/reference return surfaces exist. General user-function/method/static/constructor reference returns, non-descriptor closures, named/unpacked breadth, and exact callable semantics remain open. |
-| Objects, properties, methods | **51%** | `[##########----------]` | Object-property reference-slot mutation, diagnostic classifiers, and non-local object/static owner blockers are integrated. Full visibility, magic, dynamic/static/typed properties, destructors, references/COW, and `ArrayAccess` execution remain open. |
-| Control flow, cleanup, diagnostics | **51%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, and truthiness/conversion consumers exist. Broad unwind/finally/destructor/shutdown and exact source ordering remain open. |
-| Broad integrated verification | **91%** | `[##################--]` | Focused primary gates are strong for recent packets. The full `native_runtime_abi` suite still has known current-primary failures, and broad gates remain constrained by lane extraction cost, high swap, stale lane expectations, and backend parity gaps. |
+| Calls, functions, frames | **86%** | `[#################---]` | Selected direct/callable/function-table, descriptor-closure, capture, method-frame, and descriptor closure value/reference return surfaces exist. General user-function/method/static/constructor reference returns, non-descriptor closures, named/unpacked breadth, and exact callable semantics remain open. |
+| Objects, properties, methods | **51%** | `[##########----------]` | Object-property reference-slot mutation, diagnostic classifiers, declared-object blockers, and non-local object/static owner blockers are integrated. Full visibility, magic, dynamic/static/typed properties, destructors, references/COW, and `ArrayAccess` execution remain open. |
+| Control flow, cleanup, diagnostics | **51%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, truthiness, and conversion consumers exist. Broad unwind/finally/destructor/shutdown and exact source ordering remain open. |
+| Broad integrated verification | **91%** | `[##################--]` | Focused primary gates are strong for recent packets. The full `native_runtime_abi` suite still has known current-primary failures, and broad gates remain constrained by lane extraction cost, stale lane expectations, high swap, and backend parity gaps. |
 
 ## Active Roadmap Items
 
@@ -53,8 +53,10 @@ Primary-integrated items are separated from lane-local candidate work below.
 | Runtime numeric-unary conversion ABI | **100%** `[####################]` | **48%** `[##########----------]` | Integrated at `b13c85c6`. Covered unary `-` routes through `NativeConversionSource` / `NativeConversionResult` across runtime, LLVM, generated C, and focused linked execution. |
 | String operation-family slot consumers | **100%** `[####################]` | **45%** `[#########-----------]` | Integrated at `5307990c`; `explode()` and `str_split()` use shared byte-preserving value/reference-slot contracts. |
 | Byte-preserving PHP string value boundary | **100%** `[####################]` | **40%** `[########------------]` | Integrated at `1c369d0f`; byte-backed PHP values and native pointer-plus-length materialization are available for selected paths. |
+| Reference-source append/lvalue extraction | **5%** `[#-------------------]` | **40%** `[########------------]` | Fresh post-closure candidate prep started from `7c8fccba`; no dirty files or gates yet. Lane evidence is promising but not counted. |
+| Dynamic callable class-context dispatch | **0%** `[--------------------]` | **42%** `[########------------]` | Ranked fallback after reference-source extraction. Useful call-lane evidence exists, but no current-primary candidate packet is open for it. |
 | Native source-call cleanup and reference-source lanes | **30%** `[######--------------]` | **43%** `[#########-----------]` | `impl-native-call-semantics` has useful lane-local dynamic callable dispatch, source-call preflight, source-call target ownership, append-reference, and result-consumer evidence; not primary-integrated. |
-| Diagnostic result sink/write-operation contracts | **32%** `[######--------------]` | **43%** `[#########-----------]` | `impl-native-error-diagnostic-semantics` has useful lane-local call-argument sequencing, unary value operation, ternary write operation, report-sink, RMW, and path-write contracts. Huge dirty scope means no direct integration. |
+| Diagnostic result sink/write-operation contracts | **32%** `[######--------------]` | **43%** `[#########-----------]` | `impl-native-error-diagnostic-semantics` has lane-local diagnostic operation contracts. Its huge dirty scope means no direct integration. |
 | Broader lvalue/reference-slot materializer | **32%** `[######--------------]` | **41%** `[########------------]` | Needed so non-variable expression families that can carry references can enter shared array-key, call, and consumer slot ABIs safely. Current broad lane evidence remains parked or lane-local. |
 | Object/resource source materialization | **25%** `[#####---------------]` | **30%** `[######--------------]` | Still a recurring blocker for generic conversion and offset/source consumers. Needs a general value reconstruction/materialization boundary. |
 | Broad lane extraction backlog | **34%** `[#######-------------]` | **35%** `[#######-------------]` | Broad dirty lanes remain useful evidence repositories, not integration units. Several are parked, stale, or only current as lane-local artifacts. |
@@ -80,8 +82,9 @@ Primary-integrated executable or executable-prerequisite capability:
 
 In progress but lane-local or not yet executable primary support:
 
-- [ ] Fresh next-candidate triage needs to start from current primary `ae93da8c`; the pre-closure ranking is partially consumed.
-- [ ] `impl-native-call-semantics` has lane-local callable dispatch, caller-scope, dynamic callable, source-call cleanup, append-reference, and reference/call evidence; not primary-integrated.
+- [x] Post-closure next-candidate triage ran from current primary `7c8fccba` and ranked reference-source append/lvalue extraction first.
+- [ ] `reference-source-append-lvalue-prep` has a fresh candidate worktree from `7c8fccba`; no product diff or gates yet.
+- [ ] `impl-native-call-semantics` has lane-local callable dispatch, caller-scope, dynamic callable preflight, source-call cleanup, append-reference, and reference/call evidence; not primary-integrated.
 - [ ] `impl-native-error-diagnostic-semantics` has lane-local diagnostic operation contracts; not primary-integrated.
 - [ ] Broader closure/call reference returns need reusable consumers beyond descriptor closures: user functions, methods, static calls, constructors, discarded calls, and non-descriptor closure surfaces.
 - [ ] Broad parked lanes remain evidence only until exact current-primary prep, review, and integration.
@@ -125,22 +128,22 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary was clean and synced at `ae93da8c` before this `PROGRESS.md` edit.
-- [x] Latest executable capability head is `ae93da8c`.
-- [x] Overall and executable percentages rise to 93% for this review.
-- [x] The closure ABI packet is now a non-repeat guard, not active lane-local work.
+- [x] Primary was clean and synced at `7c8fccba` before this `PROGRESS.md` edit.
+- [x] Latest executable capability head remains `ae93da8c`.
+- [x] Overall and executable percentages remain at 93% for this review.
+- [x] The closure ABI packet is a non-repeat guard, not active work.
 
 Lane-local:
 
-- [ ] `impl-native-call-semantics` reports a shared runtime callable-value
-  dispatch boundary and earlier source-call preflight/target-helper work. It
-  remains a broad dirty lane and should be mined only through fresh
-  current-primary packets.
-- [ ] `impl-native-error-diagnostic-semantics` reports shared diagnostic call
-  argument sequencing, unary value operation, and ternary write contracts. It
-  remains lane-local and too broad for direct import.
-- [ ] The old next-packet ranking should be rerun from `ae93da8c` before any
-  further integration handoff.
+- [ ] `reference-source-append-lvalue-prep` is open against `7c8fccba`; no
+  product diff or gates yet.
+- [ ] `impl-native-call-semantics` reported fresh dynamic callable operand
+  preflight evidence at 2026-05-25 23:06 CEST. It remains a broad dirty lane
+  and should be mined only through fresh current-primary packets.
+- [ ] `impl-native-error-diagnostic-semantics` remains lane-local and too broad
+  for direct import.
+- [ ] Multiple broad lanes are parked or noncompliant-cadence evidence
+  repositories. Do not route them to primary without a new narrow extraction.
 
 Resource posture:
 
@@ -148,10 +151,10 @@ Resource posture:
   Largest observed targets: `phpc-target-native-call-semantics` 8.9G,
   `phpc-target-native-object-seed` 5.6G,
   `phpc-target-native-diagnostics` 3.0G.
-- `/home`: 459G total, 184G used, 256G available, 42% used.
+- `/home`: 459G total, 193G used, 248G available, 44% used.
   Largest observed lane/work tree:
-  `phpc-lane-native-error-diagnostic-semantics` 14G; primary is about 2.2G.
-- Memory available is about 40Gi, but swap remains high at 23Gi/29Gi used.
+  `phpc-lane-native-error-diagnostic-semantics` 14G.
+- Memory available is about 41Gi, but swap remains high at 23Gi/29Gi used.
 - Continue disk-backed `/tmp` target dirs, `umask 0007`,
   `CARGO_BUILD_JOBS=1`, `CARGO_INCREMENTAL=0`, and focused nonzero gates.
 
@@ -159,28 +162,30 @@ Resource posture:
 
 Best next action:
 
-- Run fresh next-candidate triage from current primary `ae93da8c`. The previous
-  closure ABI top pick is now integrated and must not be repeated.
+- Let `reference-source-append-lvalue-prep` continue as the next candidate, but
+  require exact current-primary scope, stable hash, clean apply proof,
+  independent review, and focused nonzero gates before any integration.
 
-Best next executable semantic packet to consider after triage:
+Fallback executable semantic packet:
 
-- A distinct reference/call consumer such as reference-source append/lvalue
-  extraction, dynamic callable class-context invocation, or another hard
-  call/reference boundary that makes behavior execute through existing shared
-  contracts.
+- If append/lvalue extraction returns `needs-split` or proves too broad,
+  consider dynamic callable class-context invocation / callable-value dispatch
+  before more cleanup-only diagnostic selector/report-sink work.
 
 Good cleanup discipline to keep:
 
-- Treat `ae93da8c`, `22f56b67`, and `2cd78ade` as completed non-repeat work.
+- Treat `ae93da8c`, `22f56b67`, `2cd78ade`, and `b13c85c6` as completed
+  non-repeat work.
 - Keep zero-test filters out of proof accounting.
 - Require current-primary base, exact dirty-file scope, stable hash, clean apply
   proof, independent review, and focused nonzero gates before any integration.
 
 Avoid:
 
-- Percentage bumps for selector-only cleanup, helper-only cleanup, blocker-only
-  work, or lane-local claims that are not committed and pushed on primary.
+- Percentage bumps for candidate creation, selector-only cleanup, helper-only
+  cleanup, blocker-only work, or lane-local claims that are not committed and
+  pushed on primary.
 - Routing broad dirty call/diagnostic lanes directly to primary.
 - Repeating descriptor closure result ABI work under a new name.
 - Letting cleanup-only diagnostic operation vocabulary displace executable PHP
-  semantic packets.
+  semantic packets while a reference/call packet is available.
