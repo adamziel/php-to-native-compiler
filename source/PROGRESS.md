@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 01:37 CEST
-Evaluation marker: `20260525T233719Z`
+Updated: 2026-05-26 01:38 CEST
+Evaluation marker: `20260525T233616Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, candidate worktrees, lane-local
@@ -15,8 +15,7 @@ Overall estimated progress: **95%** `[###################-]`
 Executable PHP semantics: **95%** `[###################-]`
 
 Primary was clean and aligned with `origin/master` at
-`5abf8525 native: add runtime callable value dispatch` before this
-`PROGRESS.md` edit.
+`87b1ba2f docs: update progress dashboard` before this `PROGRESS.md` edit.
 
 Latest primary-integrated source capability baseline:
 `5abf8525 native: add runtime callable value dispatch`.
@@ -38,6 +37,14 @@ dashboard explicitly named callable-value dispatch beyond direct user-function
 lookup/registration as the next missing callable runtime foundation, and this
 commit closes that runtime portion with generalized tests across callable
 value families.
+
+Post-integration shadow-audit risk: the callable-value dispatch shadow audit
+reported `shadow-needs-fix` after `5abf8525`, specifically around inherited
+dispatch carrying declaring scope instead of called scope, protected visibility
+being checked in only one hierarchy direction, and descriptor-closure argument
+bridging preserving reference slots without consulting descriptor parameter
+mode. This does not erase the integrated runtime foundation, but compiler
+dynamic-call consumers should wait for or include a narrow runtime repair.
 
 ## Grand Roadmap Position
 
@@ -229,7 +236,8 @@ Not done:
   dynamic callable values, `Class::method` strings, namespace fallback,
   autoload, named/unpacked/by-reference breadth beyond the integrated direct
   user-function path and runtime callable-value dispatch, magic calls,
-  non-public method breadth, and rebinding rules.
+  non-public method breadth, called-scope parity, protected-visibility parity,
+  descriptor-aware closure argument binding, and rebinding rules.
 - [ ] Runtime `ArrayAccess` method dispatch for `offsetGet`, `offsetExists`,
   `offsetSet`, and `offsetUnset`.
 - [ ] Binary literal syntax, invalid-UTF-8 PHP source parsing, byte-exact
@@ -248,7 +256,8 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary is clean and synced at `5abf8525` before this `PROGRESS.md` edit.
+- [x] Primary is clean and synced at `87b1ba2f` before this `PROGRESS.md` edit;
+  latest source capability remains `5abf8525`.
 - [x] Latest primary-integrated source capability head is `5abf8525`.
 - [x] Overall and executable estimates remain 95% under current project-local
   accounting.
@@ -261,6 +270,10 @@ Primary-integrated:
 - [x] Runtime callable ABI is now a completed non-repeat prerequisite.
 - [x] Runtime callable-value dispatch is now a completed non-repeat runtime
   prerequisite.
+- [ ] Runtime callable-value dispatch needs a narrow repair before compiler
+  consumers rely on it broadly: called-scope versus declaring-scope carriage,
+  protected same-hierarchy visibility, and descriptor-aware closure argument
+  mode.
 - [x] Direct user-function callable ABI consumers are now a completed
   non-repeat item.
 - [x] Dynamic constructor symbol-environment blocking is now a completed
@@ -287,12 +300,10 @@ Lane-local:
 
 Resource posture:
 
-- `/dev/shm`: 40G total, 24G used, 17G available, 58% used.
-  Largest observed targets: `phpc-target-native-call-semantics` 8.9G,
-  `phpc-target-native-object-seed` 5.6G, and
-  `phpc-target-native-diagnostics` 3.0G.
-- `/home`: 459G total, 194G used, 247G available, 44% used. Largest observed
-  lane/work tree: `phpc-lane-native-error-diagnostic-semantics` 14G.
+- `/dev/shm`: 40G total, 24G used, 17G available, 58% used; `du -sh /dev/shm`
+  reported 24G.
+- `/home`: 459G total, 216G used, 224G available, 50% used; `du -sh
+  /home/claude` reported 134G.
 - Memory available is about 39Gi, but swap remains high at 23Gi/29Gi used.
 - Continue disk-backed `/tmp` target dirs, `umask 0007`,
   `CARGO_BUILD_JOBS=1`, `CARGO_INCREMENTAL=0`, and focused nonzero gates.
@@ -301,11 +312,12 @@ Resource posture:
 
 Best next action:
 
-- Keep callable compiler consumer work focused on consuming the integrated
-  runtime callable ABI beyond direct user functions, not on extending old
-  dynamic-call branch helpers. Future exception/destructor work should first
-  add reusable execution, cleanup-ordering, or metadata boundaries rather than
-  one-shape try, constructor, or destructor recognizers.
+- Repair callable-value runtime dispatch semantics before broad compiler
+  consumption, then keep callable compiler consumer work focused on consuming
+  the integrated runtime callable ABI beyond direct user functions rather than
+  extending old dynamic-call branch helpers. Future exception/destructor work
+  should first add reusable execution, cleanup-ordering, or metadata boundaries
+  rather than one-shape try, constructor, or destructor recognizers.
 
 Avoid:
 
