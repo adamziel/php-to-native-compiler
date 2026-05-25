@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-25 02:08 CEST
-Evaluation marker: `20260525T000856Z`
+Updated: 2026-05-25 02:28 CEST
+Evaluation marker: `20260525T002821Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as product capability. Dirty primary WIP, probe-only commits,
@@ -10,7 +10,7 @@ blocker-only classifiers, and status-file claims are excluded until selected,
 gated, committed, pushed, and reflected here as semantic product progress.
 
 Current live pushed primary head:
-`1171f1e0 docs: update progress dashboard`
+`c745dd47 docs: update progress dashboard`
 
 Latest counted semantic/test baseline:
 `b217e2b4 codegen: block destructor-observable native allocation`
@@ -29,6 +29,7 @@ Recent pushed but uncounted primary state:
 - `4aa6c24c docs: update progress dashboard` is management metadata only.
 - `e4ad066f docs: update progress dashboard` is management metadata only.
 - `1171f1e0 docs: update progress dashboard` is management metadata only.
+- `c745dd47 docs: update progress dashboard` is management metadata only.
 
 Current dirty primary WIP:
 
@@ -168,6 +169,7 @@ Pushed but uncounted:
 - [ ] `4aa6c24c docs: update progress dashboard` is management metadata.
 - [ ] `e4ad066f docs: update progress dashboard` is management metadata.
 - [ ] `1171f1e0 docs: update progress dashboard` is management metadata.
+- [ ] `c745dd47 docs: update progress dashboard` is management metadata.
 
 Dirty primary but uncounted:
 
@@ -185,8 +187,8 @@ Lane-local but uncounted:
 
 Resource pressure is serviceable but still relevant. `/dev/shm` is `40G`
 total, `24G` used, `17G` available, `58%` used; `du -sh /dev/shm` reports
-`24G`. The `/home` filesystem has `459G` total, `186G` used, `254G`
-available, `43%` used. `du -sh /home` did not complete within an 8 second
+`24G`. The `/home` filesystem has `459G` total, `183G` used, `258G`
+available, `42%` used. `du -sh /home` did not complete within an 8 second
 timeout. New gates should still prefer disk-backed `/tmp` targets,
 `CARGO_BUILD_JOBS=1`, `CARGO_INCREMENTAL=0`, and focused filters until the
 dirty primary preg decision is resolved.

@@ -21,9 +21,9 @@
 <article class="card"><h3>JSON/type-conversion extraction</h3><div class="mini"><span>Primary</span><progress max="100" value="40">40%</progress><strong>40%</strong></div><span class="tag mixed">Lane-local JSON line-terminator and related conversion-result work has broad consumers; extract one focused candidate and audit overlap before primary review.</span></article>
 <article class="card"><h3>Control-flow target-state extraction</h3><div class="mini"><span>Primary</span><progress max="100" value="35">35%</progress><strong>35%</strong></div><span class="tag mixed">Lane-local switch/loop target-state and recursive backend work has useful gates, but needs a narrow current-primary candidate.</span></article>
 <article class="card"><h3>Broad lane extraction backlog</h3><div class="mini"><span>Primary</span><progress max="100" value="30">30%</progress><strong>30%</strong></div><span class="tag early">Many lanes report useful generalized work, but most remain broad dirty worktrees without stable primary-base candidates.</span></article></div><h2 id="php-native-compiler-progress">PHP Native Compiler Progress</h2>
-<p>Updated: 2026-05-25 02:08 CEST Evaluation marker: <code>20260525T000856Z</code></p>
+<p>Updated: 2026-05-25 02:28 CEST Evaluation marker: <code>20260525T002821Z</code></p>
 <p>Accounting rule: only generalized, tested, committed, and pushed primary work counts as product capability. Dirty primary WIP, probe-only commits, dashboard-only commits, lane-local candidates, historical worktrees, blocker-only classifiers, and status-file claims are excluded until selected, gated, committed, pushed, and reflected here as semantic product progress.</p>
-<p>Current live pushed primary head: <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/1171f1e0">1171f1e0</a> docs: update progress dashboard</code></p>
+<p>Current live pushed primary head: <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/c745dd47">c745dd47</a> docs: update progress dashboard</code></p>
 <p>Latest counted semantic/test baseline: <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b217e2b4">b217e2b4</a> codegen: block destructor-observable native allocation</code></p>
 <p>Recent pushed but uncounted primary state:</p>
 <ul>
@@ -38,6 +38,7 @@
 <li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/4aa6c24c">4aa6c24c</a> docs: update progress dashboard</code> is management metadata only.</li>
 <li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/e4ad066f">e4ad066f</a> docs: update progress dashboard</code> is management metadata only.</li>
 <li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/1171f1e0">1171f1e0</a> docs: update progress dashboard</code> is management metadata only.</li>
+<li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/c745dd47">c745dd47</a> docs: update progress dashboard</code> is management metadata only.</li>
 </ul>
 <p>Current dirty primary WIP:</p>
 <ul>
@@ -119,6 +120,7 @@
 <li>[ ] <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/4aa6c24c">4aa6c24c</a> docs: update progress dashboard</code> is management metadata.</li>
 <li>[ ] <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/e4ad066f">e4ad066f</a> docs: update progress dashboard</code> is management metadata.</li>
 <li>[ ] <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/1171f1e0">1171f1e0</a> docs: update progress dashboard</code> is management metadata.</li>
+<li>[ ] <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/c745dd47">c745dd47</a> docs: update progress dashboard</code> is management metadata.</li>
 </ul>
 <p>Dirty primary but uncounted:</p>
 <ul>
@@ -133,7 +135,7 @@
 <li>[ ] Direct-call/frame, <code>http_build_query()</code>, JSON/type-conversion, constructor visibility, and control-flow lanes should be extracted into narrow current-primary candidates before primary review.</li>
 </ul>
 <h3 id="review-notes">Review Notes</h3>
-<p>Resource pressure is serviceable but still relevant. <code>/dev/shm</code> is <code>40G</code> total, <code>24G</code> used, <code>17G</code> available, <code>58%</code> used; <code>du -sh /dev/shm</code> reports <code>24G</code>. The <code>/home</code> filesystem has <code>459G</code> total, <code>186G</code> used, <code>254G</code> available, <code>43%</code> used. <code>du -sh /home</code> did not complete within an 8 second timeout. New gates should still prefer disk-backed <code>/tmp</code> targets, <code>CARGO_BUILD_JOBS=1</code>, <code>CARGO_INCREMENTAL=0</code>, and focused filters until the dirty primary preg decision is resolved.</p></section></main>
-  <footer><span>Generated 2026-05-25T00:26:21.518Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
+<p>Resource pressure is serviceable but still relevant. <code>/dev/shm</code> is <code>40G</code> total, <code>24G</code> used, <code>17G</code> available, <code>58%</code> used; <code>du -sh /dev/shm</code> reports <code>24G</code>. The <code>/home</code> filesystem has <code>459G</code> total, <code>183G</code> used, <code>258G</code> available, <code>42%</code> used. <code>du -sh /home</code> did not complete within an 8 second timeout. New gates should still prefer disk-backed <code>/tmp</code> targets, <code>CARGO_BUILD_JOBS=1</code>, <code>CARGO_INCREMENTAL=0</code>, and focused filters until the dirty primary preg decision is resolved.</p></section></main>
+  <footer><span>Generated 2026-05-25T00:41:25.420Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
 </body>
 </html>
