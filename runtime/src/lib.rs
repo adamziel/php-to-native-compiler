@@ -710,6 +710,8 @@ const NATIVE_OBJECT_PUBLIC_PROPERTY_WRITE: u8 = 2;
 const NATIVE_OBJECT_PUBLIC_PROPERTY_ISSET: u8 = 3;
 const NATIVE_OBJECT_PUBLIC_PROPERTY_EMPTY: u8 = 4;
 const NATIVE_OBJECT_PUBLIC_PROPERTY_UNSET: u8 = 5;
+const NATIVE_OBJECT_PROPERTY_MUTATION_WRITE: u8 = 0;
+const NATIVE_OBJECT_PROPERTY_MUTATION_UNSET: u8 = 1;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21042,6 +21044,188 @@ unsafe fn native_value_object_public_property_operation(
     }
 }
 
+unsafe fn native_value_object_property_name(handle: NativeValueHandle) -> Result<String, String> {
+    let bytes = unsafe { native_value_to_string_bytes(handle) }
+        .map_err(|error| error.message().to_string())?;
+    String::from_utf8(bytes)
+        .map_err(|_| "native object property mutation requires a UTF-8 property name".to_string())
+}
+
+unsafe fn native_value_object_property_mutation_operation(
+    subject: NativeValueHandle,
+    property: NativeValueHandle,
+    replacement: NativeValueHandle,
+    operation: u8,
+) -> Result<Value, String> {
+    let property_name = unsafe { native_value_object_property_name(property) }?;
+    if property_name.is_empty() {
+        return Err("native object property mutation requires a non-empty property name".into());
+    }
+
+    let Some(Value::Object(object)) = (unsafe { subject.as_ref() }) else {
+        return Err("native object property mutation requires an object value handle".to_string());
+    };
+
+    match operation {
+        NATIVE_OBJECT_PROPERTY_MUTATION_WRITE => {
+            let replacement = unsafe { replacement.as_ref() }.cloned().ok_or_else(|| {
+                "native object property write requires a replacement value handle".to_string()
+            })?;
+            object
+                .write_public_property(&property_name, replacement)
+                .map_err(|error| error.message().to_string())?;
+            Ok(Value::Object(object.clone()))
+        }
+        NATIVE_OBJECT_PROPERTY_MUTATION_UNSET => object
+            .unset_property_from_context(&property_name, None, &[])
+            .map(|_| Value::Object(object.clone()))
+            .map_err(|error| error.message().to_string()),
+        tag => Err(format!(
+            "native object property mutation tag {tag} is not supported"
+        )),
+    }
+}
+
+unsafe fn native_object_property_mutation_slot_value(
+    value: NativeValueHandle,
+    reference: NativeReferenceHandle,
+    slot: &'static str,
+) -> Result<(NativeValueHandle, bool), String> {
+    if reference.is_null() {
+        return Ok((value, false));
+    }
+    if !value.is_null() {
+        return Err(format!(
+            "native object property mutation failed: {slot} slot received both value and reference handles"
+        ));
+    }
+    let Some(reference) = (unsafe { reference.as_ref() }) else {
+        return Err(format!(
+            "native object property mutation failed: {slot} reference handle is null"
+        ));
+    };
+
+    Ok((
+        NativeValueHandle::from_value(reference.cell.value_cloned()),
+        true,
+    ))
+}
+
+/// # Safety
+///
+/// `subject`, `property`, and `replacement` must be null or value handles
+/// previously returned by the runtime ABI and not yet freed. `replacement` is
+/// ignored for unset operations. `diagnostic` may be null; when non-null, it
+/// must point to writable storage for one `NativeDiagnosticHandle`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_object_property_mutation_operation_with_diagnostic(
+    subject: NativeValueHandle,
+    property: NativeValueHandle,
+    replacement: NativeValueHandle,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe {
+        native_value_object_property_mutation_operation(subject, property, replacement, operation)
+    } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// Each logical operand must be passed as either a value handle or a reference
+/// handle. Reference handles are dereferenced at this shared runtime boundary
+/// before object validation, property-name conversion, replacement cloning,
+/// diagnostics, and cleanup.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_object_property_mutation_operation_with_reference_slots_with_diagnostic(
+    subject: NativeValueHandle,
+    subject_reference: NativeReferenceHandle,
+    property: NativeValueHandle,
+    property_reference: NativeReferenceHandle,
+    replacement: NativeValueHandle,
+    replacement_reference: NativeReferenceHandle,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let (subject, subject_owned) = match unsafe {
+        native_object_property_mutation_slot_value(subject, subject_reference, "subject")
+    } {
+        Ok(slot) => slot,
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            return NativeValueHandle::null();
+        }
+    };
+    let (property, property_owned) = match unsafe {
+        native_object_property_mutation_slot_value(property, property_reference, "property")
+    } {
+        Ok(slot) => slot,
+        Err(message) => {
+            if subject_owned {
+                unsafe { phpc_native_value_free(subject) };
+            }
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            return NativeValueHandle::null();
+        }
+    };
+    let needs_replacement = operation == NATIVE_OBJECT_PROPERTY_MUTATION_WRITE;
+    let (replacement, replacement_owned) = if needs_replacement {
+        match unsafe {
+            native_object_property_mutation_slot_value(
+                replacement,
+                replacement_reference,
+                "replacement",
+            )
+        } {
+            Ok(slot) => slot,
+            Err(message) => {
+                if subject_owned {
+                    unsafe { phpc_native_value_free(subject) };
+                }
+                if property_owned {
+                    unsafe { phpc_native_value_free(property) };
+                }
+                unsafe { native_store_diagnostic_message(diagnostic, message) };
+                return NativeValueHandle::null();
+            }
+        }
+    } else {
+        (NativeValueHandle::null(), false)
+    };
+
+    let result = unsafe {
+        phpc_native_value_object_property_mutation_operation_with_diagnostic(
+            subject,
+            property,
+            replacement,
+            operation,
+            diagnostic,
+        )
+    };
+
+    if subject_owned {
+        unsafe { phpc_native_value_free(subject) };
+    }
+    if property_owned {
+        unsafe { phpc_native_value_free(property) };
+    }
+    if replacement_owned {
+        unsafe { phpc_native_value_free(replacement) };
+    }
+
+    result
+}
+
 fn bitwise_strings(
     left: &str,
     right: &str,
@@ -23652,6 +23836,160 @@ mod tests {
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(scalar) };
+        unsafe { phpc_native_value_free(object) };
+    }
+
+    #[test]
+    fn native_object_property_mutation_reference_slots_dereference_boundaries() {
+        let class_name = b"NativeRefBox";
+        let property_payload = b"payload";
+        let property_other = b"other";
+        let property_names = [property_payload.as_ptr(), property_other.as_ptr()];
+        let property_name_lens = [property_payload.len(), property_other.len()];
+        let property_visibilities = [
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+        ];
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let object = unsafe {
+            phpc_native_value_new_declared_class_with_diagnostic(
+                37,
+                class_name.as_ptr(),
+                class_name.len(),
+                property_names.as_ptr(),
+                property_name_lens.as_ptr(),
+                property_visibilities.as_ptr(),
+                property_names.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let object_value = unsafe { object.as_ref() }
+            .expect("declared object handle")
+            .clone();
+        let subject_reference =
+            NativeReferenceHandle::from_cell(PhpReferenceCell::new(object_value));
+        let property_reference = NativeReferenceHandle::from_cell(PhpReferenceCell::new(
+            Value::String("payload".into()),
+        ));
+        let replacement_reference =
+            NativeReferenceHandle::from_cell(PhpReferenceCell::new(Value::String("R\0Y".into())));
+
+        let written = unsafe {
+            phpc_native_object_property_mutation_operation_with_reference_slots_with_diagnostic(
+                NativeValueHandle::null(),
+                subject_reference,
+                NativeValueHandle::null(),
+                property_reference,
+                NativeValueHandle::null(),
+                replacement_reference,
+                NATIVE_OBJECT_PROPERTY_MUTATION_WRITE,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(matches!(
+            unsafe { written.as_ref() },
+            Some(Value::Object(_))
+        ));
+        unsafe { phpc_native_value_free(written) };
+
+        let subject_after_write = unsafe { phpc_native_reference_value_clone(subject_reference) };
+        let read_payload = unsafe {
+            phpc_native_value_object_public_property_operation_with_diagnostic(
+                subject_after_write,
+                property_payload.as_ptr(),
+                property_payload.len(),
+                NativeValueHandle::null(),
+                NATIVE_OBJECT_PUBLIC_PROPERTY_READ,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { read_payload.as_ref() },
+            Some(&Value::String("R\0Y".into()))
+        );
+        unsafe { phpc_native_value_free(read_payload) };
+        unsafe { phpc_native_value_free(subject_after_write) };
+
+        let other_property = NativeValueHandle::from_value(Value::String("other".into()));
+        assert!(unsafe { phpc_native_reference_set_value(property_reference, other_property) });
+        unsafe { phpc_native_value_free(other_property) };
+        let other_replacement = NativeValueHandle::from_value(Value::Int(9));
+        assert!(unsafe {
+            phpc_native_reference_set_value(replacement_reference, other_replacement)
+        });
+        unsafe { phpc_native_value_free(other_replacement) };
+        let written_other = unsafe {
+            phpc_native_object_property_mutation_operation_with_reference_slots_with_diagnostic(
+                NativeValueHandle::null(),
+                subject_reference,
+                NativeValueHandle::null(),
+                property_reference,
+                NativeValueHandle::null(),
+                replacement_reference,
+                NATIVE_OBJECT_PROPERTY_MUTATION_WRITE,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        unsafe { phpc_native_value_free(written_other) };
+
+        let unset_other = unsafe {
+            phpc_native_object_property_mutation_operation_with_reference_slots_with_diagnostic(
+                NativeValueHandle::null(),
+                subject_reference,
+                NativeValueHandle::null(),
+                property_reference,
+                NativeValueHandle::null(),
+                replacement_reference,
+                NATIVE_OBJECT_PROPERTY_MUTATION_UNSET,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        unsafe { phpc_native_value_free(unset_other) };
+
+        let subject_after_unset = unsafe { phpc_native_reference_value_clone(subject_reference) };
+        let isset_other = unsafe {
+            phpc_native_value_object_public_property_operation_with_diagnostic(
+                subject_after_unset,
+                property_other.as_ptr(),
+                property_other.len(),
+                NativeValueHandle::null(),
+                NATIVE_OBJECT_PUBLIC_PROPERTY_ISSET,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(unsafe { isset_other.as_ref() }, Some(&Value::Bool(false)));
+        unsafe { phpc_native_value_free(isset_other) };
+        unsafe { phpc_native_value_free(subject_after_unset) };
+
+        let conflicting = unsafe {
+            phpc_native_object_property_mutation_operation_with_reference_slots_with_diagnostic(
+                object,
+                subject_reference,
+                NativeValueHandle::null(),
+                property_reference,
+                NativeValueHandle::null(),
+                replacement_reference,
+                NATIVE_OBJECT_PROPERTY_MUTATION_WRITE,
+                &mut diagnostic,
+            )
+        };
+        assert!(conflicting.is_null());
+        assert!(
+            native_diagnostic_message_for_test(diagnostic).contains("both value and reference"),
+            "diagnostic should reject ambiguous slots"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        unsafe { phpc_native_reference_free(replacement_reference) };
+        unsafe { phpc_native_reference_free(property_reference) };
+        unsafe { phpc_native_reference_free(subject_reference) };
         unsafe { phpc_native_value_free(object) };
     }
 

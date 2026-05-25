@@ -10434,6 +10434,32 @@ enum CValue {
     Null,
 }
 
+enum CObjectPropertyOperand<'a> {
+    Literal(&'a str),
+    Dynamic(&'a Expr),
+}
+
+enum NativeObjectPropertyMutationOperation {
+    Write,
+    Unset,
+}
+
+impl NativeObjectPropertyMutationOperation {
+    fn operation_tag(&self) -> &'static str {
+        match self {
+            Self::Write => "PHPC_NATIVE_OBJECT_PROPERTY_MUTATION_WRITE",
+            Self::Unset => "PHPC_NATIVE_OBJECT_PROPERTY_MUTATION_UNSET",
+        }
+    }
+
+    fn result_prefix(&self) -> &'static str {
+        match self {
+            Self::Write => "object_property_write_value",
+            Self::Unset => "object_property_unset_value",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct CMutableScalarSlot {
     name: String,
@@ -10947,6 +10973,42 @@ struct CNativeArrayLvaluePath {
 struct CNativeValueMaterialization {
     handle: String,
     cleanup_after_use: Vec<String>,
+}
+
+struct CNativeValueReferenceSlot {
+    value_handle: String,
+    reference_handle: String,
+    cleanup_after_use: Vec<String>,
+    is_reference: bool,
+}
+
+impl CNativeValueReferenceSlot {
+    fn value(value: CNativeValueMaterialization) -> Self {
+        Self {
+            value_handle: value.handle,
+            reference_handle: "(phpc_NativeReferenceHandle){0}".to_string(),
+            cleanup_after_use: value.cleanup_after_use,
+            is_reference: false,
+        }
+    }
+
+    fn reference(reference: String) -> Self {
+        Self {
+            value_handle: "(phpc_NativeValueHandle){0}".to_string(),
+            reference_handle: reference,
+            cleanup_after_use: Vec::new(),
+            is_reference: true,
+        }
+    }
+
+    fn null() -> Self {
+        Self {
+            value_handle: "(phpc_NativeValueHandle){0}".to_string(),
+            reference_handle: "(phpc_NativeReferenceHandle){0}".to_string(),
+            cleanup_after_use: Vec::new(),
+            is_reference: false,
+        }
+    }
 }
 
 struct CNativeConstructorArgumentArray {
@@ -13844,6 +13906,8 @@ impl CGenerator {
                 output.push_str("#define PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_ISSET 3\n");
                 output.push_str("#define PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_EMPTY 4\n");
                 output.push_str("#define PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_UNSET 5\n");
+                output.push_str("#define PHPC_NATIVE_OBJECT_PROPERTY_MUTATION_WRITE 0\n");
+                output.push_str("#define PHPC_NATIVE_OBJECT_PROPERTY_MUTATION_UNSET 1\n");
             }
             output.push_str("#define PHPC_NATIVE_VALUE_FORMAT_ECHO 0\n");
             output.push('\n');
@@ -13985,6 +14049,8 @@ impl CGenerator {
             }
             if self.uses_native_object_property_helpers {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_public_property_operation_with_diagnostic(phpc_NativeValueHandle object, const uint8_t *property_name, size_t property_name_len, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_property_mutation_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle property, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_object_property_mutation_operation_with_reference_slots_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeReferenceHandle subject_reference, phpc_NativeValueHandle property, phpc_NativeReferenceHandle property_reference, phpc_NativeValueHandle replacement, phpc_NativeReferenceHandle replacement_reference, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_object_instanceof_helpers {
                 output.push_str("extern _Bool phpc_native_value_instanceof_class_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *class_name, size_t class_name_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -14841,6 +14907,206 @@ impl CGenerator {
         )
     }
 
+    fn materialize_native_value_reference_slot_operand(
+        &mut self,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueReferenceSlot> {
+        if let Expr::Variable(name, span) = expr {
+            if self.by_reference_foreach_linger_variables.contains(name) {
+                return Err(
+                    self.unsupported(*span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
+                );
+            }
+            if let Some(CValue::NativeReferenceHandle(reference)) =
+                self.variables.get(name).cloned()
+            {
+                return Ok(CNativeValueReferenceSlot::reference(reference));
+            }
+            if self.direct_variables_route_through_global_symbol_table()
+                && !is_request_superglobal_name(name)
+                && !is_globals_superglobal_name(name)
+            {
+                return self.materialize_symbol_table_variable_reference_slot(
+                    name,
+                    *span,
+                    failure_cleanup,
+                );
+            }
+        }
+
+        self.materialize_native_value_result_operand(expr, failure_cleanup)
+            .map(CNativeValueReferenceSlot::value)
+    }
+
+    fn materialize_symbol_table_variable_reference_slot(
+        &mut self,
+        name: &str,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueReferenceSlot> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_symbol_table_helpers = true;
+        self.uses_native_reference_helpers = true;
+
+        let table = self.ensure_globals_symbol_table(failure_cleanup, span)?;
+        let name_bytes = self.emit_symbol_name_static_bytes(name);
+        let reference = self.next_native_name("object_property_reference_slot");
+        self.body.push(format!(
+            "phpc_NativeReferenceHandle {reference} = phpc_native_symbol_table_reference_for_path({table}, {name_bytes}, {}, NULL, 0, false);",
+            name.len()
+        ));
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({reference}.ptr == NULL) {{ {error_exit} }}"));
+
+        Ok(CNativeValueReferenceSlot {
+            value_handle: "(phpc_NativeValueHandle){0}".to_string(),
+            reference_handle: reference.clone(),
+            cleanup_after_use: vec![format!("phpc_native_reference_free({reference});")],
+            is_reference: true,
+        })
+    }
+
+    fn materialize_object_property_operand(
+        &mut self,
+        object: &Expr,
+        property: CObjectPropertyOperand<'_>,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<(CNativeValueReferenceSlot, CNativeValueReferenceSlot)> {
+        let object_value =
+            self.materialize_native_value_reference_slot_operand(object, failure_cleanup)?;
+        let property_failure_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&object_value.cleanup_after_use),
+            failure_cleanup
+        );
+        let property_value = match property {
+            CObjectPropertyOperand::Literal(property) => {
+                let value = self.materialize_native_array_c_value_handle(
+                    CValue::String(property.to_string()),
+                    span,
+                )?;
+                CNativeValueReferenceSlot::value(value)
+            }
+            CObjectPropertyOperand::Dynamic(property) => self
+                .materialize_native_value_reference_slot_operand(
+                    property,
+                    &property_failure_cleanup,
+                )?,
+        };
+
+        Ok((object_value, property_value))
+    }
+
+    fn materialize_object_property_assignment_result(
+        &mut self,
+        object: &Expr,
+        property: CObjectPropertyOperand<'_>,
+        expr: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_object_property_helpers = true;
+
+        let (object_value, property_value) =
+            self.materialize_object_property_operand(object, property, span, failure_cleanup)?;
+        let property_cleanup = c_cleanup_sequence(&property_value.cleanup_after_use);
+        let object_cleanup = c_cleanup_sequence(&object_value.cleanup_after_use);
+        let replacement_failure_cleanup =
+            format!("{property_cleanup}{object_cleanup}{failure_cleanup}");
+        let replacement = self
+            .materialize_native_value_reference_slot_operand(expr, &replacement_failure_cleanup)?;
+
+        let assignment_result = if replacement.is_reference {
+            let result = self.clone_native_reference_value_handle(&replacement.reference_handle);
+            CNativeValueMaterialization {
+                handle: result.clone(),
+                cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+            }
+        } else {
+            let result = self.clone_native_value_handle(&replacement.value_handle);
+            CNativeValueMaterialization {
+                handle: result.clone(),
+                cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+            }
+        };
+
+        let assignment_result_failure_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&assignment_result.cleanup_after_use),
+            failure_cleanup
+        );
+        let mutation = self.emit_native_object_property_mutation_result_handle(
+            NativeObjectPropertyMutationOperation::Write,
+            object_value,
+            property_value,
+            replacement,
+            &assignment_result_failure_cleanup,
+        );
+        self.body.extend(mutation.cleanup_after_use);
+        Ok(assignment_result)
+    }
+
+    fn emit_native_object_property_mutation_result_handle(
+        &mut self,
+        operation: NativeObjectPropertyMutationOperation,
+        subject: CNativeValueReferenceSlot,
+        property: CNativeValueReferenceSlot,
+        replacement: CNativeValueReferenceSlot,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        self.uses_native_string_helpers = true;
+        self.uses_native_object_property_helpers = true;
+
+        let subject_handle = subject.value_handle.clone();
+        let subject_reference = subject.reference_handle.clone();
+        let property_handle = property.value_handle.clone();
+        let property_reference = property.reference_handle.clone();
+        let replacement_handle = replacement.value_handle.clone();
+        let replacement_reference = replacement.reference_handle.clone();
+        let use_reference_slots =
+            subject.is_reference || property.is_reference || replacement.is_reference;
+
+        let mut cleanup_after_use = replacement.cleanup_after_use;
+        cleanup_after_use.extend(property.cleanup_after_use);
+        cleanup_after_use.extend(subject.cleanup_after_use);
+
+        let diagnostic = self.next_native_name("object_property_mutation_diagnostic");
+        let result = self.next_native_name(operation.result_prefix());
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        if use_reference_slots {
+            self.body.push(format!(
+                "phpc_NativeValueHandle {result} = phpc_native_object_property_mutation_operation_with_reference_slots_with_diagnostic({subject_handle}, {subject_reference}, {property_handle}, {property_reference}, {replacement_handle}, {replacement_reference}, {}, &{diagnostic});",
+                operation.operation_tag()
+            ));
+        } else {
+            self.body.push(format!(
+                "phpc_NativeValueHandle {result} = phpc_native_value_object_property_mutation_operation_with_diagnostic({subject_handle}, {property_handle}, {replacement_handle}, {}, &{diagnostic});",
+                operation.operation_tag()
+            ));
+        }
+        let cleanup = format!(
+            "phpc_native_diagnostic_message_stderr({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {}{}",
+            c_cleanup_sequence(&cleanup_after_use),
+            failure_cleanup
+        );
+        let error_exit = self.native_error_exit(&cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.body.extend(cleanup_after_use);
+
+        CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }
+    }
+
     fn materialize_object_public_property_assignment_result_for_target(
         &mut self,
         target: &AssignTarget,
@@ -14854,12 +15120,11 @@ impl CGenerator {
                 span,
             } => {
                 let object = Expr::Variable(object.clone(), *span);
-                self.materialize_object_public_property_operation_expr(
+                self.materialize_object_property_assignment_result(
                     &object,
-                    property,
-                    Some(expr),
-                    "PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_WRITE",
-                    "object_property_write",
+                    CObjectPropertyOperand::Literal(property),
+                    expr,
+                    *span,
                     failure_cleanup,
                 )
                 .map(Some)
@@ -14867,12 +15132,39 @@ impl CGenerator {
             AssignTarget::NonDirectProperty {
                 holder, property, ..
             } => self
-                .materialize_object_public_property_operation_expr(
+                .materialize_object_property_assignment_result(
                     holder,
-                    property,
-                    Some(expr),
-                    "PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_WRITE",
-                    "object_property_write",
+                    CObjectPropertyOperand::Literal(property),
+                    expr,
+                    target.span(),
+                    failure_cleanup,
+                )
+                .map(Some),
+            AssignTarget::DynamicProperty {
+                object,
+                property,
+                span,
+            } => {
+                let object = Expr::Variable(object.clone(), *span);
+                self.materialize_object_property_assignment_result(
+                    &object,
+                    CObjectPropertyOperand::Dynamic(property),
+                    expr,
+                    *span,
+                    failure_cleanup,
+                )
+                .map(Some)
+            }
+            AssignTarget::NonDirectDynamicProperty {
+                holder,
+                property,
+                span,
+            } => self
+                .materialize_object_property_assignment_result(
+                    holder,
+                    CObjectPropertyOperand::Dynamic(property),
+                    expr,
+                    *span,
                     failure_cleanup,
                 )
                 .map(Some),
@@ -14885,8 +15177,6 @@ impl CGenerator {
             | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
             | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
-            | AssignTarget::DynamicProperty { .. }
-            | AssignTarget::NonDirectDynamicProperty { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
@@ -14931,14 +15221,30 @@ impl CGenerator {
         property: &str,
         failure_cleanup: &str,
     ) -> CompileResult<()> {
-        let value = self.materialize_object_public_property_operation_expr(
+        self.emit_object_property_unset_expr(
             object,
-            property,
-            None,
-            "PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_UNSET",
-            "object_property_unset",
+            CObjectPropertyOperand::Literal(property),
+            object.span(),
             failure_cleanup,
-        )?;
+        )
+    }
+
+    fn emit_object_property_unset_expr(
+        &mut self,
+        object: &Expr,
+        property: CObjectPropertyOperand<'_>,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let (object_value, property_value) =
+            self.materialize_object_property_operand(object, property, span, failure_cleanup)?;
+        let value = self.emit_native_object_property_mutation_result_handle(
+            NativeObjectPropertyMutationOperation::Unset,
+            object_value,
+            property_value,
+            CNativeValueReferenceSlot::null(),
+            failure_cleanup,
+        );
         self.body.extend(value.cleanup_after_use);
         Ok(())
     }
@@ -20175,8 +20481,18 @@ impl CGenerator {
                 let object = Expr::Variable(object.clone(), *span);
                 self.emit_object_public_property_unset_expr(&object, property, "")
             }
-            Stmt::UnsetDynamicObjectProperty { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
+            Stmt::UnsetDynamicObjectProperty {
+                object,
+                property,
+                span,
+            } => {
+                let object = Expr::Variable(object.clone(), *span);
+                self.emit_object_property_unset_expr(
+                    &object,
+                    CObjectPropertyOperand::Dynamic(property),
+                    *span,
+                    "",
+                )
             }
             Stmt::UnsetArrayIndex { name, index, span } => {
                 self.emit_unset_array_index(name, index, *span)
@@ -26406,6 +26722,31 @@ impl CGenerator {
                     holder, property, ..
                 } => {
                     self.emit_object_public_property_unset_expr(holder, property, "")?;
+                }
+                UnsetTarget::DynamicObjectProperty {
+                    object,
+                    property,
+                    span,
+                } => {
+                    let object = Expr::Variable(object.clone(), *span);
+                    self.emit_object_property_unset_expr(
+                        &object,
+                        CObjectPropertyOperand::Dynamic(property),
+                        *span,
+                        "",
+                    )?;
+                }
+                UnsetTarget::NonDirectDynamicObjectProperty {
+                    holder,
+                    property,
+                    span,
+                } => {
+                    self.emit_object_property_unset_expr(
+                        holder,
+                        CObjectPropertyOperand::Dynamic(property),
+                        *span,
+                        "",
+                    )?;
                 }
                 _ => return Err(self.unsupported(span, ASSEMBLY_MUTATION_REJECTION)),
             }

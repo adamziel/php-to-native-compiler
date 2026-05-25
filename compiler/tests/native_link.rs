@@ -2456,6 +2456,77 @@ fn native_executable_c_source_routes_declared_object_property_unsets_through_run
 }
 
 #[test]
+fn native_executable_c_source_routes_object_property_mutation_reference_slots_through_shared_boundary(
+) {
+    let program = parse(
+        "<?php\nclass Box { public $payload; }\n$obj = new Box();\n$key = \"payload\";\n$keyRef =& $key;\n$value = \"R\\0Y\";\n$valueRef =& $value;\n$obj->$key = $value;\necho $obj->payload;\nunset($obj->$key);\necho empty($obj->payload);\n$value = \"Z\";\n$obj->$key = $value;\necho $obj->payload;\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "extern phpc_NativeValueHandle phpc_native_object_property_mutation_operation_with_reference_slots_with_diagnostic("
+        ),
+        "{source}"
+    );
+    assert!(
+        body.matches(
+            " = phpc_native_object_property_mutation_operation_with_reference_slots_with_diagnostic("
+        )
+        .count()
+            >= 3,
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_object_property_mutation_operation_with_diagnostic")
+            && body.contains("phpc_native_value_object_public_property_operation_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("object-property lowering rejects")
+            && !source.contains("mutation lowering rejects")
+            && !source.contains("reference assignment lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_object_property_mutation_reference_slot_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "native_object_property_mutation_reference_slots",
+        "<?php\nclass Box { public $payload; }\n$obj = new Box();\n$key = \"payload\";\n$keyRef =& $key;\n$value = \"R\\0Y\";\n$valueRef =& $value;\n$obj->$key = $value;\necho $obj->payload, \"|\";\nunset($obj->$key);\necho empty($obj->payload), \"|\";\n$value = \"Z\";\n$obj->$key = $value;\necho $obj->payload, \"\\n\";\n",
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run object-property reference-slot executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "native executable failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"R0Y|1|Z\n");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        !stderr.contains("object-property lowering rejects")
+            && !stderr.contains("mutation lowering rejects")
+            && !stderr.contains("reference assignment lowering rejects"),
+        "stderr:\n{stderr}"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn native_executable_c_source_routes_declared_instanceof_through_runtime_abi() {
     let program = parse(NATIVE_DECLARED_CLASS_INSTANCEOF_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
