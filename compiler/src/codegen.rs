@@ -11887,6 +11887,7 @@ struct CGenerator {
     uses_native_symbol_table_helpers: bool,
     uses_native_exit_helpers: bool,
     uses_native_call_type_helpers: bool,
+    uses_native_callable_helpers: bool,
     uses_native_dynamic_call_helpers: bool,
     uses_native_closure_helpers: bool,
     uses_native_output_buffer_operation: bool,
@@ -11905,6 +11906,7 @@ struct CGenerator {
     native_request_state_handle: Option<String>,
     native_globals_symbol_table_handle: Option<String>,
     native_globals_symbol_table_owned: bool,
+    native_callable_table_handle: Option<String>,
     loop_transfer_targets: Vec<CLoopTransferTarget>,
     active_finally_bodies: Vec<Vec<Stmt>>,
     user_functions: HashMap<String, CUserFunction>,
@@ -11997,6 +11999,7 @@ struct CGotoStateSnapshot {
     native_request_state_handle: Option<String>,
     native_globals_symbol_table_handle: Option<String>,
     native_globals_symbol_table_owned: bool,
+    native_callable_table_handle: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -13193,6 +13196,7 @@ impl CGenerator {
             native_request_state_handle: self.native_request_state_handle.clone(),
             native_globals_symbol_table_handle: self.native_globals_symbol_table_handle.clone(),
             native_globals_symbol_table_owned: self.native_globals_symbol_table_owned,
+            native_callable_table_handle: self.native_callable_table_handle.clone(),
         }
     }
 
@@ -13205,6 +13209,7 @@ impl CGenerator {
             && self.native_request_state_handle == other.native_request_state_handle
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
             && self.native_globals_symbol_table_owned == other.native_globals_symbol_table_owned
+            && self.native_callable_table_handle == other.native_callable_table_handle
     }
 
     fn merge_scoped_branch_state(
@@ -13631,6 +13636,7 @@ impl CGenerator {
         self.uses_native_symbol_table_helpers |= branch.uses_native_symbol_table_helpers;
         self.uses_native_exit_helpers |= branch.uses_native_exit_helpers;
         self.uses_native_call_type_helpers |= branch.uses_native_call_type_helpers;
+        self.uses_native_callable_helpers |= branch.uses_native_callable_helpers;
         self.uses_native_dynamic_call_helpers |= branch.uses_native_dynamic_call_helpers;
         self.uses_native_closure_helpers |= branch.uses_native_closure_helpers;
         self.uses_native_output_buffer_operation |= branch.uses_native_output_buffer_operation;
@@ -13665,6 +13671,7 @@ impl CGenerator {
             || self.uses_native_reference_helpers
             || self.uses_native_text_membership_operation
             || self.uses_native_call_type_helpers
+            || self.uses_native_callable_helpers
             || self.uses_native_dynamic_call_helpers
             || self.uses_native_closure_helpers
             || self.uses_native_output_buffer_operation
@@ -13710,6 +13717,16 @@ impl CGenerator {
     fn c_closure_frame_callback_signature(c_name: &str) -> String {
         format!(
             "static phpc_NativeClosureInvocationResult {c_name}(int phpc_call_depth, const phpc_NativeClosureArgument *phpc_closure_args, size_t phpc_closure_arg_count, int *phpc_call_status)"
+        )
+    }
+
+    fn c_user_function_callable_wrapper_name(c_name: &str) -> String {
+        format!("{c_name}_native_callable_frame")
+    }
+
+    fn c_user_function_callable_wrapper_signature(c_name: &str) -> String {
+        format!(
+            "static phpc_NativeCallResultHandle {c_name}(phpc_NativeCallFrameHandle phpc_call_frame)"
         )
     }
 
@@ -14480,6 +14497,58 @@ impl CGenerator {
         Ok(definition)
     }
 
+    fn emit_user_function_callable_wrapper_definition(&self, function: &CUserFunction) -> String {
+        let wrapper_name = Self::c_user_function_callable_wrapper_name(&function.c_name);
+        let mut definition = String::new();
+        definition.push_str(&Self::c_user_function_callable_wrapper_signature(
+            &wrapper_name,
+        ));
+        definition.push_str(" {\n");
+        definition.push_str("  phpc_user_callable_call_depth += 1;\n");
+        definition.push_str("  int phpc_call_status = 0;\n");
+
+        let mut call_args = vec!["phpc_user_callable_call_depth".to_string()];
+        if function.requires_root_symbols {
+            call_args.push("phpc_user_callable_root_symbols".to_string());
+        }
+        let mut cleanup = Vec::new();
+        for (index, param) in function.decl.params.iter().enumerate() {
+            if param.by_reference {
+                definition.push_str(&format!(
+                    "  phpc_NativeReferenceHandle arg_{index} = phpc_native_call_frame_read_reference(phpc_call_frame, {index});\n"
+                ));
+                let cleanup_sequence = c_cleanup_sequence(&cleanup);
+                definition.push_str(&format!(
+                    "  if (arg_{index}.ptr == NULL) {{ {cleanup_sequence} phpc_user_callable_call_depth -= 1; return (phpc_NativeCallResultHandle){{0}}; }}\n"
+                ));
+                cleanup.push(format!("phpc_native_reference_free(arg_{index});"));
+            } else {
+                definition.push_str(&format!(
+                    "  phpc_NativeValueHandle arg_{index} = phpc_native_call_frame_read_value(phpc_call_frame, {index});\n"
+                ));
+                let cleanup_sequence = c_cleanup_sequence(&cleanup);
+                definition.push_str(&format!(
+                    "  if (arg_{index}.ptr == NULL) {{ {cleanup_sequence} phpc_user_callable_call_depth -= 1; return (phpc_NativeCallResultHandle){{0}}; }}\n"
+                ));
+                cleanup.push(format!("phpc_native_value_free(arg_{index});"));
+            }
+            call_args.push(format!("arg_{index}"));
+        }
+        call_args.push("&phpc_call_status".to_string());
+
+        definition.push_str(&format!(
+            "  phpc_NativeValueHandle phpc_call_result = {}({});\n",
+            function.c_name,
+            call_args.join(", ")
+        ));
+        definition.push_str(&format!("  {}\n", c_cleanup_sequence(&cleanup)));
+        definition.push_str("  phpc_user_callable_call_depth -= 1;\n");
+        definition.push_str("  if (phpc_call_status != 1 || phpc_call_result.ptr == NULL) { return (phpc_NativeCallResultHandle){0}; }\n");
+        definition.push_str("  return phpc_native_call_result_from_value(phpc_call_result);\n");
+        definition.push_str("}\n");
+        definition
+    }
+
     fn materialize_closure_descriptor_expr(
         &mut self,
         params: &[FunctionParam],
@@ -15234,6 +15303,7 @@ impl CGenerator {
             if self.uses_native_comparison_helpers
                 || self.uses_native_array_helpers
                 || self.uses_native_reference_helpers
+                || self.uses_native_callable_helpers
             {
                 output.push_str("#include <stdbool.h>\n");
             }
@@ -15267,8 +15337,19 @@ impl CGenerator {
                 || self.uses_native_symbol_table_helpers
                 || self.uses_native_conversion_source_helpers
                 || self.uses_native_value_truthiness
+                || self.uses_native_callable_helpers
             {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeReferenceHandle;\n");
+            }
+            if self.uses_native_callable_helpers {
+                output.push_str("#define PHPC_NATIVE_CALLABLE_KIND_FUNCTION 1\n");
+                output.push_str("#define PHPC_NATIVE_CALLABLE_VISIBILITY_PUBLIC 1\n");
+                output.push_str("typedef struct { void *ptr; } phpc_NativeCallableTableHandle;\n");
+                output.push_str("typedef struct { void *ptr; } phpc_NativeCallableHandle;\n");
+                output.push_str("typedef struct { void *ptr; } phpc_NativeCallArgumentsHandle;\n");
+                output.push_str("typedef struct { void *ptr; } phpc_NativeCallFrameHandle;\n");
+                output.push_str("typedef struct { void *ptr; } phpc_NativeCallResultHandle;\n");
+                output.push_str("typedef phpc_NativeCallResultHandle (*phpc_NativeCallableFrameCallback)(phpc_NativeCallFrameHandle);\n");
             }
             if self.uses_native_closure_helpers {
                 output.push_str("#define PHPC_NATIVE_CLOSURE_ARGUMENT_BY_REFERENCE 1\n");
@@ -15536,6 +15617,29 @@ impl CGenerator {
             output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_scalar(phpc_NativeScalarValue value);\n");
             output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_string_with_diagnostic(phpc_NativeStringHandle string, phpc_NativeDiagnosticHandle *diagnostic);\n");
             output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_string_bytes_with_diagnostic(const uint8_t *ptr, size_t len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            if self.uses_native_callable_helpers {
+                output.push_str(
+                    "extern phpc_NativeCallableTableHandle phpc_native_callable_table_new(void);\n",
+                );
+                output.push_str("extern bool phpc_native_callable_table_is_null(phpc_NativeCallableTableHandle handle);\n");
+                output.push_str("extern void phpc_native_callable_table_free(phpc_NativeCallableTableHandle handle);\n");
+                output.push_str("extern bool phpc_native_callable_table_register_visibility_staticness_frame_callback_and_free(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, uint8_t visibility, bool is_static, phpc_NativeCallableFrameCallback callback);\n");
+                output.push_str("extern phpc_NativeCallableHandle phpc_native_callable_lookup_with_diagnostic(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str(
+                    "extern void phpc_native_callable_free(phpc_NativeCallableHandle handle);\n",
+                );
+                output.push_str(
+                    "extern phpc_NativeCallArgumentsHandle phpc_native_call_arguments_new(void);\n",
+                );
+                output.push_str("extern bool phpc_native_call_arguments_is_null(phpc_NativeCallArgumentsHandle handle);\n");
+                output.push_str("extern bool phpc_native_call_arguments_push_value_and_free(phpc_NativeCallArgumentsHandle arguments, phpc_NativeValueHandle value);\n");
+                output.push_str("extern bool phpc_native_call_arguments_push_reference_and_free(phpc_NativeCallArgumentsHandle arguments, phpc_NativeReferenceHandle reference);\n");
+                output.push_str("extern void phpc_native_call_arguments_free(phpc_NativeCallArgumentsHandle handle);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_call_frame_read_value(phpc_NativeCallFrameHandle frame, size_t index);\n");
+                output.push_str("extern phpc_NativeReferenceHandle phpc_native_call_frame_read_reference(phpc_NativeCallFrameHandle frame, size_t index);\n");
+                output.push_str("extern phpc_NativeCallResultHandle phpc_native_call_result_from_value(phpc_NativeValueHandle value);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_callable_invoke_value_with_diagnostic_and_free(phpc_NativeCallableHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            }
             if self.uses_native_conversion_source_helpers {
                 output.push_str("extern phpc_NativeConversionSource phpc_native_conversion_source_value(phpc_NativeValueHandle handle);\n");
                 output.push_str("extern phpc_NativeConversionResult phpc_native_offset_read_source(phpc_NativeConversionSource target_source, phpc_NativeConversionSource key_source);\n");
@@ -15806,6 +15910,22 @@ impl CGenerator {
         if !self.static_data.is_empty() {
             output.push('\n');
         }
+        if self.uses_native_callable_helpers {
+            output.push_str(
+                "static phpc_NativeCallableTableHandle phpc_user_callable_table = {0};\n",
+            );
+            output.push_str("static int phpc_user_callable_call_depth = 0;\n");
+            if self
+                .user_functions
+                .values()
+                .any(|function| function.requires_root_symbols)
+            {
+                output.push_str(
+                    "static phpc_NativeSymbolTableHandle phpc_user_callable_root_symbols = {0};\n",
+                );
+            }
+            output.push('\n');
+        }
         if !self.user_function_order.is_empty() || self.has_declared_class_methods() {
             for key in &self.user_function_order {
                 let function = self
@@ -15832,6 +15952,16 @@ impl CGenerator {
         for definition in &self.function_definitions {
             output.push_str(definition);
             output.push('\n');
+        }
+        if self.uses_native_callable_helpers {
+            for key in &self.user_function_order {
+                let function = self
+                    .user_functions
+                    .get(key)
+                    .expect("registered function key has metadata");
+                output.push_str(&self.emit_user_function_callable_wrapper_definition(function));
+                output.push('\n');
+            }
         }
         output.push_str("int main(void) {\n");
         for line in &self.body {
@@ -15870,6 +16000,10 @@ impl CGenerator {
                 output.push_str(&format!("phpc_native_symbol_table_free({handle});"));
                 output.push('\n');
             }
+        }
+        if self.uses_native_callable_helpers {
+            output.push_str("  phpc_native_callable_table_free(phpc_user_callable_table);\n");
+            output.push_str("  phpc_user_callable_table = (phpc_NativeCallableTableHandle){0};\n");
         }
         output.push_str("  return 0;\n");
         output.push_str("}\n");
@@ -17065,6 +17199,56 @@ impl CGenerator {
         self.native_globals_symbol_table_handle = Some(table.clone());
         self.native_globals_symbol_table_owned = true;
         Ok(table)
+    }
+
+    fn ensure_native_callable_table(&mut self, failure_cleanup: &str) -> String {
+        self.uses_native_string_helpers = true;
+        self.uses_native_callable_helpers = true;
+        let table = self
+            .native_callable_table_handle
+            .clone()
+            .unwrap_or_else(|| "phpc_user_callable_table".to_string());
+        self.native_callable_table_handle = Some(table.clone());
+
+        self.body.push(format!(
+            "if (phpc_native_callable_table_is_null({table})) {{"
+        ));
+        self.body
+            .push(format!("  {table} = phpc_native_callable_table_new();"));
+        let allocation_error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!(
+            "  if (phpc_native_callable_table_is_null({table})) {{ {allocation_error_exit} }}"
+        ));
+
+        let functions = self
+            .user_function_order
+            .iter()
+            .map(|key| {
+                self.user_functions
+                    .get(key)
+                    .expect("registered function key has metadata")
+                    .clone()
+            })
+            .collect::<Vec<_>>();
+        for function in functions {
+            let (name_bytes, name_len) = self
+                .emit_call_type_static_bytes("callable_function_name_bytes", &function.decl.name);
+            let name_handle = self.next_native_name("callable_function_name");
+            let registered = self.next_native_name("callable_function_registered");
+            let wrapper_name = Self::c_user_function_callable_wrapper_name(&function.c_name);
+            self.body.push(format!(
+                "  phpc_NativeStringHandle {name_handle} = phpc_native_string_from_bytes({name_bytes}, {name_len});"
+            ));
+            self.body.push(format!(
+                "  bool {registered} = phpc_native_callable_table_register_visibility_staticness_frame_callback_and_free({table}, PHPC_NATIVE_CALLABLE_KIND_FUNCTION, (phpc_NativeStringHandle){{0}}, {name_handle}, PHPC_NATIVE_CALLABLE_VISIBILITY_PUBLIC, false, {wrapper_name});"
+            ));
+            let registration_error_exit = self.native_error_exit(failure_cleanup);
+            self.body.push(format!(
+                "  if (!{registered}) {{ {registration_error_exit} }}"
+            ));
+        }
+        self.body.push("}".to_string());
+        table
     }
 
     fn materialize_globals_symbol_table(
@@ -25075,8 +25259,50 @@ impl CGenerator {
             );
         }
 
-        let mut cleanup_after_use = Vec::new();
-        let mut call_args = vec![self.user_function_call_depth_argument()];
+        let table = self.ensure_native_callable_table(failure_cleanup);
+        if function.requires_root_symbols {
+            let root_symbols = self.ensure_globals_symbol_table(failure_cleanup, span)?;
+            self.body
+                .push(format!("phpc_user_callable_root_symbols = {root_symbols};"));
+        }
+
+        let (name_bytes, name_len) = self.emit_call_type_static_bytes(
+            "direct_callable_function_name_bytes",
+            &function.decl.name,
+        );
+        let name_handle = self.next_native_name("direct_callable_function_name");
+        let lookup_diagnostic = self.next_native_name("direct_callable_lookup_diagnostic");
+        let callable = self.next_native_name("direct_callable");
+        self.body.push(format!(
+            "phpc_NativeStringHandle {name_handle} = phpc_native_string_from_bytes({name_bytes}, {name_len});"
+        ));
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {lookup_diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "phpc_NativeCallableHandle {callable} = phpc_native_callable_lookup_with_diagnostic({table}, PHPC_NATIVE_CALLABLE_KIND_FUNCTION, (phpc_NativeStringHandle){{0}}, {name_handle}, &{lookup_diagnostic});"
+        ));
+        self.body
+            .push(format!("phpc_native_string_free({name_handle});"));
+        self.emit_report_native_diagnostic(&lookup_diagnostic);
+        let lookup_error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!(
+            "if ({callable}.ptr == NULL) {{ {lookup_error_exit} }}"
+        ));
+
+        let call_arguments = self.next_native_name("direct_callable_args");
+        self.body.push(format!(
+            "phpc_NativeCallArgumentsHandle {call_arguments} = phpc_native_call_arguments_new();"
+        ));
+        let arguments_error_exit = self.native_error_exit(&format!(
+            "phpc_native_callable_free({callable}); {failure_cleanup}"
+        ));
+        self.body.push(format!(
+            "if (phpc_native_call_arguments_is_null({call_arguments})) {{ {arguments_error_exit} }}"
+        ));
+
+        let call_cleanup =
+            format!("phpc_native_call_arguments_free({call_arguments}); phpc_native_callable_free({callable}); {failure_cleanup}");
         let fixed_count = native_user_function_fixed_param_count(&function.decl);
         for (index, param) in function.decl.params.iter().take(fixed_count).enumerate() {
             let value_expr = if let Some(arg) = args.get(index) {
@@ -25090,11 +25316,7 @@ impl CGenerator {
                     ))
                 })?
             };
-            let value_failure_cleanup = format!(
-                "{}{}",
-                c_cleanup_sequence(&cleanup_after_use),
-                failure_cleanup
-            );
+            let value_failure_cleanup = call_cleanup.clone();
             if param.by_reference {
                 let reference = self.materialize_call_reference_argument(
                     value_expr,
@@ -25102,21 +25324,27 @@ impl CGenerator {
                     &value_failure_cleanup,
                     callee,
                 )?;
-                cleanup_after_use.extend(reference.cleanup_after_use);
-                call_args.push(reference.handle);
+                self.body.push(format!(
+                    "if (!phpc_native_call_arguments_push_reference_and_free({call_arguments}, {})) {{ {} }}",
+                    reference.handle,
+                    self.native_error_exit(&call_cleanup)
+                ));
             } else {
                 let value = self
                     .materialize_native_value_result_operand(value_expr, &value_failure_cleanup)?;
-                cleanup_after_use.extend(value.cleanup_after_use.clone());
-                call_args.push(value.handle.clone());
+                let value_aux_cleanup = native_value_aux_cleanup_after_consuming_handle(&value);
+                let push_failure_cleanup =
+                    format!("{}{}", c_cleanup_sequence(&value_aux_cleanup), call_cleanup);
+                self.body.push(format!(
+                    "if (!phpc_native_call_arguments_push_value_and_free({call_arguments}, {})) {{ {} }}",
+                    value.handle,
+                    self.native_error_exit(&push_failure_cleanup)
+                ));
+                self.body.extend(value_aux_cleanup);
             }
         }
         if let Some((_, variadic_param)) = native_user_function_variadic_param(&function.decl) {
-            let variadic_failure_cleanup = format!(
-                "{}{}",
-                c_cleanup_sequence(&cleanup_after_use),
-                failure_cleanup
-            );
+            let variadic_failure_cleanup = call_cleanup.clone();
             let callable_name = format!("{}()", function.decl.name);
             let variadic_value = self.materialize_variadic_argument_array_from_exprs(
                 variadic_param,
@@ -25124,38 +25352,32 @@ impl CGenerator {
                 &callable_name,
                 &variadic_failure_cleanup,
             )?;
-            cleanup_after_use.extend(variadic_value.cleanup_after_use.clone());
-            call_args.push(variadic_value.handle);
-        }
-        if function.requires_root_symbols {
-            let table_failure_cleanup = format!(
-                "{}{}",
-                c_cleanup_sequence(&cleanup_after_use),
-                failure_cleanup
-            );
-            let table = self.ensure_globals_symbol_table(&table_failure_cleanup, span)?;
-            call_args.insert(1, table);
+            let value_aux_cleanup =
+                native_value_aux_cleanup_after_consuming_handle(&variadic_value);
+            let push_failure_cleanup =
+                format!("{}{}", c_cleanup_sequence(&value_aux_cleanup), call_cleanup);
+            self.body.push(format!(
+                "if (!phpc_native_call_arguments_push_value_and_free({call_arguments}, {})) {{ {} }}",
+                variadic_value.handle,
+                self.native_error_exit(&push_failure_cleanup)
+            ));
+            self.body.extend(value_aux_cleanup);
         }
 
-        let status = self.next_native_name("user_function_status");
         let result = self.next_native_name("user_function_result");
-        self.body.push(format!("int {status} = 0;"));
-        call_args.push(format!("&{status}"));
+        let invoke_diagnostic = self.next_native_name("direct_callable_invoke_diagnostic");
         self.body.push(format!(
-            "phpc_NativeValueHandle {result} = {}({});",
-            function.c_name,
-            call_args.join(", ")
+            "phpc_NativeDiagnosticHandle {invoke_diagnostic} = {{0}};"
         ));
-        let call_failure_cleanup = format!(
-            "{}{}",
-            c_cleanup_sequence(&cleanup_after_use),
-            failure_cleanup
-        );
-        let error_exit = self.native_error_exit(&call_failure_cleanup);
         self.body.push(format!(
-            "if ({status} != 1 || {result}.ptr == NULL) {{ {error_exit} }}"
+            "phpc_NativeValueHandle {result} = phpc_native_callable_invoke_value_with_diagnostic_and_free({callable}, {call_arguments}, &{invoke_diagnostic});"
         ));
-        self.body.extend(cleanup_after_use);
+        self.body
+            .push(format!("phpc_native_callable_free({callable});"));
+        self.emit_report_native_diagnostic(&invoke_diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
 
         Ok(CNativeValueMaterialization {
             handle: result.clone(),
@@ -36422,6 +36644,10 @@ impl CGenerator {
             if let Some(handle) = &self.native_globals_symbol_table_handle {
                 cleanup.push_str(&format!(" phpc_native_symbol_table_free({handle});"));
             }
+        }
+        if self.uses_native_callable_helpers && self.function_return_status.is_none() {
+            cleanup.push_str(" phpc_native_callable_table_free(phpc_user_callable_table);");
+            cleanup.push_str(" phpc_user_callable_table = (phpc_NativeCallableTableHandle){0};");
         }
         cleanup
     }

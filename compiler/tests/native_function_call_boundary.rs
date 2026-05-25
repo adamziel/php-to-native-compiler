@@ -1647,6 +1647,101 @@ fn native_executable_c_source_executes_descriptor_ready_closure_invocation() {
 }
 
 #[test]
+fn native_executable_direct_user_function_calls_use_runtime_callable_abi_across_arities() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function zero() { return \"Z\"; }\n",
+        "function fixed($left, $right) { return $left . $right; }\n",
+        "function defaults($left, $right = \"D\") { return $left . $right; }\n",
+        "function variadic($head, ...$tail) { return $head; }\n",
+        "echo zero(), \"|\", fixed(\"F\", \"X\"), \"|\", defaults(\"A\"), \"|\", variadic(\"V\", \"1\", \"2\");\n",
+    );
+
+    let generated = emit_native_executable_c_source(&parse(source).unwrap()).unwrap();
+    assert!(
+        generated.contains("phpc_native_callable_invoke_value_with_diagnostic_and_free"),
+        "direct user-function calls should consume the runtime callable ABI:\n{generated}"
+    );
+    assert!(
+        generated.contains("phpc_native_call_frame_read_value"),
+        "registered user functions should be entered through runtime call frames:\n{generated}"
+    );
+
+    let (source_path, output_path) =
+        compile_native_function_call_fixture("direct_user_function_callable_abi_arities", source);
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run direct user-function callable ABI executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"Z|FX|AD|V");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_executable_direct_user_function_calls_preserve_reference_arguments_through_runtime_callable_abi(
+) {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function append_marker(&$slot, $marker) { $slot = $slot . $marker; return $slot; }\n",
+        "$value = \"A\";\n",
+        "echo append_marker($value, \"B\"), \"|\", $value;\n",
+    );
+
+    let generated = emit_native_executable_c_source(&parse(source).unwrap()).unwrap();
+    assert!(
+        generated.contains("phpc_native_call_arguments_push_reference_and_free"),
+        "by-reference direct arguments should be transported through runtime call arguments:\n{generated}"
+    );
+    assert!(
+        generated.contains("phpc_native_call_frame_read_reference"),
+        "by-reference function frames should read references from the runtime frame:\n{generated}"
+    );
+
+    let (source_path, output_path) = compile_native_function_call_fixture(
+        "direct_user_function_callable_abi_references",
+        source,
+    );
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run direct user-function callable ABI reference executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"AB|AB");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn native_executable_c_source_persists_by_value_closure_captures_across_invocations() {
     if !has_cc() {
         return;
