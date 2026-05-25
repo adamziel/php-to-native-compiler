@@ -15,6 +15,55 @@ const STRING_RESULT_IR_SOURCE: &str = "<?php\n$payload = \"A\\0B\";\necho strrev
 const VALUE_OFFSET_IR_SOURCE: &str = "<?php\n$payload = \"A\\0B\\xff\";\necho $payload[1];\necho isset($payload[2]);\necho empty($payload[3]);\necho strlen($payload[0]);\necho strcmp($payload[0], \"A\");\n";
 const OUTPUT_BUFFER_RUNTIME_SOURCE: &str = "<?php\nob_start(null, strlen(\"aa\"), strlen(\"flags\"));\necho \"A\\0B\";\necho 42;\nob_get_contents();\nob_get_length();\nob_list_handlers();\nob_get_status(true);\nob_clean();\necho strtolower(\"HIDDEN\");\nob_get_clean();\nob_start();\necho \"A\";\nob_start();\necho \"B\";\nob_end_flush();\nob_get_clean();\nob_get_level();\n";
 
+fn assert_llvm_conversion_result_consumers_are_guarded(ir: &str, minimum_consumers: usize) {
+    assert!(
+        ir.matches("call %phpc.NativeConversionResult @phpc_native_")
+            .count()
+            >= minimum_consumers,
+        "{ir}"
+    );
+    assert!(
+        ir.matches("extractvalue %phpc.NativeConversionResult")
+            .count()
+            >= minimum_consumers * 3,
+        "{ir}"
+    );
+    assert!(
+        ir.matches("icmp ne i8").count() >= minimum_consumers,
+        "{ir}"
+    );
+    assert!(
+        ir.matches("icmp eq ptr").count() >= minimum_consumers,
+        "{ir}"
+    );
+    assert!(
+        ir.matches("native_conversion_error").count() >= minimum_consumers,
+        "{ir}"
+    );
+}
+
+fn assert_c_conversion_result_consumers_are_guarded(c_source: &str, minimum_consumers: usize) {
+    assert!(
+        c_source.matches("phpc_NativeConversionResult").count() >= minimum_consumers,
+        "{c_source}"
+    );
+    assert!(
+        c_source
+            .matches("status != PHPC_NATIVE_CONVERSION_STATUS_OK")
+            .count()
+            >= minimum_consumers,
+        "{c_source}"
+    );
+    assert!(
+        c_source.matches(".value.ptr == NULL").count() >= minimum_consumers,
+        "{c_source}"
+    );
+    assert!(
+        c_source.matches("phpc_native_diagnostic_report").count() >= minimum_consumers,
+        "{c_source}"
+    );
+}
+
 fn request_superglobal_array_key_consumer_rejection(backend: &str, subject: &str) -> String {
     format!(
         "{backend} request-superglobal lowering rejects array-key request operand for {subject} because request-backed ordinary array keys need ordered key expression evaluation, PHP array-key coercion diagnostics, missing-array recovery values, write/unset/reference ordering, root symbol-table reconciliation, references/copy-on-write, and exact PHP array-key diagnostics; phpc run handles current bounded request superglobal behavior"
@@ -1014,6 +1063,7 @@ fn generated_scalar_offset_reads_feed_warning_continuations_across_consumers() {
             >= 2,
         "{ir}"
     );
+    assert_llvm_conversion_result_consumers_are_guarded(&ir, 2);
     assert!(
         ir.contains("call i64 @phpc_native_value_format_stdout_with_diagnostic")
             && ir.contains(
@@ -1032,6 +1082,7 @@ fn generated_scalar_offset_reads_feed_warning_continuations_across_consumers() {
         c_source.matches("phpc_native_offset_read_source").count() >= 3,
         "{c_source}"
     );
+    assert_c_conversion_result_consumers_are_guarded(&c_source, 3);
     assert!(
         !c_source.contains("= phpc_native_value_offset_operation_with_diagnostic("),
         "{c_source}"
@@ -1111,6 +1162,7 @@ fn generated_static_unary_negation_uses_numeric_source_results() {
             && !ir.contains("phpc_native_value_unary_result"),
         "{ir}"
     );
+    assert_llvm_conversion_result_consumers_are_guarded(&ir, 5);
 
     assert!(
         c_source.contains("PHPC_NATIVE_NUMERIC_UNARY_OP_NEGATE")
@@ -1120,6 +1172,7 @@ fn generated_static_unary_negation_uses_numeric_source_results() {
                 >= 5,
         "{c_source}"
     );
+    assert_c_conversion_result_consumers_are_guarded(&c_source, 5);
     assert!(
         !c_source.contains("(-") && !c_source.contains("phpc_native_value_unary_result"),
         "{c_source}"

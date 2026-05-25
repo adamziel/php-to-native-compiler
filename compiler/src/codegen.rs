@@ -7854,9 +7854,6 @@ impl LlvmGenerator {
             let subject_source = self.next_temp();
             let offset_source = self.next_temp();
             let result = self.next_temp();
-            let status = self.next_temp();
-            let value = self.next_temp();
-            let diagnostic = self.next_temp();
             self.uses_native_conversion_source_helpers = true;
             self.uses_native_offset_read_source = true;
             self.uses_native_value_echo_stdout = true;
@@ -7869,23 +7866,9 @@ impl LlvmGenerator {
             self.body.push(format!(
                 "{result} = call %phpc.NativeConversionResult @phpc_native_offset_read_source(%phpc.NativeConversionSource {subject_source}, %phpc.NativeConversionSource {offset_source})"
             ));
-            self.body.push(format!(
-                "{diagnostic} = extractvalue %phpc.NativeConversionResult {result}, 1"
+            return Ok(IrValue::NativeValue(
+                self.emit_native_conversion_result_value(result, vec![offset, subject]),
             ));
-            self.emit_report_native_diagnostic_handle(&diagnostic);
-            self.body.push(format!(
-                "{status} = extractvalue %phpc.NativeConversionResult {result}, 2"
-            ));
-            self.body.push(format!(
-                "{value} = extractvalue %phpc.NativeConversionResult {result}, 0"
-            ));
-            self.body.push(format!(
-                "call void @phpc_native_value_free(%phpc.NativeValueHandle {offset})"
-            ));
-            self.body.push(format!(
-                "call void @phpc_native_value_free(%phpc.NativeValueHandle {subject})"
-            ));
-            return Ok(IrValue::NativeValue(value));
         }
         let diagnostic_slot = self.next_temp();
         let result = self.next_temp();
@@ -11046,15 +11029,16 @@ impl LlvmGenerator {
         self.body.push(format!(
             "{result} = call %phpc.NativeConversionResult @phpc_native_conversion_source_numeric_unary(%phpc.NativeConversionSource {source}, i8 {op_tag})"
         ));
-        self.body.push(format!(
-            "call void @phpc_native_value_free(%phpc.NativeValueHandle {value_handle})"
-        ));
         Ok(IrValue::NativeValue(
-            self.emit_native_conversion_result_value(result),
+            self.emit_native_conversion_result_value(result, vec![value_handle]),
         ))
     }
 
-    fn emit_native_conversion_result_value(&mut self, result: String) -> String {
+    fn emit_native_conversion_result_value(
+        &mut self,
+        result: String,
+        cleanup_handles: Vec<String>,
+    ) -> String {
         let value = self.next_temp();
         let diagnostic = self.next_temp();
         let status = self.next_temp();
@@ -11075,6 +11059,11 @@ impl LlvmGenerator {
         self.body.push(format!(
             "{value} = extractvalue %phpc.NativeConversionResult {result}, 0"
         ));
+        for handle in cleanup_handles {
+            self.body.push(format!(
+                "call void @phpc_native_value_free(%phpc.NativeValueHandle {handle})"
+            ));
+        }
         self.body.push(format!("{failed} = icmp ne i8 {status}, 0"));
         self.body.push(format!(
             "{value_ptr} = extractvalue %phpc.NativeValueHandle {value}, 0"
