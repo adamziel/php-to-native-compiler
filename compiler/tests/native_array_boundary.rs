@@ -7,7 +7,10 @@ use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
 const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
 const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
+const LLVM_ARRAY_ACCESS_REJECTION: &str = "LLVM ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
+const LLVM_NATIVE_ARRAY_NON_LOCAL_ASSIGNMENT_REJECTION: &str = "LLVM native array non-local assignment lowering rejects object, dynamic-object, non-direct object, and static property assignment targets until non-local owner cells, magic property writes, typed/static property state, assignment-expression results, references/copy-on-write, and exact diagnostics share one assignment owner contract; local variables and native array offset assignments use their shared native lvalue assignment contracts";
+const LLVM_NATIVE_ARRAY_NON_LOCAL_UNSET_REJECTION: &str = "LLVM native array non-local unset lowering rejects object, dynamic-object, non-direct object, and static property unsets until non-local owner cells, magic __unset dispatch, typed/static property state, references/copy-on-write, and exact diagnostics share one unset owner contract; local variables and native array offset unsets use their shared native lvalue unset contracts";
 
 #[test]
 fn phpc_run_still_handles_current_array_subset() {
@@ -60,6 +63,59 @@ fn emit_ir_routes_array_destructuring_rhs_calls_through_call_boundary() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
+}
+
+#[test]
+fn emit_ir_routes_non_local_assignments_to_shared_assignment_owner_boundary() {
+    for source in [
+        "<?php\n$box->name = 1;\n",
+        "<?php\n$name = \"slot\";\n$box->$name = 1;\n",
+        "<?php\n$box->child->name = 1;\n",
+        "<?php\nRoot::$name = 1;\n",
+        "<?php\nself::$name = 1;\n",
+        "<?php\nparent::$name = 1;\n",
+        "<?php\nstatic::$name = 1;\n",
+        "<?php\necho ($box->name = 1);\n",
+        "<?php\necho (Root::$name = 1);\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(
+            error.message,
+            LLVM_NATIVE_ARRAY_NON_LOCAL_ASSIGNMENT_REJECTION
+        );
+    }
+
+    let error = emit_ir_source("<?php\n$box->items[0] = 1;\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_ARRAY_ACCESS_REJECTION);
+}
+
+#[test]
+fn emit_ir_routes_non_local_unsets_to_shared_unset_owner_boundary() {
+    for source in [
+        "<?php\nunset($box->name);\n",
+        "<?php\n$name = \"slot\";\nunset($box->$name);\n",
+        "<?php\nunset($box->child->name);\n",
+        "<?php\nunset(Root::$name);\n",
+        "<?php\nunset(self::$name);\n",
+        "<?php\nunset(parent::$name);\n",
+        "<?php\nunset(static::$name);\n",
+        "<?php\nunset($local, $box->name);\n",
+        "<?php\nunset($local, Root::$name);\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, LLVM_NATIVE_ARRAY_NON_LOCAL_UNSET_REJECTION);
+    }
+
+    let error = emit_ir_source("<?php\nunset($local, $box->items[0]);\n").unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_ARRAY_ACCESS_REJECTION);
 }
 
 #[test]

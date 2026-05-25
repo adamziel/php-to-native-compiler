@@ -135,6 +135,10 @@ const ASSEMBLY_TRY_BLOCK_REJECTION: &str = "assembly try/catch/finally lowering 
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const LLVM_REFERENCE_WRITE_THROUGH_REJECTION: &str = "LLVM reference write-through lowering rejects direct root-variable assignment after reference binding until statement assignment and assignment-expression write-through share an alias-aware reference slot boundary with copy-on-write, cleanup ownership, and exact native error behavior; phpc run handles current reference write-through behavior";
+const LLVM_NATIVE_ARRAY_NON_LOCAL_ASSIGNMENT_REJECTION: &str = "LLVM native array non-local assignment lowering rejects object, dynamic-object, non-direct object, and static property assignment targets until non-local owner cells, magic property writes, typed/static property state, assignment-expression results, references/copy-on-write, and exact diagnostics share one assignment owner contract; local variables and native array offset assignments use their shared native lvalue assignment contracts";
+const ASSEMBLY_NATIVE_ARRAY_NON_LOCAL_ASSIGNMENT_REJECTION: &str = "assembly native array non-local assignment lowering rejects object, dynamic-object, non-direct object, and static property assignment targets until non-local owner cells, magic property writes, typed/static property state, assignment-expression results, references/copy-on-write, and exact diagnostics share one assignment owner contract; local variables and native array offset assignments use their shared native lvalue assignment contracts";
+const LLVM_NATIVE_ARRAY_NON_LOCAL_UNSET_REJECTION: &str = "LLVM native array non-local unset lowering rejects object, dynamic-object, non-direct object, and static property unsets until non-local owner cells, magic __unset dispatch, typed/static property state, references/copy-on-write, and exact diagnostics share one unset owner contract; local variables and native array offset unsets use their shared native lvalue unset contracts";
+const ASSEMBLY_NATIVE_ARRAY_NON_LOCAL_UNSET_REJECTION: &str = "assembly native array non-local unset lowering rejects object, dynamic-object, non-direct object, and static property unsets until non-local owner cells, magic __unset dispatch, typed/static property state, references/copy-on-write, and exact diagnostics share one unset owner contract; local variables and native array offset unsets use their shared native lvalue unset contracts";
 const ASSEMBLY_GLOBALS_ROOT_APPEND_REJECTION: &str = "Cannot append to $GLOBALS";
 const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment outside lowerable direct variables, null coalescing assignment, increment/decrement, non-direct assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
 const ASSEMBLY_MUTATION_REJECTION: &str = "assembly mutation lowering rejects compound assignment, null coalescing assignment, increment/decrement, assignment expressions outside lowerable direct variable, direct and nested array offset write/append values, and request-superglobal assignment values, non-symbol unset, object property unset, static property unset, mixed-target unset, and request/global-root unset until native read-modify-write ordering, null-aware mutation, unset writeback effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
@@ -268,6 +272,20 @@ impl NativeCallBackend {
         match self {
             Self::Llvm => LLVM_REFERENCE_ASSIGNMENT_REJECTION,
             Self::Assembly => ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION,
+        }
+    }
+
+    fn non_local_assignment_rejection(self) -> &'static str {
+        match self {
+            Self::Llvm => LLVM_NATIVE_ARRAY_NON_LOCAL_ASSIGNMENT_REJECTION,
+            Self::Assembly => ASSEMBLY_NATIVE_ARRAY_NON_LOCAL_ASSIGNMENT_REJECTION,
+        }
+    }
+
+    fn non_local_unset_rejection(self) -> &'static str {
+        match self {
+            Self::Llvm => LLVM_NATIVE_ARRAY_NON_LOCAL_UNSET_REJECTION,
+            Self::Assembly => ASSEMBLY_NATIVE_ARRAY_NON_LOCAL_UNSET_REJECTION,
         }
     }
 }
@@ -5242,6 +5260,115 @@ fn is_object_public_property_assign_target(target: &AssignTarget) -> bool {
     )
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeNonLocalOwnerOperation {
+    Assignment,
+    Unset,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NativeNonLocalOwnerBoundary {
+    operation: NativeNonLocalOwnerOperation,
+    span: Span,
+}
+
+impl NativeNonLocalOwnerBoundary {
+    fn assignment(span: Span) -> Self {
+        Self {
+            operation: NativeNonLocalOwnerOperation::Assignment,
+            span,
+        }
+    }
+
+    fn unset(span: Span) -> Self {
+        Self {
+            operation: NativeNonLocalOwnerOperation::Unset,
+            span,
+        }
+    }
+
+    fn rejection(self, backend: NativeCallBackend) -> &'static str {
+        match self.operation {
+            NativeNonLocalOwnerOperation::Assignment => backend.non_local_assignment_rejection(),
+            NativeNonLocalOwnerOperation::Unset => backend.non_local_unset_rejection(),
+        }
+    }
+}
+
+fn native_non_local_assignment_owner_boundary(
+    target: &AssignTarget,
+) -> Option<NativeNonLocalOwnerBoundary> {
+    matches!(
+        target,
+        AssignTarget::Property { .. }
+            | AssignTarget::DynamicProperty { .. }
+            | AssignTarget::NonDirectProperty { .. }
+            | AssignTarget::NonDirectDynamicProperty { .. }
+            | AssignTarget::StaticProperty { .. }
+            | AssignTarget::ObjectStaticProperty { .. }
+            | AssignTarget::SelfStaticProperty { .. }
+            | AssignTarget::ParentStaticProperty { .. }
+            | AssignTarget::LateStaticProperty { .. }
+    )
+    .then(|| NativeNonLocalOwnerBoundary::assignment(target.span()))
+}
+
+fn unset_target_span(target: &UnsetTarget) -> Span {
+    match target {
+        UnsetTarget::Variable { span, .. }
+        | UnsetTarget::ArrayIndex { span, .. }
+        | UnsetTarget::NestedArrayIndex { span, .. }
+        | UnsetTarget::ObjectPropertyArrayIndex { span, .. }
+        | UnsetTarget::DynamicObjectPropertyArrayIndex { span, .. }
+        | UnsetTarget::NonDirectObjectPropertyArrayIndex { span, .. }
+        | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex { span, .. }
+        | UnsetTarget::ObjectProperty { span, .. }
+        | UnsetTarget::DynamicObjectProperty { span, .. }
+        | UnsetTarget::NonDirectObjectProperty { span, .. }
+        | UnsetTarget::NonDirectDynamicObjectProperty { span, .. }
+        | UnsetTarget::StaticProperty { span, .. }
+        | UnsetTarget::SelfStaticProperty { span, .. }
+        | UnsetTarget::ParentStaticProperty { span, .. }
+        | UnsetTarget::LateStaticProperty { span, .. } => *span,
+    }
+}
+
+fn native_non_local_unset_target_owner_boundary(
+    target: &UnsetTarget,
+) -> Option<NativeNonLocalOwnerBoundary> {
+    matches!(
+        target,
+        UnsetTarget::ObjectProperty { .. }
+            | UnsetTarget::DynamicObjectProperty { .. }
+            | UnsetTarget::NonDirectObjectProperty { .. }
+            | UnsetTarget::NonDirectDynamicObjectProperty { .. }
+            | UnsetTarget::StaticProperty { .. }
+            | UnsetTarget::SelfStaticProperty { .. }
+            | UnsetTarget::ParentStaticProperty { .. }
+            | UnsetTarget::LateStaticProperty { .. }
+    )
+    .then(|| NativeNonLocalOwnerBoundary::unset(unset_target_span(target)))
+}
+
+fn native_non_local_unset_statement_owner_boundary(
+    stmt: &Stmt,
+) -> Option<NativeNonLocalOwnerBoundary> {
+    match stmt {
+        Stmt::UnsetObjectProperty { span, .. }
+        | Stmt::UnsetDynamicObjectProperty { span, .. }
+        | Stmt::UnsetStaticProperty { span, .. }
+        | Stmt::UnsetSelfStaticProperty { span, .. }
+        | Stmt::UnsetParentStaticProperty { span, .. }
+        | Stmt::UnsetLateStaticProperty { span, .. } => {
+            Some(NativeNonLocalOwnerBoundary::unset(*span))
+        }
+        Stmt::UnsetMany { targets, .. } => targets
+            .iter()
+            .find_map(native_non_local_unset_target_owner_boundary),
+        _ => None,
+    }
+}
+
 fn is_object_property_array_access_unset_target(target: &UnsetTarget) -> bool {
     matches!(
         target,
@@ -6473,13 +6600,19 @@ impl LlvmGenerator {
             | Stmt::UnsetSelfStaticProperty { span, .. }
             | Stmt::UnsetParentStaticProperty { span, .. }
             | Stmt::UnsetLateStaticProperty { span, .. } => {
-                Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
+                let boundary = native_non_local_unset_statement_owner_boundary(stmt)
+                    .unwrap_or_else(|| NativeNonLocalOwnerBoundary::unset(*span));
+                Err(self.unsupported(boundary.span, boundary.rejection(NativeCallBackend::Llvm)))
             }
             Stmt::UnsetObjectProperty { span, .. } => {
-                Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
+                let boundary = native_non_local_unset_statement_owner_boundary(stmt)
+                    .unwrap_or_else(|| NativeNonLocalOwnerBoundary::unset(*span));
+                Err(self.unsupported(boundary.span, boundary.rejection(NativeCallBackend::Llvm)))
             }
             Stmt::UnsetDynamicObjectProperty { span, .. } => {
-                Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
+                let boundary = native_non_local_unset_statement_owner_boundary(stmt)
+                    .unwrap_or_else(|| NativeNonLocalOwnerBoundary::unset(*span));
+                Err(self.unsupported(boundary.span, boundary.rejection(NativeCallBackend::Llvm)))
             }
             Stmt::UnsetArrayIndex { span, .. } => {
                 if let Some(access) = request_stmt_array_key_consumer_access(stmt) {
@@ -6511,6 +6644,10 @@ impl LlvmGenerator {
                     .any(is_object_property_array_access_unset_target)
                 {
                     return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
+                }
+                if let Some(boundary) = native_non_local_unset_statement_owner_boundary(stmt) {
+                    return Err(self
+                        .unsupported(boundary.span, boundary.rejection(NativeCallBackend::Llvm)));
                 }
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
@@ -6844,14 +6981,18 @@ impl LlvmGenerator {
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
                 }
-                if is_static_member_assign_target(target) {
-                    return Err(self.unsupported(*span, LLVM_STATIC_MEMBER_REJECTION));
-                }
                 if let Some(access) = request_assign_target_array_key_consumer_access(target) {
                     return Err(self.unsupported(
                         access.span,
                         request_array_key_consumer_rejection("LLVM", &access.label),
                     ));
+                }
+                if let Some(boundary) = native_non_local_assignment_owner_boundary(target) {
+                    return Err(self
+                        .unsupported(boundary.span, boundary.rejection(NativeCallBackend::Llvm)));
+                }
+                if is_static_member_assign_target(target) {
+                    return Err(self.unsupported(*span, LLVM_STATIC_MEMBER_REJECTION));
                 }
                 if let Some(value) = self.emit_direct_variable_assignment_expr(target, expr)? {
                     return Ok(value);
@@ -8252,6 +8393,14 @@ impl LlvmGenerator {
                 access.span,
                 request_array_key_consumer_rejection("LLVM", &access.label),
             ));
+        }
+        if is_object_property_array_access_target(target) {
+            return Err(self.unsupported(target.span(), LLVM_ARRAY_ACCESS_REJECTION));
+        }
+        if let Some(boundary) = native_non_local_assignment_owner_boundary(target) {
+            return Err(
+                self.unsupported(boundary.span, boundary.rejection(NativeCallBackend::Llvm))
+            );
         }
 
         match target {
@@ -21805,28 +21954,28 @@ impl CGenerator {
             | Stmt::UnsetSelfStaticProperty { span, .. }
             | Stmt::UnsetParentStaticProperty { span, .. }
             | Stmt::UnsetLateStaticProperty { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_MUTATION_REJECTION))
+                let boundary = native_non_local_unset_statement_owner_boundary(stmt)
+                    .unwrap_or_else(|| NativeNonLocalOwnerBoundary::unset(*span));
+                Err(self.unsupported(
+                    boundary.span,
+                    boundary.rejection(NativeCallBackend::Assembly),
+                ))
             }
-            Stmt::UnsetObjectProperty {
-                object,
-                property,
-                span,
-            } => {
-                let object = Expr::Variable(object.clone(), *span);
-                self.emit_object_public_property_unset_expr(&object, property, "")
+            Stmt::UnsetObjectProperty { span, .. } => {
+                let boundary = native_non_local_unset_statement_owner_boundary(stmt)
+                    .unwrap_or_else(|| NativeNonLocalOwnerBoundary::unset(*span));
+                Err(self.unsupported(
+                    boundary.span,
+                    boundary.rejection(NativeCallBackend::Assembly),
+                ))
             }
-            Stmt::UnsetDynamicObjectProperty {
-                object,
-                property,
-                span,
-            } => {
-                let object = Expr::Variable(object.clone(), *span);
-                self.emit_object_property_unset_expr(
-                    &object,
-                    CObjectPropertyOperand::Dynamic(property),
-                    *span,
-                    "",
-                )
+            Stmt::UnsetDynamicObjectProperty { span, .. } => {
+                let boundary = native_non_local_unset_statement_owner_boundary(stmt)
+                    .unwrap_or_else(|| NativeNonLocalOwnerBoundary::unset(*span));
+                Err(self.unsupported(
+                    boundary.span,
+                    boundary.rejection(NativeCallBackend::Assembly),
+                ))
             }
             Stmt::UnsetArrayIndex { name, index, span } => {
                 if let Some(access) = request_stmt_array_key_consumer_access(stmt) {
@@ -21862,6 +22011,12 @@ impl CGenerator {
                     .any(is_object_property_array_access_unset_target)
                 {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                }
+                if let Some(boundary) = native_non_local_unset_statement_owner_boundary(stmt) {
+                    return Err(self.unsupported(
+                        boundary.span,
+                        boundary.rejection(NativeCallBackend::Assembly),
+                    ));
                 }
                 self.emit_unset_many(targets, *span)
             }
@@ -22382,14 +22537,6 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_CAST_REJECTION))
             }
             Expr::Assign { target, expr, span } => {
-                if let Some(value) = self
-                    .materialize_object_public_property_assignment_result_for_target(
-                        target, expr, "",
-                    )?
-                {
-                    self.retain_native_value_cleanup_handle(&value.handle);
-                    return Ok(CValue::NativeValueHandle(value.handle));
-                }
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
@@ -22399,13 +22546,27 @@ impl CGenerator {
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
                 }
+                if is_object_property_array_access_target(target) {
+                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                }
+                if let Some(boundary) = native_non_local_assignment_owner_boundary(target) {
+                    return Err(self.unsupported(
+                        boundary.span,
+                        boundary.rejection(NativeCallBackend::Assembly),
+                    ));
+                }
+                if let Some(value) = self
+                    .materialize_object_public_property_assignment_result_for_target(
+                        target, expr, "",
+                    )?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
                 if let Some(value) =
                     self.emit_direct_variable_assignment_expr_for_target(target, expr, *span, "")?
                 {
                     return Ok(value);
-                }
-                if is_object_property_array_access_target(target) {
-                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
                 }
                 if is_static_member_assign_target(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION));
@@ -30155,15 +30316,23 @@ impl CGenerator {
                 request_array_key_consumer_rejection("assembly", &access.label),
             ));
         }
+        if is_object_property_array_access_target(target) {
+            return Err(self.unsupported(target.span(), ASSEMBLY_ARRAY_ACCESS_REJECTION));
+        }
+        if let Some(operation) = native_assignment_target_call_operation(target) {
+            return Err(self.unsupported_call_operation(operation));
+        }
+        if let Some(boundary) = native_non_local_assignment_owner_boundary(target) {
+            return Err(self.unsupported(
+                boundary.span,
+                boundary.rejection(NativeCallBackend::Assembly),
+            ));
+        }
         if let Some(value) =
             self.materialize_object_public_property_assignment_result_for_target(target, expr, "")?
         {
             self.body.extend(value.cleanup_after_use);
             return Ok(());
-        }
-
-        if let Some(operation) = native_assignment_target_call_operation(target) {
-            return Err(self.unsupported_call_operation(operation));
         }
 
         match target {
@@ -38538,6 +38707,66 @@ echo " 10" < "zeta";
             }),
             None
         );
+    }
+
+    #[test]
+    fn c_assembly_non_local_assignment_families_share_assignment_owner_boundary() {
+        for source in [
+            "<?php\n$box->name = 1;\n",
+            "<?php\n$name = \"slot\";\n$box->$name = 1;\n",
+            "<?php\n$box->child->name = 1;\n",
+            "<?php\nRoot::$name = 1;\n",
+            "<?php\nself::$name = 1;\n",
+            "<?php\nparent::$name = 1;\n",
+            "<?php\nstatic::$name = 1;\n",
+            "<?php\necho ($box->name = 1);\n",
+            "<?php\necho (Root::$name = 1);\n",
+        ] {
+            let program = crate::parse(source).unwrap();
+            let error = emit_c_source_for_assembly(&program).unwrap_err();
+
+            assert_eq!(error.phase, Phase::Codegen);
+            assert_eq!(
+                error.message,
+                ASSEMBLY_NATIVE_ARRAY_NON_LOCAL_ASSIGNMENT_REJECTION
+            );
+        }
+
+        let program = crate::parse("<?php\n$box->items[0] = 1;\n").unwrap();
+        let error = emit_c_source_for_assembly(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, ASSEMBLY_ARRAY_ACCESS_REJECTION);
+    }
+
+    #[test]
+    fn c_assembly_non_local_unset_families_share_unset_owner_boundary() {
+        for source in [
+            "<?php\nunset($box->name);\n",
+            "<?php\n$name = \"slot\";\nunset($box->$name);\n",
+            "<?php\nunset($box->child->name);\n",
+            "<?php\nunset(Root::$name);\n",
+            "<?php\nunset(self::$name);\n",
+            "<?php\nunset(parent::$name);\n",
+            "<?php\nunset(static::$name);\n",
+            "<?php\nunset($local, $box->name);\n",
+            "<?php\nunset($local, Root::$name);\n",
+        ] {
+            let program = crate::parse(source).unwrap();
+            let error = emit_c_source_for_assembly(&program).unwrap_err();
+
+            assert_eq!(error.phase, Phase::Codegen);
+            assert_eq!(
+                error.message,
+                ASSEMBLY_NATIVE_ARRAY_NON_LOCAL_UNSET_REJECTION
+            );
+        }
+
+        let program = crate::parse("<?php\nunset($local, $box->items[0]);\n").unwrap();
+        let error = emit_c_source_for_assembly(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, ASSEMBLY_ARRAY_ACCESS_REJECTION);
     }
 
     #[test]
