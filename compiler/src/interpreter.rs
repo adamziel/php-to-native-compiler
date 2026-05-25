@@ -1217,14 +1217,10 @@ impl ResolvedArrayCopySource {
         })
     }
 
-    fn matches_object_property(
-        &self,
-        object: &PhpObject,
-        property: &str,
-    ) -> bool {
-        self.storage_identities.iter().any(|identity| {
-            identity.matches_object_property(object, property)
-        })
+    fn matches_object_property(&self, object: &PhpObject, property: &str) -> bool {
+        self.storage_identities
+            .iter()
+            .any(|identity| identity.matches_object_property(object, property))
     }
 }
 
@@ -1256,11 +1252,7 @@ impl ArrayCopySourceStorageIdentity {
         }
     }
 
-    fn matches_object_property(
-        &self,
-        object: &PhpObject,
-        property: &str,
-    ) -> bool {
+    fn matches_object_property(&self, object: &PhpObject, property: &str) -> bool {
         match self {
             Self::ObjectProperty {
                 object_id,
@@ -1294,12 +1286,8 @@ impl ArrayCopySourceMutationImpact {
         {
             return None;
         }
-        Some((
-            detached_keys[source.keys.len()..].to_vec(),
-            cell.clone(),
-        ))
+        Some((detached_keys[source.keys.len()..].to_vec(), cell.clone()))
     }
-
 }
 
 fn push_unique_array_copy_source_detach_path(
@@ -1307,13 +1295,12 @@ fn push_unique_array_copy_source_detach_path(
     keys: Vec<ArrayKey>,
     cell: VariableCell,
 ) {
-    if paths
-        .iter()
-        .any(|(candidate_keys, candidate_cell): &(Vec<ArrayKey>, VariableCell)| {
+    if paths.iter().any(
+        |(candidate_keys, candidate_cell): &(Vec<ArrayKey>, VariableCell)| {
             candidate_keys.as_slice() == keys.as_slice()
                 && candidate_cell.shares_reference_with(&cell)
-        })
-    {
+        },
+    ) {
         return;
     }
     paths.push((keys, cell));
@@ -1358,22 +1345,18 @@ impl<'a> ArrayCopySourceMutationTarget<'a> {
                 keys,
             } => {
                 let resolved = symbols.resolved_array_copy_source(source);
-                (
-                    resolved.matches_object_property(object, property),
-                    keys,
-                )
+                (resolved.matches_object_property(object, property), keys)
             }
             Self::HolderStorageBoundary(boundary) => {
                 let resolved = symbols.resolved_array_copy_source(source);
-                let matches_boundary = resolved.matches_object_property(
-                    &boundary.object,
-                    &boundary.property,
-                ) || match &source.root {
-                    ArrayCopySourceRoot::RuntimeCell(cell) => {
-                        boundary.identity.shares_reference_with(cell)
-                    }
-                    _ => false,
-                };
+                let matches_boundary = resolved
+                    .matches_object_property(&boundary.object, &boundary.property)
+                    || match &source.root {
+                        ArrayCopySourceRoot::RuntimeCell(cell) => {
+                            boundary.identity.shares_reference_with(cell)
+                        }
+                        _ => false,
+                    };
                 (matches_boundary, boundary.keys.as_slice())
             }
         };
@@ -2304,7 +2287,8 @@ impl SymbolTable {
             self.dirty_public_object_property_array_copy_source_values
                 .iter()
                 .filter(|(name, _)| {
-                    !self.public_object_property_array_copy_sources
+                    !self
+                        .public_object_property_array_copy_sources
                         .contains_key(*name)
                 })
                 .map(|(name, source)| (name.clone(), source.clone())),
@@ -2320,12 +2304,14 @@ impl SymbolTable {
                 source: source.clone(),
             },
         ));
-        records.extend(self.dirty_public_object_property_array_copy_source_values.iter().map(
-            |(name, source)| ArrayCopySourceRecord {
-                location: ArrayCopySourceRecordLocation::DirtyStatic(name.clone()),
-                source: source.clone(),
-            },
-        ));
+        records.extend(
+            self.dirty_public_object_property_array_copy_source_values
+                .iter()
+                .map(|(name, source)| ArrayCopySourceRecord {
+                    location: ArrayCopySourceRecordLocation::DirtyStatic(name.clone()),
+                    source: source.clone(),
+                }),
+        );
         records.extend(self.dirty_array_copy_source_values.iter().map(|source| {
             ArrayCopySourceRecord {
                 location: ArrayCopySourceRecordLocation::DirtySource,
@@ -2344,15 +2330,19 @@ impl SymbolTable {
                 })
             },
         ));
-        records.extend(self.array_literal_copy_source_paths.iter().flat_map(|(name, paths)| {
-            paths.iter().map(|(prefix, source)| ArrayCopySourceRecord {
-                location: ArrayCopySourceRecordLocation::ArrayLiteralPath {
-                    name: name.clone(),
-                    prefix: prefix.clone(),
-                },
-                source: source.clone(),
-            })
-        }));
+        records.extend(
+            self.array_literal_copy_source_paths
+                .iter()
+                .flat_map(|(name, paths)| {
+                    paths.iter().map(|(prefix, source)| ArrayCopySourceRecord {
+                        location: ArrayCopySourceRecordLocation::ArrayLiteralPath {
+                            name: name.clone(),
+                            prefix: prefix.clone(),
+                        },
+                        source: source.clone(),
+                    })
+                }),
+        );
         records
     }
 
@@ -2372,7 +2362,11 @@ impl SymbolTable {
     ) -> Vec<ArrayCopySourceRecord> {
         self.array_copy_source_record_impacts_for_holder_storage_boundary(boundary)
             .into_iter()
-            .filter_map(|impact| impact.replaces_source_or_ancestor().then_some(impact.record))
+            .filter_map(|impact| {
+                impact
+                    .replaces_source_or_ancestor()
+                    .then_some(impact.record)
+            })
             .collect()
     }
 
@@ -2490,9 +2484,11 @@ impl SymbolTable {
             let retained = paths
                 .into_iter()
                 .filter(|(prefix, _)| {
-                    !stale_object_copy_source_paths.iter().any(|(stale_key, stale_prefix)| {
-                        stale_key == &key && stale_prefix.as_slice() == prefix.as_slice()
-                    })
+                    !stale_object_copy_source_paths
+                        .iter()
+                        .any(|(stale_key, stale_prefix)| {
+                            stale_key == &key && stale_prefix.as_slice() == prefix.as_slice()
+                        })
                 })
                 .collect::<Vec<_>>();
             if retained.is_empty() {
@@ -2586,8 +2582,7 @@ impl SymbolTable {
                         record: record.clone(),
                         impact,
                     };
-                    let Some((relative_keys, cell)) =
-                        impact.selected_child_detach_path(*detached)
+                    let Some((relative_keys, cell)) = impact.selected_child_detach_path(*detached)
                     else {
                         continue;
                     };
@@ -2676,12 +2671,9 @@ impl SymbolTable {
         for (mut relative_keys, cell) in relative_paths {
             let mut keys = source.keys.clone();
             keys.append(&mut relative_keys);
-            if out
-                .iter()
-                .any(|(candidate_keys, candidate_cell)| {
-                    candidate_keys == &keys && candidate_cell.shares_reference_with(&cell)
-                })
-            {
+            if out.iter().any(|(candidate_keys, candidate_cell)| {
+                candidate_keys == &keys && candidate_cell.shares_reference_with(&cell)
+            }) {
                 continue;
             }
             out.push((keys, cell));
@@ -3556,14 +3548,15 @@ impl SymbolTable {
             };
             let source_path_cell =
                 Self::read_nested_array_offset_alias_reference_cell(&array, keys);
-            return self.detached_object_property_array_offset_values.iter().any(
-                |(_, _, candidate_keys, detached_cell)| {
+            return self
+                .detached_object_property_array_offset_values
+                .iter()
+                .any(|(_, _, candidate_keys, detached_cell)| {
                     candidate_keys.as_slice() == keys
                         && source_path_cell
                             .as_ref()
                             .is_some_and(|cell| cell.shares_reference_with(detached_cell))
-                },
-            );
+                });
         }
 
         self.detached_object_property_array_offset_values
@@ -3762,7 +3755,6 @@ impl SymbolTable {
             &boundary,
             detached_paths,
         ) {
-
             match record.location {
                 ArrayCopySourceRecordLocation::CleanStatic(name)
                 | ArrayCopySourceRecordLocation::DirtyStatic(name) => {
@@ -4755,10 +4747,8 @@ impl SymbolTable {
                     continue;
                 };
                 if promote_missing_reference_cells && source_handle_allows_array_literal_promotion {
-                    let _ = self.promote_array_offset_alias_to_reference_cell(
-                        &alias,
-                        reference.clone(),
-                    );
+                    let _ = self
+                        .promote_array_offset_alias_to_reference_cell(&alias, reference.clone());
                 }
                 Self::write_nested_array_offset_alias_reference(
                     &mut array,
@@ -4800,7 +4790,10 @@ impl SymbolTable {
         Self::read_nested_array_offset_alias(&array, &source.keys)
     }
 
-    fn runtime_alias_lvalue_handle_value(&self, handle: &RuntimeAliasLvalueHandle) -> Option<Value> {
+    fn runtime_alias_lvalue_handle_value(
+        &self,
+        handle: &RuntimeAliasLvalueHandle,
+    ) -> Option<Value> {
         if let Some(cell) = &handle.cell {
             return Some(cell.value_cloned());
         }
@@ -5027,7 +5020,10 @@ impl SymbolTable {
                     .collect::<Vec<_>>();
                 for cell in cells {
                     for handle in self.runtime_alias_lvalue_handles_for_reference_cell(&cell) {
-                        if !handles.iter().any(|candidate| candidate.root == handle.root) {
+                        if !handles
+                            .iter()
+                            .any(|candidate| candidate.root == handle.root)
+                        {
                             handles.push(handle);
                         }
                     }
@@ -5038,7 +5034,10 @@ impl SymbolTable {
                 let mut handles = vec![self.runtime_alias_lvalue_handle(root.clone())];
                 if let Some(cell) = handles.first().and_then(|handle| handle.cell.clone()) {
                     for handle in self.runtime_alias_lvalue_handles_for_reference_cell(&cell) {
-                        if !handles.iter().any(|candidate| candidate.root == handle.root) {
+                        if !handles
+                            .iter()
+                            .any(|candidate| candidate.root == handle.root)
+                        {
                             handles.push(handle);
                         }
                     }
@@ -6503,10 +6502,8 @@ impl SymbolTable {
     ) -> CompileResult<()> {
         self.detach_array_offset_aliases_for_unset_paths(std::slice::from_ref(&target_alias));
         self.materialize_array_offset_alias(&source_alias, span)?;
-        let boundary = self.pre_replace_holder_storage_for_alias_write(
-            &target_alias.root,
-            &target_alias.keys,
-        );
+        let boundary =
+            self.pre_replace_holder_storage_for_alias_write(&target_alias.root, &target_alias.keys);
         self.materialize_array_offset_alias(&target_alias, span)?;
         let aliases = vec![source_alias, target_alias];
         if !self.write_array_offset_aliases(&aliases, value) {
@@ -21937,26 +21934,27 @@ impl Interpreter {
                     (value, Vec::new(), None, copy_sources)
                 } else {
                     match expr {
-                    Expr::Array { items, span } => {
-                        let (value, references, copy_sources) =
-                            self.evaluate_array_for_direct_assignment(items, *span, scope)?;
-                        (value, references, None, copy_sources)
-                    }
-                    Expr::Index {
-                        target,
-                        index,
-                        span,
-                    } => {
-                        let (value, source) = self.evaluate_array_index_with_array_copy_source(
-                            target, index, *span, scope,
-                        )?;
-                        (value, Vec::new(), source, Vec::new())
-                    }
-                    _ => {
-                        let (value, source) =
-                            self.evaluate_value_with_array_copy_source(expr, scope)?;
-                        (value, Vec::new(), source, Vec::new())
-                    }
+                        Expr::Array { items, span } => {
+                            let (value, references, copy_sources) =
+                                self.evaluate_array_for_direct_assignment(items, *span, scope)?;
+                            (value, references, None, copy_sources)
+                        }
+                        Expr::Index {
+                            target,
+                            index,
+                            span,
+                        } => {
+                            let (value, source) = self
+                                .evaluate_array_index_with_array_copy_source(
+                                    target, index, *span, scope,
+                                )?;
+                            (value, Vec::new(), source, Vec::new())
+                        }
+                        _ => {
+                            let (value, source) =
+                                self.evaluate_value_with_array_copy_source(expr, scope)?;
+                            (value, Vec::new(), source, Vec::new())
+                        }
                     }
                 };
                 let direct_object_property_copy = match expr {
@@ -26926,7 +26924,8 @@ impl Interpreter {
                 indices,
                 ..
             } => {
-                let temp_name = self.non_direct_object_holder_temp(holder, property, scope, span)?;
+                let temp_name =
+                    self.non_direct_object_holder_temp(holder, property, scope, span)?;
                 let target = AssignTarget::ObjectPropertyArrayIndex {
                     object: temp_name,
                     property: property.clone(),
@@ -27021,7 +27020,8 @@ impl Interpreter {
             AssignTarget::NonDirectProperty {
                 holder, property, ..
             } => {
-                let temp_name = self.non_direct_object_holder_temp(holder, property, scope, span)?;
+                let temp_name =
+                    self.non_direct_object_holder_temp(holder, property, scope, span)?;
                 let target = AssignTarget::Property {
                     object: temp_name,
                     property: property.clone(),
@@ -27217,10 +27217,8 @@ impl Interpreter {
                             &property,
                             &alias_fallbacks,
                         );
-                        scope.sync_array_offset_aliases_for_object_property_root(
-                            &object,
-                            &property,
-                        );
+                        scope
+                            .sync_array_offset_aliases_for_object_property_root(&object, &property);
                         Ok(())
                     }
                     other => Err(runtime_error(
@@ -27276,10 +27274,8 @@ impl Interpreter {
                             )
                             .map_err(|error| runtime_error(span, error))?;
                         scope.post_replace_holder_storage(&boundary);
-                        scope.sync_array_offset_aliases_for_object_property_root(
-                            &object,
-                            &property,
-                        );
+                        scope
+                            .sync_array_offset_aliases_for_object_property_root(&object, &property);
                         Ok(())
                     }
                     other => Err(runtime_error(
@@ -27813,7 +27809,8 @@ impl Interpreter {
                 property,
                 span,
             } => {
-                let temp_name = self.non_direct_object_holder_temp(holder, property, scope, *span)?;
+                let temp_name =
+                    self.non_direct_object_holder_temp(holder, property, scope, *span)?;
                 let target = AssignTarget::Property {
                     object: temp_name,
                     property: property.clone(),
@@ -34504,11 +34501,11 @@ impl Interpreter {
         }
 
         if name.eq_ignore_ascii_case("array_replace") {
-            let Some((first, first_sources)) =
-                args.first()
-                    .map(|arg| self.evaluate_array_literal_argument_with_copy_sources(arg, scope))
-                    .transpose()?
-                    .flatten()
+            let Some((first, first_sources)) = args
+                .first()
+                .map(|arg| self.evaluate_array_literal_argument_with_copy_sources(arg, scope))
+                .transpose()?
+                .flatten()
             else {
                 return Ok(None);
             };
@@ -42201,16 +42198,15 @@ impl Interpreter {
             let prebound_locals = self.closure_prebound_locals(&closure);
             let (this_object, class_context, called_class_context) =
                 self.closure_call_context(&closure);
-            return self
-                .call_reference_return_function_value_with_call_frame_and_return_source(
-                    function,
-                    frame,
-                    this_object,
-                    class_context,
-                    called_class_context,
-                    caller_scope,
-                    prebound_locals,
-                );
+            return self.call_reference_return_function_value_with_call_frame_and_return_source(
+                function,
+                frame,
+                this_object,
+                class_context,
+                called_class_context,
+                caller_scope,
+                prebound_locals,
+            );
         }
         let prebound_locals = self.closure_prebound_locals(&closure);
         let (this_object, class_context, called_class_context) =
@@ -43175,9 +43171,10 @@ impl Interpreter {
             let target_keys = variadic_offset
                 .map(|offset| vec![ArrayKey::Int(offset as i64)])
                 .unwrap_or_default();
-            if bindings.iter().any(|(param_name, keys, _)| {
-                param_name == &param.name && keys == &target_keys
-            }) {
+            if bindings
+                .iter()
+                .any(|(param_name, keys, _)| param_name == &param.name && keys == &target_keys)
+            {
                 continue;
             }
             bindings.push((param.name.clone(), target_keys, source));
@@ -43241,15 +43238,13 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
         include_reference_params: bool,
     ) -> CompileResult<CallFrameArgumentBindings> {
-        if let Some(frame) =
-            self.evaluate_call_user_func_array_argument_with_array_copy_sources(
-                function,
-                argument_expr,
-                span,
-                caller_scope,
-                include_reference_params,
-            )?
-        {
+        if let Some(frame) = self.evaluate_call_user_func_array_argument_with_array_copy_sources(
+            function,
+            argument_expr,
+            span,
+            caller_scope,
+            include_reference_params,
+        )? {
             self.emit_call_frame_value_reference_parameter_warnings(function, &frame, span)?;
             return Ok(frame);
         }
@@ -43260,20 +43255,19 @@ impl Interpreter {
             span,
             caller_scope,
         )?;
-        let array_copy_source_bindings =
-            Self::array_copy_source_bindings_for_reference_bindings(
-                &reference_bindings,
+        let array_copy_source_bindings = Self::array_copy_source_bindings_for_reference_bindings(
+            &reference_bindings,
+            caller_scope,
+        )
+        .into_iter()
+        .chain(
+            self.call_user_func_array_by_value_copy_source_bindings_for_argument(
+                function,
+                argument_expr,
                 caller_scope,
-            )
-            .into_iter()
-            .chain(
-                self.call_user_func_array_by_value_copy_source_bindings_for_argument(
-                    function,
-                    argument_expr,
-                    caller_scope,
-                )?,
-            )
-            .collect();
+            )?,
+        )
+        .collect();
         let by_value_array_copy_bindings =
             Self::by_value_array_copy_bindings_for_call_user_func_array_literal(
                 function,
@@ -47373,15 +47367,14 @@ impl Interpreter {
                 }
             };
 
-            let boundary =
-                caller_scope.object_property_holder_storage_boundary(
-                    object_name,
-                    &object,
-                    property,
-                    &[],
-                    current_class_id,
-                    &protected_class_ids,
-                );
+            let boundary = caller_scope.object_property_holder_storage_boundary(
+                object_name,
+                &object,
+                property,
+                &[],
+                current_class_id,
+                &protected_class_ids,
+            );
             caller_scope.pre_replace_holder_storage(&boundary);
             match object.write_property_from_context(
                 property,
@@ -47808,15 +47801,14 @@ impl Interpreter {
         };
         let value = array.next_value();
         property_array.insert(key.clone(), slot);
-        let boundary =
-            caller_scope.object_property_holder_storage_boundary(
-                object_name,
-                &object,
-                property,
-                std::slice::from_ref(&key),
-                current_class_id,
-                &protected_class_ids,
-            );
+        let boundary = caller_scope.object_property_holder_storage_boundary(
+            object_name,
+            &object,
+            property,
+            std::slice::from_ref(&key),
+            current_class_id,
+            &protected_class_ids,
+        );
         caller_scope.pre_replace_holder_storage(&boundary);
         object
             .write_property_from_context(
@@ -57707,15 +57699,14 @@ impl Interpreter {
             Value::Object(object_value) => {
                 let alias_fallbacks =
                     caller_scope.public_object_property_root_alias_fallbacks(object_name, property);
-                let boundary =
-                    caller_scope.object_property_holder_storage_boundary(
-                        object_name,
-                        &object_value,
-                        property,
-                        &[],
-                        current_class_id,
-                        &protected_class_ids,
-                    );
+                let boundary = caller_scope.object_property_holder_storage_boundary(
+                    object_name,
+                    &object_value,
+                    property,
+                    &[],
+                    current_class_id,
+                    &protected_class_ids,
+                );
                 caller_scope.pre_replace_holder_storage(&boundary);
                 match object_value.write_property_from_context_with_object_type_resolver(
                     property,
@@ -57912,6 +57903,7 @@ impl Interpreter {
             "substr" => call_substr(&args, span),
             "substr_count" => call_substr_count(&args, span),
             "str_replace" => call_str_replace(&args, span),
+            "urlencode" => call_urlencode(&args, span),
             "preg_match" => call_preg_match(&args, span),
             "preg_replace" => call_preg_replace(&args, span),
             "preg_split" => call_preg_split(&args, span),
@@ -67205,6 +67197,7 @@ fn is_builtin(name: &str) -> bool {
             | "substr"
             | "substr_count"
             | "str_replace"
+            | "urlencode"
             | "preg_match"
             | "preg_replace"
             | "preg_split"
@@ -73832,61 +73825,70 @@ impl Interpreter {
             ));
         }
 
-        let pattern =
+        let pattern_text =
             string_contains_argument("preg_replace_callback()", "pattern", &args[0], span)?;
         let callback =
             string_contains_argument("preg_replace_callback()", "callback", &args[1], span)?;
         let subject =
             string_contains_argument("preg_replace_callback()", "subject", &args[2], span)?;
-
-        if !is_wordpress_sanitize_redirect_utf8_pattern(&pattern) {
+        let pattern =
+            BoundedPregPattern::parse_slash_delimited(&pattern_text).map_err(|message| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call("preg_replace_callback()", message),
+                )
+            })?;
+        if !pattern.has_non_empty_iterable_matches() {
             return Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "preg_replace_callback()",
-                    "only the WordPress wp_sanitize_redirect() UTF-8 sanitizer pattern is implemented in the current subset",
+                    "zero-length regex matches are not implemented in the current subset",
                 ),
             ));
         }
 
-        if callback != "_wp_sanitize_utf8_in_redirect" {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "preg_replace_callback()",
-                    "only the WordPress _wp_sanitize_utf8_in_redirect string callback is implemented in the current subset",
-                ),
-            ));
+        let mut output = String::with_capacity(subject.len());
+        let mut cursor = 0;
+        while let Some(matched) = pattern.next_match(&subject, cursor) {
+            output.push_str(&subject[cursor..matched.start]);
+            let replacement =
+                self.call_preg_replace_callback_replacement(&callback, matched.captures, span)?;
+            output.push_str(&replacement);
+            cursor = matched.end;
         }
+        output.push_str(&subject[cursor..]);
 
-        Ok(Value::String(percent_encode_non_ascii_utf8(&subject)))
+        Ok(Value::String(output))
     }
-}
 
-fn is_wordpress_sanitize_redirect_utf8_pattern(pattern: &str) -> bool {
-    let compact: String = pattern.chars().filter(|ch| !ch.is_whitespace()).collect();
-    compact.starts_with("/((?:")
-        && (compact.contains("[\\xC2-\\xDF][\\x80-\\xBF]")
-            || compact.contains("[xC2-xDF][x80-xBF]"))
-        && (compact.contains("[\\xF1-\\xF3][\\x80-\\xBF]{3}")
-            || compact.contains("[xF1-xF3][x80-xBF]{3}"))
-        && compact.contains("){1,40}")
-        && compact.ends_with(")/x")
-}
-
-fn percent_encode_non_ascii_utf8(subject: &str) -> String {
-    let mut output = String::with_capacity(subject.len());
-    for ch in subject.chars() {
-        if ch.is_ascii() {
-            output.push(ch);
-        } else {
-            for byte in ch.to_string().as_bytes() {
-                output.push('%');
-                output.push_str(&format!("{byte:02X}"));
+    fn call_preg_replace_callback_replacement(
+        &mut self,
+        callback: &str,
+        captures: PhpArray,
+        span: Span,
+    ) -> CompileResult<String> {
+        let args = vec![Value::Array(captures)];
+        let value = match self.lookup_function_exact(callback).ok_or_else(|| {
+            runtime_error(
+                span,
+                RuntimeError::undefined_function(callable_name(callback)),
+            )
+        })? {
+            Callable::Builtin(key) => self.call_builtin(&key, args, span)?,
+            Callable::User(function) => {
+                self.call_user_function_with_values(function, args, span)?
             }
-        }
+        };
+
+        string_contains_argument("preg_replace_callback()", "callback result", &value, span)
     }
-    output
+}
+
+struct BoundedPregMatch {
+    start: usize,
+    end: usize,
+    captures: PhpArray,
 }
 
 fn is_compact_variable_name(name: &str) -> bool {
@@ -73905,6 +73907,16 @@ enum BoundedPregPattern {
     Prefix(String),
     Suffix(String),
     Exact(String),
+    CharacterClass {
+        starts_with_anchor: bool,
+        ends_with_anchor: bool,
+        class: BoundedPregCharacterClass,
+    },
+    ByteExpression {
+        starts_with_anchor: bool,
+        ends_with_anchor: bool,
+        expression: BoundedPregByteExpression,
+    },
     WordPressDbHostIpv4,
     WordPressDbHostIpv6,
     WordPressTablePrefixInvalidChar,
@@ -73912,7 +73924,50 @@ enum BoundedPregPattern {
     WordPressDdlQuery,
     WordPressDmlQuery,
     WordPressInsertReplaceQuery,
-    WordPressNonAsciiByte,
+}
+
+struct BoundedPregCharacterClass {
+    negated: bool,
+    ranges: Vec<BoundedPregCharacterRange>,
+}
+
+struct BoundedPregCharacterRange {
+    start: char,
+    end: char,
+}
+
+struct BoundedPregByteExpression {
+    alternatives: Vec<BoundedPregByteSequence>,
+}
+
+struct BoundedPregByteSequence {
+    terms: Vec<BoundedPregByteTerm>,
+}
+
+struct BoundedPregByteTerm {
+    atom: BoundedPregByteAtom,
+    repeat: BoundedPregRepeat,
+}
+
+enum BoundedPregByteAtom {
+    Class(BoundedPregByteClass),
+    Group(BoundedPregByteExpression),
+}
+
+struct BoundedPregByteClass {
+    negated: bool,
+    ranges: Vec<BoundedPregByteRange>,
+}
+
+struct BoundedPregByteRange {
+    start: u8,
+    end: u8,
+}
+
+#[derive(Clone, Copy)]
+struct BoundedPregRepeat {
+    min: usize,
+    max: usize,
 }
 
 impl BoundedPregPattern {
@@ -73948,10 +74003,10 @@ impl BoundedPregPattern {
         if pattern == "/^\\s*(insert|replace)\\s/i" || pattern == "/^s*(insert|replace)s/i" {
             return Ok(Self::WordPressInsertReplaceQuery);
         }
-        if pattern == "/[^\\x00-\\x7F]/" || pattern == "/[^x00-x7F]/" {
-            return Ok(Self::WordPressNonAsciiByte);
-        }
+        Self::parse_slash_delimited(pattern)
+    }
 
+    fn parse_slash_delimited(pattern: &str) -> Result<Self, String> {
         let Some(body_and_modifiers) = pattern.strip_prefix('/') else {
             return Err(
                 "only slash-delimited patterns are implemented in the current subset".to_string(),
@@ -73962,7 +74017,13 @@ impl BoundedPregPattern {
             "only slash-delimited patterns with a closing delimiter are implemented in the current subset"
                 .to_string()
         })?;
-        validate_bounded_preg_modifiers(modifiers)?;
+        let modifier_flags = validate_bounded_preg_modifiers(modifiers)?;
+        let body = if modifier_flags.extended {
+            strip_bounded_preg_extended_pattern(body)?
+        } else {
+            body.to_string()
+        };
+        let body = body.as_str();
 
         let (starts_with_anchor, body) = match body.strip_prefix('^') {
             Some(rest) => (true, rest),
@@ -73973,6 +74034,24 @@ impl BoundedPregPattern {
             None => (false, body),
         };
 
+        if body.starts_with('[') && body.ends_with(']') {
+            if let Some(class) = parse_bounded_preg_character_class(body)? {
+                return Ok(Self::CharacterClass {
+                    starts_with_anchor,
+                    ends_with_anchor,
+                    class,
+                });
+            }
+        }
+
+        if let Some(expression) = parse_bounded_preg_byte_expression(body)? {
+            return Ok(Self::ByteExpression {
+                starts_with_anchor,
+                ends_with_anchor,
+                expression,
+            });
+        }
+
         let literal = decode_bounded_preg_literal(body)?;
         Ok(match (starts_with_anchor, ends_with_anchor) {
             (true, true) => Self::Exact(literal),
@@ -73982,20 +74061,39 @@ impl BoundedPregPattern {
         })
     }
 
-    fn matches(&self, subject: &str) -> bool {
+    fn has_non_empty_iterable_matches(&self) -> bool {
         match self {
-            Self::Contains(literal) => subject.contains(literal),
-            Self::Prefix(literal) => subject.starts_with(literal),
-            Self::Suffix(literal) => subject.ends_with(literal),
-            Self::Exact(literal) => subject == literal,
+            Self::Contains(literal)
+            | Self::Prefix(literal)
+            | Self::Suffix(literal)
+            | Self::Exact(literal) => !literal.is_empty(),
+            Self::CharacterClass { .. } => true,
+            Self::ByteExpression { expression, .. } => expression.min_len() > 0,
             Self::WordPressDbHostIpv4
             | Self::WordPressDbHostIpv6
             | Self::WordPressTablePrefixInvalidChar
             | Self::WordPressSafeCollationReadQuery
             | Self::WordPressDdlQuery
             | Self::WordPressDmlQuery
-            | Self::WordPressInsertReplaceQuery
-            | Self::WordPressNonAsciiByte => self.captures(subject).is_some(),
+            | Self::WordPressInsertReplaceQuery => false,
+        }
+    }
+
+    fn matches(&self, subject: &str) -> bool {
+        match self {
+            Self::Contains(literal) => subject.contains(literal),
+            Self::Prefix(literal) => subject.starts_with(literal),
+            Self::Suffix(literal) => subject.ends_with(literal),
+            Self::Exact(literal) => subject == literal,
+            Self::CharacterClass { .. } => self.captures(subject).is_some(),
+            Self::ByteExpression { .. } => self.captures(subject).is_some(),
+            Self::WordPressDbHostIpv4
+            | Self::WordPressDbHostIpv6
+            | Self::WordPressTablePrefixInvalidChar
+            | Self::WordPressSafeCollationReadQuery
+            | Self::WordPressDdlQuery
+            | Self::WordPressDmlQuery
+            | Self::WordPressInsertReplaceQuery => self.captures(subject).is_some(),
         }
     }
 
@@ -74026,8 +74124,103 @@ impl BoundedPregPattern {
             Self::WordPressInsertReplaceQuery => {
                 wordpress_query_classifier(subject, &["INSERT", "REPLACE"], true)
             }
-            Self::WordPressNonAsciiByte => wordpress_non_ascii_byte(subject),
+            Self::CharacterClass {
+                starts_with_anchor,
+                ends_with_anchor,
+                class,
+            } => bounded_preg_character_class_capture(
+                subject,
+                *starts_with_anchor,
+                *ends_with_anchor,
+                class,
+            ),
+            Self::ByteExpression {
+                starts_with_anchor,
+                ends_with_anchor,
+                expression,
+            } => bounded_preg_byte_expression_capture(
+                subject,
+                *starts_with_anchor,
+                *ends_with_anchor,
+                expression,
+            ),
             _ => None,
+        }
+    }
+
+    fn next_match(&self, subject: &str, start: usize) -> Option<BoundedPregMatch> {
+        if start > subject.len() || !subject.is_char_boundary(start) {
+            return None;
+        }
+
+        match self {
+            Self::Contains(literal) if !literal.is_empty() => {
+                let relative_start = subject[start..].find(literal)?;
+                let absolute_start = start + relative_start;
+                let end = absolute_start + literal.len();
+                Some(BoundedPregMatch {
+                    start: absolute_start,
+                    end,
+                    captures: preg_match_single_capture(&subject[absolute_start..end]),
+                })
+            }
+            Self::Prefix(literal)
+                if !literal.is_empty() && start == 0 && subject.starts_with(literal) =>
+            {
+                Some(BoundedPregMatch {
+                    start: 0,
+                    end: literal.len(),
+                    captures: preg_match_single_capture(literal),
+                })
+            }
+            Self::Suffix(literal) if !literal.is_empty() => {
+                let absolute_start = subject.len().checked_sub(literal.len())?;
+                (start <= absolute_start && subject.ends_with(literal)).then(|| BoundedPregMatch {
+                    start: absolute_start,
+                    end: subject.len(),
+                    captures: preg_match_single_capture(literal),
+                })
+            }
+            Self::Exact(literal) if !literal.is_empty() && start == 0 && subject == literal => {
+                Some(BoundedPregMatch {
+                    start: 0,
+                    end: subject.len(),
+                    captures: preg_match_single_capture(subject),
+                })
+            }
+            Self::CharacterClass {
+                starts_with_anchor,
+                ends_with_anchor,
+                class,
+            } => next_bounded_preg_character_class_match(
+                subject,
+                start,
+                *starts_with_anchor,
+                *ends_with_anchor,
+                class,
+            ),
+            Self::ByteExpression {
+                starts_with_anchor,
+                ends_with_anchor,
+                expression,
+            } => next_bounded_preg_byte_expression_match(
+                subject,
+                start,
+                *starts_with_anchor,
+                *ends_with_anchor,
+                expression,
+            ),
+            Self::WordPressDbHostIpv4
+            | Self::WordPressDbHostIpv6
+            | Self::WordPressTablePrefixInvalidChar
+            | Self::WordPressSafeCollationReadQuery
+            | Self::WordPressDdlQuery
+            | Self::WordPressDmlQuery
+            | Self::WordPressInsertReplaceQuery
+            | Self::Contains(_)
+            | Self::Prefix(_)
+            | Self::Suffix(_)
+            | Self::Exact(_) => None,
         }
     }
 }
@@ -74036,6 +74229,650 @@ fn preg_match_single_capture(value: &str) -> PhpArray {
     let mut matches = PhpArray::new();
     matches.insert(0, Value::String(value.to_string()));
     matches
+}
+
+fn parse_bounded_preg_character_class(
+    body: &str,
+) -> Result<Option<BoundedPregCharacterClass>, String> {
+    let Some(inner) = body.strip_prefix('[') else {
+        return Ok(None);
+    };
+    let Some(inner) = inner.strip_suffix(']') else {
+        return Err(
+            "unterminated regex character classes are not implemented in the current subset"
+                .to_string(),
+        );
+    };
+    if inner.is_empty() {
+        return Err(
+            "empty regex character classes are not implemented in the current subset".to_string(),
+        );
+    }
+
+    let (negated, inner) = match inner.strip_prefix('^') {
+        Some(rest) => (true, rest),
+        None => (false, inner),
+    };
+    if inner.is_empty() {
+        return Err(
+            "empty regex character classes are not implemented in the current subset".to_string(),
+        );
+    }
+
+    let chars = inner.chars().collect::<Vec<_>>();
+    let mut index = 0;
+    let mut ranges = Vec::new();
+    while index < chars.len() {
+        let start = parse_bounded_preg_character_class_atom(&chars, &mut index)?;
+        if index < chars.len().saturating_sub(1) && chars[index] == '-' {
+            index += 1;
+            let end = parse_bounded_preg_character_class_atom(&chars, &mut index)?;
+            if start > end {
+                return Err(
+                    "descending regex character-class ranges are not implemented in the current subset"
+                        .to_string(),
+                );
+            }
+            ranges.push(BoundedPregCharacterRange { start, end });
+        } else {
+            ranges.push(BoundedPregCharacterRange { start, end: start });
+        }
+    }
+
+    Ok(Some(BoundedPregCharacterClass { negated, ranges }))
+}
+
+fn parse_bounded_preg_character_class_atom(
+    chars: &[char],
+    index: &mut usize,
+) -> Result<char, String> {
+    let Some(ch) = chars.get(*index).copied() else {
+        return Err(
+            "trailing regex character-class ranges are not implemented in the current subset"
+                .to_string(),
+        );
+    };
+    *index += 1;
+
+    if ch != '\\' {
+        if matches!(ch, '[' | ']') {
+            return Err(
+                "nested or multiple regex character classes are not implemented in the current subset"
+                    .to_string(),
+            );
+        }
+        return Ok(ch);
+    }
+
+    let Some(escaped) = chars.get(*index).copied() else {
+        return Err(
+            "trailing regex character-class escapes are not implemented in the current subset"
+                .to_string(),
+        );
+    };
+    *index += 1;
+
+    match escaped {
+        'x' => {
+            let high = parse_bounded_preg_hex_digit(chars.get(*index).copied())?;
+            *index += 1;
+            let low = parse_bounded_preg_hex_digit(chars.get(*index).copied())?;
+            *index += 1;
+            char::from_u32((high << 4) | low).ok_or_else(|| {
+                "regex character-class hex escapes outside Unicode scalar values are not implemented in the current subset"
+                    .to_string()
+            })
+        }
+        '\\' | '-' | ']' | '^' | '/' => Ok(escaped),
+        _ => Err(format!(
+            "escape sequence \\{escaped} in regex character classes is not implemented in the current subset"
+        )),
+    }
+}
+
+fn parse_bounded_preg_hex_digit(ch: Option<char>) -> Result<u32, String> {
+    ch.and_then(|ch| ch.to_digit(16)).ok_or_else(|| {
+        "regex character-class hex escapes must contain exactly two hex digits in the current subset"
+            .to_string()
+    })
+}
+
+fn bounded_preg_character_class_capture(
+    subject: &str,
+    starts_with_anchor: bool,
+    ends_with_anchor: bool,
+    class: &BoundedPregCharacterClass,
+) -> Option<PhpArray> {
+    next_bounded_preg_character_class_match(subject, 0, starts_with_anchor, ends_with_anchor, class)
+        .map(|matched| matched.captures)
+}
+
+fn next_bounded_preg_character_class_match(
+    subject: &str,
+    start: usize,
+    starts_with_anchor: bool,
+    ends_with_anchor: bool,
+    class: &BoundedPregCharacterClass,
+) -> Option<BoundedPregMatch> {
+    if starts_with_anchor {
+        if start != 0 {
+            return None;
+        }
+        let (match_start, ch) = subject.char_indices().next()?;
+        let end = match_start + ch.len_utf8();
+        if (!ends_with_anchor || end == subject.len()) && class.matches(ch) {
+            return Some(BoundedPregMatch {
+                start: match_start,
+                end,
+                captures: preg_match_single_capture(&subject[match_start..end]),
+            });
+        }
+        return None;
+    }
+
+    if ends_with_anchor {
+        let (match_start, ch) = subject.char_indices().last()?;
+        let end = subject.len();
+        if start <= match_start && class.matches(ch) {
+            return Some(BoundedPregMatch {
+                start: match_start,
+                end,
+                captures: preg_match_single_capture(&subject[match_start..end]),
+            });
+        }
+        return None;
+    }
+
+    subject[start..]
+        .char_indices()
+        .find(|(_, ch)| class.matches(*ch))
+        .map(|(relative_start, ch)| {
+            let match_start = start + relative_start;
+            let end = match_start + ch.len_utf8();
+            BoundedPregMatch {
+                start: match_start,
+                end,
+                captures: preg_match_single_capture(&subject[match_start..end]),
+            }
+        })
+}
+
+impl BoundedPregCharacterClass {
+    fn matches(&self, ch: char) -> bool {
+        let contained = self
+            .ranges
+            .iter()
+            .any(|range| range.start <= ch && ch <= range.end);
+        contained != self.negated
+    }
+}
+
+fn parse_bounded_preg_byte_expression(
+    body: &str,
+) -> Result<Option<BoundedPregByteExpression>, String> {
+    if !body.contains('[') && !body.contains('(') {
+        return Ok(None);
+    }
+
+    let mut parser = BoundedPregByteParser::new(body);
+    let expression = parser.parse_expression()?;
+    if parser.position != parser.chars.len() {
+        return Ok(None);
+    }
+    Ok(Some(expression))
+}
+
+struct BoundedPregByteParser {
+    chars: Vec<char>,
+    position: usize,
+}
+
+impl BoundedPregByteParser {
+    fn new(input: &str) -> Self {
+        Self {
+            chars: input.chars().collect(),
+            position: 0,
+        }
+    }
+
+    fn parse_expression(&mut self) -> Result<BoundedPregByteExpression, String> {
+        let mut alternatives = Vec::new();
+        loop {
+            alternatives.push(self.parse_sequence()?);
+            if self.peek() != Some('|') {
+                break;
+            }
+            self.position += 1;
+        }
+
+        if alternatives
+            .iter()
+            .any(|sequence| sequence.terms.is_empty())
+        {
+            return Err(
+                "empty regex alternatives are not implemented in the current subset".to_string(),
+            );
+        }
+
+        Ok(BoundedPregByteExpression { alternatives })
+    }
+
+    fn parse_sequence(&mut self) -> Result<BoundedPregByteSequence, String> {
+        let mut terms = Vec::new();
+        while let Some(ch) = self.peek() {
+            if matches!(ch, ')' | '|') {
+                break;
+            }
+            let atom = self.parse_atom()?;
+            let repeat = self.parse_repeat()?;
+            terms.push(BoundedPregByteTerm { atom, repeat });
+        }
+        Ok(BoundedPregByteSequence { terms })
+    }
+
+    fn parse_atom(&mut self) -> Result<BoundedPregByteAtom, String> {
+        match self.peek() {
+            Some('[') => self.parse_class().map(BoundedPregByteAtom::Class),
+            Some('(') => self.parse_group().map(BoundedPregByteAtom::Group),
+            Some('\\') => self.parse_escaped_byte_atom(),
+            Some('x') if self.peek_hex_byte_atom() => self.parse_bare_hex_byte_atom(),
+            Some(ch) => Err(format!(
+                "regex atom {ch} is not implemented in the current subset"
+            )),
+            None => {
+                Err("trailing regex atoms are not implemented in the current subset".to_string())
+            }
+        }
+    }
+
+    fn parse_group(&mut self) -> Result<BoundedPregByteExpression, String> {
+        self.expect('(')?;
+        if self.peek() == Some('?') {
+            self.position += 1;
+            self.expect(':')?;
+        }
+        let expression = self.parse_expression()?;
+        self.expect(')')?;
+        Ok(expression)
+    }
+
+    fn parse_class(&mut self) -> Result<BoundedPregByteClass, String> {
+        self.expect('[')?;
+        let negated = if self.peek() == Some('^') {
+            self.position += 1;
+            true
+        } else {
+            false
+        };
+
+        let mut ranges = Vec::new();
+        while let Some(ch) = self.peek() {
+            if ch == ']' {
+                break;
+            }
+            let start = self.parse_class_atom()?;
+            if self.peek() == Some('-')
+                && self
+                    .chars
+                    .get(self.position + 1)
+                    .is_some_and(|next| *next != ']')
+            {
+                self.position += 1;
+                let end = self.parse_class_atom()?;
+                if start > end {
+                    return Err(
+                        "descending regex byte-class ranges are not implemented in the current subset"
+                            .to_string(),
+                    );
+                }
+                ranges.push(BoundedPregByteRange { start, end });
+            } else {
+                ranges.push(BoundedPregByteRange { start, end: start });
+            }
+        }
+
+        self.expect(']')?;
+        if ranges.is_empty() {
+            return Err(
+                "empty regex byte classes are not implemented in the current subset".to_string(),
+            );
+        }
+        Ok(BoundedPregByteClass { negated, ranges })
+    }
+
+    fn parse_class_atom(&mut self) -> Result<u8, String> {
+        let Some(ch) = self.next() else {
+            return Err(
+                "trailing regex byte-class ranges are not implemented in the current subset"
+                    .to_string(),
+            );
+        };
+
+        if ch != '\\' {
+            if ch == 'x' && self.peek_hex_byte_atom_tail() {
+                return self.parse_hex_byte_after_x();
+            }
+            if ch.is_ascii() {
+                return Ok(ch as u8);
+            }
+            return Err(
+                "non-ASCII regex byte-class literals are not implemented in the current subset"
+                    .to_string(),
+            );
+        }
+
+        match self.next() {
+            Some('x') => {
+                self.parse_hex_byte_after_x()
+            }
+            Some('\\' | '-' | ']' | '^' | '/') => Ok(self.chars[self.position - 1] as u8),
+            Some(escaped) => Err(format!(
+                "escape sequence \\{escaped} in regex byte classes is not implemented in the current subset"
+            )),
+            None => Err(
+                "trailing regex byte-class escapes are not implemented in the current subset"
+                    .to_string(),
+            ),
+        }
+    }
+
+    fn parse_escaped_byte_atom(&mut self) -> Result<BoundedPregByteAtom, String> {
+        self.expect('\\')?;
+        match self.next() {
+            Some('x') => {
+                let byte = self.parse_hex_byte_after_x()?;
+                Ok(BoundedPregByteAtom::Class(BoundedPregByteClass {
+                    negated: false,
+                    ranges: vec![BoundedPregByteRange {
+                        start: byte,
+                        end: byte,
+                    }],
+                }))
+            }
+            Some(escaped) => Err(format!(
+                "escape sequence \\{escaped} outside regex byte classes is not implemented in the current subset"
+            )),
+            None => Err(
+                "trailing regex byte escapes are not implemented in the current subset".to_string(),
+            ),
+        }
+    }
+
+    fn parse_bare_hex_byte_atom(&mut self) -> Result<BoundedPregByteAtom, String> {
+        self.expect('x')?;
+        let byte = self.parse_hex_byte_after_x()?;
+        Ok(BoundedPregByteAtom::Class(BoundedPregByteClass {
+            negated: false,
+            ranges: vec![BoundedPregByteRange {
+                start: byte,
+                end: byte,
+            }],
+        }))
+    }
+
+    fn parse_hex_byte_after_x(&mut self) -> Result<u8, String> {
+        let high = parse_bounded_preg_hex_digit(self.next())?;
+        let low = parse_bounded_preg_hex_digit(self.next())?;
+        Ok(((high << 4) | low) as u8)
+    }
+
+    fn peek_hex_byte_atom(&self) -> bool {
+        self.chars
+            .get(self.position + 1)
+            .is_some_and(|ch| ch.is_ascii_hexdigit())
+            && self
+                .chars
+                .get(self.position + 2)
+                .is_some_and(|ch| ch.is_ascii_hexdigit())
+    }
+
+    fn peek_hex_byte_atom_tail(&self) -> bool {
+        self.chars
+            .get(self.position)
+            .is_some_and(|ch| ch.is_ascii_hexdigit())
+            && self
+                .chars
+                .get(self.position + 1)
+                .is_some_and(|ch| ch.is_ascii_hexdigit())
+    }
+
+    fn parse_repeat(&mut self) -> Result<BoundedPregRepeat, String> {
+        if self.peek() != Some('{') {
+            return Ok(BoundedPregRepeat { min: 1, max: 1 });
+        }
+        self.position += 1;
+
+        let min = self.parse_decimal_usize()?;
+        let max = if self.peek() == Some(',') {
+            self.position += 1;
+            self.parse_decimal_usize()?
+        } else {
+            min
+        };
+        self.expect('}')?;
+
+        if min == 0 {
+            return Err(
+                "zero-length regex repeats are not implemented in the current subset".to_string(),
+            );
+        }
+        if min > max {
+            return Err(
+                "descending regex repeat ranges are not implemented in the current subset"
+                    .to_string(),
+            );
+        }
+        if max > 40 {
+            return Err(
+                "regex repeat upper bounds above 40 are not implemented in the current subset"
+                    .to_string(),
+            );
+        }
+
+        Ok(BoundedPregRepeat { min, max })
+    }
+
+    fn parse_decimal_usize(&mut self) -> Result<usize, String> {
+        let start = self.position;
+        while self.peek().is_some_and(|ch| ch.is_ascii_digit()) {
+            self.position += 1;
+        }
+        if self.position == start {
+            return Err(
+                "regex repeats must include decimal bounds in the current subset".to_string(),
+            );
+        }
+        self.chars[start..self.position]
+            .iter()
+            .collect::<String>()
+            .parse::<usize>()
+            .map_err(|_| "regex repeat bounds are out of range in the current subset".to_string())
+    }
+
+    fn expect(&mut self, expected: char) -> Result<(), String> {
+        match self.next() {
+            Some(ch) if ch == expected => Ok(()),
+            _ => Err(format!(
+                "regex delimiter {expected} is not balanced in the current subset"
+            )),
+        }
+    }
+
+    fn peek(&self) -> Option<char> {
+        self.chars.get(self.position).copied()
+    }
+
+    fn next(&mut self) -> Option<char> {
+        let ch = self.peek()?;
+        self.position += 1;
+        Some(ch)
+    }
+}
+
+fn bounded_preg_byte_expression_capture(
+    subject: &str,
+    starts_with_anchor: bool,
+    ends_with_anchor: bool,
+    expression: &BoundedPregByteExpression,
+) -> Option<PhpArray> {
+    next_bounded_preg_byte_expression_match(
+        subject,
+        0,
+        starts_with_anchor,
+        ends_with_anchor,
+        expression,
+    )
+    .map(|matched| matched.captures)
+}
+
+fn next_bounded_preg_byte_expression_match(
+    subject: &str,
+    start: usize,
+    starts_with_anchor: bool,
+    ends_with_anchor: bool,
+    expression: &BoundedPregByteExpression,
+) -> Option<BoundedPregMatch> {
+    if start > subject.len() || !subject.is_char_boundary(start) {
+        return None;
+    }
+
+    let starts = if starts_with_anchor {
+        if start != 0 {
+            return None;
+        }
+        vec![0]
+    } else {
+        subject[start..]
+            .char_indices()
+            .map(|(relative, _)| start + relative)
+            .collect::<Vec<_>>()
+    };
+
+    for match_start in starts {
+        let Some(end) = expression.longest_match(subject.as_bytes(), match_start) else {
+            continue;
+        };
+        if end == match_start || !subject.is_char_boundary(end) {
+            continue;
+        }
+        if ends_with_anchor && end != subject.len() {
+            continue;
+        }
+        return Some(BoundedPregMatch {
+            start: match_start,
+            end,
+            captures: preg_match_single_capture(&subject[match_start..end]),
+        });
+    }
+
+    None
+}
+
+impl BoundedPregByteExpression {
+    fn min_len(&self) -> usize {
+        self.alternatives
+            .iter()
+            .map(BoundedPregByteSequence::min_len)
+            .min()
+            .unwrap_or(0)
+    }
+
+    fn longest_match(&self, bytes: &[u8], start: usize) -> Option<usize> {
+        self.match_ends(bytes, start).into_iter().max()
+    }
+
+    fn match_ends(&self, bytes: &[u8], start: usize) -> Vec<usize> {
+        let mut ends = Vec::new();
+        for alternative in &self.alternatives {
+            ends.extend(alternative.match_ends(bytes, start));
+        }
+        ends
+    }
+}
+
+impl BoundedPregByteSequence {
+    fn min_len(&self) -> usize {
+        self.terms.iter().map(BoundedPregByteTerm::min_len).sum()
+    }
+
+    fn match_ends(&self, bytes: &[u8], start: usize) -> Vec<usize> {
+        let mut positions = vec![start];
+        for term in &self.terms {
+            let mut next_positions = Vec::new();
+            for position in positions {
+                next_positions.extend(term.match_ends(bytes, position));
+            }
+            sort_and_dedup_usizes(&mut next_positions);
+            if next_positions.is_empty() {
+                return Vec::new();
+            }
+            positions = next_positions;
+        }
+        positions
+    }
+}
+
+impl BoundedPregByteTerm {
+    fn min_len(&self) -> usize {
+        self.atom.min_len() * self.repeat.min
+    }
+
+    fn match_ends(&self, bytes: &[u8], start: usize) -> Vec<usize> {
+        let mut positions = vec![start];
+        let mut accepted = Vec::new();
+        for count in 1..=self.repeat.max {
+            let mut next_positions = Vec::new();
+            for position in positions {
+                next_positions.extend(self.atom.match_ends(bytes, position));
+            }
+            sort_and_dedup_usizes(&mut next_positions);
+            if next_positions.is_empty() {
+                break;
+            }
+            if count >= self.repeat.min {
+                accepted.extend(next_positions.iter().copied());
+            }
+            positions = next_positions;
+        }
+        sort_and_dedup_usizes(&mut accepted);
+        accepted
+    }
+}
+
+impl BoundedPregByteAtom {
+    fn min_len(&self) -> usize {
+        match self {
+            Self::Class(_) => 1,
+            Self::Group(expression) => expression.min_len(),
+        }
+    }
+
+    fn match_ends(&self, bytes: &[u8], start: usize) -> Vec<usize> {
+        match self {
+            Self::Class(class) => bytes
+                .get(start)
+                .copied()
+                .filter(|byte| class.matches(*byte))
+                .map(|_| vec![start + 1])
+                .unwrap_or_default(),
+            Self::Group(expression) => expression.match_ends(bytes, start),
+        }
+    }
+}
+
+impl BoundedPregByteClass {
+    fn matches(&self, byte: u8) -> bool {
+        let contained = self
+            .ranges
+            .iter()
+            .any(|range| range.start <= byte && byte <= range.end);
+        contained != self.negated
+    }
+}
+
+fn sort_and_dedup_usizes(values: &mut Vec<usize>) {
+    values.sort_unstable();
+    values.dedup();
 }
 
 fn wordpress_db_host_match_array(full: &str, host: &str, port: Option<&str>) -> PhpArray {
@@ -74101,11 +74938,6 @@ fn wordpress_query_classifier(
     }
 
     None
-}
-
-fn wordpress_non_ascii_byte(subject: &str) -> Option<PhpArray> {
-    let non_ascii = subject.chars().find(|ch| !ch.is_ascii())?;
-    Some(preg_match_single_capture(&non_ascii.to_string()))
 }
 
 fn wordpress_db_host_ipv4_captures(subject: &str) -> Option<PhpArray> {
@@ -74176,11 +75008,75 @@ fn split_slash_delimited_pattern(pattern: &str) -> Option<(&str, &str)> {
     Some((&pattern[..index], &pattern[index + 1..]))
 }
 
-fn validate_bounded_preg_modifiers(modifiers: &str) -> Result<(), String> {
-    match modifiers {
-        "" | "u" => Ok(()),
-        _ => Err("only the u pattern modifier is implemented in the current subset".to_string()),
+#[derive(Default)]
+struct BoundedPregModifierFlags {
+    extended: bool,
+}
+
+fn validate_bounded_preg_modifiers(modifiers: &str) -> Result<BoundedPregModifierFlags, String> {
+    let mut flags = BoundedPregModifierFlags::default();
+    for modifier in modifiers.chars() {
+        match modifier {
+            'u' => {}
+            'x' => flags.extended = true,
+            _ => {
+                return Err(
+                    "only the u and x pattern modifiers are implemented in the current subset"
+                        .to_string(),
+                );
+            }
+        }
     }
+    Ok(flags)
+}
+
+fn strip_bounded_preg_extended_pattern(pattern: &str) -> Result<String, String> {
+    let mut output = String::with_capacity(pattern.len());
+    let mut chars = pattern.chars().peekable();
+    let mut in_class = false;
+
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            output.push(ch);
+            if let Some(escaped) = chars.next() {
+                output.push(escaped);
+            } else {
+                return Err(
+                    "trailing pattern escapes are not implemented in the current subset"
+                        .to_string(),
+                );
+            }
+            continue;
+        }
+
+        if ch == '[' {
+            in_class = true;
+            output.push(ch);
+            continue;
+        }
+        if ch == ']' {
+            in_class = false;
+            output.push(ch);
+            continue;
+        }
+
+        if !in_class && ch == '#' {
+            for comment_ch in chars.by_ref() {
+                if comment_ch == '\n' {
+                    break;
+                }
+            }
+            continue;
+        }
+
+        if !in_class && ch.is_whitespace() {
+            continue;
+        }
+
+        output.push(ch);
+    }
+
+    Ok(output)
 }
 
 fn decode_bounded_preg_literal(body: &str) -> Result<String, String> {
@@ -74207,7 +75103,7 @@ fn decode_bounded_preg_literal(body: &str) -> Result<String, String> {
 
         if matches!(
             ch,
-            '*' | '+' | '?' | '[' | ']' | '(' | ')' | '{' | '}' | '|'
+            '.' | '*' | '+' | '?' | '[' | ']' | '(' | ')' | '{' | '}' | '|'
         ) {
             return Err(format!(
                 "regex metacharacter {ch} is not implemented in the current subset"
@@ -74306,6 +75202,26 @@ fn call_str_replace(args: &[Value], span: Span) -> CompileResult<Value> {
     let (result, _) = str_replace_scalar_result(&args[0], &args[1], &args[2], span)?;
 
     Ok(Value::String(result))
+}
+
+fn call_urlencode(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("urlencode", args, 1, span)?;
+    let value = string_contains_argument("urlencode()", "string", &args[0], span)?;
+    Ok(Value::String(form_urlencode_component(&value)))
+}
+
+fn form_urlencode_component(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.') {
+            encoded.push(byte as char);
+        } else if byte == b' ' {
+            encoded.push('+');
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
 }
 
 fn str_replace_scalar_result(
@@ -77693,7 +78609,10 @@ mod tests {
 
         assert_eq!(
             scope.array_copy_source_mutation_impact_for_object_property_write(
-                &source, &object, "items", &[]
+                &source,
+                &object,
+                "items",
+                &[]
             ),
             Some(ArrayCopySourceMutationImpact::ReplacesSourceOrAncestor)
         );
@@ -77703,19 +78622,14 @@ mod tests {
             std::slice::from_ref(&leaf_key),
             leaf_cell.clone(),
         );
-        assert!(scope.array_copy_source_path_was_detached(
-            &source,
-            std::slice::from_ref(&leaf_key)
-        ));
+        assert!(scope.array_copy_source_path_was_detached(&source, std::slice::from_ref(&leaf_key)));
 
         let detached = vec![(vec![leaf_key.clone()], leaf_cell.clone())];
         scope.mark_array_copy_source_dirty(source);
         let boundary =
             scope.holder_storage_mutation_boundary_for_object_property(&object, "items", &[]);
-        let rehydrated = scope.array_copy_source_records_rehydrated_by_holder_storage_boundary(
-            &boundary,
-            &detached,
-        );
+        let rehydrated = scope
+            .array_copy_source_records_rehydrated_by_holder_storage_boundary(&boundary, &detached);
         let paths = rehydrated
             .iter()
             .find_map(|(record, paths)| {
@@ -77755,7 +78669,10 @@ mod tests {
 
         assert_eq!(
             scope.array_copy_source_mutation_impact_for_object_property_write(
-                &source, &object, "items", &[]
+                &source,
+                &object,
+                "items",
+                &[]
             ),
             Some(ArrayCopySourceMutationImpact::ReplacesSourceOrAncestor)
         );
@@ -77890,7 +78807,9 @@ mod tests {
         scope.record_public_object_property_array_copy_source("clean", source.clone());
         scope.record_public_object_property_array_copy_source("dirty", source.clone());
         scope.mark_public_object_property_array_copy_source_dirty("dirty");
-        scope.public_object_property_array_copy_sources.remove("dirty");
+        scope
+            .public_object_property_array_copy_sources
+            .remove("dirty");
         scope.mark_array_copy_source_dirty(source.clone());
         scope.record_object_property_array_copy_source_path(
             &object,
@@ -77905,16 +78824,19 @@ mod tests {
         let impacts = scope.array_copy_source_record_impacts_for_holder_storage_boundary(&boundary);
 
         assert_eq!(impacts.len(), 5);
-        assert!(impacts.iter().all(|impact| impact.replaces_source_or_ancestor()));
+        assert!(impacts
+            .iter()
+            .all(|impact| impact.replaces_source_or_ancestor()));
         assert!(impacts
             .iter()
             .any(|impact| matches!(impact.record.location, ArrayCopySourceRecordLocation::CleanStatic(ref name) if name == "clean")));
         assert!(impacts
             .iter()
             .any(|impact| matches!(impact.record.location, ArrayCopySourceRecordLocation::DirtyStatic(ref name) if name == "dirty")));
-        assert!(impacts
-            .iter()
-            .any(|impact| matches!(impact.record.location, ArrayCopySourceRecordLocation::DirtySource)));
+        assert!(impacts.iter().any(|impact| matches!(
+            impact.record.location,
+            ArrayCopySourceRecordLocation::DirtySource
+        )));
         assert!(impacts.iter().any(|impact| matches!(
             impact.record.location,
             ArrayCopySourceRecordLocation::ObjectPropertyPath { ref property, .. } if property == "copy"
@@ -77965,9 +78887,10 @@ mod tests {
         assert!(records
             .iter()
             .any(|(record, _)| matches!(record.location, ArrayCopySourceRecordLocation::CleanStatic(ref name) if name == "copy")));
-        assert!(records
-            .iter()
-            .any(|(record, _)| matches!(record.location, ArrayCopySourceRecordLocation::DirtySource)));
+        assert!(records.iter().any(|(record, _)| matches!(
+            record.location,
+            ArrayCopySourceRecordLocation::DirtySource
+        )));
     }
 
     #[test]
@@ -78015,7 +78938,9 @@ mod tests {
             object_property_source.clone(),
         );
         source_scope.mark_public_object_property_array_copy_source_dirty("copy");
-        source_scope.public_object_property_array_copy_sources.remove("copy");
+        source_scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
 
         let source = ArrayCopySource::alias_path(
             ArrayOffsetAliasRoot::StaticArray {
@@ -78025,9 +78950,8 @@ mod tests {
             false,
         );
 
-        let portable =
-            SymbolTable::portable_array_copy_source_from_scope(&source, &source_scope)
-                .expect("expected dirty static copy source to remain portable");
+        let portable = SymbolTable::portable_array_copy_source_from_scope(&source, &source_scope)
+            .expect("expected dirty static copy source to remain portable");
 
         assert!(matches!(
             portable.root,
@@ -78053,7 +78977,9 @@ mod tests {
             ArrayCopySource::object_property(object, "items".to_string(), Vec::new(), true);
         scope.record_public_object_property_array_copy_source("copy", source.clone());
         scope.mark_public_object_property_array_copy_source_dirty("copy");
-        scope.public_object_property_array_copy_sources.remove("copy");
+        scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
 
         let aliases = vec![ArrayOffsetAlias {
             root: ArrayOffsetAliasRoot::StaticArray {
@@ -78089,7 +79015,9 @@ mod tests {
         scope.write_static("copy", Value::Array(PhpArray::new()));
         scope.record_public_object_property_array_copy_source("copy", source.clone());
         scope.mark_public_object_property_array_copy_source_dirty("copy");
-        scope.public_object_property_array_copy_sources.remove("copy");
+        scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
 
         scope
             .write_alias_root_value_for_reference_promotion(
@@ -78133,7 +79061,9 @@ mod tests {
             ArrayCopySource::object_property(object, "items".to_string(), Vec::new(), true);
         scope.record_public_object_property_array_copy_source("copy", source.clone());
         scope.mark_public_object_property_array_copy_source_dirty("copy");
-        scope.public_object_property_array_copy_sources.remove("copy");
+        scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
         scope.array_offset_aliases.insert(
             "copy".to_string(),
             vec![
@@ -78181,7 +79111,9 @@ mod tests {
         scope.write_static("copy", Value::Array(PhpArray::new()));
         scope.record_public_object_property_array_copy_source("copy", source.clone());
         scope.mark_public_object_property_array_copy_source_dirty("copy");
-        scope.public_object_property_array_copy_sources.remove("copy");
+        scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
 
         let snapshot = scope.public_array_copy_source_snapshot();
         scope.clear_public_object_property_array_copy_source("copy");
@@ -78212,15 +79144,13 @@ mod tests {
         let mut copy = PhpArray::new();
         copy.insert(leaf_key.clone(), Value::String("plain".to_string()));
         scope.write_static("copy", Value::Array(copy));
-        let source = ArrayCopySource::object_property(
-            object.clone(),
-            "items".to_string(),
-            Vec::new(),
-            true,
-        );
+        let source =
+            ArrayCopySource::object_property(object.clone(), "items".to_string(), Vec::new(), true);
         scope.record_public_object_property_array_copy_source("copy", source.clone());
         scope.mark_public_object_property_array_copy_source_dirty("copy");
-        scope.public_object_property_array_copy_sources.remove("copy");
+        scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
 
         let leaf_cell = PhpReferenceCell::new(Value::String("shared".to_string()));
         scope.rehydrate_detached_object_property_array_copy_sources(
@@ -78272,7 +79202,9 @@ mod tests {
         scope.write_static("copy", value.clone());
         scope.record_public_object_property_array_copy_source("copy", source.clone());
         scope.mark_public_object_property_array_copy_source_dirty("copy");
-        scope.public_object_property_array_copy_sources.remove("copy");
+        scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
 
         let recovered_from_expr = interpreter
             .public_object_property_array_copy_source_for_value_expr(
@@ -78313,7 +79245,9 @@ mod tests {
             ArrayCopySource::object_property(object, "items".to_string(), Vec::new(), true);
         scope.record_public_object_property_array_copy_source("copy", source);
         scope.mark_public_object_property_array_copy_source_dirty("copy");
-        scope.public_object_property_array_copy_sources.remove("copy");
+        scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
         scope.array_offset_aliases.insert(
             "leaf_alias".to_string(),
             vec![ArrayOffsetAlias {
@@ -78423,7 +79357,9 @@ mod tests {
         caller_scope.write_static("copy", Value::Array(PhpArray::new()));
         caller_scope.record_public_object_property_array_copy_source("copy", source.clone());
         caller_scope.mark_public_object_property_array_copy_source_dirty("copy");
-        caller_scope.public_object_property_array_copy_sources.remove("copy");
+        caller_scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
 
         let function = FunctionDecl {
             name: "takes_ref".to_string(),
@@ -78484,14 +79420,12 @@ mod tests {
         scope.write_static("copy", value.clone());
         scope.record_public_object_property_array_copy_source("copy", source.clone());
         scope.mark_public_object_property_array_copy_source_dirty("copy");
-        scope.public_object_property_array_copy_sources.remove("copy");
+        scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
 
-        let recovered = Interpreter::array_copy_source_for_closure_capture(
-            "copy",
-            &value,
-            &scope,
-        )
-        .expect("expected dirty static copy source to be captured");
+        let recovered = Interpreter::array_copy_source_for_closure_capture("copy", &value, &scope)
+            .expect("expected dirty static copy source to be captured");
 
         assert!(scope.array_copy_sources_match(&recovered, &source));
     }
@@ -78512,7 +79446,9 @@ mod tests {
             ArrayCopySource::object_property(object, "items".to_string(), Vec::new(), true);
         caller_scope.record_public_object_property_array_copy_source("copy", source.clone());
         caller_scope.mark_public_object_property_array_copy_source_dirty("copy");
-        caller_scope.public_object_property_array_copy_sources.remove("copy");
+        caller_scope
+            .public_object_property_array_copy_sources
+            .remove("copy");
         let binding = ReferenceBinding {
             param_name: "param".to_string(),
             target: ReferenceBindingTarget::CallerCell {
@@ -78722,7 +79658,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -78855,7 +79793,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -78921,7 +79861,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -78987,7 +79929,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -79058,7 +80002,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -79133,7 +80079,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -79197,7 +80145,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -79269,7 +80219,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -79335,7 +80287,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -79387,7 +80341,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -79442,7 +80398,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -79510,7 +80468,9 @@ mod tests {
             .expect("expected copied leaf reference cell");
 
         assert_eq!(copied_leaf_cell.id(), leaf_cell.id());
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
@@ -79565,7 +80525,9 @@ mod tests {
             .unwrap();
 
         assert!(matches!(value, Value::Array(_)));
-        assert!(scope.public_object_property_array_copy_source_for_static("copy").is_none());
+        assert!(scope
+            .public_object_property_array_copy_source_for_static("copy")
+            .is_none());
     }
 
     #[test]
