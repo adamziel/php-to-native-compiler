@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-25 12:55 CEST
-Evaluation marker: `20260525T105552Z`
+Updated: 2026-05-25 13:07 CEST
+Evaluation marker: `20260525T110757Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, lane-local candidates, broad
@@ -9,28 +9,26 @@ worktree claims, probe-only commits, and dashboard-only commits are excluded.
 
 ## Executive Read
 
-Overall estimated progress: **86%** `[#################---]`
+Overall estimated progress: **87%** `[#################---]`
 
-Executable PHP semantics: **86%** `[#################---]`
+Executable PHP semantics: **87%** `[#################---]`
 
 Primary is clean and aligned with `origin/master` at
-`ecf3ba12 docs: update progress dashboard` before this dashboard edit. No new
-compiler/runtime semantic commit landed after
-`9022eb9e native: add array key reference slot ABI`, so the integrated product
-percentage does not move.
+`8f6266ce native: route reference slot type and int consumers`.
 
-The latest integrated capability is still the shared runtime/codegen
-value/reference-slot ABI for array-key materialization. It lets generated-native
-reference-backed variable operands and active symbol-table variable references
-feed array-key conversion through one checked slot boundary. This is real
-primary progress, but it is not full array-key, reference/COW,
-object/resource/Stringable, or `ArrayAccess` parity.
+The new counted primary capability is the shared value/reference-slot boundary
+for reference-held type-name, type-predicate, and integer consumers. Runtime,
+LLVM, and generated C now route supported reference-backed `gettype()` /
+`get_debug_type()`, `is_*()` predicates, and integer operands through one
+checked operand-slot ABI without cloning reference values around the boundary.
+The integrator deliberately kept post-alias direct-root write-through blocked
+for both statement assignments and assignment-expression assignments until a
+shared alias-aware helper exists.
 
-Current candidate supply improved: the repaired reference-slot type/int
-consumer candidate has independent review approval for primary-integrator
-handoff with exact hash
-`5b5aedd6863ee1ee210dedd3c449d3e669f7479d0f77a3862e114b217f1cb5c7`. It is
-still lane-local until primary applies it, gates it, commits it, and pushes it.
+This is real generalized primary progress and justifies a small progress bump,
+but it is still a prerequisite slice. It is not full reference/COW identity,
+arbitrary lvalue materialization, real `ArrayAccess`, broad userland frame
+execution, request/global parity, or exact diagnostics.
 
 Full generalized PHP remains blocked on callable/userland frame breadth,
 references/COW identity, request and `$GLOBALS` parity, includes, variable
@@ -41,10 +39,12 @@ parity.
 ## Current Primary State
 
 - Current primary head before this dashboard edit:
-  `ecf3ba12 docs: update progress dashboard`.
+  `8f6266ce native: route reference slot type and int consumers`.
 - Primary sync at evaluation verification: clean and aligned with
   `origin/master`.
 - Latest integrated executable/prerequisite semantic baseline:
+  `8f6266ce native: route reference slot type and int consumers`.
+- Prior integrated prerequisite:
   `9022eb9e native: add array key reference slot ABI`.
 - Prior integrated prerequisite:
   `cc7efc2d native: add offset read source result ABI`.
@@ -57,10 +57,10 @@ parity.
 
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | **98%** | `[####################]` | Strong selected-path value, array, string, diagnostic, reference, symbol, call-frame, object, comparison, conversion, owner-cell, request-state, offset-read, and array-key slot surfaces. |
-| Compiler/backend consumers | **98%** | `[####################]` | Generated C and LLVM consume many shared ABIs. Recent array-key slot routing is integrated for generated C; broader LLVM/backend parity remains incomplete. |
-| Executable PHP semantics | **86%** | `[#################---]` | Primary has closure/callable/object islands, bounded preg callbacks, object-property reference-slot mutation, offset-read continuation proof, and reference-backed array-key conversion. Broad semantics remain incomplete. |
-| Arrays, lvalues, references, COW | **72%** | `[##############------]` | Array-key value/reference-slot ABI is integrated. Full COW, arbitrary roots, foreach, property references, broad expression reference slots, and alias composition remain open. |
+| Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, array, string, diagnostic, reference, symbol, call-frame, object, comparison, conversion, owner-cell, request-state, offset-read, array-key, and type/int slot surfaces. |
+| Compiler/backend consumers | **99%** | `[####################]` | Generated C and LLVM consume many shared ABIs. Recent reference-slot type/int routing covers both generated C and LLVM, but broad backend parity remains incomplete. |
+| Executable PHP semantics | **87%** | `[#################---]` | Primary has closure/callable/object islands, bounded preg callbacks, object-property reference-slot mutation, offset-read continuation proof, reference-backed array-key conversion, and reference-backed type/int consumers. Broad semantics remain incomplete. |
+| Arrays, lvalues, references, COW | **73%** | `[###############-----]` | Array-key and type/int reference-slot consumers are integrated. Full COW, arbitrary roots, foreach, property references, broad expression reference slots, and alias composition remain open. |
 | Symbols, globals, request state | **72%** | `[##############------]` | Selected function globals, root-symbol surfaces, and active symbol-table reference consumers exist. `$GLOBALS` self-cells, request/global alias parity, includes, variable variables, and exact unset/global behavior remain incomplete. |
 | Calls, functions, frames | **82%** | `[################----]` | Bounded closures, callable arrays/objects, public method frames, and constructors exist in selected paths. Named/unpacked/by-reference/userland frame breadth remains incomplete. |
 | Objects, properties, methods | **50%** | `[##########----------]` | Object-property reference-slot mutation and diagnostic classifiers are integrated. Full visibility, magic, dynamic/static/typed properties, destructors, references/COW, and `ArrayAccess` execution remain open. |
@@ -71,21 +71,22 @@ parity.
 
 | Item | Toward Primary Integration | Toward Full Feature | Status |
 | --- | ---: | ---: | --- |
+| Reference-slot type/int consumer ABI | **100%** `[####################]` | **45%** `[#########-----------]` | Integrated at `8f6266ce`. Runtime, LLVM, and generated C route reference-held type names, type predicates, and supported int operands through shared value/reference slots. Alias-aware write-through remains intentionally blocked. |
 | Array-key value/reference-slot ABI | **100%** `[####################]` | **42%** `[########------------]` | Integrated at `9022eb9e`. Adds shared checked slot ABI for value/reference-backed array-key operands with runtime, generated-C source, and linked executable proof. Broader expression lvalues, COW identity, object/resource/Stringable keys, and direct `ArrayAccess` remain open. |
 | Scalar/resource offset-read source-result prerequisite | **100%** `[####################]` | **44%** `[#########-----------]` | Integrated at `cc7efc2d`. Adds shared runtime/codegen source-result ABI and executable continuation proof. Direct object `ArrayAccess`, object/resource materialization, and LLVM error-status cleanup remain open. |
 | Object-property reference-slot mutation | **100%** `[####################]` | **39%** `[########------------]` | Integrated at `bfbc62c4`. Executable generated-C/native-link support for covered assignment/unset mutation operands. Full object/property/reference semantics remain open. |
 | Bounded `preg_replace_callback()` string callbacks | **100%** `[####################]` | **32%** `[######--------------]` | Integrated at `6aca392d`. Full PCRE, broader captures/modifiers, non-string callables, `limit`/`count`/`flags`, and legacy recognizer cleanup remain open. |
 | Object-offset `ArrayAccess` diagnostic classifier | **100%** `[####################]` | **12%** `[##------------------]` | Integrated at `deaf52ca`. Diagnostic routing only; no `offsetGet`, `offsetExists`, `offsetSet`, or `offsetUnset` execution. |
-| Reference-slot type/int consumer packet | **90%** `[##################--]` | **43%** `[#########-----------]` | Reviewed `go-for-primary-integrator` with exact four-file hash and nonzero gates. Still not product capability until applied, gated, committed, and pushed in primary. |
-| String-array/string-position/string-result consumer prerequisite | **25%** `[#####---------------]` | **35%** `[#######-------------]` | Useful lane-local work exists, but it must remain separate from the type/int packet and needs compact current-primary extraction. |
-| Text-membership/reference text-byte conversion | **25%** `[#####---------------]` | **34%** `[#######-------------]` | Explicitly excluded from the array-key and type/int packets. Needs separate current-primary proof. |
-| Broader lvalue/reference-slot materializer | **25%** `[#####---------------]` | **38%** `[########------------]` | Needed after `9022eb9e` so non-variable expression families that can carry references can enter shared array-key and consumer slot ABIs safely. |
+| Text-membership/reference text-byte conversion | **35%** `[#######-------------]` | **36%** `[#######-------------]` | Useful lane-local work exists after the type/int packet. Needs a compact current-primary extraction with runtime/compiler/link proof before it can count. |
+| Reference-slot comparison consumers | **35%** `[#######-------------]` | **37%** `[#######-------------]` | Lane-local work suggests a shared comparison slot ABI, but strict-identity/static arithmetic expectations and broader comparison parity must stay out of any compact packet. |
+| String-array/string-position/string-result consumers | **35%** `[#######-------------]` | **38%** `[########------------]` | Useful lane-local work exists, including string-array/result expansion. It must be split from unrelated builtin breadth and proven as one reusable semantic boundary. |
+| Broader lvalue/reference-slot materializer | **25%** `[#####---------------]` | **38%** `[########------------]` | Needed so non-variable expression families that can carry references can enter shared array-key and consumer slot ABIs safely. |
 | Object/resource source materialization for shared conversion sources | **25%** `[#####---------------]` | **30%** `[######--------------]` | Explicit blocker left by the offset-read ABI. Needs a general value reconstruction boundary before generic object/resource consumers are safe. |
 | LLVM offset-read/error-status cleanup | **25%** `[#####---------------]` | **30%** `[######--------------]` | Offset-read diagnostics exist, but LLVM still needs a generalized control-flow/error-exit status boundary for failed conversion results. |
 | Static-property comparison operand ABI | **35%** `[#######-------------]` | **37%** `[#######-------------]` | Prior extraction says `needs-split`: source lane is too broad and entangled. Split metadata/operand prerequisites first. |
-| Callable/dynamic constructor candidates | **60%** `[############--------]` | **42%** `[########------------]` | May 24 lane-local candidates look useful but are stale relative to current primary `9022eb9e`; refresh before any primary review. |
+| Callable/dynamic constructor candidates | **55%** `[###########---------]` | **42%** `[########------------]` | May 24 lane-local candidates look useful but are stale relative to current primary `8f6266ce`; refresh before any primary review. |
 | Diagnostics, request, and cleanup boundaries | **60%** `[############--------]` | **40%** `[########------------]` | Lane-local request handle, writeback, branch cleanup, try/catch/finally preflight, stateful-call cleanup, and result-boundary work is useful infrastructure. Exact Zend ordering and real handler/exceptions execution remain open. |
-| Broad lane extraction backlog | **32%** `[######--------------]` | **32%** `[######--------------]` | Broad dirty lanes continue producing useful surfaces, but many are blocker/preflight-only and not directly integrable. Treat lanes as packet sources, not integration units. |
+| Broad lane extraction backlog | **33%** `[#######-------------]` | **33%** `[#######-------------]` | Broad dirty lanes continue producing useful surfaces, but many are blocker/preflight-only and not directly integrable. Treat lanes as packet sources, not integration units. |
 
 ## Done / In Progress / Not Done
 
@@ -107,6 +108,7 @@ Primary-integrated executable or executable-prerequisite capability:
 - [x] Object-property assignment/unset mutation for covered reference-backed operands through generated-C/native-link shared slot boundaries.
 - [x] Shared offset-read source-result ABI for scalar/resource warning continuations, arrays, byte strings, references, and object-property offset-source composition.
 - [x] Shared array-key value/reference-slot ABI for generated-native reference-backed variable operands and active symbol-table variable references.
+- [x] Shared reference-slot type-name/type-predicate/int consumer ABI for runtime, LLVM, and generated C.
 
 Primary-integrated non-executable infrastructure:
 
@@ -117,18 +119,18 @@ Primary-integrated non-executable infrastructure:
 
 In progress but lane-local or not yet executable primary support:
 
-- [ ] Reference-held type-name/type-predicate/int conversion slot consumer
-  candidate is reviewed for primary-integrator handoff, but not integrated.
-- [ ] String-array/string-position/string-result consumer family must be split
-  from the type/int packet and proven separately.
-- [ ] Text-membership/reference text-byte conversion still needs separate
-  proof.
+- [ ] Text-membership/reference text-byte conversion needs current-primary
+  extraction after `8f6266ce`.
+- [ ] String-array/string-position/string-result consumer families must be
+  split from unrelated builtin breadth and proven separately.
+- [ ] Reference-slot comparison, scanner, and diagnostic consumers remain
+  lane-local.
 - [ ] Direct object `ArrayAccess` method dispatch remains blocked behind
   diagnostic-only classifier support.
 - [ ] Broader expression-family lvalue/reference-slot materialization is
   needed beyond variable-backed operands.
-- [ ] Reference-slot comparison, scanner, and diagnostic consumers remain
-  lane-local.
+- [ ] Alias-aware LLVM direct-root write-through after `=&` remains blocked for
+  both statement assignment and assignment expressions.
 - [ ] Object/resource source materialization for generic conversion sources
   remains blocked.
 - [ ] LLVM offset-read error-status cleanup needs a generalized control-flow
@@ -168,11 +170,15 @@ Not done:
 
 ## Recent Primary-Integrated Work
 
+- `8f6266ce`: reference-slot type/int consumers. Integrated files:
+  `runtime/src/lib.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/native_runtime_abi.rs`, and
+  `compiler/tests/native_link.rs`. Focused runtime, generated IR, generated-C
+  source, linked executable, `cargo check`, rustfmt, diff hygiene, apply/hash,
+  and zero-match gates passed.
+- `bfcf77bf`: progress-dashboard commit only. No executable compiler/runtime
+  semantic code changed.
 - `ecf3ba12`: progress-dashboard commit only. No executable compiler/runtime
-  semantic code changed.
-- `28016b44`: progress-dashboard commit only. No executable compiler/runtime
-  semantic code changed.
-- `7b476083`: progress-dashboard commit only. No executable compiler/runtime
   semantic code changed.
 - `9022eb9e`: array-key value/reference-slot ABI. Integrated files:
   `runtime/src/lib.rs`, `compiler/src/codegen.rs`, and
@@ -196,34 +202,38 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary is clean and synced at `ecf3ba12` before this dashboard edit.
-- [x] Latest counted semantic/prerequisite commit remains `9022eb9e`.
-- [x] Array-key value/reference-slot support is integrated for the reviewed
+- [x] Primary is clean and synced at `8f6266ce` before this dashboard edit.
+- [x] Latest counted semantic/prerequisite commit is `8f6266ce`.
+- [x] Reference-held type-name/type-predicate/int consumers are integrated
+  through the shared value/reference-slot ABI for runtime, LLVM, and generated C.
+- [x] Array-key value/reference-slot support remains integrated for the reviewed
   generated-native variable/reference-backed operand family.
 - [x] Offset-read source/result and object-property reference-slot mutation
   remain the adjacent integrated reference/lvalue prerequisites.
-- [x] Overall and executable-semantics estimates remain **86%** because no new
-  semantic packet landed after the previous marker.
+- [x] Overall and executable-semantics estimates move modestly to **87%**
+  because the landed packet is useful but narrow.
 
 Best next candidate supply:
 
-- [ ] Consider launching the reviewed reference-slot type/int consumer through
-  a dedicated primary-integrator pass, using exact hash
-  `5b5aedd6863ee1ee210dedd3c449d3e669f7479d0f77a3862e114b217f1cb5c7`.
-- [ ] Keep that packet limited to reference-held type-name/type-predicate/int
-  consumers and the centralized LLVM post-alias write-through rejection.
-- [ ] Reject or split any string-array/text-byte, scanner, comparison,
-  request/SAPI, parser/lexer/AST, fixture, or broad reference/COW collateral.
-- [ ] If type/int integration fails, pivot to a compact post-`9022eb9e`
-  lvalue/reference-slot materializer that widens array-key/reference-slot
-  ingress beyond variable-backed operands.
+- [ ] Run post-integration triage against `8f6266ce` before authorizing another
+  primary-integrator handoff.
+- [ ] Consider a compact text-membership/reference text-byte slot packet only
+  if it has exact current-primary apply proof, hash/file guards, and focused
+  runtime/compiler/link gates.
+- [ ] Consider a compact reference-slot comparison packet only if it routes
+  through a shared slot ABI and excludes strict-identity/static arithmetic
+  expectation churn.
+- [ ] Consider a broader lvalue/reference-slot materializer if it widens shared
+  slot ingress beyond variable-backed operands without importing COW collateral.
+- [ ] Keep builtin-surface expansion from type-conversion and binary-string
+  lanes out of primary unless it removes one reusable semantic blocker.
 - [ ] Direct `ArrayAccess` execution should not be counted until real
   `offsetGet`/`offsetExists`/`offsetSet`/`offsetUnset` dispatch lands with
   reference/COW and diagnostic proof.
 - [ ] `static-property-comparison-extract`: `needs-split`; do not integrate
   the current broad lane hunk as-is.
 - [ ] Callable-object and dynamic-constructor candidate packets need a fresh
-  current-primary review because they predate `9022eb9e`.
+  current-primary review because they predate `8f6266ce`.
 - [ ] Broad symbol/control-flow/diagnostic/reference/binary-string/type-
   conversion lanes continue producing useful surfaces that are not yet product
   capability.
@@ -232,14 +242,12 @@ Best next candidate supply:
 
 Resource pressure is usable but guarded. Live verification for this review
 showed `/dev/shm` at `40G` total, `24G` used, `17G` available (`58%`) and the
-filesystem backing `/home` at `459G` total, `187G` used, `254G` available
-(`43%`). `du -sh /dev/shm` reports `24G`; `du -sh /home` reports `127G` with
-container-overlay permission warnings. Memory has about `38Gi` available, but
+filesystem backing `/home` at `459G` total, `196G` used, `244G` available
+(`45%`). `du -sh /dev/shm` reports `24G`; `du -sh /home` reports `127G` with
+container-overlay permission warnings. Memory has about `40Gi` available, but
 swap remains high at `23Gi` used of `29Gi`.
 
-Advisory steering read: the top-level supervisor should consider the reviewed
-reference-slot type/int consumer as the next primary-integrator handoff, at its
-discretion, but only with strict current-primary recovery, exact hash/file
-guards, focused nonzero gates, and no broad lane imports. Keep counting
-lane-local work as candidate supply until it is integrated, committed, and
-pushed in primary.
+Advisory steering read: the top-level supervisor should consider `8f6266ce`
+the new baseline at its discretion, then run a short post-integration triage
+before the next primary handoff. Keep counting lane-local work as candidate
+supply until it is integrated, committed, and pushed in primary.
