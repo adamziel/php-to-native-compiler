@@ -1555,6 +1555,80 @@ fn native_executable_c_source_persists_by_value_closure_captures_across_invocati
 }
 
 #[test]
+fn native_executable_c_source_captures_reference_backed_values_by_value_across_frame_families() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = r#"<?php
+function direct_capture(&$slot, $before, $after) {
+    $slot = $before;
+    $alias =& $slot;
+    $copy = static function () use ($alias) { return $alias; };
+    $slot = $after;
+    return $copy;
+}
+class ReferenceBackedCaptureFactory {
+    public static function static_capture(&$slot, $before, $after) {
+        $slot = $before;
+        $alias =& $slot;
+        $copy = static function () use ($alias) { return $alias; };
+        $slot = $after;
+        return $copy;
+    }
+    public function method_capture(&$slot, $before, $after) {
+        $slot = $before;
+        $alias =& $slot;
+        $copy = static function () use ($alias) { return $alias; };
+        $slot = $after;
+        return $copy;
+    }
+}
+$closure_capture = function (&$slot, $before, $after) {
+    $slot = $before;
+    $alias =& $slot;
+    $copy = static function () use ($alias) { return $alias; };
+    $slot = $after;
+    return $copy;
+};
+$direct = "old";
+$direct_copy = direct_capture($direct, "D0", "D1");
+echo $direct_copy(), ":", $direct, "|";
+$static = "old";
+$static_copy = ReferenceBackedCaptureFactory::static_capture($static, "S0", "S1");
+echo $static_copy(), ":", $static, "|";
+$method = "old";
+$factory = new ReferenceBackedCaptureFactory();
+$method_copy = $factory->method_capture($method, "M0", "M1");
+echo $method_copy(), ":", $method, "|";
+$closure = "old";
+$closure_copy = $closure_capture($closure, "C0", "C1");
+echo $closure_copy(), ":", $closure;
+"#;
+    let (source_path, output_path) =
+        compile_native_function_call_fixture("reference_backed_by_value_closure_captures", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run reference-backed by-value closure capture executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"D0:D1|S0:S1|M0:M1|C0:C1");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn native_source_closure_routes_value_and_reference_returns_through_shared_result_contract() {
     for source in [
         concat!(

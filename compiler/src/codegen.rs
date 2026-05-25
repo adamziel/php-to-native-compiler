@@ -14431,10 +14431,7 @@ impl CGenerator {
                 let name_handle = self.materialize_closure_capture_name(capture);
                 capture_names.push(name_handle);
 
-                let Some(captured) = self.variables.get(&capture.name).cloned() else {
-                    return Err(self.unsupported(capture.span, ASSEMBLY_CLOSURE_REJECTION));
-                };
-                let value_handle = self.emit_native_value_for_cvalue(captured, capture.span)?;
+                let value_handle = self.materialize_closure_value_capture_handle(capture)?;
                 capture_values.push(value_handle);
             }
             let names = self.next_native_name("closure_capture_names");
@@ -14480,6 +14477,27 @@ impl CGenerator {
             "phpc_NativeStringHandle {name_handle} = phpc_native_string_from_bytes({bytes}, {byte_len});"
         ));
         name_handle
+    }
+
+    fn materialize_closure_value_capture_handle(
+        &mut self,
+        capture: &ClosureCapture,
+    ) -> CompileResult<String> {
+        let Some(captured) = self.variables.get(&capture.name).cloned() else {
+            if self.globals_symbol_table_is_active() {
+                return Ok(self
+                    .emit_symbol_table_variable_value_read(&capture.name, capture.span, "")?
+                    .handle);
+            }
+            return Err(self.unsupported(capture.span, ASSEMBLY_CLOSURE_REJECTION));
+        };
+
+        match captured {
+            CValue::NativeReferenceHandle(reference) => {
+                Ok(self.clone_native_reference_value_handle(&reference))
+            }
+            captured => self.emit_native_value_for_cvalue(captured, capture.span),
+        }
     }
 
     fn promote_closure_capture_local_reference(
@@ -14544,10 +14562,7 @@ impl CGenerator {
             return Ok(argument);
         }
 
-        let Some(captured) = self.variables.get(&capture.name).cloned() else {
-            return Err(self.unsupported(capture.span, ASSEMBLY_CLOSURE_REJECTION));
-        };
-        let value_handle = self.emit_native_value_for_cvalue(captured, capture.span)?;
+        let value_handle = self.materialize_closure_value_capture_handle(capture)?;
         self.body
             .push(format!("{argument}.value = {value_handle};"));
         Ok(argument)
