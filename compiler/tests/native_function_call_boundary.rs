@@ -782,6 +782,43 @@ fn native_executable_c_source_routes_statement_operand_call_results_through_call
 }
 
 #[test]
+fn native_statement_preflight_routes_try_catch_finally_body_calls_through_call_boundary() {
+    for (source, llvm_expected, assembly_expected) in [
+        (
+            "<?php\ntry { return missing(); } catch (Exception $e) {}\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"missing\";\ntry { if (true) { $call(); } } catch (Exception $e) {}\n",
+            LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\ntry { echo \"ok\"; } catch (Exception $e) { $box->work(); }\n",
+            LLVM_METHOD_CALL_REJECTION,
+            ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+        (
+            "<?php\ntry { echo \"ok\"; } finally { throw new Failure(); }\n",
+            LLVM_OBJECT_INSTANTIATION_REJECTION,
+            ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
+        ),
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, llvm_expected);
+
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, assembly_expected);
+    }
+}
+
+#[test]
 fn native_executable_c_source_blocks_destructor_observable_declared_class_allocation() {
     for source in [
         r#"<?php

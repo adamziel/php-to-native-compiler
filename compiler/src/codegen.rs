@@ -3,11 +3,11 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use crate::ast::{
-    ArrayItem, AssignTarget, BinaryOp, CastKind, ClassDecl, ClassMember, ClassMethodDecl,
-    ClassVisibility, ClosureCapture, CompoundAssignOp, Expr, ForAction, FunctionDecl,
-    FunctionParam, IncrementDecrementOp, IncrementDecrementPosition, InterpolatedAccessSegment,
-    InterpolatedArrayKey, InterpolatedStringPart, NewClassName, Program, ReferenceSource, Span,
-    Stmt, SwitchCase, TypeDecl, UnaryOp, UnsetTarget,
+    ArrayItem, AssignTarget, BinaryOp, CastKind, CatchClause, ClassDecl, ClassMember,
+    ClassMethodDecl, ClassVisibility, ClosureCapture, CompoundAssignOp, Expr, ForAction,
+    FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition,
+    InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart, NewClassName, Program,
+    ReferenceSource, Span, Stmt, SwitchCase, TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
@@ -1962,6 +1962,12 @@ fn native_statement_operand_call_operation(stmt: &Stmt) -> Option<NativeCallOper
         Stmt::UnsetMany { targets, .. } => {
             targets.iter().find_map(native_unset_target_call_operation)
         }
+        Stmt::Try {
+            body,
+            catches,
+            finally_body,
+            ..
+        } => native_try_body_call_operation(body, catches, finally_body.as_deref()),
         Stmt::Namespace { .. }
         | Stmt::Use { .. }
         | Stmt::Echo { .. }
@@ -1981,10 +1987,93 @@ fn native_statement_operand_call_operation(stmt: &Stmt) -> Option<NativeCallOper
         | Stmt::UnsetParentStaticProperty { .. }
         | Stmt::UnsetLateStaticProperty { .. }
         | Stmt::Return { value: None, .. }
-        | Stmt::Try { .. }
         | Stmt::Break { .. }
         | Stmt::Continue { .. }
         | Stmt::Global { .. } => None,
+    }
+}
+
+fn native_try_body_call_operation(
+    body: &[Stmt],
+    catches: &[CatchClause],
+    finally_body: Option<&[Stmt]>,
+) -> Option<NativeCallOperation> {
+    native_try_stmt_list_call_operation(body)
+        .or_else(|| {
+            catches
+                .iter()
+                .find_map(|catch| native_try_stmt_list_call_operation(&catch.body))
+        })
+        .or_else(|| finally_body.and_then(native_try_stmt_list_call_operation))
+}
+
+fn native_try_stmt_list_call_operation(statements: &[Stmt]) -> Option<NativeCallOperation> {
+    statements.iter().find_map(native_try_stmt_call_operation)
+}
+
+fn native_try_stmt_call_operation(stmt: &Stmt) -> Option<NativeCallOperation> {
+    match stmt {
+        Stmt::Try {
+            body,
+            catches,
+            finally_body,
+            ..
+        } => native_try_body_call_operation(body, catches, finally_body.as_deref()),
+        _ => native_statement_operand_call_operation(stmt).or_else(|| match stmt {
+            Stmt::Echo { exprs, .. } => {
+                native_unemitted_statement_operand_list_call_operation(exprs)
+            }
+            Stmt::Print { expr, .. } | Stmt::Expr { expr, .. } => {
+                native_unemitted_statement_operand_call_operation(expr)
+            }
+            Stmt::Assign { expr, .. } => native_unemitted_statement_operand_call_operation(expr),
+            Stmt::If {
+                then_branch,
+                else_branch,
+                ..
+            } => native_try_stmt_list_call_operation(then_branch)
+                .or_else(|| native_try_stmt_list_call_operation(else_branch)),
+            Stmt::While { body, .. } | Stmt::DoWhile { body, .. } | Stmt::Foreach { body, .. } => {
+                native_try_stmt_list_call_operation(body)
+            }
+            Stmt::For { body, .. } => native_try_stmt_list_call_operation(body),
+            Stmt::Switch { cases, .. } => cases
+                .iter()
+                .find_map(|case| native_try_stmt_list_call_operation(&case.body)),
+            Stmt::Namespace { .. }
+            | Stmt::Use { .. }
+            | Stmt::ReferenceAssign { .. }
+            | Stmt::CompoundAssign { .. }
+            | Stmt::IncrementDecrement { .. }
+            | Stmt::NullCoalesceAssign { .. }
+            | Stmt::Goto { .. }
+            | Stmt::Label { .. }
+            | Stmt::UnsetVariable { .. }
+            | Stmt::UnsetArrayIndex { .. }
+            | Stmt::UnsetNestedArrayIndex { .. }
+            | Stmt::UnsetObjectProperty { .. }
+            | Stmt::UnsetDynamicObjectProperty { .. }
+            | Stmt::UnsetStaticProperty { .. }
+            | Stmt::UnsetSelfStaticProperty { .. }
+            | Stmt::UnsetParentStaticProperty { .. }
+            | Stmt::UnsetLateStaticProperty { .. }
+            | Stmt::UnsetMany { .. }
+            | Stmt::ConstDeclaration { .. }
+            | Stmt::Require { .. }
+            | Stmt::Include { .. }
+            | Stmt::Function(_)
+            | Stmt::Interface(_)
+            | Stmt::Trait(_)
+            | Stmt::Enum(_)
+            | Stmt::Class(_)
+            | Stmt::Return { .. }
+            | Stmt::Throw { .. }
+            | Stmt::Try { .. }
+            | Stmt::Break { .. }
+            | Stmt::Continue { .. }
+            | Stmt::Global { .. }
+            | Stmt::StaticLocal { .. } => None,
+        }),
     }
 }
 
@@ -22379,7 +22468,7 @@ impl CGenerator {
     fn emit_try_statement(
         &mut self,
         body: &[Stmt],
-        _catches: &[crate::ast::CatchClause],
+        catches: &[crate::ast::CatchClause],
         finally_body: Option<&[Stmt]>,
         span: Span,
     ) -> CompileResult<()> {
@@ -22389,7 +22478,30 @@ impl CGenerator {
         } else {
             stmt_list_contains_try_unwind_blocker(body)
         };
-        if body_has_blocker || finally_body.is_some_and(stmt_list_contains_try_unwind_blocker) {
+        let finally_has_blocker = finally_body.is_some_and(stmt_list_contains_try_unwind_blocker);
+        if let Some(operation) = {
+            let body_operation = || {
+                body_has_blocker
+                    .then(|| native_try_stmt_list_call_operation(body))
+                    .flatten()
+            };
+            let catch_operation = || {
+                catches
+                    .iter()
+                    .find_map(|catch| native_try_stmt_list_call_operation(&catch.body))
+            };
+            let finally_operation = || {
+                finally_has_blocker
+                    .then(|| finally_body.and_then(native_try_stmt_list_call_operation))
+                    .flatten()
+            };
+            body_operation()
+                .or_else(catch_operation)
+                .or_else(finally_operation)
+        } {
+            return Err(self.unsupported_call_operation(operation));
+        }
+        if body_has_blocker || finally_has_blocker {
             return Err(self.unsupported(span, ASSEMBLY_TRY_BLOCK_REJECTION));
         }
 
