@@ -1002,6 +1002,42 @@ fn native_executable_c_source_routes_direct_strings_and_scalars_through_runtime_
 }
 
 #[test]
+fn native_executable_c_source_materializes_binary_string_values_with_explicit_lengths() {
+    let program = parse(concat!(
+        "<?php\n$payload = \"A",
+        "\0",
+        "B\";\necho strlen($payload), \":\", $payload[1], \":\", $payload;\n"
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("extern phpc_NativeValueHandle phpc_native_value_from_string_bytes_with_diagnostic(const uint8_t *ptr, size_t len, phpc_NativeDiagnosticHandle *diagnostic);"),
+        "{source}"
+    );
+    assert!(
+        source.contains("static const uint8_t phpc_native_value_bytes_")
+            && source.contains("{65, 0, 66}"),
+        "{source}"
+    );
+    assert!(
+        source.contains(
+            "phpc_native_value_from_string_bytes_with_diagnostic(phpc_native_value_bytes_"
+        ) && source.contains(", 3, &native_value_diagnostic_"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_offset_read_source")
+            && source.contains("phpc_native_conversion_source_value(native_value_handle_"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_format_stdout_with_diagnostic"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_reports_owned_diagnostics_through_shared_consumer() {
     let program = parse("<?php\necho \"left\";\n$s = \"AB\";\n$s[0] = \"Z\";\necho $s;\n").unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -1122,6 +1158,38 @@ fn emit_exe_links_and_runs_scalar_runtime_value_echo_program() {
 
     let _ = fs::remove_file(&source_path);
     let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_byte_string_value_boundary_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "native_byte_string_value_boundary",
+        concat!(
+            "<?php\n$payload = \"A",
+            "\0",
+            "B\";\necho strlen($payload), \":\", $payload[1], \":\", $payload, \"\\n\";\n"
+        ),
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native byte-string executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"3:\0:A\0B\n");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
 }
 
 #[test]

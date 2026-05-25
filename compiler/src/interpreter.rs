@@ -60808,7 +60808,8 @@ impl Interpreter {
             },
             "var_dump" => {
                 for value in &args {
-                    self.append_output_at(&format_var_dump(value), span);
+                    let output = format_var_dump(value, span)?;
+                    self.append_output_at(&output, span);
                 }
                 Ok(Value::Null)
             }
@@ -63398,6 +63399,10 @@ impl Interpreter {
             }
         }
 
+        if let Value::BinaryString(value) = value {
+            return tree_walk_binary_string_utf8(&value, "echo", span).map(str::to_owned);
+        }
+
         value
             .try_echo_string()
             .map_err(|error| runtime_error(span, error))
@@ -63407,6 +63412,9 @@ impl Interpreter {
         match value {
             Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
                 Ok(value.echo_string())
+            }
+            Value::BinaryString(value) => {
+                tree_walk_binary_string_utf8(&value, "(string)", span).map(str::to_owned)
             }
             Value::Array(_) => Err(runtime_error(
                 span,
@@ -63518,6 +63526,7 @@ impl Interpreter {
                 Value::Int(value) => Ok(Value::Int(value)),
                 Value::Float(value) => cast_float_to_int(value, "(int)", span),
                 Value::String(value) => cast_string_to_int(&value, span),
+                Value::BinaryString(value) => cast_binary_string_to_int(&value, span),
                 Value::Array(_) => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -63554,6 +63563,7 @@ impl Interpreter {
                 Value::Int(value) => Ok(Value::Float(value as f64)),
                 Value::Float(value) => Ok(Value::Float(value)),
                 Value::String(value) => cast_string_to_float(&value, span),
+                Value::BinaryString(value) => cast_binary_string_to_float(&value, span),
                 Value::Array(_) => Err(runtime_error(
                     span,
                     RuntimeError::unsupported_call(
@@ -63586,7 +63596,11 @@ impl Interpreter {
             CastKind::Array => match value {
                 Value::Null => Ok(Value::Array(PhpArray::new())),
                 Value::Array(value) => Ok(Value::Array(value)),
-                Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+                Value::Bool(_)
+                | Value::Int(_)
+                | Value::Float(_)
+                | Value::String(_)
+                | Value::BinaryString(_) => {
                     let mut array = PhpArray::new();
                     array
                         .append(value)
@@ -63651,6 +63665,13 @@ fn cast_string_to_int(value: &str, span: Span) -> CompileResult<Value> {
             "leading-numeric string cast behavior is outside the current bounded prefix subset",
         ),
     ))
+}
+
+fn cast_binary_string_to_int(value: &[u8], span: Span) -> CompileResult<Value> {
+    match std::str::from_utf8(value) {
+        Ok(value) => cast_string_to_int(value, span),
+        Err(_) => Ok(Value::Int(0)),
+    }
 }
 
 fn starts_with_numeric_prefix(value: &str) -> bool {
@@ -63738,6 +63759,33 @@ fn cast_string_to_float(value: &str, span: Span) -> CompileResult<Value> {
     }
 
     Ok(Value::Float(0.0))
+}
+
+fn cast_binary_string_to_float(value: &[u8], span: Span) -> CompileResult<Value> {
+    match std::str::from_utf8(value) {
+        Ok(value) => cast_string_to_float(value, span),
+        Err(_) => Ok(Value::Float(0.0)),
+    }
+}
+
+fn tree_walk_binary_string_utf8<'a>(
+    value: &'a [u8],
+    context: &'static str,
+    span: Span,
+) -> CompileResult<&'a str> {
+    std::str::from_utf8(value).map_err(|_| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                context,
+                "byte strings with invalid UTF-8 require a byte-output boundary in the tree-walk interpreter",
+            ),
+        )
+    })
+}
+
+fn tree_walk_binary_string_utf8_option(value: &[u8]) -> Option<&str> {
+    std::str::from_utf8(value).ok()
 }
 
 fn cast_float_to_int(value: f64, callable: &'static str, span: Span) -> CompileResult<Value> {
@@ -67779,7 +67827,12 @@ fn normalize_runtime_class_constant_lookup_name(name: &str) -> Option<(&str, &st
 
 fn unsupported_runtime_constant_value_type(value: &Value) -> Option<&'static str> {
     match value {
-        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => None,
+        Value::Null
+        | Value::Bool(_)
+        | Value::Int(_)
+        | Value::Float(_)
+        | Value::String(_)
+        | Value::BinaryString(_) => None,
         Value::Array(array) => array
             .entries()
             .iter()
@@ -75846,6 +75899,14 @@ fn format_php_serialized_value(value: &Value, output: &mut String) -> Option<()>
             output.push_str(value);
             output.push_str("\";");
         }
+        Value::BinaryString(value) => {
+            let value = tree_walk_binary_string_utf8_option(value)?;
+            output.push_str("s:");
+            output.push_str(&value.len().to_string());
+            output.push_str(":\"");
+            output.push_str(value);
+            output.push_str("\";");
+        }
         Value::Array(array) => {
             output.push_str("a:");
             output.push_str(&array.len().to_string());
@@ -77618,18 +77679,22 @@ fn value_from_array_key(key: &ArrayKey) -> Value {
     }
 }
 
-fn format_var_dump(value: &Value) -> String {
-    format_var_dump_with_indent(value, 0)
+fn format_var_dump(value: &Value, span: Span) -> CompileResult<String> {
+    format_var_dump_with_indent(value, 0, span)
 }
 
-fn format_var_dump_with_indent(value: &Value, indent: usize) -> String {
+fn format_var_dump_with_indent(value: &Value, indent: usize, span: Span) -> CompileResult<String> {
     let padding = "  ".repeat(indent);
-    match value {
+    Ok(match value {
         Value::Null => format!("{padding}NULL\n"),
         Value::Bool(value) => format!("{padding}bool({})\n", if *value { "true" } else { "false" }),
         Value::Int(value) => format!("{padding}int({value})\n"),
         Value::Float(value) => format!("{padding}float({})\n", value),
         Value::String(value) => format!("{padding}string({}) \"{}\"\n", value.len(), value),
+        Value::BinaryString(value) => {
+            let value = tree_walk_binary_string_utf8(value, "var_dump()", span)?;
+            format!("{padding}string({}) \"{}\"\n", value.len(), value)
+        }
         Value::Array(value) => {
             let mut output = format!("{padding}array({}) {{\n", value.len());
             for entry in value.entries() {
@@ -77637,7 +77702,11 @@ fn format_var_dump_with_indent(value: &Value, indent: usize) -> String {
                     "{padding}  [{}]=>\n",
                     format_var_dump_key(&entry.key)
                 ));
-                output.push_str(&format_var_dump_with_indent(entry.value(), indent + 1));
+                output.push_str(&format_var_dump_with_indent(
+                    entry.value(),
+                    indent + 1,
+                    span,
+                )?);
             }
             output.push_str(&format!("{padding}}}\n"));
             output
@@ -77654,7 +77723,11 @@ fn format_var_dump_with_indent(value: &Value, indent: usize) -> String {
                     format_var_dump_object_property(&property)
                 ));
                 let property_value = property.value_cloned();
-                output.push_str(&format_var_dump_with_indent(&property_value, indent + 1));
+                output.push_str(&format_var_dump_with_indent(
+                    &property_value,
+                    indent + 1,
+                    span,
+                )?);
             }
             output.push_str(&format!("{padding}}}\n"));
             output
@@ -77666,7 +77739,7 @@ fn format_var_dump_with_indent(value: &Value, indent: usize) -> String {
             )
         }
         Value::Resource(id) => format!("{padding}resource({id}) of type (stream)\n"),
-    }
+    })
 }
 
 fn format_var_dump_key(key: &ArrayKey) -> String {

@@ -3685,7 +3685,7 @@ pub unsafe extern "C" fn phpc_native_value_dynamic_call_failure_with_diagnostic(
 
 fn native_value_is_callable_syntax_only(value: &Value) -> bool {
     match value {
-        Value::String(_) => true,
+        Value::String(_) | Value::BinaryString(_) => true,
         Value::Array(array) => native_array_is_callable_syntax_only(array),
         Value::Closure(_) => true,
         Value::Object(_) => false,
@@ -3703,11 +3703,11 @@ fn native_array_is_callable_syntax_only(array: &PhpArray) -> bool {
     let Some(target) = array.get_cloned(ArrayKey::Int(0)) else {
         return false;
     };
-    let Some(Value::String(_)) = array.get_cloned(ArrayKey::Int(1)) else {
+    let Some(Value::String(_) | Value::BinaryString(_)) = array.get_cloned(ArrayKey::Int(1)) else {
         return false;
     };
     match target {
-        Value::String(_) => true,
+        Value::String(_) | Value::BinaryString(_) => true,
         Value::Object(_) => true,
         Value::Null
         | Value::Bool(_)
@@ -3763,11 +3763,15 @@ fn native_callable_array_parts(value: &Value) -> NativeCallableArrayParts {
     let Some(target) = array.get_cloned(ArrayKey::Int(0)) else {
         return NativeCallableArrayParts::none();
     };
-    let Some(method @ Value::String(_)) = array.get_cloned(ArrayKey::Int(1)) else {
+    let Some(method @ (Value::String(_) | Value::BinaryString(_))) =
+        array.get_cloned(ArrayKey::Int(1))
+    else {
         return NativeCallableArrayParts::none();
     };
     match target {
-        Value::String(_) | Value::Object(_) => NativeCallableArrayParts::ok(target, method),
+        Value::String(_) | Value::BinaryString(_) | Value::Object(_) => {
+            NativeCallableArrayParts::ok(target, method)
+        }
         Value::Null
         | Value::Bool(_)
         | Value::Int(_)
@@ -6975,20 +6979,17 @@ pub unsafe extern "C" fn phpc_native_string_clone_bytes(
 pub unsafe extern "C" fn phpc_native_value_string_clone_bytes(
     handle: NativeValueHandle,
 ) -> NativeByteBuffer {
-    let Some(Value::String(value)) = (unsafe { handle.as_ref() }) else {
-        return NativeByteBuffer::empty();
-    };
-
-    NativeByteBuffer::from_slice(value.as_bytes())
+    unsafe { handle.as_ref() }
+        .and_then(PhpStringByteSource::string_clone_native_byte_buffer)
+        .unwrap_or_else(NativeByteBuffer::empty)
 }
 
 /// # Safety
 ///
 /// `handle` must be null or a handle previously returned by the runtime ABI
 /// and not yet freed. The returned value handle owns a cloned runtime
-/// `Value::String` for valid UTF-8 bytes. Null handles and non-UTF-8 bytes
-/// return a null value handle until diagnostics and binary string values have
-/// native ABI coverage.
+/// PHP string value. Valid UTF-8 bytes use `Value::String`; arbitrary byte
+/// strings use the byte-backed PHP string value representation.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_value_from_string(
     handle: NativeStringHandle,
@@ -7452,9 +7453,11 @@ fn request_state_key_bytes_from_value(
         Value::Float(value) => request_state_lossless_float_key_bytes(*value)
             .ok_or(NativeRequestStateOperationStatus::UnsupportedKeyCoercion),
         Value::String(value) => Ok(value.as_bytes().to_vec()),
-        Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => {
-            Err(NativeRequestStateOperationStatus::UnsupportedKeyCoercion)
-        }
+        Value::BinaryString(_)
+        | Value::Array(_)
+        | Value::Object(_)
+        | Value::Closure(_)
+        | Value::Resource(_) => Err(NativeRequestStateOperationStatus::UnsupportedKeyCoercion),
     }
 }
 
@@ -8052,11 +8055,7 @@ unsafe fn native_value_from_string_bytes(
     }
 
     let bytes = unsafe { std::slice::from_raw_parts(bytes, len) };
-    let Ok(value) = String::from_utf8(bytes.to_vec()) else {
-        return Err("native value conversion failed: string bytes are not valid UTF-8");
-    };
-
-    Ok(Value::String(value))
+    Ok(value_from_php_string_bytes(bytes.to_vec()))
 }
 
 unsafe fn native_value_from_string(handle: NativeStringHandle) -> Result<Value, &'static str> {
@@ -8076,7 +8075,8 @@ pub unsafe extern "C" fn phpc_native_value_echo_bytes(
     handle: NativeValueHandle,
 ) -> NativeByteBuffer {
     unsafe { handle.as_ref() }
-        .map(|value| NativeByteBuffer::from_vec(value.echo_string().into_bytes()))
+        .and_then(|value| value.try_echo_bytes().ok())
+        .map(NativeByteBuffer::from_vec)
         .unwrap_or_else(NativeByteBuffer::empty)
 }
 
@@ -8117,6 +8117,13 @@ unsafe fn native_exit_value_result(handle: NativeValueHandle) -> NativeExitResul
                 Err(_) => NativeExitResult::diagnostic("native exit failed: stdout write failed"),
             }
         }
+        Value::BinaryString(value) => {
+            let mut stdout = io::stdout();
+            match stdout.write_all(value).and_then(|()| stdout.flush()) {
+                Ok(()) => NativeExitResult::ok(0),
+                Err(_) => NativeExitResult::diagnostic("native exit failed: stdout write failed"),
+            }
+        }
         value => NativeExitResult::diagnostic(format!(
             "native exit failed: argument must be null, int, or string in the current subset, got {}",
             value.type_name()
@@ -8131,7 +8138,7 @@ unsafe fn native_value_to_string_bytes(handle: NativeValueHandle) -> RuntimeResu
         ));
     };
 
-    value.try_echo_string().map(String::into_bytes)
+    value.try_echo_bytes()
 }
 
 /// # Safety
@@ -8949,6 +8956,15 @@ fn value_to_native_int64(
         Value::Float(value) => finite_float_to_int64(*value, operation),
         Value::String(value) => {
             let Some(number) = parse_numeric_string(value) else {
+                return Err(native_int_conversion_error(
+                    operation,
+                    "string is not numeric",
+                ));
+            };
+            native_number_to_int64(number, operation)
+        }
+        Value::BinaryString(value) => {
+            let Some(number) = parse_numeric_string_bytes(value) else {
                 return Err(native_int_conversion_error(
                     operation,
                     "string is not numeric",
@@ -10175,13 +10191,7 @@ unsafe fn native_value_string_offset_write_value(
     let replacement = unsafe { native_string_offset_replacement_bytes_from_value(replacement) }?;
 
     let warning = php_string_offset_write(&mut bytes, offset, &replacement)?;
-    let value = String::from_utf8(bytes).map(Value::String).map_err(|_| {
-        RuntimeError::unsupported_call(
-            "native string offset write",
-            "byte strings with invalid UTF-8 require the binary string value boundary",
-        )
-    })?;
-    Ok((value, warning))
+    Ok((value_from_php_string_bytes(bytes), warning))
 }
 
 unsafe fn native_value_offset_operation_value(
@@ -10286,6 +10296,12 @@ fn native_offset_read_source_result_from_values(
         },
         Value::String(value) => match native_string_offset_index_from_runtime_value(&key)
             .and_then(|offset| php_string_offset_read_value(value.as_bytes(), offset))
+        {
+            Ok(value) => NativeConversionResult::value(value),
+            Err(error) => NativeConversionResult::error(error.message()),
+        },
+        Value::BinaryString(value) => match native_string_offset_index_from_runtime_value(&key)
+            .and_then(|offset| php_string_offset_read_value(&value, offset))
         {
             Ok(value) => NativeConversionResult::value(value),
             Err(error) => NativeConversionResult::error(error.message()),
@@ -11642,6 +11658,16 @@ fn native_value_array_callback_integer_parameter(
                     .map_err(|error| error.message().to_string()),
             }
         }
+        Value::BinaryString(value) => {
+            let Some(number) = parse_numeric_string_bytes(value) else {
+                return Err(format!("native value {callable} {parameter} string is not numeric"));
+            };
+            match number {
+                Number::Int(value) => Ok(value),
+                Number::Float(value) => native_value_float_to_int(value, callable)
+                    .map_err(|error| error.message().to_string()),
+            }
+        }
         Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => Err(
             format!(
                 "native value {callable} {parameter} rejects {} until shared internal-parameter integer coercion can model arrays, objects, resources, references/copy-on-write, cleanup ownership, and exact diagnostics",
@@ -12404,6 +12430,19 @@ fn native_array_sort_flag_integer(
                     .map_err(|error| error.message().to_string()),
             }
         }
+        Value::BinaryString(value) => {
+            let Some(number) = parse_numeric_string_bytes(value) else {
+                return Err(format!(
+                    "native array {}() sort flag parameter string is not numeric",
+                    operation.label()
+                ));
+            };
+            match number {
+                Number::Int(value) => Ok(value),
+                Number::Float(value) => native_value_float_to_int(value, operation.callable())
+                    .map_err(|error| error.message().to_string()),
+            }
+        }
         Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => Err(
             format!(
                 "native array {}() sort flag parameter rejects {} until shared internal-parameter integer coercion can model arrays, objects, resources, references/copy-on-write, cleanup ownership, and exact diagnostics",
@@ -12920,6 +12959,7 @@ unsafe fn native_value_string_offset_read_subject_bytes(
 
     match value {
         Value::String(value) => Ok(value.as_bytes().to_vec()),
+        Value::BinaryString(value) => Ok(value.clone()),
         Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => {
             Err(RuntimeError::unsupported_call(
                 "native string offset read",
@@ -12949,10 +12989,9 @@ unsafe fn native_value_string_offset_subject_bytes(
     };
 
     match value {
+        Value::BinaryString(value) => Ok(value.clone()),
         Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
-            Ok(analyze_php_value_string_semantics(value)
-                .into_string()
-                .into_bytes())
+            Ok(analyze_php_value_string_semantics(value).into_bytes())
         }
         Value::Array(_)
         | Value::Object(_)
@@ -12974,10 +13013,9 @@ unsafe fn native_string_offset_replacement_bytes_from_value(
     };
 
     match value {
+        Value::BinaryString(value) => Ok(value.clone()),
         Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
-            Ok(analyze_php_value_string_semantics(value)
-                .into_string()
-                .into_bytes())
+            Ok(analyze_php_value_string_semantics(value).into_bytes())
         }
         Value::Array(_)
         | Value::Object(_)
@@ -13015,6 +13053,7 @@ unsafe fn native_string_offset_index_from_value(handle: NativeValueHandle) -> Ru
             ))
         }
         Value::String(value) => php_string_offset_index_from_string(value)?,
+        Value::BinaryString(value) => php_string_offset_index_from_bytes(value)?,
         other => {
             return Err(RuntimeError::invalid_string_conversion(format!(
                 "native string offset operation failed: {} offsets are not supported; only null, bool, int, integral float, and integer string offsets are implemented",
@@ -13031,7 +13070,10 @@ unsafe fn native_string_offset_index_from_value(handle: NativeValueHandle) -> Ru
 }
 
 fn php_string_offset_index_from_string(value: &str) -> RuntimeResult<i64> {
-    let bytes = value.as_bytes();
+    php_string_offset_index_from_bytes(value.as_bytes())
+}
+
+fn php_string_offset_index_from_bytes(bytes: &[u8]) -> RuntimeResult<i64> {
     if bytes.is_empty() {
         return Err(RuntimeError::invalid_string_conversion(
             "native string offset operation failed: offset must be an integer string",
@@ -13049,6 +13091,12 @@ fn php_string_offset_index_from_string(value: &str) -> RuntimeResult<i64> {
             "native string offset operation failed: offset must be an integer string",
         ));
     }
+
+    let value = std::str::from_utf8(bytes).map_err(|_| {
+        RuntimeError::invalid_string_conversion(
+            "native string offset operation failed: offset must be an integer string",
+        )
+    })?;
 
     value.parse::<i64>().map_err(|_| {
         RuntimeError::invalid_string_conversion(
@@ -13082,14 +13130,7 @@ fn php_string_offset_read_value(bytes: &[u8], offset: usize) -> RuntimeResult<Va
         )));
     };
 
-    String::from_utf8(vec![*byte])
-        .map(Value::String)
-        .map_err(|_| {
-            RuntimeError::unsupported_call(
-                "native string offset read",
-                "byte strings with invalid UTF-8 require the binary string value boundary",
-            )
-        })
+    Ok(value_from_php_string_bytes(vec![*byte]))
 }
 
 pub fn php_string_offset_write(
@@ -13597,7 +13638,7 @@ unsafe fn native_value_format_stdout_bytes(
             "native value formatting failed: value handle is null",
         ));
     };
-    value.try_echo_string().map(String::into_bytes)
+    value.try_echo_bytes()
 }
 
 #[cfg(test)]
@@ -17023,7 +17064,12 @@ fn array_scalar_value_supported(callable: &str, value: &Value) -> RuntimeResult<
                 ),
             ))
         }
-        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => Ok(()),
+        Value::Null
+        | Value::Bool(_)
+        | Value::Int(_)
+        | Value::Float(_)
+        | Value::String(_)
+        | Value::BinaryString(_) => Ok(()),
     }
 }
 
@@ -20136,6 +20182,7 @@ pub enum Value {
     Int(i64),
     Float(f64),
     String(String),
+    BinaryString(Vec<u8>),
     Array(PhpArray),
     Object(PhpObject),
     Closure(PhpClosure),
@@ -20146,6 +20193,7 @@ impl PhpStringByteSource for Value {
     fn string_byte_view(&self) -> Option<PhpStringByteView<'_>> {
         match self {
             Self::String(value) => Some(PhpStringByteView::from_slice(value.as_bytes())),
+            Self::BinaryString(value) => Some(PhpStringByteView::from_slice(value)),
             Self::Null
             | Self::Bool(_)
             | Self::Int(_)
@@ -20353,6 +20401,13 @@ impl PhpClosureCapture {
     }
 }
 
+fn value_from_php_string_bytes(bytes: Vec<u8>) -> Value {
+    match String::from_utf8(bytes) {
+        Ok(value) => Value::String(value),
+        Err(error) => Value::BinaryString(error.into_bytes()),
+    }
+}
+
 impl Value {
     pub fn type_name(&self) -> &'static str {
         match self {
@@ -20361,6 +20416,7 @@ impl Value {
             Value::Int(_) => "int",
             Value::Float(_) => "float",
             Value::String(_) => "string",
+            Value::BinaryString(_) => "string",
             Value::Array(_) => "array",
             Value::Object(_) => "object",
             Value::Closure(_) => "closure",
@@ -20375,6 +20431,7 @@ impl Value {
             Value::Int(_) => "integer",
             Value::Float(_) => "double",
             Value::String(_) => "string",
+            Value::BinaryString(_) => "string",
             Value::Array(_) => "array",
             Value::Object(_) => "object",
             Value::Closure(_) => "object",
@@ -20385,7 +20442,11 @@ impl Value {
     pub fn is_scalar(&self) -> bool {
         matches!(
             self,
-            Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_)
+            Value::Bool(_)
+                | Value::Int(_)
+                | Value::Float(_)
+                | Value::String(_)
+                | Value::BinaryString(_)
         )
     }
 
@@ -20393,6 +20454,10 @@ impl Value {
         match self {
             Value::Int(_) | Value::Float(_) => true,
             Value::String(value) => parse_numeric_string(value).is_some(),
+            Value::BinaryString(value) => std::str::from_utf8(value)
+                .ok()
+                .and_then(parse_numeric_string)
+                .is_some(),
             Value::Null
             | Value::Bool(_)
             | Value::Array(_)
@@ -20416,12 +20481,9 @@ impl Value {
 
     pub fn php_scalar_string_bytes(&self) -> Option<Vec<u8>> {
         match self {
+            Value::BinaryString(value) => Some(value.clone()),
             Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
-                Some(
-                    analyze_php_value_string_semantics(self)
-                        .into_string()
-                        .into_bytes(),
-                )
+                Some(analyze_php_value_string_semantics(self).into_bytes())
             }
             Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => None,
         }
@@ -20429,8 +20491,7 @@ impl Value {
 
     pub fn php_scalar_string_value(&self) -> Option<Self> {
         self.php_scalar_string_bytes()
-            .and_then(|bytes| String::from_utf8(bytes).ok())
-            .map(Value::String)
+            .map(value_from_php_string_bytes)
     }
 
     pub fn try_echo_string(&self) -> RuntimeResult<String> {
@@ -20449,6 +20510,23 @@ impl Value {
         }
     }
 
+    pub fn try_echo_bytes(&self) -> RuntimeResult<Vec<u8>> {
+        match self {
+            Value::Object(object) => Err(RuntimeError::invalid_string_conversion(format!(
+                "object of class {} cannot be converted to string",
+                object.class_name()
+            ))),
+            Value::Closure(_) => Err(RuntimeError::invalid_string_conversion(
+                "object of class Closure cannot be converted to string",
+            )),
+            Value::Resource(_) => Err(RuntimeError::invalid_string_conversion(
+                "resource cannot be converted to string",
+            )),
+            Value::BinaryString(value) => Ok(value.clone()),
+            _ => Ok(analyze_php_value_string_semantics(self).into_bytes()),
+        }
+    }
+
     pub fn is_truthy(&self) -> bool {
         match self {
             Value::Null => false,
@@ -20456,6 +20534,7 @@ impl Value {
             Value::Int(value) => *value != 0,
             Value::Float(value) => *value != 0.0,
             Value::String(value) => is_php_truthy_string(value),
+            Value::BinaryString(value) => !value.is_empty() && value != b"0",
             Value::Array(value) => !value.is_empty(),
             Value::Object(_) => true,
             Value::Closure(_) => true,
@@ -20505,11 +20584,9 @@ impl Value {
     }
 
     pub fn php_concat(&self, other: &Value) -> RuntimeResult<Value> {
-        Ok(Value::String(format!(
-            "{}{}",
-            self.try_echo_string()?,
-            other.try_echo_string()?
-        )))
+        let mut bytes = self.try_echo_bytes()?;
+        bytes.extend(other.try_echo_bytes()?);
+        Ok(value_from_php_string_bytes(bytes))
     }
 
     pub fn php_bitwise_and(&self, other: &Value) -> RuntimeResult<Value> {
@@ -20543,6 +20620,9 @@ impl Value {
         match self {
             Value::Int(value) => Ok(Value::Int(!value)),
             Value::String(value) => bitwise_not_string(value).map(Value::String),
+            Value::BinaryString(value) => Ok(value_from_php_string_bytes(
+                value.iter().map(|byte| !byte).collect(),
+            )),
             Value::Null => Err(RuntimeError::invalid_arithmetic(
                 ArithmeticOp::BitwiseNot,
                 "null cannot be used with unary bitwise not",
@@ -20631,6 +20711,9 @@ impl Value {
             (Value::Int(left), Value::Int(right)) => left == right,
             (Value::Float(left), Value::Float(right)) => left == right,
             (Value::String(left), Value::String(right)) => left == right,
+            (Value::String(left), Value::BinaryString(right)) => left.as_bytes() == right,
+            (Value::BinaryString(left), Value::String(right)) => left == right.as_bytes(),
+            (Value::BinaryString(left), Value::BinaryString(right)) => left == right,
             (Value::Resource(left), Value::Resource(right)) => left == right,
             _ => false,
         }
@@ -20732,21 +20815,44 @@ impl Value {
             (Value::Resource(_), _) | (_, Value::Resource(_)) => None,
             (Value::Null, Value::Null) => Some(Ordering::Equal),
             (Value::Null, Value::String(right)) => compare_binary_strings("", right),
+            (Value::Null, Value::BinaryString(right)) => compare_binary_string_bytes(b"", right),
             (Value::String(left), Value::Null) => compare_binary_strings(left, ""),
+            (Value::BinaryString(left), Value::Null) => compare_binary_string_bytes(left, b""),
             (Value::Null, _) => compare_numbers(Number::Int(0), other.numeric_value()?),
             (_, Value::Null) => compare_numbers(self.numeric_value()?, Number::Int(0)),
             (Value::String(left), Value::String(right)) => compare_php_strings(left, right),
+            (Value::String(left), Value::BinaryString(right)) => {
+                compare_php_string_bytes(left.as_bytes(), right)
+            }
+            (Value::BinaryString(left), Value::String(right)) => {
+                compare_php_string_bytes(left, right.as_bytes())
+            }
+            (Value::BinaryString(left), Value::BinaryString(right)) => {
+                compare_php_string_bytes(left, right)
+            }
             (Value::String(left), Value::Int(right)) => {
                 compare_string_and_number(left, Number::Int(*right))
             }
             (Value::String(left), Value::Float(right)) => {
                 compare_string_and_number(left, Number::Float(*right))
             }
+            (Value::BinaryString(left), Value::Int(right)) => {
+                compare_string_bytes_and_number(left, Number::Int(*right))
+            }
+            (Value::BinaryString(left), Value::Float(right)) => {
+                compare_string_bytes_and_number(left, Number::Float(*right))
+            }
             (Value::Int(left), Value::String(right)) => {
                 compare_number_and_string(Number::Int(*left), right)
             }
             (Value::Float(left), Value::String(right)) => {
                 compare_number_and_string(Number::Float(*left), right)
+            }
+            (Value::Int(left), Value::BinaryString(right)) => {
+                compare_number_and_string_bytes(Number::Int(*left), right)
+            }
+            (Value::Float(left), Value::BinaryString(right)) => {
+                compare_number_and_string_bytes(Number::Float(*left), right)
             }
             _ => compare_numbers(self.numeric_value()?, other.numeric_value()?),
         }
@@ -20760,6 +20866,7 @@ impl Value {
             Value::Bool(false) => Some(Number::Int(0)),
             Value::Bool(true) => Some(Number::Int(1)),
             Value::String(value) => parse_numeric_string(value),
+            Value::BinaryString(value) => parse_numeric_string_bytes(value),
             Value::Array(_) => None,
             Value::Object(_) => None,
             Value::Closure(_) => None,
@@ -20775,6 +20882,9 @@ impl Value {
             Value::Int(value) => Ok(Number::Int(*value)),
             Value::Float(value) => Ok(Number::Float(*value)),
             Value::String(value) => parse_numeric_string(value).ok_or_else(|| {
+                RuntimeError::invalid_arithmetic(operation, "string is not numeric")
+            }),
+            Value::BinaryString(value) => parse_numeric_string_bytes(value).ok_or_else(|| {
                 RuntimeError::invalid_arithmetic(operation, "string is not numeric")
             }),
             Value::Array(_) => Err(RuntimeError::invalid_arithmetic(
@@ -20803,8 +20913,12 @@ impl Value {
         byte_op: fn(u8, u8) -> u8,
         int_op: fn(i64, i64) -> i64,
     ) -> RuntimeResult<Value> {
-        if let (Value::String(left), Value::String(right)) = (self, other) {
-            return bitwise_strings(left, right, operation, byte_op).map(Value::String);
+        if self.string_byte_view().is_some() && other.string_byte_view().is_some() {
+            let left = self.string_bytes().expect("string view checked");
+            let right = other.string_bytes().expect("string view checked");
+            return Ok(value_from_php_string_bytes(bitwise_string_bytes(
+                left, right, operation, byte_op,
+            )?));
         }
 
         let left = self.to_bitwise_int(operation)?;
@@ -20820,6 +20934,14 @@ impl Value {
             Value::Int(value) => Ok(*value),
             Value::Float(value) => Ok(*value as i64),
             Value::String(value) => match parse_numeric_string(value) {
+                Some(Number::Int(value)) => Ok(value),
+                Some(Number::Float(value)) => Ok(value as i64),
+                None => Err(RuntimeError::invalid_arithmetic(
+                    operation,
+                    "string is not numeric",
+                )),
+            },
+            Value::BinaryString(value) => match parse_numeric_string_bytes(value) {
                 Some(Number::Int(value)) => Ok(value),
                 Some(Number::Float(value)) => Ok(value as i64),
                 None => Err(RuntimeError::invalid_arithmetic(
@@ -21347,8 +21469,9 @@ fn native_value_cast_value(value: &Value, op: u8) -> RuntimeResult<Value> {
 
 fn native_value_string_cast(value: &Value) -> RuntimeResult<Value> {
     match value {
+        Value::BinaryString(value) => Ok(Value::BinaryString(value.clone())),
         Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
-            Ok(Value::String(value.echo_string()))
+            Ok(value_from_php_string_bytes(value.try_echo_bytes()?))
         }
         Value::Array(_) => Err(RuntimeError::unsupported_call(
             "(string)",
@@ -21376,6 +21499,7 @@ fn native_value_int_cast(value: &Value) -> RuntimeResult<i64> {
         Value::Int(value) => Ok(*value),
         Value::Float(value) => native_value_float_to_int(*value, "(int)"),
         Value::String(value) => native_value_string_to_int(value),
+        Value::BinaryString(value) => native_value_string_bytes_to_int(value),
         Value::Array(value) => Ok(if value.is_empty() { 0 } else { 1 }),
         Value::Object(_) => Err(RuntimeError::unsupported_call(
             "(int)",
@@ -21399,6 +21523,7 @@ fn native_value_float_cast(value: &Value) -> RuntimeResult<f64> {
         Value::Int(value) => Ok(*value as f64),
         Value::Float(value) => Ok(*value),
         Value::String(value) => native_value_string_to_float(value),
+        Value::BinaryString(value) => native_value_string_bytes_to_float(value),
         Value::Array(value) => Ok(if value.is_empty() { 0.0 } else { 1.0 }),
         Value::Object(_) => Err(RuntimeError::unsupported_call(
             "(float)",
@@ -21419,7 +21544,11 @@ fn native_value_array_cast(value: &Value) -> RuntimeResult<PhpArray> {
     match value {
         Value::Null => Ok(PhpArray::new()),
         Value::Array(value) => Ok(value.clone()),
-        Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
+        Value::Bool(_)
+        | Value::Int(_)
+        | Value::Float(_)
+        | Value::String(_)
+        | Value::BinaryString(_) => {
             let mut array = PhpArray::new();
             array
                 .append(value.clone())
@@ -21453,6 +21582,13 @@ fn native_value_string_to_int(value: &str) -> RuntimeResult<i64> {
     }
 }
 
+fn native_value_string_bytes_to_int(value: &[u8]) -> RuntimeResult<i64> {
+    match std::str::from_utf8(value) {
+        Ok(value) => native_value_string_to_int(value),
+        Err(_) => Ok(0),
+    }
+}
+
 fn native_value_string_to_float(value: &str) -> RuntimeResult<f64> {
     match classify_php_numeric_string(value) {
         PhpNumericStringClassification::Integer(value) => Ok(value as f64),
@@ -21466,6 +21602,13 @@ fn native_value_string_to_float(value: &str) -> RuntimeResult<f64> {
             "(float)",
             "leading-numeric string cast warning/recovery behavior is not implemented",
         )),
+    }
+}
+
+fn native_value_string_bytes_to_float(value: &[u8]) -> RuntimeResult<f64> {
+    match std::str::from_utf8(value) {
+        Ok(value) => native_value_string_to_float(value),
+        Err(_) => Ok(0.0),
     }
 }
 
@@ -22378,15 +22521,13 @@ pub unsafe extern "C" fn phpc_native_object_property_mutation_operation_with_ref
     result
 }
 
-fn bitwise_strings(
-    left: &str,
-    right: &str,
+fn bitwise_string_bytes(
+    left: &[u8],
+    right: &[u8],
     operation: ArithmeticOp,
     op: fn(u8, u8) -> u8,
-) -> RuntimeResult<String> {
-    let left = left.as_bytes();
-    let right = right.as_bytes();
-    let output = match operation {
+) -> RuntimeResult<Vec<u8>> {
+    Ok(match operation {
         ArithmeticOp::BitwiseAnd | ArithmeticOp::BitwiseXor => left
             .iter()
             .zip(right.iter())
@@ -22406,13 +22547,6 @@ fn bitwise_strings(
             output
         }
         _ => unreachable!("caller provided a bitwise operation"),
-    };
-
-    String::from_utf8(output).map_err(|_| {
-        RuntimeError::invalid_arithmetic(
-            operation,
-            "binary string results outside UTF-8 are not supported",
-        )
     })
 }
 
@@ -22638,9 +22772,12 @@ enum ComparisonValueFamily {
 impl ComparisonValueFamily {
     fn for_value(value: &Value) -> Self {
         match value {
-            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
-                Self::Scalar
-            }
+            Value::Null
+            | Value::Bool(_)
+            | Value::Int(_)
+            | Value::Float(_)
+            | Value::String(_)
+            | Value::BinaryString(_) => Self::Scalar,
             Value::Array(_) => Self::Array,
             Value::Object(_) | Value::Closure(_) => Self::Object,
             Value::Resource(_) => Self::Resource,
@@ -22994,6 +23131,10 @@ impl PhpValueStringSemantics {
     fn into_string(self) -> String {
         self.value
     }
+
+    fn into_bytes(self) -> Vec<u8> {
+        self.value.into_bytes()
+    }
 }
 
 pub fn analyze_php_value_string_semantics(value: &Value) -> PhpValueStringSemantics {
@@ -23004,6 +23145,7 @@ pub fn analyze_php_value_string_semantics(value: &Value) -> PhpValueStringSemant
         Value::Int(value) => value.to_string(),
         Value::Float(value) => format_php_float(*value),
         Value::String(value) => value.clone(),
+        Value::BinaryString(value) => String::from_utf8_lossy(value).into_owned(),
         Value::Array(_) => "Array".to_string(),
         Value::Object(_) | Value::Closure(_) => "Object".to_string(),
         Value::Resource(id) => format!("Resource id #{id}"),
@@ -23085,6 +23227,44 @@ fn native_value_arithmetic_number(
                     });
             }
             PhpNumericStringClassification::NonNumeric => {
+                return Err(RuntimeError::invalid_arithmetic(
+                    operation,
+                    "string is not numeric",
+                ));
+            }
+        },
+        Value::BinaryString(value) => match std::str::from_utf8(value) {
+            Ok(value) => match classify_php_numeric_string(value) {
+                PhpNumericStringClassification::Integer(value) => {
+                    return Ok(NativeArithmeticNumber {
+                        number: Number::Int(value),
+                        leading_numeric: false,
+                    });
+                }
+                PhpNumericStringClassification::Float(value) => {
+                    return Ok(NativeArithmeticNumber {
+                        number: Number::Float(value),
+                        leading_numeric: false,
+                    });
+                }
+                PhpNumericStringClassification::LeadingNumeric => {
+                    return leading_numeric_string_number(value)
+                        .map(|number| NativeArithmeticNumber {
+                            number,
+                            leading_numeric: true,
+                        })
+                        .ok_or_else(|| {
+                            RuntimeError::invalid_arithmetic(operation, "string is not numeric")
+                        });
+                }
+                PhpNumericStringClassification::NonNumeric => {
+                    return Err(RuntimeError::invalid_arithmetic(
+                        operation,
+                        "string is not numeric",
+                    ));
+                }
+            },
+            Err(_) => {
                 return Err(RuntimeError::invalid_arithmetic(
                     operation,
                     "string is not numeric",
@@ -23210,11 +23390,26 @@ fn compare_php_strings(left: &str, right: &str) -> Option<Ordering> {
     }
 }
 
+fn compare_php_string_bytes(left: &[u8], right: &[u8]) -> Option<Ordering> {
+    match (std::str::from_utf8(left), std::str::from_utf8(right)) {
+        (Ok(left), Ok(right)) => compare_php_strings(left, right),
+        _ => compare_binary_string_bytes(left, right),
+    }
+}
+
 fn compare_number_and_string(left: Number, right: &str) -> Option<Ordering> {
     if let Some(right) = parse_numeric_string(right) {
         compare_numbers(left, right)
     } else {
         compare_binary_strings(&left.to_php_string(), right)
+    }
+}
+
+fn compare_number_and_string_bytes(left: Number, right: &[u8]) -> Option<Ordering> {
+    if let Some(right) = parse_numeric_string_bytes(right) {
+        compare_numbers(left, right)
+    } else {
+        compare_binary_string_bytes(left.to_php_string().as_bytes(), right)
     }
 }
 
@@ -23226,8 +23421,20 @@ fn compare_string_and_number(left: &str, right: Number) -> Option<Ordering> {
     }
 }
 
+fn compare_string_bytes_and_number(left: &[u8], right: Number) -> Option<Ordering> {
+    if let Some(left) = parse_numeric_string_bytes(left) {
+        compare_numbers(left, right)
+    } else {
+        compare_binary_string_bytes(left, right.to_php_string().as_bytes())
+    }
+}
+
 fn compare_binary_strings(left: &str, right: &str) -> Option<Ordering> {
-    Some(left.as_bytes().cmp(right.as_bytes()))
+    compare_binary_string_bytes(left.as_bytes(), right.as_bytes())
+}
+
+fn compare_binary_string_bytes(left: &[u8], right: &[u8]) -> Option<Ordering> {
+    Some(left.cmp(right))
 }
 
 fn parse_numeric_string(value: &str) -> Option<Number> {
@@ -23237,6 +23444,12 @@ fn parse_numeric_string(value: &str) -> Option<Number> {
         PhpNumericStringClassification::LeadingNumeric
         | PhpNumericStringClassification::NonNumeric => None,
     }
+}
+
+fn parse_numeric_string_bytes(value: &[u8]) -> Option<Number> {
+    std::str::from_utf8(value)
+        .ok()
+        .and_then(parse_numeric_string)
 }
 
 fn leading_numeric_string_number(value: &str) -> Option<Number> {
@@ -34366,10 +34579,97 @@ mod tests {
         let string =
             unsafe { phpc_native_string_from_bytes(invalid_bytes.as_ptr(), invalid_bytes.len()) };
         let invalid_value = unsafe { phpc_native_value_from_string(string) };
-        assert!(invalid_value.is_null());
+        assert!(matches!(
+            unsafe { invalid_value.as_ref() },
+            Some(Value::BinaryString(value)) if value == &invalid_bytes
+        ));
 
         unsafe { phpc_native_value_free(invalid_value) };
         unsafe { phpc_native_string_free(string) };
+    }
+
+    #[test]
+    fn native_byte_string_values_preserve_arbitrary_php_bytes_across_value_surfaces() {
+        let payload = b"A\0B\xff0";
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let value = unsafe {
+            phpc_native_value_from_string_bytes_with_diagnostic(
+                payload.as_ptr(),
+                payload.len(),
+                &mut diagnostic,
+            )
+        };
+
+        assert!(!value.is_null());
+        assert!(diagnostic.is_null());
+        assert!(matches!(
+            unsafe { value.as_ref() },
+            Some(Value::BinaryString(bytes)) if bytes == payload
+        ));
+
+        let cloned = unsafe { phpc_native_value_clone(value) };
+        assert!(matches!(
+            unsafe { cloned.as_ref() },
+            Some(Value::BinaryString(bytes)) if bytes == payload
+        ));
+
+        let clone_bytes = unsafe { phpc_native_value_string_clone_bytes(value) };
+        assert_eq!(native_byte_buffer_to_vec_for_test(clone_bytes), payload);
+
+        let echo_bytes = unsafe { phpc_native_value_echo_bytes(value) };
+        assert_eq!(native_byte_buffer_to_vec_for_test(echo_bytes), payload);
+
+        let conversion = unsafe { phpc_native_value_to_string_bytes(value) };
+        assert!(conversion.diagnostic.is_null());
+        assert_eq!(
+            native_byte_buffer_to_vec_for_test(conversion.bytes),
+            payload
+        );
+
+        let mut stdout = Vec::new();
+        assert_eq!(
+            unsafe { native_value_format_stdout_result(value, 0, &mut stdout) }.unwrap(),
+            payload.len()
+        );
+        assert_eq!(stdout, payload);
+
+        let offset = phpc_native_value_from_scalar(phpc_native_int(3));
+        let byte = unsafe {
+            phpc_native_value_offset_operation_with_diagnostic(
+                value,
+                offset,
+                NativeStringOffsetOperation::Read as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(byte), b"\xff");
+
+        let string = unsafe { phpc_native_string_from_bytes(payload.as_ptr(), payload.len()) };
+        let string_value = unsafe { phpc_native_value_from_string(string) };
+        assert!(matches!(
+            unsafe { string_value.as_ref() },
+            Some(Value::BinaryString(bytes)) if bytes == payload
+        ));
+
+        let missing = unsafe {
+            phpc_native_value_from_string_bytes_with_diagnostic(
+                std::ptr::null(),
+                payload.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(missing.is_null());
+        assert!(!diagnostic.is_null());
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        unsafe { phpc_native_value_free(missing) };
+        unsafe { phpc_native_value_free(string_value) };
+        unsafe { phpc_native_string_free(string) };
+        unsafe { phpc_native_value_free(byte) };
+        unsafe { phpc_native_value_free(offset) };
+        unsafe { phpc_native_value_free(cloned) };
+        unsafe { phpc_native_value_free(value) };
     }
 
     #[test]

@@ -187,6 +187,38 @@ fn generated_ir_routes_nul_strings_through_formatter_stdout_abi() {
 }
 
 #[test]
+fn generated_ir_materializes_binary_string_values_with_explicit_lengths() {
+    let ir = emit_ir_source(concat!(
+        "<?php\n$payload = \"A",
+        "\0",
+        "B\";\necho strlen($payload), \":\", $payload[1], \":\", $payload;\n"
+    ))
+    .unwrap();
+
+    assert!(
+        ir.contains(
+            "declare %phpc.NativeValueHandle @phpc_native_value_from_string_bytes_with_diagnostic(ptr, i64, ptr)"
+        ),
+        "{ir}"
+    );
+    assert!(ir.contains("c\"A\\00B\\00\""), "{ir}");
+    assert!(
+        ir.contains("call %phpc.NativeValueHandle @phpc_native_value_from_string_bytes_with_diagnostic(ptr @.str.")
+            && ir.contains(", i64 3, ptr"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call %phpc.NativeConversionSource @phpc_native_conversion_source_value")
+            && ir.contains("call %phpc.NativeConversionResult @phpc_native_offset_read_source"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i64 @phpc_native_value_format_stdout_with_diagnostic"),
+        "{ir}"
+    );
+}
+
+#[test]
 fn native_output_buffer_builtins_share_runtime_boundary_across_backends() {
     let ir = emit_ir_source(OUTPUT_BUFFER_RUNTIME_SOURCE).unwrap();
 
