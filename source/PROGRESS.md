@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-25 21:28 CEST
-Evaluation marker: `20260525T192812Z`
+Updated: 2026-05-25 21:47 CEST
+Evaluation marker: `20260525T194746Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, candidate worktrees, lane-local
@@ -15,19 +15,19 @@ Overall estimated progress: **92%** `[##################--]`
 Executable PHP semantics: **92%** `[##################--]`
 
 Primary is clean and aligned with `origin/master` at
-`f3e33a4c docs: update progress dashboard` before this `PROGRESS.md` edit.
+`2a535631 docs: update progress dashboard` before this `PROGRESS.md` edit.
 
 The latest primary-integrated production/prerequisite baseline remains
 `2cd78ade native: share conversion result consumers`. The latest integrated
 executable capability baseline remains
 `b13c85c6 native: add unary negation source result ABI`.
 
-This review keeps percentages flat. No new primary production semantic commit
-landed after `2cd78ade`; `f3e33a4c` is docs-only. The active post-helper
-call-semantics split returned `needs-split`: it proved several existing
-closure/capture surfaces on current primary, but by-reference closure returns
-need a real native closure value/reference return ABI before they can honestly
-count as executable PHP semantics.
+This review keeps percentages flat. No new primary compiler/runtime source
+commit landed after `2cd78ade`; `2a535631` is docs-only. The active
+request-key selector fallback is a codegen-only cleanup candidate, not new
+executable PHP behavior. The post-helper call split proved useful current
+closure coverage, but by-reference closure returns still need a real native
+closure value/reference return ABI before they can count.
 
 ## Grand Roadmap Position
 
@@ -53,11 +53,11 @@ count as executable PHP semantics.
 | Non-local assignment owner-cell blocker refresh | **100%** `[####################]` | **35%** `[#######-------------]` | Integrated at `f770d728`. This is blocker/parity work, not executable property/static writeback. |
 | String operation-family slot consumers | **100%** `[####################]` | **45%** `[#########-----------]` | Integrated at `5307990c`; `explode()` and `str_split()` use shared byte-preserving value/reference-slot contracts. |
 | Byte-preserving PHP string value boundary | **100%** `[####################]` | **40%** `[########------------]` | Integrated at `1c369d0f`; byte-backed PHP values and native pointer-plus-length materialization are available for selected paths. |
-| Call/closure reference return ABI | **15%** `[###-----------------]` | **32%** `[######--------------]` | Current split returned `needs-split`. It proved descriptor-ready closure invocation and by-value captures, but by-reference closure returns require a reusable closure value/reference return ABI and reference-result consumers. |
-| Request-key backend diagnostic selector | **35%** `[#######-------------]` | **34%** `[#######-------------]` | Lane-local `impl-native-error-diagnostic-semantics` reports shared top-level request-key operation selection across LLVM/generated C with focused gates. Treat as cleanup unless extracted and integrated from current primary. |
+| Request-key backend diagnostic selector fallback | **70%** `[##############------]` | **34%** `[#######-------------]` | Candidate `request-key-selector-fallback-prep` is ready for primary review at hash `e71bf25f9426cc058ef6d741fd5801357b1f5ac9a71474df83b35e0b74c8e0fb`, dirty only in `compiler/src/codegen.rs`. Count as cleanup only; two zero-filter gate caveats require review. |
+| Call/closure reference return ABI | **15%** `[###-----------------]` | **32%** `[######--------------]` | Current split returned `needs-split`. It proved descriptor-ready closure invocation and capture surfaces, but by-reference closure returns require a reusable closure value/reference return ABI and reference-result consumers. |
+| Broader source-call cleanup lanes | **20%** `[####----------------]` | **38%** `[########------------]` | `impl-native-call-semantics` has useful lane-local call cleanup and callable-context evidence, but broad dirty state keeps it evidence only until exact current-primary extraction. |
 | Broader lvalue/reference-slot materializer | **30%** `[######--------------]` | **39%** `[########------------]` | Needed so non-variable expression families that can carry references can enter shared array-key and consumer slot ABIs safely. Current broad lane evidence is parked or lane-local. |
 | Object/resource source materialization | **25%** `[#####---------------]` | **30%** `[######--------------]` | Still a recurring blocker for generic conversion and offset/source consumers. Needs a general value reconstruction/materialization boundary. |
-| LLVM offset-read/error-status cleanup | **35%** `[#######-------------]` | **32%** `[######--------------]` | `2cd78ade` improves current LLVM conversion-result cleanup/guard sharing, but a broader control-flow/error-exit status boundary is still missing. |
 | Broad lane extraction backlog | **34%** `[#######-------------]` | **35%** `[#######-------------]` | Broad dirty lanes remain useful evidence repositories, not integration units. Several are parked after cadence failures. |
 
 ## Done / In Progress / Not Done
@@ -79,10 +79,11 @@ Primary-integrated executable or executable-prerequisite capability:
 
 In progress but lane-local or not yet executable primary support:
 
+- [ ] `request-key-selector-fallback-prep` is ready for review as codegen-only cleanup; do not count as executable semantics unless a separate execution boundary is proved.
 - [ ] `post-helper-call-semantics-split-prep` proved current primary closure/capture coverage but returned `needs-split` for by-reference closure returns.
 - [ ] A native closure value/reference return ABI is needed before by-reference closure return execution can count.
-- [ ] `impl-native-call-semantics` has lane-local caller-scope dynamic callable and call cleanup evidence; not primary-integrated.
-- [ ] `impl-native-error-diagnostic-semantics` has lane-local request-key selector cleanup evidence; not primary-integrated.
+- [ ] `impl-native-call-semantics` has lane-local caller-scope, dynamic callable, source-call cleanup, and reference/call evidence; not primary-integrated.
+- [ ] `impl-native-error-diagnostic-semantics` has lane-local selector/report-sink cleanup evidence; not primary-integrated.
 - [ ] Broad parked lanes remain evidence only until exact current-primary prep, review, and integration.
 
 Not done:
@@ -117,7 +118,7 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary was clean and synced at `f3e33a4c` before this `PROGRESS.md`
+- [x] Primary was clean and synced at `2a535631` before this `PROGRESS.md`
   edit.
 - [x] Latest production/prerequisite head remains `2cd78ade`.
 - [x] Latest executable capability head remains `b13c85c6`.
@@ -125,14 +126,17 @@ Primary-integrated:
 
 Lane-local:
 
-- [ ] `post-helper-call-semantics-split-prep` produced a stable current-primary
-  candidate hash and focused proof, but its own decision is `needs-split`;
-  do not route it as a ready review packet.
+- [ ] `request-key-selector-fallback-prep` is the active review candidate,
+  based on `2a535631`, dirty only in `compiler/src/codegen.rs`, with stable hash
+  `e71bf25f9426cc058ef6d741fd5801357b1f5ac9a71474df83b35e0b74c8e0fb`.
+- [ ] The request-key selector candidate should be counted as cleanup only and
+  its two zero-filter native-runtime ABI caveats should be reviewed explicitly.
+- [ ] `post-helper-call-semantics-split-prep` produced stable current-primary
+  closure/capture evidence, but its own decision is `needs-split`; do not route
+  it as a ready review packet.
 - [ ] The next call/frame semantic target is a reusable closure
   value/reference return ABI with linked alias/write-through proof.
-- [ ] `impl-native-error-diagnostic-semantics` request-key selector work is
-  plausible cleanup, not new executable capability unless freshly integrated.
-- [ ] Parked broad lanes should remain evidence repositories only.
+- [ ] Broad dirty lanes should remain evidence repositories only.
 
 Resource posture:
 
@@ -140,34 +144,32 @@ Resource posture:
   Largest observed targets: `phpc-target-native-call-semantics` 8.9G,
   `phpc-target-native-object-seed` 5.6G,
   `phpc-target-native-diagnostics` 3.0G.
-- `/home`: 459G total, 211G used, 229G available, 48% used.
+- `/home`: 459G total, 206G used, 235G available, 47% used.
   Largest observed lane/work tree:
   `phpc-lane-native-error-diagnostic-semantics` 14G; primary is about 2.2G.
+- Memory available is about 40Gi, but swap remains high at 23Gi/29Gi used.
 - Continue disk-backed `/tmp` target dirs, `umask 0007`,
   `CARGO_BUILD_JOBS=1`, `CARGO_INCREMENTAL=0`, and focused nonzero gates.
 
 ## Next Steering Read
 
-Best next compact packet to consider:
+Best compact cleanup packet to consider:
 
-- A fresh current-primary closure value/reference return ABI split, only if it
-  can prove linked execution and alias/write-through across direct calls,
-  dynamic descriptor closure calls, nested call consumers, discarded calls, and
-  reference assignment sources.
+- Finish independent review of the request-key backend selector fallback. If it
+  is accepted, integrate only as cleanup and keep executable-progress
+  percentages flat unless a separate semantic execution boundary is proved.
 
-Fallback cleanup packet:
+Best next executable semantic packet to design:
 
-- A request-key backend selector cleanup from
-  `impl-native-error-diagnostic-semantics`, only if re-derived from current
-  primary with exact scope, stable hash, apply proof, independent review, and
-  focused nonzero gates. Count as cleanup unless it unlocks a concrete
-  execution boundary.
+- A closure value/reference return ABI that can prove linked alias/write-through
+  across direct calls, dynamic descriptor closure calls, nested call consumers,
+  discarded calls, and reference assignment sources.
 
 Avoid:
 
 - Re-counting `2cd78ade` conversion-result helper work as pending.
-- Routing the post-helper call split candidate to review despite its
+- Routing the post-helper call split candidate to integration despite its
   `needs-split` decision.
 - Whole-lane imports from parked or broad dirty worktrees.
-- Percentage bumps for helper-only cleanup, blocker-only work, or lane-local
-  claims that are not committed and pushed on primary.
+- Percentage bumps for selector-only cleanup, helper-only cleanup, blocker-only
+  work, or lane-local claims that are not committed and pushed on primary.
