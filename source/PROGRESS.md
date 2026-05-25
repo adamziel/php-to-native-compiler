@@ -92,7 +92,7 @@ diagnostics/error handlers, and backend parity.
 | Byte-preserving PHP string value boundary | **100%** `[####################]` | **40%** `[########------------]` | Integrated at `1c369d0f`. Runtime has `Value::BinaryString(Vec<u8>)`, byte-view/runtime string-family preservation, native pointer-plus-length materialization, and linked byte-output proof. Full byte-output interpreter surfaces, binary source syntax, and request/global key coercion remain open. |
 | Request-backed array-key/RMW blocker parity | **100%** `[####################]` | **37%** `[#######-------------]` | Integrated at `a501c4d1`. LLVM and generated C share blocker classification for request-backed ordinary array-key consumers across selected read, assignment, unset, reference assignment, for-action assignment/RMW, compound assignment, `??=`, and increment/decrement paths. Blocker-only: no request storage/writeback or `$GLOBALS` parity. |
 | Reference-slot consumer families | **100%** `[####################]` | **45%** `[#########-----------]` | Type/int, text-membership, comparison, truthiness, array-key, and offset-read value/reference slots are integrated for reviewed selected paths. Full alias/COW composition remains open. |
-| Conversion and call-boundary shortcut retirement | **50%** `[##########----------]` | **42%** `[########------------]` | Unary negation now has primary source/result routing. Lane-local type-conversion work reports more shortcut retirement for arithmetic, concat, comparison, `empty()`, type introspection, nested unary, and logical families, but that lane is broad and currently not a primary packet. |
+| Conversion-result helper and shortcut retirement | **70%** `[##############------]` | **43%** `[#########-----------]` | A post-unary conversion-result helper consolidation candidate is ready for primary review with current-primary apply proof and focused gates. It is not integrated and should be counted as cleanup, not a capability jump, if it lands. Lane-local type-conversion work reports more shortcut retirement for arithmetic, concat, comparison, `empty()`, type introspection, nested unary, and logical families, but that lane is broad and currently parked/not a primary packet. |
 | Broader lvalue/reference-slot materializer | **30%** `[######--------------]` | **39%** `[########------------]` | Needed so non-variable expression families that can carry references can enter shared array-key and consumer slot ABIs safely. Should stay focused on slot materialization, not foreach or `ArrayAccess` execution. |
 | Object/resource source materialization | **25%** `[#####---------------]` | **30%** `[######--------------]` | Still a recurring blocker for generic conversion and offset/source consumers. Needs a general value reconstruction/materialization boundary before generic object/resource consumers are safe. |
 | LLVM offset-read/error-status cleanup | **25%** `[#####---------------]` | **30%** `[######--------------]` | Offset-read diagnostics exist, but LLVM still needs a generalized control-flow/error-exit status boundary for failed conversion results. |
@@ -128,10 +128,15 @@ Primary-integrated non-executable infrastructure:
 
 In progress but lane-local or not yet executable primary support:
 
-- [ ] `impl-native-type-conversion` is removing exact-shape arithmetic, comparison, concat, `empty()`, `is_numeric()`, `isset()`, nested unary, and logical shortcuts in a broad lane; current latest pass was hard-stopped without a new bounded packet.
-- [ ] `impl-native-call-semantics` reports lane-local call-result discard/failure cleanup, frame array-path reference, callable descriptor, and object `__invoke` planning improvements.
+- [ ] `post-unary-conversion-result-helper-prep` is ready for primary review as
+  a compact current-primary helper consolidation candidate over existing
+  `NativeConversionResult` consumers. It is not counted until reviewed,
+  integrated, committed, and pushed, and even then should be treated as cleanup
+  rather than new executable PHP capability.
+- [ ] `impl-native-type-conversion` is removing exact-shape arithmetic, comparison, concat, `empty()`, `is_numeric()`, `isset()`, nested unary, and logical shortcuts in a broad lane; current latest pass was hard-stopped after inspection without a new bounded packet.
+- [ ] `impl-native-call-semantics` reports lane-local call-result discard/failure cleanup, frame array-path reference, callable descriptor, object `__invoke` planning improvements, and runtime diagnostic/result helper cleanup.
 - [ ] `impl-native-error-diagnostic-semantics` reports lane-local shared backend selectors for diagnostic symbol, request, path, array, binary, unary, and call consumers.
-- [ ] `impl-array-linked-exec` reports lane-local cleanup/blocker ownership improvements for object-property array updates, stateful call operands, try/throw exits, resource roots, and computed roots.
+- [ ] `impl-array-linked-exec` reports lane-local cleanup/blocker ownership improvements for object-property array updates, stateful call operands, try/throw exits, resource roots, and computed roots, but is now force-parked after a watched-status cadence miss.
 - [ ] `impl-symbol-integrator` reports lane-local core type/member/relationship metadata ABIs, but the lane is broad, dirty, and parked after hard-stop.
 - [ ] Several broad lanes are parked after cadence failures or conflict-heavy exploration. Reclaim only through fresh, exact-scope current-primary prep.
 - [ ] Full byte-exact tree-walk interpreter output surfaces remain blocked behind a real byte-output/session/debug formatting representation.
@@ -169,6 +174,9 @@ Not done:
   current-primary apply proof, three focused nonzero gates, `cargo check`,
   `cargo fmt --check`, `git diff --check`, push proof, and clean post-push
   sync except for the evaluator-owned `PROGRESS.md` update.
+- `77cca4ec`: progress-dashboard commit only. No executable compiler/runtime
+  semantic code changed; this review still counts `b13c85c6` as the latest
+  semantic baseline.
 - `a8268e0e`: progress-dashboard commit only. No executable compiler/runtime
   semantic code changed.
 - `f770d728`: non-local assignment owner blockers. Integrated files:
@@ -187,7 +195,7 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary was clean and synced at `b13c85c6` before this `PROGRESS.md`
+- [x] Primary was clean and synced at `77cca4ec` before this `PROGRESS.md`
   edit.
 - [x] Latest counted semantic/prerequisite commit is `b13c85c6`.
 - [x] Covered unary `-` lowering now uses a shared runtime numeric-unary
@@ -206,15 +214,22 @@ Primary-integrated:
 
 Lane-local:
 
+- [ ] `post-unary-conversion-result-helper-prep` is ready for primary review:
+  two product files, stable hash
+  `99de98d95f2d93efc4f6d54ed5e386513a8e917ce4787830472013d936da36f1`,
+  current-primary apply proof, focused nonzero gates, `cargo check`,
+  `cargo fmt --check`, and `git diff --check`. This is helper consolidation,
+  not counted semantic progress.
 - [ ] `impl-native-type-conversion` contains useful but very broad conversion
-  shortcut-retirement work and was most recently hard-stopped without selecting
-  a new bounded packet.
+  shortcut-retirement work and was most recently hard-stopped after inspection
+  without selecting a new bounded packet.
 - [ ] `impl-native-call-semantics` reports call-result discard/failure and
-  frame array-path reference improvements, still lane-local.
+  frame array-path reference improvements plus newer runtime diagnostic/result
+  helper cleanup, still lane-local.
 - [ ] `impl-native-error-diagnostic-semantics` reports backend selector cleanup
   for diagnostic consumers, still lane-local.
 - [ ] `impl-array-linked-exec` reports cleanup/blocker ordering improvements,
-  mostly blocker-boundary work, still lane-local.
+  mostly blocker-boundary work, and is now parked after a cadence miss.
 - [ ] `impl-symbol-integrator` reports core metadata ABI work but is broad,
   dirty, and parked; use only as evidence.
 - [ ] Forced-parked or stale broad lanes remain evidence only, not importable
@@ -226,7 +241,7 @@ Resource posture:
   Largest observed target dirs are `phpc-target-native-call-semantics` at
   `8.9G`, `phpc-target-native-object-seed` at `5.6G`, and
   `phpc-target-native-diagnostics` at `3.0G`.
-- `/home`: live df `459G` total, `194G` used, `247G` available, 45% used.
+- `/home`: live df `459G` total, `193G` used, `247G` available, 44% used.
   Largest observed lane/work tree is
   `phpc-lane-native-error-diagnostic-semantics` at `14G`; primary is about
   `2.2G`.
@@ -241,7 +256,9 @@ Resource posture:
 Best next compact packets to consider:
 
 - conversion-result consumer/free/report helper consolidation following the
-  integrated unary-negation source/result ABI;
+  integrated unary-negation source/result ABI; a compact candidate is already
+  ready for independent review, but it should be counted as cleanup rather
+  than a capability jump;
 - a narrow call-result discard/failure cleanup packet, if it can be extracted
   from `impl-native-call-semantics` without pre-existing lane collateral;
 - diagnostic consumer selector cleanup only when it removes duplicated backend
@@ -254,6 +271,11 @@ Best next compact packets to consider:
   and audited for hard-coded-table risk;
 - refreshed callable-object, dynamic-constructor, object-instantiation, or
   destructor-blocker packets after rebasing and reviewing from current primary.
+
+Dashboard note: the supervisor dashboard tail observed during this review is
+stale relative to current primary and newest worker statuses. Prefer primary
+git state plus current worker artifacts for steering until the dashboard is
+refreshed.
 
 Do not count lane-local triage, stopped dirty lanes, parked broad lanes, stale
 candidates, blocker-only metadata, review-only candidates, failed prep tests,
