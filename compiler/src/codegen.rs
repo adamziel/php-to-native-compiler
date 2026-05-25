@@ -1471,6 +1471,34 @@ fn native_value_comparison_op_tag(op: BinaryOp) -> Option<&'static str> {
     }
 }
 
+fn native_value_comparison_op_tag_value(op: BinaryOp) -> Option<u8> {
+    match op {
+        BinaryOp::Eq => Some(0),
+        BinaryOp::Ne => Some(1),
+        BinaryOp::Lt => Some(2),
+        BinaryOp::Le => Some(3),
+        BinaryOp::Gt => Some(4),
+        BinaryOp::Ge => Some(5),
+        BinaryOp::StrictEq => Some(6),
+        BinaryOp::StrictNe => Some(7),
+        BinaryOp::Add
+        | BinaryOp::Sub
+        | BinaryOp::Mul
+        | BinaryOp::Div
+        | BinaryOp::Mod
+        | BinaryOp::Concat
+        | BinaryOp::NullCoalesce
+        | BinaryOp::LogicalAnd
+        | BinaryOp::LogicalOr
+        | BinaryOp::LogicalXor
+        | BinaryOp::BitwiseAnd
+        | BinaryOp::BitwiseOr
+        | BinaryOp::BitwiseXor
+        | BinaryOp::ShiftLeft
+        | BinaryOp::ShiftRight => None,
+    }
+}
+
 fn native_value_non_strict_comparison_op_tag(op: BinaryOp) -> Option<&'static str> {
     match op {
         BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
@@ -5554,6 +5582,7 @@ struct LlvmGenerator {
     uses_native_value_echo_stdout: bool,
     uses_native_string_int_operation: bool,
     uses_native_value_operation_result: bool,
+    uses_native_value_comparison_operation: bool,
     uses_native_value_offset_operation: bool,
     uses_native_conversion_source_helpers: bool,
     uses_native_offset_read_source: bool,
@@ -5780,6 +5809,20 @@ impl LlvmGenerator {
             }
             output.push_str("%phpc.NativeValueOperationResult = type { i8, %phpc.NativeValueHandle, %phpc.NativeDiagnosticHandle }\n");
         }
+        if self.uses_native_value_comparison_operation {
+            if !emitted_native_value_handle {
+                output.push_str("%phpc.NativeValueHandle = type { ptr }\n");
+                emitted_native_value_handle = true;
+            }
+            if !emitted_native_diagnostic_handle {
+                output.push_str("%phpc.NativeDiagnosticHandle = type { ptr }\n");
+                emitted_native_diagnostic_handle = true;
+            }
+            if !emitted_native_reference_handle {
+                output.push_str("%phpc.NativeReferenceHandle = type { ptr }\n");
+                emitted_native_reference_handle = true;
+            }
+        }
         if self.uses_native_value_offset_operation {
             let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
             if !emitted_native_value_handle {
@@ -5934,6 +5977,23 @@ impl LlvmGenerator {
                 && !self.uses_native_value_echo_stdout
             {
                 output.push_str("declare void @phpc_native_value_free(%phpc.NativeValueHandle)\n");
+                output.push_str(&format!(
+                    "declare {usize_type} @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle)\n"
+                ));
+                output.push_str(
+                    "declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)\n",
+                );
+            }
+        }
+        if self.uses_native_value_comparison_operation {
+            output.push_str("declare i1 @phpc_native_value_comparison_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i8, ptr)\n");
+            output.push_str("declare i1 @phpc_native_value_comparison_with_reference_slots_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeReferenceHandle, %phpc.NativeValueHandle, %phpc.NativeReferenceHandle, i8, ptr)\n");
+            if !self.uses_native_reference_helpers
+                && !self.uses_native_string_int_operation
+                && !self.uses_native_value_echo_stdout
+            {
+                output.push_str("declare void @phpc_native_value_free(%phpc.NativeValueHandle)\n");
+                let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
                 output.push_str(&format!(
                     "declare {usize_type} @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle)\n"
                 ));
@@ -6500,6 +6560,12 @@ impl LlvmGenerator {
                 right,
                 span,
             } => {
+                if matches!(op, BinaryOp::StrictEq | BinaryOp::StrictNe)
+                    && (self.expression_can_reach_native_reference_slot(left)
+                        || self.expression_can_reach_native_reference_slot(right))
+                {
+                    return self.emit_scalar_comparison_expr(left, *op, right, *span);
+                }
                 if is_comparison_op(*op) && !matches!(op, BinaryOp::StrictEq | BinaryOp::StrictNe) {
                     return self.emit_scalar_comparison_expr(left, *op, right, *span);
                 }
@@ -8083,6 +8149,13 @@ impl LlvmGenerator {
         }
     }
 
+    fn expression_can_reach_native_reference_slot(&self, expr: &Expr) -> bool {
+        let Expr::Variable(name, _) = expr else {
+            return false;
+        };
+        matches!(self.variables.get(name), Some(IrValue::NativeReference(_)))
+    }
+
     fn emit_scalar_comparison_expr(
         &mut self,
         left: &Expr,
@@ -8123,6 +8196,23 @@ impl LlvmGenerator {
         right: IrValue,
         span: Span,
     ) -> CompileResult<IrValue> {
+        if matches!(
+            (&left, &right),
+            (IrValue::NativeValue(_) | IrValue::NativeReference(_), _)
+                | (_, IrValue::NativeValue(_) | IrValue::NativeReference(_))
+        ) {
+            let Some(op_tag) = native_value_comparison_op_tag_value(op) else {
+                return Err(self.unsupported(span, llvm_comparison_rejection()));
+            };
+            return self.emit_native_value_comparison_operation(
+                left,
+                op_tag,
+                right,
+                span,
+                llvm_comparison_rejection(),
+            );
+        }
+
         match (left, right) {
             (IrValue::Null, IrValue::Null) => {
                 let Some(result) = null_comparison_result(op) else {
@@ -10310,6 +10400,77 @@ impl LlvmGenerator {
         ))
     }
 
+    fn emit_native_value_reference_slot_for_ir_value(
+        &mut self,
+        value: IrValue,
+        span: Span,
+        rejection: &'static str,
+    ) -> CompileResult<(String, String, Option<String>, bool)> {
+        match value {
+            IrValue::NativeReference(reference) => {
+                Ok(("zeroinitializer".to_string(), reference, None, true))
+            }
+            value => {
+                let handle = self
+                    .emit_native_value_for_ir_value(value, span)
+                    .map_err(|_| self.unsupported(span, rejection))?;
+                Ok((
+                    handle.clone(),
+                    "zeroinitializer".to_string(),
+                    Some(handle),
+                    false,
+                ))
+            }
+        }
+    }
+
+    fn emit_native_value_comparison_operation(
+        &mut self,
+        left: IrValue,
+        op_tag: u8,
+        right: IrValue,
+        span: Span,
+        rejection: &'static str,
+    ) -> CompileResult<IrValue> {
+        let (left, left_reference, left_cleanup, left_is_reference) =
+            self.emit_native_value_reference_slot_for_ir_value(left, span, rejection)?;
+        let (right, right_reference, right_cleanup, right_is_reference) =
+            self.emit_native_value_reference_slot_for_ir_value(right, span, rejection)?;
+        let diagnostic_slot = self.next_temp();
+        let result = self.next_temp();
+        self.uses_native_value_comparison_operation = true;
+        if left_is_reference || right_is_reference {
+            self.uses_native_reference_helpers = true;
+        }
+        self.body.push(format!(
+            "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
+        ));
+        self.body.push(format!(
+            "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
+        ));
+        if left_is_reference || right_is_reference {
+            self.body.push(format!(
+                "{result} = call i1 @phpc_native_value_comparison_with_reference_slots_with_diagnostic(%phpc.NativeValueHandle {left}, %phpc.NativeReferenceHandle {left_reference}, %phpc.NativeValueHandle {right}, %phpc.NativeReferenceHandle {right_reference}, i8 {op_tag}, ptr {diagnostic_slot})"
+            ));
+        } else {
+            self.body.push(format!(
+                "{result} = call i1 @phpc_native_value_comparison_with_diagnostic(%phpc.NativeValueHandle {left}, %phpc.NativeValueHandle {right}, i8 {op_tag}, ptr {diagnostic_slot})"
+            ));
+        }
+        self.emit_report_native_diagnostic_slot(&diagnostic_slot);
+        if let Some(handle) = right_cleanup {
+            self.body.push(format!(
+                "call void @phpc_native_value_free(%phpc.NativeValueHandle {handle})"
+            ));
+        }
+        if let Some(handle) = left_cleanup {
+            self.body.push(format!(
+                "call void @phpc_native_value_free(%phpc.NativeValueHandle {handle})"
+            ));
+        }
+        Ok(IrValue::BoolExpr(result))
+    }
+
     fn emit_native_value_operation_result_value(&mut self, result: String) -> String {
         let tag = self.next_temp();
         let value = self.next_temp();
@@ -10836,6 +10997,7 @@ struct CGenerator {
     uses_native_string_helpers: bool,
     uses_native_comparison_helpers: bool,
     uses_native_array_comparison_helpers: bool,
+    uses_native_value_comparison_operation: bool,
     uses_native_array_helpers: bool,
     uses_native_value_clone: bool,
     uses_native_value_string_clone_bytes: bool,
@@ -12541,6 +12703,8 @@ impl CGenerator {
         self.uses_native_string_helpers |= branch.uses_native_string_helpers;
         self.uses_native_comparison_helpers |= branch.uses_native_comparison_helpers;
         self.uses_native_array_comparison_helpers |= branch.uses_native_array_comparison_helpers;
+        self.uses_native_value_comparison_operation |=
+            branch.uses_native_value_comparison_operation;
         self.uses_native_array_helpers |= branch.uses_native_array_helpers;
         self.uses_native_value_clone |= branch.uses_native_value_clone;
         self.uses_native_value_string_clone_bytes |= branch.uses_native_value_string_clone_bytes;
@@ -12580,6 +12744,7 @@ impl CGenerator {
     fn uses_native_runtime_helpers(&self) -> bool {
         self.uses_native_string_helpers
             || self.uses_native_comparison_helpers
+            || self.uses_native_value_comparison_operation
             || self.uses_native_array_helpers
             || self.uses_native_request_state_helpers
             || self.uses_native_symbol_table_helpers
@@ -14148,6 +14313,7 @@ impl CGenerator {
                 || self.uses_native_array_lvalue_helpers
                 || self.uses_native_reference_helpers
                 || self.uses_native_text_membership_operation
+                || self.uses_native_value_comparison_operation
                 || self.uses_native_request_state_reference_helpers
                 || self.uses_native_symbol_table_helpers
                 || self.uses_native_conversion_source_helpers
@@ -14226,6 +14392,16 @@ impl CGenerator {
                 output.push_str("typedef struct { int exit_code; uint8_t value; } phpc_NativeComparisonBranchDecision;\n");
                 output.push_str("#define PHPC_NATIVE_COMPARISON_STATUS_OK 0\n");
                 output.push_str("#define PHPC_NATIVE_COMPARISON_STATUS_BLOCKED 1\n");
+            }
+            if self.uses_native_value_comparison_operation && !self.uses_native_array_helpers {
+                output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_EQ 0\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_NE 1\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_LT 2\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_LE 3\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_GT 4\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_GE 5\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_STRICT_EQ 6\n");
+                output.push_str("#define PHPC_NATIVE_VALUE_COMPARISON_STRICT_NE 7\n");
             }
             if self.uses_native_array_helpers {
                 output.push_str("typedef struct { uint8_t tag; int64_t int_value; phpc_NativeByteBuffer bytes; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeArrayKeyMaterializationResult;\n");
@@ -14476,6 +14652,10 @@ impl CGenerator {
                 }
                 if self.uses_native_text_membership_operation {
                     output.push_str("extern _Bool phpc_native_text_membership_with_reference_slot_with_diagnostic(phpc_NativeValueHandle value, phpc_NativeReferenceHandle reference, uint8_t surface, const uint8_t *const *candidates, const size_t *candidate_lengths, size_t candidate_count, _Bool case_insensitive, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                }
+                if self.uses_native_value_comparison_operation {
+                    output.push_str("extern _Bool phpc_native_value_comparison_with_diagnostic(phpc_NativeValueHandle left, phpc_NativeValueHandle right, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                    output.push_str("extern _Bool phpc_native_value_comparison_with_reference_slots_with_diagnostic(phpc_NativeValueHandle left, phpc_NativeReferenceHandle left_reference, phpc_NativeValueHandle right, phpc_NativeReferenceHandle right_reference, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 }
                 output.push_str("extern _Bool phpc_native_value_string_predicate_with_diagnostic(phpc_NativeValueHandle haystack, phpc_NativeValueHandle needle, uint8_t predicate, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern int64_t phpc_native_value_string_int_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -21667,6 +21847,12 @@ impl CGenerator {
                 right,
                 span,
             } => {
+                if matches!(op, BinaryOp::StrictEq | BinaryOp::StrictNe)
+                    && (self.expression_can_reach_native_reference_slot(left)
+                        || self.expression_can_reach_native_reference_slot(right))
+                {
+                    return self.emit_native_value_comparison_bool_expr(left, *op, right, *span);
+                }
                 if is_comparison_op(*op) && !matches!(op, BinaryOp::StrictEq | BinaryOp::StrictNe) {
                     if self.uses_native_string_helpers {
                         return self
@@ -29912,11 +30098,14 @@ impl CGenerator {
         right: &Expr,
         span: Span,
     ) -> CompileResult<CValue> {
-        let comparison =
-            self.materialize_native_value_comparison_expr(left, op, right, span, "")?;
-        let truthy = self.emit_native_value_handle_truthiness(&comparison.handle);
-        self.body.extend(comparison.cleanup_after_use);
-        Ok(CValue::BoolExpr(truthy))
+        let Some(op_tag) = native_value_comparison_op_tag(op) else {
+            return Err(self.unsupported(span, assembly_comparison_rejection()));
+        };
+        let left_value = self.materialize_native_value_reference_slot_operand(left, "")?;
+        let right_failure_cleanup = c_cleanup_sequence(&left_value.cleanup_after_use);
+        let right_value =
+            self.materialize_native_value_reference_slot_operand(right, &right_failure_cleanup)?;
+        Ok(self.emit_native_value_comparison_bool(left_value, op_tag, right_value))
     }
 
     fn materialize_native_value_comparison_expr(
@@ -33536,6 +33725,42 @@ impl CGenerator {
         )
     }
 
+    fn emit_native_value_comparison_bool(
+        &mut self,
+        left: CNativeValueReferenceSlot,
+        op_tag: &str,
+        right: CNativeValueReferenceSlot,
+    ) -> CValue {
+        let left_handle = left.value_handle.clone();
+        let left_reference = left.reference_handle.clone();
+        let right_handle = right.value_handle.clone();
+        let right_reference = right.reference_handle.clone();
+        let use_reference_slots = left.is_reference || right.is_reference;
+        let mut cleanup_after_use = right.cleanup_after_use;
+        cleanup_after_use.extend(left.cleanup_after_use);
+
+        let result = self.next_native_name("value_comparison_result");
+        let diagnostic = self.next_native_name("value_comparison_diagnostic");
+        self.uses_native_value_comparison_operation = true;
+        if use_reference_slots {
+            self.uses_native_reference_helpers = true;
+        }
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        if use_reference_slots {
+            self.body.push(format!(
+                "_Bool {result} = phpc_native_value_comparison_with_reference_slots_with_diagnostic({left_handle}, {left_reference}, {right_handle}, {right_reference}, {op_tag}, &{diagnostic});"
+            ));
+        } else {
+            self.body.push(format!(
+                "_Bool {result} = phpc_native_value_comparison_with_diagnostic({left_handle}, {right_handle}, {op_tag}, &{diagnostic});"
+            ));
+        }
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body.extend(cleanup_after_use);
+        CValue::BoolExpr(result)
+    }
+
     fn emit_native_value_bitwise_operation_result_handle(
         &mut self,
         subject: CNativeValueMaterialization,
@@ -34116,6 +34341,14 @@ impl CGenerator {
             } if self.uses_native_string_helpers
                 && native_value_non_strict_comparison_op_tag(*op).is_some() =>
             {
+                if self.expression_can_reach_native_reference_slot(left)
+                    || self.expression_can_reach_native_reference_slot(right)
+                {
+                    let value =
+                        self.emit_native_value_comparison_bool_expr(left, *op, right, *span)?;
+                    self.emit_echo(value, *span)?;
+                    return Ok(true);
+                }
                 self.materialize_native_value_comparison_expr(left, *op, right, *span, "")?
             }
             _ => {

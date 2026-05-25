@@ -13641,6 +13641,191 @@ pub unsafe extern "C" fn phpc_native_value_compare(
     unsafe { native_value_compare_outcome(left, op, right) }.into_native_result()
 }
 
+/// # Safety
+///
+/// `left` and `right` must be value handles previously returned by the runtime
+/// ABI and not yet freed. `diagnostic` may be null; when non-null, it must
+/// point to writable storage for one `NativeDiagnosticHandle`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_comparison_with_diagnostic(
+    left: NativeValueHandle,
+    right: NativeValueHandle,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe { native_value_compare_outcome(left, operation, right) } {
+        NativeComparisonOutcome::Value(value) => value,
+        NativeComparisonOutcome::Blocked(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// `left`, `right`, `left_reference`, and `right_reference` must be null or
+/// handles previously returned by the runtime ABI and not yet freed. For each
+/// comparison operand slot, pass either a value handle or a reference handle.
+/// Reference operands are dereferenced at the comparison boundary so generated
+/// backends can preserve reference ownership instead of cloning values before
+/// PHP comparison semantics run.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_comparison_with_reference_slots_with_diagnostic(
+    left: NativeValueHandle,
+    left_reference: NativeReferenceHandle,
+    right: NativeValueHandle,
+    right_reference: NativeReferenceHandle,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let (left, left_owned) = match unsafe {
+        native_value_reference_slot_owned_value(
+            left,
+            left_reference,
+            "native value comparison",
+            "left",
+        )
+    } {
+        Ok(slot) => slot,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            return false;
+        }
+    };
+    let (right, right_owned) = match unsafe {
+        native_value_reference_slot_owned_value(
+            right,
+            right_reference,
+            "native value comparison",
+            "right",
+        )
+    } {
+        Ok(slot) => slot,
+        Err(error) => {
+            if left_owned {
+                unsafe { phpc_native_value_free(left) };
+            }
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            return false;
+        }
+    };
+
+    let outcome = unsafe { native_value_compare_outcome(left, operation, right) };
+
+    if right_owned {
+        unsafe { phpc_native_value_free(right) };
+    }
+    if left_owned {
+        unsafe { phpc_native_value_free(left) };
+    }
+
+    match outcome {
+        NativeComparisonOutcome::Value(value) => value,
+        NativeComparisonOutcome::Blocked(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            false
+        }
+    }
+}
+
+#[test]
+fn native_value_comparison_reference_slots_dereference_binary_strings_and_arrays() {
+    fn diagnostic_message_for_test(handle: NativeDiagnosticHandle) -> String {
+        let buffer = unsafe { phpc_native_diagnostic_message_clone_bytes(handle) };
+        let bytes = if buffer.ptr().is_null() {
+            Vec::new()
+        } else {
+            unsafe { std::slice::from_raw_parts(buffer.ptr(), buffer.len()) }.to_vec()
+        };
+        unsafe { phpc_native_byte_buffer_free(buffer) };
+        String::from_utf8(bytes).expect("runtime diagnostics should be valid UTF-8")
+    }
+
+    let left = NativeValueHandle::from_value(Value::String("A\0B".to_string()));
+    let right = NativeValueHandle::from_value(Value::String("A\0B".to_string()));
+    let left_reference = unsafe { phpc_native_reference_from_value_and_free(left) };
+    let right_reference = unsafe { phpc_native_reference_from_value_and_free(right) };
+    let mut diagnostic = NativeDiagnosticHandle::null();
+
+    let equal = unsafe {
+        phpc_native_value_comparison_with_reference_slots_with_diagnostic(
+            NativeValueHandle::null(),
+            left_reference,
+            NativeValueHandle::null(),
+            right_reference,
+            NATIVE_VALUE_COMPARISON_EQ,
+            &mut diagnostic,
+        )
+    };
+    assert!(diagnostic.is_null());
+    assert!(equal);
+
+    let lower = NativeValueHandle::from_value(Value::String("A\0C".to_string()));
+    let lower_reference = unsafe { phpc_native_reference_from_value_and_free(lower) };
+    let less_than = unsafe {
+        phpc_native_value_comparison_with_reference_slots_with_diagnostic(
+            NativeValueHandle::null(),
+            left_reference,
+            NativeValueHandle::null(),
+            lower_reference,
+            NATIVE_VALUE_COMPARISON_LT,
+            &mut diagnostic,
+        )
+    };
+    assert!(diagnostic.is_null());
+    assert!(less_than);
+
+    let mut left_array = PhpArray::new();
+    left_array.insert("payload", Value::String("A\0B".to_string()));
+    left_array.insert("byte", Value::String("C".to_string()));
+    let mut right_array = PhpArray::new();
+    right_array.insert("payload", Value::String("A\0B".to_string()));
+    right_array.insert("byte", Value::String("C".to_string()));
+    let left_array = NativeValueHandle::from_value(Value::Array(left_array));
+    let right_array = NativeValueHandle::from_value(Value::Array(right_array));
+    let left_array_reference = unsafe { phpc_native_reference_from_value_and_free(left_array) };
+    let strict_equal = unsafe {
+        phpc_native_value_comparison_with_reference_slots_with_diagnostic(
+            NativeValueHandle::null(),
+            left_array_reference,
+            right_array,
+            NativeReferenceHandle::null(),
+            NATIVE_VALUE_COMPARISON_STRICT_EQ,
+            &mut diagnostic,
+        )
+    };
+    assert!(diagnostic.is_null());
+    assert!(strict_equal);
+
+    let invalid_value = NativeValueHandle::from_value(Value::String("invalid".to_string()));
+    let invalid = unsafe {
+        phpc_native_value_comparison_with_reference_slots_with_diagnostic(
+            invalid_value,
+            left_reference,
+            NativeValueHandle::null(),
+            right_reference,
+            NATIVE_VALUE_COMPARISON_EQ,
+            &mut diagnostic,
+        )
+    };
+    assert!(!invalid);
+    assert!(diagnostic_message_for_test(diagnostic)
+        .contains("left slot received both value and reference handles"));
+    unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+    unsafe { phpc_native_value_free(invalid_value) };
+    unsafe { phpc_native_value_free(right_array) };
+    unsafe { phpc_native_reference_free(left_array_reference) };
+    unsafe { phpc_native_reference_free(lower_reference) };
+    unsafe { phpc_native_reference_free(right_reference) };
+    unsafe { phpc_native_reference_free(left_reference) };
+}
+
 unsafe fn native_value_compare_outcome(
     left: NativeValueHandle,
     op: u8,

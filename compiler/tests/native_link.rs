@@ -2583,6 +2583,43 @@ fn native_executable_c_source_routes_reference_keys_and_text_membership_through_
 }
 
 #[test]
+fn native_executable_c_source_routes_reference_held_native_value_comparisons_through_slot_boundary()
+{
+    let program = parse(
+        "<?php\n$left = \"A\\0B\\xFF\";\n$leftRef =& $left;\n$right = \"A\\0B\\xFF\";\n$rightRef =& $right;\necho $leftRef == $rightRef;\necho $leftRef < \"A\\0C\";\necho $leftRef === $rightRef;\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "extern _Bool phpc_native_value_comparison_with_reference_slots_with_diagnostic(phpc_NativeValueHandle left, phpc_NativeReferenceHandle left_reference, phpc_NativeValueHandle right, phpc_NativeReferenceHandle right_reference, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);"
+        ),
+        "{source}"
+    );
+    assert!(
+        body.matches(" = phpc_native_value_comparison_with_reference_slots_with_diagnostic(")
+            .count()
+            >= 3,
+        "{source}"
+    );
+    assert!(
+        body.contains(", PHPC_NATIVE_VALUE_COMPARISON_EQ, &value_comparison_diagnostic_")
+            && body.contains(", PHPC_NATIVE_VALUE_COMPARISON_LT, &value_comparison_diagnostic_")
+            && body.contains(
+                ", PHPC_NATIVE_VALUE_COMPARISON_STRICT_EQ, &value_comparison_diagnostic_"
+            ),
+        "{source}"
+    );
+    assert!(
+        !body.contains(" = phpc_native_reference_value_clone(")
+            && !source.contains("assembly comparison lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_reference_type_introspection_without_value_clone_detour() {
     let program = parse("<?php\n$value = 7;\n$alias =& $value;\necho gettype($alias);\necho is_int($alias);\n$value = \"text\";\necho get_debug_type($alias);\necho is_string($alias);\necho is_scalar($alias);\n").unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();

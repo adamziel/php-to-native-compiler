@@ -422,6 +422,36 @@ fn generated_ir_routes_text_membership_reference_slots_without_value_clone_detou
 }
 
 #[test]
+fn generated_ir_routes_reference_held_native_value_comparisons_through_slot_boundary() {
+    let ir = emit_ir_source(
+        "<?php\n$left = \"A\\0B\\xFF\";\n$leftRef =& $left;\n$right = \"A\\0B\\xFF\";\n$rightRef =& $right;\necho $leftRef == $rightRef;\necho $leftRef < \"A\\0C\";\necho $leftRef === $rightRef;\n",
+    )
+    .unwrap();
+
+    assert!(
+        ir.contains(
+            "declare i1 @phpc_native_value_comparison_with_reference_slots_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeReferenceHandle, %phpc.NativeValueHandle, %phpc.NativeReferenceHandle, i8, ptr)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.matches("call i1 @phpc_native_value_comparison_with_reference_slots_with_diagnostic")
+            .count()
+            >= 3,
+        "{ir}"
+    );
+    assert!(
+        ir.contains(", i8 0, ptr ") && ir.contains(", i8 2, ptr ") && ir.contains(", i8 6, ptr "),
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("call %phpc.NativeValueHandle @phpc_native_reference_value_clone")
+            && !ir.contains("LLVM comparison lowering rejects"),
+        "{ir}"
+    );
+}
+
+#[test]
 fn generated_ir_routes_reference_int_operands_without_value_clone_detour() {
     let ir = emit_ir_source(
         "<?php\n$length = 2;\n$lengthRef =& $length;\n$offset = 1;\n$offsetRef =& $offset;\necho strncmp(\"abcdef\", \"abcxyz\", $lengthRef);\necho strncasecmp(\"ABCDEF\", \"abcxyz\", $lengthRef);\necho substr_count(\"abcabc\", \"a\", $offsetRef, $lengthRef);\necho strpos(\"abcabc\", \"c\", $offsetRef);\n",
