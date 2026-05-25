@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-25 15:29 CEST
-Evaluation marker: `20260525T132910Z`
+Updated: 2026-05-25 15:55 CEST
+Evaluation marker: `20260525T135531Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, candidate worktrees, lane-local
@@ -9,23 +9,19 @@ claims, probe-only commits, and dashboard-only commits are excluded.
 
 ## Executive Read
 
-Overall estimated progress: **89%** `[##################--]`
+Overall estimated progress: **90%** `[##################--]`
 
-Executable PHP semantics: **89%** `[##################--]`
+Executable PHP semantics: **90%** `[##################--]`
 
 Primary is clean and aligned with `origin/master` at
-`85fb799a docs: update progress dashboard`. That head is docs-only; the latest
-counted semantic/prerequisite baseline remains
-`146c2d64 native: route reference comparison slots`.
+`24ec4a10 native: route reference truthiness slots`. The latest counted
+semantic/prerequisite baseline is now `24ec4a10`.
 
-This review intentionally changes the evaluation marker without moving the
-headline percentages. The current window produced triage and prep activity,
-not new integrated compiler/runtime semantics.
-
-The best immediate candidate is a truthiness value/reference-slot extraction,
-but it is still lane-local prep. No primary integration is active or
-authorized until an exact-scope ready artifact, current-primary apply/hash
-proof, focused nonzero gates, and independent review exist.
+This review counts one new primary-integrated semantic packet since the prior
+dashboard: shared value/reference-slot truthiness routing for covered runtime,
+LLVM, and generated-C native value consumers. The intervening
+`0304a083 docs: update progress dashboard` commit is docs-only and is not
+counted as capability.
 
 Full generalized PHP remains blocked on references/COW identity, arbitrary
 lvalues, request/global parity, includes, variable variables, broad userland
@@ -35,8 +31,10 @@ shutdown ordering, exact diagnostics/error handlers, and backend parity.
 ## Primary-Integrated Baseline
 
 - Current primary head before this dashboard edit:
-  `85fb799a docs: update progress dashboard`.
+  `24ec4a10 native: route reference truthiness slots`.
 - Latest integrated executable/prerequisite semantic baseline:
+  `24ec4a10 native: route reference truthiness slots`.
+- Prior integrated prerequisite:
   `146c2d64 native: route reference comparison slots`.
 - Prior integrated prerequisite:
   `9f373b25 native: route reference text membership slots`.
@@ -55,20 +53,21 @@ shutdown ordering, exact diagnostics/error handlers, and backend parity.
 
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, array, string, diagnostic, reference, symbol, call-frame, object, comparison, conversion, owner-cell, request-state, offset-read, array-key, type/int, text-membership, and comparison slot surfaces. |
-| Compiler/backend consumers | **99%** | `[####################]` | Generated C and LLVM consume many shared ABIs. Recent comparison routing covers selected runtime/LLVM/generated-C paths; broad backend parity remains incomplete. |
-| Executable PHP semantics | **89%** | `[##################--]` | Primary has closure/callable/object islands, bounded preg callbacks, object-property reference-slot mutation, offset-read continuation proof, reference-backed array-key conversion, type/int consumers, text-membership consumers, and comparison consumers. |
-| Arrays, lvalues, references, COW | **75%** | `[###############-----]` | Value/reference slot ABI reuse is expanding. Full COW, arbitrary roots, foreach, property references, broad expression reference slots, and alias composition remain open. |
+| Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, array, string, diagnostic, reference, symbol, call-frame, object, comparison, conversion, owner-cell, request-state, offset-read, array-key, type/int, text-membership, comparison, and truthiness slot surfaces. |
+| Compiler/backend consumers | **99%** | `[####################]` | Generated C and LLVM consume many shared ABIs. Recent truthiness routing covers selected runtime/LLVM/generated-C paths; broad backend parity remains incomplete. |
+| Executable PHP semantics | **90%** | `[##################--]` | Primary has closure/callable/object islands, bounded preg callbacks, object-property reference-slot mutation, offset-read continuation proof, reference-backed array-key conversion, type/int consumers, text-membership consumers, comparison consumers, and truthiness consumers. |
+| Arrays, lvalues, references, COW | **76%** | `[###############-----]` | Value/reference slot ABI reuse is expanding. Full COW, arbitrary roots, foreach, property references, broad expression reference slots, and alias composition remain open. |
 | Symbols, globals, request state | **72%** | `[##############------]` | Selected function globals, root-symbol surfaces, and active symbol-table reference consumers exist. `$GLOBALS` self-cells, request/global alias parity, includes, variable variables, and exact unset/global behavior remain incomplete. |
 | Calls, functions, frames | **83%** | `[#################---]` | `function_exists()` uses the repaired shared text-membership path in selected generated-native routes, including native-C user functions. Named/unpacked/by-reference/userland frame breadth remains incomplete. |
 | Objects, properties, methods | **50%** | `[##########----------]` | Object-property reference-slot mutation and diagnostic classifiers are integrated. Full visibility, magic, dynamic/static/typed properties, destructors, references/COW, and `ArrayAccess` execution remain open. |
-| Control flow, cleanup, diagnostics | **50%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, and diagnostics exist. Broad unwind/finally/destructor/shutdown and exact source ordering remain open. |
-| Broad integrated verification | **87%** | `[#################---]` | Focused gates are strong for recent packets. Broad gates remain constrained by lane extraction cost, high swap, stale lane expectations, and backend parity gaps. |
+| Control flow, cleanup, diagnostics | **51%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, and truthiness consumers exist. Broad unwind/finally/destructor/shutdown and exact source ordering remain open. |
+| Broad integrated verification | **88%** | `[##################--]` | Focused gates are strong for recent packets. Broad gates remain constrained by lane extraction cost, high swap, stale lane expectations, and backend parity gaps. |
 
 ## Active Roadmap Items
 
 | Item | Toward Primary Integration | Toward Full Feature | Status |
 | --- | ---: | ---: | --- |
+| Truthiness value/reference-slot consumers | **100%** `[####################]` | **45%** `[#########-----------]` | Integrated at `24ec4a10`. Runtime, LLVM, and generated C route covered unary/logical truthiness, scalar/static `empty()`, reference-held operands, and native-value variable `isset`/`empty` proof paths through a shared value/reference-slot diagnostic ABI. Symbol-table/request-backed `empty()` remains outside this packet. |
 | Reference-slot comparison consumers | **100%** `[####################]` | **45%** `[#########-----------]` | Integrated at `146c2d64`. Runtime, LLVM, and generated C route covered native value/reference comparison operands through shared diagnostic comparison slot ABIs. Full object/resource/stringable/COW/diagnostic comparison parity remains open. |
 | Text-membership/reference text-byte conversion | **100%** `[####################]` | **44%** `[#########-----------]` | Integrated at `9f373b25`. Shared runtime value/reference text slot feeds `function_exists()` and `extension_loaded()` consumers; repaired native-C source includes user functions. Dynamic runtime environment discovery and LLVM user-function parity remain open. |
 | Reference-slot type/int consumer ABI | **100%** `[####################]` | **45%** `[#########-----------]` | Integrated at `8f6266ce`. Runtime, LLVM, and generated C route reference-held type names, type predicates, and supported int operands through shared value/reference slots. |
@@ -76,18 +75,18 @@ shutdown ordering, exact diagnostics/error handlers, and backend parity.
 | Scalar/resource offset-read source-result prerequisite | **100%** `[####################]` | **44%** `[#########-----------]` | Integrated at `cc7efc2d`. Direct object `ArrayAccess`, object/resource materialization, and LLVM error-status cleanup remain open. |
 | Object-property reference-slot mutation | **100%** `[####################]` | **39%** `[########------------]` | Integrated at `bfbc62c4`. Covered assignment/unset operands use shared value/reference slot handling. Full object/property/reference semantics remain open. |
 | Bounded `preg_replace_callback()` string callbacks | **100%** `[####################]` | **32%** `[######--------------]` | Integrated at `6aca392d`. Full PCRE, broader captures/modifiers, non-string callables, `limit`/`count`/`flags`, and legacy recognizer cleanup remain open. |
-| Truthiness value/reference-slot consumers | **55%** `[###########---------]` | **42%** `[########------------]` | Top-ranked post-comparison prep candidate. Dashboard says prep is active, but no ready extract status exists yet and the broad binary-string lane was stopped after stale probing. |
 | Request-backed array-key/RMW blocker parity | **32%** `[######--------------]` | **34%** `[#######-------------]` | Diagnostics lane suggests a narrow blocker-parity packet that composes with the array-key ABI. It is not executable request storage/writeback. |
 | String operation-family slot consumers | **45%** `[#########-----------]` | **39%** `[########------------]` | Lane evidence shows value/reference-slot emission for string-result/array/int/position/parser/distance families. Needs one tight family split, not builtin accumulation. |
-| Static division/modulo source-result parity | **45%** `[#########-----------]` | **36%** `[#######-------------]` | Lane-local in `impl-native-type-conversion`: static `/` and `%` use shared source arithmetic result consumers. Useful, but broad lane also contains callback/filesystem surfaces. |
+| Static division/modulo source-result parity | **45%** `[#########-----------]` | **36%** `[#######-------------]` | Lane-local in `impl-native-type-conversion`: static `/` and `%` use shared source arithmetic result consumers. Useful, but broad lane also contains callback/filesystem/throw surfaces. |
+| Throw/source blocker and exception boundary | **38%** `[########------------]` | **28%** `[######--------------]` | Lane-local in `impl-native-type-conversion`: generated native `throw` operands materialize through one source blocker before a noncontinuable Throwable boundary. Real exception objects, unwind, catch/finally, and handlers remain open. |
 | Broader lvalue/reference-slot materializer | **25%** `[#####---------------]` | **38%** `[########------------]` | Needed so non-variable expression families that can carry references can enter shared array-key and consumer slot ABIs safely. |
 | Object/resource source materialization for shared conversion sources | **25%** `[#####---------------]` | **30%** `[######--------------]` | Explicit blocker left by the offset-read ABI. Needs a general value reconstruction boundary before generic object/resource consumers are safe. |
 | LLVM offset-read/error-status cleanup | **25%** `[#####---------------]` | **30%** `[######--------------]` | Offset-read diagnostics exist, but LLVM still needs a generalized control-flow/error-exit status boundary for failed conversion results. |
 | Static-property comparison operand ABI | **35%** `[#######-------------]` | **37%** `[#######-------------]` | Prior extraction says `needs-split`: source lane is too broad and entangled. Split metadata/operand prerequisites first. |
 | Callable-object/dynamic-constructor candidates | **52%** `[##########----------]` | **42%** `[########------------]` | May 24 candidates still look useful but are stale relative to current primary and the May 25 slot integrations; refresh before review and do not combine them. |
-| Linked symbol-table value carriers | **35%** `[#######-------------]` | **35%** `[#######-------------]` | `impl-link-symbol-vars` has useful lane-local symbol-table helper/value-read evidence and broad `native_link` proof, but it is stopped and not a primary packet. |
+| Linked symbol-table value carriers | **35%** `[#######-------------]` | **35%** `[#######-------------]` | `impl-link-symbol-vars` has useful lane-local symbol-table helper/value-read evidence, but it is checkpointed after missed cadence and a huge dirty diff. |
 | Diagnostics, request, and cleanup boundaries | **60%** `[############--------]` | **40%** `[########------------]` | Lane-local request handle, writeback, branch cleanup, try/catch/finally preflight, stateful-call cleanup, and result-boundary work is useful infrastructure. Exact Zend ordering and real handler/exceptions execution remain open. |
-| Broad lane extraction backlog | **33%** `[#######-------------]` | **35%** `[#######-------------]` | Broad dirty lanes continue producing useful surfaces, but several were checkpointed or parked for stale cadence and broad conflict-heavy probing. Treat lanes as packet sources, not integration units. |
+| Broad lane extraction backlog | **34%** `[#######-------------]` | **35%** `[#######-------------]` | Broad dirty lanes continue producing useful surfaces, but several were checkpointed or parked for stale cadence and broad conflict-heavy probing. Treat lanes as packet sources, not integration units. |
 
 ## Done / In Progress / Not Done
 
@@ -103,6 +102,7 @@ Primary-integrated executable or executable-prerequisite capability:
 - [x] Shared reference-slot type-name/type-predicate/int consumer ABI for runtime, LLVM, and generated C.
 - [x] Shared reference-slot text-byte/text-membership ABI for runtime, LLVM, and generated C selected paths, including repaired native-C user-function membership for `function_exists()`.
 - [x] Shared reference-slot comparison ABI for covered runtime, LLVM, and generated-C native value comparison consumers.
+- [x] Shared reference-slot truthiness ABI for covered runtime, LLVM, and generated-C native value truthiness consumers.
 
 Primary-integrated non-executable infrastructure:
 
@@ -111,9 +111,9 @@ Primary-integrated non-executable infrastructure:
 
 In progress but lane-local or not yet executable primary support:
 
-- [ ] Truthiness value/reference-slot consumer routing is in active prep, not review or integration.
-- [ ] String operation-family value/reference-slot consumers must be split from unrelated builtin breadth and proven separately.
+- [ ] Post-truthiness next-candidate triage needs refresh from current primary `24ec4a10`.
 - [ ] Request-backed array-key/RMW consumer blocker parity is lane-local and should stay separate from request storage execution.
+- [ ] String operation-family value/reference-slot consumers must be split from unrelated builtin breadth and proven separately.
 - [ ] Direct object `ArrayAccess` method dispatch remains blocked behind diagnostic-only classifier support.
 - [ ] Broader expression-family lvalue/reference-slot materialization is needed beyond variable-backed operands.
 - [ ] Alias-aware LLVM direct-root write-through after `=&` remains blocked for both statement assignment and assignment expressions.
@@ -139,14 +139,16 @@ Not done:
 
 ## Recent Primary-Integrated Work
 
-- `85fb799a`: progress-dashboard commit only. No executable compiler/runtime
+- `24ec4a10`: reference truthiness slots. Integrated files:
+  `runtime/src/lib.rs`, `compiler/src/codegen.rs`,
+  `compiler/tests/native_runtime_abi.rs`, and `compiler/tests/native_link.rs`.
+  Focused runtime/IR/generated-C/link gates, exact one-test matches, `cargo
+  check`, rustfmt, `git diff --check`, apply/hash proof, and push proof passed.
+- `0304a083`: progress-dashboard commit only. No executable compiler/runtime
   semantic code changed.
 - `146c2d64`: reference comparison slots. Integrated files:
   `runtime/src/lib.rs`, `compiler/src/codegen.rs`,
   `compiler/tests/native_runtime_abi.rs`, and `compiler/tests/native_link.rs`.
-  Focused runtime, generated IR, generated-C source, linked executable,
-  adjacent comparison, `cargo check`, rustfmt, diff hygiene, apply/hash, and
-  exact-scope gates passed.
 - `ac8e8535`, `1068564c`, and `fa1694d8`: progress-dashboard commits only.
   No executable compiler/runtime semantic code changed.
 - `9f373b25`: reference text-membership slots. Integrated files:
@@ -163,30 +165,33 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary is clean and synced at `85fb799a`.
-- [x] Latest counted semantic/prerequisite commit remains `146c2d64`.
-- [x] Reference-held comparison consumers are integrated through the shared
+- [x] Primary is clean and synced at `24ec4a10`.
+- [x] Latest counted semantic/prerequisite commit is `24ec4a10`.
+- [x] Reference-held truthiness consumers are integrated through the shared
   value/reference-slot ABI for runtime, LLVM, and generated C selected paths.
-- [x] Repaired reference-held text-membership consumers, type/int consumers,
-  array-key value/reference slots, and offset-read source-result support
-  remain integrated for reviewed selected paths.
-- [x] No new primary implementation diffs were present during this review.
+- [x] Repaired reference-held comparison, text-membership, type/int, array-key
+  value/reference slots, and offset-read source-result support remain
+  integrated for reviewed selected paths.
+- [x] No uncommitted primary implementation diffs were present before this
+  `PROGRESS.md` edit.
 
 Lane-local:
 
-- [ ] Truthiness reference-slot consumer routing is the freshest plausible
-  boundary, and the dashboard says a prep worker is active. It still needs a
-  ready extract artifact, hash/apply proof, focused nonzero gates, and review.
-- [ ] `impl-binary-string-runtime` was stopped after broad stale probing; its
-  truthiness evidence is useful, but the broad lane is not a candidate.
+- [ ] The dashboard was stale during this review and still showed truthiness
+  integration as active at `0304a083`; live primary/integrator evidence shows
+  it is integrated and pushed at `24ec4a10`.
+- [ ] Post-truthiness triage should be rerun from current primary and should
+  reject repeating truthiness/comparison/text-membership/type-int/array-key
+  slot packets.
 - [ ] Request-backed array-key/RMW blocker parity remains a narrow fallback
   packet if it avoids claiming executable request/global storage.
 - [ ] String operation-family slot routing is plausible only as a tight family
   split; broad string/stream/PCRE/callback import should stay out of primary.
 - [ ] `impl-native-type-conversion` and `impl-array-value-runtime` continue
   useful lane-local work, but both contain broad collateral.
-- [ ] `impl-global-symbols` and `impl-native-integration-batch` are parked or
-  checkpointed after broad dirty-lane inspection and conflict-heavy probes.
+- [ ] `impl-binary-string-runtime`, `impl-native-diagnostics`,
+  `impl-link-symbol-vars`, and `impl-global-symbols` are parked/checkpointed
+  evidence after stale cadence or broad dirty-lane work.
 - [ ] Stale callable-object and dynamic-constructor candidates need
   current-primary refresh before review.
 
@@ -194,22 +199,19 @@ Resource posture:
 
 - `/dev/shm`: live df `40G` total, `24G` used, `17G` available; live `du`
   reports `24G`.
-- `/home`: live df `459G` total, `212G` used, `229G` available. Live bounded
-  `du -sh /home` timed out after permission-denied overlay warnings; the
-  bounded evidence snapshot reported about `128G` with the same warning class.
-- Live memory has about `39Gi` available.
+- `/home`: live df `459G` total, `212G` used, `229G` available; live `du -sh
+  /home` reports about `129G` after permission-denied overlay warnings.
+- Live memory has about `38Gi` available.
 - Live swap remains high at `23Gi/29Gi`; use disk-backed target dirs,
   `umask 0007`, `CARGO_BUILD_JOBS=1`, and focused nonzero gates.
 
 ## Next Steering Read
 
-The top-level queue should wait for the truthiness prep result. Only a
-`ready-for-primary-review` artifact with exact file scope, current-primary
-apply/hash proof against `85fb799a`, focused nonzero gates, rustfmt,
-`git diff --check`, and independent review should open a primary handoff.
+The top-level queue should refresh triage from `24ec4a10`. The truthiness
+packet is now integrated, so the next candidate should not repeat it or import
+the broad binary-string lane around it.
 
-If truthiness keeps failing or drags in broad binary-string collateral, fall
-back to one of the already-ranked compact packets:
+Best next compact packets to consider:
 
 - request-backed array-key/RMW blocker parity, if it stays narrow and does not
   claim executable request/global storage;
