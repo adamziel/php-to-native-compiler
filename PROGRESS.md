@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 01:38 CEST
+Updated: 2026-05-26 01:56 CEST
 Evaluation marker: `20260525T233616Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
@@ -15,10 +15,20 @@ Overall estimated progress: **95%** `[###################-]`
 Executable PHP semantics: **95%** `[###################-]`
 
 Primary was clean and aligned with `origin/master` at
-`87b1ba2f docs: update progress dashboard` before this `PROGRESS.md` edit.
+`501a4fb8 native: centralize reference handle C typedef gating` before this
+`PROGRESS.md` edit.
 
 Latest primary-integrated source capability baseline:
-`5abf8525 native: add runtime callable value dispatch`.
+`501a4fb8 native: centralize reference handle C typedef gating`.
+
+`501a4fb8` centralizes generated-C `phpc_NativeReferenceHandle` typedef
+emission behind `uses_native_reference_handle_type()`, covering native-link
+helpers that can emit reference-handle declarations instead of extending
+inline typedef predicates at the declaration site. This is a native-link ABI
+declaration-order repair across existing reference-handle helper families, not
+new request/global frame execution, not dynamic callable compiler consumption,
+and not a percentage-moving semantic expansion. Overall, executable, and
+workstream estimates remain flat.
 
 `5abf8525` adds runtime callable-value dispatch over the existing callable
 table, call-arguments, call-frame, and call-result ABI. The runtime now looks
@@ -63,6 +73,13 @@ dynamic-call consumers should wait for or include a narrow runtime repair.
 
 ## Recent Primary-Integrated Work
 
+- `501a4fb8`: centralized generated-C `phpc_NativeReferenceHandle` typedef
+  gating behind `uses_native_reference_handle_type()`. Future native-link
+  helpers that can emit `phpc_NativeReferenceHandle` declarations must consume
+  that shared predicate rather than extending inline typedef predicates. This
+  repairs declaration-before-use ordering for current reference-handle helper
+  families without adding request/global frame execution, dynamic callable
+  compiler consumption, or exact-shape production lowering.
 - `5abf8525`: added runtime callable-value dispatch over the callable table
   and call-arguments/frame/result ABI. Integrated exactly `runtime/src/lib.rs`;
   focused runtime unit tests cover string and binary-string function names,
@@ -256,11 +273,16 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary is clean and synced at `87b1ba2f` before this `PROGRESS.md` edit;
-  latest source capability remains `5abf8525`.
-- [x] Latest primary-integrated source capability head is `5abf8525`.
+- [x] Primary is clean and synced at `501a4fb8` before this `PROGRESS.md` edit;
+  latest source capability is `501a4fb8`.
+- [x] Latest primary-integrated source capability head is `501a4fb8`.
 - [x] Overall and executable estimates remain 95% under current project-local
   accounting.
+- [x] Native-link reference-handle typedef emission is now a completed
+  non-repeat declaration-order repair: future helpers that can emit
+  `phpc_NativeReferenceHandle` declarations must use
+  `uses_native_reference_handle_type()` rather than adding inline typedef
+  predicates.
 - [x] Calls/functions/frames advances to 91% because runtime callable-value
   dispatch now covers multiple callable value families over the shared callable
   table and call-arguments/frame/result ABI with executable unit coverage; this
@@ -334,3 +356,6 @@ Avoid:
   work under new names.
 - Extending generated-C dynamic-call shape helpers instead of consuming the
   integrated runtime callable ABI.
+- Extending inline generated-C `phpc_NativeReferenceHandle` typedef predicates;
+  native-link helpers that can emit reference-handle declarations must use
+  `uses_native_reference_handle_type()`.
