@@ -8354,6 +8354,37 @@ pub unsafe extern "C" fn phpc_native_reference_to_string_bytes(
     ))
 }
 
+unsafe fn native_value_reference_slot_owned_value(
+    value: NativeValueHandle,
+    reference: NativeReferenceHandle,
+    operation: &'static str,
+    slot: &'static str,
+) -> RuntimeResult<(NativeValueHandle, bool)> {
+    if reference.is_null() {
+        if value.is_null() {
+            return Err(RuntimeError::invalid_string_conversion(format!(
+                "{operation} failed: {slot} value handle is null"
+            )));
+        }
+        return Ok((value, false));
+    }
+
+    if !value.is_null() {
+        return Err(RuntimeError::invalid_string_conversion(format!(
+            "{operation} failed: {slot} slot received both value and reference handles"
+        )));
+    }
+
+    let owned_value = unsafe { phpc_native_reference_value_clone(reference) };
+    if owned_value.is_null() {
+        return Err(RuntimeError::invalid_string_conversion(format!(
+            "{operation} failed: {slot} reference handle is null"
+        )));
+    }
+
+    Ok((owned_value, true))
+}
+
 /// # Safety
 ///
 /// `handle` must be null or a value handle previously returned by the runtime
@@ -8380,6 +8411,236 @@ pub unsafe extern "C" fn phpc_native_value_to_int64_with_diagnostic(
     }
 }
 
+/// # Safety
+///
+/// `value` and `reference` are one logical operand slot. `value` must be null
+/// or a value handle previously returned by the runtime ABI and not yet freed;
+/// `reference` must be null or a reference handle previously returned by the
+/// runtime ABI and not yet freed. Pass either a value or a reference. The
+/// selected slot is converted through PHP internal integer-argument semantics.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_to_int_with_reference_slot_with_diagnostic(
+    value: NativeValueHandle,
+    reference: NativeReferenceHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> i64 {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let (value, owned) = match unsafe {
+        native_value_reference_slot_owned_value(
+            value,
+            reference,
+            "native integer argument conversion",
+            "value",
+        )
+    } {
+        Ok(slot) => slot,
+        Err(error) => {
+            if !diagnostic.is_null() {
+                unsafe { *diagnostic = NativeDiagnosticHandle::from_message(error.message()) };
+            }
+            return 0;
+        }
+    };
+
+    let result = match unsafe { value.as_ref() }.map(php_value_to_int_argument) {
+        Some(Ok(value)) => value,
+        Some(Err(error)) => {
+            if !diagnostic.is_null() {
+                unsafe { *diagnostic = NativeDiagnosticHandle::from_message(error.message()) };
+            }
+            0
+        }
+        None => {
+            if !diagnostic.is_null() {
+                unsafe {
+                    *diagnostic = NativeDiagnosticHandle::from_message(
+                        RuntimeError::invalid_string_conversion(
+                            "native integer argument conversion failed: value handle is null",
+                        )
+                        .message(),
+                    )
+                };
+            }
+            0
+        }
+    };
+
+    if owned {
+        unsafe { phpc_native_value_free(value) };
+    }
+
+    result
+}
+
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. The returned value handle owns the PHP string result
+/// for `gettype()` when `debug == 0`, or `get_debug_type()` otherwise. On
+/// failure the helper stores a diagnostic handle that the caller owns and must
+/// release with `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_type_name_with_diagnostic(
+    handle: NativeValueHandle,
+    debug: bool,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let Some(value) = (unsafe { handle.as_ref() }) else {
+        if !diagnostic.is_null() {
+            unsafe {
+                *diagnostic = NativeDiagnosticHandle::from_message(
+                    RuntimeError::invalid_string_conversion(
+                        "native value type name failed: value handle is null",
+                    )
+                    .message(),
+                );
+            }
+        }
+        return NativeValueHandle::null();
+    };
+
+    let kind = if debug {
+        NATIVE_VALUE_TYPE_NAME_DEBUG
+    } else {
+        NATIVE_VALUE_TYPE_NAME_GETTYPE
+    };
+    match native_value_type_name(value, kind) {
+        Ok(name) => NativeValueHandle::from_value(Value::String(name)),
+        Err(message) => {
+            if !diagnostic.is_null() {
+                unsafe { *diagnostic = NativeDiagnosticHandle::from_message(message) };
+            }
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `value` and `reference` are one logical operand slot. `value` must be null
+/// or a value handle previously returned by the runtime ABI and not yet freed;
+/// `reference` must be null or a reference handle previously returned by the
+/// runtime ABI and not yet freed. Pass either a value or a reference. The
+/// returned value handle owns the PHP string result for `gettype()` when
+/// `debug == 0`, or `get_debug_type()` otherwise.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_type_name_with_reference_slot_with_diagnostic(
+    value: NativeValueHandle,
+    reference: NativeReferenceHandle,
+    debug: bool,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let (value, owned) = match unsafe {
+        native_value_reference_slot_owned_value(value, reference, "native value type name", "value")
+    } {
+        Ok(slot) => slot,
+        Err(error) => {
+            if !diagnostic.is_null() {
+                unsafe { *diagnostic = NativeDiagnosticHandle::from_message(error.message()) };
+            }
+            return NativeValueHandle::null();
+        }
+    };
+
+    let result = unsafe { phpc_native_value_type_name_with_diagnostic(value, debug, diagnostic) };
+    if owned {
+        unsafe { phpc_native_value_free(value) };
+    }
+    result
+}
+
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. `predicate` is a native value type-predicate tag. On
+/// failure the helper stores a diagnostic handle that the caller owns and must
+/// release with `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_type_predicate_with_diagnostic(
+    handle: NativeValueHandle,
+    predicate: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let Some(value) = (unsafe { handle.as_ref() }) else {
+        if !diagnostic.is_null() {
+            unsafe {
+                *diagnostic = NativeDiagnosticHandle::from_message(
+                    RuntimeError::invalid_string_conversion(
+                        "native value type predicate failed: value handle is null",
+                    )
+                    .message(),
+                );
+            }
+        }
+        return false;
+    };
+
+    match native_value_type_predicate(value, predicate) {
+        Some(result) => result,
+        None => {
+            if !diagnostic.is_null() {
+                unsafe {
+                    *diagnostic = NativeDiagnosticHandle::from_message(
+                        RuntimeError::invalid_string_conversion(format!(
+                            "native value type predicate tag {predicate} is not supported"
+                        ))
+                        .message(),
+                    );
+                }
+            }
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// `value` and `reference` are one logical operand slot. `value` must be null
+/// or a value handle previously returned by the runtime ABI and not yet freed;
+/// `reference` must be null or a reference handle previously returned by the
+/// runtime ABI and not yet freed. Pass either a value or a reference.
+/// `predicate` is a native value type-predicate tag.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_type_predicate_with_reference_slot_with_diagnostic(
+    value: NativeValueHandle,
+    reference: NativeReferenceHandle,
+    predicate: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let (value, owned) = match unsafe {
+        native_value_reference_slot_owned_value(
+            value,
+            reference,
+            "native value type predicate",
+            "value",
+        )
+    } {
+        Ok(slot) => slot,
+        Err(error) => {
+            if !diagnostic.is_null() {
+                unsafe { *diagnostic = NativeDiagnosticHandle::from_message(error.message()) };
+            }
+            return false;
+        }
+    };
+
+    let result =
+        unsafe { phpc_native_value_type_predicate_with_diagnostic(value, predicate, diagnostic) };
+    if owned {
+        unsafe { phpc_native_value_free(value) };
+    }
+    result
+}
+
 unsafe fn native_value_to_int64(handle: NativeValueHandle, operation: u8) -> RuntimeResult<i64> {
     let operation = native_int_conversion_operation_from_abi(operation)?;
     let value = unsafe { handle.as_ref() }.ok_or_else(|| {
@@ -8389,6 +8650,36 @@ unsafe fn native_value_to_int64(handle: NativeValueHandle, operation: u8) -> Run
         ))
     })?;
     value_to_native_int64(value, operation)
+}
+
+fn php_value_to_int_argument(value: &Value) -> RuntimeResult<i64> {
+    match value {
+        Value::Null => Ok(0),
+        Value::Bool(value) => Ok(i64::from(*value)),
+        Value::Int(value) => Ok(*value),
+        Value::Float(value) => finite_float_to_int_argument(*value),
+        Value::String(value) => match parse_numeric_string(value) {
+            Some(Number::Int(value)) => Ok(value),
+            Some(Number::Float(value)) => finite_float_to_int_argument(value),
+            None => Err(RuntimeError::invalid_string_conversion(
+                "native integer argument conversion failed: expected numeric string",
+            )),
+        },
+        other => Err(RuntimeError::invalid_string_conversion(format!(
+            "native integer argument conversion failed: expected numeric scalar, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+fn finite_float_to_int_argument(value: f64) -> RuntimeResult<i64> {
+    if value.is_finite() && value >= i64::MIN as f64 && value < 9_223_372_036_854_775_808.0 {
+        Ok(value as i64)
+    } else {
+        Err(RuntimeError::invalid_string_conversion(
+            "native integer argument conversion failed: expected finite in-range numeric scalar",
+        ))
+    }
 }
 
 fn native_int_conversion_operation_from_abi(
@@ -24638,6 +24929,168 @@ mod tests {
         unsafe { phpc_native_value_free(float_value) };
         unsafe { phpc_native_value_free(int_value) };
         unsafe { phpc_native_value_free(bool_value) };
+    }
+
+    #[test]
+    fn native_reference_type_introspection_dereferences_type_name_and_predicate_slots() {
+        let string_value = NativeValueHandle::from_value(Value::String("payload".to_string()));
+        let reference = unsafe { phpc_native_reference_from_value_and_free(string_value) };
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let type_name = unsafe {
+            phpc_native_value_type_name_with_reference_slot_with_diagnostic(
+                NativeValueHandle::null(),
+                reference,
+                false,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_string_bytes_for_test(type_name), b"string");
+        unsafe { phpc_native_value_free(type_name) };
+
+        assert!(unsafe {
+            phpc_native_value_type_predicate_with_reference_slot_with_diagnostic(
+                NativeValueHandle::null(),
+                reference,
+                NATIVE_VALUE_TYPE_IS_STRING,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let mut array = PhpArray::new();
+        array.append(Value::Int(1)).unwrap();
+        let array_value = NativeValueHandle::from_value(Value::Array(array));
+        assert!(unsafe { phpc_native_reference_set_value(reference, array_value) });
+        unsafe { phpc_native_value_free(array_value) };
+
+        let debug_type = unsafe {
+            phpc_native_value_type_name_with_reference_slot_with_diagnostic(
+                NativeValueHandle::null(),
+                reference,
+                true,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_string_bytes_for_test(debug_type), b"array");
+        unsafe { phpc_native_value_free(debug_type) };
+
+        assert!(unsafe {
+            phpc_native_value_type_predicate_with_reference_slot_with_diagnostic(
+                NativeValueHandle::null(),
+                reference,
+                NATIVE_VALUE_TYPE_IS_ARRAY,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert!(!unsafe {
+            phpc_native_value_type_predicate_with_reference_slot_with_diagnostic(
+                NativeValueHandle::null(),
+                reference,
+                NATIVE_VALUE_TYPE_IS_SCALAR,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let direct_value = NativeValueHandle::from_value(Value::Int(7));
+        let conflicting = unsafe {
+            phpc_native_value_type_predicate_with_reference_slot_with_diagnostic(
+                direct_value,
+                reference,
+                NATIVE_VALUE_TYPE_IS_INT,
+                &mut diagnostic,
+            )
+        };
+        assert!(!conflicting);
+        assert!(
+            native_diagnostic_message_for_test(diagnostic).contains("both value and reference"),
+            "ambiguous slots must be diagnosed centrally"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(direct_value) };
+        unsafe { phpc_native_reference_free(reference) };
+    }
+
+    #[test]
+    fn native_reference_int_conversion_dereferences_argument_slot_boundary() {
+        let string_value = NativeValueHandle::from_value(Value::String("12".to_string()));
+        let reference = unsafe { phpc_native_reference_from_value_and_free(string_value) };
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let first = unsafe {
+            phpc_native_value_to_int_with_reference_slot_with_diagnostic(
+                NativeValueHandle::null(),
+                reference,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(first, 12);
+        assert!(diagnostic.is_null());
+
+        let updated = NativeValueHandle::from_value(Value::String("7".to_string()));
+        assert!(unsafe { phpc_native_reference_set_value(reference, updated) });
+        unsafe { phpc_native_value_free(updated) };
+        let second = unsafe {
+            phpc_native_value_to_int_with_reference_slot_with_diagnostic(
+                NativeValueHandle::null(),
+                reference,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(second, 7);
+        assert!(diagnostic.is_null());
+
+        let null_value = NativeValueHandle::from_value(Value::Null);
+        assert!(unsafe { phpc_native_reference_set_value(reference, null_value) });
+        unsafe { phpc_native_value_free(null_value) };
+        let null_int = unsafe {
+            phpc_native_value_to_int_with_reference_slot_with_diagnostic(
+                NativeValueHandle::null(),
+                reference,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(null_int, 0);
+        assert!(diagnostic.is_null());
+
+        let array_value = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
+        assert!(unsafe { phpc_native_reference_set_value(reference, array_value) });
+        unsafe { phpc_native_value_free(array_value) };
+        let rejected = unsafe {
+            phpc_native_value_to_int_with_reference_slot_with_diagnostic(
+                NativeValueHandle::null(),
+                reference,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(rejected, 0);
+        assert!(
+            native_diagnostic_message_for_test(diagnostic).contains("expected numeric scalar"),
+            "array integer conversion should fail through the shared slot boundary"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        diagnostic = NativeDiagnosticHandle::null();
+
+        let direct_value = NativeValueHandle::from_value(Value::Int(5));
+        let conflicting = unsafe {
+            phpc_native_value_to_int_with_reference_slot_with_diagnostic(
+                direct_value,
+                reference,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(conflicting, 0);
+        assert!(
+            native_diagnostic_message_for_test(diagnostic).contains("both value and reference"),
+            "ambiguous integer slots must be rejected centrally"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(direct_value) };
+        unsafe { phpc_native_reference_free(reference) };
     }
 
     #[test]

@@ -338,6 +338,134 @@ fn generated_ir_routes_string_result_builtins_through_value_result_contract() {
 }
 
 #[test]
+fn generated_ir_routes_reference_type_introspection_without_value_clone_detour() {
+    let ir = emit_ir_source(
+        "<?php\n$payload = \"A\\0B\";\n$alias =& $payload;\necho gettype($alias);\necho get_debug_type($alias);\necho is_string($alias);\necho is_scalar($alias);\necho is_int($alias);\n",
+    )
+    .unwrap();
+
+    assert!(
+        ir.contains(
+            "declare %phpc.NativeValueHandle @phpc_native_value_type_name_with_reference_slot_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeReferenceHandle, i1, ptr)"
+        ) && ir.contains(
+            "declare i1 @phpc_native_value_type_predicate_with_reference_slot_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeReferenceHandle, i8, ptr)"
+        ),
+        "{ir}"
+    );
+    assert_eq!(
+        ir.matches("call %phpc.NativeValueHandle @phpc_native_value_type_name_with_reference_slot_with_diagnostic")
+            .count(),
+        2,
+        "{ir}"
+    );
+    assert_eq!(
+        ir.matches("call i1 @phpc_native_value_type_predicate_with_reference_slot_with_diagnostic")
+            .count(),
+        3,
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call %phpc.NativeReferenceHandle @phpc_native_reference_from_value_and_free")
+            && ir.contains("call %phpc.NativeReferenceHandle @phpc_native_reference_clone")
+            && ir.contains("call void @phpc_native_diagnostic_free"),
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("call %phpc.NativeValueHandle @phpc_native_reference_value_clone")
+            && !ir.contains("call %phpc.NativeValueHandle @phpc_native_value_type_name_result")
+            && !ir.contains("call i1 @phpc_native_value_type_predicate(")
+            && !ir.contains("call i1 @phpc_native_reference_set_value"),
+        "{ir}"
+    );
+}
+
+#[test]
+fn generated_ir_routes_reference_int_operands_without_value_clone_detour() {
+    let ir = emit_ir_source(
+        "<?php\n$length = 2;\n$lengthRef =& $length;\n$offset = 1;\n$offsetRef =& $offset;\necho strncmp(\"abcdef\", \"abcxyz\", $lengthRef);\necho strncasecmp(\"ABCDEF\", \"abcxyz\", $lengthRef);\necho substr_count(\"abcabc\", \"a\", $offsetRef, $lengthRef);\necho strpos(\"abcabc\", \"c\", $offsetRef);\n",
+    )
+    .unwrap();
+
+    assert!(
+        ir.contains(
+            "declare i64 @phpc_native_value_to_int_with_reference_slot_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeReferenceHandle, ptr)"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.matches("call i64 @phpc_native_value_to_int_with_reference_slot_with_diagnostic")
+            .count()
+            >= 5,
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i64 @phpc_native_value_string_int_operation_with_diagnostic")
+            && ir.contains("call %phpc.NativeValueHandle @phpc_native_value_string_search_result_with_diagnostic"),
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("call %phpc.NativeValueHandle @phpc_native_reference_value_clone")
+            && !ir.contains("call i1 @phpc_native_reference_set_value")
+            && !ir.contains("LLVM string-int builtin lowering rejects"),
+        "{ir}"
+    );
+}
+
+#[test]
+fn generated_ir_routes_extended_reference_string_result_slots_without_value_clone_detour() {
+    let ir = emit_ir_source(
+        "<?php\n$offset = 1;\n$length = 2;\n$offsetRef =& $offset;\n$lengthRef =& $length;\necho strncmp(\"abcdef\", \"abcxyz\", $lengthRef);\necho substr_count(\"abcabc\", \"a\", $offsetRef, $lengthRef);\necho strncasecmp(\"ABCDEF\", \"abcdxy\", $lengthRef);\necho strpos(\"abcabc\", \"a\", $offsetRef);\n",
+    )
+    .unwrap();
+
+    assert!(
+        ir.contains("call i64 @phpc_native_value_to_int_with_reference_slot_with_diagnostic")
+            && ir.contains("call i64 @phpc_native_value_string_int_operation_with_diagnostic")
+            && ir.contains("call %phpc.NativeValueHandle @phpc_native_value_string_search_result_with_diagnostic"),
+        "{ir}"
+    );
+    assert!(
+        ir.matches("call i64 @phpc_native_value_to_int_with_reference_slot_with_diagnostic")
+            .count()
+            >= 5,
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("call %phpc.NativeValueHandle @phpc_native_reference_value_clone")
+            && !ir.contains("call i1 @phpc_native_reference_set_value")
+            && !ir.contains("LLVM string-result builtin lowering rejects")
+            && !ir.contains("LLVM string-int builtin lowering rejects"),
+        "{ir}"
+    );
+}
+
+#[test]
+fn generated_ir_rejects_post_alias_direct_root_assignment_without_partial_write_through() {
+    let cases = [
+        (
+            "statement assignment",
+            "<?php\n$value = 1;\n$alias =& $value;\n$value = \"text\";\necho gettype($alias);\n",
+        ),
+        (
+            "assignment expression",
+            "<?php\n$value = 1;\n$alias =& $value;\necho ($value = \"text\");\necho gettype($alias);\n",
+        ),
+    ];
+
+    for (label, source) in cases {
+        let error = emit_ir_source(source).unwrap_err();
+        assert_eq!(error.phase, Phase::Codegen, "{label}");
+        assert!(
+            error.message.contains(
+                "LLVM reference write-through lowering rejects direct root-variable assignment after reference binding"
+            ),
+            "{label}: {}",
+            error.message
+        );
+    }
+}
+
+#[test]
 fn generated_ir_string_int_route_reaches_assembly_backend() {
     if !has_llvm_assembly_backend() {
         return;

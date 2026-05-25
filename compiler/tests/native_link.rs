@@ -2562,6 +2562,113 @@ fn native_executable_c_source_routes_reference_keys_and_text_membership_through_
 }
 
 #[test]
+fn native_executable_c_source_routes_reference_type_introspection_without_value_clone_detour() {
+    let program = parse("<?php\n$value = 7;\n$alias =& $value;\necho gettype($alias);\necho is_int($alias);\n$value = \"text\";\necho get_debug_type($alias);\necho is_string($alias);\necho is_scalar($alias);\n").unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "extern phpc_NativeValueHandle phpc_native_value_type_name_with_reference_slot_with_diagnostic("
+        ) && source.contains("extern bool phpc_native_value_type_predicate_with_reference_slot_with_diagnostic("),
+        "{source}"
+    );
+    assert_eq!(
+        body.matches(" = phpc_native_value_type_name_with_reference_slot_with_diagnostic(")
+            .count(),
+        2,
+        "{source}"
+    );
+    assert_eq!(
+        body.matches(" = phpc_native_value_type_predicate_with_reference_slot_with_diagnostic(")
+            .count(),
+        3,
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_native_symbol_table_reference_for_path(")
+            && body.contains("phpc_native_symbol_table_bind_reference_path(")
+            && body.contains("phpc_native_symbol_table_set_value_by_path_with_diagnostic(")
+            && body.contains("phpc_native_reference_free("),
+        "{source}"
+    );
+    assert!(
+        !body.contains(" = phpc_native_reference_value_clone(")
+            && !body.contains(" = phpc_native_value_type_name_result(")
+            && !body.contains(" = phpc_native_value_type_predicate(")
+            && !source.contains("reference assignment lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_reference_int_operands_through_reference_boundary() {
+    let program = parse(
+        "<?php\n$length = 2;\n$lengthRef =& $length;\n$offset = 1;\n$offsetRef =& $offset;\necho strncmp(\"abcdef\", \"abcxyz\", $lengthRef);\necho strncasecmp(\"ABCDEF\", \"abcxyz\", $lengthRef);\n$length = 3;\necho substr_count(\"abcabc\", \"a\", $offsetRef, $lengthRef);\n$offset = 2;\necho strpos(\"abcabc\", \"c\", $offsetRef);\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "extern int64_t phpc_native_value_to_int_with_reference_slot_with_diagnostic("
+        ),
+        "{source}"
+    );
+    assert!(
+        body.matches(" = (long long)phpc_native_value_to_int_with_reference_slot_with_diagnostic(")
+            .count()
+            >= 5,
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_string_int_operation_with_diagnostic(")
+            && body.contains("phpc_native_value_string_search_result_with_diagnostic(")
+            && body.contains("phpc_native_symbol_table_bind_reference_path(")
+            && body.contains("phpc_native_symbol_table_set_value_by_path_with_diagnostic("),
+        "{source}"
+    );
+    assert!(
+        !body.contains(" = phpc_native_reference_value_clone(")
+            && !source.contains("assembly string-int builtin lowering rejects")
+            && !source.contains("reference assignment lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_extended_reference_string_result_slots_through_shared_boundary(
+) {
+    let program = parse(
+        "<?php\n$offset = 1;\n$length = 2;\n$offsetRef =& $offset;\n$lengthRef =& $length;\necho strncmp(\"abcdef\", \"abcxyz\", $lengthRef);\necho substr_count(\"abcabc\", \"a\", $offsetRef, $lengthRef);\n$length = 4;\necho strncasecmp(\"ABCDEF\", \"abcdxy\", $lengthRef);\n$offset = 3;\necho strpos(\"abcabc\", \"a\", $offsetRef);\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains(
+            " = (long long)phpc_native_value_to_int_with_reference_slot_with_diagnostic("
+        ) && body.contains("phpc_native_value_string_int_operation_with_diagnostic(")
+            && body.contains("phpc_native_value_string_search_result_with_diagnostic("),
+        "{source}"
+    );
+    assert!(
+        body.matches(" = (long long)phpc_native_value_to_int_with_reference_slot_with_diagnostic(")
+            .count()
+            >= 5,
+        "{source}"
+    );
+    assert!(
+        !body.contains(" = phpc_native_reference_value_clone(")
+            && !source.contains("assembly string-result builtin lowering rejects")
+            && !source.contains("assembly string-int builtin lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_native_reference_key_text_membership_program() {
     if !has_cc() {
         return;
