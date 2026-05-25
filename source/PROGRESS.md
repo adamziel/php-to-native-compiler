@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-25 05:35 CEST
-Evaluation marker: `20260525T033541Z`
+Updated: 2026-05-25 05:56 CEST
+Evaluation marker: `20260525T035619Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as product capability. Dirty primary WIP, probe-only commits,
@@ -10,7 +10,7 @@ blocker-only classifiers, and status-file claims are excluded until selected,
 gated, committed, pushed, and reflected here as semantic product progress.
 
 Current live pushed primary head observed by evaluator:
-`348f232b docs: update progress dashboard`
+`e5e16130 docs: update progress dashboard`
 
 Latest counted semantic/test baseline:
 `b217e2b4 codegen: block destructor-observable native allocation`
@@ -25,7 +25,7 @@ Overall estimated progress: **85%** `[#################---]`
 Executable PHP semantics: **85%** `[#################---]`
 
 Primary semantic capability did not move this review. Primary is synced with
-`origin/master` at `348f232b`, and every pushed commit after the symbol-table
+`origin/master` at `e5e16130`, and every pushed commit after the symbol-table
 ABI probe is a progress/dashboard commit. The latest counted semantic baseline
 remains the destructor-observable allocation blocker at `b217e2b4`.
 
@@ -36,14 +36,12 @@ Focused preg tests, milestone841 PHP comparison, `cargo check`, scoped
 rustfmt, scoped diff checks, regression audit, and shape audit support review.
 It is still uncommitted and unpushed, so it is not counted here.
 
-Lane-local progress remains real but uncounted. Fresh worker statuses sampled
-around this review report request/root symbol reconciliation, dynamic
-`$GLOBALS[$expr]` request-root routing, dynamic internal callback execution,
-runtime-selected by-reference call planning, switch/goto/label cleanup-state
-work, object/ArrayAccess diagnostic classification, object-property and
-reference-cell mutation boundaries, request-state unset/payload conversion,
-dynamic string-comparison conversion, parameter-binding diagnostic
-classification, SPL exception metadata, and more. These are candidate
+Lane-local progress remains real but uncounted. Fresh worker statuses report
+request/root metadata ABI work, linked local-symbol error-control flow,
+receiver-method lookup preflight cleanup, switch/loop/goto cleanup boundaries,
+state-stable short-ternary value selection, object/ArrayAccess diagnostic
+classification, object-property reference-slot mutation candidates, and broad
+type-conversion/string/reference/call-frame surfaces. These are candidate
 supplies, not product capability, until extracted, rechecked on current
 primary, gated, committed, and pushed.
 
@@ -82,14 +80,14 @@ backend parity.
 | Item | Toward Primary Integration | Toward Full Feature | Status |
 | --- | ---: | ---: | --- |
 | Dirty `preg_replace_callback()` repair | **95%** `[###################-]` | **32%** `[######--------------]` | Ready for primary review at hash `52973e3185c8874b67c38e245e6b0c6497c2117ac826fcb46d092f4ea655e8b5`. It executes string callbacks over a bounded slash-delimited regex subset. Still uncounted until committed and pushed. |
-| Lane-local object/ArrayAccess/method dispatch policy boundaries | **58%** `[############--------]` | **28%** `[######--------------]` | Fresh lane evidence reports operation-discriminated ArrayAccess diagnostics, method-dispatch policy, constructor-dispatch policy, and `$this` context blockers. It still does not execute `offsetGet`, `offsetExists`, `offsetSet`, `offsetUnset`, userland methods, or constructors. |
+| Lane-local object/ArrayAccess/method dispatch policy boundaries | **58%** `[############--------]` | **28%** `[######--------------]` | Fresh lane evidence reports object-offset diagnostic classification and broad ArrayAccess/property-operation work. Runtime method-frame `offsetGet`, `offsetExists`, `offsetSet`, and `offsetUnset` execution is not integrated. |
 | Object-offset `ArrayAccess` error-control classifier | **88%** `[##################--]` | **10%** `[##------------------]` | Focused one-file compiler classifier candidate. It improves unsupported object-offset diagnostic routing; it is not runtime `ArrayAccess`. Recheck hash/apply state after the preg decision. |
-| Object-property reference-slot mutation | **78%** `[################----]` | **35%** `[#######-------------]` | Strong executable object mutation candidate at hash `c60ed1c30dc1d979da1fc44641ae4378a3629e45c42da0d9621faf10519e56e8`. Latest triage still calls out formatting repair and fresh current-primary gates before integration. |
-| Symbol-table storage and request/global reconciliation | **30%** `[######--------------]` | **25%** `[#####---------------]` | ABI/runtime helper visibility exists through `2967110c`; lane-local request/root reconciliation is promising, but generalized PHP variable assignment/readback through symbol tables is still not implemented in counted primary. |
-| Direct calls, callbacks, and frame extraction | **52%** `[##########----------]` | **40%** `[########------------]` | Lane-local direct-call classification, runtime-selected by-reference planning, constructor lookup ordering, callable registry diagnostics, and internal callback execution are semantically useful. Real PHP function/method body execution and broad by-reference/return propagation remain unintegrated. |
-| Conditional/control-flow value consumers | **45%** `[#########-----------]` | **38%** `[########------------]` | Lane-local switch/goto/loop cleanup-state work and short-ternary/probe work have focused gates. Mutation-capable state, full cleanup/unwind, and general expression merges remain open. |
-| Type-conversion, regex, string, request, and formatted-output work | **52%** `[##########----------]` | **34%** `[#######-------------]` | Lane-local surfaces include JSON flags, resource lifecycle, INI state, object casts, class-property metadata, dynamic internal callbacks, regex parameter validation, request connection-state builtins, and byte/string/serialization work. Extract one focused executable candidate at a time. |
-| Broad lane extraction backlog | **30%** `[######--------------]` | **30%** `[######--------------]` | Many lanes report generalized progress, but several carry huge conflict-heavy worktrees. Treat them as mines for compact slices, not as patches to import. |
+| Object-property reference-slot mutation | **78%** `[################----]` | **35%** `[#######-------------]` | Strong executable object mutation candidate at hash `c60ed1c30dc1d979da1fc44641ae4378a3629e45c42da0d9621faf10519e56e8`. Triage still calls for formatting repair and fresh current-primary gates before integration. |
+| Symbol-table storage and request/global reconciliation | **30%** `[######--------------]` | **25%** `[#####---------------]` | ABI/runtime helper visibility exists through `2967110c`; lane-local request/root metadata is active, but generalized PHP variable assignment/readback through symbol tables is still not implemented in counted primary. |
+| Direct calls, callbacks, and frame extraction | **52%** `[##########----------]` | **40%** `[########------------]` | Lane-local direct-call classification, receiver-method lookup preflight, runtime-selected by-reference planning, constructor lookup ordering, callable registry diagnostics, and internal callback execution are semantically useful. Real broad PHP function/method body execution remains unintegrated. |
+| Conditional/control-flow value consumers | **46%** `[#########-----------]` | **38%** `[########------------]` | Lane-local switch/goto/loop cleanup-state work and state-stable short-ternary value selection have focused gates. Mutation-capable state, full cleanup/unwind, and general expression merges remain open. |
+| Type-conversion, regex, string, request, and formatted-output work | **52%** `[##########----------]` | **34%** `[#######-------------]` | Lane-local surfaces include JSON flags, resource lifecycle, INI state, object casts, class-property metadata, dynamic internal callbacks, regex parameter validation, request conversion, and byte/string/serialization work. Extract one focused executable candidate at a time. |
+| Broad lane extraction backlog | **28%** `[######--------------]` | **30%** `[######--------------]` | Many lanes report generalized progress, but several carry huge conflict-heavy worktrees. Treat them as mines for compact slices, not as patches to import. |
 
 ## Done / In Progress / Not Done
 
@@ -112,10 +110,10 @@ In progress but uncounted:
 
 - [ ] Pushed symbol-table ABI probe `2967110c`; useful visibility, not generalized PHP symbol storage.
 - [ ] Dirty bounded `preg_replace_callback()` callback-execution repair; ready for primary review and gated at hash `52973e3185c8874b67c38e245e6b0c6497c2117ac826fcb46d092f4ea655e8b5`.
-- [ ] Lane-local object/ArrayAccess/method-dispatch policy boundaries; promising but still blocker/policy infrastructure, not executable userland methods.
+- [ ] Lane-local object/ArrayAccess/method-dispatch policy boundaries; promising but still partly blocker/policy infrastructure and not full method-frame or ArrayAccess execution.
 - [ ] Lane-local `object-arrayaccess-error-control-retry` diagnostic classifier candidate; recheck hash/apply state after the preg decision.
 - [ ] Lane-local `object-property-reference-slots` mutation/reference-slot candidate; repair formatting and refresh current-primary apply proof and gates before integration.
-- [ ] Lane-local request/root symbol reconciliation, dynamic internal callbacks, direct-call/frame, JSON/type-conversion/resource/INI/object-cast/class-property, regex, control-flow, cleanup-contract, diagnostic sequencing, comparison, object-policy, symbol/global, and array/reference candidates that need clean extraction.
+- [ ] Lane-local request/root symbol metadata, dynamic internal callbacks, direct-call/frame, JSON/type-conversion/resource/INI/object-cast/class-property, regex, control-flow, cleanup-contract, diagnostic sequencing, comparison, object-policy, symbol/global, and array/reference candidates that need clean extraction.
 
 Not done:
 
@@ -151,12 +149,12 @@ Primary-integrated and counted:
 
 - [x] Counted semantic baseline remains `b217e2b4`.
 - [x] Overall and executable-semantics estimates remain 85%.
-- [x] Live `HEAD` and `origin/master` are synced at `348f232b`.
+- [x] Live `HEAD` and `origin/master` are synced at `e5e16130`.
 
 Pushed but uncounted:
 
 - [ ] `2967110c codegen: expose symbol table abi probe` exposes helper declarations/probe calls but does not execute generalized PHP symbol storage.
-- [ ] Dashboard/progress commits through `348f232b` update observability only.
+- [ ] Dashboard/progress commits through `e5e16130` update observability only.
 
 Dirty primary but uncounted:
 
@@ -168,18 +166,19 @@ Dirty primary but uncounted:
 Lane-local but uncounted:
 
 - [ ] Object/ArrayAccess/method-dispatch policy boundaries have fresh multi-operation evidence, but remain lane-local and not full method-frame or `ArrayAccess` execution.
-- [ ] Request/root symbol reconciliation, dynamic internal callback execution, runtime-selected by-reference call planning, switch/goto/loop cleanup-state work, JSON/resource/INI/object-cast/class-property surfaces, and direct-variable probe consolidation are useful lane evidence but not primary-integrated.
+- [ ] Request/root metadata, linked diagnostics, dynamic internal callback execution, receiver-method lookup preflight, switch/goto/loop cleanup-state work, JSON/resource/INI/object-cast/class-property surfaces, and direct-variable probe consolidation are useful lane evidence but not primary-integrated.
 - [ ] `object-arrayaccess-error-control-retry` remains a low-risk classifier candidate after live hash/apply recheck.
 - [ ] `object-property-reference-slots` remains the stronger executable object candidate after formatting repair, current-primary recheck, and rerun gates.
+- [ ] `impl-native-object-property-runtime` is blocked despite focused proof: its broad object-property boundary suite currently has 54 failures in the dirty lane.
 
 ## Review Notes
 
 Resource pressure is serviceable but guarded. Live `/dev/shm` is `40G` total,
 `24G` used, `17G` available, `58%` used; `du -sh /dev/shm` reports `24G`.
-The `/home` filesystem has `459G` total, `222G` used, `219G` available,
-`51%` used by `df`; bounded `du -sh /home` timed out and emitted permission
-noise under container overlay paths, so `df` is the better current pressure
-signal. Swap remains high: `23Gi` used out of `29Gi`.
+The `/home` filesystem has `459G` total, `231G` used, `209G` available,
+`53%` used by `df`; bounded `du -sh /home` timed out, and a scoped
+`du -sh /home/claude` was stopped after permission noise under container
+overlay paths. Swap remains high: `23Gi` used out of `29Gi`.
 
 Advisory steering read: resolve the dirty preg decision first. Then integrate
 only one narrow current-primary candidate at a time, with live hash/apply
