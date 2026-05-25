@@ -27,6 +27,35 @@ pub enum NativeValueFormatterTag {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeTextSurfaceTag {
+    FunctionName = 4,
+    ExtensionName = 6,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TextOnlySurface {
+    FunctionName,
+    ExtensionName,
+}
+
+impl TextOnlySurface {
+    fn from_native_tag(tag: NativeTextSurfaceTag) -> Self {
+        match tag {
+            NativeTextSurfaceTag::FunctionName => Self::FunctionName,
+            NativeTextSurfaceTag::ExtensionName => Self::ExtensionName,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::FunctionName => "function name",
+            Self::ExtensionName => "extension name",
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeOutputBufferOperation {
     Start = 0,
     GetLevel = 1,
@@ -8118,6 +8147,203 @@ pub unsafe extern "C" fn phpc_native_value_to_string_bytes(
     match unsafe { native_value_to_string_bytes(handle) } {
         Ok(bytes) => NativeStringConversionResult::success(bytes),
         Err(error) => NativeStringConversionResult::failure(error),
+    }
+}
+
+/// # Safety
+///
+/// `value` and `reference` are one logical operand slot. `value` must be null
+/// or a value handle previously returned by the runtime ABI and not yet freed;
+/// `reference` must be null or a reference handle previously returned by the
+/// runtime ABI and not yet freed. Pass either a value or a reference. The
+/// returned result owns either string bytes or a diagnostic handle; release
+/// owned fields with `phpc_native_string_conversion_result_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_to_string_bytes_with_reference_slot(
+    value: NativeValueHandle,
+    reference: NativeReferenceHandle,
+) -> NativeStringConversionResult {
+    let (value, owned) = match unsafe {
+        native_value_reference_slot_owned_value(
+            value,
+            reference,
+            "native value-to-string conversion",
+            "value",
+        )
+    } {
+        Ok(slot) => slot,
+        Err(error) => return NativeStringConversionResult::failure(error),
+    };
+
+    let result = unsafe { phpc_native_value_to_string_bytes(value) };
+    if owned {
+        unsafe { phpc_native_value_free(value) };
+    }
+    result
+}
+
+fn php_text_bytes(value: &Value, surface: TextOnlySurface) -> RuntimeResult<Vec<u8>> {
+    let bytes = value.try_echo_string()?.into_bytes();
+    text_only_surface_str(&bytes, surface)?;
+    Ok(bytes)
+}
+
+fn text_only_surface_str(bytes: &[u8], surface: TextOnlySurface) -> RuntimeResult<&str> {
+    if bytes.contains(&0) {
+        return Err(RuntimeError::invalid_string_conversion(format!(
+            "native text conversion failed: {} contains a NUL byte",
+            surface.label()
+        )));
+    }
+
+    std::str::from_utf8(bytes).map_err(|_| {
+        RuntimeError::invalid_string_conversion(format!(
+            "native text conversion failed: {} is not valid UTF-8",
+            surface.label()
+        ))
+    })
+}
+
+unsafe fn native_text_bytes_with_reference_slot(
+    value: NativeValueHandle,
+    reference: NativeReferenceHandle,
+    surface: TextOnlySurface,
+) -> RuntimeResult<Vec<u8>> {
+    let (value, owned) = unsafe {
+        native_value_reference_slot_owned_value(value, reference, "native text conversion", "value")
+    }?;
+    let result = match unsafe { value.as_ref() } {
+        Some(value) => php_text_bytes(value, surface),
+        None => Err(RuntimeError::invalid_string_conversion(
+            "native text conversion failed: value handle is null",
+        )),
+    };
+    if owned {
+        unsafe { phpc_native_value_free(value) };
+    }
+    result
+}
+
+/// # Safety
+///
+/// `value` and `reference` are one logical operand slot. `value` must be null
+/// or a value handle previously returned by the runtime ABI and not yet freed;
+/// `reference` must be null or a live reference handle. At most one of the two
+/// handles may be non-null. The returned result owns either text bytes or a
+/// diagnostic handle; release owned fields with
+/// `phpc_native_string_conversion_result_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_text_bytes_with_reference_slot(
+    value: NativeValueHandle,
+    reference: NativeReferenceHandle,
+    surface: NativeTextSurfaceTag,
+) -> NativeStringConversionResult {
+    match unsafe {
+        native_text_bytes_with_reference_slot(
+            value,
+            reference,
+            TextOnlySurface::from_native_tag(surface),
+        )
+    } {
+        Ok(bytes) => NativeStringConversionResult::success(bytes),
+        Err(error) => NativeStringConversionResult::failure(error),
+    }
+}
+
+unsafe fn native_text_bytes_membership(
+    bytes: &[u8],
+    surface: TextOnlySurface,
+    candidates: *const *const u8,
+    candidate_lengths: *const usize,
+    candidate_count: usize,
+    case_insensitive: bool,
+) -> RuntimeResult<bool> {
+    text_only_surface_str(bytes, surface)?;
+    if candidate_count == 0 {
+        return Ok(false);
+    }
+    if candidates.is_null() {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native text membership failed: candidate list is null",
+        ));
+    }
+    if candidate_lengths.is_null() {
+        return Err(RuntimeError::invalid_string_conversion(
+            "native text membership failed: candidate length list is null",
+        ));
+    }
+
+    let candidates = unsafe { std::slice::from_raw_parts(candidates, candidate_count) };
+    let candidate_lengths =
+        unsafe { std::slice::from_raw_parts(candidate_lengths, candidate_count) };
+    for (candidate, length) in candidates.iter().zip(candidate_lengths) {
+        let candidate = unsafe { native_abi_bytes(*candidate, *length) }.ok_or_else(|| {
+            RuntimeError::invalid_string_conversion(
+                "native text membership failed: candidate pointer is null",
+            )
+        })?;
+        let matches = if case_insensitive {
+            bytes.eq_ignore_ascii_case(candidate)
+        } else {
+            bytes == candidate
+        };
+        if matches {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+/// # Safety
+///
+/// `value` and `reference` are one logical operand slot. `value` must be null
+/// or a value handle previously returned by the runtime ABI and not yet freed;
+/// `reference` must be null or a reference handle previously returned by the
+/// runtime ABI and not yet freed. Pass either `value` or `reference`.
+/// Candidate pointers must be null only when `candidate_count` is zero, or
+/// otherwise point to `candidate_count` readable byte slices.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_text_membership_with_reference_slot_with_diagnostic(
+    value: NativeValueHandle,
+    reference: NativeReferenceHandle,
+    surface: NativeTextSurfaceTag,
+    candidates: *const *const u8,
+    candidate_lengths: *const usize,
+    candidate_count: usize,
+    case_insensitive: bool,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let surface = TextOnlySurface::from_native_tag(surface);
+    let bytes = match unsafe { native_text_bytes_with_reference_slot(value, reference, surface) } {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            if !diagnostic.is_null() {
+                unsafe { *diagnostic = NativeDiagnosticHandle::from_message(error.message()) };
+            }
+            return false;
+        }
+    };
+
+    match unsafe {
+        native_text_bytes_membership(
+            &bytes,
+            surface,
+            candidates,
+            candidate_lengths,
+            candidate_count,
+            case_insensitive,
+        )
+    } {
+        Ok(value) => value,
+        Err(error) => {
+            if !diagnostic.is_null() {
+                unsafe { *diagnostic = NativeDiagnosticHandle::from_message(error.message()) };
+            }
+            false
+        }
     }
 }
 
@@ -36001,6 +36227,81 @@ mod tests {
         unsafe { phpc_native_value_free(repeated) };
         unsafe { phpc_native_value_free(folded) };
         unsafe { phpc_native_value_free(payload) };
+    }
+
+    #[test]
+    fn native_text_membership_uses_one_value_or_reference_string_slot() {
+        let function_candidates = [b"strlen".as_ptr(), b"strtolower".as_ptr()];
+        let function_lengths = [6usize, 10usize];
+        let extension_candidates = [b"json".as_ptr(), b"hash".as_ptr()];
+        let extension_lengths = [4usize, 4usize];
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let direct = NativeValueHandle::from_value(Value::String("STRLEN".to_string()));
+        assert!(unsafe {
+            phpc_native_text_membership_with_reference_slot_with_diagnostic(
+                direct,
+                NativeReferenceHandle::null(),
+                NativeTextSurfaceTag::FunctionName,
+                function_candidates.as_ptr(),
+                function_lengths.as_ptr(),
+                function_candidates.len(),
+                true,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let extension = NativeValueHandle::from_value(Value::String("Hash".to_string()));
+        let extension_reference = unsafe { phpc_native_reference_from_value_and_free(extension) };
+        assert!(unsafe {
+            phpc_native_text_membership_with_reference_slot_with_diagnostic(
+                NativeValueHandle::null(),
+                extension_reference,
+                NativeTextSurfaceTag::ExtensionName,
+                extension_candidates.as_ptr(),
+                extension_lengths.as_ptr(),
+                extension_candidates.len(),
+                true,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let text = unsafe {
+            phpc_native_value_text_bytes_with_reference_slot(
+                NativeValueHandle::null(),
+                extension_reference,
+                NativeTextSurfaceTag::ExtensionName,
+            )
+        };
+        assert_eq!(
+            native_string_conversion_result_for_test(text).unwrap(),
+            b"Hash"
+        );
+
+        let invalid = NativeValueHandle::from_value(Value::String("bad\0name".to_string()));
+        assert!(!unsafe {
+            phpc_native_text_membership_with_reference_slot_with_diagnostic(
+                invalid,
+                NativeReferenceHandle::null(),
+                NativeTextSurfaceTag::FunctionName,
+                function_candidates.as_ptr(),
+                function_lengths.as_ptr(),
+                function_candidates.len(),
+                true,
+                &mut diagnostic,
+            )
+        });
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid string conversion: native text conversion failed: function name contains a NUL byte"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        unsafe { phpc_native_reference_free(extension_reference) };
+        unsafe { phpc_native_value_free(direct) };
+        unsafe { phpc_native_value_free(invalid) };
     }
 
     #[test]

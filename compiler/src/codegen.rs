@@ -23,6 +23,21 @@ const MAX_KNOWN_INT_VALUES: usize = 4;
 const MAX_KNOWN_FLOAT_VALUES: usize = 4;
 const MAX_KNOWN_STRING_VALUES: usize = 4;
 const NATIVE_FILESYSTEM_PATH_HAS_BOOLEAN_OPTION: u8 = 1;
+
+#[derive(Debug, Clone, Copy)]
+enum NativeTextSurface {
+    FunctionName,
+    ExtensionName,
+}
+
+impl NativeTextSurface {
+    fn surface_tag(self) -> u8 {
+        match self {
+            Self::FunctionName => 4,
+            Self::ExtensionName => 6,
+        }
+    }
+}
 const NATIVE_FILESYSTEM_PATH_HAS_PATH: u8 = 8;
 const NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC: u8 = 1;
 const NATIVE_DECLARED_CLASS_PROPERTY_PROTECTED: u8 = 2;
@@ -5545,6 +5560,7 @@ struct LlvmGenerator {
     uses_native_output_buffer_operation: bool,
     uses_native_value_truthiness: bool,
     uses_native_reference_helpers: bool,
+    uses_native_text_membership_operation: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -5810,6 +5826,20 @@ impl LlvmGenerator {
             }
             if !emitted_native_diagnostic_handle {
                 output.push_str("%phpc.NativeDiagnosticHandle = type { ptr }\n");
+                emitted_native_diagnostic_handle = true;
+            }
+            if !emitted_native_reference_handle {
+                output.push_str("%phpc.NativeReferenceHandle = type { ptr }\n");
+                emitted_native_reference_handle = true;
+            }
+        }
+        if self.uses_native_text_membership_operation {
+            if !emitted_native_value_handle {
+                output.push_str("%phpc.NativeValueHandle = type { ptr }\n");
+                emitted_native_value_handle = true;
+            }
+            if !emitted_native_diagnostic_handle {
+                output.push_str("%phpc.NativeDiagnosticHandle = type { ptr }\n");
             }
             if !emitted_native_reference_handle {
                 output.push_str("%phpc.NativeReferenceHandle = type { ptr }\n");
@@ -5886,6 +5916,24 @@ impl LlvmGenerator {
             if !self.uses_native_string_int_operation && !self.uses_native_value_echo_stdout {
                 output.push_str("declare void @phpc_native_value_free(%phpc.NativeValueHandle)\n");
                 let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+                output.push_str(&format!(
+                    "declare {usize_type} @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle)\n"
+                ));
+                output.push_str(
+                    "declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)\n",
+                );
+            }
+        }
+        if self.uses_native_text_membership_operation {
+            let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+            output.push_str(&format!(
+                "declare i1 @phpc_native_text_membership_with_reference_slot_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeReferenceHandle, i8, ptr, ptr, {usize_type}, i1, ptr)\n"
+            ));
+            if !self.uses_native_reference_helpers
+                && !self.uses_native_string_int_operation
+                && !self.uses_native_value_echo_stdout
+            {
+                output.push_str("declare void @phpc_native_value_free(%phpc.NativeValueHandle)\n");
                 output.push_str(&format!(
                     "declare {usize_type} @phpc_native_diagnostic_message_stderr(%phpc.NativeDiagnosticHandle)\n"
                 ));
@@ -7175,11 +7223,14 @@ impl LlvmGenerator {
         }
 
         let value = self.emit_expr(&args[0])?;
-        self.function_exists_result_for_value(&value)
-            .map(IrValue::Bool)
-            .ok_or_else(|| {
-                self.unsupported_direct_call(span, NativeCallBlocker::UnknownCalleeDiagnostics)
-            })
+        self.emit_native_text_membership_bool(
+            value,
+            NativeTextSurface::FunctionName,
+            NATIVE_KNOWN_FUNCTION_NAMES,
+            true,
+            span,
+            LLVM_FUNCTION_CALL_REJECTION,
+        )
     }
 
     fn emit_is_callable_call(&mut self, args: &[Expr], span: Span) -> CompileResult<IrValue> {
@@ -7259,6 +7310,16 @@ impl LlvmGenerator {
         }
 
         let value = self.emit_expr(&args[0])?;
+        if name.eq_ignore_ascii_case("extension_loaded") {
+            return self.emit_native_text_membership_bool(
+                value,
+                NativeTextSurface::ExtensionName,
+                COMPAT_LOADED_EXTENSION_NAMES,
+                true,
+                span,
+                LLVM_FUNCTION_CALL_REJECTION,
+            );
+        }
         if let IrValue::NativeReference(reference) = value {
             if let Some(predicate_tag) = native_value_type_predicate_tag(name) {
                 return Ok(self.emit_native_reference_type_predicate(reference, predicate_tag));
@@ -7308,12 +7369,6 @@ impl LlvmGenerator {
                     self.unsupported_direct_call(span, NativeCallBlocker::ReturnValueOwnership)
                 }),
             "is_countable" | "is_iterable" => Ok(IrValue::Bool(false)),
-            "extension_loaded" => match value {
-                IrValue::String(name) => Ok(IrValue::Bool(is_compat_loaded_extension_name(&name))),
-                IrValue::StringPtr(_) => Ok(IrValue::Bool(false)),
-                _ => Err(self
-                    .unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)),
-            },
             "is_object" => Ok(IrValue::Bool(false)),
             _ => {
                 Err(self.unsupported_direct_call(span, NativeCallBlocker::UnknownCalleeDiagnostics))
@@ -10064,6 +10119,101 @@ impl LlvmGenerator {
         Ok(result)
     }
 
+    fn emit_native_text_membership_bool(
+        &mut self,
+        value: IrValue,
+        surface: NativeTextSurface,
+        candidates: &[&str],
+        case_insensitive: bool,
+        span: Span,
+        rejection: &'static str,
+    ) -> CompileResult<IrValue> {
+        let (value_handle, reference_handle, owned_value) = match value {
+            IrValue::NativeReference(reference) => ("zeroinitializer".to_string(), reference, None),
+            value => {
+                let handle = self
+                    .emit_native_value_for_ir_value(value, span)
+                    .map_err(|_| self.unsupported(span, rejection))?;
+                (handle.clone(), "zeroinitializer".to_string(), Some(handle))
+            }
+        };
+        let (candidate_ptrs, candidate_lengths) =
+            self.emit_native_text_membership_candidate_arrays(candidates);
+        let diagnostic_slot = self.next_temp();
+        let result = self.next_temp();
+        let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+        self.uses_native_text_membership_operation = true;
+        self.body.push(format!(
+            "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
+        ));
+        self.body.push(format!(
+            "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
+        ));
+        self.body.push(format!(
+            "{result} = call i1 @phpc_native_text_membership_with_reference_slot_with_diagnostic(%phpc.NativeValueHandle {value_handle}, %phpc.NativeReferenceHandle {reference_handle}, i8 {}, ptr {candidate_ptrs}, ptr {candidate_lengths}, {usize_type} {}, i1 {}, ptr {diagnostic_slot})",
+            surface.surface_tag(),
+            candidates.len(),
+            if case_insensitive { "true" } else { "false" }
+        ));
+        self.emit_report_native_diagnostic_slot(&diagnostic_slot);
+        if let Some(handle) = owned_value {
+            self.body.push(format!(
+                "call void @phpc_native_value_free(%phpc.NativeValueHandle {handle})"
+            ));
+        }
+        Ok(IrValue::BoolExpr(result))
+    }
+
+    fn emit_native_text_membership_candidate_arrays(
+        &mut self,
+        candidates: &[&str],
+    ) -> (String, String) {
+        if candidates.is_empty() {
+            return ("null".to_string(), "null".to_string());
+        }
+
+        let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+        let ptrs = self.next_temp();
+        let lengths = self.next_temp();
+        self.body
+            .push(format!("{ptrs} = alloca [{} x ptr]", candidates.len()));
+        self.body.push(format!(
+            "{lengths} = alloca [{} x {usize_type}]",
+            candidates.len()
+        ));
+        for (index, candidate) in candidates.iter().enumerate() {
+            let global = self.add_string(candidate);
+            let ptr_slot = self.next_temp();
+            let length_slot = self.next_temp();
+            self.body.push(format!(
+                "{ptr_slot} = getelementptr inbounds [{} x ptr], ptr {ptrs}, i64 0, i64 {index}",
+                candidates.len()
+            ));
+            self.body
+                .push(format!("store ptr @{global}, ptr {ptr_slot}"));
+            self.body.push(format!(
+                "{length_slot} = getelementptr inbounds [{} x {usize_type}], ptr {lengths}, i64 0, i64 {index}",
+                candidates.len()
+            ));
+            self.body.push(format!(
+                "store {usize_type} {}, ptr {length_slot}",
+                candidate.len()
+            ));
+        }
+
+        let ptr_data = self.next_temp();
+        let length_data = self.next_temp();
+        self.body.push(format!(
+            "{ptr_data} = getelementptr inbounds [{} x ptr], ptr {ptrs}, i64 0, i64 0",
+            candidates.len()
+        ));
+        self.body.push(format!(
+            "{length_data} = getelementptr inbounds [{} x {usize_type}], ptr {lengths}, i64 0, i64 0",
+            candidates.len()
+        ));
+        (ptr_data, length_data)
+    }
+
     fn emit_native_value_string_len(
         &mut self,
         value: IrValue,
@@ -10696,6 +10846,7 @@ struct CGenerator {
     uses_native_value_truthiness: bool,
     uses_native_array_lvalue_helpers: bool,
     uses_native_reference_helpers: bool,
+    uses_native_text_membership_operation: bool,
     uses_native_request_state_helpers: bool,
     uses_native_request_state_reference_helpers: bool,
     uses_native_symbol_table_helpers: bool,
@@ -12409,6 +12560,7 @@ impl CGenerator {
         self.uses_native_dynamic_call_helpers |= branch.uses_native_dynamic_call_helpers;
         self.uses_native_closure_helpers |= branch.uses_native_closure_helpers;
         self.uses_native_output_buffer_operation |= branch.uses_native_output_buffer_operation;
+        self.uses_native_text_membership_operation |= branch.uses_native_text_membership_operation;
         self.uses_native_object_instantiation_helpers |=
             branch.uses_native_object_instantiation_helpers;
         self.uses_native_object_property_helpers |= branch.uses_native_object_property_helpers;
@@ -12435,6 +12587,7 @@ impl CGenerator {
             || self.uses_native_exit_helpers
             || self.uses_native_value_clone
             || self.uses_native_reference_helpers
+            || self.uses_native_text_membership_operation
             || self.uses_native_call_type_helpers
             || self.uses_native_dynamic_call_helpers
             || self.uses_native_closure_helpers
@@ -13994,6 +14147,7 @@ impl CGenerator {
             if self.uses_native_closure_helpers
                 || self.uses_native_array_lvalue_helpers
                 || self.uses_native_reference_helpers
+                || self.uses_native_text_membership_operation
                 || self.uses_native_request_state_reference_helpers
                 || self.uses_native_symbol_table_helpers
                 || self.uses_native_conversion_source_helpers
@@ -14319,6 +14473,9 @@ impl CGenerator {
                 output.push_str("extern int64_t phpc_native_value_to_int64_with_diagnostic(phpc_NativeValueHandle value, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 if self.uses_native_reference_helpers || self.uses_native_symbol_table_helpers {
                     output.push_str("extern int64_t phpc_native_value_to_int_with_reference_slot_with_diagnostic(phpc_NativeValueHandle value, phpc_NativeReferenceHandle reference, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                }
+                if self.uses_native_text_membership_operation {
+                    output.push_str("extern _Bool phpc_native_text_membership_with_reference_slot_with_diagnostic(phpc_NativeValueHandle value, phpc_NativeReferenceHandle reference, uint8_t surface, const uint8_t *const *candidates, const size_t *candidate_lengths, size_t candidate_count, _Bool case_insensitive, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 }
                 output.push_str("extern _Bool phpc_native_value_string_predicate_with_diagnostic(phpc_NativeValueHandle haystack, phpc_NativeValueHandle needle, uint8_t predicate, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern int64_t phpc_native_value_string_int_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, int64_t offset, int64_t length, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -27833,6 +27990,74 @@ impl CGenerator {
         CValue::BoolExpr(result)
     }
 
+    fn emit_native_text_membership_bool(
+        &mut self,
+        value: CValue,
+        surface: NativeTextSurface,
+        result_prefix: &str,
+        candidates: &[String],
+        case_insensitive: bool,
+        span: Span,
+        rejection: &'static str,
+    ) -> CompileResult<CValue> {
+        let value = match value {
+            CValue::NativeReferenceHandle(reference) => {
+                CNativeValueReferenceSlot::reference(reference)
+            }
+            value => CNativeValueReferenceSlot::value(
+                self.materialize_native_array_c_value_handle(value, span)
+                    .map_err(|_| self.unsupported(span, rejection))?,
+            ),
+        };
+        let (candidate_ptrs, candidate_lengths) =
+            self.emit_native_text_membership_candidate_table(candidates);
+        let result = self.next_native_name(result_prefix);
+        let diagnostic = self.next_native_name("text_membership_diagnostic");
+        self.uses_native_text_membership_operation = true;
+        self.uses_native_string_helpers = true;
+        self.uses_native_reference_helpers |= value.is_reference;
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "_Bool {result} = phpc_native_text_membership_with_reference_slot_with_diagnostic({}, {}, {}, {candidate_ptrs}, {candidate_lengths}, {}, {}, &{diagnostic});",
+            value.value_handle,
+            value.reference_handle,
+            surface.surface_tag(),
+            candidates.len(),
+            if case_insensitive { "1" } else { "0" }
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body.extend(value.cleanup_after_use);
+        Ok(CValue::BoolExpr(result))
+    }
+
+    fn emit_native_text_membership_candidate_table(
+        &mut self,
+        candidates: &[String],
+    ) -> (String, String) {
+        let index = self.next_static_data;
+        self.next_static_data += 1;
+        let ptrs = format!("phpc_native_text_membership_candidates_{index}");
+        let lengths = format!("phpc_native_text_membership_candidate_lengths_{index}");
+        let candidate_ptrs = candidates
+            .iter()
+            .map(|candidate| format!("(const uint8_t *)\"{}\"", c_string(candidate)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let candidate_lengths = candidates
+            .iter()
+            .map(|candidate| candidate.len().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.static_data.push(format!(
+            "static const uint8_t *const {ptrs}[] = {{{candidate_ptrs}}};"
+        ));
+        self.static_data.push(format!(
+            "static const size_t {lengths}[] = {{{candidate_lengths}}};"
+        ));
+        (ptrs, lengths)
+    }
+
     fn emit_string_int_operation_call(
         &mut self,
         operation: NativeStringIntOperation,
@@ -28366,11 +28591,16 @@ impl CGenerator {
         }
 
         let value = self.emit_expr(&args[0])?;
-        self.function_exists_result_for_value(&value)
-            .map(CValue::Bool)
-            .ok_or_else(|| {
-                self.unsupported_direct_call(span, NativeCallBlocker::UnknownCalleeDiagnostics)
-            })
+        let candidates = self.function_exists_text_membership_candidates();
+        self.emit_native_text_membership_bool(
+            value,
+            NativeTextSurface::FunctionName,
+            "function_exists_result",
+            &candidates,
+            true,
+            span,
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        )
     }
 
     fn emit_is_callable_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
@@ -28526,6 +28756,18 @@ impl CGenerator {
             &value,
             CValue::NativeValueHandle(_) | CValue::NativeReferenceHandle(_)
         ) {
+            if name.eq_ignore_ascii_case("extension_loaded") {
+                let candidates = native_text_membership_candidates(COMPAT_LOADED_EXTENSION_NAMES);
+                return self.emit_native_text_membership_bool(
+                    value,
+                    NativeTextSurface::ExtensionName,
+                    "extension_loaded_result",
+                    &candidates,
+                    true,
+                    span,
+                    ASSEMBLY_FUNCTION_CALL_REJECTION,
+                );
+            }
             return Err(self.unsupported_direct_call(span, NativeCallBlocker::ReturnValueOwnership));
         }
         match name.to_ascii_lowercase().as_str() {
@@ -28562,12 +28804,18 @@ impl CGenerator {
                     self.unsupported_direct_call(span, NativeCallBlocker::ReturnValueOwnership)
                 }),
             "is_countable" | "is_iterable" => Ok(CValue::Bool(false)),
-            "extension_loaded" => match value {
-                CValue::String(name) => Ok(CValue::Bool(is_compat_loaded_extension_name(&name))),
-                CValue::StringExpr(_) => Ok(CValue::Bool(false)),
-                _ => Err(self
-                    .unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)),
-            },
+            "extension_loaded" => {
+                let candidates = native_text_membership_candidates(COMPAT_LOADED_EXTENSION_NAMES);
+                self.emit_native_text_membership_bool(
+                    value,
+                    NativeTextSurface::ExtensionName,
+                    "extension_loaded_result",
+                    &candidates,
+                    true,
+                    span,
+                    ASSEMBLY_FUNCTION_CALL_REJECTION,
+                )
+            }
             "is_object" => Ok(CValue::Bool(false)),
             _ => {
                 Err(self.unsupported_direct_call(span, NativeCallBlocker::UnknownCalleeDiagnostics))
@@ -28714,6 +28962,12 @@ impl CGenerator {
             || self
                 .user_functions
                 .contains_key(&Self::user_function_key(name))
+    }
+
+    fn function_exists_text_membership_candidates(&self) -> Vec<String> {
+        let mut candidates = native_text_membership_candidates(NATIVE_KNOWN_FUNCTION_NAMES);
+        candidates.extend(self.user_function_order.iter().cloned());
+        candidates
     }
 
     fn is_known_declared_class_available(&self, name: &str) -> bool {
@@ -34996,6 +35250,343 @@ fn known_strings_have_uniform_function_exists_result(values: &KnownString) -> Op
     result
 }
 
+const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
+    "define",
+    "strlen",
+    "strtolower",
+    "trim",
+    "ltrim",
+    "rtrim",
+    "strcasecmp",
+    "strcmp",
+    "strncmp",
+    "strncasecmp",
+    "str_contains",
+    "str_starts_with",
+    "str_ends_with",
+    "strpos",
+    "substr",
+    "substr_count",
+    "str_replace",
+    "levenshtein",
+    "similar_text",
+    "preg_match",
+    "preg_replace",
+    "preg_split",
+    "preg_replace_callback",
+    "compact",
+    "error_reporting",
+    "ignore_user_abort",
+    "php_sapi_name",
+    "sprintf",
+    "vsprintf",
+    "call_user_func",
+    "call_user_func_array",
+    "implode",
+    "basename",
+    "dirname",
+    "abs",
+    "version_compare",
+    "microtime",
+    "date_default_timezone_set",
+    "ini_get",
+    "ini_set",
+    "get_include_path",
+    "set_include_path",
+    "min",
+    "rand",
+    "uniqid",
+    "hash_hmac",
+    "count",
+    "constant",
+    "defined",
+    "array_key_exists",
+    "array_values",
+    "array_key_first",
+    "array_key_last",
+    "current",
+    "key",
+    "next",
+    "prev",
+    "reset",
+    "end",
+    "array_is_list",
+    "array_keys",
+    "array_reverse",
+    "array_slice",
+    "array_chunk",
+    "array_pad",
+    "array_merge",
+    "array_replace",
+    "array_flip",
+    "array_change_key_case",
+    "array_column",
+    "array_fill_keys",
+    "array_combine",
+    "array_intersect_key",
+    "array_diff_key",
+    "array_diff",
+    "array_intersect",
+    "array_unique",
+    "array_count_values",
+    "array_sum",
+    "array_product",
+    "array_reduce",
+    "array_filter",
+    "array_map",
+    "sort",
+    "rsort",
+    "asort",
+    "arsort",
+    "ksort",
+    "krsort",
+    "natsort",
+    "natcasesort",
+    "usort",
+    "uasort",
+    "uksort",
+    "array_push",
+    "array_unshift",
+    "array_shift",
+    "array_pop",
+    "in_array",
+    "array_search",
+    "gettype",
+    "is_null",
+    "is_bool",
+    "is_int",
+    "is_integer",
+    "is_long",
+    "is_float",
+    "is_double",
+    "is_string",
+    "is_array",
+    "is_scalar",
+    "is_numeric",
+    "is_countable",
+    "is_iterable",
+    "is_callable",
+    "function_exists",
+    "extension_loaded",
+    "class_alias",
+    "mysqli_connect",
+    "mysqli_real_connect",
+    "mysqli_get_server_info",
+    "mysqli_get_server_version",
+    "mysqli_get_host_info",
+    "mysqli_get_client_info",
+    "mysqli_get_client_version",
+    "mysqli_get_proto_info",
+    "mysqli_thread_id",
+    "mysqli_kill",
+    "mysqli_change_user",
+    "mysqli_refresh",
+    "mysqli_get_charset",
+    "mysqli_character_set_name",
+    "mysqli_field_count",
+    "mysqli_close",
+    "mysqli_options",
+    "mysqli_set_opt",
+    "mysqli_ssl_set",
+    "mysqli_connect_errno",
+    "mysqli_connect_error",
+    "mysqli_error_list",
+    "mysqli_get_connection_stats",
+    "mysqli_get_links_stats",
+    "mysqli_get_client_stats",
+    "mysqli_thread_safe",
+    "mysqli_stmt_init",
+    "mysqli_prepare",
+    "mysqli_stmt_prepare",
+    "mysqli_stmt_param_count",
+    "mysqli_stmt_get_warnings",
+    "mysqli_stmt_error_list",
+    "mysqli_stmt_bind_param",
+    "mysqli_stmt_bind_result",
+    "mysqli_stmt_execute",
+    "mysqli_execute",
+    "mysqli_stmt_get_result",
+    "mysqli_stmt_close",
+    "mysqli_stmt_errno",
+    "mysqli_stmt_error",
+    "mysqli_stmt_affected_rows",
+    "mysqli_stmt_store_result",
+    "mysqli_stmt_num_rows",
+    "mysqli_stmt_fetch",
+    "mysqli_stmt_result_metadata",
+    "mysqli_stmt_field_count",
+    "mysqli_stmt_free_result",
+    "mysqli_stmt_data_seek",
+    "mysqli_stmt_attr_get",
+    "mysqli_stmt_attr_set",
+    "mysqli_stmt_send_long_data",
+    "mysqli_stmt_reset",
+    "mysqli_stmt_more_results",
+    "mysqli_stmt_next_result",
+    "mysqli_stmt_sqlstate",
+    "mysqli_stmt_warning_count",
+    "mysqli_stmt_insert_id",
+    "mysqli_execute_query",
+    "mysqli_dump_debug_info",
+    "mysqli_debug",
+    "mysqli_stat",
+    "mysqli_autocommit",
+    "mysqli_begin_transaction",
+    "mysqli_commit",
+    "mysqli_rollback",
+    "mysqli_savepoint",
+    "mysqli_release_savepoint",
+    "mysqli_set_charset",
+    "mysqli_query",
+    "mysqli_real_query",
+    "mysqli_multi_query",
+    "mysqli_errno",
+    "mysqli_error",
+    "mysqli_sqlstate",
+    "mysqli_warning_count",
+    "mysqli_info",
+    "mysqli_get_warnings",
+    "mysqli_affected_rows",
+    "mysqli_insert_id",
+    "mysqli_ping",
+    "mysqli_select_db",
+    "mysqli_real_escape_string",
+    "mysqli_escape_string",
+    "mysqli_fetch_object",
+    "mysqli_fetch_assoc",
+    "mysqli_fetch_row",
+    "mysqli_fetch_array",
+    "mysqli_fetch_all",
+    "mysqli_fetch_column",
+    "mysqli_fetch_field",
+    "mysqli_fetch_fields",
+    "mysqli_fetch_field_direct",
+    "mysqli_num_fields",
+    "mysqli_num_rows",
+    "mysqli_fetch_lengths",
+    "mysqli_data_seek",
+    "mysqli_field_seek",
+    "mysqli_field_tell",
+    "mysqli_free_result",
+    "mysqli_more_results",
+    "mysqli_next_result",
+    "mysqli_store_result",
+    "mysqli_use_result",
+    "mysqli_reap_async_query",
+    "mysqli_poll",
+    "mysqli_report",
+    "mysqli_init",
+    "is_uploaded_file",
+    "move_uploaded_file",
+    "file_exists",
+    "file_get_contents",
+    "fopen",
+    "stream_context_create",
+    "stream_context_get_options",
+    "stream_context_get_params",
+    "stream_context_get_default",
+    "stream_context_set_default",
+    "stream_context_set_option",
+    "stream_context_set_params",
+    "fwrite",
+    "fread",
+    "rewind",
+    "stream_get_contents",
+    "feof",
+    "ftell",
+    "fseek",
+    "fstat",
+    "stream_get_meta_data",
+    "fclose",
+    "opendir",
+    "readdir",
+    "rewinddir",
+    "closedir",
+    "filesize",
+    "filemtime",
+    "realpath",
+    "realpath_cache_get",
+    "realpath_cache_size",
+    "getcwd",
+    "is_dir",
+    "is_file",
+    "is_readable",
+    "is_writable",
+    "is_link",
+    "clearstatcache",
+    "register_shutdown_function",
+    "set_error_handler",
+    "restore_error_handler",
+    "ob_start",
+    "ob_get_level",
+    "ob_get_contents",
+    "ob_get_length",
+    "ob_list_handlers",
+    "ob_get_status",
+    "ob_get_clean",
+    "ob_get_flush",
+    "ob_clean",
+    "ob_flush",
+    "ob_end_clean",
+    "ob_end_flush",
+    "header",
+    "header_remove",
+    "headers_list",
+    "headers_sent",
+    "http_response_code",
+    "setcookie",
+    "setrawcookie",
+    "session_start",
+    "session_status",
+    "session_cache_limiter",
+    "session_cache_expire",
+    "session_id",
+    "session_write_close",
+    "assert",
+    "get_class",
+    "is_object",
+    "get_debug_type",
+    "class_exists",
+    "interface_exists",
+    "trait_exists",
+    "enum_exists",
+    "get_declared_classes",
+    "get_declared_interfaces",
+    "get_declared_traits",
+    "class_implements",
+    "class_uses",
+    "class_parents",
+    "get_called_class",
+    "spl_object_id",
+    "spl_object_hash",
+    "spl_autoload",
+    "spl_autoload_register",
+    "spl_autoload_functions",
+    "spl_autoload_extensions",
+    "spl_autoload_unregister",
+    "spl_autoload_call",
+    "property_exists",
+    "method_exists",
+    "get_class_methods",
+    "get_class_vars",
+    "get_object_vars",
+    "get_mangled_object_vars",
+    "is_a",
+    "is_subclass_of",
+    "get_parent_class",
+    "var_dump",
+    "print_r",
+];
+
+const COMPAT_LOADED_EXTENSION_NAMES: &[&str] = &["json", "hash", "pdo", "pdo_mysql"];
+
+fn native_text_membership_candidates(candidates: &[&str]) -> Vec<String> {
+    candidates
+        .iter()
+        .map(|candidate| (*candidate).to_string())
+        .collect()
+}
+
 fn native_string_predicate_for_name(name: &str) -> Option<NativeStringPredicate> {
     match name.to_ascii_lowercase().as_str() {
         "str_starts_with" => Some(NativeStringPredicate::StartsWith),
@@ -35441,341 +36032,9 @@ fn native_dynamic_callable_builtin_runtime_candidate_for_name(
 }
 
 fn is_native_known_function_name(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        "define"
-            | "strlen"
-            | "strtolower"
-            | "trim"
-            | "ltrim"
-            | "rtrim"
-            | "strcasecmp"
-            | "strcmp"
-            | "strncmp"
-            | "strncasecmp"
-            | "str_contains"
-            | "str_starts_with"
-            | "str_ends_with"
-            | "strpos"
-            | "substr"
-            | "substr_count"
-            | "str_replace"
-            | "levenshtein"
-            | "similar_text"
-            | "preg_match"
-            | "preg_replace"
-            | "preg_split"
-            | "preg_replace_callback"
-            | "compact"
-            | "error_reporting"
-            | "ignore_user_abort"
-            | "php_sapi_name"
-            | "sprintf"
-            | "vsprintf"
-            | "call_user_func"
-            | "call_user_func_array"
-            | "implode"
-            | "basename"
-            | "dirname"
-            | "abs"
-            | "version_compare"
-            | "microtime"
-            | "date_default_timezone_set"
-            | "ini_get"
-            | "ini_set"
-            | "get_include_path"
-            | "set_include_path"
-            | "min"
-            | "rand"
-            | "uniqid"
-            | "hash_hmac"
-            | "count"
-            | "constant"
-            | "defined"
-            | "array_key_exists"
-            | "array_values"
-            | "array_key_first"
-            | "array_key_last"
-            | "current"
-            | "key"
-            | "next"
-            | "prev"
-            | "reset"
-            | "end"
-            | "array_is_list"
-            | "array_keys"
-            | "array_reverse"
-            | "array_slice"
-            | "array_chunk"
-            | "array_pad"
-            | "array_merge"
-            | "array_replace"
-            | "array_flip"
-            | "array_change_key_case"
-            | "array_column"
-            | "array_fill_keys"
-            | "array_combine"
-            | "array_intersect_key"
-            | "array_diff_key"
-            | "array_diff"
-            | "array_intersect"
-            | "array_unique"
-            | "array_count_values"
-            | "array_sum"
-            | "array_product"
-            | "array_reduce"
-            | "array_filter"
-            | "array_map"
-            | "sort"
-            | "rsort"
-            | "asort"
-            | "arsort"
-            | "ksort"
-            | "krsort"
-            | "natsort"
-            | "natcasesort"
-            | "usort"
-            | "uasort"
-            | "uksort"
-            | "array_push"
-            | "array_unshift"
-            | "array_shift"
-            | "array_pop"
-            | "in_array"
-            | "array_search"
-            | "gettype"
-            | "is_null"
-            | "is_bool"
-            | "is_int"
-            | "is_integer"
-            | "is_long"
-            | "is_float"
-            | "is_double"
-            | "is_string"
-            | "is_array"
-            | "is_scalar"
-            | "is_numeric"
-            | "is_countable"
-            | "is_iterable"
-            | "is_callable"
-            | "function_exists"
-            | "extension_loaded"
-            | "class_alias"
-            | "mysqli_connect"
-            | "mysqli_real_connect"
-            | "mysqli_get_server_info"
-            | "mysqli_get_server_version"
-            | "mysqli_get_host_info"
-            | "mysqli_get_client_info"
-            | "mysqli_get_client_version"
-            | "mysqli_get_proto_info"
-            | "mysqli_thread_id"
-            | "mysqli_kill"
-            | "mysqli_change_user"
-            | "mysqli_refresh"
-            | "mysqli_get_charset"
-            | "mysqli_character_set_name"
-            | "mysqli_field_count"
-            | "mysqli_close"
-            | "mysqli_options"
-            | "mysqli_set_opt"
-            | "mysqli_ssl_set"
-            | "mysqli_connect_errno"
-            | "mysqli_connect_error"
-            | "mysqli_error_list"
-            | "mysqli_get_connection_stats"
-            | "mysqli_get_links_stats"
-            | "mysqli_get_client_stats"
-            | "mysqli_thread_safe"
-            | "mysqli_stmt_init"
-            | "mysqli_prepare"
-            | "mysqli_stmt_prepare"
-            | "mysqli_stmt_param_count"
-            | "mysqli_stmt_get_warnings"
-            | "mysqli_stmt_error_list"
-            | "mysqli_stmt_bind_param"
-            | "mysqli_stmt_bind_result"
-            | "mysqli_stmt_execute"
-            | "mysqli_execute"
-            | "mysqli_stmt_get_result"
-            | "mysqli_stmt_close"
-            | "mysqli_stmt_errno"
-            | "mysqli_stmt_error"
-            | "mysqli_stmt_affected_rows"
-            | "mysqli_stmt_store_result"
-            | "mysqli_stmt_num_rows"
-            | "mysqli_stmt_fetch"
-            | "mysqli_stmt_result_metadata"
-            | "mysqli_stmt_field_count"
-            | "mysqli_stmt_free_result"
-            | "mysqli_stmt_data_seek"
-            | "mysqli_stmt_attr_get"
-            | "mysqli_stmt_attr_set"
-            | "mysqli_stmt_send_long_data"
-            | "mysqli_stmt_reset"
-            | "mysqli_stmt_more_results"
-            | "mysqli_stmt_next_result"
-            | "mysqli_stmt_sqlstate"
-            | "mysqli_stmt_warning_count"
-            | "mysqli_stmt_insert_id"
-            | "mysqli_execute_query"
-            | "mysqli_dump_debug_info"
-            | "mysqli_debug"
-            | "mysqli_stat"
-            | "mysqli_autocommit"
-            | "mysqli_begin_transaction"
-            | "mysqli_commit"
-            | "mysqli_rollback"
-            | "mysqli_savepoint"
-            | "mysqli_release_savepoint"
-            | "mysqli_set_charset"
-            | "mysqli_query"
-            | "mysqli_real_query"
-            | "mysqli_multi_query"
-            | "mysqli_errno"
-            | "mysqli_error"
-            | "mysqli_sqlstate"
-            | "mysqli_warning_count"
-            | "mysqli_info"
-            | "mysqli_get_warnings"
-            | "mysqli_affected_rows"
-            | "mysqli_insert_id"
-            | "mysqli_ping"
-            | "mysqli_select_db"
-            | "mysqli_real_escape_string"
-            | "mysqli_escape_string"
-            | "mysqli_fetch_object"
-            | "mysqli_fetch_assoc"
-            | "mysqli_fetch_row"
-            | "mysqli_fetch_array"
-            | "mysqli_fetch_all"
-            | "mysqli_fetch_column"
-            | "mysqli_fetch_field"
-            | "mysqli_fetch_fields"
-            | "mysqli_fetch_field_direct"
-            | "mysqli_num_fields"
-            | "mysqli_num_rows"
-            | "mysqli_fetch_lengths"
-            | "mysqli_data_seek"
-            | "mysqli_field_seek"
-            | "mysqli_field_tell"
-            | "mysqli_free_result"
-            | "mysqli_more_results"
-            | "mysqli_next_result"
-            | "mysqli_store_result"
-            | "mysqli_use_result"
-            | "mysqli_reap_async_query"
-            | "mysqli_poll"
-            | "mysqli_report"
-            | "mysqli_init"
-            | "is_uploaded_file"
-            | "move_uploaded_file"
-            | "file_exists"
-            | "file_get_contents"
-            | "fopen"
-            | "stream_context_create"
-            | "stream_context_get_options"
-            | "stream_context_get_params"
-            | "stream_context_get_default"
-            | "stream_context_set_default"
-            | "stream_context_set_option"
-            | "stream_context_set_params"
-            | "fwrite"
-            | "fread"
-            | "rewind"
-            | "stream_get_contents"
-            | "feof"
-            | "ftell"
-            | "fseek"
-            | "fstat"
-            | "stream_get_meta_data"
-            | "fclose"
-            | "opendir"
-            | "readdir"
-            | "rewinddir"
-            | "closedir"
-            | "filesize"
-            | "filemtime"
-            | "realpath"
-            | "realpath_cache_get"
-            | "realpath_cache_size"
-            | "getcwd"
-            | "is_dir"
-            | "is_file"
-            | "is_readable"
-            | "is_writable"
-            | "is_link"
-            | "clearstatcache"
-            | "register_shutdown_function"
-            | "set_error_handler"
-            | "restore_error_handler"
-            | "ob_start"
-            | "ob_get_level"
-            | "ob_get_contents"
-            | "ob_get_length"
-            | "ob_list_handlers"
-            | "ob_get_status"
-            | "ob_get_clean"
-            | "ob_get_flush"
-            | "ob_clean"
-            | "ob_flush"
-            | "ob_end_clean"
-            | "ob_end_flush"
-            | "header"
-            | "header_remove"
-            | "headers_list"
-            | "headers_sent"
-            | "http_response_code"
-            | "setcookie"
-            | "setrawcookie"
-            | "session_start"
-            | "session_status"
-            | "session_cache_limiter"
-            | "session_cache_expire"
-            | "session_id"
-            | "session_write_close"
-            | "assert"
-            | "get_class"
-            | "is_object"
-            | "get_debug_type"
-            | "class_exists"
-            | "interface_exists"
-            | "trait_exists"
-            | "enum_exists"
-            | "get_declared_classes"
-            | "get_declared_interfaces"
-            | "get_declared_traits"
-            | "class_implements"
-            | "class_uses"
-            | "class_parents"
-            | "get_called_class"
-            | "spl_object_id"
-            | "spl_object_hash"
-            | "spl_autoload"
-            | "spl_autoload_register"
-            | "spl_autoload_functions"
-            | "spl_autoload_extensions"
-            | "spl_autoload_unregister"
-            | "spl_autoload_call"
-            | "property_exists"
-            | "method_exists"
-            | "get_class_methods"
-            | "get_class_vars"
-            | "get_object_vars"
-            | "get_mangled_object_vars"
-            | "is_a"
-            | "is_subclass_of"
-            | "get_parent_class"
-            | "var_dump"
-            | "print_r"
-    )
-}
-
-fn is_compat_loaded_extension_name(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        "json" | "hash" | "pdo" | "pdo_mysql"
-    )
+    NATIVE_KNOWN_FUNCTION_NAMES
+        .iter()
+        .any(|candidate| candidate.eq_ignore_ascii_case(name))
 }
 
 fn known_strings_have_uniform_numeric_result(values: &KnownString) -> Option<bool> {

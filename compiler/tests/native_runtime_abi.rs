@@ -380,6 +380,48 @@ fn generated_ir_routes_reference_type_introspection_without_value_clone_detour()
 }
 
 #[test]
+fn generated_ir_routes_text_membership_reference_slots_without_value_clone_detour() {
+    let ir = emit_ir_source(
+        "<?php\n$name = \"MYSQLI_QUERY\";\n$nameRef =& $name;\n$extension = \"Json\";\n$extensionRef =& $extension;\necho function_exists($nameRef);\necho extension_loaded($extensionRef);\n",
+    )
+    .unwrap();
+
+    assert!(
+        ir.contains(
+            "declare i1 @phpc_native_text_membership_with_reference_slot_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeReferenceHandle, i8, ptr, ptr,"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.matches("call i1 @phpc_native_text_membership_with_reference_slot_with_diagnostic")
+            .count()
+            >= 2,
+        "{ir}"
+    );
+    assert!(ir.contains("i8 4, ptr") && ir.contains("i8 6, ptr"), "{ir}");
+    for native_known_name in [
+        "mysqli_query",
+        "stream_get_contents",
+        "is_uploaded_file",
+        "spl_autoload_register",
+    ] {
+        assert!(
+            ir.contains(native_known_name),
+            "function_exists text-membership table should use the full native-known semantic family: {native_known_name}\n{ir}"
+        );
+    }
+    assert!(
+        ir.contains("call %phpc.NativeReferenceHandle @phpc_native_reference_from_value_and_free"),
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("call %phpc.NativeValueHandle @phpc_native_reference_value_clone")
+            && !ir.contains("LLVM function-call lowering rejects"),
+        "{ir}"
+    );
+}
+
+#[test]
 fn generated_ir_routes_reference_int_operands_without_value_clone_detour() {
     let ir = emit_ir_source(
         "<?php\n$length = 2;\n$lengthRef =& $length;\n$offset = 1;\n$offsetRef =& $offset;\necho strncmp(\"abcdef\", \"abcxyz\", $lengthRef);\necho strncasecmp(\"ABCDEF\", \"abcxyz\", $lengthRef);\necho substr_count(\"abcabc\", \"a\", $offsetRef, $lengthRef);\necho strpos(\"abcabc\", \"c\", $offsetRef);\n",

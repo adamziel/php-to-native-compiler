@@ -2530,7 +2530,7 @@ fn emit_exe_links_and_runs_object_property_mutation_reference_slot_program() {
 fn native_executable_c_source_routes_reference_keys_and_text_membership_through_reference_boundaries(
 ) {
     let program = parse(
-        "<?php\n$key = \"A\\0B\";\n$keyRef =& $key;\n$numeric = \"42\";\n$numericRef =& $numeric;\n$items = [$keyRef => \"value\", $numericRef => \"number\"];\necho $items[$key];\necho \"|\";\necho $items[42];\n",
+        "<?php\n$name = \"MYSQLI_QUERY\";\n$nameRef =& $name;\n$extension = \"Json\";\n$extensionRef =& $extension;\n$key = \"A\\0B\";\n$keyRef =& $key;\n$numeric = \"42\";\n$numericRef =& $numeric;\n$items = [$keyRef => \"value\", $numericRef => \"number\"];\necho function_exists($nameRef);\necho extension_loaded($extensionRef);\necho $items[$key];\necho \"|\";\necho $items[42];\n",
     )
     .unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -2539,9 +2539,28 @@ fn native_executable_c_source_routes_reference_keys_and_text_membership_through_
     assert!(
         source.contains(
             "extern phpc_NativeArrayKeyMaterializationResult phpc_native_value_to_array_key_with_reference_slot("
+        ) && source.contains(
+            "extern _Bool phpc_native_text_membership_with_reference_slot_with_diagnostic("
         ),
         "{source}"
     );
+    assert!(
+        body.matches(" = phpc_native_text_membership_with_reference_slot_with_diagnostic(")
+            .count()
+            >= 2,
+        "{source}"
+    );
+    for native_known_name in [
+        "(const uint8_t *)\"mysqli_query\"",
+        "(const uint8_t *)\"stream_get_contents\"",
+        "(const uint8_t *)\"is_uploaded_file\"",
+        "(const uint8_t *)\"spl_autoload_register\"",
+    ] {
+        assert!(
+            source.contains(native_known_name),
+            "function_exists text-membership table should use the full native-known semantic family: {native_known_name}\n{source}"
+        );
+    }
     assert!(
         body.matches(
             " = phpc_native_value_to_array_key_with_reference_slot((phpc_NativeValueHandle){0}, "
@@ -2556,7 +2575,9 @@ fn native_executable_c_source_routes_reference_keys_and_text_membership_through_
     );
     assert!(
         !source.contains("assembly native-array value lowering rejects")
-            && !source.contains("reference assignment lowering rejects"),
+            && !source.contains("reference assignment lowering rejects")
+            && !source.contains("assembly function-call lowering rejects")
+            && !body.contains(" = phpc_native_reference_value_clone("),
         "{source}"
     );
 }
@@ -2676,7 +2697,7 @@ fn emit_exe_links_and_runs_native_reference_key_text_membership_program() {
 
     let (source_path, output_path) = compile_native_link_fixture(
         "native_reference_key_text_membership",
-        "<?php\n$key = \"A\\0B\";\n$keyRef =& $key;\n$numeric = \"42\";\n$numericRef =& $numeric;\n$items = [$keyRef => \"value\", $numericRef => \"number\"];\necho $items[$key], \"|\", $items[42], \"\\n\";\n",
+        "<?php\n$name = \"MYSQLI_QUERY\";\n$nameRef =& $name;\n$extension = \"Json\";\n$extensionRef =& $extension;\n$key = \"A\\0B\";\n$keyRef =& $key;\n$numeric = \"42\";\n$numericRef =& $numeric;\n$items = [$keyRef => \"value\", $numericRef => \"number\"];\necho function_exists($nameRef), extension_loaded($extensionRef), \"|\", $items[$key], \"|\", $items[42], \"\\n\";\n",
     );
 
     let run = Command::new(&output_path)
@@ -2689,7 +2710,7 @@ fn emit_exe_links_and_runs_native_reference_key_text_membership_program() {
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(run.stdout, b"value|number\n");
+    assert_eq!(run.stdout, b"11|value|number\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -17685,6 +17706,11 @@ fn native_executable_c_source_routes_user_function_introspection_through_registe
     assert!(
         source.contains("static phpc_NativeValueHandle phpc_user_function_0_pick("),
         "registered user function should still lower to a reusable frame:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_text_membership_with_reference_slot_with_diagnostic(")
+            && source.contains("(const uint8_t *)\"pick\""),
+        "function_exists runtime membership should include registered user functions:\n{source}"
     );
     assert!(
         !source.contains("assembly function-call lowering rejects")
