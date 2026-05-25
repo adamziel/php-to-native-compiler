@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-25 13:29 CEST
-Evaluation marker: `20260525T112949Z`
+Updated: 2026-05-25 13:49 CEST
+Evaluation marker: `20260525T114934Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, lane-local candidates, broad
@@ -13,26 +13,29 @@ Overall estimated progress: **87%** `[#################---]`
 
 Executable PHP semantics: **87%** `[#################---]`
 
-Primary was clean and aligned with `origin/master` before this dashboard edit at
-`df8141eb docs: update progress dashboard`. The latest counted semantic commit
-remains `8f6266ce native: route reference slot type and int consumers`.
+Primary is clean and aligned with `origin/master` at
+`caea4991 docs: update progress dashboard` before this dashboard edit. The
+latest counted semantic/prerequisite commit remains
+`8f6266ce native: route reference slot type and int consumers`.
 
 No new semantic compiler/runtime capability landed in this review window. The
-current work is preparation for the next packet: a lane-local extraction of
-reference-aware text-byte/text-membership slot reuse from
-`impl-binary-string-runtime`, started against `df8141eb` and still pending.
+important current movement is lane-local: the reference text-membership slot
+candidate completed extraction and focused gates, then failed independent review
+with `needs-edits` because its `function_exists()` production path narrowed the
+existing known/user-function semantics. It is useful candidate work, but it is
+not primary capability yet.
 
-The project continues to move through reusable runtime/compiler ABI boundaries,
-not through one-off fixture recognizers. That is the right direction, but full
-generalized PHP remains blocked on references/COW identity, arbitrary lvalues,
-request/global parity, includes, variable variables, broad userland frames,
-real `ArrayAccess`, object semantics, cleanup/unwind/destructor/shutdown
-ordering, exact diagnostics/error handlers, and backend parity.
+The project continues to advance when packets land through reusable
+runtime/compiler ABI boundaries. Full generalized PHP remains blocked on
+references/COW identity, arbitrary lvalues, request/global parity, includes,
+variable variables, broad userland frames, real `ArrayAccess`, object semantics,
+cleanup/unwind/destructor/shutdown ordering, exact diagnostics/error handlers,
+and backend parity.
 
 ## Current Primary State
 
 - Current primary head before this dashboard edit:
-  `df8141eb docs: update progress dashboard`.
+  `caea4991 docs: update progress dashboard`.
 - Latest integrated executable/prerequisite semantic baseline:
   `8f6266ce native: route reference slot type and int consumers`.
 - Prior integrated prerequisite:
@@ -63,19 +66,19 @@ ordering, exact diagnostics/error handlers, and backend parity.
 | Item | Toward Primary Integration | Toward Full Feature | Status |
 | --- | ---: | ---: | --- |
 | Reference-slot type/int consumer ABI | **100%** `[####################]` | **45%** `[#########-----------]` | Integrated at `8f6266ce`. Runtime, LLVM, and generated C route reference-held type names, type predicates, and supported int operands through shared value/reference slots. Alias-aware write-through remains intentionally blocked. |
-| Array-key value/reference-slot ABI | **100%** `[####################]` | **42%** `[########------------]` | Integrated at `9022eb9e`. Adds shared checked slot ABI for value/reference-backed array-key operands with runtime, generated-C source, and linked executable proof. Broader expression lvalues, COW identity, object/resource/Stringable keys, and direct `ArrayAccess` remain open. |
-| Scalar/resource offset-read source-result prerequisite | **100%** `[####################]` | **44%** `[#########-----------]` | Integrated at `cc7efc2d`. Adds shared runtime/codegen source-result ABI and executable continuation proof. Direct object `ArrayAccess`, object/resource materialization, and LLVM error-status cleanup remain open. |
-| Object-property reference-slot mutation | **100%** `[####################]` | **39%** `[########------------]` | Integrated at `bfbc62c4`. Executable generated-C/native-link support for covered assignment/unset mutation operands. Full object/property/reference semantics remain open. |
+| Array-key value/reference-slot ABI | **100%** `[####################]` | **42%** `[########------------]` | Integrated at `9022eb9e`. Shared checked slot ABI for value/reference-backed array-key operands is in primary. Broader expression lvalues, COW identity, object/resource/Stringable keys, and direct `ArrayAccess` remain open. |
+| Scalar/resource offset-read source-result prerequisite | **100%** `[####################]` | **44%** `[#########-----------]` | Integrated at `cc7efc2d`. Direct object `ArrayAccess`, object/resource materialization, and LLVM error-status cleanup remain open. |
+| Object-property reference-slot mutation | **100%** `[####################]` | **39%** `[########------------]` | Integrated at `bfbc62c4`. Covered assignment/unset operands use shared value/reference slot handling. Full object/property/reference semantics remain open. |
 | Bounded `preg_replace_callback()` string callbacks | **100%** `[####################]` | **32%** `[######--------------]` | Integrated at `6aca392d`. Full PCRE, broader captures/modifiers, non-string callables, `limit`/`count`/`flags`, and legacy recognizer cleanup remain open. |
 | Object-offset `ArrayAccess` diagnostic classifier | **100%** `[####################]` | **12%** `[##------------------]` | Integrated at `deaf52ca`. Diagnostic routing only; no `offsetGet`, `offsetExists`, `offsetSet`, or `offsetUnset` execution. |
-| Text-membership/reference text-byte conversion | **35%** `[#######-------------]` | **36%** `[#######-------------]` | Active lane-local extraction started at 13:22 CEST against `df8141eb`. It is not countable until it has a final status, stable hash, current-primary apply proof, nonzero gates, and independent review. |
+| Text-membership/reference text-byte conversion | **55%** `[###########---------]` | **36%** `[#######-------------]` | Candidate extraction completed with stable hash, apply proof, and nonzero focused gates, but independent review returned `needs-edits` because `function_exists()` narrowed the existing known/user-function semantic source. Not countable. |
 | Reference-slot comparison consumers | **35%** `[#######-------------]` | **37%** `[#######-------------]` | Lane-local work suggests a shared comparison slot ABI, but strict-identity/static arithmetic expectations and broader comparison parity must stay out of any compact packet. |
-| String-array/string-position/string-result consumers | **35%** `[#######-------------]` | **38%** `[########------------]` | Useful lane-local work exists, including string-array/result expansion. It must be split from unrelated builtin breadth and proven as one reusable semantic boundary. |
+| String-array/string-position/string-result consumers | **40%** `[########------------]` | **38%** `[########------------]` | Useful lane-local work exists, including string-array/result expansion. It must be split from unrelated builtin breadth and proven as one reusable semantic boundary. |
 | Broader lvalue/reference-slot materializer | **25%** `[#####---------------]` | **38%** `[########------------]` | Needed so non-variable expression families that can carry references can enter shared array-key and consumer slot ABIs safely. |
 | Object/resource source materialization for shared conversion sources | **25%** `[#####---------------]` | **30%** `[######--------------]` | Explicit blocker left by the offset-read ABI. Needs a general value reconstruction boundary before generic object/resource consumers are safe. |
 | LLVM offset-read/error-status cleanup | **25%** `[#####---------------]` | **30%** `[######--------------]` | Offset-read diagnostics exist, but LLVM still needs a generalized control-flow/error-exit status boundary for failed conversion results. |
 | Static-property comparison operand ABI | **35%** `[#######-------------]` | **37%** `[#######-------------]` | Prior extraction says `needs-split`: source lane is too broad and entangled. Split metadata/operand prerequisites first. |
-| Callable/dynamic constructor candidates | **55%** `[###########---------]` | **42%** `[########------------]` | May 24 lane-local candidates look useful but are stale relative to current primary `df8141eb`; refresh before any primary review. |
+| Callable/dynamic constructor candidates | **52%** `[##########----------]` | **42%** `[########------------]` | May 24 lane-local candidates look useful but are stale relative to current primary `caea4991`; refresh before any primary review. |
 | Diagnostics, request, and cleanup boundaries | **60%** `[############--------]` | **40%** `[########------------]` | Lane-local request handle, writeback, branch cleanup, try/catch/finally preflight, stateful-call cleanup, and result-boundary work is useful infrastructure. Exact Zend ordering and real handler/exceptions execution remain open. |
 | Broad lane extraction backlog | **33%** `[#######-------------]` | **33%** `[#######-------------]` | Broad dirty lanes continue producing useful surfaces, but many are blocker/preflight-only and not directly integrable. Treat lanes as packet sources, not integration units. |
 
@@ -108,7 +111,7 @@ Primary-integrated non-executable infrastructure:
 
 In progress but lane-local or not yet executable primary support:
 
-- [ ] Text-membership/reference text-byte conversion is actively being extracted against `df8141eb`; status is pending and not countable.
+- [ ] Text-membership/reference text-byte conversion has a reviewed candidate, but it needs edits before another primary review.
 - [ ] String-array/string-position/string-result consumer families must be split from unrelated builtin breadth and proven separately.
 - [ ] Reference-slot comparison, scanner, and diagnostic consumers remain lane-local.
 - [ ] Direct object `ArrayAccess` method dispatch remains blocked behind diagnostic-only classifier support.
@@ -139,6 +142,7 @@ Not done:
 
 ## Recent Primary-Integrated Work
 
+- `caea4991`: progress-dashboard commit only. No executable compiler/runtime semantic code changed.
 - `df8141eb`: progress-dashboard commit only. No executable compiler/runtime semantic code changed.
 - `8f6266ce`: reference-slot type/int consumers. Integrated files: `runtime/src/lib.rs`, `compiler/src/codegen.rs`, `compiler/tests/native_runtime_abi.rs`, and `compiler/tests/native_link.rs`. Focused runtime, generated IR, generated-C source, linked executable, `cargo check`, rustfmt, diff hygiene, apply/hash, and zero-match gates passed.
 - `bfcf77bf`: progress-dashboard commit only. No executable compiler/runtime semantic code changed.
@@ -152,35 +156,37 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary was clean and synced at `df8141eb` before this dashboard edit.
+- [x] Primary was clean and synced at `caea4991` before this dashboard edit.
 - [x] Latest counted semantic/prerequisite commit remains `8f6266ce`.
 - [x] Reference-held type-name/type-predicate/int consumers are integrated through the shared value/reference-slot ABI for runtime, LLVM, and generated C.
 - [x] Array-key value/reference-slot and offset-read source-result support remain integrated for reviewed selected paths.
 
 Lane-local:
 
-- [ ] `reference-text-membership-slot-extract.status.md` is in progress and pending; no final candidate hash, apply proof, gates, or review decision exists yet.
-- [ ] Post-reference-slot triage ranks text-membership/reference text-byte slot reuse as the next plausible compact packet, with comparison slots, string family consumers, lvalue materialization, and refreshed callable candidates behind it.
-- [ ] `impl-binary-string-runtime` is broad and must not be imported directly.
-- [ ] `main:34 primary-integrator` should remain idle until a final reviewed packet is authorized by the supervisor.
+- [ ] `reference-text-membership-slot-extract.status.md` completed and produced candidate hash `e226cf0ad7671427118ba6c9e8dcf7debfedabe321447f43bf0978ea0e1b395b` with focused gates.
+- [ ] `reference-text-membership-slot-review.status.md` returned `needs-edits`: `function_exists()` must preserve the existing broader native/user-function availability semantics.
+- [ ] `impl-binary-string-runtime` remains broad; useful text/string surfaces must be extracted as compact packets, not imported directly.
+- [ ] Stale callable-object and dynamic-constructor candidates need current-primary refresh before review.
+- [ ] `primary-integrator` should remain idle until a repaired packet has independent `go-for-primary-integrator` review.
 
 Resource posture:
 
 - `/dev/shm`: `40G` total, `24G` used, `17G` available.
-- `/home`: `459G` total, `207G` used, `234G` available; `du -sh /home` is `127G`.
-- Memory has about `38Gi` available.
+- `/home`: `459G` total, `205G` used, `235G` available.
+- Memory has about `39Gi` available.
 - Swap remains high at `23Gi/29Gi`; use disk-backed target dirs, `CARGO_BUILD_JOBS=1`, and focused nonzero gates.
 
 ## Next Steering Read
 
-The next useful move is to finish the text-membership/reference text-byte extraction and judge it as a compact current-primary packet. It should only advance if it has:
+The next useful move is to repair the text-membership/reference text-byte
+candidate rather than sending it to primary integration. A repaired candidate
+should prove:
 
-- exact dirty-file inventory;
-- stable binary diff hash;
-- apply proof against `df8141eb` or newer;
-- nonzero runtime/compiler/link gates;
-- rustfmt and `git diff --check`;
-- a clear no-exact-shape audit;
-- independent primary review before any integrator handoff.
+- `function_exists()` uses the same effective semantic source as the existing compiler path;
+- user-defined functions are still represented where the current path represents them;
+- native candidate coverage has not narrowed relative to the existing known-function source;
+- the value/reference text-byte slot ABI still has runtime, IR, generated-C source, and linked executable proof;
+- current-primary apply proof, rustfmt, `cargo check`, `git diff --check`, stable diff hash, and zero-test audit all pass.
 
-Do not count lane-local triage, pending extraction, stale May 24 candidates, broad source-lane work, or docs-only commits as product capability.
+Do not count lane-local triage, pending repairs, stale May 24 candidates, broad
+source-lane work, or docs-only commits as product capability.
