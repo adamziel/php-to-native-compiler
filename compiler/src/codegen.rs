@@ -318,6 +318,7 @@ enum NativeCallBlocker {
     ByReferenceArgumentBinding,
     FunctionFrameHandoff,
     ClosureFrameHandoff,
+    GlobalFrameSeparation,
     UnknownCalleeDiagnostics,
     MethodDispatch,
     ConstructorDispatch,
@@ -938,7 +939,10 @@ fn native_expr_call_result_operation(
         | Expr::LateStaticMethodCall { span, .. } => Some(
             NativeCallOperation::method_value_with_blocker(*span, blocker),
         ),
-        Expr::New { span, .. } => Some(NativeCallOperation::constructor_value(*span, blocker)),
+        Expr::New {
+            class_name, span, ..
+        } => native_constructor_symbol_environment_operation_for_class_name(class_name, *span)
+            .or_else(|| Some(NativeCallOperation::constructor_value(*span, blocker))),
         Expr::Closure {
             params,
             returns_by_reference,
@@ -4266,12 +4270,23 @@ fn native_value_call_operation_for_expr(expr: &Expr) -> Option<NativeCallOperati
             NativeCallBlocker::MethodDispatch,
             native_call_args_for_expr(expr),
         ),
-        Expr::New { args, span, .. } => (
-            *span,
-            NativeCallCallee::ConstructorDispatch,
-            NativeCallBlocker::ConstructorDispatch,
-            args.as_slice(),
-        ),
+        Expr::New {
+            class_name,
+            args,
+            span,
+        } => {
+            if let Some(operation) =
+                native_constructor_symbol_environment_operation_for_class_name(class_name, *span)
+            {
+                return Some(operation);
+            }
+            (
+                *span,
+                NativeCallCallee::ConstructorDispatch,
+                NativeCallBlocker::ConstructorDispatch,
+                args.as_slice(),
+            )
+        }
         _ => return None,
     };
     let blocker = native_call_argument_list_blocker(args).unwrap_or(default_blocker);
@@ -4329,6 +4344,24 @@ fn native_call_args_for_expr(expr: &Expr) -> &[Expr] {
         | Expr::SelfMethodCall { args, .. }
         | Expr::LateStaticMethodCall { args, .. } => args.as_slice(),
         _ => unreachable!("native call args requested for a non-method call expression"),
+    }
+}
+
+fn native_constructor_symbol_environment_operation_for_class_name(
+    class_name: &NewClassName,
+    span: Span,
+) -> Option<NativeCallOperation> {
+    new_class_name_symbol_environment_span(class_name, span).map(|span| {
+        NativeCallOperation::constructor_value(span, NativeCallBlocker::GlobalFrameSeparation)
+    })
+}
+
+fn new_class_name_symbol_environment_span(class_name: &NewClassName, span: Span) -> Option<Span> {
+    match class_name {
+        NewClassName::DynamicVariable(name) if is_frame_separated_symbol_environment_name(name) => {
+            Some(span)
+        }
+        _ => None,
     }
 }
 
@@ -4398,6 +4431,7 @@ fn native_direct_call_blocker_message(
             | NativeCallBlocker::LvalueOperandEvaluationCleanup
             | NativeCallBlocker::ReturnValueOwnership
             | NativeCallBlocker::ByReferenceArgumentBinding
+            | NativeCallBlocker::GlobalFrameSeparation
             | NativeCallBlocker::UnknownCalleeDiagnostics,
         ) => backend.function_call_rejection(),
         (
@@ -4424,6 +4458,7 @@ fn native_dynamic_call_blocker_message(
             | NativeCallBlocker::LvalueOperandEvaluationCleanup
             | NativeCallBlocker::ReturnValueOwnership
             | NativeCallBlocker::ByReferenceArgumentBinding
+            | NativeCallBlocker::GlobalFrameSeparation
             | NativeCallBlocker::UnknownCalleeDiagnostics,
         ) => backend.dynamic_function_call_rejection(),
         (
@@ -4448,6 +4483,7 @@ fn native_method_call_blocker_message(
             | NativeCallBlocker::StatementOperandEvaluationCleanup
             | NativeCallBlocker::ValueOperandEvaluationCleanup
             | NativeCallBlocker::LvalueOperandEvaluationCleanup
+            | NativeCallBlocker::GlobalFrameSeparation
             | NativeCallBlocker::ReturnValueOwnership,
         ) => backend.method_call_rejection(),
         (
@@ -4473,6 +4509,7 @@ fn native_constructor_call_blocker_message(
             | NativeCallBlocker::StatementOperandEvaluationCleanup
             | NativeCallBlocker::ValueOperandEvaluationCleanup
             | NativeCallBlocker::LvalueOperandEvaluationCleanup
+            | NativeCallBlocker::GlobalFrameSeparation
             | NativeCallBlocker::ReturnValueOwnership,
         ) => backend.object_instantiation_rejection(),
         (
@@ -4492,6 +4529,7 @@ fn native_function_frame_blocker_message(
             NativeCallResult::FrameHandoff,
             NativeCallBlocker::FunctionFrameHandoff
             | NativeCallBlocker::ByReferenceArgumentBinding
+            | NativeCallBlocker::GlobalFrameSeparation
             | NativeCallBlocker::ReturnValueOwnership,
         )
         | (NativeCallResult::Value, NativeCallBlocker::ReturnValueOwnership) => {
@@ -4510,6 +4548,7 @@ fn native_closure_frame_blocker_message(
             NativeCallResult::FrameHandoff,
             NativeCallBlocker::ClosureFrameHandoff
             | NativeCallBlocker::ByReferenceArgumentBinding
+            | NativeCallBlocker::GlobalFrameSeparation
             | NativeCallBlocker::ReturnValueOwnership,
         ) => backend.closure_rejection(),
         _ => unreachable!("invalid native closure-frame blocker contract"),
@@ -4569,6 +4608,10 @@ const REQUEST_SUPERGLOBAL_NAMES: [&str; 7] = [
 
 fn is_globals_superglobal_name(name: &str) -> bool {
     name == "GLOBALS"
+}
+
+fn is_frame_separated_symbol_environment_name(name: &str) -> bool {
+    is_globals_superglobal_name(name) || is_request_superglobal_name(name)
 }
 
 fn static_string_key_expr_value(expr: &Expr) -> Option<String> {
@@ -16024,6 +16067,12 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        if let Some(operation) =
+            native_constructor_symbol_environment_operation_for_class_name(class_name, span)
+        {
+            return Err(self.unsupported_call_operation(operation));
+        }
+
         let class = match class_name {
             NewClassName::Named(name) => {
                 let key = Self::declared_class_key(name);
@@ -39791,6 +39840,55 @@ echo " 10" < "zeta";
         assert_eq!(
             native_value_call_operation_for_expr(&Expr::Variable("value".to_string(), span)),
             None
+        );
+    }
+
+    #[test]
+    fn native_constructor_class_operands_route_symbol_environment_to_frame_separation() {
+        let span = test_span();
+        let expected =
+            NativeCallOperation::constructor_value(span, NativeCallBlocker::GlobalFrameSeparation);
+
+        for class_name in [
+            crate::ast::NewClassName::DynamicVariable("GLOBALS".to_string()),
+            crate::ast::NewClassName::DynamicVariable("_GET".to_string()),
+            crate::ast::NewClassName::DynamicVariable("_POST".to_string()),
+        ] {
+            let expr = Expr::New {
+                class_name,
+                args: vec![Expr::Call {
+                    name: "argument".to_string(),
+                    args: Vec::new(),
+                    span,
+                }],
+                span,
+            };
+
+            assert_eq!(native_value_call_operation_for_expr(&expr), Some(expected));
+            assert_eq!(
+                native_expr_call_result_operation(
+                    &expr,
+                    NativeCallBlocker::ArgumentEvaluationCleanup,
+                ),
+                Some(expected)
+            );
+        }
+
+        let ordinary_dynamic_class = Expr::New {
+            class_name: crate::ast::NewClassName::DynamicVariable("class".to_string()),
+            args: vec![Expr::Call {
+                name: "argument".to_string(),
+                args: Vec::new(),
+                span,
+            }],
+            span,
+        };
+        assert_eq!(
+            native_value_call_operation_for_expr(&ordinary_dynamic_class),
+            Some(NativeCallOperation::constructor_value(
+                span,
+                NativeCallBlocker::ArgumentEvaluationCleanup,
+            ))
         );
     }
 

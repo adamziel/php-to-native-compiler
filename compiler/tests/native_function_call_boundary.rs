@@ -880,6 +880,44 @@ new $name("ok");
 }
 
 #[test]
+fn native_executable_c_source_routes_symbol_environment_constructor_class_operands() {
+    for (label, source) in [
+        (
+            "discard",
+            r#"<?php
+new $GLOBALS();
+"#,
+        ),
+        (
+            "assignment",
+            r#"<?php
+$value = new $_GET();
+"#,
+        ),
+        (
+            "echo",
+            r#"<?php
+echo new $_POST();
+"#,
+        ),
+        (
+            "array-value",
+            r#"<?php
+$items = [new $_REQUEST()];
+"#,
+        ),
+    ] {
+        let error = emit_native_executable_c_source(&parse(source).unwrap()).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen, "{label}");
+        assert_eq!(
+            error.message, ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
+            "{label}"
+        );
+    }
+}
+
+#[test]
 fn emit_ir_rejects_direct_calls_before_lowering_arguments() {
     for source in [
         "<?php\necho label([]);\nfunction label($value) { return $value; }\n",
