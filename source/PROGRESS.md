@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-25 19:17 CEST
-Evaluation marker: `20260525T171704Z`
+Updated: 2026-05-25 19:32 CEST
+Evaluation marker: `20260525T173205Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, candidate worktrees, lane-local
@@ -15,16 +15,14 @@ Overall estimated progress: **91%** `[##################--]`
 Executable PHP semantics: **91%** `[##################--]`
 
 Primary is clean and aligned with `origin/master` at
-`b4789b5c docs: update progress dashboard`. This is a docs-only evaluator
-head. The latest counted semantic/prerequisite baseline remains
-`5307990c native: add string-array operation slots`.
+`f770d728 native: block non-local assignment owners`. The latest counted
+semantic/prerequisite baseline is now `f770d728`.
 
-No new primary semantic commit landed in this review window. Current primary
-capability stays flat: byte-backed PHP string values and byte-preserving
-`explode()` / `str_split()` string-array operation slots are integrated, but
-the new non-local assignment owner-cell packet is still only review-approved
-lane-local candidate work until a dedicated integrator applies, tests,
-commits, and pushes it.
+This review window did land a real primary semantic/prerequisite packet:
+non-local assignment and unset owner families now route through shared
+owner-boundary classifiers before backend lowering. Count it as integrated
+blocker/parity and risk-reduction progress, not as executable object/static
+property storage or writeback.
 
 Full generalized PHP remains blocked on references/COW identity, arbitrary
 lvalues, request/global parity and writeback, includes, variable variables,
@@ -35,8 +33,10 @@ handlers, and backend parity.
 ## Primary-Integrated Baseline
 
 - Current primary head before this dashboard edit:
-  `b4789b5c docs: update progress dashboard`.
+  `f770d728 native: block non-local assignment owners`.
 - Latest integrated executable/prerequisite semantic baseline:
+  `f770d728 native: block non-local assignment owners`.
+- Recent integrated prerequisite:
   `5307990c native: add string-array operation slots`.
 - Recent integrated prerequisite:
   `1c369d0f native: add byte-backed PHP string value boundary`.
@@ -61,32 +61,33 @@ handlers, and backend parity.
 
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, byte-string, string-array, array, diagnostic, reference, symbol, call-frame, object, comparison, conversion, owner-cell, request-state, offset-read, array-key, type/int, text-membership, comparison, and truthiness slot surfaces. |
-| Compiler/backend consumers | **99%** | `[####################]` | Generated C and LLVM consume many shared ABIs, request-backed array-key blockers, byte-backed string values, and string-array operation slots. Direct assembly and some generated-C-only surfaces still lag. |
-| Executable PHP semantics | **91%** | `[##################--]` | Primary has closure/callable/object islands, bounded preg callbacks, object-property reference-slot mutation, offset-read continuation proof, reference-backed array-key conversion, type/int, text-membership, comparison, truthiness consumers, request-key blocker parity, byte-backed string values, and byte-preserving `explode()` / `str_split()` slot proof. |
+| Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, byte-string, string-array, array, diagnostic, reference, symbol, call-frame, object, comparison, conversion, owner-cell, request-state, offset-read, array-key, type/int, text-membership, comparison, truthiness, and non-local owner-boundary surfaces. |
+| Compiler/backend consumers | **99%** | `[####################]` | Generated C and LLVM consume many shared ABIs, request-backed array-key blockers, byte-backed string values, string-array operation slots, and non-local owner-family blockers. Direct assembly and some generated-C-only surfaces still lag. |
+| Executable PHP semantics | **91%** | `[##################--]` | Primary has closure/callable/object islands, bounded preg callbacks, object-property reference-slot mutation, offset-read continuation proof, reference-backed array-key conversion, type/int, text-membership, comparison, truthiness consumers, request-key blocker parity, byte-backed strings, string-array slots, and non-local owner blockers. |
 | Strings and byte semantics | **62%** | `[############--------]` | Byte-backed values and shared byte-preserving string-array results are integrated. Full byte-exact interpreter output, binary source bytes, `mb_str_split()` codepoint semantics, request/global keys, and exact diagnostics remain open. |
-| Arrays, lvalues, references, COW | **77%** | `[###############-----]` | Value/reference slot ABI reuse is expanding and unsafe request-backed key materialization is blocked. Full COW, arbitrary roots, foreach, broader expression reference slots, and alias composition remain open. |
+| Arrays, lvalues, references, COW | **78%** | `[################----]` | Value/reference slot ABI reuse is expanding, unsafe request-backed key materialization is blocked, and non-local owner assignment/unset families now share a blocker. Full COW, arbitrary roots, foreach, broader expression reference slots, and alias composition remain open. |
 | Symbols, globals, request state | **73%** | `[###############-----]` | Selected function globals, root-symbol surfaces, active symbol-table reference consumers, and request-backed key blockers exist. `$GLOBALS` self-cells, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
 | Calls, functions, frames | **83%** | `[#################---]` | Selected direct/callable/function-table surfaces exist. Named/unpacked/by-reference/userland frame breadth remains incomplete. |
-| Objects, properties, methods | **50%** | `[##########----------]` | Object-property reference-slot mutation and diagnostic classifiers are integrated. Full visibility, magic, dynamic/static/typed properties, destructors, references/COW, and `ArrayAccess` execution remain open. |
+| Objects, properties, methods | **51%** | `[##########----------]` | Object-property reference-slot mutation, diagnostic classifiers, and non-local object/static owner blockers are integrated. Full visibility, magic, dynamic/static/typed properties, destructors, references/COW, and `ArrayAccess` execution remain open. |
 | Control flow, cleanup, diagnostics | **51%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, and truthiness consumers exist. Broad unwind/finally/destructor/shutdown and exact source ordering remain open. |
-| Broad integrated verification | **90%** | `[##################--]` | Focused primary gates are strong for recent packets. Broad gates remain constrained by lane extraction cost, high swap, stale lane expectations, and backend parity gaps. |
+| Broad integrated verification | **91%** | `[##################--]` | Focused primary gates are strong for recent packets, including the owner-family integration. Broad gates remain constrained by lane extraction cost, high swap, stale lane expectations, and backend parity gaps. |
 
 ## Active Roadmap Items
 
 | Item | Toward Primary Integration | Toward Full Feature | Status |
 | --- | ---: | ---: | --- |
+| Non-local assignment owner-cell blocker refresh | **100%** `[####################]` | **35%** `[#######-------------]` | Integrated at `f770d728`. LLVM assignment statements/expressions and C/assembly codegen paths route non-local object/static owner families through shared assignment/unset owner blockers while preserving ArrayAccess precedence. This is blocker/parity work, not executable property/static writeback. |
 | String operation-family slot consumers | **100%** `[####################]` | **45%** `[#########-----------]` | Integrated at `5307990c`. Runtime, LLVM, generated C, and linked execution route `explode()` and `str_split()` through shared byte-preserving value/reference-slot string-array contracts. `mb_str_split()`, binary source parsing, request/global execution, and broad multibyte semantics remain open. |
 | Byte-preserving PHP string value boundary | **100%** `[####################]` | **40%** `[########------------]` | Integrated at `1c369d0f`. Runtime has `Value::BinaryString(Vec<u8>)`, `value_from_php_string_bytes(Vec<u8>)`, byte-view/runtime string-family preservation, native pointer-plus-length materialization, and linked byte-output proof. Full byte-output interpreter surfaces, binary source syntax, and request/global key coercion remain open. |
 | Request-backed array-key/RMW blocker parity | **100%** `[####################]` | **37%** `[#######-------------]` | Integrated at `a501c4d1`. LLVM and generated C share blocker classification for request-backed ordinary array-key consumers across selected read, assignment, unset, reference assignment, for-action assignment/RMW, compound assignment, `??=`, and increment/decrement paths. Blocker-only: no request storage/writeback or `$GLOBALS` parity. |
 | Reference-slot consumer families | **100%** `[####################]` | **45%** `[#########-----------]` | Type/int, text-membership, comparison, truthiness, array-key, and offset-read value/reference slots are integrated for reviewed selected paths. Full alias/COW composition remains open. |
-| Non-local assignment owner-cell blocker refresh | **90%** `[##################--]` | **33%** `[#######-------------]` | Prep and independent review report `go-for-primary-integrator`. Exact scope is `compiler/src/codegen.rs` plus `compiler/tests/native_array_boundary.rs`, hash `fa382d902123bde2af0759bb4bcdfddf599d84d8cb457a41dd49691fd277f003`, with nonzero owner-family gates and apply proof against `b4789b5c`. Not primary-integrated yet. |
 | Broader lvalue/reference-slot materializer | **30%** `[######--------------]` | **39%** `[########------------]` | Needed so non-variable expression families that can carry references can enter shared array-key and consumer slot ABIs safely. Should stay focused on slot materialization, not foreach or `ArrayAccess` execution. |
 | Object/resource source materialization | **25%** `[#####---------------]` | **30%** `[######--------------]` | Explicit blocker left by the offset-read ABI. Needs a general value reconstruction boundary before generic object/resource consumers are safe. |
 | LLVM offset-read/error-status cleanup | **25%** `[#####---------------]` | **30%** `[######--------------]` | Offset-read diagnostics exist, but LLVM still needs a generalized control-flow/error-exit status boundary for failed conversion results. |
-| Callable-object/dynamic-constructor candidates | **52%** `[##########----------]` | **42%** `[########------------]` | Useful May 24 candidates remain stale relative to current primary and May 25 slot/request/string integrations. Refresh from current primary before review and do not combine them. |
-| Diagnostics, request, and cleanup boundaries | **64%** `[#############-------]` | **41%** `[########------------]` | Lane-local control-flow, symbol, call, type-conversion, array, diagnostic, and reference-cell work continues producing useful boundaries, but parked/broad lanes are evidence only until extracted into exact current-primary packets. |
-| Broad lane extraction backlog | **34%** `[#######-------------]` | **35%** `[#######-------------]` | Broad dirty lanes continue producing useful surfaces, but several are checkpointed, parked, paused, stopped, conflict-heavy, or not reviewable as whole lanes. Treat lanes as packet sources, not integration units. |
+| Conversion and call-boundary shortcut retirement | **45%** `[#########-----------]` | **40%** `[########------------]` | Lane-local type-conversion and call-semantics work is removing exact-shape logical/ternary/`is_numeric`/`isset` shortcuts and sharing callable descriptor paths. Useful packet source, but not primary until extracted and integrated. |
+| Symbol/object metadata and array-cast candidates | **38%** `[########------------]` | **34%** `[#######-------------]` | Lane-local symbol work has current-subset `(array)` cast and core type-existence metadata ABIs. Interesting, but broad and dirty; must be packetized before review. |
+| Diagnostics, request, and cleanup boundaries | **65%** `[#############-------]` | **41%** `[########------------]` | Lane-local diagnostic, path-RMW, foreach, switch, symbol, call, and conversion work continues producing useful boundaries. Several are blocker-only and should not be counted until exact-scope primary integration. |
+| Broad lane extraction backlog | **34%** `[#######-------------]` | **35%** `[#######-------------]` | Broad dirty lanes continue producing useful evidence, but several are checkpointed, parked, paused, stopped, conflict-heavy, or not reviewable as whole lanes. Treat lanes as packet sources, not integration units. |
 
 ## Done / In Progress / Not Done
 
@@ -106,6 +107,7 @@ Primary-integrated executable or executable-prerequisite capability:
 - [x] Shared request-backed ordinary array-key/RMW blocker classification for selected LLVM and generated-C consumers.
 - [x] Byte-backed PHP string value representation and native pointer-plus-length materialization for arbitrary PHP string bytes.
 - [x] Shared byte-preserving `explode()` and `str_split()` string-array operation slots across runtime, LLVM, generated C, and linked execution.
+- [x] Shared non-local assignment/unset owner-family blockers for object/static property assignment and unset paths across current backend lowering families.
 
 Primary-integrated non-executable infrastructure:
 
@@ -114,10 +116,10 @@ Primary-integrated non-executable infrastructure:
 
 In progress but lane-local or not yet executable primary support:
 
-- [ ] Non-local assignment owner-cell blocker refresh is independently reviewed with `go-for-primary-integrator`, but is not committed or pushed on primary.
-- [ ] `impl-native-type-conversion` is removing exact-shape logical/ternary shortcuts and replacing them with generalized conversion-result paths.
-- [ ] `impl-native-call-semantics` is centralizing runtime PHP-truthiness condition materialization for call-result values.
-- [ ] `impl-symbol-integrator` and `impl-array-linked-exec` continue producing focused boundaries for casts, class-name operands, static-local/default preflight, cleanup, lvalue key cleanup, and switch/try protected exits. These are lane-local until extracted.
+- [ ] `impl-native-type-conversion` is removing exact-shape logical/ternary/`is_numeric`/`isset` shortcuts and replacing them with generalized conversion-result and null-introspection paths.
+- [ ] `impl-native-call-semantics` is centralizing callable descriptor/reference-return planning, including object `__invoke` descriptor reuse.
+- [ ] `impl-symbol-integrator` is producing lane-local `(array)` cast and core type-existence metadata ABIs.
+- [ ] `impl-array-linked-exec` and `impl-native-error-diagnostic-semantics` are producing focused foreach/declaration/default, diagnostic, and path-RMW boundaries.
 - [ ] Several broad lanes are parked after cadence failures or conflict-heavy exploration. They must be reclaimed only through fresh, exact-scope current-primary prep.
 - [ ] Full byte-exact tree-walk interpreter output surfaces remain blocked behind a real byte-output/session/debug formatting representation.
 - [ ] Request/global key byte coercion for byte-backed strings remains intentionally blocked.
@@ -146,16 +148,20 @@ Not done:
 
 ## Recent Primary-Integrated Work
 
-- `b4789b5c`: progress-dashboard commit only. No executable compiler/runtime
+- `f770d728`: non-local assignment owner blockers. Integrated files:
+  `compiler/src/codegen.rs` and `compiler/tests/native_array_boundary.rs`.
+  Review/integration proof included stable candidate hash
+  `fa382d902123bde2af0759bb4bcdfddf599d84d8cb457a41dd49691fd277f003`,
+  current-primary apply proof, four focused owner-family gates,
+  `cargo check -p phpc`, `cargo fmt --check -p phpc`, `git diff --check`,
+  push proof, and clean post-push state.
+- `e840b723`: progress-dashboard commit only. No executable compiler/runtime
   semantic code changed.
-- `1a43fe12`: progress-dashboard commit only. No executable compiler/runtime
+- `b4789b5c`: progress-dashboard commit only. No executable compiler/runtime
   semantic code changed.
 - `5307990c`: string-array operation slots. Integrated files:
   `runtime/src/lib.rs`, `compiler/src/codegen.rs`,
   `compiler/tests/native_runtime_abi.rs`, and `compiler/tests/native_link.rs`.
-  Review/integration proof included exact hash/scope/apply checks, four
-  nonzero focused gates, `cargo check`, `cargo fmt --check`,
-  `git diff --check`, push proof, and clean post-push state.
 - `1c369d0f`: byte-backed PHP string value boundary. Integrated files:
   `runtime/src/lib.rs`, `compiler/src/interpreter.rs`,
   `compiler/tests/native_runtime_abi.rs`, and `compiler/tests/native_link.rs`.
@@ -170,9 +176,11 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary was clean and synced at `b4789b5c` before this `PROGRESS.md`
+- [x] Primary was clean and synced at `f770d728` before this `PROGRESS.md`
   edit.
-- [x] Latest counted semantic/prerequisite commit remains `5307990c`.
+- [x] Latest counted semantic/prerequisite commit is `f770d728`.
+- [x] Non-local assignment and unset object/static owner families now share
+  assignment/unset owner-boundary classification before backend lowering.
 - [x] Byte-backed PHP string value representation remains integrated with
   native IR/C materialization and linked executable byte-output proof.
 - [x] `explode()` and `str_split()` have shared byte-preserving string-array
@@ -187,26 +195,29 @@ Primary-integrated:
 
 Lane-local:
 
-- [ ] `non-local-assignment-owner-cell-blocker-refresh-review.status.md`
-  reports `Decision: go-for-primary-integrator` at 19:17 CEST. It is the best
-  immediate primary candidate, but remains uncounted until integrated.
-- [ ] `impl-native-type-conversion` and `impl-native-call-semantics` continue
-  producing focused lane-local conversion/call-result proofs with nonzero
-  gates.
-- [ ] `impl-symbol-integrator`, `impl-array-linked-exec`,
-  `impl-native-error-diagnostic-semantics`, and adjacent lanes remain packet
-  sources only unless a fresh exact-scope review artifact is produced.
-- [ ] Parked broad lanes must be treated as preserved evidence, not reviewable
-  integration units.
+- [ ] `impl-native-type-conversion` reports fresh focused lane-local work for
+  shared conversion/null-introspection paths across logical, ternary,
+  `is_numeric`, and `isset` surfaces.
+- [ ] `impl-native-call-semantics` reports fresh callable descriptor reuse for
+  dynamic callable reference-return and object `__invoke` descriptor planning.
+- [ ] `impl-symbol-integrator` reports lane-local `(array)` cast and
+  core type-existence metadata ABI work, but the lane is broad and dirty.
+- [ ] `impl-array-linked-exec`, `impl-native-error-diagnostic-semantics`, and
+  adjacent lanes remain packet sources only unless fresh exact-scope review
+  artifacts are produced.
+- [ ] `impl-native-control-flow-seed` is forced parked with a 106k-line dirty
+  diff. Treat as evidence only, not as an importable lane.
 
 Resource posture:
 
 - `/dev/shm`: live df `40G` total, `24G` used, `17G` available, 58% used.
-  Largest observed target dirs include `phpc-target-native-call-semantics`
-  at `8.9G`, `phpc-target-native-object-seed` at `5.6G`, and
+  Largest observed target dirs are `phpc-target-native-call-semantics` at
+  `8.9G`, `phpc-target-native-object-seed` at `5.6G`, and
   `phpc-target-native-diagnostics` at `3.0G`.
-- `/home`: live df `459G` total, `212G` used, `228G` available, 49% used.
-- Memory: `43Gi` total, about `41Gi` available; swap remains high at
+- `/home`: live df `459G` total, `202G` used, `239G` available, 46% used.
+  Largest observed lane/work tree is `phpc-lane-native-error-diagnostic-semantics`
+  at `14G`; primary is about `2.2G`.
+- Memory: `43Gi` total, about `39Gi` available; swap remains high at
   `23Gi/29Gi`.
 - Continue using disk-backed target dirs, `umask 0007`, `CARGO_BUILD_JOBS=1`,
   `CARGO_INCREMENTAL=0`, and focused nonzero gates.
@@ -215,11 +226,10 @@ Resource posture:
 
 Best next compact packets to consider:
 
-- the non-local assignment owner-cell blocker refresh, if the dedicated
-  integrator rechecks live primary and the reviewed diff still applies;
 - a broader lvalue/reference materializer prerequisite, if it stays focused on
   enabling shared slot ABIs rather than adding foreach or `ArrayAccess`
   execution;
+- object/resource source materialization for generic conversion consumers;
 - a refreshed callable-object, dynamic-constructor, object-instantiation, or
   destructor-blocker packet, after rebasing and reviewing from current primary;
 - a control-flow cleanup packet only after parked switch/control-flow work is
