@@ -174,6 +174,12 @@ const ASSEMBLY_SESSION_STATE_REJECTION: &str = "assembly session-state lowering 
 const LLVM_OUTPUT_BUFFER_REJECTION: &str = "LLVM output-buffer lowering rejects ob_start(), ob_get_level(), ob_get_contents(), ob_get_length(), ob_list_handlers(), ob_get_status(), ob_get_clean(), ob_get_flush(), ob_clean(), ob_flush(), ob_end_clean(), and ob_end_flush() until native stdout capture buffers, shutdown flushing, output-started tracking, SAPI interaction, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded output-buffer behavior";
 const ASSEMBLY_OUTPUT_BUFFER_REJECTION: &str = "assembly output-buffer lowering rejects ob_start(), ob_get_level(), ob_get_contents(), ob_get_length(), ob_list_handlers(), ob_get_status(), ob_get_clean(), ob_get_flush(), ob_clean(), ob_flush(), ob_end_clean(), and ob_end_flush() until native stdout capture buffers, shutdown flushing, output-started tracking, SAPI interaction, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded output-buffer behavior";
 
+fn request_array_key_consumer_rejection(backend: &str, subject: &str) -> String {
+    format!(
+        "{backend} request-superglobal lowering rejects array-key request operand for {subject} because request-backed ordinary array keys need ordered key expression evaluation, PHP array-key coercion diagnostics, missing-array recovery values, write/unset/reference ordering, root symbol-table reconciliation, references/copy-on-write, and exact PHP array-key diagnostics; phpc run handles current bounded request superglobal behavior"
+    )
+}
+
 const NATIVE_VALUE_OFFSET_MUTATION_WRITE: u8 = 0;
 const NATIVE_VALUE_OFFSET_MUTATION_APPEND: u8 = 1;
 const NATIVE_ARRAY_PATH_KEY_TAG: u8 = 0;
@@ -4692,6 +4698,218 @@ fn request_superglobal_expr_span(expr: &Expr) -> Option<Span> {
     }
 }
 
+#[derive(Debug, Clone)]
+struct RequestArrayKeyConsumerAccess {
+    span: Span,
+    label: String,
+}
+
+fn php_string_key_label(value: &str) -> String {
+    let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("\"{escaped}\"")
+}
+
+fn request_index_label(index: &Expr) -> String {
+    match index {
+        Expr::String(value, _) => php_string_key_label(value),
+        Expr::Int(value, _) => value.to_string(),
+        Expr::Float(value, _) => format_float_literal(*value),
+        Expr::Bool(value, _) => {
+            if *value {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
+        }
+        Expr::Null(_) => "null".to_string(),
+        _ => "<dynamic>".to_string(),
+    }
+}
+
+fn request_superglobal_expr_label(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Variable(name, _) if is_request_superglobal_name(name) => Some(format!("${name}")),
+        Expr::Index { target, index, .. } => {
+            let target = request_superglobal_expr_label(target)?;
+            Some(format!("{target}[{}]", request_index_label(index)))
+        }
+        Expr::AppendIndex { target, .. } => {
+            let target = request_superglobal_expr_label(target)?;
+            Some(format!("{target}[]"))
+        }
+        _ => None,
+    }
+}
+
+fn request_array_key_consumer_access<'a>(
+    indices: impl IntoIterator<Item = &'a Expr>,
+) -> Option<RequestArrayKeyConsumerAccess> {
+    indices.into_iter().find_map(|index| {
+        request_superglobal_expr_label(index).map(|label| RequestArrayKeyConsumerAccess {
+            span: index.span(),
+            label,
+        })
+    })
+}
+
+fn request_assign_target_array_key_consumer_access(
+    target: &AssignTarget,
+) -> Option<RequestArrayKeyConsumerAccess> {
+    match target {
+        AssignTarget::ArrayIndex { index, .. } => index
+            .as_ref()
+            .and_then(|index| request_array_key_consumer_access(std::iter::once(index))),
+        AssignTarget::NestedArrayIndex { indices, .. }
+        | AssignTarget::ObjectPropertyArrayIndex { indices, .. }
+        | AssignTarget::DynamicObjectPropertyArrayIndex { indices, .. }
+        | AssignTarget::NonDirectObjectPropertyArrayIndex { indices, .. }
+        | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { indices, .. } => {
+            request_array_key_consumer_access(indices)
+        }
+        AssignTarget::NestedArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::ObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::DynamicObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::NonDirectObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        } => request_array_key_consumer_access(indices.iter().chain(suffix_indices.iter())),
+        AssignTarget::Variable { .. }
+        | AssignTarget::List { .. }
+        | AssignTarget::Property { .. }
+        | AssignTarget::NonDirectProperty { .. }
+        | AssignTarget::NonDirectDynamicProperty { .. }
+        | AssignTarget::ObjectStaticProperty { .. }
+        | AssignTarget::DynamicProperty { .. }
+        | AssignTarget::StaticProperty { .. }
+        | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::ParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. } => None,
+    }
+}
+
+fn request_reference_source_array_key_consumer_access(
+    source: &ReferenceSource,
+) -> Option<RequestArrayKeyConsumerAccess> {
+    match source {
+        ReferenceSource::ArrayIndex { index, .. }
+        | ReferenceSource::ObjectPropertyArrayIndex { index, .. }
+        | ReferenceSource::DynamicObjectPropertyArrayIndex { index, .. } => {
+            request_array_key_consumer_access(std::iter::once(index))
+        }
+        ReferenceSource::ArrayAppend { indices, .. }
+        | ReferenceSource::NestedArrayIndex { indices, .. }
+        | ReferenceSource::ObjectPropertyArrayAppend { indices, .. }
+        | ReferenceSource::DynamicObjectPropertyArrayAppend { indices, .. }
+        | ReferenceSource::ObjectPropertyNestedArrayIndex { indices, .. }
+        | ReferenceSource::DynamicObjectPropertyNestedArrayIndex { indices, .. }
+        | ReferenceSource::StaticPropertyArrayIndex { indices, .. }
+        | ReferenceSource::NonDirectDynamicObjectPropertyArrayAppend { indices, .. }
+        | ReferenceSource::NonDirectDynamicObjectPropertyNestedArrayIndex { indices, .. }
+        | ReferenceSource::NonDirectObjectPropertyArrayAppend { indices, .. }
+        | ReferenceSource::NonDirectObjectPropertyNestedArrayIndex { indices, .. } => {
+            request_array_key_consumer_access(indices)
+        }
+        ReferenceSource::ExpressionArrayIndex {
+            target, indices, ..
+        }
+        | ReferenceSource::ExpressionArrayAppend {
+            target, indices, ..
+        } => request_superglobal_expr_label(target)
+            .map(|label| RequestArrayKeyConsumerAccess {
+                span: target.span(),
+                label,
+            })
+            .or_else(|| request_array_key_consumer_access(indices)),
+        ReferenceSource::Property { .. }
+        | ReferenceSource::StaticProperty { .. }
+        | ReferenceSource::MethodCall { .. }
+        | ReferenceSource::Variable { .. } => None,
+    }
+}
+
+fn request_for_action_array_key_consumer_access(
+    action: &ForAction,
+) -> Option<RequestArrayKeyConsumerAccess> {
+    match action {
+        ForAction::Assign { target, .. } | ForAction::CompoundAssign { target, .. } => {
+            request_assign_target_array_key_consumer_access(target)
+        }
+        ForAction::IncrementDecrement { target, .. } => {
+            request_assign_target_array_key_consumer_access(target)
+        }
+        ForAction::Expr { expr } => request_array_key_consumer_access(std::iter::once(expr)),
+    }
+}
+
+fn request_stmt_array_key_consumer_access(stmt: &Stmt) -> Option<RequestArrayKeyConsumerAccess> {
+    match stmt {
+        Stmt::Assign { target, .. }
+        | Stmt::CompoundAssign { target, .. }
+        | Stmt::NullCoalesceAssign { target, .. } => {
+            request_assign_target_array_key_consumer_access(target)
+        }
+        Stmt::ReferenceAssign { target, source, .. } => {
+            request_assign_target_array_key_consumer_access(target)
+                .or_else(|| request_reference_source_array_key_consumer_access(source))
+        }
+        Stmt::IncrementDecrement { target, .. } => {
+            request_assign_target_array_key_consumer_access(target)
+        }
+        Stmt::UnsetArrayIndex { index, .. } => {
+            request_array_key_consumer_access(std::iter::once(index))
+        }
+        Stmt::UnsetNestedArrayIndex { indices, .. } => request_array_key_consumer_access(indices),
+        Stmt::UnsetMany { targets, .. } => targets.iter().find_map(|target| match target {
+            UnsetTarget::ArrayIndex { index, .. } => {
+                request_array_key_consumer_access(std::iter::once(index))
+            }
+            UnsetTarget::NestedArrayIndex { indices, .. }
+            | UnsetTarget::ObjectPropertyArrayIndex { indices, .. }
+            | UnsetTarget::DynamicObjectPropertyArrayIndex { indices, .. }
+            | UnsetTarget::NonDirectObjectPropertyArrayIndex { indices, .. }
+            | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex { indices, .. } => {
+                request_array_key_consumer_access(indices)
+            }
+            UnsetTarget::Variable { .. }
+            | UnsetTarget::ObjectProperty { .. }
+            | UnsetTarget::DynamicObjectProperty { .. }
+            | UnsetTarget::NonDirectObjectProperty { .. }
+            | UnsetTarget::NonDirectDynamicObjectProperty { .. }
+            | UnsetTarget::StaticProperty { .. }
+            | UnsetTarget::SelfStaticProperty { .. }
+            | UnsetTarget::ParentStaticProperty { .. }
+            | UnsetTarget::LateStaticProperty { .. } => None,
+        }),
+        Stmt::For {
+            initializers,
+            increments,
+            ..
+        } => initializers
+            .iter()
+            .chain(increments.iter())
+            .find_map(request_for_action_array_key_consumer_access),
+        _ => None,
+    }
+}
+
 fn request_superglobal_consumed_args_span(args: &[Expr]) -> Option<Span> {
     args.iter().find_map(request_superglobal_expr_span)
 }
@@ -6148,6 +6366,12 @@ impl LlvmGenerator {
                 {
                     return Err(self.unsupported_call_operation(operation));
                 }
+                if let Some(access) = request_stmt_array_key_consumer_access(stmt) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("LLVM", &access.label),
+                    ));
+                }
 
                 self.emit_reference_assignment(target, source, *span)
             }
@@ -6159,6 +6383,12 @@ impl LlvmGenerator {
             } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
+                }
+                if let Some(access) = request_assign_target_array_key_consumer_access(target) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("LLVM", &access.label),
+                    ));
                 }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
@@ -6175,6 +6405,12 @@ impl LlvmGenerator {
             | Stmt::NullCoalesceAssign { target, span, .. } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
+                }
+                if let Some(access) = request_assign_target_array_key_consumer_access(target) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("LLVM", &access.label),
+                    ));
                 }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
@@ -6206,10 +6442,18 @@ impl LlvmGenerator {
                 }
                 Err(self.unsupported(class.span, LLVM_OBJECT_CLASS_REJECTION))
             }
+            Stmt::For { span, .. } => {
+                if let Some(access) = request_stmt_array_key_consumer_access(stmt) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("LLVM", &access.label),
+                    ));
+                }
+                Err(self.unsupported(*span, LLVM_CONTROL_FLOW_REJECTION))
+            }
             Stmt::If { span, .. }
             | Stmt::While { span, .. }
             | Stmt::DoWhile { span, .. }
-            | Stmt::For { span, .. }
             | Stmt::Switch { span, .. }
             | Stmt::Goto { span, .. }
             | Stmt::Label { span, .. }
@@ -6234,12 +6478,30 @@ impl LlvmGenerator {
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
             Stmt::UnsetArrayIndex { span, .. } => {
+                if let Some(access) = request_stmt_array_key_consumer_access(stmt) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("LLVM", &access.label),
+                    ));
+                }
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
             Stmt::UnsetNestedArrayIndex { span, .. } => {
+                if let Some(access) = request_stmt_array_key_consumer_access(stmt) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("LLVM", &access.label),
+                    ));
+                }
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
             Stmt::UnsetMany { targets, span } => {
+                if let Some(access) = request_stmt_array_key_consumer_access(stmt) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("LLVM", &access.label),
+                    ));
+                }
                 if targets
                     .iter()
                     .any(is_object_property_array_access_unset_target)
@@ -6326,6 +6588,14 @@ impl LlvmGenerator {
                     return Err(
                         self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
                     );
+                }
+                if let Some(access) =
+                    request_array_key_consumer_access(std::iter::once(index.as_ref()))
+                {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("LLVM", &access.label),
+                    ));
                 }
                 if let Some(result) = native_object_array_access_operation_result_from_expr(
                     expr,
@@ -6566,6 +6836,12 @@ impl LlvmGenerator {
                 if is_static_member_assign_target(target) {
                     return Err(self.unsupported(*span, LLVM_STATIC_MEMBER_REJECTION));
                 }
+                if let Some(access) = request_assign_target_array_key_consumer_access(target) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("LLVM", &access.label),
+                    ));
+                }
                 if let Some(value) = self.emit_direct_variable_assignment_expr(target, expr)? {
                     return Ok(value);
                 }
@@ -6579,6 +6855,12 @@ impl LlvmGenerator {
             } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
+                }
+                if let Some(access) = request_assign_target_array_key_consumer_access(target) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("LLVM", &access.label),
+                    ));
                 }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
@@ -6594,6 +6876,12 @@ impl LlvmGenerator {
             | Expr::IncrementDecrement { target, span, .. } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
+                }
+                if let Some(access) = request_assign_target_array_key_consumer_access(target) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("LLVM", &access.label),
+                    ));
                 }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
@@ -7826,6 +8114,12 @@ impl LlvmGenerator {
     fn emit_assignment(&mut self, target: &AssignTarget, expr: &Expr) -> CompileResult<()> {
         if let Some(operation) = native_assignment_target_call_operation(target) {
             return Err(self.unsupported_call_operation(operation));
+        }
+        if let Some(access) = request_assign_target_array_key_consumer_access(target) {
+            return Err(self.unsupported(
+                access.span,
+                request_array_key_consumer_rejection("LLVM", &access.label),
+            ));
         }
 
         match target {
@@ -20749,6 +21043,12 @@ impl CGenerator {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
+                if let Some(access) = request_assign_target_array_key_consumer_access(target) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("assembly", &access.label),
+                    ));
+                }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
                 }
@@ -20773,6 +21073,12 @@ impl CGenerator {
             ForAction::IncrementDecrement { target, op, .. } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
+                }
+                if let Some(access) = request_assign_target_array_key_consumer_access(target) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("assembly", &access.label),
+                    ));
                 }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
@@ -21097,6 +21403,12 @@ impl CGenerator {
                 {
                     return Err(self.unsupported_call_operation(operation));
                 }
+                if let Some(access) = request_stmt_array_key_consumer_access(stmt) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("assembly", &access.label),
+                    ));
+                }
 
                 if self.emit_request_superglobal_root_to_root_reference_assignment(
                     target, source, "",
@@ -21174,6 +21486,12 @@ impl CGenerator {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
+                if let Some(access) = request_assign_target_array_key_consumer_access(target) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("assembly", &access.label),
+                    ));
+                }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
                 }
@@ -21193,6 +21511,12 @@ impl CGenerator {
             } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
+                }
+                if let Some(access) = request_assign_target_array_key_consumer_access(target) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("assembly", &access.label),
+                    ));
                 }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
@@ -21218,6 +21542,12 @@ impl CGenerator {
             Stmt::IncrementDecrement { target, op, span } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
+                }
+                if let Some(access) = request_assign_target_array_key_consumer_access(target) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("assembly", &access.label),
+                    ));
                 }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
@@ -21284,7 +21614,15 @@ impl CGenerator {
                 increments,
                 body,
                 span,
-            } => self.emit_for_statement(initializers, conditions, increments, body, *span),
+            } => {
+                if let Some(access) = request_stmt_array_key_consumer_access(stmt) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("assembly", &access.label),
+                    ));
+                }
+                self.emit_for_statement(initializers, conditions, increments, body, *span)
+            }
             Stmt::DoWhile {
                 body,
                 condition,
@@ -21358,14 +21696,34 @@ impl CGenerator {
                 )
             }
             Stmt::UnsetArrayIndex { name, index, span } => {
+                if let Some(access) = request_stmt_array_key_consumer_access(stmt) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("assembly", &access.label),
+                    ));
+                }
                 self.emit_unset_array_index(name, index, *span)
             }
             Stmt::UnsetNestedArrayIndex {
                 name,
                 indices,
                 span,
-            } => self.emit_unset_nested_array_index(name, indices, *span),
+            } => {
+                if let Some(access) = request_stmt_array_key_consumer_access(stmt) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("assembly", &access.label),
+                    ));
+                }
+                self.emit_unset_nested_array_index(name, indices, *span)
+            }
             Stmt::UnsetMany { targets, span } => {
+                if let Some(access) = request_stmt_array_key_consumer_access(stmt) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("assembly", &access.label),
+                    ));
+                }
                 if targets
                     .iter()
                     .any(is_object_property_array_access_unset_target)
@@ -21487,6 +21845,14 @@ impl CGenerator {
                     return Err(
                         self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
                     );
+                }
+                if let Some(access) =
+                    request_array_key_consumer_access(std::iter::once(index.as_ref()))
+                {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("assembly", &access.label),
+                    ));
                 }
                 if let Some(value) =
                     self.materialize_native_value_offset_read_expr(target, index, *span, "")?
@@ -21887,6 +22253,12 @@ impl CGenerator {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
+                if let Some(access) = request_assign_target_array_key_consumer_access(target) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("assembly", &access.label),
+                    ));
+                }
                 if let Some(value) =
                     self.emit_direct_variable_assignment_expr_for_target(target, expr, *span, "")?
                 {
@@ -21922,6 +22294,12 @@ impl CGenerator {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
+                if let Some(access) = request_assign_target_array_key_consumer_access(target) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("assembly", &access.label),
+                    ));
+                }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
                 }
@@ -21947,6 +22325,12 @@ impl CGenerator {
             } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
+                }
+                if let Some(access) = request_assign_target_array_key_consumer_access(target) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("assembly", &access.label),
+                    ));
                 }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
@@ -21977,6 +22361,12 @@ impl CGenerator {
             } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
+                }
+                if let Some(access) = request_assign_target_array_key_consumer_access(target) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("assembly", &access.label),
+                    ));
                 }
                 if is_object_property_array_access_target(target) {
                     return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
@@ -29496,6 +29886,12 @@ impl CGenerator {
     }
 
     fn emit_assignment(&mut self, target: &AssignTarget, expr: &Expr) -> CompileResult<()> {
+        if let Some(access) = request_assign_target_array_key_consumer_access(target) {
+            return Err(self.unsupported(
+                access.span,
+                request_array_key_consumer_rejection("assembly", &access.label),
+            ));
+        }
         if let Some(value) =
             self.materialize_object_public_property_assignment_result_for_target(target, expr, "")?
         {
@@ -32648,6 +33044,19 @@ impl CGenerator {
         expr: &Expr,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        if let Expr::Index { target, index, .. } = expr {
+            if request_superglobal_expr_span(target).is_none() {
+                if let Some(access) =
+                    request_array_key_consumer_access(std::iter::once(index.as_ref()))
+                {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("assembly", &access.label),
+                    ));
+                }
+            }
+        }
+
         if let Expr::Variable(name, span) = expr {
             if self.by_reference_foreach_linger_variables.contains(name) {
                 return Err(
@@ -33062,8 +33471,14 @@ impl CGenerator {
             } => self
                 .materialize_object_public_property_read_expr(target, property, failure_cleanup)
                 .map(Some),
-            Expr::NullCoalesceAssign { target, expr, span } => self
-                .materialize_array_offset_null_coalesce_assignment_expr(
+            Expr::NullCoalesceAssign { target, expr, span } => {
+                if let Some(access) = request_assign_target_array_key_consumer_access(target) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("assembly", &access.label),
+                    ));
+                }
+                self.materialize_array_offset_null_coalesce_assignment_expr(
                     target,
                     expr,
                     *span,
@@ -33079,7 +33494,8 @@ impl CGenerator {
                         )
                     },
                     |value| Ok(Some(value)),
-                ),
+                )
+            }
             Expr::Ternary {
                 condition,
                 if_true,

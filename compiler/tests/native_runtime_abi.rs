@@ -15,6 +15,12 @@ const STRING_RESULT_IR_SOURCE: &str = "<?php\n$payload = \"A\\0B\";\necho strrev
 const VALUE_OFFSET_IR_SOURCE: &str = "<?php\n$payload = \"A\\0B\\xff\";\necho $payload[1];\necho isset($payload[2]);\necho empty($payload[3]);\necho strlen($payload[0]);\necho strcmp($payload[0], \"A\");\n";
 const OUTPUT_BUFFER_RUNTIME_SOURCE: &str = "<?php\nob_start(null, strlen(\"aa\"), strlen(\"flags\"));\necho \"A\\0B\";\necho 42;\nob_get_contents();\nob_get_length();\nob_list_handlers();\nob_get_status(true);\nob_clean();\necho strtolower(\"HIDDEN\");\nob_get_clean();\nob_start();\necho \"A\";\nob_start();\necho \"B\";\nob_end_flush();\nob_get_clean();\nob_get_level();\n";
 
+fn request_superglobal_array_key_consumer_rejection(backend: &str, subject: &str) -> String {
+    format!(
+        "{backend} request-superglobal lowering rejects array-key request operand for {subject} because request-backed ordinary array keys need ordered key expression evaluation, PHP array-key coercion diagnostics, missing-array recovery values, write/unset/reference ordering, root symbol-table reconciliation, references/copy-on-write, and exact PHP array-key diagnostics; phpc run handles current bounded request superglobal behavior"
+    )
+}
+
 #[test]
 fn scalar_echo_probe_ir_matches_committed_snapshot() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -54,6 +60,61 @@ fn native_request_state_runtime_value_keys_share_key_result_accessors() {
         !ir.contains("extractvalue %phpc.NativeRequestStateKeyResult"),
         "{ir}"
     );
+}
+
+#[test]
+fn native_request_state_ordinary_array_key_consumers_share_blocker_across_backends() {
+    for (source, subject) in [
+        (
+            "<?php\necho $local[$_GET[\"preview\"]];\n",
+            "$_GET[\"preview\"]",
+        ),
+        (
+            "<?php\n$local[$_POST[\"action\"]] = \"x\";\n",
+            "$_POST[\"action\"]",
+        ),
+        (
+            "<?php\nunset($local[$_SERVER[\"SCRIPT_NAME\"]]);\n",
+            "$_SERVER[\"SCRIPT_NAME\"]",
+        ),
+        (
+            "<?php\n$alias =& $local[$_COOKIE[\"wordpress_test_cookie\"]];\n",
+            "$_COOKIE[\"wordpress_test_cookie\"]",
+        ),
+        (
+            "<?php\nfor ($local[$_REQUEST[\"name\"]] = 0; false; ) {}\n",
+            "$_REQUEST[\"name\"]",
+        ),
+        (
+            "<?php\n$local[$_GET[\"count\"]] .= \"x\";\n",
+            "$_GET[\"count\"]",
+        ),
+        (
+            "<?php\necho ($local[$_FILES[\"upload\"]] ??= \"x\");\n",
+            "$_FILES[\"upload\"]",
+        ),
+        (
+            "<?php\necho ++$local[$_SESSION[\"id\"]];\n",
+            "$_SESSION[\"id\"]",
+        ),
+    ] {
+        let ir_error = emit_ir_source(source).unwrap_err();
+        assert_eq!(ir_error.phase, Phase::Codegen, "{source}");
+        assert_eq!(
+            ir_error.message,
+            request_superglobal_array_key_consumer_rejection("LLVM", subject),
+            "{source}"
+        );
+
+        let program = parse(source).unwrap();
+        let c_error = emit_native_executable_c_source(&program).unwrap_err();
+        assert_eq!(c_error.phase, Phase::Codegen, "{source}");
+        assert_eq!(
+            c_error.message,
+            request_superglobal_array_key_consumer_rejection("assembly", subject),
+            "{source}"
+        );
+    }
 }
 
 #[test]

@@ -9,6 +9,12 @@ use std::process::{Command, Output};
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const LLVM_REQUEST_SUPERGLOBAL_REJECTION: &str = "LLVM request-superglobal lowering rejects $_SERVER, $_COOKIE, $_GET, $_POST, $_REQUEST, $_FILES, and $_SESSION until native request-state storage, SAPI population, variables_order policy, upload metadata, session storage, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded request superglobal behavior";
 
+fn llvm_request_superglobal_array_key_consumer_rejection(subject: &str) -> String {
+    format!(
+        "LLVM request-superglobal lowering rejects array-key request operand for {subject} because request-backed ordinary array keys need ordered key expression evaluation, PHP array-key coercion diagnostics, missing-array recovery values, write/unset/reference ordering, root symbol-table reconciliation, references/copy-on-write, and exact PHP array-key diagnostics; phpc run handles current bounded request superglobal behavior"
+    )
+}
+
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
     assert_eq!(error.phase, Phase::Runtime);
@@ -698,6 +704,53 @@ fn emit_ir_rejects_request_bag_superglobals_until_native_request_state_exists() 
     assert_eq!(cookie_direct.line, 2);
     assert_eq!(cookie_direct.column, 6);
     assert_eq!(cookie_direct.message, LLVM_REQUEST_SUPERGLOBAL_REJECTION);
+}
+
+#[test]
+fn emit_ir_request_state_ordinary_array_key_consumers_share_blocker() {
+    for (source, subject) in [
+        (
+            "<?php\necho $local[$_GET[\"preview\"]];\n",
+            "$_GET[\"preview\"]",
+        ),
+        (
+            "<?php\n$local[$_POST[\"action\"]] = \"x\";\n",
+            "$_POST[\"action\"]",
+        ),
+        (
+            "<?php\nunset($local[$_SERVER[\"SCRIPT_NAME\"]]);\n",
+            "$_SERVER[\"SCRIPT_NAME\"]",
+        ),
+        (
+            "<?php\n$alias =& $local[$_COOKIE[\"wordpress_test_cookie\"]];\n",
+            "$_COOKIE[\"wordpress_test_cookie\"]",
+        ),
+        (
+            "<?php\nfor ($local[$_REQUEST[\"name\"]] = 0; false; ) {}\n",
+            "$_REQUEST[\"name\"]",
+        ),
+        (
+            "<?php\n$local[$_GET[\"count\"]] .= \"x\";\n",
+            "$_GET[\"count\"]",
+        ),
+        (
+            "<?php\necho ($local[$_FILES[\"upload\"]] ??= \"x\");\n",
+            "$_FILES[\"upload\"]",
+        ),
+        (
+            "<?php\necho ++$local[$_SESSION[\"id\"]];\n",
+            "$_SESSION[\"id\"]",
+        ),
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen, "{source}");
+        assert_eq!(
+            error.message,
+            llvm_request_superglobal_array_key_consumer_rejection(subject),
+            "{source}"
+        );
+    }
 }
 
 #[test]
