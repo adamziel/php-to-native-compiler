@@ -1,11 +1,11 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-25 14:28 CEST
-Evaluation marker: `20260525T122859Z`
+Updated: 2026-05-25 14:52 CEST
+Evaluation marker: `20260525T124920Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
-counts as integrated capability. Dirty WIP, lane-local candidates, broad
-worktree claims, probe-only commits, and dashboard-only commits are excluded.
+counts as integrated capability. Dirty WIP, candidate worktrees, lane-local
+claims, probe-only commits, and dashboard-only commits are excluded.
 
 ## Executive Read
 
@@ -14,23 +14,23 @@ Overall estimated progress: **88%** `[##################--]`
 Executable PHP semantics: **88%** `[##################--]`
 
 Primary is clean and aligned with `origin/master` at
-`fa1694d8 docs: update progress dashboard` before this dashboard edit. The
+`1068564c docs: update progress dashboard` before this dashboard edit. The
 latest counted semantic/prerequisite commit remains
 `9f373b25 native: route reference text membership slots`.
 
-No new semantic primary commit landed in this review window. The useful new
-movement is post-text-membership triage: the next primary packet should be a
-fresh, compact extraction from current primary, not a whole broad lane import.
+No new semantic primary commit landed in this review window. Current momentum
+is lane-local: a reference-slot comparison consumer packet is now prepared for
+primary review, with apply proof and focused gates, but it is not integrated.
 
 Full generalized PHP remains blocked on references/COW identity, arbitrary
 lvalues, request/global parity, includes, variable variables, broad userland
 frames, real `ArrayAccess`, object semantics, cleanup/unwind/destructor
 shutdown ordering, exact diagnostics/error handlers, and backend parity.
 
-## Current Primary State
+## Primary-Integrated Baseline
 
 - Current primary head before this dashboard edit:
-  `fa1694d8 docs: update progress dashboard`.
+  `1068564c docs: update progress dashboard`.
 - Latest integrated executable/prerequisite semantic baseline:
   `9f373b25 native: route reference text membership slots`.
 - Prior integrated prerequisite:
@@ -62,39 +62,30 @@ shutdown ordering, exact diagnostics/error handlers, and backend parity.
 
 | Item | Toward Primary Integration | Toward Full Feature | Status |
 | --- | ---: | ---: | --- |
-| Text-membership/reference text-byte conversion | **100%** `[####################]` | **44%** `[#########-----------]` | Integrated at `9f373b25`. Shared runtime value/reference text slot feeds `function_exists()` and `extension_loaded()` consumers; repaired source preserves native known functions and native-C user functions. Dynamic runtime environment discovery and LLVM user-function parity remain open. |
-| Reference-slot type/int consumer ABI | **100%** `[####################]` | **45%** `[#########-----------]` | Integrated at `8f6266ce`. Runtime, LLVM, and generated C route reference-held type names, type predicates, and supported int operands through shared value/reference slots. Alias-aware write-through remains intentionally blocked. |
-| Array-key value/reference-slot ABI | **100%** `[####################]` | **42%** `[########------------]` | Integrated at `9022eb9e`. Shared checked slot ABI for value/reference-backed array-key operands is in primary. Broader expression lvalues, COW identity, object/resource/Stringable keys, and direct `ArrayAccess` remain open. |
+| Text-membership/reference text-byte conversion | **100%** `[####################]` | **44%** `[#########-----------]` | Integrated at `9f373b25`. Shared runtime value/reference text slot feeds `function_exists()` and `extension_loaded()` consumers; repaired native-C source includes user functions. Dynamic runtime environment discovery and LLVM user-function parity remain open. |
+| Reference-slot type/int consumer ABI | **100%** `[####################]` | **45%** `[#########-----------]` | Integrated at `8f6266ce`. Runtime, LLVM, and generated C route reference-held type names, type predicates, and supported int operands through shared value/reference slots. |
+| Array-key value/reference-slot ABI | **100%** `[####################]` | **42%** `[########------------]` | Integrated at `9022eb9e`. Broader expression lvalues, COW identity, object/resource/Stringable keys, and direct `ArrayAccess` remain open. |
 | Scalar/resource offset-read source-result prerequisite | **100%** `[####################]` | **44%** `[#########-----------]` | Integrated at `cc7efc2d`. Direct object `ArrayAccess`, object/resource materialization, and LLVM error-status cleanup remain open. |
 | Object-property reference-slot mutation | **100%** `[####################]` | **39%** `[########------------]` | Integrated at `bfbc62c4`. Covered assignment/unset operands use shared value/reference slot handling. Full object/property/reference semantics remain open. |
 | Bounded `preg_replace_callback()` string callbacks | **100%** `[####################]` | **32%** `[######--------------]` | Integrated at `6aca392d`. Full PCRE, broader captures/modifiers, non-string callables, `limit`/`count`/`flags`, and legacy recognizer cleanup remain open. |
 | Object-offset `ArrayAccess` diagnostic classifier | **100%** `[####################]` | **12%** `[##------------------]` | Integrated at `deaf52ca`. Diagnostic routing only; no `offsetGet`, `offsetExists`, `offsetSet`, or `offsetUnset` execution. |
-| Reference-slot comparison consumers | **42%** `[########------------]` | **38%** `[########------------]` | Ranked as the best next packet source by post-text triage, but still lane-local. Must exclude strict-identity/static arithmetic expectation churn and broad comparison parity. |
-| String operation-family slot consumers | **45%** `[#########-----------]` | **39%** `[########------------]` | Lane evidence shows value/reference-slot emission for string-result/array/int/position/parser/distance families. Needs one tight family split, not builtin accumulation. |
+| Reference-slot comparison consumers | **76%** `[###############-----]` | **40%** `[########------------]` | Candidate is ready for primary review, not integrated. Four-file packet has current-primary apply proof, stable hash `8ce92f610cf212411fd511d246652bb2311edb7f6c7e6a442fdda91fb77910cd`, and runtime/LLVM/generated-C/check/fmt/diff gates. Needs independent review and primary integration. |
 | Request-backed array-key/RMW blocker parity | **32%** `[######--------------]` | **34%** `[#######-------------]` | Diagnostics lane suggests a narrow blocker-parity packet that composes with the array-key ABI. It is not executable request storage/writeback. |
+| String operation-family slot consumers | **45%** `[#########-----------]` | **39%** `[########------------]` | Lane evidence shows value/reference-slot emission for string-result/array/int/position/parser/distance families. Needs one tight family split, not builtin accumulation. |
 | Broader lvalue/reference-slot materializer | **25%** `[#####---------------]` | **38%** `[########------------]` | Needed so non-variable expression families that can carry references can enter shared array-key and consumer slot ABIs safely. |
 | Object/resource source materialization for shared conversion sources | **25%** `[#####---------------]` | **30%** `[######--------------]` | Explicit blocker left by the offset-read ABI. Needs a general value reconstruction boundary before generic object/resource consumers are safe. |
 | LLVM offset-read/error-status cleanup | **25%** `[#####---------------]` | **30%** `[######--------------]` | Offset-read diagnostics exist, but LLVM still needs a generalized control-flow/error-exit status boundary for failed conversion results. |
 | Static-property comparison operand ABI | **35%** `[#######-------------]` | **37%** `[#######-------------]` | Prior extraction says `needs-split`: source lane is too broad and entangled. Split metadata/operand prerequisites first. |
-| Callable-object/dynamic-constructor candidates | **52%** `[##########----------]` | **42%** `[########------------]` | May 24 candidates still look useful but are stale relative to current primary `fa1694d8`; refresh before review and do not combine them. |
+| Callable-object/dynamic-constructor candidates | **52%** `[##########----------]` | **42%** `[########------------]` | May 24 candidates still look useful but are stale relative to current primary; refresh before review and do not combine them. |
 | Diagnostics, request, and cleanup boundaries | **60%** `[############--------]` | **40%** `[########------------]` | Lane-local request handle, writeback, branch cleanup, try/catch/finally preflight, stateful-call cleanup, and result-boundary work is useful infrastructure. Exact Zend ordering and real handler/exceptions execution remain open. |
-| Broad lane extraction backlog | **34%** `[#######-------------]` | **34%** `[#######-------------]` | Broad dirty lanes continue producing useful surfaces, but many are blocker/preflight-only or adjacent builtin/callback expansions. Treat lanes as packet sources, not integration units. |
+| Broad lane extraction backlog | **35%** `[#######-------------]` | **35%** `[#######-------------]` | Broad dirty lanes continue producing useful surfaces, but many are blocker/preflight-only or adjacent builtin/callback/filesystem expansions. Treat lanes as packet sources, not integration units. |
 
 ## Done / In Progress / Not Done
 
 Primary-integrated executable or executable-prerequisite capability:
 
-- [x] Descriptor-backed by-value closure invocation.
-- [x] Direct by-value closure captures and non-static arrow implicit captures.
-- [x] Untyped by-reference descriptor closure parameters.
-- [x] Supported root/reference and promoted frame-local by-reference captures.
-- [x] Typed/default/variadic by-value descriptor closure parameters.
-- [x] Static anonymous descriptor closures and static arrow closures.
-- [x] Non-static closure `$this` binding inside active object frames.
-- [x] Callable-array invocation for supported public static/object method frames.
-- [x] Callable-object invocation through supported public `__invoke` frames.
-- [x] Runtime string-valued declared-class `new` for selected declared classes.
-- [x] Destructor-observable declared-class allocation is blocked before unsafe generated-C native allocation.
+- [x] Descriptor-backed closures, selected captures, selected by-reference parameters, and selected callable-array/object invocation.
+- [x] Runtime string-valued declared-class `new` for selected declared classes, with destructor-observable allocation blocked before unsafe native allocation.
 - [x] Bounded public declared-object properties, methods, statics, constructors, named `instanceof`, and same-family aggregate equality.
 - [x] Bounded `preg_replace_callback()` string-callback execution over supported slash-delimited patterns.
 - [x] Object-property assignment/unset mutation for covered reference-backed operands through generated-C/native-link shared slot boundaries.
@@ -110,7 +101,7 @@ Primary-integrated non-executable infrastructure:
 
 In progress but lane-local or not yet executable primary support:
 
-- [ ] Reference-slot comparison consumers need fresh current-primary extraction and review.
+- [ ] Reference-slot comparison consumers are ready for primary review, but not integrated.
 - [ ] String operation-family value/reference-slot consumers must be split from unrelated builtin breadth and proven separately.
 - [ ] Request-backed array-key/RMW consumer blocker parity is lane-local and should stay separate from request storage execution.
 - [ ] Direct object `ArrayAccess` method dispatch remains blocked behind diagnostic-only classifier support.
@@ -121,7 +112,7 @@ In progress but lane-local or not yet executable primary support:
 - [ ] Static-property comparison operands need a smaller prerequisite split before primary review.
 - [ ] Callable-object and dynamic-constructor candidates need current-primary refresh before review.
 - [ ] Function-frame, method-table, request-state, object visibility, cleanup, and diagnostic boundaries remain lane-local infrastructure.
-- [ ] Binary-string, stream, PCRE, callback, pathinfo, and broad internal-callback surfaces remain lane-local until extracted into compact semantic packets.
+- [ ] Binary-string, stream, PCRE, callback, pathinfo, filesystem, and broad internal-callback surfaces remain lane-local until extracted into compact semantic packets.
 
 Not done:
 
@@ -138,6 +129,8 @@ Not done:
 
 ## Recent Primary-Integrated Work
 
+- `1068564c`: progress-dashboard commit only. No executable compiler/runtime
+  semantic code changed.
 - `fa1694d8`: progress-dashboard commit only. No executable compiler/runtime
   semantic code changed.
 - `9f373b25`: reference text-membership slots. Integrated files:
@@ -146,36 +139,21 @@ Not done:
   Focused runtime, generated IR, generated-C source, linked executable,
   user-function introspection, `cargo check`, rustfmt, diff hygiene,
   apply/hash, and zero-match gates passed.
-- `419ee981`: progress-dashboard commit only. No executable compiler/runtime
-  semantic code changed.
 - `8f6266ce`: reference-slot type/int consumers. Integrated files:
   `runtime/src/lib.rs`, `compiler/src/codegen.rs`,
   `compiler/tests/native_runtime_abi.rs`, and `compiler/tests/native_link.rs`.
-  Focused runtime, generated IR, generated-C source, linked executable,
-  `cargo check`, rustfmt, diff hygiene, apply/hash, and zero-match gates passed.
 - `9022eb9e`: array-key value/reference-slot ABI. Integrated files:
   `runtime/src/lib.rs`, `compiler/src/codegen.rs`, and
-  `compiler/tests/native_link.rs`. Focused runtime, generated-C source, linked
-  executable, `cargo check`, rustfmt, and diff hygiene gates passed.
+  `compiler/tests/native_link.rs`.
 - `cc7efc2d`: scalar/resource offset-read source-result ABI. Integrated files:
   `runtime/src/lib.rs`, `compiler/src/codegen.rs`, and
-  `compiler/tests/native_runtime_abi.rs`. Focused runtime, generated-source,
-  executable continuation, object-property composition, ArrayAccess rejection,
-  `cargo check`, diff hygiene, and rustfmt gates passed.
-- `bfbc62c4`: generated-C/native-link object-property assignment and unset
-  mutation route subject, property, and replacement operands through shared
-  value-or-reference slot handling with runtime dereference boundaries.
-- `deaf52ca`: compiler classifies unsupported object-offset `ArrayAccess`
-  receiver diagnostics through a shared operation result across covered
-  read/probe/error-control families. This is not executable `ArrayAccess`.
-- `6aca392d`: interpreter `preg_replace_callback()` executes supported string
-  callbacks over a bounded slash-delimited pattern subset.
+  `compiler/tests/native_runtime_abi.rs`.
 
 ## Current Work Snapshot
 
 Primary-integrated:
 
-- [x] Primary was clean and synced at `fa1694d8` before this dashboard edit.
+- [x] Primary was clean and synced at `1068564c` before this dashboard edit.
 - [x] Latest counted semantic/prerequisite commit remains `9f373b25`.
 - [x] Repaired reference-held text-membership consumers are integrated through
   the shared value/reference-slot ABI for runtime, LLVM, and generated C.
@@ -187,10 +165,10 @@ Primary-integrated:
 
 Lane-local:
 
-- [ ] Post-text-membership triage ranks reference-slot comparison consumers as
-  the best next packet if extracted tightly from current primary.
-- [ ] Request-backed array-key/RMW blocker parity looks like a narrower fallback
-  packet, but it is blocker precision rather than executable request storage.
+- [ ] Reference-slot comparison consumer packet is ready for primary review:
+  four files, current-primary apply proof, stable hash, and focused gates.
+- [ ] Request-backed array-key/RMW blocker parity remains a narrower fallback
+  packet if comparison review stalls.
 - [ ] String operation-family slot routing is plausible only as a tight family
   split; broad string/stream/PCRE/callback import should stay out of primary.
 - [ ] `impl-native-type-conversion` and `impl-binary-string-runtime` are broad
@@ -200,26 +178,30 @@ Lane-local:
 
 Resource posture:
 
-- `/dev/shm`: `40G` total, `24G` used, `17G` available; `du` reports `24G`.
-- `/home`: `459G` total, `202G` used, `238G` available; `du` reports `128G`.
+- `/dev/shm`: live `40G` total, `24G` used, `17G` available; live/snapshot `du`
+  reports about `24G`.
+- `/home`: live filesystem `459G` total, `211G` used, `229G` available;
+  snapshot `du` reported `128G`.
 - Snapshot memory had about `39Gi` available.
 - Snapshot swap remained high at `23Gi/29Gi`; use disk-backed target dirs,
   `CARGO_BUILD_JOBS=1`, and focused nonzero gates.
 
 ## Next Steering Read
 
-The next high-value primary candidate should be another compact reusable
-boundary, not a broad builtin/callback batch. Good options to consider:
+The next high-value primary candidate is the reference-slot comparison consumer
+packet, if independent review confirms the exact scope and excludes
+strict-identity/static arithmetic expectation churn, broad comparison parity,
+and already-landed text-membership work.
 
-- reference-slot comparison consumers, if extracted without strict-identity,
-  static arithmetic expectation churn, or broad comparison parity;
-- request-backed array-key/RMW blocker parity, if the packet stays narrow and
-  does not claim executable request/global storage;
+Fallback options to consider:
+
+- request-backed array-key/RMW blocker parity, if it stays narrow and does not
+  claim executable request/global storage;
 - one string operation-family slot-consumer split, if it includes runtime/IR/
   generated-C proof and excludes adjacent builtin accretion;
 - refreshed callable-object or dynamic-constructor work only after rebuilding
   the candidate from current primary.
 
-Do not count lane-local triage, broad source-lane work, stale May 24 candidates,
-callback-family accumulation, blocker-only metadata, or docs-only commits as
-product capability.
+Do not count lane-local triage, broad source-lane work, stale May 24
+candidates, callback/filesystem-family accumulation, blocker-only metadata, or
+docs-only commits as product capability.
