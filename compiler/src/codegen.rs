@@ -15499,6 +15499,9 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_public_property_operation_with_diagnostic(phpc_NativeValueHandle object, const uint8_t *property_name, size_t property_name_len, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_property_mutation_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle property, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_object_property_mutation_operation_with_reference_slots_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeReferenceHandle subject_reference, phpc_NativeValueHandle property, phpc_NativeReferenceHandle property_reference, phpc_NativeValueHandle replacement, phpc_NativeReferenceHandle replacement_reference, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeReferenceHandle phpc_native_value_public_property_reference_with_diagnostic_and_free(phpc_NativeValueHandle object, phpc_NativeValueHandle property, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeReferenceHandle phpc_native_value_public_property_array_path_reference_with_diagnostic_and_free(phpc_NativeValueHandle object, phpc_NativeValueHandle property, const phpc_NativeValueHandle *keys, size_t len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeReferenceHandle phpc_native_value_public_property_array_append_reference_with_diagnostic_and_free(phpc_NativeValueHandle object, phpc_NativeValueHandle property, const phpc_NativeValueHandle *keys, size_t len, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_object_instanceof_helpers {
                 output.push_str("extern _Bool phpc_native_value_instanceof_class_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *class_name, size_t class_name_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -17114,6 +17117,24 @@ impl CGenerator {
                     span,
                 })
             }
+            Expr::AppendIndex { target, span } => {
+                let (root, indices) = match target.as_ref() {
+                    nested @ Expr::Index { .. } => {
+                        let (root, indices, _) = array_index_expr_path(nested)?;
+                        (root, indices)
+                    }
+                    root => (root, Vec::new()),
+                };
+                let Expr::Variable(name, _) = root else {
+                    return None;
+                };
+                Some(CReferencePath {
+                    name,
+                    keys: indices,
+                    append: true,
+                    span: *span,
+                })
+            }
             _ => None,
         }
     }
@@ -17400,6 +17421,12 @@ impl CGenerator {
             }
         }
 
+        if let Some(reference) =
+            self.materialize_object_property_expr_reference_source(expr, failure_cleanup)?
+        {
+            return Ok(reference);
+        }
+
         let Some(path) = self.c_reference_path_for_expr(expr) else {
             return Err(
                 self.unsupported_call_operation(NativeCallOperation::value_result(
@@ -17415,8 +17442,9 @@ impl CGenerator {
         let path = self.materialize_c_reference_path(path, failure_cleanup)?;
         let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
         let handle = self.next_native_name("call_reference_arg");
+        let append = if path.append { "true" } else { "false" };
         self.body.push(format!(
-            "phpc_NativeReferenceHandle {handle} = phpc_native_symbol_table_reference_for_path({table}, {}, {}, {}, {}, false);",
+            "phpc_NativeReferenceHandle {handle} = phpc_native_symbol_table_reference_for_path({table}, {}, {}, {}, {}, {append});",
             path.name_bytes, path.name_len, path.keys, path.key_count
         ));
         let error_exit = self.native_error_exit(&format!("{path_cleanup}{failure_cleanup}"));
@@ -17428,6 +17456,387 @@ impl CGenerator {
             handle: handle.clone(),
             cleanup_after_use: vec![format!("phpc_native_reference_free({handle});")],
         })
+    }
+
+    fn materialize_object_property_expr_reference_source(
+        &mut self,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeReferenceMaterialization>> {
+        match expr {
+            Expr::Property {
+                target,
+                property,
+                span,
+            } => self
+                .materialize_object_property_reference_source(
+                    target,
+                    CObjectPropertyOperand::Literal(property),
+                    &[],
+                    false,
+                    *span,
+                    failure_cleanup,
+                )
+                .map(Some),
+            Expr::DynamicProperty {
+                target,
+                property,
+                span,
+            } => self
+                .materialize_object_property_reference_source(
+                    target,
+                    CObjectPropertyOperand::Dynamic(property),
+                    &[],
+                    false,
+                    *span,
+                    failure_cleanup,
+                )
+                .map(Some),
+            Expr::Index { .. } | Expr::AppendIndex { .. } => {
+                let Some((target, indices, span, append)) = object_property_array_expr_path(expr)
+                else {
+                    return Ok(None);
+                };
+                let Some((object, property)) = object_property_reference_parts(target) else {
+                    return Ok(None);
+                };
+                self.materialize_object_property_reference_source(
+                    object,
+                    property,
+                    &indices,
+                    append,
+                    span,
+                    failure_cleanup,
+                )
+                .map(Some)
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn materialize_object_property_reference_source(
+        &mut self,
+        object: &Expr,
+        property: CObjectPropertyOperand<'_>,
+        indices: &[&Expr],
+        append: bool,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeReferenceMaterialization> {
+        self.uses_native_object_property_helpers = true;
+        self.uses_native_reference_helpers = true;
+
+        let object_value = self.materialize_native_value_result_operand(object, failure_cleanup)?;
+        let object_cleanup = c_cleanup_sequence(&object_value.cleanup_after_use);
+        let property_failure_cleanup = format!("{object_cleanup}{failure_cleanup}");
+        let property_value = match property {
+            CObjectPropertyOperand::Literal(property) => self
+                .materialize_native_array_c_value_handle(
+                    CValue::String(property.to_string()),
+                    span,
+                )?,
+            CObjectPropertyOperand::Dynamic(property) => {
+                self.materialize_native_value_result_operand(property, &property_failure_cleanup)?
+            }
+        };
+        let property_cleanup = c_cleanup_sequence(&property_value.cleanup_after_use);
+        let key_failure_cleanup = format!("{property_cleanup}{object_cleanup}{failure_cleanup}");
+        let keys =
+            self.materialize_optional_globals_symbol_path_keys(indices, &key_failure_cleanup)?;
+        let diagnostic = self.next_native_name("reference_source_diagnostic");
+        let reference = self.next_native_name("reference_source");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        let (keys_arg, keys_len) = if indices.is_empty() {
+            ("NULL".to_string(), 0)
+        } else {
+            (keys.handles.clone(), keys.len)
+        };
+        let helper = if indices.is_empty() && !append {
+            "phpc_native_value_public_property_reference_with_diagnostic_and_free"
+        } else if append {
+            "phpc_native_value_public_property_array_append_reference_with_diagnostic_and_free"
+        } else {
+            "phpc_native_value_public_property_array_path_reference_with_diagnostic_and_free"
+        };
+        if indices.is_empty() && !append {
+            self.body.push(format!(
+                "phpc_NativeReferenceHandle {reference} = {helper}({}, {}, &{diagnostic});",
+                object_value.handle, property_value.handle
+            ));
+        } else {
+            self.body.push(format!(
+                "phpc_NativeReferenceHandle {reference} = {helper}({}, {}, {keys_arg}, {keys_len}, &{diagnostic});",
+                object_value.handle, property_value.handle
+            ));
+        }
+        let error_exit = self.native_error_exit(&failure_cleanup);
+        self.body.push(format!(
+            "if ({reference}.ptr == NULL) {{ phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {error_exit} }}"
+        ));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+
+        Ok(CNativeReferenceMaterialization {
+            handle: reference.clone(),
+            cleanup_after_use: vec![format!("phpc_native_reference_free({reference});")],
+        })
+    }
+
+    fn materialize_symbol_reference_source_handle(
+        &mut self,
+        source_path: CSymbolReferencePath<'_>,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeReferenceMaterialization> {
+        if let CSymbolReferencePath::Named(path) = &source_path {
+            self.reject_unsupported_symbol_reference_path_root(path, span)?;
+        }
+
+        let table = self.ensure_globals_symbol_table(failure_cleanup, span)?;
+        let source_ref = self.next_native_name("reference_source");
+        let source_cleanup_after_use = match source_path {
+            CSymbolReferencePath::Named(path) => {
+                let source = self.materialize_c_reference_path(path, failure_cleanup)?;
+                let source_append = if source.append { "true" } else { "false" };
+                self.body.push(format!(
+                    "phpc_NativeReferenceHandle {source_ref} = phpc_native_symbol_table_reference_for_path({table}, {}, {}, {}, {}, {source_append});",
+                    source.name_bytes, source.name_len, source.keys, source.key_count
+                ));
+                source.cleanup_after_use
+            }
+            CSymbolReferencePath::Globals(path) => {
+                let source =
+                    self.materialize_globals_symbol_value_reference_path(path, failure_cleanup)?;
+                let source_append = if source.append { "true" } else { "false" };
+                self.body.push(format!(
+                    "phpc_NativeReferenceHandle {source_ref} = phpc_native_symbol_table_reference_for_value_path({table}, {}, {}, {source_append});",
+                    source.keys, source.key_count
+                ));
+                source.cleanup_after_use
+            }
+            CSymbolReferencePath::GlobalsDynamic(path) => self
+                .emit_globals_dynamic_reference_source(
+                    &table,
+                    path,
+                    &source_ref,
+                    failure_cleanup,
+                )?,
+        };
+        let source_cleanup = c_cleanup_sequence(&source_cleanup_after_use);
+        let source_error_exit =
+            self.native_error_exit(&format!("{source_cleanup}{failure_cleanup}"));
+        self.body.push(format!(
+            "if ({source_ref}.ptr == NULL) {{ {source_error_exit} }}"
+        ));
+        self.body.extend(source_cleanup_after_use);
+
+        Ok(CNativeReferenceMaterialization {
+            handle: source_ref.clone(),
+            cleanup_after_use: vec![format!("phpc_native_reference_free({source_ref});")],
+        })
+    }
+
+    fn materialize_reference_source_handle(
+        &mut self,
+        source: &ReferenceSource,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeReferenceMaterialization> {
+        if let ReferenceSource::Variable { name, .. } = source {
+            if let Some(CValue::NativeReferenceHandle(reference)) =
+                self.variables.get(name).cloned()
+            {
+                let handle = self.clone_native_reference_handle(&reference);
+                let error_exit = self.native_error_exit(failure_cleanup);
+                self.body
+                    .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
+                return Ok(CNativeReferenceMaterialization {
+                    handle: handle.clone(),
+                    cleanup_after_use: vec![format!("phpc_native_reference_free({handle});")],
+                });
+            }
+        }
+
+        match source {
+            ReferenceSource::Property { expr, .. } => {
+                if let Some(reference) =
+                    self.materialize_object_property_expr_reference_source(expr, failure_cleanup)?
+                {
+                    return Ok(reference);
+                }
+            }
+            ReferenceSource::ObjectPropertyArrayIndex {
+                object,
+                property,
+                index,
+                span,
+            } => {
+                let object = Expr::Variable(object.clone(), *span);
+                return self.materialize_object_property_reference_source(
+                    &object,
+                    CObjectPropertyOperand::Literal(property),
+                    &[index],
+                    false,
+                    *span,
+                    failure_cleanup,
+                );
+            }
+            ReferenceSource::DynamicObjectPropertyArrayIndex {
+                object,
+                property,
+                index,
+                span,
+            } => {
+                let object = Expr::Variable(object.clone(), *span);
+                return self.materialize_object_property_reference_source(
+                    &object,
+                    CObjectPropertyOperand::Dynamic(property),
+                    &[index],
+                    false,
+                    *span,
+                    failure_cleanup,
+                );
+            }
+            ReferenceSource::ObjectPropertyArrayAppend {
+                object,
+                property,
+                indices,
+                span,
+            } => {
+                let object = Expr::Variable(object.clone(), *span);
+                let indices = indices.iter().collect::<Vec<_>>();
+                return self.materialize_object_property_reference_source(
+                    &object,
+                    CObjectPropertyOperand::Literal(property),
+                    &indices,
+                    true,
+                    *span,
+                    failure_cleanup,
+                );
+            }
+            ReferenceSource::DynamicObjectPropertyArrayAppend {
+                object,
+                property,
+                indices,
+                span,
+            } => {
+                let object = Expr::Variable(object.clone(), *span);
+                let indices = indices.iter().collect::<Vec<_>>();
+                return self.materialize_object_property_reference_source(
+                    &object,
+                    CObjectPropertyOperand::Dynamic(property),
+                    &indices,
+                    true,
+                    *span,
+                    failure_cleanup,
+                );
+            }
+            ReferenceSource::ObjectPropertyNestedArrayIndex {
+                object,
+                property,
+                indices,
+                span,
+            } => {
+                let object = Expr::Variable(object.clone(), *span);
+                let indices = indices.iter().collect::<Vec<_>>();
+                return self.materialize_object_property_reference_source(
+                    &object,
+                    CObjectPropertyOperand::Literal(property),
+                    &indices,
+                    false,
+                    *span,
+                    failure_cleanup,
+                );
+            }
+            ReferenceSource::DynamicObjectPropertyNestedArrayIndex {
+                object,
+                property,
+                indices,
+                span,
+            } => {
+                let object = Expr::Variable(object.clone(), *span);
+                let indices = indices.iter().collect::<Vec<_>>();
+                return self.materialize_object_property_reference_source(
+                    &object,
+                    CObjectPropertyOperand::Dynamic(property),
+                    &indices,
+                    false,
+                    *span,
+                    failure_cleanup,
+                );
+            }
+            ReferenceSource::NonDirectObjectPropertyArrayAppend {
+                holder,
+                property,
+                indices,
+                span,
+            } => {
+                let indices = indices.iter().collect::<Vec<_>>();
+                return self.materialize_object_property_reference_source(
+                    holder,
+                    CObjectPropertyOperand::Literal(property),
+                    &indices,
+                    true,
+                    *span,
+                    failure_cleanup,
+                );
+            }
+            ReferenceSource::NonDirectDynamicObjectPropertyArrayAppend {
+                holder,
+                property,
+                indices,
+                span,
+            } => {
+                let indices = indices.iter().collect::<Vec<_>>();
+                return self.materialize_object_property_reference_source(
+                    holder,
+                    CObjectPropertyOperand::Dynamic(property),
+                    &indices,
+                    true,
+                    *span,
+                    failure_cleanup,
+                );
+            }
+            ReferenceSource::NonDirectObjectPropertyNestedArrayIndex {
+                holder,
+                property,
+                indices,
+                span,
+            } => {
+                let indices = indices.iter().collect::<Vec<_>>();
+                return self.materialize_object_property_reference_source(
+                    holder,
+                    CObjectPropertyOperand::Literal(property),
+                    &indices,
+                    false,
+                    *span,
+                    failure_cleanup,
+                );
+            }
+            ReferenceSource::NonDirectDynamicObjectPropertyNestedArrayIndex {
+                holder,
+                property,
+                indices,
+                span,
+            } => {
+                let indices = indices.iter().collect::<Vec<_>>();
+                return self.materialize_object_property_reference_source(
+                    holder,
+                    CObjectPropertyOperand::Dynamic(property),
+                    &indices,
+                    false,
+                    *span,
+                    failure_cleanup,
+                );
+            }
+            _ => {}
+        }
+
+        let Some(source_path) = self.c_symbol_reference_path_for_source(source) else {
+            return Err(self.unsupported(span, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION));
+        };
+        self.materialize_symbol_reference_source_handle(source_path, span, failure_cleanup)
     }
 
     fn materialize_globals_symbol_value_reference_path(
@@ -17853,12 +18262,10 @@ impl CGenerator {
         }
 
         let table = self.ensure_globals_symbol_table(failure_cleanup, span)?;
-        let target_failure_cleanup =
-            format!("phpc_native_reference_free({source_ref}); {failure_cleanup}");
         let bound = self.next_native_name("symbol_reference_bound");
         let target_cleanup_after_use = match target_path {
             CSymbolReferencePath::Named(path) => {
-                let target = self.materialize_c_reference_path(path, &target_failure_cleanup)?;
+                let target = self.materialize_c_reference_path(path, failure_cleanup)?;
                 let target_append = if target.append { "true" } else { "false" };
                 self.body.push(format!(
                     "bool {bound} = phpc_native_symbol_table_bind_reference_path({table}, {}, {}, {}, {}, {target_append}, {source_ref});",
@@ -17867,10 +18274,8 @@ impl CGenerator {
                 target.cleanup_after_use
             }
             CSymbolReferencePath::Globals(path) => {
-                let target = self.materialize_globals_symbol_value_reference_path(
-                    path,
-                    &target_failure_cleanup,
-                )?;
+                let target =
+                    self.materialize_globals_symbol_value_reference_path(path, failure_cleanup)?;
                 let target_append = if target.append { "true" } else { "false" };
                 self.body.push(format!(
                     "bool {bound} = phpc_native_symbol_table_bind_reference_value_path({table}, {}, {}, {target_append}, {source_ref});",
@@ -17884,7 +18289,7 @@ impl CGenerator {
                     path,
                     source_ref,
                     &bound,
-                    &target_failure_cleanup,
+                    failure_cleanup,
                 )?,
         };
         let target_cleanup = c_cleanup_sequence(&target_cleanup_after_use);
@@ -17892,6 +18297,39 @@ impl CGenerator {
         self.body
             .push(format!("if (!{bound}) {{ {bind_error_exit} }}"));
         self.body.extend(target_cleanup_after_use);
+        Ok(true)
+    }
+
+    fn emit_c_reference_source_assignment(
+        &mut self,
+        target: &AssignTarget,
+        source: &ReferenceSource,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<bool> {
+        if self
+            .c_symbol_reference_path_for_assign_target(target)
+            .is_none()
+        {
+            return Ok(false);
+        }
+
+        let source = self.materialize_reference_source_handle(source, span, failure_cleanup)?;
+        let target_failure_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&source.cleanup_after_use),
+            failure_cleanup
+        );
+        let bound = self.emit_c_symbol_path_reference_assignment_from_source_ref(
+            target,
+            &source.handle,
+            span,
+            &target_failure_cleanup,
+        )?;
+        if !bound {
+            return Ok(false);
+        }
+        self.body.extend(source.cleanup_after_use);
         Ok(true)
     }
 
@@ -22088,6 +22526,10 @@ impl CGenerator {
                 if self.emit_request_superglobal_path_reference_source_assignment(
                     target, source, *span, "",
                 )? {
+                    return Ok(());
+                }
+
+                if self.emit_c_reference_source_assignment(target, source, *span, "")? {
                     return Ok(());
                 }
 
@@ -36070,6 +36512,43 @@ fn array_index_expr_path(expr: &Expr) -> Option<(&Expr, Vec<&Expr>, Span)> {
             Some((root, indices, *span))
         }
         root => Some((root, vec![index.as_ref()], *span)),
+    }
+}
+
+fn object_property_array_expr_path(expr: &Expr) -> Option<(&Expr, Vec<&Expr>, Span, bool)> {
+    match expr {
+        Expr::Index {
+            target,
+            index,
+            span,
+        } => match target.as_ref() {
+            nested @ Expr::Index { .. } => {
+                let (root, mut indices, _, _) = object_property_array_expr_path(nested)?;
+                indices.push(index.as_ref());
+                Some((root, indices, *span, false))
+            }
+            root => Some((root, vec![index.as_ref()], *span, false)),
+        },
+        Expr::AppendIndex { target, span } => match target.as_ref() {
+            nested @ Expr::Index { .. } => {
+                let (root, indices, _, _) = object_property_array_expr_path(nested)?;
+                Some((root, indices, *span, true))
+            }
+            root => Some((root, Vec::new(), *span, true)),
+        },
+        _ => None,
+    }
+}
+
+fn object_property_reference_parts(expr: &Expr) -> Option<(&Expr, CObjectPropertyOperand<'_>)> {
+    match expr {
+        Expr::Property {
+            target, property, ..
+        } => Some((target.as_ref(), CObjectPropertyOperand::Literal(property))),
+        Expr::DynamicProperty {
+            target, property, ..
+        } => Some((target.as_ref(), CObjectPropertyOperand::Dynamic(property))),
+        _ => None,
     }
 }
 

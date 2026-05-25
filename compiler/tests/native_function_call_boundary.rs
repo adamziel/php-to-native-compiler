@@ -1402,6 +1402,87 @@ fn native_executable_c_source_executes_by_reference_closure_captures_across_cons
 }
 
 #[test]
+fn native_executable_c_source_routes_plain_reference_assignment_fallbacks_through_shared_reference_boundary(
+) {
+    for source in [
+        "<?php\n$alias =& StaticSource::$slot;\n",
+        "<?php\n$alias =& StaticSource::$slot[0];\n",
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION);
+    }
+}
+
+#[test]
+fn native_executable_c_source_binds_object_property_reference_sources_across_reference_consumers() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = r#"<?php
+function replace(&$slot, $next) { $slot = $next; return $slot; }
+function pick(&$slot) { return $slot; }
+class PropertyReferenceSourceBox {
+    public $direct;
+    public $dynamic;
+    public $items;
+    public $target_source;
+    public $appendItems;
+}
+$box = new PropertyReferenceSourceBox();
+$direct =& $box->direct;
+$direct = "D";
+echo pick($box->direct), "|";
+$name = "dynamic";
+$dynamic =& $box->$name;
+$dynamic = "Y";
+echo pick($box->$name), "|";
+$path =& $box->items["leaf"];
+$path = "P";
+echo pick($box->items["leaf"]), "|";
+$targets = [];
+$targets["alias"] =& $box->target_source;
+replace($box->target_source, "T");
+echo pick($targets["alias"]), "|";
+$arrayAppend = [];
+$arrayAlias =& $arrayAppend[];
+$arrayAlias = "AA";
+echo pick($arrayAppend[0]), "|";
+$propertyAppend =& $box->appendItems[];
+$propertyAppend = "PA";
+echo pick($box->appendItems[0]);
+"#;
+    let generated = emit_native_executable_c_source(&parse(source).unwrap()).unwrap();
+    assert!(
+        generated.contains("phpc_native_value_public_property_reference_with_diagnostic_and_free")
+    );
+
+    let (source_path, output_path) =
+        compile_native_function_call_fixture("object_property_reference_sources", source);
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run object-property reference executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"D|Y|P|T|AA|PA");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn native_executable_c_source_executes_descriptor_ready_closure_invocation() {
     if !has_cc() {
         return;

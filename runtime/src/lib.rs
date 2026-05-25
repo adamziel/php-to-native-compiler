@@ -4194,6 +4194,247 @@ pub unsafe extern "C" fn phpc_native_array_insert_key_value_with_diagnostic(
     }
 }
 
+unsafe fn native_array_path_keys_from_value_handles(
+    keys: *const NativeValueHandle,
+    len: usize,
+    allow_empty: bool,
+) -> RuntimeResult<Vec<ArrayKey>> {
+    if len == 0 {
+        return if allow_empty {
+            Ok(Vec::new())
+        } else {
+            Err(RuntimeError::invalid_array_key(
+                "native reference path requires at least one key",
+            ))
+        };
+    }
+    if keys.is_null() {
+        return Err(RuntimeError::invalid_array_key(
+            "native reference path key vector is null",
+        ));
+    }
+
+    let keys = unsafe { std::slice::from_raw_parts(keys, len) };
+    keys.iter()
+        .map(|key| {
+            let value = unsafe { key.as_ref() }.ok_or_else(|| {
+                RuntimeError::invalid_array_key("native reference path key handle is null")
+            })?;
+            native_array_key_from_runtime_value(value)
+        })
+        .collect()
+}
+
+unsafe fn native_value_handle_vector_free(keys: *const NativeValueHandle, len: usize) {
+    if len == 0 || keys.is_null() {
+        return;
+    }
+
+    for key in unsafe { std::slice::from_raw_parts(keys, len) } {
+        unsafe { phpc_native_value_free(*key) };
+    }
+}
+
+fn reference_array_path_cell(
+    reference: &PhpReferenceCell,
+    keys: &[ArrayKey],
+    append: bool,
+) -> RuntimeResult<PhpReferenceCell> {
+    let mut root = match reference.value_cloned() {
+        Value::Array(array) => array,
+        Value::Null | Value::Bool(false) => PhpArray::new(),
+        other => {
+            return Err(RuntimeError::invalid_array_access(format!(
+                "native reference path extraction failed: cannot create array path on {}",
+                other.type_name()
+            )));
+        }
+    };
+
+    let cell = if append {
+        let cell = PhpReferenceCell::new(Value::Null);
+        root.append_path_reference(keys, cell.clone())?;
+        cell
+    } else {
+        root.materialize_path(keys)?;
+        root.promote_path_to_reference_cell(keys).ok_or_else(|| {
+            RuntimeError::invalid_array_access(
+                "native reference path extraction failed: array path reference is missing",
+            )
+        })?
+    };
+    reference.set_value(Value::Array(root));
+    Ok(cell)
+}
+
+unsafe fn native_property_name_from_value_handle(
+    property: NativeValueHandle,
+) -> Result<String, String> {
+    let property =
+        unsafe { property.as_ref() }.ok_or_else(|| "missing property handle".to_string())?;
+    native_object_property_name_from_value(property)
+}
+
+/// # Safety
+///
+/// `object` and `property` must be null or value handles previously returned
+/// by the runtime ABI and not yet freed. The helper aliases an existing public
+/// property cell or creates a supported dynamic public property cell, and frees
+/// both input value handles before returning.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_public_property_reference_with_diagnostic_and_free(
+    object: NativeValueHandle,
+    property: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeReferenceHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let result = (|| {
+        let object_value = unsafe { object.as_ref() }.ok_or_else(|| {
+            "native object property reference failed: missing object handle".to_string()
+        })?;
+        let property_name = unsafe { native_property_name_from_value_handle(property) }
+            .map_err(|message| format!("native object property reference failed: {message}"))?;
+        let Value::Object(object) = object_value else {
+            return Err(format!(
+                "native object property reference failed: receiver must be an object, got {}",
+                object_value.type_name()
+            ));
+        };
+
+        object
+            .bind_dynamic_public_property_reference_cell(&property_name)
+            .map(NativeReferenceHandle::from_cell)
+            .map_err(|error| error.message().to_string())
+    })();
+
+    unsafe {
+        phpc_native_value_free(object);
+        phpc_native_value_free(property);
+    }
+
+    match result {
+        Ok(reference) => reference,
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeReferenceHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `object`, `property`, and every entry in `keys` must be null only as
+/// documented for their handle types. The helper aliases the public property
+/// reference cell, promotes the selected array path inside it to a reference,
+/// and frees all input value handles before returning.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_public_property_array_path_reference_with_diagnostic_and_free(
+    object: NativeValueHandle,
+    property: NativeValueHandle,
+    keys: *const NativeValueHandle,
+    len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeReferenceHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let result = (|| {
+        let object_value = unsafe { object.as_ref() }.ok_or_else(|| {
+            "native object property array-path reference failed: missing object handle".to_string()
+        })?;
+        let property_name =
+            unsafe { native_property_name_from_value_handle(property) }.map_err(|message| {
+                format!("native object property array-path reference failed: {message}")
+            })?;
+        let keys = unsafe { native_array_path_keys_from_value_handles(keys, len, false) }
+            .map_err(|error| error.message().to_string())?;
+        let Value::Object(object) = object_value else {
+            return Err(format!(
+                "native object property array-path reference failed: receiver must be an object, got {}",
+                object_value.type_name()
+            ));
+        };
+
+        let property = object
+            .bind_dynamic_public_property_reference_cell(&property_name)
+            .map_err(|error| error.message().to_string())?;
+        reference_array_path_cell(&property, &keys, false)
+            .map(NativeReferenceHandle::from_cell)
+            .map_err(|error| error.message().to_string())
+    })();
+
+    unsafe {
+        phpc_native_value_free(object);
+        phpc_native_value_free(property);
+        native_value_handle_vector_free(keys, len);
+    }
+
+    match result {
+        Ok(reference) => reference,
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeReferenceHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `object`, `property`, and every entry in `keys` must be null only as
+/// documented for their handle types. The helper aliases the public property
+/// reference cell, appends a new null reference at the selected path inside it,
+/// and frees all input value handles before returning.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_public_property_array_append_reference_with_diagnostic_and_free(
+    object: NativeValueHandle,
+    property: NativeValueHandle,
+    keys: *const NativeValueHandle,
+    len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeReferenceHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let result = (|| {
+        let object_value = unsafe { object.as_ref() }.ok_or_else(|| {
+            "native object property array-append reference failed: missing object handle"
+                .to_string()
+        })?;
+        let property_name =
+            unsafe { native_property_name_from_value_handle(property) }.map_err(|message| {
+                format!("native object property array-append reference failed: {message}")
+            })?;
+        let keys = unsafe { native_array_path_keys_from_value_handles(keys, len, true) }
+            .map_err(|error| error.message().to_string())?;
+        let Value::Object(object) = object_value else {
+            return Err(format!(
+                "native object property array-append reference failed: receiver must be an object, got {}",
+                object_value.type_name()
+            ));
+        };
+
+        let property = object
+            .bind_dynamic_public_property_reference_cell(&property_name)
+            .map_err(|error| error.message().to_string())?;
+        reference_array_path_cell(&property, &keys, true)
+            .map(NativeReferenceHandle::from_cell)
+            .map_err(|error| error.message().to_string())
+    })();
+
+    unsafe {
+        phpc_native_value_free(object);
+        phpc_native_value_free(property);
+        native_value_handle_vector_free(keys, len);
+    }
+
+    match result {
+        Ok(reference) => reference,
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeReferenceHandle::null()
+        }
+    }
+}
+
 /// # Safety
 ///
 /// `handle` must be null or an array handle previously returned by the runtime
