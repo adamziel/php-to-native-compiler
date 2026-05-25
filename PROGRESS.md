@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 00:13 CEST
-Evaluation marker: `20260525T221331Z`
+Updated: 2026-05-26 00:36 CEST
+Evaluation marker: `20260525T223657Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, candidate worktrees, lane-local
@@ -15,35 +15,41 @@ Overall estimated progress: **95%** `[###################-]`
 Executable PHP semantics: **95%** `[###################-]`
 
 Primary was clean and aligned with `origin/master` at
-`b35b2529 docs: update progress dashboard` before this `PROGRESS.md` edit.
+`e32f5735 native: add runtime callable ABI` before this `PROGRESS.md` edit.
 
 Latest primary-integrated executable capability baseline:
-`90e53401 native: materialize reference-backed closure captures`.
+`e32f5735 native: add runtime callable ABI`.
 
-No new primary source semantic packet landed since the prior dashboard marker.
-This review records current steering state only: dynamic callable
-class-context/value dispatch correctly stopped as too broad, a runtime-only
-callable ABI split has been recommended and queued, and broad call/diagnostic
-lanes remain evidence only. Overall and executable estimates stay flat.
+`e32f5735` landed the runtime-only callable table, call
+arguments/result/frame ABI, and caller-scope visibility boundary. This is a
+generalized prerequisite for dynamic callable-value dispatch and compiler
+consumers, not complete callable execution. Overall and executable estimates
+stay flat while the next call work moves from ABI foundation to compiler use.
 
 ## Grand Roadmap Position
 
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, byte-string, string-array, array, diagnostic, reference, symbol, call-frame, object, comparison, conversion, numeric-unary, request-state, closure-result, and reference-source surfaces. A generalized callable table/arguments/result ABI is now the next explicit missing foundation for dynamic callable work. |
+| Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, byte-string, string-array, array, diagnostic, reference, symbol, call-frame, object, comparison, conversion, numeric-unary, request-state, closure-result, reference-source, and callable table/arguments/result/frame surfaces. The next missing callable foundation is value dispatch and compiler consumption through the integrated ABI. |
 | Compiler/backend consumers | **99%** | `[####################]` | Generated C has the freshest executable semantics; LLVM and direct assembly still lag several recent semantic packets. No new compiler consumer landed in this review window. |
 | Executable PHP semantics | **95%** | `[###################-]` | Primary has many selected executable islands, including reference-backed by-value closure capture materialization, closure value/reference returns, and reference-source append/lvalue extraction. |
 | Strings and byte semantics | **62%** | `[############--------]` | Byte-backed values and byte-preserving `explode()` / `str_split()` slots are integrated. Binary source bytes, byte-exact interpreter/session/debug output, `mb_str_split()`, request/global byte keys, and exact diagnostics remain open. |
 | Arrays, lvalues, references, COW | **82%** | `[################----]` | Selected reference-source/lvalue extraction and closure capture from reference-backed slots are integrated. Full COW, arbitrary alias roots, foreach, alias composition, static/magic/non-public properties, ArrayAccess, and broad writeback remain incomplete. |
 | Symbols, globals, request state | **74%** | `[###############-----]` | Selected globals, root-symbol, active symbol-table reference consumers, request-key blockers, and append-shaped symbol reference-source materialization exist. `$GLOBALS` self-cells, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
-| Calls, functions, frames | **88%** | `[##################--]` | Descriptor closures, selected captures, selected by-reference parameters, callable/function-table surfaces, method-frame surfaces, descriptor closure value/reference returns, and reference-backed by-value captures are integrated. General callable table/value dispatch, non-descriptor closures, methods, static calls, constructors, visibility, and argument binding breadth remain open. |
+| Calls, functions, frames | **89%** | `[##################--]` | Descriptor closures, selected captures, selected by-reference parameters, callable/function-table surfaces, method-frame surfaces, descriptor closure value/reference returns, reference-backed by-value captures, and a runtime callable table/arguments/result/frame ABI are integrated. General callable-value dispatch, compiler table registration/consumers, non-descriptor closures, methods, static calls, constructors, and argument binding breadth remain open. |
 | Objects, properties, methods | **53%** | `[###########---------]` | Public object-property reference-source extraction and object-property reference-slot mutation exist for selected paths. Full visibility, magic, dynamic/static/typed properties, destructors, references/COW, and `ArrayAccess` execution remain open. |
 | Control flow, cleanup, diagnostics | **51%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, truthiness, and conversion consumers exist. Broad unwind/finally/destructor/shutdown and exact source ordering remain open. Current broad diagnostic-lane work is not counted. |
 | Broad integrated verification | **92%** | `[##################--]` | Recent focused gates are strong and nonzero. The full `native_runtime_abi` suite still has known current-primary failures, and broad gates remain constrained by lane extraction cost, stale lane expectations, high swap, and backend parity gaps. |
 
 ## Recent Primary-Integrated Work
 
-- No new primary source semantic packet landed in this review window.
+- `e32f5735`: added a runtime callable table and shared
+  call arguments/result/frame ABI for function, method, and constructor
+  callable kinds, including value/reference/failure ownership operations,
+  called-scope propagation, and public/protected/private caller-scope
+  visibility checks. Integrated exactly `runtime/src/lib.rs`; focused nonzero
+  php_runtime gates, `cargo check -p php_runtime -p phpc`, fmt, and diff
+  checks passed.
 - `90e53401`: materialized by-value descriptor closure captures from
   reference-backed locals/frame slots through a shared helper consumed by both
   descriptor capture storage families. Integrated exactly
@@ -72,7 +78,7 @@ Primary-integrated capability and lane-local candidate work are separated here.
 
 | Item | Toward Primary Integration | Toward Full Feature | Status |
 | --- | ---: | ---: | --- |
-| Dynamic callable runtime ABI / callable-value dispatch | **15%** `[###-----------------]` | **43%** `[#########-----------]` | Lane-local architecture moved forward: dynamic callable-value/context prep returned `needs-architecture`, and a scope audit recommends a first runtime-only callable table, call arguments/result/frame, ownership, invocation, and visibility ABI packet in `runtime/src/lib.rs`. No candidate diff, gates, review, or primary integration yet. |
+| Dynamic callable runtime ABI / callable-value dispatch | **100%** `[####################]` | **47%** `[#########-----------]` | Runtime-only callable table, arguments/result/frame ownership, function/method/constructor invocation callbacks, called-scope propagation, and public/protected/private visibility checks are integrated at `e32f5735`. Callable-value dispatch, compiler table registration, and generated-C consumers remain lane-local/future work. |
 | Reference-backed by-value closure captures | **100%** `[####################]` | **48%** `[##########----------]` | Integrated at `90e53401`. Covers descriptor closure value captures from ordinary locals, native reference handles, and active symbol-table storage across direct function, static method, receiver method, and closure factory frames. Non-static implicit `$this`, secondary-alias writeback, and broad callable/object semantics remain open. |
 | Reference-source append/lvalue extraction | **100%** `[####################]` | **52%** `[##########----------]` | Integrated at `7aa162ca`. Covers selected symbol, native reference local, public object-property, object-property array-path, append, reference assignment, and by-reference call consumers. Static/magic/non-public properties, ArrayAccess, arbitrary alias roots, and full references/COW remain open. |
 | Closure value/reference return ABI | **100%** `[####################]` | **50%** `[##########----------]` | Integrated at `ae93da8c`. Runtime closure invocation has a shared value/reference/diagnostic/status result contract for descriptor closures. Broader function/method/static/constructor reference returns remain open. |
@@ -119,13 +125,19 @@ Primary-integrated executable or executable-prerequisite capability:
 - [x] Shared numeric-unary source/result ABI for covered unary negation.
 - [x] Shared LLVM conversion-result consumer helper for current scalar
   offset-read and numeric-unary source-result paths.
+- [x] Runtime callable table plus shared call arguments/result/frame ABI for
+  function, method, and constructor callable kinds, including value/reference/
+  failure ownership, called-scope propagation, and caller-scope visibility.
 
 In progress but lane-local or not yet executable primary support:
 
-- [ ] Dynamic callable runtime ABI prep is queued from current primary at
-  `b35b2529`, scoped to `runtime/src/lib.rs` only. It must produce a compact
-  candidate with nonzero runtime ownership/invocation/visibility tests, or stop
-  as `needs-broader-design`.
+- [ ] Dynamic callable compiler consumers must now use the integrated
+  `e32f5735` runtime ABI: table registration, callable-value dispatch, and
+  generated-C result/value/reference/discard consumers remain unintegrated.
+- [ ] Three current-primary candidate packets are ready for review but not
+  counted: dynamic constructor symbol-environment blockers,
+  allocatable destructor-risk metadata, and try-body call routing. Each still
+  needs independent review, current-primary apply proof, and focused gates.
 - [ ] `impl-native-call-semantics` has broad dirty evidence for call ordering,
   dynamic constructor/class-name blockers, callable-value dispatch,
   destructor-risk metadata, source-call ordering, and object/call blockers.
@@ -168,20 +180,23 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary is clean and synced at `b35b2529` before this `PROGRESS.md` edit.
-- [x] Latest executable capability head remains `90e53401`.
+- [x] Primary is clean and synced at `e32f5735` before this `PROGRESS.md` edit.
+- [x] Latest executable capability head is `e32f5735`.
 - [x] Overall and executable estimates remain 95% under current project-local
   accounting.
 - [x] Closure capture from reference-backed storage remains a completed
   non-repeat item.
+- [x] Runtime callable ABI is now a completed non-repeat prerequisite.
 
 Lane-local:
 
-- [ ] Dynamic callable value-context prep made no product edits and returned
-  `needs-architecture`; architecture now recommends a runtime-only callable ABI
-  first packet.
-- [ ] Dynamic callable runtime ABI prep is active but has not yet produced a
-  status file, candidate diff, stable hash, gates, or review result.
+- [x] Dynamic callable value-context prep correctly returned
+  `needs-architecture`; the runtime-only ABI split from that blocker is now
+  integrated.
+- [ ] Next callable work should target callable-value dispatch and first
+  compiler consumer packets over `e32f5735`, not another ABI-only inventory.
+- [ ] Dynamic constructor symbol-environment, allocatable destructor-risk, and
+  try-body call-routing candidates are ready-for-review artifacts only.
 - [ ] Call-lane loop/call ordering work is fresh but broad and dirty.
 - [ ] Diagnostic-lane callable operand, reference-binding, RMW, report dispatch,
   and control-flow scanner contracts are broad and dirty; status chronology is
@@ -195,9 +210,9 @@ Resource posture:
   Largest observed targets: `phpc-target-native-call-semantics` 8.9G,
   `phpc-target-native-object-seed` 5.6G, and
   `phpc-target-native-diagnostics` 3.0G.
-- `/home`: 459G total, 183G used, 257G available, 42% used. Largest observed
+- `/home`: 459G total, 194G used, 247G available, 44% used. Largest observed
   lane/work tree: `phpc-lane-native-error-diagnostic-semantics` 14G.
-- Memory available is about 41Gi, but swap remains high at 23Gi/29Gi used.
+- Memory available is about 39Gi, but swap remains high at 23Gi/29Gi used.
 - Continue disk-backed `/tmp` target dirs, `umask 0007`,
   `CARGO_BUILD_JOBS=1`, `CARGO_INCREMENTAL=0`, and focused nonzero gates.
 
@@ -205,12 +220,10 @@ Resource posture:
 
 Best next action:
 
-- Consider allowing the runtime callable ABI prep to continue only while it
-  stays compact, runtime-only, and backed by nonzero tests for call argument
-  value/reference ownership, call result value/reference/failure ownership,
-  function/method/constructor invocation, and public/protected/private
-  caller-scope visibility. If that cannot hold, classify the blocker rather
-  than widening the packet.
+- Review the ready current-primary candidate packets in priority order only
+  after proving clean apply over `e32f5735` and any docs-only progress commit.
+  Favor call/compiler consumer work that uses the integrated runtime callable
+  ABI over cleanup-only diagnostic/scanner work.
 
 Avoid:
 
@@ -218,9 +231,10 @@ Avoid:
   cleanup, diagnostic/scanner-only cleanup, future-dated status claims, or
   lane-local work.
 - Routing broad dirty call/diagnostic lanes directly to primary.
-- Repeating reference-backed closure capture materialization,
+- Repeating runtime-only callable table/arguments/result/frame ABI work,
+  reference-backed closure capture materialization,
   reference-source append/lvalue extraction, descriptor closure result ABI,
   request-key selector cleanup, conversion helper cleanup, or unary negation ABI
   work under new names.
-- Letting ABI scaffolding drift into a large declaration inventory without a
-  near-term callable-value dispatch and compiler-consumer path.
+- Extending generated-C dynamic-call shape helpers instead of consuming the
+  integrated runtime callable ABI.
