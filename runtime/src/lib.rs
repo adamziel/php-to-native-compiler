@@ -712,6 +712,15 @@ const NATIVE_OBJECT_PUBLIC_PROPERTY_EMPTY: u8 = 4;
 const NATIVE_OBJECT_PUBLIC_PROPERTY_UNSET: u8 = 5;
 const NATIVE_OBJECT_PROPERTY_MUTATION_WRITE: u8 = 0;
 const NATIVE_OBJECT_PROPERTY_MUTATION_UNSET: u8 = 1;
+pub const PHPC_NATIVE_CONVERSION_SOURCE_SCALAR: u8 = 0;
+pub const PHPC_NATIVE_CONVERSION_SOURCE_VALUE: u8 = 1;
+pub const PHPC_NATIVE_CONVERSION_SOURCE_STRING: u8 = 2;
+pub const PHPC_NATIVE_CONVERSION_SOURCE_ARRAY: u8 = 3;
+pub const PHPC_NATIVE_CONVERSION_SOURCE_OBJECT: u8 = 4;
+pub const PHPC_NATIVE_CONVERSION_SOURCE_RESOURCE: u8 = 5;
+pub const PHPC_NATIVE_CONVERSION_SOURCE_REFERENCE: u8 = 6;
+pub const PHPC_NATIVE_CONVERSION_STATUS_OK: u8 = 0;
+pub const PHPC_NATIVE_CONVERSION_STATUS_ERROR: u8 = 1;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -927,6 +936,27 @@ const NATIVE_REQUEST_STATE_MISSING_KEY_READ_MESSAGE: &str =
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeSymbolTableHandle {
     ptr: *mut NativeSymbolTable,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NativeConversionSource {
+    kind: u8,
+    scalar: NativeScalarValue,
+    value: NativeValueHandle,
+    string: NativeStringHandle,
+    array: NativeArrayHandle,
+    object: NativeObjectHandle,
+    resource: NativeResourceHandle,
+    reference: NativeReferenceHandle,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeConversionResult {
+    value: NativeValueHandle,
+    diagnostic: NativeDiagnosticHandle,
+    status: u8,
 }
 
 #[derive(Debug)]
@@ -1576,6 +1606,99 @@ impl NativeValueOperationResult {
     #[cfg(test)]
     fn succeeded(&self) -> bool {
         self.tag == NativeValueOperationResultTag::Ok
+    }
+}
+
+impl NativeConversionSource {
+    const fn empty(kind: u8) -> Self {
+        Self {
+            kind,
+            scalar: NativeScalarValue::null(),
+            value: NativeValueHandle::null(),
+            string: NativeStringHandle::null(),
+            array: NativeArrayHandle::null(),
+            object: NativeObjectHandle::null(),
+            resource: NativeResourceHandle::null(),
+            reference: NativeReferenceHandle::null(),
+        }
+    }
+
+    pub const fn scalar(value: NativeScalarValue) -> Self {
+        Self {
+            scalar: value,
+            ..Self::empty(PHPC_NATIVE_CONVERSION_SOURCE_SCALAR)
+        }
+    }
+
+    pub const fn value(handle: NativeValueHandle) -> Self {
+        Self {
+            value: handle,
+            ..Self::empty(PHPC_NATIVE_CONVERSION_SOURCE_VALUE)
+        }
+    }
+
+    pub const fn string(handle: NativeStringHandle) -> Self {
+        Self {
+            string: handle,
+            ..Self::empty(PHPC_NATIVE_CONVERSION_SOURCE_STRING)
+        }
+    }
+
+    pub const fn array(handle: NativeArrayHandle) -> Self {
+        Self {
+            array: handle,
+            ..Self::empty(PHPC_NATIVE_CONVERSION_SOURCE_ARRAY)
+        }
+    }
+
+    pub const fn object(handle: NativeObjectHandle) -> Self {
+        Self {
+            object: handle,
+            ..Self::empty(PHPC_NATIVE_CONVERSION_SOURCE_OBJECT)
+        }
+    }
+
+    pub const fn resource(handle: NativeResourceHandle) -> Self {
+        Self {
+            resource: handle,
+            ..Self::empty(PHPC_NATIVE_CONVERSION_SOURCE_RESOURCE)
+        }
+    }
+
+    pub const fn reference(handle: NativeReferenceHandle) -> Self {
+        Self {
+            reference: handle,
+            ..Self::empty(PHPC_NATIVE_CONVERSION_SOURCE_REFERENCE)
+        }
+    }
+}
+
+impl NativeConversionResult {
+    fn value(value: Value) -> Self {
+        Self {
+            value: NativeValueHandle::from_value(value),
+            diagnostic: NativeDiagnosticHandle::null(),
+            status: PHPC_NATIVE_CONVERSION_STATUS_OK,
+        }
+    }
+
+    fn value_with_warning(value: Value, message: impl Into<String>) -> Self {
+        Self {
+            value: NativeValueHandle::from_value(value),
+            diagnostic: NativeDiagnosticHandle::from_message_with_severity(
+                NativeDiagnosticSeverity::Warning,
+                message,
+            ),
+            status: PHPC_NATIVE_CONVERSION_STATUS_OK,
+        }
+    }
+
+    fn error(message: impl Into<String>) -> Self {
+        Self {
+            value: NativeValueHandle::null(),
+            diagnostic: NativeDiagnosticHandle::from_message(message),
+            status: PHPC_NATIVE_CONVERSION_STATUS_ERROR,
+        }
     }
 }
 
@@ -2923,6 +3046,55 @@ pub extern "C" fn phpc_native_float(value: f64) -> NativeScalarValue {
 #[no_mangle]
 pub extern "C" fn phpc_native_value_from_scalar(value: NativeScalarValue) -> NativeValueHandle {
     NativeValueHandle::from_value(value.to_value())
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_conversion_source_scalar(
+    value: NativeScalarValue,
+) -> NativeConversionSource {
+    NativeConversionSource::scalar(value)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_conversion_source_value(
+    handle: NativeValueHandle,
+) -> NativeConversionSource {
+    NativeConversionSource::value(handle)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_conversion_source_string(
+    handle: NativeStringHandle,
+) -> NativeConversionSource {
+    NativeConversionSource::string(handle)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_conversion_source_array(
+    handle: NativeArrayHandle,
+) -> NativeConversionSource {
+    NativeConversionSource::array(handle)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_conversion_source_object(
+    handle: NativeObjectHandle,
+) -> NativeConversionSource {
+    NativeConversionSource::object(handle)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_conversion_source_resource(
+    handle: NativeResourceHandle,
+) -> NativeConversionSource {
+    NativeConversionSource::resource(handle)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_conversion_source_reference(
+    handle: NativeReferenceHandle,
+) -> NativeConversionSource {
+    NativeConversionSource::reference(handle)
 }
 
 #[no_mangle]
@@ -9409,6 +9581,181 @@ unsafe fn native_value_offset_operation_value(
 
     unsafe { native_value_string_offset_operation_value(subject, offset, operation) }
         .map(|value| (value, None))
+}
+
+unsafe fn native_conversion_source_value(source: NativeConversionSource) -> Result<Value, String> {
+    match source.kind {
+        PHPC_NATIVE_CONVERSION_SOURCE_SCALAR => Ok(source.scalar.to_value()),
+        PHPC_NATIVE_CONVERSION_SOURCE_VALUE => unsafe { source.value.as_ref() }
+            .cloned()
+            .ok_or_else(|| "native conversion source value handle is null".to_string()),
+        PHPC_NATIVE_CONVERSION_SOURCE_STRING => {
+            let string = unsafe { source.string.as_ref() }
+                .ok_or_else(|| "native conversion source string handle is null".to_string())?;
+            String::from_utf8(string.bytes.clone())
+                .map(Value::String)
+                .map_err(|_| "native conversion source string requires UTF-8 bytes".to_string())
+        }
+        PHPC_NATIVE_CONVERSION_SOURCE_ARRAY => unsafe { source.array.as_ref() }
+            .map(|array| Value::Array(array.value.clone()))
+            .ok_or_else(|| "native conversion source array handle is null".to_string()),
+        PHPC_NATIVE_CONVERSION_SOURCE_OBJECT => Err(
+            "native conversion source object handle materialization awaits the object value boundary"
+                .to_string(),
+        ),
+        PHPC_NATIVE_CONVERSION_SOURCE_RESOURCE => Err(
+            "native conversion source resource handle materialization awaits the resource value boundary"
+                .to_string(),
+        ),
+        PHPC_NATIVE_CONVERSION_SOURCE_REFERENCE => unsafe { source.reference.as_ref() }
+            .map(|reference| reference.cell.value_cloned())
+            .ok_or_else(|| "native conversion source reference handle is null".to_string()),
+        kind => Err(format!("native conversion source kind {kind} is not supported")),
+    }
+}
+
+fn native_string_offset_index_from_runtime_value(value: &Value) -> RuntimeResult<usize> {
+    let offset = match value {
+        Value::Null => 0,
+        Value::Bool(false) => 0,
+        Value::Bool(true) => 1,
+        Value::Int(value) => *value,
+        Value::Float(value)
+            if value.is_finite()
+                && value.fract() == 0.0
+                && *value >= i64::MIN as f64
+                && *value <= i64::MAX as f64 =>
+        {
+            *value as i64
+        }
+        Value::Float(_) => {
+            return Err(RuntimeError::invalid_string_conversion(
+                "native string offset operation failed: offset must be an integer",
+            ))
+        }
+        Value::String(value) => php_string_offset_index_from_string(value)?,
+        other => {
+            return Err(RuntimeError::invalid_string_conversion(format!(
+                "native string offset operation failed: {} offsets are not supported; only null, bool, int, integral float, and integer string offsets are implemented",
+                other.type_name()
+            )))
+        }
+    };
+
+    usize::try_from(offset).map_err(|_| {
+        RuntimeError::invalid_string_conversion(
+            "native string offset operation failed: offset must be a non-negative integer",
+        )
+    })
+}
+
+fn native_offset_read_source_result_from_values(
+    target: Value,
+    key: Value,
+) -> NativeConversionResult {
+    match target {
+        Value::Array(array) => match native_array_key_from_runtime_value(&key) {
+            Ok(key) => match array.get_cloned(key.clone()) {
+                Some(value) => NativeConversionResult::value(value),
+                None => NativeConversionResult::value_with_warning(
+                    Value::Null,
+                    RuntimeError::undefined_array_key(key.diagnostic_key()).message(),
+                ),
+            },
+            Err(error) => NativeConversionResult::error(error.message()),
+        },
+        Value::String(value) => match native_string_offset_index_from_runtime_value(&key)
+            .and_then(|offset| php_string_offset_read_value(value.as_bytes(), offset))
+        {
+            Ok(value) => NativeConversionResult::value(value),
+            Err(error) => NativeConversionResult::error(error.message()),
+        },
+        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::Resource(_) => {
+            NativeConversionResult::value_with_warning(
+                Value::Null,
+                format!(
+                    "Warning: Trying to access array offset on value of type {}",
+                    target.type_name()
+                ),
+            )
+        }
+        Value::Object(_) | Value::Closure(_) => NativeConversionResult::error(format!(
+            "native offset read source failed: {} subjects require a supported ArrayAccess/object boundary",
+            target.type_name()
+        )),
+    }
+}
+
+/// # Safety
+///
+/// Each source must contain null handles or handles returned by the runtime ABI
+/// and not yet freed. The returned value and diagnostic handles are owned by
+/// the result consumer.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_offset_read_source(
+    target_source: NativeConversionSource,
+    key_source: NativeConversionSource,
+) -> NativeConversionResult {
+    let target = match unsafe { native_conversion_source_value(target_source) } {
+        Ok(value) => value,
+        Err(message) => return NativeConversionResult::error(message),
+    };
+    let key = match unsafe { native_conversion_source_value(key_source) } {
+        Ok(value) => value,
+        Err(message) => return NativeConversionResult::error(message),
+    };
+    native_offset_read_source_result_from_values(target, key)
+}
+
+fn native_object_property_name_from_value(value: &Value) -> Result<String, String> {
+    value
+        .try_echo_string()
+        .map_err(|error| error.message().to_string())
+}
+
+/// # Safety
+///
+/// Each source must contain null handles or handles returned by the runtime ABI
+/// and not yet freed. The returned value and diagnostic handles are owned by
+/// the result consumer.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_object_property_offset_read_source(
+    target_source: NativeConversionSource,
+    property_source: NativeConversionSource,
+    key_source: NativeConversionSource,
+) -> NativeConversionResult {
+    let target = match unsafe { native_conversion_source_value(target_source) } {
+        Ok(value) => value,
+        Err(message) => return NativeConversionResult::error(message),
+    };
+    let property = match unsafe { native_conversion_source_value(property_source) } {
+        Ok(value) => value,
+        Err(message) => return NativeConversionResult::error(message),
+    };
+    let key = match unsafe { native_conversion_source_value(key_source) } {
+        Ok(value) => value,
+        Err(message) => return NativeConversionResult::error(message),
+    };
+
+    let property_name = match native_object_property_name_from_value(&property) {
+        Ok(name) if !name.is_empty() => name,
+        Ok(_) => {
+            return NativeConversionResult::error(
+                "native object property offset read source requires a non-empty property name",
+            )
+        }
+        Err(message) => return NativeConversionResult::error(message),
+    };
+
+    let Value::Object(object) = target else {
+        return NativeConversionResult::error(
+            "native object property offset read source requires an object value",
+        );
+    };
+    match object.read_public_property(&property_name) {
+        Ok(value) => native_offset_read_source_result_from_values(value, key),
+        Err(error) => NativeConversionResult::error(error.message()),
+    }
 }
 
 unsafe fn native_value_offset_mutation_operation_value(
@@ -35579,6 +35926,80 @@ mod tests {
             Value::String("abc".to_string()),
             Value::String("missing".to_string()),
             "invalid string conversion: native string offset operation failed: offset must be an integer string",
+        );
+    }
+
+    #[test]
+    fn native_offset_read_source_handles_arrays_and_byte_strings_across_consumers() {
+        fn assert_value(result: NativeConversionResult, expected: &[u8]) {
+            assert_eq!(result.status, PHPC_NATIVE_CONVERSION_STATUS_OK);
+            assert!(
+                result.diagnostic.is_null(),
+                "unexpected diagnostic: {}",
+                native_diagnostic_message_for_test(result.diagnostic)
+            );
+            assert_eq!(native_value_echo_bytes_for_test(result.value), expected);
+            unsafe { phpc_native_value_free(result.value) };
+        }
+
+        fn assert_warning_null(result: NativeConversionResult, expected: &str) {
+            assert_eq!(result.status, PHPC_NATIVE_CONVERSION_STATUS_OK);
+            assert_eq!(
+                unsafe { result.value.as_ref() },
+                Some(&Value::Null),
+                "warning continuations keep a null value"
+            );
+            assert_eq!(
+                native_diagnostic_message_for_test(result.diagnostic),
+                expected
+            );
+            unsafe { phpc_native_value_free(result.value) };
+            unsafe { phpc_native_diagnostic_free(result.diagnostic) };
+        }
+
+        let mut array = PhpArray::new();
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert(2, Value::String("two".to_string()));
+        assert_value(
+            unsafe {
+                phpc_native_offset_read_source(
+                    NativeConversionSource::array(NativeArrayHandle::from_array(array)),
+                    NativeConversionSource::string(NativeStringHandle::from_vec(b"name".to_vec())),
+                )
+            },
+            b"Ada",
+        );
+
+        assert_value(
+            unsafe {
+                phpc_native_offset_read_source(
+                    NativeConversionSource::string(NativeStringHandle::from_vec(b"A\0B".to_vec())),
+                    NativeConversionSource::scalar(phpc_native_int(1)),
+                )
+            },
+            b"\0",
+        );
+
+        assert_warning_null(
+            unsafe {
+                phpc_native_offset_read_source(
+                    NativeConversionSource::scalar(phpc_native_int(42)),
+                    NativeConversionSource::scalar(phpc_native_int(0)),
+                )
+            },
+            "Warning: Trying to access array offset on value of type int",
+        );
+
+        assert_warning_null(
+            unsafe {
+                phpc_native_offset_read_source(
+                    NativeConversionSource::value(NativeValueHandle::from_value(Value::Resource(
+                        9,
+                    ))),
+                    NativeConversionSource::scalar(phpc_native_int(0)),
+                )
+            },
+            "Warning: Trying to access array offset on value of type resource",
         );
     }
 

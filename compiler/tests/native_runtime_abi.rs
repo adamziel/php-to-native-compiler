@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use php_compiler::{
@@ -520,6 +520,133 @@ fn generated_ir_routes_native_value_truthiness_through_runtime_abi() {
 }
 
 #[test]
+fn generated_scalar_offset_reads_feed_warning_continuations_across_consumers() {
+    let ir_source = concat!(
+        "<?php\n",
+        "$scalar = 42;\n",
+        "$text = \"A\\0B\";\n",
+        "echo $scalar[0];\n",
+        "echo \"|\";\n",
+        "echo strlen($text[1]);\n",
+    );
+    let ir = emit_ir_source(ir_source).unwrap();
+
+    let c_source_input = concat!(
+        "<?php\n",
+        "$scalar = 42;\n",
+        "$text = \"A\\0B\";\n",
+        "$items = [\"name\" => \"Ada\"];\n",
+        "echo $scalar[0];\n",
+        "echo \"|\";\n",
+        "echo strlen($text[1]);\n",
+        "echo \"|\";\n",
+        "echo $items[\"name\"];\n",
+    );
+
+    assert!(ir.contains("%phpc.NativeConversionSource = type"), "{ir}");
+    assert!(
+        ir.contains("declare %phpc.NativeConversionResult @phpc_native_offset_read_source"),
+        "{ir}"
+    );
+    assert!(
+        ir.matches("call %phpc.NativeConversionResult @phpc_native_offset_read_source")
+            .count()
+            >= 2,
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i64 @phpc_native_value_format_stdout_with_diagnostic")
+            && ir.contains(
+                "call %phpc.NativeStringConversionResult @phpc_native_value_to_string_bytes"
+            ),
+        "{ir}"
+    );
+
+    let program = parse(c_source_input).unwrap();
+    let c_source = emit_native_executable_c_source(&program).unwrap();
+    assert!(
+        c_source.contains("phpc_NativeConversionResult"),
+        "{c_source}"
+    );
+    assert!(
+        c_source.matches("phpc_native_offset_read_source").count() >= 3,
+        "{c_source}"
+    );
+    assert!(
+        !c_source.contains("= phpc_native_value_offset_operation_with_diagnostic("),
+        "{c_source}"
+    );
+}
+
+#[test]
+fn native_executable_scalar_offset_reads_continue_across_conversion_consumers() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "$scalar = 42;\n",
+        "$text = \"A\\0B\";\n",
+        "$items = [\"name\" => \"Ada\"];\n",
+        "echo $scalar[0];\n",
+        "echo \"|\";\n",
+        "echo strlen($text[1]);\n",
+        "echo \"|\";\n",
+        "echo $items[\"name\"];\n",
+    );
+    let (_source_path, exe_path) =
+        compile_native_runtime_abi_executable("scalar_offset_source_result", source);
+    let output = Command::new(&exe_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run {exe_path:?}: {error}"));
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "|1|Ada");
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("Trying to access array offset on value of type int"),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn generated_object_property_offset_reads_use_shared_source_results() {
+    let source = concat!(
+        "<?php\n",
+        "class Box { public $name; }\n",
+        "$box = new Box();\n",
+        "$box->name = \"Ada\";\n",
+        "echo $box->name[1];\n",
+        "echo strlen($box->name[2]);\n",
+    );
+    let program = parse(source).unwrap();
+    let c_source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        c_source.contains("phpc_native_object_property_offset_read_source"),
+        "{c_source}"
+    );
+    assert!(
+        c_source
+            .matches("phpc_native_object_property_offset_read_source")
+            .count()
+            >= 2,
+        "{c_source}"
+    );
+    assert!(
+        c_source.contains("phpc_NativeConversionSource")
+            && c_source.contains("phpc_NativeConversionResult"),
+        "{c_source}"
+    );
+}
+
+#[test]
 fn generated_ir_value_offset_route_reaches_assembly_backend() {
     if !has_llvm_assembly_backend() {
         return;
@@ -638,6 +765,48 @@ fn has_llvm_assembly_backend() -> bool {
     ["clang", "llc"]
         .iter()
         .any(|command| Command::new(command).arg("--version").output().is_ok())
+}
+
+fn has_cc() -> bool {
+    Command::new("cc").arg("--version").output().is_ok()
+}
+
+fn compile_native_runtime_abi_executable(name: &str, source: &str) -> (PathBuf, PathBuf) {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let base = std::env::temp_dir().join(format!(
+        "phpc-native-runtime-abi-{name}-{}",
+        std::process::id()
+    ));
+    let source_path = base.with_extension("php");
+    let output_path = base.with_extension("exe");
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+    fs::write(&source_path, source).expect("write native runtime ABI source");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("native runtime ABI source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("native runtime ABI executable path is valid UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("failed to compile native executable: {error}"));
+
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    (source_path, output_path)
 }
 
 #[test]
