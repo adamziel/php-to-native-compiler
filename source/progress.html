@@ -25,18 +25,19 @@
 <article class="card"><h3>Symbol/object metadata candidates</h3><div class="mini"><span>Primary</span><progress max="100" value="40">40%</progress><strong>40%</strong></div><span class="tag mixed">Lane-local symbol work reports core type/member/relationship metadata ABIs. Interesting, but broad and dirty; must be packetized and audited for hard-coded-table risk before primary review.</span></article>
 <article class="card"><h3>Diagnostics, request, and cleanup boundaries</h3><div class="mini"><span>Primary</span><progress max="100" value="66">66%</progress><strong>66%</strong></div><span class="tag mixed">Lane-local diagnostic selectors, path-RMW, request, symbol, call, conversion, and cleanup-boundary work is producing useful packet sources. Several are blocker-only and should not be counted until exact-scope primary integration.</span></article>
 <article class="card"><h3>Broad lane extraction backlog</h3><div class="mini"><span>Primary</span><progress max="100" value="34">34%</progress><strong>34%</strong></div><span class="tag early">Broad dirty lanes continue producing useful evidence, but many are checkpointed, parked, paused, stopped, conflict-heavy, or not reviewable as whole lanes. Treat lanes as packet sources, not integration units.</span></article></div><h2 id="php-native-compiler-progress">PHP Native Compiler Progress</h2>
-<p>Updated: 2026-05-25 20:32 CEST Evaluation marker: <code>20260525T183217Z</code></p>
+<p>Updated: 2026-05-25 20:52 CEST Evaluation marker: <code>20260525T185240Z</code></p>
 <p>Accounting rule: only generalized, tested, committed, and pushed primary work counts as integrated capability. Dirty WIP, candidate worktrees, lane-local claims, review-only work, failed prep proofs, probe-only commits, and dashboard-only commits are excluded.</p>
 <h3 id="executive-read">Executive Read</h3>
 <p>Overall estimated progress: <strong>92%</strong> <code>[##################--]</code></p>
 <p>Executable PHP semantics: <strong>92%</strong> <code>[##################--]</code></p>
-<p>Primary was clean and aligned with <code>origin/master</code> at <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b13c85c6">b13c85c6</a> native: add unary negation source result ABI</code> before this <code>PROGRESS.md</code> edit. The latest counted semantic/prerequisite baseline is now <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b13c85c6">b13c85c6</a></code>.</p>
-<p>This window converted the unary <code>-</code> conversion gap from a failed codegen-only prep into an integrated runtime/compiler boundary. Runtime now exposes a shared numeric-unary source/result ABI for unary negation, and LLVM plus generated C route covered unary <code>-</code> operands through <code>NativeConversionSource</code> and <code>NativeConversionResult</code> instead of backend-local primitive negation/folding.</p>
+<p>Primary was clean and aligned with <code>origin/master</code> at <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/77cca4ec">77cca4ec</a> docs: update progress dashboard</code> before this <code>PROGRESS.md</code> edit. The latest counted semantic/prerequisite baseline remains <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b13c85c6">b13c85c6</a></code>.</p>
+<p>No new semantic primary commit landed after the unary <code>-</code> source/result ABI. This review keeps capability percentages flat while recording current lane-local progress: a post-unary conversion-result helper candidate is ready for primary review, but it is helper consolidation and is not counted as integrated capability.</p>
+<p>The latest counted semantic window converted the unary <code>-</code> conversion gap from a failed codegen-only prep into an integrated runtime/compiler boundary. Runtime now exposes a shared numeric-unary source/result ABI for unary negation, and LLVM plus generated C route covered unary <code>-</code> operands through <code>NativeConversionSource</code> and <code>NativeConversionResult</code> instead of backend-local primitive negation/folding.</p>
 <p>This is real primary progress, but it is still a selected conversion-family boundary. Full generalized PHP remains blocked on references/COW identity, arbitrary lvalues, request/global parity and writeback, includes, variable variables, broad userland frames, real <code>ArrayAccess</code>, object/magic/visibility/ destructor semantics, cleanup/unwind/finally/shutdown ordering, exact diagnostics/error handlers, and backend parity.</p>
 <h3 id="primary-integrated-baseline">Primary-Integrated Baseline</h3>
 <ul>
 <li>Current primary head before this dashboard edit:</li>
-<p><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b13c85c6">b13c85c6</a> native: add unary negation source result ABI</code>.</p>
+<p><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/77cca4ec">77cca4ec</a> docs: update progress dashboard</code>.</p>
 <li>Latest integrated executable/prerequisite semantic baseline:</li>
 <p><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b13c85c6">b13c85c6</a> native: add unary negation source result ABI</code>.</p>
 <li>Recent integrated prerequisite:</li>
@@ -202,6 +203,6 @@
 <p>destructor-blocker packets after rebasing and reviewing from current primary.</p>
 </ul>
 <p>Do not count lane-local triage, stopped dirty lanes, parked broad lanes, stale candidates, blocker-only metadata, review-only candidates, failed prep tests, or docs-only commits as product capability.</p></section></main>
-  <footer><span>Generated 2026-05-25T18:42:02.951Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
+  <footer><span>Generated 2026-05-25T18:57:06.957Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
 </body>
 </html>

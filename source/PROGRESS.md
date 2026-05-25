@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-25 20:32 CEST
-Evaluation marker: `20260525T183217Z`
+Updated: 2026-05-25 20:52 CEST
+Evaluation marker: `20260525T185240Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, candidate worktrees, lane-local
@@ -15,15 +15,21 @@ Overall estimated progress: **92%** `[##################--]`
 Executable PHP semantics: **92%** `[##################--]`
 
 Primary was clean and aligned with `origin/master` at
-`b13c85c6 native: add unary negation source result ABI` before this
-`PROGRESS.md` edit. The latest counted semantic/prerequisite baseline is now
-`b13c85c6`.
+`77cca4ec docs: update progress dashboard` before this `PROGRESS.md` edit.
+The latest counted semantic/prerequisite baseline remains `b13c85c6`.
 
-This window converted the unary `-` conversion gap from a failed codegen-only
-prep into an integrated runtime/compiler boundary. Runtime now exposes a shared
-numeric-unary source/result ABI for unary negation, and LLVM plus generated C
-route covered unary `-` operands through `NativeConversionSource` and
-`NativeConversionResult` instead of backend-local primitive negation/folding.
+No new semantic primary commit landed after the unary `-` source/result ABI.
+This review keeps capability percentages flat while recording current
+lane-local progress: a post-unary conversion-result helper candidate is ready
+for primary review, but it is helper consolidation and is not counted as
+integrated capability.
+
+The latest counted semantic window converted the unary `-` conversion gap from
+a failed codegen-only prep into an integrated runtime/compiler boundary.
+Runtime now exposes a shared numeric-unary source/result ABI for unary
+negation, and LLVM plus generated C route covered unary `-` operands through
+`NativeConversionSource` and `NativeConversionResult` instead of backend-local
+primitive negation/folding.
 
 This is real primary progress, but it is still a selected conversion-family
 boundary. Full generalized PHP remains blocked on references/COW identity,
@@ -35,7 +41,7 @@ diagnostics/error handlers, and backend parity.
 ## Primary-Integrated Baseline
 
 - Current primary head before this dashboard edit:
-  `b13c85c6 native: add unary negation source result ABI`.
+  `77cca4ec docs: update progress dashboard`.
 - Latest integrated executable/prerequisite semantic baseline:
   `b13c85c6 native: add unary negation source result ABI`.
 - Recent integrated prerequisite:
