@@ -4762,6 +4762,197 @@ fn is_static_member_assign_target(target: &AssignTarget) -> bool {
     )
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(test)]
+enum NativeObjectPropertyOperationResultKind {
+    Value,
+    Bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeObjectArrayAccessOperation {
+    Read,
+    NullCoalesceRead,
+    Isset,
+    Empty,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeObjectArrayAccessReceiverKind {
+    ErrorControlReceiver,
+    PropertyValue,
+    CallResult,
+    DynamicCallResult,
+    InstanceMethodCallResult,
+    StaticMethodCallResult,
+    NewObjectResult,
+    CloneResult,
+    StaticPropertyValue,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NativeObjectArrayAccessOperationResult {
+    operation: NativeObjectArrayAccessOperation,
+    receiver_kind: NativeObjectArrayAccessReceiverKind,
+    span: Span,
+}
+
+impl NativeObjectArrayAccessOperation {
+    #[cfg(test)]
+    fn result_kind(self) -> NativeObjectPropertyOperationResultKind {
+        match self {
+            Self::Read => NativeObjectPropertyOperationResultKind::Value,
+            Self::NullCoalesceRead => NativeObjectPropertyOperationResultKind::Value,
+            Self::Isset | Self::Empty => NativeObjectPropertyOperationResultKind::Bool,
+        }
+    }
+}
+
+impl NativeObjectArrayAccessReceiverKind {
+    fn from_object_offset_receiver(expr: &Expr) -> Option<(Self, Span)> {
+        match expr {
+            Expr::ErrorControl { expr, span } => Self::from_object_offset_receiver(expr.as_ref())
+                .map(|_| (Self::ErrorControlReceiver, *span)),
+            Expr::Property { span, .. } | Expr::DynamicProperty { span, .. } => {
+                Some((Self::PropertyValue, *span))
+            }
+            Expr::Call { span, .. } => Some((Self::CallResult, *span)),
+            Expr::DynamicCall { span, .. } => Some((Self::DynamicCallResult, *span)),
+            Expr::MethodCall { span, .. } | Expr::DynamicMethodCall { span, .. } => {
+                Some((Self::InstanceMethodCallResult, *span))
+            }
+            Expr::ParentMethodCall { span, .. }
+            | Expr::StaticMethodCall { span, .. }
+            | Expr::ObjectStaticMethodCall { span, .. }
+            | Expr::SelfMethodCall { span, .. }
+            | Expr::LateStaticMethodCall { span, .. } => {
+                Some((Self::StaticMethodCallResult, *span))
+            }
+            Expr::New { span, .. } => Some((Self::NewObjectResult, *span)),
+            Expr::Clone { span, .. } => Some((Self::CloneResult, *span)),
+            Expr::ObjectStaticProperty { span, .. }
+            | Expr::StaticProperty { span, .. }
+            | Expr::SelfStaticProperty { span, .. }
+            | Expr::ParentStaticProperty { span, .. }
+            | Expr::LateStaticProperty { span, .. } => Some((Self::StaticPropertyValue, *span)),
+            _ => None,
+        }
+    }
+}
+
+impl NativeObjectArrayAccessOperationResult {
+    fn error_control_receiver(operation: NativeObjectArrayAccessOperation, span: Span) -> Self {
+        Self {
+            operation,
+            receiver_kind: NativeObjectArrayAccessReceiverKind::ErrorControlReceiver,
+            span,
+        }
+    }
+
+    fn from_expr_at(expr: &Expr, operation: NativeObjectArrayAccessOperation) -> Option<Self> {
+        if let Some(result) =
+            native_object_array_access_error_control_operation_result_from_expr(expr, operation)
+        {
+            return Some(result);
+        }
+
+        Self::from_expr_without_error_control(expr, operation)
+    }
+
+    fn from_expr_without_error_control(
+        expr: &Expr,
+        operation: NativeObjectArrayAccessOperation,
+    ) -> Option<Self> {
+        let target = match expr {
+            Expr::Index { target, .. } | Expr::AppendIndex { target, .. } => target.as_ref(),
+            _ => return None,
+        };
+        let (receiver_kind, span) =
+            NativeObjectArrayAccessReceiverKind::from_object_offset_receiver(target)?;
+        Some(Self {
+            operation,
+            receiver_kind,
+            span,
+        })
+    }
+
+    #[cfg(test)]
+    fn result_kind(self) -> NativeObjectPropertyOperationResultKind {
+        self.operation.result_kind()
+    }
+
+    fn llvm_rejection(self) -> &'static str {
+        self.rejection(NativeCallBackend::Llvm)
+    }
+
+    fn assembly_rejection(self) -> &'static str {
+        self.rejection(NativeCallBackend::Assembly)
+    }
+
+    fn rejection(self, backend: NativeCallBackend) -> &'static str {
+        match (backend, self.receiver_kind) {
+            (_, NativeObjectArrayAccessReceiverKind::ErrorControlReceiver) => match backend {
+                NativeCallBackend::Llvm => LLVM_ERROR_CONTROL_REJECTION,
+                NativeCallBackend::Assembly => ASSEMBLY_ERROR_CONTROL_REJECTION,
+            },
+            (_, NativeObjectArrayAccessReceiverKind::CallResult) => {
+                backend.function_call_rejection()
+            }
+            (_, NativeObjectArrayAccessReceiverKind::DynamicCallResult) => {
+                backend.dynamic_function_call_rejection()
+            }
+            (_, NativeObjectArrayAccessReceiverKind::InstanceMethodCallResult)
+            | (_, NativeObjectArrayAccessReceiverKind::StaticMethodCallResult) => {
+                backend.method_call_rejection()
+            }
+            (_, NativeObjectArrayAccessReceiverKind::NewObjectResult) => {
+                backend.object_instantiation_rejection()
+            }
+            (NativeCallBackend::Llvm, NativeObjectArrayAccessReceiverKind::CloneResult) => {
+                LLVM_CLONE_REJECTION
+            }
+            (NativeCallBackend::Assembly, NativeObjectArrayAccessReceiverKind::CloneResult) => {
+                ASSEMBLY_CLONE_REJECTION
+            }
+            (NativeCallBackend::Llvm, NativeObjectArrayAccessReceiverKind::StaticPropertyValue) => {
+                LLVM_STATIC_MEMBER_REJECTION
+            }
+            (
+                NativeCallBackend::Assembly,
+                NativeObjectArrayAccessReceiverKind::StaticPropertyValue,
+            ) => ASSEMBLY_STATIC_MEMBER_REJECTION,
+            (NativeCallBackend::Llvm, NativeObjectArrayAccessReceiverKind::PropertyValue) => {
+                LLVM_ARRAY_ACCESS_REJECTION
+            }
+            (NativeCallBackend::Assembly, NativeObjectArrayAccessReceiverKind::PropertyValue) => {
+                ASSEMBLY_ARRAY_ACCESS_REJECTION
+            }
+        }
+    }
+}
+
+fn native_object_array_access_error_control_operation_result_from_expr(
+    expr: &Expr,
+    operation: NativeObjectArrayAccessOperation,
+) -> Option<NativeObjectArrayAccessOperationResult> {
+    let Expr::ErrorControl { expr, span } = expr else {
+        return None;
+    };
+    NativeObjectArrayAccessOperationResult::from_expr_without_error_control(
+        expr.as_ref(),
+        operation,
+    )
+    .is_some()
+    .then(|| NativeObjectArrayAccessOperationResult::error_control_receiver(operation, *span))
+}
+
+fn native_object_array_access_operation_result_from_expr(
+    expr: &Expr,
+    operation: NativeObjectArrayAccessOperation,
+) -> Option<NativeObjectArrayAccessOperationResult> {
+    NativeObjectArrayAccessOperationResult::from_expr_at(expr, operation)
+}
+
 fn is_object_public_property_assign_target(target: &AssignTarget) -> bool {
     matches!(
         target,
@@ -4777,15 +4968,6 @@ fn is_object_property_array_access_unset_target(target: &UnsetTarget) -> bool {
             | UnsetTarget::NonDirectObjectPropertyArrayIndex { .. }
             | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
     )
-}
-
-fn is_array_access_offset_expr(expr: &Expr) -> bool {
-    match expr {
-        Expr::Index { target, .. } | Expr::AppendIndex { target, .. } => {
-            is_object_offset_expr(target)
-        }
-        _ => false,
-    }
 }
 
 fn is_object_offset_expr(expr: &Expr) -> bool {
@@ -5871,8 +6053,11 @@ impl LlvmGenerator {
                         self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
                     );
                 }
-                if is_object_offset_expr(target) {
-                    return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
+                if let Some(result) = native_object_array_access_operation_result_from_expr(
+                    expr,
+                    NativeObjectArrayAccessOperation::Read,
+                ) {
+                    return Err(self.unsupported(result.span, result.llvm_rejection()));
                 }
                 if self.is_known_value_offset_target(target) {
                     let target = self.emit_value_operand_expr(target)?;
@@ -5898,8 +6083,11 @@ impl LlvmGenerator {
                         self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION)
                     );
                 }
-                if is_object_offset_expr(target) {
-                    return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
+                if let Some(result) = native_object_array_access_operation_result_from_expr(
+                    expr,
+                    NativeObjectArrayAccessOperation::Read,
+                ) {
+                    return Err(self.unsupported(result.span, result.llvm_rejection()));
                 }
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
@@ -6083,9 +6271,6 @@ impl LlvmGenerator {
                 self.emit_unary(*op, value, *span)
             }
             Expr::ErrorControl { span, .. } => {
-                if let Some(operation) = native_value_operand_call_result_operation(expr) {
-                    return Err(self.unsupported_call_operation(operation));
-                }
                 Err(self.unsupported(*span, LLVM_ERROR_CONTROL_REJECTION))
             }
             Expr::Include { span, .. } | Expr::Require { span, .. } => {
@@ -6165,6 +6350,12 @@ impl LlvmGenerator {
                     return self.emit_scalar_comparison_expr(left, *op, right, *span);
                 }
                 if matches!(op, BinaryOp::NullCoalesce) {
+                    if let Some(result) = native_object_array_access_operation_result_from_expr(
+                        left,
+                        NativeObjectArrayAccessOperation::NullCoalesceRead,
+                    ) {
+                        return Err(self.unsupported(result.span, result.llvm_rejection()));
+                    }
                     if let Some(operation) = native_value_operand_call_result_operation(expr) {
                         return Err(self.unsupported_call_operation(operation));
                     }
@@ -6200,8 +6391,11 @@ impl LlvmGenerator {
             return Err(self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION));
         }
 
-        if is_array_access_offset_expr(arg) {
-            return Err(self.unsupported(arg.span(), LLVM_ARRAY_ACCESS_REJECTION));
+        if let Some(result) = native_object_array_access_operation_result_from_expr(
+            arg,
+            NativeObjectArrayAccessOperation::Isset,
+        ) {
+            return Err(self.unsupported(result.span, result.llvm_rejection()));
         }
 
         if let Expr::Index {
@@ -6247,8 +6441,11 @@ impl LlvmGenerator {
             return Err(self.unsupported(superglobal_span, LLVM_REQUEST_SUPERGLOBAL_REJECTION));
         }
 
-        if is_array_access_offset_expr(arg) {
-            return Err(self.unsupported(arg.span(), LLVM_ARRAY_ACCESS_REJECTION));
+        if let Some(result) = native_object_array_access_operation_result_from_expr(
+            arg,
+            NativeObjectArrayAccessOperation::Empty,
+        ) {
+            return Err(self.unsupported(result.span, result.llvm_rejection()));
         }
 
         if let Expr::Index {
@@ -20108,8 +20305,11 @@ impl CGenerator {
                         self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
                     );
                 }
-                if is_object_offset_expr(target) {
-                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                if let Some(result) = native_object_array_access_operation_result_from_expr(
+                    expr,
+                    NativeObjectArrayAccessOperation::Read,
+                ) {
+                    return Err(self.unsupported(result.span, result.assembly_rejection()));
                 }
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
@@ -20125,8 +20325,11 @@ impl CGenerator {
                         self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
                     );
                 }
-                if is_object_offset_expr(target) {
-                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                if let Some(result) = native_object_array_access_operation_result_from_expr(
+                    expr,
+                    NativeObjectArrayAccessOperation::Read,
+                ) {
+                    return Err(self.unsupported(result.span, result.assembly_rejection()));
                 }
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
@@ -20469,9 +20672,6 @@ impl CGenerator {
                 self.emit_unary(*op, value, *span)
             }
             Expr::ErrorControl { span, .. } => {
-                if let Some(operation) = native_value_operand_call_result_operation(expr) {
-                    return Err(self.unsupported_call_operation(operation));
-                }
                 Err(self.unsupported(*span, ASSEMBLY_ERROR_CONTROL_REJECTION))
             }
             Expr::Include { span, .. } | Expr::Require { span, .. } => {
@@ -20627,6 +20827,12 @@ impl CGenerator {
                     return self.emit_scalar_comparison_expr(left, *op, right, *span);
                 }
                 if matches!(op, BinaryOp::NullCoalesce) {
+                    if let Some(result) = native_object_array_access_operation_result_from_expr(
+                        left,
+                        NativeObjectArrayAccessOperation::NullCoalesceRead,
+                    ) {
+                        return Err(self.unsupported(result.span, result.assembly_rejection()));
+                    }
                     if let Some(operation) = native_value_operand_call_result_operation(expr) {
                         return Err(self.unsupported_call_operation(operation));
                     }
@@ -23133,8 +23339,11 @@ impl CGenerator {
                 );
             }
 
-            if is_array_access_offset_expr(arg) {
-                return Err(self.unsupported(arg.span(), ASSEMBLY_ARRAY_ACCESS_REJECTION));
+            if let Some(result) = native_object_array_access_operation_result_from_expr(
+                arg,
+                NativeObjectArrayAccessOperation::Isset,
+            ) {
+                return Err(self.unsupported(result.span, result.assembly_rejection()));
             }
 
             if let Some(value) =
@@ -23259,8 +23468,11 @@ impl CGenerator {
             return Err(self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
         }
 
-        if is_array_access_offset_expr(arg) {
-            return Err(self.unsupported(arg.span(), ASSEMBLY_ARRAY_ACCESS_REJECTION));
+        if let Some(result) = native_object_array_access_operation_result_from_expr(
+            arg,
+            NativeObjectArrayAccessOperation::Empty,
+        ) {
+            return Err(self.unsupported(result.span, result.assembly_rejection()));
         }
 
         if let Some(value) =
@@ -34714,6 +34926,163 @@ mod tests {
 
     fn test_span() -> Span {
         Span::new(1, 1)
+    }
+
+    fn span(column: usize) -> Span {
+        Span::new(1, column)
+    }
+
+    fn variable(name: &str, column: usize) -> Expr {
+        Expr::Variable(name.to_string(), span(column))
+    }
+
+    fn property_offset_with_error_control_receiver() -> Expr {
+        Expr::Index {
+            target: Box::new(Expr::ErrorControl {
+                expr: Box::new(Expr::Property {
+                    target: Box::new(variable("box", 6)),
+                    property: "items".to_string(),
+                    span: span(10),
+                }),
+                span: span(5),
+            }),
+            index: Box::new(Expr::Int(0, span(18))),
+            span: span(17),
+        }
+    }
+
+    fn property_offset_with_error_control_expression() -> Expr {
+        Expr::ErrorControl {
+            expr: Box::new(Expr::Index {
+                target: Box::new(Expr::Property {
+                    target: Box::new(variable("box", 7)),
+                    property: "items".to_string(),
+                    span: span(11),
+                }),
+                index: Box::new(Expr::Int(0, span(19))),
+                span: span(18),
+            }),
+            span: span(5),
+        }
+    }
+
+    #[test]
+    fn native_object_arrayaccess_error_control_receiver_classification_is_shared() {
+        let receiver_error_control = property_offset_with_error_control_receiver();
+        let expression_error_control = property_offset_with_error_control_expression();
+
+        for (expr, operation, expected_result) in [
+            (
+                &receiver_error_control,
+                NativeObjectArrayAccessOperation::Read,
+                NativeObjectPropertyOperationResultKind::Value,
+            ),
+            (
+                &receiver_error_control,
+                NativeObjectArrayAccessOperation::NullCoalesceRead,
+                NativeObjectPropertyOperationResultKind::Value,
+            ),
+            (
+                &receiver_error_control,
+                NativeObjectArrayAccessOperation::Isset,
+                NativeObjectPropertyOperationResultKind::Bool,
+            ),
+            (
+                &receiver_error_control,
+                NativeObjectArrayAccessOperation::Empty,
+                NativeObjectPropertyOperationResultKind::Bool,
+            ),
+            (
+                &expression_error_control,
+                NativeObjectArrayAccessOperation::Read,
+                NativeObjectPropertyOperationResultKind::Value,
+            ),
+            (
+                &expression_error_control,
+                NativeObjectArrayAccessOperation::Empty,
+                NativeObjectPropertyOperationResultKind::Bool,
+            ),
+        ] {
+            let result = native_object_array_access_operation_result_from_expr(expr, operation)
+                .expect("object-offset ArrayAccess expression should classify");
+
+            assert_eq!(result.operation, operation);
+            assert_eq!(
+                result.receiver_kind,
+                NativeObjectArrayAccessReceiverKind::ErrorControlReceiver
+            );
+            assert_eq!(result.span, span(5));
+            assert_eq!(result.result_kind(), expected_result);
+            assert_eq!(result.llvm_rejection(), LLVM_ERROR_CONTROL_REJECTION);
+            assert_eq!(
+                result.assembly_rejection(),
+                ASSEMBLY_ERROR_CONTROL_REJECTION
+            );
+        }
+
+        let non_error_control = Expr::Index {
+            target: Box::new(Expr::DynamicProperty {
+                target: Box::new(variable("box", 6)),
+                property: Box::new(Expr::String("items".to_string(), span(11))),
+                span: span(10),
+            }),
+            index: Box::new(Expr::String("key".to_string(), span(20))),
+            span: span(19),
+        };
+        let result = native_object_array_access_operation_result_from_expr(
+            &non_error_control,
+            NativeObjectArrayAccessOperation::Isset,
+        )
+        .expect("dynamic property object-offset ArrayAccess expression should classify");
+        assert_eq!(
+            result.receiver_kind,
+            NativeObjectArrayAccessReceiverKind::PropertyValue
+        );
+        assert_eq!(
+            result.result_kind(),
+            NativeObjectPropertyOperationResultKind::Bool
+        );
+        assert_eq!(result.llvm_rejection(), LLVM_ARRAY_ACCESS_REJECTION);
+        assert_eq!(result.assembly_rejection(), ASSEMBLY_ARRAY_ACCESS_REJECTION);
+    }
+
+    #[test]
+    fn native_object_arrayaccess_error_control_receiver_diagnostics_share_operation_result() {
+        let read = property_offset_with_error_control_receiver();
+        let null_coalesce = Expr::Binary {
+            left: Box::new(read.clone()),
+            op: BinaryOp::NullCoalesce,
+            right: Box::new(Expr::String("fallback".to_string(), span(26))),
+            span: span(24),
+        };
+        let isset = Expr::Call {
+            name: "isset".to_string(),
+            args: vec![read.clone()],
+            span: span(1),
+        };
+        let empty = Expr::Call {
+            name: "empty".to_string(),
+            args: vec![read.clone()],
+            span: span(1),
+        };
+
+        for expr in [read, null_coalesce, isset, empty] {
+            let llvm_error = LlvmGenerator::default()
+                .emit_expr(&expr)
+                .expect_err("LLVM object-offset ArrayAccess error-control receiver should reject");
+            assert_eq!(llvm_error.phase, Phase::Codegen);
+            assert_eq!(llvm_error.line, 1);
+            assert_eq!(llvm_error.column, 5);
+            assert_eq!(llvm_error.message, LLVM_ERROR_CONTROL_REJECTION);
+
+            let assembly_error = CGenerator::default().emit_expr(&expr).expect_err(
+                "assembly object-offset ArrayAccess error-control receiver should reject",
+            );
+            assert_eq!(assembly_error.phase, Phase::Codegen);
+            assert_eq!(assembly_error.line, 1);
+            assert_eq!(assembly_error.column, 5);
+            assert_eq!(assembly_error.message, ASSEMBLY_ERROR_CONTROL_REJECTION);
+        }
     }
 
     #[test]
