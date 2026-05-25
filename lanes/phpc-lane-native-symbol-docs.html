@@ -27,6 +27,6 @@
 <li>Drafted the native symbol-table ABI boundary for the next simple</li>
 <p>assignment/readback slice. The proposed docs name a <code>NativeSymbolTableHandle</code>, the runtime-aligned <code>phpc_native_symbol_table_null/new/root_new/frame_new/is_null/read/read_value/write/write_value/free</code> helper names, root table ownership for request/global slots, current top-level use of one allocated table as root storage, write helper cloning from caller-owned <code>NativeValueHandle</code> inputs, and read helper returns as fresh caller-owned <code>NativeValueHandle</code> clones. The documented compiler boundary remains the existing direct <code>$name = &lt;lowerable value&gt;; echo $name</code> style slice; it does not claim undefined-variable diagnostics, <code>global</code>, function frames, static locals, variable variables, superglobals, references/COW, arrays, objects, or general PHP symbol-table semantics. The current <code>frame_new(root)</code> helper pins frame-constructor spelling but still allocates independent local storage without borrowed-root lookup or <code>global</code> routing.</p>
 </ul></section></main>
-  <footer><span>Generated 2026-05-25T04:27:20.929Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
+  <footer><span>Generated 2026-05-25T04:57:26.786Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
 </body>
 </html>
