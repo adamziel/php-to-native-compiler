@@ -26,6 +26,31 @@ pub enum NativeValueFormatterTag {
 }
 
 #[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NativeCallableKind {
+    Function = 1,
+    Method = 2,
+    Constructor = 3,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NativeCallableVisibility {
+    Public = 1,
+    Protected = 2,
+    Private = 3,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeCallResultStatus {
+    Null = 0,
+    Value = 1,
+    Reference = 2,
+    Failure = 3,
+}
+
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeTextSurfaceTag {
     FunctionName = 4,
@@ -104,6 +129,36 @@ pub struct NativeValueHandle {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeDiagnosticHandle {
     ptr: *mut NativeDiagnostic,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeCallableTableHandle {
+    ptr: *mut NativeCallableTable,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeCallableHandle {
+    ptr: *mut NativeCallable,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeCallArgumentsHandle {
+    ptr: *mut NativeCallArguments,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeCallResultHandle {
+    ptr: *mut NativeCallResult,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeCallFrameHandle {
+    ptr: *mut NativeCallFrame,
 }
 
 #[repr(C)]
@@ -1015,6 +1070,256 @@ struct NativeDiagnosticSourceLocation {
     file: Option<Vec<u8>>,
     line: usize,
     column: usize,
+}
+
+pub type NativeCallableFrameCallback =
+    unsafe extern "C" fn(NativeCallFrameHandle) -> NativeCallResultHandle;
+
+#[derive(Debug)]
+struct NativeCallableTable {
+    entries: HashMap<NativeCallableKey, NativeCallableDescriptor>,
+    class_parents: HashMap<String, String>,
+}
+
+#[derive(Debug)]
+struct NativeCallable {
+    descriptor: NativeCallableDescriptor,
+    called_scope: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct NativeCallableDescriptor {
+    kind: NativeCallableKind,
+    scope: Option<String>,
+    name: String,
+    visibility: NativeCallableVisibility,
+    is_static: bool,
+    callback: NativeCallableFrameCallback,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct NativeCallableKey {
+    kind: NativeCallableKind,
+    scope: Option<String>,
+    name: String,
+}
+
+#[derive(Debug)]
+struct NativeCallArguments {
+    slots: Vec<NativeCallArgumentSlot>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum NativeCallArgumentSlot {
+    Value(NativeValueHandle),
+    Reference(NativeReferenceHandle),
+}
+
+#[derive(Debug)]
+struct NativeCallResult {
+    slot: NativeCallResultSlot,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum NativeCallResultSlot {
+    Value(NativeValueHandle),
+    Reference(NativeReferenceHandle),
+    Failure(NativeDiagnosticHandle),
+}
+
+#[derive(Debug)]
+struct NativeCallFrame {
+    slots: Vec<NativeCallArgumentSlot>,
+    called_scope: Option<String>,
+}
+
+impl NativeCallableKey {
+    fn new(kind: NativeCallableKind, scope: Option<String>, name: String) -> Self {
+        let scope = match kind {
+            NativeCallableKind::Function => None,
+            NativeCallableKind::Method | NativeCallableKind::Constructor => {
+                scope.map(|scope| normalize_class_lookup_name(&scope))
+            }
+        };
+        Self {
+            kind,
+            scope,
+            name: name.to_ascii_lowercase(),
+        }
+    }
+}
+
+impl NativeCallableTable {
+    fn register(&mut self, descriptor: NativeCallableDescriptor) {
+        let key = NativeCallableKey::new(
+            descriptor.kind,
+            descriptor.scope.clone(),
+            descriptor.name.clone(),
+        );
+        self.entries.insert(key, descriptor);
+    }
+
+    fn register_parent(&mut self, class_name: String, parent_name: String) {
+        self.class_parents.insert(
+            normalize_class_lookup_name(&class_name),
+            normalize_class_lookup_name(&parent_name),
+        );
+    }
+
+    fn lookup(
+        &self,
+        kind: NativeCallableKind,
+        scope: Option<String>,
+        name: String,
+        caller_scope: Option<String>,
+    ) -> Result<NativeCallable, String> {
+        let key = NativeCallableKey::new(kind, scope, name.clone());
+        let Some(descriptor) = self.entries.get(&key) else {
+            return Err(format!(
+                "native callable lookup failed: {kind:?} {name} is not registered"
+            ));
+        };
+        if self.can_access(descriptor, caller_scope.as_deref()) {
+            return Ok(NativeCallable {
+                descriptor: descriptor.clone(),
+                called_scope: descriptor.scope.clone(),
+            });
+        }
+        let declaring = descriptor.scope.as_deref().unwrap_or("");
+        Err(format!(
+            "native callable lookup failed: {:?} method {}::{} is not visible from {}",
+            descriptor.visibility,
+            declaring,
+            descriptor.name,
+            caller_scope.as_deref().unwrap_or("<global>")
+        ))
+    }
+
+    fn can_access(
+        &self,
+        descriptor: &NativeCallableDescriptor,
+        caller_scope: Option<&str>,
+    ) -> bool {
+        match descriptor.visibility {
+            NativeCallableVisibility::Public => true,
+            NativeCallableVisibility::Private => {
+                let (Some(declaring), Some(caller)) = (descriptor.scope.as_deref(), caller_scope)
+                else {
+                    return false;
+                };
+                normalize_class_lookup_name(declaring) == normalize_class_lookup_name(caller)
+            }
+            NativeCallableVisibility::Protected => {
+                let (Some(declaring), Some(caller)) = (descriptor.scope.as_deref(), caller_scope)
+                else {
+                    return false;
+                };
+                let declaring = normalize_class_lookup_name(declaring);
+                let caller = normalize_class_lookup_name(caller);
+                caller == declaring || self.class_extends(&caller, &declaring)
+            }
+        }
+    }
+
+    fn class_extends(&self, child: &str, parent: &str) -> bool {
+        let mut current = child;
+        let mut seen = HashSet::new();
+        while let Some(next) = self.class_parents.get(current) {
+            if next == parent {
+                return true;
+            }
+            if !seen.insert(current.to_string()) {
+                return false;
+            }
+            current = next;
+        }
+        false
+    }
+}
+
+impl NativeCallArgumentSlot {
+    unsafe fn clone_slot(self) -> Self {
+        match self {
+            Self::Value(value) => Self::Value(unsafe { phpc_native_value_clone(value) }),
+            Self::Reference(reference) => {
+                Self::Reference(unsafe { phpc_native_reference_clone(reference) })
+            }
+        }
+    }
+
+    unsafe fn free(self) {
+        match self {
+            Self::Value(value) => unsafe { phpc_native_value_free(value) },
+            Self::Reference(reference) => unsafe { phpc_native_reference_free(reference) },
+        }
+    }
+}
+
+impl NativeCallResultSlot {
+    fn status(&self) -> NativeCallResultStatus {
+        match self {
+            Self::Value(_) => NativeCallResultStatus::Value,
+            Self::Reference(_) => NativeCallResultStatus::Reference,
+            Self::Failure(_) => NativeCallResultStatus::Failure,
+        }
+    }
+
+    unsafe fn discard(&mut self) {
+        let old = std::mem::replace(
+            self,
+            NativeCallResultSlot::Failure(NativeDiagnosticHandle::null()),
+        );
+        match old {
+            Self::Value(value) => unsafe { phpc_native_value_free(value) },
+            Self::Reference(reference) => unsafe { phpc_native_reference_free(reference) },
+            Self::Failure(diagnostic) => unsafe { phpc_native_diagnostic_free(diagnostic) },
+        }
+    }
+}
+
+unsafe fn native_call_argument_slot_from_value(
+    value: NativeValueHandle,
+    consume: bool,
+) -> Option<NativeCallArgumentSlot> {
+    if value.is_null() {
+        return None;
+    }
+    if consume {
+        Some(NativeCallArgumentSlot::Value(value))
+    } else {
+        Some(NativeCallArgumentSlot::Value(unsafe {
+            phpc_native_value_clone(value)
+        }))
+    }
+}
+
+unsafe fn native_call_argument_slot_from_reference(
+    reference: NativeReferenceHandle,
+    consume: bool,
+) -> Option<NativeCallArgumentSlot> {
+    if reference.is_null() {
+        return None;
+    }
+    if consume {
+        Some(NativeCallArgumentSlot::Reference(reference))
+    } else {
+        Some(NativeCallArgumentSlot::Reference(unsafe {
+            phpc_native_reference_clone(reference)
+        }))
+    }
+}
+
+unsafe fn native_string_handle_to_string(handle: NativeStringHandle) -> Option<String> {
+    unsafe { handle.as_ref() }.and_then(|string| String::from_utf8(string.bytes.clone()).ok())
+}
+
+fn native_diagnostic_clone(handle: NativeDiagnosticHandle) -> NativeDiagnosticHandle {
+    unsafe { handle.as_ref() }
+        .cloned()
+        .map(|diagnostic| NativeDiagnosticHandle {
+            ptr: Box::into_raw(Box::new(diagnostic)),
+        })
+        .unwrap_or_else(NativeDiagnosticHandle::null)
 }
 
 #[derive(Debug)]
@@ -2390,6 +2695,135 @@ impl NativeReferenceHandle {
 
     unsafe fn as_ref(&self) -> Option<&NativeReference> {
         unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl NativeCallableTableHandle {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    fn new() -> Self {
+        Self {
+            ptr: Box::into_raw(Box::new(NativeCallableTable {
+                entries: HashMap::new(),
+                class_parents: HashMap::new(),
+            })),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+
+    unsafe fn as_ref(&self) -> Option<&NativeCallableTable> {
+        unsafe { self.ptr.as_ref() }
+    }
+
+    unsafe fn as_mut(&mut self) -> Option<&mut NativeCallableTable> {
+        unsafe { self.ptr.as_mut() }
+    }
+}
+
+impl NativeCallableHandle {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    fn from_callable(callable: NativeCallable) -> Self {
+        Self {
+            ptr: Box::into_raw(Box::new(callable)),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+
+    unsafe fn as_ref(&self) -> Option<&NativeCallable> {
+        unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl NativeCallArgumentsHandle {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    fn new() -> Self {
+        Self {
+            ptr: Box::into_raw(Box::new(NativeCallArguments { slots: Vec::new() })),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+
+    unsafe fn as_ref(&self) -> Option<&NativeCallArguments> {
+        unsafe { self.ptr.as_ref() }
+    }
+
+    unsafe fn as_mut(&mut self) -> Option<&mut NativeCallArguments> {
+        unsafe { self.ptr.as_mut() }
+    }
+}
+
+impl NativeCallResultHandle {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    fn from_slot(slot: NativeCallResultSlot) -> Self {
+        Self {
+            ptr: Box::into_raw(Box::new(NativeCallResult { slot })),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+
+    unsafe fn as_ref(&self) -> Option<&NativeCallResult> {
+        unsafe { self.ptr.as_ref() }
+    }
+
+    unsafe fn as_mut(&mut self) -> Option<&mut NativeCallResult> {
+        unsafe { self.ptr.as_mut() }
+    }
+}
+
+impl NativeCallFrameHandle {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    fn from_frame(frame: NativeCallFrame) -> Self {
+        Self {
+            ptr: Box::into_raw(Box::new(frame)),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+
+    unsafe fn as_ref(&self) -> Option<&NativeCallFrame> {
+        unsafe { self.ptr.as_ref() }
+    }
+
+    unsafe fn as_mut(&mut self) -> Option<&mut NativeCallFrame> {
+        unsafe { self.ptr.as_mut() }
     }
 }
 
@@ -6081,6 +6515,921 @@ pub unsafe extern "C" fn phpc_native_reference_free(handle: NativeReferenceHandl
     }
 
     drop(unsafe { Box::from_raw(handle.ptr) });
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_callable_table_null() -> NativeCallableTableHandle {
+    NativeCallableTableHandle::null()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_callable_table_new() -> NativeCallableTableHandle {
+    NativeCallableTableHandle::new()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_callable_table_is_null(handle: NativeCallableTableHandle) -> bool {
+    handle.is_null()
+}
+
+/// # Safety
+///
+/// `handle` must be null or a callable-table handle previously returned by the
+/// runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_table_free(handle: NativeCallableTableHandle) {
+    if handle.ptr.is_null() {
+        return;
+    }
+
+    drop(unsafe { Box::from_raw(handle.ptr) });
+}
+
+/// # Safety
+///
+/// `table` must be a callable-table handle. `scope` may be null for function
+/// callables; non-function callables require a UTF-8 scope and name handle.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_table_register_frame_callback(
+    table: NativeCallableTableHandle,
+    kind: NativeCallableKind,
+    scope: NativeStringHandle,
+    name: NativeStringHandle,
+    callback: NativeCallableFrameCallback,
+) -> bool {
+    unsafe {
+        phpc_native_callable_table_register_visibility_staticness_frame_callback(
+            table,
+            kind,
+            scope,
+            name,
+            NativeCallableVisibility::Public,
+            false,
+            callback,
+        )
+    }
+}
+
+/// # Safety
+///
+/// `table` must be a callable-table handle. `scope` may be null for function
+/// callables; non-function callables require a UTF-8 scope and name handle.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_table_register_visibility_staticness_frame_callback(
+    mut table: NativeCallableTableHandle,
+    kind: NativeCallableKind,
+    scope: NativeStringHandle,
+    name: NativeStringHandle,
+    visibility: NativeCallableVisibility,
+    is_static: bool,
+    callback: NativeCallableFrameCallback,
+) -> bool {
+    let Some(table) = (unsafe { table.as_mut() }) else {
+        return false;
+    };
+    let Some(name) = (unsafe { native_string_handle_to_string(name) }) else {
+        return false;
+    };
+    let scope = unsafe { native_string_handle_to_string(scope) };
+    if !matches!(kind, NativeCallableKind::Function) && scope.is_none() {
+        return false;
+    }
+
+    table.register(NativeCallableDescriptor {
+        kind,
+        scope,
+        name,
+        visibility,
+        is_static,
+        callback,
+    });
+    true
+}
+
+/// # Safety
+///
+/// Same as `phpc_native_callable_table_register_visibility_staticness_frame_callback`,
+/// and always consumes `scope` and `name`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_table_register_visibility_staticness_frame_callback_and_free(
+    table: NativeCallableTableHandle,
+    kind: NativeCallableKind,
+    scope: NativeStringHandle,
+    name: NativeStringHandle,
+    visibility: NativeCallableVisibility,
+    is_static: bool,
+    callback: NativeCallableFrameCallback,
+) -> bool {
+    let registered = unsafe {
+        phpc_native_callable_table_register_visibility_staticness_frame_callback(
+            table, kind, scope, name, visibility, is_static, callback,
+        )
+    };
+    unsafe { phpc_native_string_free(scope) };
+    unsafe { phpc_native_string_free(name) };
+    registered
+}
+
+/// # Safety
+///
+/// `table` must be a callable-table handle. `class_name` and `parent_name` must
+/// be UTF-8 native string handles and are always consumed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_table_register_class_parent_and_free(
+    mut table: NativeCallableTableHandle,
+    class_name: NativeStringHandle,
+    parent_name: NativeStringHandle,
+) -> bool {
+    let class = unsafe { native_string_handle_to_string(class_name) };
+    let parent = unsafe { native_string_handle_to_string(parent_name) };
+    unsafe { phpc_native_string_free(class_name) };
+    unsafe { phpc_native_string_free(parent_name) };
+    let (Some(table), Some(class), Some(parent)) = (unsafe { table.as_mut() }, class, parent)
+    else {
+        return false;
+    };
+    table.register_parent(class, parent);
+    true
+}
+
+/// # Safety
+///
+/// `table` must be a callable-table handle. `scope`, `name`, and `diagnostic`
+/// must be valid for the duration of the call according to the runtime ABI.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_lookup_with_diagnostic(
+    table: NativeCallableTableHandle,
+    kind: NativeCallableKind,
+    scope: NativeStringHandle,
+    name: NativeStringHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallableHandle {
+    unsafe {
+        phpc_native_callable_lookup_with_context_diagnostic(
+            table,
+            kind,
+            scope,
+            name,
+            NativeStringHandle::null(),
+            diagnostic,
+        )
+    }
+}
+
+/// # Safety
+///
+/// `table` must be a callable-table handle. `scope`, `name`, `caller_scope`, and
+/// `diagnostic` must be valid for the duration of the call according to the
+/// runtime ABI.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_lookup_with_context_diagnostic(
+    table: NativeCallableTableHandle,
+    kind: NativeCallableKind,
+    scope: NativeStringHandle,
+    name: NativeStringHandle,
+    caller_scope: NativeStringHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallableHandle {
+    let Some(table) = (unsafe { table.as_ref() }) else {
+        if !diagnostic.is_null() {
+            unsafe {
+                *diagnostic = NativeDiagnosticHandle::from_message(
+                    "native callable lookup failed: table is null",
+                )
+            };
+        }
+        return NativeCallableHandle::null();
+    };
+    let Some(name) = (unsafe { native_string_handle_to_string(name) }) else {
+        if !diagnostic.is_null() {
+            unsafe {
+                *diagnostic = NativeDiagnosticHandle::from_message(
+                    "native callable lookup failed: name is null",
+                )
+            };
+        }
+        return NativeCallableHandle::null();
+    };
+    let scope = unsafe { native_string_handle_to_string(scope) };
+    let caller_scope = unsafe { native_string_handle_to_string(caller_scope) };
+    match table.lookup(kind, scope, name, caller_scope) {
+        Ok(callable) => NativeCallableHandle::from_callable(callable),
+        Err(message) => {
+            if !diagnostic.is_null() {
+                unsafe { *diagnostic = NativeDiagnosticHandle::from_message(message) };
+            }
+            NativeCallableHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a callable handle previously returned by the
+/// runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_free(handle: NativeCallableHandle) {
+    if handle.ptr.is_null() {
+        return;
+    }
+
+    drop(unsafe { Box::from_raw(handle.ptr) });
+}
+
+/// # Safety
+///
+/// `handle` must be null or a callable handle previously returned by the
+/// runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_is_static(handle: NativeCallableHandle) -> bool {
+    unsafe { handle.as_ref() }
+        .map(|callable| callable.descriptor.is_static)
+        .unwrap_or(false)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_call_arguments_null() -> NativeCallArgumentsHandle {
+    NativeCallArgumentsHandle::null()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_call_arguments_new() -> NativeCallArgumentsHandle {
+    NativeCallArgumentsHandle::new()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_call_arguments_is_null(handle: NativeCallArgumentsHandle) -> bool {
+    handle.is_null()
+}
+
+/// # Safety
+///
+/// `handle` must be null or a call-arguments handle previously returned by the
+/// runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_arguments_len(
+    handle: NativeCallArgumentsHandle,
+) -> usize {
+    unsafe { handle.as_ref() }
+        .map(|arguments| arguments.slots.len())
+        .unwrap_or(0)
+}
+
+/// # Safety
+///
+/// `arguments` must be a call-arguments handle. `value` must be a value handle;
+/// the argument list stores an owned clone and leaves `value` with the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_arguments_push_value(
+    mut arguments: NativeCallArgumentsHandle,
+    value: NativeValueHandle,
+) -> bool {
+    let Some(arguments) = (unsafe { arguments.as_mut() }) else {
+        return false;
+    };
+    let Some(slot) = (unsafe { native_call_argument_slot_from_value(value, false) }) else {
+        return false;
+    };
+    arguments.slots.push(slot);
+    true
+}
+
+/// # Safety
+///
+/// Same as `phpc_native_call_arguments_push_value`, and always consumes `value`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_arguments_push_value_and_free(
+    mut arguments: NativeCallArgumentsHandle,
+    value: NativeValueHandle,
+) -> bool {
+    let Some(arguments) = (unsafe { arguments.as_mut() }) else {
+        unsafe { phpc_native_value_free(value) };
+        return false;
+    };
+    let Some(slot) = (unsafe { native_call_argument_slot_from_value(value, true) }) else {
+        unsafe { phpc_native_value_free(value) };
+        return false;
+    };
+    arguments.slots.push(slot);
+    true
+}
+
+/// # Safety
+///
+/// `arguments` must be a call-arguments handle. `reference` must be a reference
+/// handle; the argument list stores an owned clone and leaves `reference` with
+/// the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_arguments_push_reference(
+    mut arguments: NativeCallArgumentsHandle,
+    reference: NativeReferenceHandle,
+) -> bool {
+    let Some(arguments) = (unsafe { arguments.as_mut() }) else {
+        return false;
+    };
+    let Some(slot) = (unsafe { native_call_argument_slot_from_reference(reference, false) }) else {
+        return false;
+    };
+    arguments.slots.push(slot);
+    true
+}
+
+/// # Safety
+///
+/// Same as `phpc_native_call_arguments_push_reference`, and always consumes
+/// `reference`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_arguments_push_reference_and_free(
+    mut arguments: NativeCallArgumentsHandle,
+    reference: NativeReferenceHandle,
+) -> bool {
+    let Some(arguments) = (unsafe { arguments.as_mut() }) else {
+        unsafe { phpc_native_reference_free(reference) };
+        return false;
+    };
+    let Some(slot) = (unsafe { native_call_argument_slot_from_reference(reference, true) }) else {
+        unsafe { phpc_native_reference_free(reference) };
+        return false;
+    };
+    arguments.slots.push(slot);
+    true
+}
+
+/// # Safety
+///
+/// `arguments` must be null or a call-arguments handle previously returned by
+/// the runtime ABI and not yet freed. The returned value is an owned clone.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_arguments_read_value(
+    arguments: NativeCallArgumentsHandle,
+    index: usize,
+) -> NativeValueHandle {
+    match unsafe { arguments.as_ref() }.and_then(|arguments| arguments.slots.get(index)) {
+        Some(NativeCallArgumentSlot::Value(value)) => unsafe { phpc_native_value_clone(*value) },
+        Some(NativeCallArgumentSlot::Reference(reference)) => unsafe {
+            phpc_native_reference_value_clone(*reference)
+        },
+        None => NativeValueHandle::null(),
+    }
+}
+
+/// # Safety
+///
+/// `arguments` must be null or a call-arguments handle previously returned by
+/// the runtime ABI and not yet freed. The returned reference is an owned clone.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_arguments_read_reference(
+    arguments: NativeCallArgumentsHandle,
+    index: usize,
+) -> NativeReferenceHandle {
+    match unsafe { arguments.as_ref() }.and_then(|arguments| arguments.slots.get(index)) {
+        Some(NativeCallArgumentSlot::Reference(reference)) => unsafe {
+            phpc_native_reference_clone(*reference)
+        },
+        Some(NativeCallArgumentSlot::Value(_)) | None => NativeReferenceHandle::null(),
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a call-arguments handle previously returned by the
+/// runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_arguments_free(handle: NativeCallArgumentsHandle) {
+    if handle.ptr.is_null() {
+        return;
+    }
+    let arguments = unsafe { Box::from_raw(handle.ptr) };
+    for slot in arguments.slots {
+        unsafe { slot.free() };
+    }
+}
+
+/// # Safety
+///
+/// `called_scope` may be null or a UTF-8 native string handle. Ownership stays
+/// with the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_frame_new(
+    called_scope: NativeStringHandle,
+) -> NativeCallFrameHandle {
+    NativeCallFrameHandle::from_frame(NativeCallFrame {
+        slots: Vec::new(),
+        called_scope: unsafe { native_string_handle_to_string(called_scope) },
+    })
+}
+
+/// # Safety
+///
+/// `frame` and `arguments` must be runtime handles. The frame stores an owned
+/// clone of the selected argument slot.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_frame_bind_argument(
+    mut frame: NativeCallFrameHandle,
+    arguments: NativeCallArgumentsHandle,
+    index: usize,
+) -> bool {
+    let (Some(frame), Some(slot)) = (
+        unsafe { frame.as_mut() },
+        unsafe { arguments.as_ref() }.and_then(|arguments| arguments.slots.get(index).copied()),
+    ) else {
+        return false;
+    };
+    frame.slots.push(unsafe { slot.clone_slot() });
+    true
+}
+
+/// # Safety
+///
+/// `frame` must be null or a call-frame handle. The returned value is owned.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_frame_read_value(
+    frame: NativeCallFrameHandle,
+    index: usize,
+) -> NativeValueHandle {
+    match unsafe { frame.as_ref() }.and_then(|frame| frame.slots.get(index)) {
+        Some(NativeCallArgumentSlot::Value(value)) => unsafe { phpc_native_value_clone(*value) },
+        Some(NativeCallArgumentSlot::Reference(reference)) => unsafe {
+            phpc_native_reference_value_clone(*reference)
+        },
+        None => NativeValueHandle::null(),
+    }
+}
+
+/// # Safety
+///
+/// `frame` must be null or a call-frame handle. The returned reference is owned.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_frame_read_reference(
+    frame: NativeCallFrameHandle,
+    index: usize,
+) -> NativeReferenceHandle {
+    match unsafe { frame.as_ref() }.and_then(|frame| frame.slots.get(index)) {
+        Some(NativeCallArgumentSlot::Reference(reference)) => unsafe {
+            phpc_native_reference_clone(*reference)
+        },
+        Some(NativeCallArgumentSlot::Value(_)) | None => NativeReferenceHandle::null(),
+    }
+}
+
+/// # Safety
+///
+/// `frame` must be null or a call-frame handle. The returned string is owned.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_frame_called_scope(
+    frame: NativeCallFrameHandle,
+) -> NativeStringHandle {
+    unsafe { frame.as_ref() }
+        .and_then(|frame| frame.called_scope.as_ref())
+        .map(|scope| NativeStringHandle::from_vec(scope.as_bytes().to_vec()))
+        .unwrap_or_else(NativeStringHandle::null)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a call-frame handle previously returned by the
+/// runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_frame_free(handle: NativeCallFrameHandle) {
+    if handle.ptr.is_null() {
+        return;
+    }
+    let frame = unsafe { Box::from_raw(handle.ptr) };
+    for slot in frame.slots {
+        unsafe { slot.free() };
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_call_result_null() -> NativeCallResultHandle {
+    NativeCallResultHandle::null()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_call_result_is_null(handle: NativeCallResultHandle) -> bool {
+    handle.is_null()
+}
+
+/// # Safety
+///
+/// `handle` must be null or a call-result handle.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_result_status(
+    handle: NativeCallResultHandle,
+) -> NativeCallResultStatus {
+    unsafe { handle.as_ref() }
+        .map(|result| result.slot.status())
+        .unwrap_or(NativeCallResultStatus::Null)
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_call_result_from_value(
+    value: NativeValueHandle,
+) -> NativeCallResultHandle {
+    if value.is_null() {
+        return NativeCallResultHandle::null();
+    }
+    NativeCallResultHandle::from_slot(NativeCallResultSlot::Value(value))
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_call_result_from_reference(
+    reference: NativeReferenceHandle,
+) -> NativeCallResultHandle {
+    if reference.is_null() {
+        return NativeCallResultHandle::null();
+    }
+    NativeCallResultHandle::from_slot(NativeCallResultSlot::Reference(reference))
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_call_result_from_diagnostic_and_free(
+    diagnostic: NativeDiagnosticHandle,
+) -> NativeCallResultHandle {
+    if diagnostic.is_null() {
+        return NativeCallResultHandle::null();
+    }
+    NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(diagnostic))
+}
+
+/// # Safety
+///
+/// `handle` must be null or a call-result handle. The returned value is owned.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_result_read_value(
+    handle: NativeCallResultHandle,
+) -> NativeValueHandle {
+    match unsafe { handle.as_ref() }.map(|result| result.slot) {
+        Some(NativeCallResultSlot::Value(value)) => unsafe { phpc_native_value_clone(value) },
+        Some(NativeCallResultSlot::Reference(reference)) => unsafe {
+            phpc_native_reference_value_clone(reference)
+        },
+        Some(NativeCallResultSlot::Failure(_)) | None => NativeValueHandle::null(),
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a call-result handle. The returned reference is
+/// owned.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_result_read_reference(
+    handle: NativeCallResultHandle,
+) -> NativeReferenceHandle {
+    match unsafe { handle.as_ref() }.map(|result| result.slot) {
+        Some(NativeCallResultSlot::Reference(reference)) => unsafe {
+            phpc_native_reference_clone(reference)
+        },
+        Some(NativeCallResultSlot::Value(_)) | Some(NativeCallResultSlot::Failure(_)) | None => {
+            NativeReferenceHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a call-result handle. The returned diagnostic is
+/// owned.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_result_read_diagnostic(
+    handle: NativeCallResultHandle,
+) -> NativeDiagnosticHandle {
+    match unsafe { handle.as_ref() }.map(|result| result.slot) {
+        Some(NativeCallResultSlot::Failure(diagnostic)) => native_diagnostic_clone(diagnostic),
+        Some(NativeCallResultSlot::Value(_)) | Some(NativeCallResultSlot::Reference(_)) | None => {
+            NativeDiagnosticHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a call-result handle. Ownership of the value moves
+/// to the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_result_take_value(
+    mut handle: NativeCallResultHandle,
+) -> NativeValueHandle {
+    let Some(result) = (unsafe { handle.as_mut() }) else {
+        return NativeValueHandle::null();
+    };
+    match std::mem::replace(
+        &mut result.slot,
+        NativeCallResultSlot::Failure(NativeDiagnosticHandle::null()),
+    ) {
+        NativeCallResultSlot::Value(value) => value,
+        NativeCallResultSlot::Reference(reference) => {
+            let value = unsafe { phpc_native_reference_value_clone(reference) };
+            unsafe { phpc_native_reference_free(reference) };
+            value
+        }
+        NativeCallResultSlot::Failure(diagnostic) => {
+            unsafe { phpc_native_diagnostic_free(diagnostic) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a call-result handle. Ownership of the reference
+/// moves to the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_result_take_reference(
+    mut handle: NativeCallResultHandle,
+) -> NativeReferenceHandle {
+    let Some(result) = (unsafe { handle.as_mut() }) else {
+        return NativeReferenceHandle::null();
+    };
+    match std::mem::replace(
+        &mut result.slot,
+        NativeCallResultSlot::Failure(NativeDiagnosticHandle::null()),
+    ) {
+        NativeCallResultSlot::Reference(reference) => reference,
+        NativeCallResultSlot::Value(value) => {
+            unsafe { phpc_native_value_free(value) };
+            NativeReferenceHandle::null()
+        }
+        NativeCallResultSlot::Failure(diagnostic) => {
+            unsafe { phpc_native_diagnostic_free(diagnostic) };
+            NativeReferenceHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a call-result handle. Ownership of the diagnostic
+/// moves to the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_result_take_diagnostic(
+    mut handle: NativeCallResultHandle,
+) -> NativeDiagnosticHandle {
+    let Some(result) = (unsafe { handle.as_mut() }) else {
+        return NativeDiagnosticHandle::null();
+    };
+    match std::mem::replace(
+        &mut result.slot,
+        NativeCallResultSlot::Failure(NativeDiagnosticHandle::null()),
+    ) {
+        NativeCallResultSlot::Failure(diagnostic) => diagnostic,
+        NativeCallResultSlot::Value(value) => {
+            unsafe { phpc_native_value_free(value) };
+            NativeDiagnosticHandle::null()
+        }
+        NativeCallResultSlot::Reference(reference) => {
+            unsafe { phpc_native_reference_free(reference) };
+            NativeDiagnosticHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// Same as `phpc_native_call_result_take_value`, and consumes `handle`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_result_take_value_and_free(
+    handle: NativeCallResultHandle,
+) -> NativeValueHandle {
+    let value = unsafe { phpc_native_call_result_take_value(handle) };
+    unsafe { phpc_native_call_result_free(handle) };
+    value
+}
+
+/// # Safety
+///
+/// Same as `phpc_native_call_result_take_reference`, and consumes `handle`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_result_take_reference_and_free(
+    handle: NativeCallResultHandle,
+) -> NativeReferenceHandle {
+    let reference = unsafe { phpc_native_call_result_take_reference(handle) };
+    unsafe { phpc_native_call_result_free(handle) };
+    reference
+}
+
+/// # Safety
+///
+/// Same as `phpc_native_call_result_take_diagnostic`, and consumes `handle`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_result_take_diagnostic_and_free(
+    handle: NativeCallResultHandle,
+) -> NativeDiagnosticHandle {
+    let diagnostic = unsafe { phpc_native_call_result_take_diagnostic(handle) };
+    unsafe { phpc_native_call_result_free(handle) };
+    diagnostic
+}
+
+/// # Safety
+///
+/// `handle` must be null or a call-result handle.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_result_discard(mut handle: NativeCallResultHandle) {
+    if let Some(result) = unsafe { handle.as_mut() } {
+        unsafe { result.slot.discard() };
+    }
+}
+
+/// # Safety
+///
+/// Same as `phpc_native_call_result_discard`, and consumes `handle`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_result_discard_and_free(handle: NativeCallResultHandle) {
+    unsafe { phpc_native_call_result_discard(handle) };
+    unsafe { phpc_native_call_result_free(handle) };
+}
+
+/// # Safety
+///
+/// `handle` must be null or a call-result handle previously returned by the
+/// runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_result_free(handle: NativeCallResultHandle) {
+    if handle.ptr.is_null() {
+        return;
+    }
+    let mut result = unsafe { Box::from_raw(handle.ptr) };
+    unsafe { result.slot.discard() };
+}
+
+/// # Safety
+///
+/// `callable` and `arguments` must be runtime handles. The returned frame owns
+/// clones of each argument slot.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_frame_from_arguments_with_diagnostic(
+    callable: NativeCallableHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallFrameHandle {
+    let (Some(callable), Some(arguments)) =
+        (unsafe { callable.as_ref() }, unsafe { arguments.as_ref() })
+    else {
+        if !diagnostic.is_null() {
+            unsafe {
+                *diagnostic = NativeDiagnosticHandle::from_message(
+                    "native call frame creation failed: callable or arguments handle is null",
+                )
+            };
+        }
+        return NativeCallFrameHandle::null();
+    };
+    let mut slots = Vec::with_capacity(arguments.slots.len());
+    for slot in &arguments.slots {
+        slots.push(unsafe { slot.clone_slot() });
+    }
+    NativeCallFrameHandle::from_frame(NativeCallFrame {
+        slots,
+        called_scope: callable.called_scope.clone(),
+    })
+}
+
+/// # Safety
+///
+/// Same as `phpc_native_callable_frame_from_arguments_with_diagnostic`, and
+/// consumes `arguments`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_frame_from_arguments_with_diagnostic_and_free(
+    callable: NativeCallableHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallFrameHandle {
+    let frame = unsafe {
+        phpc_native_callable_frame_from_arguments_with_diagnostic(callable, arguments, diagnostic)
+    };
+    unsafe { phpc_native_call_arguments_free(arguments) };
+    frame
+}
+
+/// # Safety
+///
+/// `callable` and `arguments` must be runtime handles. The returned result owns
+/// the callback result handle.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_invoke_result_with_diagnostic(
+    callable: NativeCallableHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallResultHandle {
+    let Some(callable_ref) = (unsafe { callable.as_ref() }) else {
+        if !diagnostic.is_null() {
+            unsafe {
+                *diagnostic = NativeDiagnosticHandle::from_message(
+                    "native callable invocation failed: callable handle is null",
+                )
+            };
+        }
+        return NativeCallResultHandle::null();
+    };
+    let frame = unsafe {
+        phpc_native_callable_frame_from_arguments_with_diagnostic(callable, arguments, diagnostic)
+    };
+    if frame.is_null() {
+        return NativeCallResultHandle::null();
+    }
+    let result = unsafe { (callable_ref.descriptor.callback)(frame) };
+    unsafe { phpc_native_call_frame_free(frame) };
+    if result.is_null() {
+        NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+            NativeDiagnosticHandle::from_message(
+                "native callable invocation failed: frame callback returned a null result",
+            ),
+        ))
+    } else {
+        result
+    }
+}
+
+/// # Safety
+///
+/// Same as `phpc_native_callable_invoke_result_with_diagnostic`, and consumes
+/// `arguments`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_invoke_result_with_diagnostic_and_free(
+    callable: NativeCallableHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallResultHandle {
+    let result = unsafe {
+        phpc_native_callable_invoke_result_with_diagnostic(callable, arguments, diagnostic)
+    };
+    unsafe { phpc_native_call_arguments_free(arguments) };
+    result
+}
+
+/// # Safety
+///
+/// Invokes a callable and returns an owned value result, or null with a
+/// diagnostic for failures and non-value results.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_invoke_value_with_diagnostic_and_free(
+    callable: NativeCallableHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    let result = unsafe {
+        phpc_native_callable_invoke_result_with_diagnostic_and_free(callable, arguments, diagnostic)
+    };
+    if unsafe { phpc_native_call_result_status(result) } == NativeCallResultStatus::Failure
+        && !diagnostic.is_null()
+        && unsafe { (*diagnostic).is_null() }
+    {
+        unsafe { *diagnostic = phpc_native_call_result_read_diagnostic(result) };
+    }
+    let value = unsafe { phpc_native_call_result_take_value_and_free(result) };
+    if value.is_null() && !diagnostic.is_null() && unsafe { (*diagnostic).is_null() } {
+        unsafe {
+            *diagnostic = NativeDiagnosticHandle::from_message(
+                "native callable invocation failed: result did not contain a value",
+            )
+        };
+    }
+    value
+}
+
+/// # Safety
+///
+/// Invokes a callable and returns an owned reference result, or null with a
+/// diagnostic for failures and non-reference results.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_invoke_reference_with_diagnostic_and_free(
+    callable: NativeCallableHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeReferenceHandle {
+    let result = unsafe {
+        phpc_native_callable_invoke_result_with_diagnostic_and_free(callable, arguments, diagnostic)
+    };
+    if unsafe { phpc_native_call_result_status(result) } == NativeCallResultStatus::Failure
+        && !diagnostic.is_null()
+        && unsafe { (*diagnostic).is_null() }
+    {
+        unsafe { *diagnostic = phpc_native_call_result_read_diagnostic(result) };
+    }
+    let reference = unsafe { phpc_native_call_result_take_reference_and_free(result) };
+    if reference.is_null() && !diagnostic.is_null() && unsafe { (*diagnostic).is_null() } {
+        unsafe {
+            *diagnostic = NativeDiagnosticHandle::from_message(
+                "native callable invocation failed: result did not contain a reference",
+            )
+        };
+    }
+    reference
+}
+
+/// # Safety
+///
+/// Invokes a callable and discards any callback result.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_invoke_discard_with_diagnostic_and_free(
+    callable: NativeCallableHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) {
+    let result = unsafe {
+        phpc_native_callable_invoke_result_with_diagnostic_and_free(callable, arguments, diagnostic)
+    };
+    unsafe { phpc_native_call_result_discard_and_free(result) };
 }
 
 #[no_mangle]
@@ -24355,6 +25704,427 @@ mod tests {
         array.insert(0, target);
         array.insert(1, method);
         array
+    }
+
+    fn native_string_for_test(value: &str) -> NativeStringHandle {
+        unsafe { phpc_native_string_from_bytes(value.as_ptr(), value.len()) }
+    }
+
+    unsafe fn int_from_frame_for_test(frame: NativeCallFrameHandle, index: usize) -> i64 {
+        let value = unsafe { phpc_native_call_frame_read_value(frame, index) };
+        let result = match unsafe { value.as_ref() } {
+            Some(Value::Int(value)) => *value,
+            other => panic!("expected int frame value, got {other:?}"),
+        };
+        unsafe { phpc_native_value_free(value) };
+        result
+    }
+
+    unsafe fn string_from_native_for_test(handle: NativeStringHandle) -> String {
+        let string = unsafe { native_string_handle_to_string(handle) }.expect("native string");
+        unsafe { phpc_native_string_free(handle) };
+        string
+    }
+
+    unsafe extern "C" fn native_sum_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        let left = unsafe { int_from_frame_for_test(frame, 0) };
+        let right = unsafe { int_from_frame_for_test(frame, 1) };
+        phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Int(left + right)))
+    }
+
+    unsafe extern "C" fn native_scoped_method_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        let scope =
+            unsafe { string_from_native_for_test(phpc_native_call_frame_called_scope(frame)) };
+        let value = unsafe { int_from_frame_for_test(frame, 0) };
+        phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::String(format!(
+            "{scope}:{value}"
+        ))))
+    }
+
+    unsafe extern "C" fn native_constructor_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        let scope =
+            unsafe { string_from_native_for_test(phpc_native_call_frame_called_scope(frame)) };
+        let value = unsafe { int_from_frame_for_test(frame, 0) };
+        phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::String(format!(
+            "new {scope}({value})"
+        ))))
+    }
+
+    unsafe fn register_callable_for_test(
+        table: NativeCallableTableHandle,
+        kind: NativeCallableKind,
+        scope: Option<&str>,
+        name: &str,
+        visibility: NativeCallableVisibility,
+        callback: NativeCallableFrameCallback,
+    ) {
+        let scope = scope
+            .map(native_string_for_test)
+            .unwrap_or_else(NativeStringHandle::null);
+        let name = native_string_for_test(name);
+        assert!(unsafe {
+            phpc_native_callable_table_register_visibility_staticness_frame_callback_and_free(
+                table, kind, scope, name, visibility, false, callback,
+            )
+        });
+    }
+
+    unsafe fn lookup_callable_for_test(
+        table: NativeCallableTableHandle,
+        kind: NativeCallableKind,
+        scope: Option<&str>,
+        name: &str,
+        caller_scope: Option<&str>,
+    ) -> (NativeCallableHandle, NativeDiagnosticHandle) {
+        let scope = scope
+            .map(native_string_for_test)
+            .unwrap_or_else(NativeStringHandle::null);
+        let name = native_string_for_test(name);
+        let caller_scope = caller_scope
+            .map(native_string_for_test)
+            .unwrap_or_else(NativeStringHandle::null);
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let callable = unsafe {
+            phpc_native_callable_lookup_with_context_diagnostic(
+                table,
+                kind,
+                scope,
+                name,
+                caller_scope,
+                &mut diagnostic,
+            )
+        };
+        unsafe { phpc_native_string_free(scope) };
+        unsafe { phpc_native_string_free(name) };
+        unsafe { phpc_native_string_free(caller_scope) };
+        (callable, diagnostic)
+    }
+
+    unsafe fn invoke_ints_for_test(
+        callable: NativeCallableHandle,
+        values: &[i64],
+    ) -> NativeCallResultHandle {
+        let arguments = phpc_native_call_arguments_new();
+        for value in values {
+            assert!(unsafe {
+                phpc_native_call_arguments_push_value_and_free(
+                    arguments,
+                    NativeValueHandle::from_value(Value::Int(*value)),
+                )
+            });
+        }
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let result = unsafe {
+            phpc_native_callable_invoke_result_with_diagnostic_and_free(
+                callable,
+                arguments,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        result
+    }
+
+    #[test]
+    fn native_call_arguments_and_results_preserve_value_reference_failure_and_ownership() {
+        let arguments = phpc_native_call_arguments_new();
+        let original_value = NativeValueHandle::from_value(Value::Int(7));
+        assert!(unsafe { phpc_native_call_arguments_push_value(arguments, original_value) });
+
+        let cell = PhpReferenceCell::new(Value::String("before".to_string()));
+        let original_reference = NativeReferenceHandle::from_cell(cell.clone());
+        assert!(unsafe {
+            phpc_native_call_arguments_push_reference(arguments, original_reference)
+        });
+        assert_eq!(unsafe { phpc_native_call_arguments_len(arguments) }, 2);
+
+        let read_value = unsafe { phpc_native_call_arguments_read_value(arguments, 0) };
+        assert_eq!(unsafe { read_value.as_ref() }, Some(&Value::Int(7)));
+        unsafe { phpc_native_value_free(read_value) };
+
+        let read_reference_value = unsafe { phpc_native_call_arguments_read_value(arguments, 1) };
+        assert_eq!(
+            unsafe { read_reference_value.as_ref() },
+            Some(&Value::String("before".to_string()))
+        );
+        unsafe { phpc_native_value_free(read_reference_value) };
+
+        let read_reference = unsafe { phpc_native_call_arguments_read_reference(arguments, 1) };
+        let replacement = NativeValueHandle::from_value(Value::String("after".to_string()));
+        assert!(unsafe { phpc_native_reference_set_value(read_reference, replacement) });
+        unsafe { phpc_native_value_free(replacement) };
+        unsafe { phpc_native_reference_free(read_reference) };
+        assert_eq!(cell.value_cloned(), Value::String("after".to_string()));
+
+        let value_result =
+            phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Int(11)));
+        assert_eq!(
+            unsafe { phpc_native_call_result_status(value_result) },
+            NativeCallResultStatus::Value
+        );
+        let value_read = unsafe { phpc_native_call_result_read_value(value_result) };
+        assert_eq!(unsafe { value_read.as_ref() }, Some(&Value::Int(11)));
+        unsafe { phpc_native_value_free(value_read) };
+        let value_taken = unsafe { phpc_native_call_result_take_value_and_free(value_result) };
+        assert_eq!(unsafe { value_taken.as_ref() }, Some(&Value::Int(11)));
+        unsafe { phpc_native_value_free(value_taken) };
+
+        let reference_result = phpc_native_call_result_from_reference(unsafe {
+            phpc_native_reference_clone(original_reference)
+        });
+        assert_eq!(
+            unsafe { phpc_native_call_result_status(reference_result) },
+            NativeCallResultStatus::Reference
+        );
+        let reference_read = unsafe { phpc_native_call_result_read_reference(reference_result) };
+        assert!(!reference_read.is_null());
+        unsafe { phpc_native_reference_free(reference_read) };
+        let reference_taken =
+            unsafe { phpc_native_call_result_take_reference_and_free(reference_result) };
+        let final_value = NativeValueHandle::from_value(Value::String("taken".to_string()));
+        assert!(unsafe { phpc_native_reference_set_value(reference_taken, final_value) });
+        unsafe { phpc_native_value_free(final_value) };
+        unsafe { phpc_native_reference_free(reference_taken) };
+        assert_eq!(cell.value_cloned(), Value::String("taken".to_string()));
+
+        let diagnostic = NativeDiagnosticHandle::from_message("call failed generically");
+        let failure_result = phpc_native_call_result_from_diagnostic_and_free(diagnostic);
+        assert_eq!(
+            unsafe { phpc_native_call_result_status(failure_result) },
+            NativeCallResultStatus::Failure
+        );
+        let failure_read = unsafe { phpc_native_call_result_read_diagnostic(failure_result) };
+        assert_eq!(
+            unsafe { failure_read.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some("call failed generically")
+        );
+        unsafe { phpc_native_diagnostic_free(failure_read) };
+        let failure_taken =
+            unsafe { phpc_native_call_result_take_diagnostic_and_free(failure_result) };
+        assert_eq!(
+            unsafe { failure_taken.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some("call failed generically")
+        );
+        unsafe { phpc_native_diagnostic_free(failure_taken) };
+
+        unsafe { phpc_native_value_free(original_value) };
+        unsafe { phpc_native_reference_free(original_reference) };
+        unsafe { phpc_native_call_arguments_free(arguments) };
+    }
+
+    #[test]
+    fn native_callable_table_invokes_function_method_and_constructor_with_shared_arguments() {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "sum",
+                NativeCallableVisibility::Public,
+                native_sum_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("Counter"),
+                "add",
+                NativeCallableVisibility::Public,
+                native_scoped_method_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Constructor,
+                Some("Counter"),
+                "__construct",
+                NativeCallableVisibility::Public,
+                native_constructor_callback,
+            );
+        }
+
+        let (function, diagnostic) = unsafe {
+            lookup_callable_for_test(table, NativeCallableKind::Function, None, "SUM", None)
+        };
+        assert!(diagnostic.is_null());
+        let function_result = unsafe { invoke_ints_for_test(function, &[2, 5]) };
+        let function_value =
+            unsafe { phpc_native_call_result_take_value_and_free(function_result) };
+        assert_eq!(unsafe { function_value.as_ref() }, Some(&Value::Int(7)));
+        unsafe { phpc_native_value_free(function_value) };
+
+        let (method, diagnostic) = unsafe {
+            lookup_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("Counter"),
+                "ADD",
+                None,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let method_result = unsafe { invoke_ints_for_test(method, &[9]) };
+        let method_value = unsafe { phpc_native_call_result_take_value_and_free(method_result) };
+        assert_eq!(
+            unsafe { method_value.as_ref() },
+            Some(&Value::String("Counter:9".to_string()))
+        );
+        unsafe { phpc_native_value_free(method_value) };
+
+        let (constructor, diagnostic) = unsafe {
+            lookup_callable_for_test(
+                table,
+                NativeCallableKind::Constructor,
+                Some("Counter"),
+                "__CONSTRUCT",
+                None,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let constructor_result = unsafe { invoke_ints_for_test(constructor, &[3]) };
+        let constructor_value =
+            unsafe { phpc_native_call_result_take_value_and_free(constructor_result) };
+        assert_eq!(
+            unsafe { constructor_value.as_ref() },
+            Some(&Value::String("new Counter(3)".to_string()))
+        );
+        unsafe { phpc_native_value_free(constructor_value) };
+
+        unsafe { phpc_native_callable_free(function) };
+        unsafe { phpc_native_callable_free(method) };
+        unsafe { phpc_native_callable_free(constructor) };
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn native_callable_table_context_enforces_public_protected_private_method_lookup() {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("Base"),
+                "open",
+                NativeCallableVisibility::Public,
+                native_scoped_method_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("Base"),
+                "guarded",
+                NativeCallableVisibility::Protected,
+                native_scoped_method_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("Base"),
+                "secret",
+                NativeCallableVisibility::Private,
+                native_scoped_method_callback,
+            );
+            assert!(phpc_native_callable_table_register_class_parent_and_free(
+                table,
+                native_string_for_test("Child"),
+                native_string_for_test("Base"),
+            ));
+        }
+
+        let (public_external, diagnostic) = unsafe {
+            lookup_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("Base"),
+                "open",
+                None,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!public_external.is_null());
+        unsafe { phpc_native_callable_free(public_external) };
+
+        let (protected_external, diagnostic) = unsafe {
+            lookup_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("Base"),
+                "guarded",
+                None,
+            )
+        };
+        assert!(protected_external.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "native callable lookup failed: Protected method Base::guarded is not visible from <global>"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let (protected_same_class, diagnostic) = unsafe {
+            lookup_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("Base"),
+                "guarded",
+                Some("Base"),
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!protected_same_class.is_null());
+        unsafe { phpc_native_callable_free(protected_same_class) };
+
+        let (protected_child, diagnostic) = unsafe {
+            lookup_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("Base"),
+                "guarded",
+                Some("Child"),
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!protected_child.is_null());
+        unsafe { phpc_native_callable_free(protected_child) };
+
+        let (private_same_class, diagnostic) = unsafe {
+            lookup_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("Base"),
+                "secret",
+                Some("Base"),
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!private_same_class.is_null());
+        unsafe { phpc_native_callable_free(private_same_class) };
+
+        let (private_child, diagnostic) = unsafe {
+            lookup_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("Base"),
+                "secret",
+                Some("Child"),
+            )
+        };
+        assert!(private_child.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "native callable lookup failed: Private method Base::secret is not visible from Child"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        unsafe { phpc_native_callable_table_free(table) };
     }
 
     #[test]
