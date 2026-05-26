@@ -14,8 +14,8 @@ Overall supervised-roadmap progress: **95%** `[###################-]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Primary `HEAD` is aligned with `origin/master` at
-`db358278 docs: account ArrayAccess offset write dispatch ABI`.
+Primary `HEAD` is aligned with `origin/master` after the docs/accounting
+update for `682f3aef`.
 
 Latest primary-integrated source capability baseline:
 `682f3aef runtime: add ArrayAccess offset write dispatch ABI`.
@@ -217,8 +217,7 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary is clean and synced at
-  `db358278 docs: account ArrayAccess offset write dispatch ABI`.
+- [x] Primary is clean and synced after docs/accounting for `682f3aef`.
 - [x] Latest source capability is `682f3aef`.
 - [x] `682f3aef` is accounted as runtime-only Object/ArrayAccess offset write
   dispatch ABI progress, not compiler lowering or full ArrayAccess parity.
