@@ -46,6 +46,8 @@ use php_runtime::{
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_RMW_LVALUE_OPERAND_LIST,
+    PHPC_NATIVE_DIAGNOSTIC_OPERATION_STATEMENT_OPERAND_LIST,
+    PHPC_NATIVE_DIAGNOSTIC_OPERATION_VALUE_OPERAND_LIST,
 };
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
@@ -349,6 +351,142 @@ impl<'a> NativeDiagnosticResultProducer<'a> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+enum NativeDiagnosticResultConsumerFamily {
+    ExpressionOperand,
+    StatementOperand,
+    TerminalOperand,
+    CleanupOperand,
+    AssignmentLvalueOperand,
+    LvalueOperand,
+    RmwLvalueOperand,
+    ReferenceBindingOperand,
+    CallArgumentOperand,
+    Termination,
+    DeclarationInitializer,
+    StaticLocalInitializer,
+    GlobalDeclaration,
+    DeferredCleanup,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+enum NativeDiagnosticResultConsumerBlocker {
+    MissingRuntimeAbi,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+enum NativeDiagnosticResultListConsumer {
+    ValueRequiredOperation { operation: u8 },
+    DeferredCleanup,
+}
+
+#[allow(dead_code)]
+impl NativeDiagnosticResultConsumerFamily {
+    fn list_consumer(
+        self,
+    ) -> Result<NativeDiagnosticResultListConsumer, NativeDiagnosticResultConsumerBlocker> {
+        match self {
+            Self::ExpressionOperand => {
+                Ok(NativeDiagnosticResultListConsumer::ValueRequiredOperation {
+                    operation: PHPC_NATIVE_DIAGNOSTIC_OPERATION_VALUE_OPERAND_LIST,
+                })
+            }
+            Self::StatementOperand => {
+                Ok(NativeDiagnosticResultListConsumer::ValueRequiredOperation {
+                    operation: PHPC_NATIVE_DIAGNOSTIC_OPERATION_STATEMENT_OPERAND_LIST,
+                })
+            }
+            Self::TerminalOperand => {
+                Ok(NativeDiagnosticResultListConsumer::ValueRequiredOperation {
+                    operation: PHPC_NATIVE_DIAGNOSTIC_OPERATION_CONTROL_FLOW_OPERAND_LIST,
+                })
+            }
+            Self::CleanupOperand => {
+                Ok(NativeDiagnosticResultListConsumer::ValueRequiredOperation {
+                    operation: PHPC_NATIVE_DIAGNOSTIC_OPERATION_CONTROL_FLOW_OPERAND_LIST,
+                })
+            }
+            Self::AssignmentLvalueOperand => {
+                Ok(NativeDiagnosticResultListConsumer::ValueRequiredOperation {
+                    operation: PHPC_NATIVE_DIAGNOSTIC_OPERATION_ASSIGNMENT_LVALUE_OPERAND_LIST,
+                })
+            }
+            Self::LvalueOperand => Ok(NativeDiagnosticResultListConsumer::ValueRequiredOperation {
+                operation: PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST,
+            }),
+            Self::RmwLvalueOperand => {
+                Ok(NativeDiagnosticResultListConsumer::ValueRequiredOperation {
+                    operation: PHPC_NATIVE_DIAGNOSTIC_OPERATION_RMW_LVALUE_OPERAND_LIST,
+                })
+            }
+            Self::ReferenceBindingOperand => {
+                Ok(NativeDiagnosticResultListConsumer::ValueRequiredOperation {
+                    operation: PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST,
+                })
+            }
+            Self::CallArgumentOperand => {
+                Ok(NativeDiagnosticResultListConsumer::ValueRequiredOperation {
+                    operation: PHPC_NATIVE_DIAGNOSTIC_OPERATION_CALL_ARGUMENT_LIST,
+                })
+            }
+            Self::DeferredCleanup => Ok(NativeDiagnosticResultListConsumer::DeferredCleanup),
+            Self::Termination
+            | Self::DeclarationInitializer
+            | Self::StaticLocalInitializer
+            | Self::GlobalDeclaration => {
+                Err(NativeDiagnosticResultConsumerBlocker::MissingRuntimeAbi)
+            }
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl NativeDiagnosticResultListConsumer {
+    fn abi_name(self) -> &'static str {
+        match self {
+            Self::ValueRequiredOperation { .. } => {
+                "phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free"
+            }
+            Self::DeferredCleanup => {
+                "phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free"
+            }
+        }
+    }
+
+    fn llvm_call(
+        self,
+        result: &str,
+        first_operand: &str,
+        count: usize,
+        usize_type: &str,
+    ) -> String {
+        let abi_name = self.abi_name();
+        match self {
+            Self::ValueRequiredOperation { operation } => format!(
+                "{result} = call %phpc.NativeDiagnosticResult @{abi_name}(i8 {operation}, ptr {first_operand}, {usize_type} {count})"
+            ),
+            Self::DeferredCleanup => format!(
+                "{result} = call %phpc.NativeDiagnosticResult @{abi_name}(ptr {first_operand}, {usize_type} {count})"
+            ),
+        }
+    }
+
+    fn c_statement(self, result: &str, first_operand: &str, count: usize) -> String {
+        let abi_name = self.abi_name();
+        match self {
+            Self::ValueRequiredOperation { operation } => format!(
+                "phpc_NativeDiagnosticResult {result} = {abi_name}({operation}, {first_operand}, {count});"
+            ),
+            Self::DeferredCleanup => format!(
+                "phpc_NativeDiagnosticResult {result} = {abi_name}({first_operand}, {count});"
+            ),
+        }
+    }
+}
+
 fn llvm_native_diagnostic_result_type() -> &'static str {
     "%phpc.NativeDiagnosticResult = type { ptr }"
 }
@@ -362,6 +500,13 @@ fn llvm_native_diagnostic_result_declarations() -> &'static str {
     )
 }
 
+fn llvm_native_diagnostic_result_consumer_declarations(usize_type: &str) -> String {
+    format!(
+        "declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free(i8, ptr, {usize_type})\n\
+         declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free(ptr, {usize_type})\n"
+    )
+}
+
 fn c_native_diagnostic_result_type() -> &'static str {
     "typedef struct { void *ptr; } phpc_NativeDiagnosticResult;\n"
 }
@@ -372,6 +517,13 @@ fn c_native_diagnostic_result_declarations() -> &'static str {
         "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_from_value(phpc_NativeValueHandle value);\n",
         "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_from_diagnostic_and_free(phpc_NativeDiagnosticHandle diagnostic);\n",
         "extern void phpc_native_diagnostic_result_free(phpc_NativeDiagnosticResult result);\n",
+    )
+}
+
+fn c_native_diagnostic_result_consumer_declarations() -> &'static str {
+    concat!(
+        "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free(uint8_t operation, const phpc_NativeDiagnosticResult *results, size_t result_count);\n",
+        "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free(const phpc_NativeDiagnosticResult *cleanup_results, size_t cleanup_result_count);\n",
     )
 }
 
@@ -8661,6 +8813,7 @@ struct LlvmGenerator {
     uses_native_reference_helpers: bool,
     uses_native_text_membership_operation: bool,
     uses_native_diagnostic_result_producers: bool,
+    uses_native_diagnostic_result_consumers: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -9011,7 +9164,9 @@ impl LlvmGenerator {
                 "%phpc.NativeReferenceHandle = type { ptr }",
             );
         }
-        if self.uses_native_diagnostic_result_producers {
+        if self.uses_native_diagnostic_result_producers
+            || self.uses_native_diagnostic_result_consumers
+        {
             emit_llvm_type_once(
                 &mut output,
                 &mut emitted_native_value_handle,
@@ -9172,8 +9327,16 @@ impl LlvmGenerator {
                 );
             }
         }
-        if self.uses_native_diagnostic_result_producers {
+        if self.uses_native_diagnostic_result_producers
+            || self.uses_native_diagnostic_result_consumers
+        {
             output.push_str(llvm_native_diagnostic_result_declarations());
+        }
+        if self.uses_native_diagnostic_result_consumers {
+            let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+            output.push_str(&llvm_native_diagnostic_result_consumer_declarations(
+                usize_type,
+            ));
         }
         output.push('\n');
         output.push_str("@.fmt_int = private unnamed_addr constant [5 x i8] c\"%lld\\00\"\n");
@@ -14263,6 +14426,21 @@ impl LlvmGenerator {
         }
     }
 
+    #[allow(dead_code)]
+    fn emit_native_diagnostic_result_list_consumer(
+        &mut self,
+        consumer: NativeDiagnosticResultListConsumer,
+        first_operand: &str,
+        count: usize,
+    ) -> String {
+        self.uses_native_diagnostic_result_consumers = true;
+        let result = self.next_temp();
+        let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+        self.body
+            .push(consumer.llvm_call(&result, first_operand, count, usize_type));
+        result
+    }
+
     fn native_call_diagnostics(&self) -> NativeCallDiagnostics {
         NativeCallDiagnostics::new(NativeCallBackend::Llvm)
     }
@@ -14635,6 +14813,7 @@ struct CGenerator {
     uses_native_object_instanceof_helpers: bool,
     uses_native_object_method_helpers: bool,
     uses_native_diagnostic_result_producers: bool,
+    uses_native_diagnostic_result_consumers: bool,
     next_static_data: usize,
     next_native_temp: usize,
     native_value_cleanup_handles: Vec<String>,
@@ -16213,6 +16392,20 @@ impl CGenerator {
         ));
     }
 
+    #[allow(dead_code)]
+    fn emit_native_diagnostic_result_list_consumer(
+        &mut self,
+        consumer: NativeDiagnosticResultListConsumer,
+        first_operand: &str,
+        count: usize,
+    ) -> String {
+        self.uses_native_diagnostic_result_consumers = true;
+        let result = self.next_native_name("diagnostic_result_consumer");
+        self.body
+            .push(consumer.c_statement(&result, first_operand, count));
+        result
+    }
+
     fn scoped_branch_generator(&self) -> Self {
         let mut branch = self.clone();
         branch.body.clear();
@@ -16874,6 +17067,8 @@ impl CGenerator {
         self.uses_native_object_method_helpers |= branch.uses_native_object_method_helpers;
         self.uses_native_diagnostic_result_producers |=
             branch.uses_native_diagnostic_result_producers;
+        self.uses_native_diagnostic_result_consumers |=
+            branch.uses_native_diagnostic_result_consumers;
     }
 
     fn merge_scoped_branch_codegen(&mut self, branch: &Self) {
@@ -16912,6 +17107,7 @@ impl CGenerator {
             || self.uses_native_object_instanceof_helpers
             || self.uses_native_object_method_helpers
             || self.uses_native_diagnostic_result_producers
+            || self.uses_native_diagnostic_result_consumers
             || !self.function_definitions.is_empty()
     }
 
@@ -18789,7 +18985,9 @@ impl CGenerator {
             output.push_str("typedef struct { void *ptr; } phpc_NativeStringHandle;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeValueHandle;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeDiagnosticHandle;\n");
-            if self.uses_native_diagnostic_result_producers {
+            if self.uses_native_diagnostic_result_producers
+                || self.uses_native_diagnostic_result_consumers
+            {
                 output.push_str(c_native_diagnostic_result_type());
             }
             if self.uses_native_reference_handle_type() {
@@ -19305,8 +19503,13 @@ impl CGenerator {
             output.push_str("extern size_t phpc_native_diagnostic_message_stderr(phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern size_t phpc_native_diagnostic_report(phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern void phpc_native_diagnostic_free(phpc_NativeDiagnosticHandle diagnostic);\n");
-            if self.uses_native_diagnostic_result_producers {
+            if self.uses_native_diagnostic_result_producers
+                || self.uses_native_diagnostic_result_consumers
+            {
                 output.push_str(c_native_diagnostic_result_declarations());
+            }
+            if self.uses_native_diagnostic_result_consumers {
+                output.push_str(c_native_diagnostic_result_consumer_declarations());
             }
             if self.uses_native_reference_helpers
                 || self.uses_native_symbol_table_helpers
@@ -45384,6 +45587,151 @@ mod tests {
             .contains("typedef struct { void *ptr; } phpc_NativeDiagnosticResult"));
         assert!(c_native_diagnostic_result_declarations()
             .contains("phpc_native_diagnostic_result_free"));
+    }
+
+    #[test]
+    fn native_diagnostic_result_consumer_selector_covers_supported_and_blocked_families() {
+        for (family, operation) in [
+            (
+                NativeDiagnosticResultConsumerFamily::ExpressionOperand,
+                PHPC_NATIVE_DIAGNOSTIC_OPERATION_VALUE_OPERAND_LIST,
+            ),
+            (
+                NativeDiagnosticResultConsumerFamily::StatementOperand,
+                PHPC_NATIVE_DIAGNOSTIC_OPERATION_STATEMENT_OPERAND_LIST,
+            ),
+            (
+                NativeDiagnosticResultConsumerFamily::TerminalOperand,
+                PHPC_NATIVE_DIAGNOSTIC_OPERATION_CONTROL_FLOW_OPERAND_LIST,
+            ),
+            (
+                NativeDiagnosticResultConsumerFamily::CleanupOperand,
+                PHPC_NATIVE_DIAGNOSTIC_OPERATION_CONTROL_FLOW_OPERAND_LIST,
+            ),
+            (
+                NativeDiagnosticResultConsumerFamily::AssignmentLvalueOperand,
+                PHPC_NATIVE_DIAGNOSTIC_OPERATION_ASSIGNMENT_LVALUE_OPERAND_LIST,
+            ),
+            (
+                NativeDiagnosticResultConsumerFamily::LvalueOperand,
+                PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST,
+            ),
+            (
+                NativeDiagnosticResultConsumerFamily::RmwLvalueOperand,
+                PHPC_NATIVE_DIAGNOSTIC_OPERATION_RMW_LVALUE_OPERAND_LIST,
+            ),
+            (
+                NativeDiagnosticResultConsumerFamily::ReferenceBindingOperand,
+                PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST,
+            ),
+            (
+                NativeDiagnosticResultConsumerFamily::CallArgumentOperand,
+                PHPC_NATIVE_DIAGNOSTIC_OPERATION_CALL_ARGUMENT_LIST,
+            ),
+        ] {
+            assert_eq!(
+                family.list_consumer(),
+                Ok(NativeDiagnosticResultListConsumer::ValueRequiredOperation { operation })
+            );
+        }
+
+        assert_eq!(
+            NativeDiagnosticResultConsumerFamily::DeferredCleanup.list_consumer(),
+            Ok(NativeDiagnosticResultListConsumer::DeferredCleanup)
+        );
+
+        for family in [
+            NativeDiagnosticResultConsumerFamily::Termination,
+            NativeDiagnosticResultConsumerFamily::DeclarationInitializer,
+            NativeDiagnosticResultConsumerFamily::StaticLocalInitializer,
+            NativeDiagnosticResultConsumerFamily::GlobalDeclaration,
+        ] {
+            assert_eq!(
+                family.list_consumer(),
+                Err(NativeDiagnosticResultConsumerBlocker::MissingRuntimeAbi)
+            );
+        }
+    }
+
+    #[test]
+    fn native_diagnostic_result_backend_consumers_route_operation_and_cleanup_lists() {
+        let mut llvm = LlvmGenerator::default();
+        let value_consumer = NativeDiagnosticResultConsumerFamily::ExpressionOperand
+            .list_consumer()
+            .expect("expression operands use value-required operation consumer");
+        let assignment_consumer = NativeDiagnosticResultConsumerFamily::AssignmentLvalueOperand
+            .list_consumer()
+            .expect("assignment lvalue operands use value-required operation consumer");
+        let cleanup_consumer = NativeDiagnosticResultConsumerFamily::DeferredCleanup
+            .list_consumer()
+            .expect("deferred cleanup uses cleanup consumer");
+
+        let value_result =
+            llvm.emit_native_diagnostic_result_list_consumer(value_consumer, "%value_results", 2);
+        let assignment_result = llvm.emit_native_diagnostic_result_list_consumer(
+            assignment_consumer,
+            "%assignment_results",
+            3,
+        );
+        let cleanup_result = llvm.emit_native_diagnostic_result_list_consumer(
+            cleanup_consumer,
+            "%cleanup_results",
+            1,
+        );
+
+        assert!(llvm.uses_native_diagnostic_result_consumers);
+        assert_ne!(value_result, assignment_result);
+        assert_ne!(assignment_result, cleanup_result);
+        assert!(llvm.body.iter().any(|line| line.contains(
+            "@phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free"
+        ) && line.contains(&format!(
+            "i8 {}",
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_VALUE_OPERAND_LIST
+        ))));
+        assert!(llvm.body.iter().any(|line| line.contains(
+            "@phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free"
+        ) && line.contains(&format!(
+            "i8 {}",
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_ASSIGNMENT_LVALUE_OPERAND_LIST
+        ))));
+        assert!(llvm.body.iter().any(|line| line
+            .contains("@phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free")));
+        assert!(
+            llvm_native_diagnostic_result_consumer_declarations("i64").contains(
+                "@phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free"
+            )
+        );
+
+        let mut c = CGenerator::default();
+        let value_result =
+            c.emit_native_diagnostic_result_list_consumer(value_consumer, "value_results", 2);
+        let assignment_result = c.emit_native_diagnostic_result_list_consumer(
+            assignment_consumer,
+            "assignment_results",
+            3,
+        );
+        let cleanup_result =
+            c.emit_native_diagnostic_result_list_consumer(cleanup_consumer, "cleanup_results", 1);
+
+        assert!(c.uses_native_diagnostic_result_consumers);
+        assert_ne!(value_result, assignment_result);
+        assert_ne!(assignment_result, cleanup_result);
+        assert!(c.body.iter().any(|line| line.contains(
+            "phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free"
+        ) && line.contains(&format!(
+            "{}, value_results, 2",
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_VALUE_OPERAND_LIST
+        ))));
+        assert!(c.body.iter().any(|line| line.contains(
+            "phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free"
+        ) && line.contains(&format!(
+            "{}, assignment_results, 3",
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_ASSIGNMENT_LVALUE_OPERAND_LIST
+        ))));
+        assert!(c.body.iter().any(|line| line
+            .contains("phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free")));
+        assert!(c_native_diagnostic_result_consumer_declarations()
+            .contains("phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free"));
     }
 
     #[test]
