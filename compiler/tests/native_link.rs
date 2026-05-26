@@ -17409,6 +17409,47 @@ const NATIVE_RUNTIME_DYNAMIC_GLOBALS_SELF_IMPORT_USER_FUNCTION_SOURCE: &str = co
     "echo \"|\", $slot;\n",
 );
 
+const NATIVE_REQUEST_GLOBAL_FRAME_DIRECT_SOURCE: &str = concat!(
+    "<?php\n",
+    "$_GET[\"name\"] = \"Ada\";\n",
+    "$_POST[\"id\"] = \"root\";\n",
+    "function read_request() {\n",
+    "    echo $_GET[\"name\"];\n",
+    "    return $_POST[\"id\"];\n",
+    "}\n",
+    "echo read_request();\n",
+);
+
+const NATIVE_REQUEST_GLOBAL_FRAME_MUTATION_SOURCE: &str = concat!(
+    "<?php\n",
+    "function write_post() {\n",
+    "    $_POST[\"id\"] = \"B\";\n",
+    "}\n",
+    "write_post();\n",
+    "echo $_POST[\"id\"];\n",
+);
+
+const NATIVE_REQUEST_GLOBAL_FRAME_GLOBALS_ALIAS_SOURCE: &str = concat!(
+    "<?php\n",
+    "function update_request_alias() {\n",
+    "    $GLOBALS[\"_GET\"][\"id\"] = \"fn\";\n",
+    "}\n",
+    "update_request_alias();\n",
+    "echo $_GET[\"id\"];\n",
+);
+
+const NATIVE_REQUEST_GLOBAL_FRAME_MIXED_SOURCE: &str = concat!(
+    "<?php\n",
+    "$value = \"root\";\n",
+    "function update_both() {\n",
+    "    global $value;\n",
+    "    $value = \"fn\";\n",
+    "    $_GET[\"id\"] = \"G\";\n",
+    "}\n",
+    "update_both();\n",
+    "echo $value, \":\", $_GET[\"id\"];\n",
+);
+
 #[test]
 fn native_executable_c_source_lowers_direct_user_function_frames() {
     let program = parse(NATIVE_USER_FUNCTION_FRAME_SOURCE).unwrap();
@@ -18332,6 +18373,118 @@ fn emit_exe_links_and_runs_globals_self_import_user_function_frame_program() {
         run.stdout,
         b"root|changed:DEEP|changed:DEEP|mixed!:mixed!|mixed!"
     );
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_request_global_frame_direct_user_function_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "request_global_frame_direct_user_function",
+        NATIVE_REQUEST_GLOBAL_FRAME_DIRECT_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native request/global direct executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"Adaroot");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_request_global_frame_mutation_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "request_global_frame_mutation",
+        NATIVE_REQUEST_GLOBAL_FRAME_MUTATION_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native request/global mutation executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"B");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_request_global_frame_globals_alias_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "request_global_frame_globals_alias",
+        NATIVE_REQUEST_GLOBAL_FRAME_GLOBALS_ALIAS_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native request/global $GLOBALS alias executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"fn");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_request_global_frame_mixed_environment_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "request_global_frame_mixed_environment",
+        NATIVE_REQUEST_GLOBAL_FRAME_MIXED_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native request/global mixed environment executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"fn:G");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

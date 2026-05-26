@@ -2643,6 +2643,14 @@ fn stmt_list_contains_global_import(statements: &[Stmt]) -> bool {
     statements.iter().any(stmt_contains_global_import)
 }
 
+fn stmt_list_frame_environment_requirement(statements: &[Stmt]) -> CFrameEnvironmentRequirement {
+    CFrameEnvironmentRequirement {
+        root_symbols: stmt_list_contains_global_import(statements)
+            || stmt_list_contains_globals_access(statements),
+        request_state: stmt_list_contains_request_state_access(statements),
+    }
+}
+
 fn stmt_contains_global_import(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Global { .. } => true,
@@ -2670,6 +2678,123 @@ fn stmt_contains_global_import(stmt: &Stmt) -> bool {
                     .is_some_and(|body| stmt_list_contains_global_import(body))
         }
         _ => false,
+    }
+}
+
+fn stmt_list_contains_globals_access(statements: &[Stmt]) -> bool {
+    statements.iter().any(stmt_contains_globals_access)
+}
+
+fn stmt_contains_globals_access(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Echo { exprs, .. } => exprs.iter().any(expr_contains_globals_access),
+        Stmt::Print { expr, .. }
+        | Stmt::Expr { expr, .. }
+        | Stmt::Require { path: expr, .. }
+        | Stmt::Include { path: expr, .. }
+        | Stmt::Throw { expr, .. } => expr_contains_globals_access(expr),
+        Stmt::Assign { target, expr, .. }
+        | Stmt::CompoundAssign { target, expr, .. }
+        | Stmt::NullCoalesceAssign { target, expr, .. } => {
+            assign_target_contains_globals_access(target) || expr_contains_globals_access(expr)
+        }
+        Stmt::ReferenceAssign { target, source, .. } => {
+            assign_target_contains_globals_access(target)
+                || reference_source_contains_globals_access(source)
+        }
+        Stmt::IncrementDecrement { target, .. } => assign_target_contains_globals_access(target),
+        Stmt::If {
+            condition,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            expr_contains_globals_access(condition)
+                || stmt_list_contains_globals_access(then_branch)
+                || stmt_list_contains_globals_access(else_branch)
+        }
+        Stmt::While {
+            condition, body, ..
+        }
+        | Stmt::DoWhile {
+            condition, body, ..
+        } => expr_contains_globals_access(condition) || stmt_list_contains_globals_access(body),
+        Stmt::For {
+            initializers,
+            conditions,
+            increments,
+            body,
+            ..
+        } => {
+            initializers
+                .iter()
+                .chain(increments.iter())
+                .any(for_action_contains_globals_access)
+                || conditions.iter().any(expr_contains_globals_access)
+                || stmt_list_contains_globals_access(body)
+        }
+        Stmt::Switch { value, cases, .. } => {
+            expr_contains_globals_access(value)
+                || cases.iter().any(|case| {
+                    case.condition
+                        .as_ref()
+                        .is_some_and(expr_contains_globals_access)
+                        || stmt_list_contains_globals_access(&case.body)
+                })
+        }
+        Stmt::Foreach { iterable, body, .. } => {
+            expr_contains_globals_access(iterable) || stmt_list_contains_globals_access(body)
+        }
+        Stmt::UnsetVariable { name, .. } => is_globals_superglobal_name(name),
+        Stmt::UnsetArrayIndex { name, index, .. } => {
+            is_globals_superglobal_name(name) || expr_contains_globals_access(index)
+        }
+        Stmt::UnsetNestedArrayIndex { name, indices, .. } => {
+            is_globals_superglobal_name(name) || indices.iter().any(expr_contains_globals_access)
+        }
+        Stmt::UnsetDynamicObjectProperty { property, .. } => expr_contains_globals_access(property),
+        Stmt::UnsetMany { targets, .. } => targets.iter().any(unset_target_contains_globals_access),
+        Stmt::ConstDeclaration { declarations, .. } => declarations
+            .iter()
+            .any(|declaration| expr_contains_globals_access(&declaration.value)),
+        Stmt::Return { value, .. } => value.as_ref().is_some_and(expr_contains_globals_access),
+        Stmt::Try {
+            body,
+            catches,
+            finally_body,
+            ..
+        } => {
+            stmt_list_contains_globals_access(body)
+                || catches
+                    .iter()
+                    .any(|catch| stmt_list_contains_globals_access(&catch.body))
+                || finally_body
+                    .as_ref()
+                    .is_some_and(|body| stmt_list_contains_globals_access(body))
+        }
+        Stmt::StaticLocal { declarations, .. } => declarations.iter().any(|declaration| {
+            declaration
+                .default
+                .as_ref()
+                .is_some_and(expr_contains_globals_access)
+        }),
+        Stmt::Namespace { .. }
+        | Stmt::Use { .. }
+        | Stmt::Goto { .. }
+        | Stmt::Label { .. }
+        | Stmt::UnsetObjectProperty { .. }
+        | Stmt::UnsetStaticProperty { .. }
+        | Stmt::UnsetSelfStaticProperty { .. }
+        | Stmt::UnsetParentStaticProperty { .. }
+        | Stmt::UnsetLateStaticProperty { .. }
+        | Stmt::Function(_)
+        | Stmt::Interface(_)
+        | Stmt::Trait(_)
+        | Stmt::Enum(_)
+        | Stmt::Class(_)
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. }
+        | Stmt::Global { .. } => false,
     }
 }
 
@@ -4907,6 +5032,902 @@ fn globals_request_superglobal_alias_path<'a>(
         return None;
     }
     None
+}
+
+fn globals_indices_may_reference_request_superglobal(indices: &[&Expr]) -> bool {
+    let mut remaining = indices;
+    while let Some((first, rest)) = remaining.split_first() {
+        let Some(name) = static_string_key_expr_value(first) else {
+            return true;
+        };
+        if is_globals_superglobal_name(&name) {
+            remaining = rest;
+            continue;
+        }
+        return is_request_superglobal_name(&name);
+    }
+    false
+}
+
+fn globals_alias_expr_may_reference_request_superglobal(expr: &Expr) -> bool {
+    let mut indices = Vec::new();
+    let mut target = expr;
+    loop {
+        match target {
+            Expr::Index {
+                target: nested,
+                index,
+                ..
+            } => {
+                indices.push(index.as_ref());
+                target = nested;
+            }
+            Expr::AppendIndex { target: nested, .. } => {
+                target = nested;
+            }
+            Expr::Variable(name, _) if is_globals_superglobal_name(name) => {
+                indices.reverse();
+                return globals_indices_may_reference_request_superglobal(&indices);
+            }
+            _ => return false,
+        }
+    }
+}
+
+fn expr_contains_globals_access(expr: &Expr) -> bool {
+    match expr {
+        Expr::Variable(name, _) if is_globals_superglobal_name(name) => true,
+        Expr::InterpolatedString { parts, .. } => parts
+            .iter()
+            .any(interpolated_string_part_contains_globals_access),
+        Expr::Call { args, .. }
+        | Expr::StaticMethodCall { args, .. }
+        | Expr::ParentMethodCall { args, .. }
+        | Expr::SelfMethodCall { args, .. }
+        | Expr::LateStaticMethodCall { args, .. }
+        | Expr::New { args, .. } => args.iter().any(expr_contains_globals_access),
+        Expr::DynamicCall { callee, args, .. } => {
+            expr_contains_globals_access(callee) || args.iter().any(expr_contains_globals_access)
+        }
+        Expr::MethodCall { target, args, .. }
+        | Expr::ObjectStaticMethodCall { target, args, .. } => {
+            expr_contains_globals_access(target) || args.iter().any(expr_contains_globals_access)
+        }
+        Expr::DynamicMethodCall {
+            target,
+            method,
+            args,
+            ..
+        } => {
+            expr_contains_globals_access(target)
+                || expr_contains_globals_access(method)
+                || args.iter().any(expr_contains_globals_access)
+        }
+        Expr::Array { items, .. } => items.iter().any(|item| {
+            item.key.as_ref().is_some_and(expr_contains_globals_access)
+                || expr_contains_globals_access(&item.value)
+        }),
+        Expr::Index { target, index, .. } => {
+            expr_contains_globals_access(target) || expr_contains_globals_access(index)
+        }
+        Expr::AppendIndex { target, .. }
+        | Expr::Property { target, .. }
+        | Expr::ObjectStaticProperty { target, .. }
+        | Expr::InstanceOf { expr: target, .. }
+        | Expr::Clone { expr: target, .. }
+        | Expr::Unary { expr: target, .. }
+        | Expr::ErrorControl { expr: target, .. }
+        | Expr::Include { path: target, .. }
+        | Expr::Require { path: target, .. }
+        | Expr::Cast { expr: target, .. } => expr_contains_globals_access(target),
+        Expr::DynamicProperty {
+            target, property, ..
+        } => expr_contains_globals_access(target) || expr_contains_globals_access(property),
+        Expr::Binary { left, right, .. } => {
+            expr_contains_globals_access(left) || expr_contains_globals_access(right)
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            expr_contains_globals_access(condition)
+                || expr_contains_globals_access(if_true)
+                || expr_contains_globals_access(if_false)
+        }
+        Expr::ShortTernary {
+            condition,
+            if_false,
+            ..
+        } => expr_contains_globals_access(condition) || expr_contains_globals_access(if_false),
+        Expr::Assign { target, expr, .. }
+        | Expr::CompoundAssign { target, expr, .. }
+        | Expr::NullCoalesceAssign { target, expr, .. } => {
+            assign_target_contains_globals_access(target) || expr_contains_globals_access(expr)
+        }
+        Expr::IncrementDecrement { target, .. } => assign_target_contains_globals_access(target),
+        Expr::Null(_)
+        | Expr::Bool(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::String(_, _)
+        | Expr::Variable(_, _)
+        | Expr::MagicLine { .. }
+        | Expr::MagicFile { .. }
+        | Expr::MagicDir { .. }
+        | Expr::MagicFunction { .. }
+        | Expr::MagicClass { .. }
+        | Expr::MagicMethod { .. }
+        | Expr::GlobalConstant { .. }
+        | Expr::ClassNameConstant { .. }
+        | Expr::SelfClassNameConstant { .. }
+        | Expr::ParentClassNameConstant { .. }
+        | Expr::StaticClassNameConstant { .. }
+        | Expr::ClassConstant { .. }
+        | Expr::SelfClassConstant { .. }
+        | Expr::ParentClassConstant { .. }
+        | Expr::LateStaticClassConstant { .. }
+        | Expr::StaticProperty { .. }
+        | Expr::SelfStaticProperty { .. }
+        | Expr::ParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. }
+        | Expr::Closure { .. } => false,
+    }
+}
+
+fn interpolated_string_part_contains_globals_access(part: &InterpolatedStringPart) -> bool {
+    match part {
+        InterpolatedStringPart::Variable(name)
+        | InterpolatedStringPart::ArrayOffset { variable: name, .. }
+        | InterpolatedStringPart::ObjectProperty { variable: name, .. }
+        | InterpolatedStringPart::AccessChain { variable: name, .. } => {
+            is_globals_superglobal_name(name)
+        }
+        InterpolatedStringPart::Literal(_) => false,
+    }
+}
+
+fn target_name_is_globals(target: &AssignTarget) -> bool {
+    match target {
+        AssignTarget::Variable { name, .. }
+        | AssignTarget::ArrayIndex { name, .. }
+        | AssignTarget::NestedArrayIndex { name, .. }
+        | AssignTarget::NestedArrayAppend { name, .. } => is_globals_superglobal_name(name),
+        _ => false,
+    }
+}
+
+fn assign_target_contains_globals_access(target: &AssignTarget) -> bool {
+    match target {
+        AssignTarget::Variable { name, .. } => is_globals_superglobal_name(name),
+        AssignTarget::ArrayIndex { index, .. } => {
+            target_name_is_globals(target)
+                || index.as_ref().is_some_and(expr_contains_globals_access)
+        }
+        AssignTarget::NestedArrayIndex { indices, .. }
+        | AssignTarget::ObjectPropertyArrayIndex { indices, .. } => {
+            target_name_is_globals(target) || indices.iter().any(expr_contains_globals_access)
+        }
+        AssignTarget::NestedArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::ObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            target_name_is_globals(target)
+                || indices
+                    .iter()
+                    .chain(suffix_indices.iter())
+                    .any(expr_contains_globals_access)
+        }
+        AssignTarget::DynamicProperty { property, .. } => expr_contains_globals_access(property),
+        AssignTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => {
+            expr_contains_globals_access(property)
+                || indices.iter().any(expr_contains_globals_access)
+        }
+        AssignTarget::DynamicObjectPropertyArrayAppend {
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            expr_contains_globals_access(property)
+                || indices
+                    .iter()
+                    .chain(suffix_indices.iter())
+                    .any(expr_contains_globals_access)
+        }
+        AssignTarget::NonDirectProperty { holder, .. }
+        | AssignTarget::ObjectStaticProperty { target: holder, .. }
+        | AssignTarget::NonDirectObjectPropertyArrayIndex { holder, .. } => {
+            expr_contains_globals_access(holder)
+        }
+        AssignTarget::NonDirectObjectPropertyArrayAppend {
+            holder,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            expr_contains_globals_access(holder)
+                || indices
+                    .iter()
+                    .chain(suffix_indices.iter())
+                    .any(expr_contains_globals_access)
+        }
+        AssignTarget::NonDirectDynamicProperty {
+            holder, property, ..
+        }
+        | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder, property, ..
+        } => expr_contains_globals_access(holder) || expr_contains_globals_access(property),
+        AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+            holder,
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            expr_contains_globals_access(holder)
+                || expr_contains_globals_access(property)
+                || indices
+                    .iter()
+                    .chain(suffix_indices.iter())
+                    .any(expr_contains_globals_access)
+        }
+        AssignTarget::List { .. }
+        | AssignTarget::Property { .. }
+        | AssignTarget::StaticProperty { .. }
+        | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::ParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. } => false,
+    }
+}
+
+fn reference_source_contains_globals_access(source: &ReferenceSource) -> bool {
+    match source {
+        ReferenceSource::Variable { name, .. } => is_globals_superglobal_name(name),
+        ReferenceSource::ArrayIndex { name, index, .. } => {
+            is_globals_superglobal_name(name) || expr_contains_globals_access(index)
+        }
+        ReferenceSource::ArrayAppend { name, indices, .. }
+        | ReferenceSource::NestedArrayIndex { name, indices, .. } => {
+            is_globals_superglobal_name(name) || indices.iter().any(expr_contains_globals_access)
+        }
+        ReferenceSource::ObjectPropertyArrayIndex { index, .. } => {
+            expr_contains_globals_access(index)
+        }
+        ReferenceSource::DynamicObjectPropertyArrayIndex {
+            property, index, ..
+        } => expr_contains_globals_access(property) || expr_contains_globals_access(index),
+        ReferenceSource::ObjectPropertyArrayAppend { indices, .. }
+        | ReferenceSource::ObjectPropertyNestedArrayIndex { indices, .. } => {
+            indices.iter().any(expr_contains_globals_access)
+        }
+        ReferenceSource::DynamicObjectPropertyArrayAppend {
+            property, indices, ..
+        }
+        | ReferenceSource::DynamicObjectPropertyNestedArrayIndex {
+            property, indices, ..
+        } => {
+            expr_contains_globals_access(property)
+                || indices.iter().any(expr_contains_globals_access)
+        }
+        ReferenceSource::NonDirectObjectPropertyArrayAppend {
+            holder, indices, ..
+        }
+        | ReferenceSource::NonDirectObjectPropertyNestedArrayIndex {
+            holder, indices, ..
+        } => {
+            expr_contains_globals_access(holder) || indices.iter().any(expr_contains_globals_access)
+        }
+        ReferenceSource::NonDirectDynamicObjectPropertyArrayAppend {
+            holder,
+            property,
+            indices,
+            ..
+        }
+        | ReferenceSource::NonDirectDynamicObjectPropertyNestedArrayIndex {
+            holder,
+            property,
+            indices,
+            ..
+        } => {
+            expr_contains_globals_access(holder)
+                || expr_contains_globals_access(property)
+                || indices.iter().any(expr_contains_globals_access)
+        }
+        ReferenceSource::StaticPropertyArrayIndex { expr, indices, .. }
+        | ReferenceSource::ExpressionArrayIndex {
+            target: expr,
+            indices,
+            ..
+        }
+        | ReferenceSource::ExpressionArrayAppend {
+            target: expr,
+            indices,
+            ..
+        } => expr_contains_globals_access(expr) || indices.iter().any(expr_contains_globals_access),
+        ReferenceSource::Property { expr, .. }
+        | ReferenceSource::StaticProperty { expr, .. }
+        | ReferenceSource::MethodCall { expr, .. } => expr_contains_globals_access(expr),
+    }
+}
+
+fn for_action_contains_globals_access(action: &ForAction) -> bool {
+    match action {
+        ForAction::Assign { target, expr } | ForAction::CompoundAssign { target, expr, .. } => {
+            assign_target_contains_globals_access(target) || expr_contains_globals_access(expr)
+        }
+        ForAction::IncrementDecrement { target, .. } => {
+            assign_target_contains_globals_access(target)
+        }
+        ForAction::Expr { expr } => expr_contains_globals_access(expr),
+    }
+}
+
+fn unset_target_contains_globals_access(target: &UnsetTarget) -> bool {
+    match target {
+        UnsetTarget::Variable { name, .. } => is_globals_superglobal_name(name),
+        UnsetTarget::ArrayIndex { name, index, .. } => {
+            is_globals_superglobal_name(name) || expr_contains_globals_access(index)
+        }
+        UnsetTarget::NestedArrayIndex { name, indices, .. } => {
+            is_globals_superglobal_name(name) || indices.iter().any(expr_contains_globals_access)
+        }
+        UnsetTarget::DynamicObjectProperty {
+            property: index, ..
+        } => expr_contains_globals_access(index),
+        UnsetTarget::ObjectPropertyArrayIndex { indices, .. } => {
+            indices.iter().any(expr_contains_globals_access)
+        }
+        UnsetTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => {
+            expr_contains_globals_access(property)
+                || indices.iter().any(expr_contains_globals_access)
+        }
+        UnsetTarget::NonDirectObjectProperty { holder, .. }
+        | UnsetTarget::NonDirectObjectPropertyArrayIndex { holder, .. } => {
+            expr_contains_globals_access(holder)
+        }
+        UnsetTarget::NonDirectDynamicObjectProperty {
+            holder, property, ..
+        }
+        | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder, property, ..
+        } => expr_contains_globals_access(holder) || expr_contains_globals_access(property),
+        UnsetTarget::ObjectProperty { .. }
+        | UnsetTarget::StaticProperty { .. }
+        | UnsetTarget::SelfStaticProperty { .. }
+        | UnsetTarget::ParentStaticProperty { .. }
+        | UnsetTarget::LateStaticProperty { .. } => false,
+    }
+}
+
+fn stmt_list_contains_request_state_access(statements: &[Stmt]) -> bool {
+    statements.iter().any(stmt_contains_request_state_access)
+}
+
+fn stmt_contains_request_state_access(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Echo { exprs, .. } => exprs.iter().any(expr_contains_request_state_access),
+        Stmt::Print { expr, .. }
+        | Stmt::Expr { expr, .. }
+        | Stmt::Require { path: expr, .. }
+        | Stmt::Include { path: expr, .. }
+        | Stmt::Throw { expr, .. } => expr_contains_request_state_access(expr),
+        Stmt::Assign { target, expr, .. }
+        | Stmt::CompoundAssign { target, expr, .. }
+        | Stmt::NullCoalesceAssign { target, expr, .. } => {
+            assign_target_contains_request_state_access(target)
+                || expr_contains_request_state_access(expr)
+        }
+        Stmt::ReferenceAssign { target, source, .. } => {
+            assign_target_contains_request_state_access(target)
+                || reference_source_contains_request_state_access(source)
+        }
+        Stmt::IncrementDecrement { target, .. } => {
+            assign_target_contains_request_state_access(target)
+        }
+        Stmt::If {
+            condition,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            expr_contains_request_state_access(condition)
+                || stmt_list_contains_request_state_access(then_branch)
+                || stmt_list_contains_request_state_access(else_branch)
+        }
+        Stmt::While {
+            condition, body, ..
+        }
+        | Stmt::DoWhile {
+            condition, body, ..
+        } => {
+            expr_contains_request_state_access(condition)
+                || stmt_list_contains_request_state_access(body)
+        }
+        Stmt::For {
+            initializers,
+            conditions,
+            increments,
+            body,
+            ..
+        } => {
+            initializers
+                .iter()
+                .chain(increments.iter())
+                .any(for_action_contains_request_state_access)
+                || conditions.iter().any(expr_contains_request_state_access)
+                || stmt_list_contains_request_state_access(body)
+        }
+        Stmt::Switch { value, cases, .. } => {
+            expr_contains_request_state_access(value)
+                || cases.iter().any(|case| {
+                    case.condition
+                        .as_ref()
+                        .is_some_and(expr_contains_request_state_access)
+                        || stmt_list_contains_request_state_access(&case.body)
+                })
+        }
+        Stmt::Foreach { iterable, body, .. } => {
+            expr_contains_request_state_access(iterable)
+                || stmt_list_contains_request_state_access(body)
+        }
+        Stmt::UnsetVariable { name, .. } => is_request_superglobal_name(name),
+        Stmt::UnsetArrayIndex { name, index, .. } => {
+            is_request_superglobal_name(name)
+                || (is_globals_superglobal_name(name)
+                    && globals_indices_may_reference_request_superglobal(&[index]))
+                || expr_contains_request_state_access(index)
+        }
+        Stmt::UnsetNestedArrayIndex { name, indices, .. } => {
+            is_request_superglobal_name(name)
+                || (is_globals_superglobal_name(name)
+                    && globals_indices_may_reference_request_superglobal(
+                        &indices.iter().collect::<Vec<_>>(),
+                    ))
+                || indices.iter().any(expr_contains_request_state_access)
+        }
+        Stmt::UnsetDynamicObjectProperty { property, .. } => {
+            expr_contains_request_state_access(property)
+        }
+        Stmt::UnsetMany { targets, .. } => targets
+            .iter()
+            .any(unset_target_contains_request_state_access),
+        Stmt::ConstDeclaration { declarations, .. } => declarations
+            .iter()
+            .any(|declaration| expr_contains_request_state_access(&declaration.value)),
+        Stmt::Return { value, .. } => value
+            .as_ref()
+            .is_some_and(expr_contains_request_state_access),
+        Stmt::Try {
+            body,
+            catches,
+            finally_body,
+            ..
+        } => {
+            stmt_list_contains_request_state_access(body)
+                || catches
+                    .iter()
+                    .any(|catch| stmt_list_contains_request_state_access(&catch.body))
+                || finally_body
+                    .as_ref()
+                    .is_some_and(|body| stmt_list_contains_request_state_access(body))
+        }
+        Stmt::StaticLocal { declarations, .. } => declarations.iter().any(|declaration| {
+            declaration
+                .default
+                .as_ref()
+                .is_some_and(expr_contains_request_state_access)
+        }),
+        Stmt::Namespace { .. }
+        | Stmt::Use { .. }
+        | Stmt::Goto { .. }
+        | Stmt::Label { .. }
+        | Stmt::UnsetObjectProperty { .. }
+        | Stmt::UnsetStaticProperty { .. }
+        | Stmt::UnsetSelfStaticProperty { .. }
+        | Stmt::UnsetParentStaticProperty { .. }
+        | Stmt::UnsetLateStaticProperty { .. }
+        | Stmt::Function(_)
+        | Stmt::Interface(_)
+        | Stmt::Trait(_)
+        | Stmt::Enum(_)
+        | Stmt::Class(_)
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. }
+        | Stmt::Global { .. } => false,
+    }
+}
+
+fn expr_contains_request_state_access(expr: &Expr) -> bool {
+    if globals_alias_expr_may_reference_request_superglobal(expr) {
+        return true;
+    }
+    match expr {
+        Expr::Variable(name, _) if is_request_superglobal_name(name) => true,
+        Expr::InterpolatedString { parts, .. } => parts
+            .iter()
+            .any(interpolated_string_part_contains_request_state_access),
+        Expr::Call { args, .. }
+        | Expr::StaticMethodCall { args, .. }
+        | Expr::ParentMethodCall { args, .. }
+        | Expr::SelfMethodCall { args, .. }
+        | Expr::LateStaticMethodCall { args, .. }
+        | Expr::New { args, .. } => args.iter().any(expr_contains_request_state_access),
+        Expr::DynamicCall { callee, args, .. } => {
+            expr_contains_request_state_access(callee)
+                || args.iter().any(expr_contains_request_state_access)
+        }
+        Expr::MethodCall { target, args, .. }
+        | Expr::ObjectStaticMethodCall { target, args, .. } => {
+            expr_contains_request_state_access(target)
+                || args.iter().any(expr_contains_request_state_access)
+        }
+        Expr::DynamicMethodCall {
+            target,
+            method,
+            args,
+            ..
+        } => {
+            expr_contains_request_state_access(target)
+                || expr_contains_request_state_access(method)
+                || args.iter().any(expr_contains_request_state_access)
+        }
+        Expr::Array { items, .. } => items.iter().any(|item| {
+            item.key
+                .as_ref()
+                .is_some_and(expr_contains_request_state_access)
+                || expr_contains_request_state_access(&item.value)
+        }),
+        Expr::Index { target, index, .. } => {
+            expr_contains_request_state_access(target) || expr_contains_request_state_access(index)
+        }
+        Expr::AppendIndex { target, .. }
+        | Expr::Property { target, .. }
+        | Expr::ObjectStaticProperty { target, .. }
+        | Expr::InstanceOf { expr: target, .. }
+        | Expr::Clone { expr: target, .. }
+        | Expr::Unary { expr: target, .. }
+        | Expr::ErrorControl { expr: target, .. }
+        | Expr::Include { path: target, .. }
+        | Expr::Require { path: target, .. }
+        | Expr::Cast { expr: target, .. } => expr_contains_request_state_access(target),
+        Expr::DynamicProperty {
+            target, property, ..
+        } => {
+            expr_contains_request_state_access(target)
+                || expr_contains_request_state_access(property)
+        }
+        Expr::Binary { left, right, .. } => {
+            expr_contains_request_state_access(left) || expr_contains_request_state_access(right)
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            expr_contains_request_state_access(condition)
+                || expr_contains_request_state_access(if_true)
+                || expr_contains_request_state_access(if_false)
+        }
+        Expr::ShortTernary {
+            condition,
+            if_false,
+            ..
+        } => {
+            expr_contains_request_state_access(condition)
+                || expr_contains_request_state_access(if_false)
+        }
+        Expr::Assign { target, expr, .. }
+        | Expr::CompoundAssign { target, expr, .. }
+        | Expr::NullCoalesceAssign { target, expr, .. } => {
+            assign_target_contains_request_state_access(target)
+                || expr_contains_request_state_access(expr)
+        }
+        Expr::IncrementDecrement { target, .. } => {
+            assign_target_contains_request_state_access(target)
+        }
+        Expr::Null(_)
+        | Expr::Bool(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::String(_, _)
+        | Expr::Variable(_, _)
+        | Expr::MagicLine { .. }
+        | Expr::MagicFile { .. }
+        | Expr::MagicDir { .. }
+        | Expr::MagicFunction { .. }
+        | Expr::MagicClass { .. }
+        | Expr::MagicMethod { .. }
+        | Expr::GlobalConstant { .. }
+        | Expr::ClassNameConstant { .. }
+        | Expr::SelfClassNameConstant { .. }
+        | Expr::ParentClassNameConstant { .. }
+        | Expr::StaticClassNameConstant { .. }
+        | Expr::ClassConstant { .. }
+        | Expr::SelfClassConstant { .. }
+        | Expr::ParentClassConstant { .. }
+        | Expr::LateStaticClassConstant { .. }
+        | Expr::StaticProperty { .. }
+        | Expr::SelfStaticProperty { .. }
+        | Expr::ParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. }
+        | Expr::Closure { .. } => false,
+    }
+}
+
+fn interpolated_string_part_contains_request_state_access(part: &InterpolatedStringPart) -> bool {
+    match part {
+        InterpolatedStringPart::Variable(name)
+        | InterpolatedStringPart::ArrayOffset { variable: name, .. }
+        | InterpolatedStringPart::ObjectProperty { variable: name, .. }
+        | InterpolatedStringPart::AccessChain { variable: name, .. } => {
+            is_request_superglobal_name(name)
+        }
+        InterpolatedStringPart::Literal(_) => false,
+    }
+}
+
+fn assign_target_contains_request_state_access(target: &AssignTarget) -> bool {
+    match target {
+        AssignTarget::Variable { name, .. } => is_request_superglobal_name(name),
+        AssignTarget::ArrayIndex { name, index, .. } => {
+            is_request_superglobal_name(name)
+                || (is_globals_superglobal_name(name)
+                    && index.as_ref().is_some_and(|index| {
+                        globals_indices_may_reference_request_superglobal(&[index])
+                    }))
+                || index
+                    .as_ref()
+                    .is_some_and(expr_contains_request_state_access)
+        }
+        AssignTarget::NestedArrayIndex { name, indices, .. }
+        | AssignTarget::NestedArrayAppend { name, indices, .. } => {
+            is_request_superglobal_name(name)
+                || (is_globals_superglobal_name(name)
+                    && globals_indices_may_reference_request_superglobal(
+                        &indices.iter().collect::<Vec<_>>(),
+                    ))
+                || indices.iter().any(expr_contains_request_state_access)
+        }
+        AssignTarget::DynamicProperty { property, .. } => {
+            expr_contains_request_state_access(property)
+        }
+        AssignTarget::ObjectPropertyArrayIndex { indices, .. } => {
+            indices.iter().any(expr_contains_request_state_access)
+        }
+        AssignTarget::ObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        } => indices
+            .iter()
+            .chain(suffix_indices.iter())
+            .any(expr_contains_request_state_access),
+        AssignTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => {
+            expr_contains_request_state_access(property)
+                || indices.iter().any(expr_contains_request_state_access)
+        }
+        AssignTarget::DynamicObjectPropertyArrayAppend {
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            expr_contains_request_state_access(property)
+                || indices
+                    .iter()
+                    .chain(suffix_indices.iter())
+                    .any(expr_contains_request_state_access)
+        }
+        AssignTarget::NonDirectProperty { holder, .. }
+        | AssignTarget::ObjectStaticProperty { target: holder, .. }
+        | AssignTarget::NonDirectObjectPropertyArrayIndex { holder, .. } => {
+            expr_contains_request_state_access(holder)
+        }
+        AssignTarget::NonDirectObjectPropertyArrayAppend {
+            holder,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            expr_contains_request_state_access(holder)
+                || indices
+                    .iter()
+                    .chain(suffix_indices.iter())
+                    .any(expr_contains_request_state_access)
+        }
+        AssignTarget::NonDirectDynamicProperty {
+            holder, property, ..
+        }
+        | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder, property, ..
+        } => {
+            expr_contains_request_state_access(holder)
+                || expr_contains_request_state_access(property)
+        }
+        AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+            holder,
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            expr_contains_request_state_access(holder)
+                || expr_contains_request_state_access(property)
+                || indices
+                    .iter()
+                    .chain(suffix_indices.iter())
+                    .any(expr_contains_request_state_access)
+        }
+        AssignTarget::List { .. }
+        | AssignTarget::Property { .. }
+        | AssignTarget::StaticProperty { .. }
+        | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::ParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. } => false,
+    }
+}
+
+fn reference_source_contains_request_state_access(source: &ReferenceSource) -> bool {
+    match source {
+        ReferenceSource::Variable { name, .. } => is_request_superglobal_name(name),
+        ReferenceSource::ArrayIndex { name, index, .. } => {
+            is_request_superglobal_name(name)
+                || (is_globals_superglobal_name(name)
+                    && globals_indices_may_reference_request_superglobal(&[index]))
+                || expr_contains_request_state_access(index)
+        }
+        ReferenceSource::ArrayAppend { name, indices, .. }
+        | ReferenceSource::NestedArrayIndex { name, indices, .. } => {
+            is_request_superglobal_name(name)
+                || (is_globals_superglobal_name(name)
+                    && globals_indices_may_reference_request_superglobal(
+                        &indices.iter().collect::<Vec<_>>(),
+                    ))
+                || indices.iter().any(expr_contains_request_state_access)
+        }
+        ReferenceSource::ObjectPropertyArrayIndex { index, .. } => {
+            expr_contains_request_state_access(index)
+        }
+        ReferenceSource::DynamicObjectPropertyArrayIndex {
+            property, index, ..
+        } => {
+            expr_contains_request_state_access(property)
+                || expr_contains_request_state_access(index)
+        }
+        ReferenceSource::ObjectPropertyArrayAppend { indices, .. }
+        | ReferenceSource::ObjectPropertyNestedArrayIndex { indices, .. } => {
+            indices.iter().any(expr_contains_request_state_access)
+        }
+        ReferenceSource::DynamicObjectPropertyArrayAppend {
+            property, indices, ..
+        }
+        | ReferenceSource::DynamicObjectPropertyNestedArrayIndex {
+            property, indices, ..
+        } => {
+            expr_contains_request_state_access(property)
+                || indices.iter().any(expr_contains_request_state_access)
+        }
+        ReferenceSource::NonDirectObjectPropertyArrayAppend {
+            holder, indices, ..
+        }
+        | ReferenceSource::NonDirectObjectPropertyNestedArrayIndex {
+            holder, indices, ..
+        } => {
+            expr_contains_request_state_access(holder)
+                || indices.iter().any(expr_contains_request_state_access)
+        }
+        ReferenceSource::NonDirectDynamicObjectPropertyArrayAppend {
+            holder,
+            property,
+            indices,
+            ..
+        }
+        | ReferenceSource::NonDirectDynamicObjectPropertyNestedArrayIndex {
+            holder,
+            property,
+            indices,
+            ..
+        } => {
+            expr_contains_request_state_access(holder)
+                || expr_contains_request_state_access(property)
+                || indices.iter().any(expr_contains_request_state_access)
+        }
+        ReferenceSource::StaticPropertyArrayIndex { expr, indices, .. }
+        | ReferenceSource::ExpressionArrayIndex {
+            target: expr,
+            indices,
+            ..
+        }
+        | ReferenceSource::ExpressionArrayAppend {
+            target: expr,
+            indices,
+            ..
+        } => {
+            expr_contains_request_state_access(expr)
+                || indices.iter().any(expr_contains_request_state_access)
+        }
+        ReferenceSource::Property { expr, .. }
+        | ReferenceSource::StaticProperty { expr, .. }
+        | ReferenceSource::MethodCall { expr, .. } => expr_contains_request_state_access(expr),
+    }
+}
+
+fn for_action_contains_request_state_access(action: &ForAction) -> bool {
+    match action {
+        ForAction::Assign { target, expr } | ForAction::CompoundAssign { target, expr, .. } => {
+            assign_target_contains_request_state_access(target)
+                || expr_contains_request_state_access(expr)
+        }
+        ForAction::IncrementDecrement { target, .. } => {
+            assign_target_contains_request_state_access(target)
+        }
+        ForAction::Expr { expr } => expr_contains_request_state_access(expr),
+    }
+}
+
+fn unset_target_contains_request_state_access(target: &UnsetTarget) -> bool {
+    match target {
+        UnsetTarget::Variable { name, .. } => is_request_superglobal_name(name),
+        UnsetTarget::ArrayIndex { name, index, .. } => {
+            is_request_superglobal_name(name)
+                || (is_globals_superglobal_name(name)
+                    && globals_indices_may_reference_request_superglobal(&[index]))
+                || expr_contains_request_state_access(index)
+        }
+        UnsetTarget::NestedArrayIndex { name, indices, .. } => {
+            is_request_superglobal_name(name)
+                || (is_globals_superglobal_name(name)
+                    && globals_indices_may_reference_request_superglobal(
+                        &indices.iter().collect::<Vec<_>>(),
+                    ))
+                || indices.iter().any(expr_contains_request_state_access)
+        }
+        UnsetTarget::DynamicObjectProperty { property, .. } => {
+            expr_contains_request_state_access(property)
+        }
+        UnsetTarget::ObjectPropertyArrayIndex { indices, .. } => {
+            indices.iter().any(expr_contains_request_state_access)
+        }
+        UnsetTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => {
+            expr_contains_request_state_access(property)
+                || indices.iter().any(expr_contains_request_state_access)
+        }
+        UnsetTarget::NonDirectObjectProperty { holder, .. }
+        | UnsetTarget::NonDirectObjectPropertyArrayIndex { holder, .. } => {
+            expr_contains_request_state_access(holder)
+        }
+        UnsetTarget::NonDirectDynamicObjectProperty {
+            holder, property, ..
+        }
+        | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder, property, ..
+        } => {
+            expr_contains_request_state_access(holder)
+                || expr_contains_request_state_access(property)
+        }
+        UnsetTarget::ObjectProperty { .. }
+        | UnsetTarget::StaticProperty { .. }
+        | UnsetTarget::SelfStaticProperty { .. }
+        | UnsetTarget::ParentStaticProperty { .. }
+        | UnsetTarget::LateStaticProperty { .. } => false,
+    }
 }
 
 fn request_superglobal_root_name(expr: &Expr) -> Option<&str> {
@@ -12073,6 +13094,7 @@ struct CGenerator {
     native_value_cleanup_handles: Vec<String>,
     native_reference_cleanup_handles: Vec<String>,
     native_request_state_handle: Option<String>,
+    native_request_state_owned: bool,
     native_globals_symbol_table_handle: Option<String>,
     native_globals_symbol_table_owned: bool,
     native_callable_table_handle: Option<String>,
@@ -12166,6 +13188,7 @@ struct CGotoStateSnapshot {
     native_value_cleanup_handles: Vec<String>,
     native_reference_cleanup_handles: Vec<String>,
     native_request_state_handle: Option<String>,
+    native_request_state_owned: bool,
     native_globals_symbol_table_handle: Option<String>,
     native_globals_symbol_table_owned: bool,
     native_callable_table_handle: Option<String>,
@@ -12188,7 +13211,26 @@ struct CGotoTransfer {
 struct CUserFunction {
     c_name: String,
     decl: FunctionDecl,
-    requires_root_symbols: bool,
+    frame_environment: CFrameEnvironmentRequirement,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct CFrameEnvironmentRequirement {
+    root_symbols: bool,
+    request_state: bool,
+}
+
+impl CFrameEnvironmentRequirement {
+    fn merge(&mut self, other: Self) -> bool {
+        let before = *self;
+        self.root_symbols |= other.root_symbols;
+        self.request_state |= other.request_state;
+        *self != before
+    }
+
+    fn any(self) -> bool {
+        self.root_symbols || self.request_state
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -13344,6 +14386,7 @@ impl CGenerator {
             && self.native_value_cleanup_handles == other.native_value_cleanup_handles
             && self.native_reference_cleanup_handles == other.native_reference_cleanup_handles
             && self.native_request_state_handle == other.native_request_state_handle
+            && self.native_request_state_owned == other.native_request_state_owned
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
             && self.native_globals_symbol_table_owned == other.native_globals_symbol_table_owned
     }
@@ -13363,6 +14406,7 @@ impl CGenerator {
             native_value_cleanup_handles: self.native_value_cleanup_handles.clone(),
             native_reference_cleanup_handles: self.native_reference_cleanup_handles.clone(),
             native_request_state_handle: self.native_request_state_handle.clone(),
+            native_request_state_owned: self.native_request_state_owned,
             native_globals_symbol_table_handle: self.native_globals_symbol_table_handle.clone(),
             native_globals_symbol_table_owned: self.native_globals_symbol_table_owned,
             native_callable_table_handle: self.native_callable_table_handle.clone(),
@@ -13376,6 +14420,7 @@ impl CGenerator {
             && self.global_import_names == other.global_import_names
             && self.native_reference_cleanup_handles == other.native_reference_cleanup_handles
             && self.native_request_state_handle == other.native_request_state_handle
+            && self.native_request_state_owned == other.native_request_state_owned
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
             && self.native_globals_symbol_table_owned == other.native_globals_symbol_table_owned
             && self.native_callable_table_handle == other.native_callable_table_handle
@@ -13929,11 +14974,14 @@ impl CGenerator {
     fn c_user_function_signature(
         c_name: &str,
         function_params: &[FunctionParam],
-        requires_root_symbols: bool,
+        frame_environment: CFrameEnvironmentRequirement,
     ) -> String {
         let mut params = vec!["int phpc_call_depth".to_string()];
-        if requires_root_symbols {
+        if frame_environment.root_symbols {
             params.push("phpc_NativeSymbolTableHandle phpc_root_symbols".to_string());
+        }
+        if frame_environment.request_state {
+            params.push("phpc_NativeRequestStateHandle phpc_request_state".to_string());
         }
         params.extend(function_params.iter().enumerate().map(|(index, param)| {
             if param.by_reference {
@@ -14308,41 +15356,31 @@ impl CGenerator {
                 CUserFunction {
                     c_name,
                     decl: function.clone(),
-                    requires_root_symbols: stmt_list_contains_global_import(&function.body),
+                    frame_environment: stmt_list_frame_environment_requirement(&function.body),
                 },
             );
         }
-        self.propagate_user_function_root_symbol_requirements();
+        self.propagate_user_function_frame_environment_requirements();
         self.accept_recursive_user_function_frames()
     }
 
-    fn propagate_user_function_root_symbol_requirements(&mut self) {
+    fn propagate_user_function_frame_environment_requirements(&mut self) {
         loop {
             let mut changed = false;
             for key in self.user_function_order.clone() {
-                if self
-                    .user_functions
-                    .get(&key)
-                    .is_some_and(|function| function.requires_root_symbols)
-                {
-                    continue;
-                }
-
                 let mut calls = Vec::new();
                 if let Some(function) = self.user_functions.get(&key) {
                     collect_direct_call_names_from_stmts(&function.decl.body, &mut calls);
                 }
 
-                let requires_root_symbols = calls.into_iter().any(|name| {
-                    self.user_functions
-                        .get(&Self::user_function_key(&name))
-                        .is_some_and(|callee| callee.requires_root_symbols)
-                });
-                if requires_root_symbols {
-                    if let Some(function) = self.user_functions.get_mut(&key) {
-                        function.requires_root_symbols = true;
-                        changed = true;
+                let mut required = CFrameEnvironmentRequirement::default();
+                for name in calls {
+                    if let Some(callee) = self.user_functions.get(&Self::user_function_key(&name)) {
+                        required.merge(callee.frame_environment);
                     }
+                }
+                if let Some(function) = self.user_functions.get_mut(&key) {
+                    changed |= function.frame_environment.merge(required);
                 }
             }
 
@@ -14402,14 +15440,14 @@ impl CGenerator {
         let calls_root_symbol_frame = direct_calls.into_iter().any(|name| {
             self.user_functions
                 .get(&Self::user_function_key(&name))
-                .is_some_and(|function| function.requires_root_symbols)
+                .is_some_and(|function| function.frame_environment.any())
         });
 
         if captures
             .iter()
             .any(|capture| !self.native_closure_capture_is_supported(capture))
             || native_function_params_have_malformed_variadic_params(params)
-            || stmt_list_contains_global_import(body)
+            || stmt_list_frame_environment_requirement(body).any()
             || calls_root_symbol_frame
             || return_type.is_some_and(|decl| !native_function_type_decl_is_supported(decl))
             || params.iter().any(|param| {
@@ -14639,10 +15677,17 @@ impl CGenerator {
             next_static_data: self.next_static_data,
             next_native_temp: self.next_native_temp,
             native_globals_symbol_table_handle: function
-                .requires_root_symbols
+                .frame_environment
+                .root_symbols
                 .then(|| "phpc_root_symbols".to_string()),
             native_globals_symbol_table_owned: false,
-            uses_native_symbol_table_helpers: function.requires_root_symbols,
+            native_request_state_handle: function
+                .frame_environment
+                .request_state
+                .then(|| "phpc_request_state".to_string()),
+            native_request_state_owned: false,
+            uses_native_symbol_table_helpers: function.frame_environment.root_symbols,
+            uses_native_request_state_helpers: function.frame_environment.request_state,
             ..CGenerator::default()
         };
 
@@ -14670,7 +15715,7 @@ impl CGenerator {
         definition.push_str(&Self::c_user_function_signature(
             &function.c_name,
             &function.decl.params,
-            function.requires_root_symbols,
+            function.frame_environment,
         ));
         definition.push_str(" {\n");
         for line in &generator.body {
@@ -14693,8 +15738,11 @@ impl CGenerator {
         definition.push_str("  int phpc_call_status = 0;\n");
 
         let mut call_args = vec!["phpc_user_callable_call_depth".to_string()];
-        if function.requires_root_symbols {
+        if function.frame_environment.root_symbols {
             call_args.push("phpc_user_callable_root_symbols".to_string());
+        }
+        if function.frame_environment.request_state {
+            call_args.push("phpc_user_callable_request_state".to_string());
         }
         let mut cleanup = Vec::new();
         for (index, param) in function.decl.params.iter().enumerate() {
@@ -16093,10 +17141,19 @@ impl CGenerator {
             if self
                 .user_functions
                 .values()
-                .any(|function| function.requires_root_symbols)
+                .any(|function| function.frame_environment.root_symbols)
             {
                 output.push_str(
                     "static phpc_NativeSymbolTableHandle phpc_user_callable_root_symbols = {0};\n",
+                );
+            }
+            if self
+                .user_functions
+                .values()
+                .any(|function| function.frame_environment.request_state)
+            {
+                output.push_str(
+                    "static phpc_NativeRequestStateHandle phpc_user_callable_request_state = {0};\n",
                 );
             }
             output.push('\n');
@@ -16110,7 +17167,7 @@ impl CGenerator {
                 output.push_str(&Self::c_user_function_signature(
                     &function.c_name,
                     &function.decl.params,
-                    function.requires_root_symbols,
+                    function.frame_environment,
                 ));
                 output.push_str(";\n");
             }
@@ -16164,10 +17221,12 @@ impl CGenerator {
             output.push_str(&format!("phpc_native_array_free({handle});"));
             output.push('\n');
         }
-        if let Some(handle) = &self.native_request_state_handle {
-            output.push_str("  ");
-            output.push_str(&format!("phpc_native_request_state_free({handle});"));
-            output.push('\n');
+        if self.native_request_state_owned {
+            if let Some(handle) = &self.native_request_state_handle {
+                output.push_str("  ");
+                output.push_str(&format!("phpc_native_request_state_free({handle});"));
+                output.push('\n');
+            }
         }
         if self.native_globals_symbol_table_owned {
             if let Some(handle) = &self.native_globals_symbol_table_handle {
@@ -20383,6 +21442,7 @@ impl CGenerator {
             "phpc_NativeRequestStateHandle {handle} = phpc_native_request_state_empty();"
         ));
         self.native_request_state_handle = Some(handle.clone());
+        self.native_request_state_owned = true;
         handle
     }
 
@@ -24477,7 +25537,7 @@ impl CGenerator {
 
         if functions
             .iter()
-            .any(|function| function.requires_root_symbols)
+            .any(|function| function.frame_environment.root_symbols)
             || self.runtime_dynamic_call_needs_symbol_table_for_reference_args(&functions, args)
         {
             let symbol_table_failure_cleanup =
@@ -24520,6 +25580,19 @@ impl CGenerator {
                 callee.handle
             ));
             self.body.push(format!("  {matched} = 1;"));
+
+            if function.frame_environment.request_state {
+                let branch_failure_cleanup =
+                    format!("{}{}", c_cleanup_sequence(&shared_cleanup), failure_cleanup);
+                self.emit_runtime_dynamic_call_failure(
+                    &callee.handle,
+                    "request-state frame environment handoff is only supported for direct generated user-function calls",
+                    &branch_failure_cleanup,
+                    "  ",
+                );
+                self.body.push("}".to_string());
+                continue;
+            }
 
             if !native_user_function_accepts_arg_count(&function.decl, args.len()) {
                 let branch_failure_cleanup =
@@ -24616,7 +25689,7 @@ impl CGenerator {
                 branch_cleanup.extend(variadic_value.cleanup_after_use.clone());
                 call_args.push(variadic_value.handle);
             }
-            if function.requires_root_symbols {
+            if function.frame_environment.root_symbols {
                 let table_failure_cleanup = format!(
                     "{}{}{}",
                     c_cleanup_sequence(&branch_cleanup),
@@ -25435,10 +26508,16 @@ impl CGenerator {
         }
 
         let table = self.ensure_native_callable_table(failure_cleanup);
-        if function.requires_root_symbols {
+        if function.frame_environment.root_symbols {
             let root_symbols = self.ensure_globals_symbol_table(failure_cleanup, span)?;
             self.body
                 .push(format!("phpc_user_callable_root_symbols = {root_symbols};"));
+        }
+        if function.frame_environment.request_state {
+            let request_state = self.ensure_native_request_state_handle();
+            self.body.push(format!(
+                "phpc_user_callable_request_state = {request_state};"
+            ));
         }
 
         let (name_bytes, name_len) = self.emit_call_type_static_bytes(
@@ -36812,8 +37891,10 @@ impl CGenerator {
         for handle in self.array_cleanup_handles.iter().rev() {
             cleanup.push_str(&format!(" phpc_native_array_free({handle});"));
         }
-        if let Some(handle) = &self.native_request_state_handle {
-            cleanup.push_str(&format!(" phpc_native_request_state_free({handle});"));
+        if self.native_request_state_owned {
+            if let Some(handle) = &self.native_request_state_handle {
+                cleanup.push_str(&format!(" phpc_native_request_state_free({handle});"));
+            }
         }
         if self.native_globals_symbol_table_owned {
             if let Some(handle) = &self.native_globals_symbol_table_handle {
@@ -38828,6 +39909,81 @@ mod tests {
 
     fn variable(name: &str, column: usize) -> Expr {
         Expr::Variable(name.to_string(), span(column))
+    }
+
+    #[test]
+    fn user_function_frame_environment_requirement_covers_request_global_surfaces() {
+        let direct_request =
+            crate::parse("<?php\nfunction read_request() { return $_GET[\"id\"]; }\n").unwrap();
+        let function = match &direct_request.statements[0] {
+            Stmt::Function(function) => function,
+            _ => panic!("expected function declaration"),
+        };
+        let requirement = stmt_list_frame_environment_requirement(&function.body);
+        assert_eq!(
+            requirement,
+            CFrameEnvironmentRequirement {
+                root_symbols: false,
+                request_state: true,
+            }
+        );
+
+        let globals_alias = crate::parse(
+            "<?php\nfunction write_alias() { $GLOBALS[\"_POST\"][\"id\"] = \"P\"; }\n",
+        )
+        .unwrap();
+        let function = match &globals_alias.statements[0] {
+            Stmt::Function(function) => function,
+            _ => panic!("expected function declaration"),
+        };
+        let requirement = stmt_list_frame_environment_requirement(&function.body);
+        assert_eq!(
+            requirement,
+            CFrameEnvironmentRequirement {
+                root_symbols: true,
+                request_state: true,
+            }
+        );
+
+        let ordinary_global =
+            crate::parse("<?php\nfunction read_global() { global $value; return $value; }\n")
+                .unwrap();
+        let function = match &ordinary_global.statements[0] {
+            Stmt::Function(function) => function,
+            _ => panic!("expected function declaration"),
+        };
+        let requirement = stmt_list_frame_environment_requirement(&function.body);
+        assert_eq!(
+            requirement,
+            CFrameEnvironmentRequirement {
+                root_symbols: true,
+                request_state: false,
+            }
+        );
+    }
+
+    #[test]
+    fn user_function_frame_environment_requirement_propagates_request_state_through_direct_calls() {
+        let program = crate::parse(
+            "<?php\nfunction read_request() { return $_GET[\"id\"]; }\nfunction direct_relay() { return read_request(); }\n",
+        )
+        .unwrap();
+        let mut generator = CGenerator::default();
+        generator
+            .register_top_level_user_functions(&program.statements)
+            .unwrap();
+
+        let direct = generator
+            .user_functions
+            .get(&CGenerator::user_function_key("direct_relay"))
+            .expect("direct relay registered");
+        assert_eq!(
+            direct.frame_environment,
+            CFrameEnvironmentRequirement {
+                root_symbols: false,
+                request_state: true,
+            }
+        );
     }
 
     fn property_offset_with_error_control_receiver() -> Expr {
