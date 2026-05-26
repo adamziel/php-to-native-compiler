@@ -388,9 +388,9 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary is clean and synced at `b4b21937` before this `PROGRESS.md` edit;
-  latest source capability is `b4b21937`.
-- [x] Latest primary-integrated source capability head is `b4b21937`.
+- [x] Primary is clean and synced at `b27bbb20` before this `PROGRESS.md` edit;
+  latest source capability is `b27bbb20`.
+- [x] Latest primary-integrated source capability head is `b27bbb20`.
 - [x] Overall and executable estimates remain 95% under current project-local
   accounting.
 - [x] Diagnostic operand-list blocker boundary is now a completed non-repeat
@@ -400,6 +400,10 @@ Primary-integrated:
   non-repeat diagnostic prerequisite: future reference-binding work must extend
   or consume the shared operation-list and operand requirement ABI rather than
   adding source-shape or generated-output recognizers.
+- [x] Direct request-state frame-environment handoff for generated-C
+  user-function calls is now a completed non-repeat item: future request/global
+  work must extend `CFrameEnvironmentRequirement` and the shared callable/frame
+  handoff, not revive `requires_root_symbols` or add source-shape recognizers.
 - [x] Native-link reference-handle typedef emission is now a completed
   non-repeat declaration-order repair: future helpers that can emit
   `phpc_NativeReferenceHandle` declarations must use
@@ -420,6 +424,10 @@ Primary-integrated:
   not source-shape callable branches.
 - [x] Direct user-function callable ABI consumers are now a completed
   non-repeat item.
+- [x] Symbols/globals/request state advances to 75% and calls/functions/frames
+  advances to 92% because direct generated-C user-function calls now propagate
+  root/request frame-environment requirements through the callable ABI; overall
+  and executable estimates remain 95%.
 - [x] Dynamic constructor symbol-environment blocking is now a completed
   non-repeat item.
 - [x] Try/catch/finally body call-boundary preflight is now a completed
@@ -438,13 +446,15 @@ Lane-local:
 - [x] Reference-binding operation-list follow-up is integrated at `b4b21937`
   as a diagnostic/blocker extension over `a544daa8`; it is not executable
   reference binding and does not move percentages.
-- [ ] Dynamic callable compiler-consumer work is mapped after the runtime
-  repair, but still needs a narrow implementation patch that consumes the
-  repaired runtime callable-value ABI instead of extending legacy generated-C
-  branch ladders.
-- [ ] Request/global direct handoff has a large apply-ready candidate and needs
-  strict review/gates before any integration; do not treat apply success as
-  semantic proof.
+- [ ] Dynamic callable compiler-consumer work has a post-request repair marked
+  ready for primary review, but it is still lane-local until integrated and
+  must consume the repaired callable-value ABI plus
+  `CFrameEnvironmentRequirement` instead of extending legacy generated-C branch
+  ladders.
+- [x] Request/global direct handoff is integrated at `b27bbb20`; remaining
+  request/global work is dynamic callable request-state handoff, closure
+  frame-environment handoff, `$GLOBALS` self-cell semantics, request writeback,
+  includes, variable variables, references/COW, and cleanup/unwind parity.
 - [ ] Trait effective-method metadata prep has current-primary reconciliation
   proof, but it is metadata-only and still leaves trait method execution,
   destructor execution, and object lifetime cleanup open.
@@ -460,8 +470,7 @@ Resource posture:
 
 - `/dev/shm`: 40G total, 24G used, 17G available, 58% used; `du -sh /dev/shm`
   reported 24G.
-- `/home`: 459G total, 216G used, 224G available, 50% used; `du -sh
-  /home/claude` reported 135G.
+- `/home`: 459G total, 214G used, 227G available, 49% used.
 - Memory available is about 40Gi, but swap remains high at 23Gi/29Gi used.
 - Continue disk-backed `/tmp` target dirs, `umask 0007`,
   `CARGO_BUILD_JOBS=1`, `CARGO_INCREMENTAL=0`, and focused nonzero gates.

@@ -175,15 +175,17 @@
 <h3 id="current-work-snapshot">Current Work Snapshot</h3>
 <p>Primary-integrated:</p>
 <ul>
-<li>[x] Primary is clean and synced at <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b4b21937">b4b21937</a></code> before this <code>PROGRESS.md</code> edit;</li>
-<p>latest source capability is <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b4b21937">b4b21937</a></code>.</p>
-<li>[x] Latest primary-integrated source capability head is <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b4b21937">b4b21937</a></code>.</li>
+<li>[x] Primary is clean and synced at <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b27bbb20">b27bbb20</a></code> before this <code>PROGRESS.md</code> edit;</li>
+<p>latest source capability is <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b27bbb20">b27bbb20</a></code>.</p>
+<li>[x] Latest primary-integrated source capability head is <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b27bbb20">b27bbb20</a></code>.</li>
 <li>[x] Overall and executable estimates remain 95% under current project-local</li>
 <p>accounting.</p>
 <li>[x] Diagnostic operand-list blocker boundary is now a completed non-repeat</li>
 <p>diagnostic prerequisite: later diagnostic work must layer on the generic operand-list requirement boundary instead of adding source-shape blockers.</p>
 <li>[x] Reference-binding operand-list blocker requirements are now a completed</li>
 <p>non-repeat diagnostic prerequisite: future reference-binding work must extend or consume the shared operation-list and operand requirement ABI rather than adding source-shape or generated-output recognizers.</p>
+<li>[x] Direct request-state frame-environment handoff for generated-C</li>
+<p>user-function calls is now a completed non-repeat item: future request/global work must extend <code>CFrameEnvironmentRequirement</code> and the shared callable/frame handoff, not revive <code>requires_root_symbols</code> or add source-shape recognizers.</p>
 <li>[x] Native-link reference-handle typedef emission is now a completed</li>
 <p>non-repeat declaration-order repair: future helpers that can emit <code>phpc_NativeReferenceHandle</code> declarations must use <code>uses_native_reference_handle_type()</code> rather than adding inline typedef predicates.</p>
 <li>[x] Calls/functions/frames advances to 91% because runtime callable-value</li>
@@ -197,6 +199,8 @@
 <p>runtime prerequisite: compiler dynamic callable consumers must use the repaired runtime lookup/called-scope/visibility/descriptor-argument boundary, not source-shape callable branches.</p>
 <li>[x] Direct user-function callable ABI consumers are now a completed</li>
 <p>non-repeat item.</p>
+<li>[x] Symbols/globals/request state advances to 75% and calls/functions/frames</li>
+<p>advances to 92% because direct generated-C user-function calls now propagate root/request frame-environment requirements through the callable ABI; overall and executable estimates remain 95%.</p>
 <li>[x] Dynamic constructor symbol-environment blocking is now a completed</li>
 <p>non-repeat item.</p>
 <li>[x] Try/catch/finally body call-boundary preflight is now a completed</li>
@@ -212,10 +216,10 @@
 <p>callable-value dispatch and method/static/constructor consumer packets over the integrated ABI, not another direct user-function or ABI-only inventory.</p>
 <li>[x] Reference-binding operation-list follow-up is integrated at <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b4b21937">b4b21937</a></code></li>
 <p>as a diagnostic/blocker extension over <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/a544daa8">a544daa8</a></code>; it is not executable reference binding and does not move percentages.</p>
-<li>[ ] Dynamic callable compiler-consumer work is mapped after the runtime</li>
-<p>repair, but still needs a narrow implementation patch that consumes the repaired runtime callable-value ABI instead of extending legacy generated-C branch ladders.</p>
-<li>[ ] Request/global direct handoff has a large apply-ready candidate and needs</li>
-<p>strict review/gates before any integration; do not treat apply success as semantic proof.</p>
+<li>[ ] Dynamic callable compiler-consumer work has a post-request repair marked</li>
+<p>ready for primary review, but it is still lane-local until integrated and must consume the repaired callable-value ABI plus <code>CFrameEnvironmentRequirement</code> instead of extending legacy generated-C branch ladders.</p>
+<li>[x] Request/global direct handoff is integrated at <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b27bbb20">b27bbb20</a></code>; remaining</li>
+<p>request/global work is dynamic callable request-state handoff, closure frame-environment handoff, <code>$GLOBALS</code> self-cell semantics, request writeback, includes, variable variables, references/COW, and cleanup/unwind parity.</p>
 <li>[ ] Trait effective-method metadata prep has current-primary reconciliation</li>
 <p>proof, but it is metadata-only and still leaves trait method execution, destructor execution, and object lifetime cleanup open.</p>
 <li>[ ] Call-lane loop/call ordering work is fresh but broad and dirty.</li>
@@ -228,8 +232,7 @@
 <ul>
 <li><code>/dev/shm</code>: 40G total, 24G used, 17G available, 58% used; <code>du -sh /dev/shm</code></li>
 <p>reported 24G.</p>
-<li><code>/home</code>: 459G total, 216G used, 224G available, 50% used; `du -sh</li>
-<p>/home/claude` reported 135G.</p>
+<li><code>/home</code>: 459G total, 214G used, 227G available, 49% used.</li>
 <li>Memory available is about 40Gi, but swap remains high at 23Gi/29Gi used.</li>
 <li>Continue disk-backed <code>/tmp</code> target dirs, <code>umask 0007</code>,</li>
 <p><code>CARGO_BUILD_JOBS=1</code>, <code>CARGO_INCREMENTAL=0</code>, and focused nonzero gates.</p>
@@ -254,6 +257,6 @@
 <li>Extending inline generated-C <code>phpc_NativeReferenceHandle</code> typedef predicates;</li>
 <p>native-link helpers that can emit reference-handle declarations must use <code>uses_native_reference_handle_type()</code>.</p>
 </ul></section></main>
-  <footer><span>Generated 2026-05-26T01:01:30.038Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
+  <footer><span>Generated 2026-05-26T01:01:39.047Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
 </body>
 </html>
