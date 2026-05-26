@@ -7341,6 +7341,13 @@ enum CNativeArrayAccessOffsetReadOperation {
     Exists,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CNativeArrayAccessOffsetWriteOperation {
+    Write,
+    Append,
+    Unset,
+}
+
 impl CNativeArrayAccessOffsetReadOperation {
     fn c_tag(self) -> &'static str {
         match self {
@@ -7353,6 +7360,24 @@ impl CNativeArrayAccessOffsetReadOperation {
         match self {
             Self::Get => "arrayaccess_offset_get",
             Self::Exists => "arrayaccess_offset_exists",
+        }
+    }
+}
+
+impl CNativeArrayAccessOffsetWriteOperation {
+    fn c_tag(self) -> &'static str {
+        match self {
+            Self::Write => "PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_SET",
+            Self::Append => "PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_APPEND",
+            Self::Unset => "PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_UNSET",
+        }
+    }
+
+    fn result_prefix(self) -> &'static str {
+        match self {
+            Self::Write => "arrayaccess_offset_set",
+            Self::Append => "arrayaccess_offset_append",
+            Self::Unset => "arrayaccess_offset_unset",
         }
     }
 }
@@ -14180,6 +14205,7 @@ struct CGenerator {
     uses_native_call_type_helpers: bool,
     uses_native_callable_helpers: bool,
     uses_native_arrayaccess_offset_read_helpers: bool,
+    uses_native_arrayaccess_offset_write_helpers: bool,
     uses_native_dynamic_call_helpers: bool,
     uses_native_closure_helpers: bool,
     uses_native_output_buffer_operation: bool,
@@ -15977,6 +16003,8 @@ impl CGenerator {
         self.uses_native_callable_helpers |= branch.uses_native_callable_helpers;
         self.uses_native_arrayaccess_offset_read_helpers |=
             branch.uses_native_arrayaccess_offset_read_helpers;
+        self.uses_native_arrayaccess_offset_write_helpers |=
+            branch.uses_native_arrayaccess_offset_write_helpers;
         self.uses_native_dynamic_call_helpers |= branch.uses_native_dynamic_call_helpers;
         self.uses_native_closure_helpers |= branch.uses_native_closure_helpers;
         self.uses_native_output_buffer_operation |= branch.uses_native_output_buffer_operation;
@@ -16013,6 +16041,7 @@ impl CGenerator {
             || self.uses_native_call_type_helpers
             || self.uses_native_callable_helpers
             || self.uses_native_arrayaccess_offset_read_helpers
+            || self.uses_native_arrayaccess_offset_write_helpers
             || self.uses_native_dynamic_call_helpers
             || self.uses_native_closure_helpers
             || self.uses_native_output_buffer_operation
@@ -17812,6 +17841,11 @@ impl CGenerator {
                     output.push_str("#define PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_GET 0\n");
                     output.push_str("#define PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_EXISTS 1\n");
                 }
+                if self.uses_native_arrayaccess_offset_write_helpers {
+                    output.push_str("#define PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_SET 0\n");
+                    output.push_str("#define PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_APPEND 1\n");
+                    output.push_str("#define PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_UNSET 2\n");
+                }
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallableTableHandle;\n");
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallableHandle;\n");
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallableValueHandle;\n");
@@ -18115,6 +18149,9 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_callable_value_invoke_value_with_diagnostic_and_free(phpc_NativeCallableValueHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 if self.uses_native_arrayaccess_offset_read_helpers {
                     output.push_str("extern phpc_NativeValueHandle phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle subject, phpc_NativeValueHandle offset, uint8_t operation, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                }
+                if self.uses_native_arrayaccess_offset_write_helpers {
+                    output.push_str("extern phpc_NativeValueHandle phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle subject, phpc_NativeValueHandle offset, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 }
             }
             if self.uses_native_conversion_source_helpers {
@@ -26565,6 +26602,13 @@ impl CGenerator {
                 {
                     return Ok(value);
                 }
+                if let Some(value) = self
+                    .emit_native_arrayaccess_offset_assignment_expr_for_target(
+                        target, expr, *span, "",
+                    )?
+                {
+                    return Ok(value);
+                }
                 if let Some(value) =
                     self.emit_array_offset_mutation_assignment_expr(target, expr, *span)?
                 {
@@ -32375,6 +32419,9 @@ impl CGenerator {
         index_expr: &Expr,
         span: Span,
     ) -> CompileResult<()> {
+        if self.emit_native_arrayaccess_offset_unset_for_variable(name, index_expr, span, "")? {
+            return Ok(());
+        }
         if is_request_superglobal_name(name) {
             return self.emit_request_superglobal_keyed_unset(name, index_expr, "");
         }
@@ -34667,6 +34714,9 @@ impl CGenerator {
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_DESTRUCTURING_REJECTION))
             }
             AssignTarget::ArrayIndex { name, index, span } => {
+                if self.emit_native_arrayaccess_offset_assignment_for_target(target, expr, "")? {
+                    return Ok(());
+                }
                 if is_request_superglobal_name(name) {
                     return if let Some(index) = index.as_ref() {
                         self.emit_request_superglobal_keyed_assignment(name, index, expr)
@@ -38785,6 +38835,232 @@ impl CGenerator {
             handle: result.clone(),
             cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
         }))
+    }
+
+    fn emit_native_arrayaccess_offset_write_operation_for_variable(
+        &mut self,
+        name: &str,
+        index: Option<&Expr>,
+        replacement_expr: Option<&Expr>,
+        operation: CNativeArrayAccessOffsetWriteOperation,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        if !self.native_arrayaccess_value_variables.contains(name) {
+            return Ok(None);
+        }
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_callable_helpers = true;
+        self.uses_native_arrayaccess_offset_write_helpers = true;
+
+        let subject_expr = Expr::Variable(name.to_string(), span);
+        let subject =
+            self.materialize_native_value_result_operand(&subject_expr, failure_cleanup)?;
+        let subject_cleanup = c_cleanup_sequence(&subject.cleanup_after_use);
+        let offset_failure_cleanup = format!("{subject_cleanup}{failure_cleanup}");
+        let offset = match operation {
+            CNativeArrayAccessOffsetWriteOperation::Append => CNativeValueMaterialization {
+                handle: "(phpc_NativeValueHandle){0}".to_string(),
+                cleanup_after_use: Vec::new(),
+            },
+            CNativeArrayAccessOffsetWriteOperation::Write
+            | CNativeArrayAccessOffsetWriteOperation::Unset => {
+                let Some(index) = index else {
+                    return Err(self.unsupported(span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                };
+                self.materialize_native_value_result_operand(index, &offset_failure_cleanup)?
+            }
+        };
+        let offset_cleanup = c_cleanup_sequence(&offset.cleanup_after_use);
+        let replacement_failure_cleanup =
+            format!("{offset_cleanup}{subject_cleanup}{failure_cleanup}");
+        let replacement = match operation {
+            CNativeArrayAccessOffsetWriteOperation::Unset => CNativeValueMaterialization {
+                handle: "(phpc_NativeValueHandle){0}".to_string(),
+                cleanup_after_use: Vec::new(),
+            },
+            CNativeArrayAccessOffsetWriteOperation::Write
+            | CNativeArrayAccessOffsetWriteOperation::Append => {
+                let Some(replacement_expr) = replacement_expr else {
+                    return Err(self.unsupported(span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                };
+                self.materialize_native_value_result_operand(
+                    replacement_expr,
+                    &replacement_failure_cleanup,
+                )?
+            }
+        };
+
+        self.emit_native_arrayaccess_offset_write_operation_from_materialized(
+            name,
+            subject,
+            offset,
+            replacement,
+            operation,
+            span,
+            failure_cleanup,
+        )
+        .map(Some)
+    }
+
+    fn emit_native_arrayaccess_offset_write_operation_from_materialized(
+        &mut self,
+        name: &str,
+        subject: CNativeValueMaterialization,
+        offset: CNativeValueMaterialization,
+        replacement: CNativeValueMaterialization,
+        operation: CNativeArrayAccessOffsetWriteOperation,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_callable_helpers = true;
+        self.uses_native_arrayaccess_offset_write_helpers = true;
+
+        let mut operand_cleanup = replacement.cleanup_after_use;
+        operand_cleanup.extend(offset.cleanup_after_use);
+        operand_cleanup.extend(subject.cleanup_after_use);
+        let operand_cleanup_sequence = c_cleanup_sequence(&operand_cleanup);
+        let table = self
+            .ensure_native_callable_table(&format!("{operand_cleanup_sequence}{failure_cleanup}"));
+
+        let result = self.next_native_name(operation.result_prefix());
+        let diagnostic = self.next_native_name("arrayaccess_offset_write_diagnostic");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic({table}, {}, {}, {}, {}, (phpc_NativeStringHandle){{0}}, &{diagnostic});",
+            subject.handle,
+            offset.handle,
+            replacement.handle,
+            operation.c_tag()
+        ));
+        let error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_report({diagnostic}); {operand_cleanup_sequence}{failure_cleanup}"
+        ));
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.emit_active_symbol_table_root_value_write(
+            name,
+            &result,
+            span,
+            &format!(
+                "phpc_native_value_free({result}); {operand_cleanup_sequence}{failure_cleanup}"
+            ),
+        )?;
+        self.body.extend(operand_cleanup);
+
+        Ok(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: Vec::new(),
+        })
+    }
+
+    fn emit_native_arrayaccess_offset_assignment_for_target(
+        &mut self,
+        target: &AssignTarget,
+        replacement_expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<bool> {
+        let AssignTarget::ArrayIndex { name, index, span } = target else {
+            return Ok(false);
+        };
+        let operation = if index.is_some() {
+            CNativeArrayAccessOffsetWriteOperation::Write
+        } else {
+            CNativeArrayAccessOffsetWriteOperation::Append
+        };
+        let Some(result) = self.emit_native_arrayaccess_offset_write_operation_for_variable(
+            name,
+            index.as_ref(),
+            Some(replacement_expr),
+            operation,
+            *span,
+            failure_cleanup,
+        )?
+        else {
+            return Ok(false);
+        };
+        self.store_native_value_result_variable_with_arrayaccess_subject(name, result, true);
+        Ok(true)
+    }
+
+    fn emit_native_arrayaccess_offset_assignment_expr_for_target(
+        &mut self,
+        target: &AssignTarget,
+        replacement_expr: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CValue>> {
+        let AssignTarget::ArrayIndex { name, index, .. } = target else {
+            return Ok(None);
+        };
+        if !self.native_arrayaccess_value_variables.contains(name) {
+            return Ok(None);
+        }
+
+        let operation = if index.is_some() {
+            CNativeArrayAccessOffsetWriteOperation::Write
+        } else {
+            CNativeArrayAccessOffsetWriteOperation::Append
+        };
+        let subject_expr = Expr::Variable(name.to_string(), span);
+        let subject =
+            self.materialize_native_value_result_operand(&subject_expr, failure_cleanup)?;
+        let subject_cleanup = c_cleanup_sequence(&subject.cleanup_after_use);
+        let offset_failure_cleanup = format!("{subject_cleanup}{failure_cleanup}");
+        let offset = if let Some(index) = index.as_ref() {
+            self.materialize_native_value_result_operand(index, &offset_failure_cleanup)?
+        } else {
+            CNativeValueMaterialization {
+                handle: "(phpc_NativeValueHandle){0}".to_string(),
+                cleanup_after_use: Vec::new(),
+            }
+        };
+        let offset_cleanup = c_cleanup_sequence(&offset.cleanup_after_use);
+        let replacement_failure_cleanup =
+            format!("{offset_cleanup}{subject_cleanup}{failure_cleanup}");
+        let (replacement_value, replacement) = self
+            .materialize_assignment_expression_replacement_value(
+                replacement_expr,
+                &replacement_failure_cleanup,
+            )?;
+        let result = self.emit_native_arrayaccess_offset_write_operation_from_materialized(
+            name,
+            subject,
+            offset,
+            replacement,
+            operation,
+            span,
+            failure_cleanup,
+        )?;
+        self.store_native_value_result_variable_with_arrayaccess_subject(name, result, true);
+        Ok(Some(replacement_value))
+    }
+
+    fn emit_native_arrayaccess_offset_unset_for_variable(
+        &mut self,
+        name: &str,
+        index: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<bool> {
+        let Some(result) = self.emit_native_arrayaccess_offset_write_operation_for_variable(
+            name,
+            Some(index),
+            None,
+            CNativeArrayAccessOffsetWriteOperation::Unset,
+            span,
+            failure_cleanup,
+        )?
+        else {
+            return Ok(false);
+        };
+        self.store_native_value_result_variable_with_arrayaccess_subject(name, result, true);
+        Ok(true)
     }
 
     fn emit_native_arrayaccess_offset_isset_expr(

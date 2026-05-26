@@ -13055,6 +13055,99 @@ fn emit_exe_links_and_runs_arrayaccess_read_isset_runtime_consumer_program() {
     let _ = fs::remove_file(&output_path);
 }
 
+const ARRAYACCESS_WRITE_UNSET_SOURCE: &str = concat!(
+    "<?php\n",
+    "class WriteBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"A:get;\"; return \"g\"; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"A:set:\"; if ($offset) { echo $offset; } else { echo \"NULL\"; } echo \"=\", $value, \";\"; return \"ignored\"; }\n",
+    "    public function offsetUnset($offset) { echo \"A:unset:\", $offset, \";\"; return \"ignored\"; }\n",
+    "}\n",
+    "class AuditBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"B:get;\"; return \"g\"; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"B:set:\"; if ($offset) { echo $offset; } else { echo \"NULL\"; } echo \"=\", $value, \";\"; return \"ignored\"; }\n",
+    "    public function offsetUnset($offset) { echo \"B:unset:\"; if ($offset) { echo $offset; } else { echo \"NULL\"; } echo \";\"; return \"ignored\"; }\n",
+    "}\n",
+    "$first = new WriteBag();\n",
+    "$first[\"slot\"] = \"one\";\n",
+    "$first[] = \"tail\";\n",
+    "unset($first[\"slot\"]);\n",
+    "$first[\"again\"] = \"two\";\n",
+    "$alias = $first;\n",
+    "$alias[\"copy\"] = strtolower(\"COPY\");\n",
+    "$alias[] = 4 + 5;\n",
+    "unset($alias[0]);\n",
+    "$second = new AuditBag();\n",
+    "$second[7] = 3;\n",
+    "$second[] = strtoupper(\"z\");\n",
+    "unset($second[true]);\n",
+    "$result = ($second[\"expr\"] = \"rv\");\n",
+    "$flags = [\"pick\" => \"1\"];\n",
+    "if ($flags[\"pick\"]) {\n",
+    "    $joined = new WriteBag();\n",
+    "} else {\n",
+    "    $joined = new AuditBag();\n",
+    "}\n",
+    "$joined[\"branch\"] = \"j\";\n",
+    "$joined[] = 1 + 1;\n",
+    "unset($joined[false]);\n",
+    "echo \"result=\", $result;\n",
+);
+
+#[test]
+fn native_executable_c_source_routes_arrayaccess_write_unset_through_runtime_abi() {
+    let program = parse(ARRAYACCESS_WRITE_UNSET_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_SET")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_APPEND")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_UNSET")
+            && source.contains(
+                "phpc_native_value_new_declared_class_with_relationships_and_diagnostic"
+            ),
+        "ArrayAccess direct writes, appends, and unsets should consume the runtime write ABI and declared interface metadata:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_callable_table_register_visibility_staticness_frame_callback_and_free")
+            && source.contains("_native_callable_frame")
+            && !source.contains("ArrayAccess lowering rejects")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches"),
+        "ArrayAccess write/unset lowering should dispatch through callable-table method wrappers without finite callable recognizers:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_arrayaccess_write_unset_runtime_consumer_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "arrayaccess_write_unset_runtime_consumer",
+        ARRAYACCESS_WRITE_UNSET_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native ArrayAccess write/unset executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(
+        run.stdout,
+        b"A:set:slot=one;A:set:NULL=tail;A:unset:slot;A:set:again=two;A:set:copy=copy;A:set:NULL=9;A:unset:0;B:set:7=3;B:set:NULL=Z;B:unset:1;B:set:expr=rv;A:set:branch=j;A:set:NULL=2;A:unset:;result=rv"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
 #[test]
 fn emit_exe_links_and_runs_array_lvalue_compound_assignment_program() {
     if !has_cc() {
