@@ -829,6 +829,12 @@ struct NativeSourceCallResultCarrier {
     diagnostic_result_converter: Option<&'static str>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeSourceCallTargetOperands {
+    args: Vec<String>,
+    cleanup_after_invocation: Vec<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeSourceCallResultCarrierSelection {
     Carrier(NativeSourceCallResultCarrier),
@@ -30239,6 +30245,25 @@ impl CGenerator {
         invoke_result
     }
 
+    fn emit_native_direct_named_source_call_target_operands(
+        &mut self,
+        name_prefix: &str,
+        name: &str,
+        failure_cleanup: &str,
+    ) -> NativeSourceCallTargetOperands {
+        let table = self.ensure_native_callable_table(failure_cleanup);
+        let name_handle = self.emit_native_string_handle_for_static_text(name_prefix, name);
+        NativeSourceCallTargetOperands {
+            args: vec![
+                table,
+                "PHPC_NATIVE_CALLABLE_KIND_FUNCTION".to_string(),
+                "(phpc_NativeStringHandle){0}".to_string(),
+                name_handle.clone(),
+            ],
+            cleanup_after_invocation: vec![format!("phpc_native_string_free({name_handle});")],
+        }
+    }
+
     fn emit_runtime_callable_value_call_arguments(
         &mut self,
         call_arguments: &str,
@@ -31638,7 +31663,6 @@ impl CGenerator {
             );
         }
 
-        let table = self.ensure_native_callable_table(failure_cleanup);
         if function.frame_environment.root_symbols {
             let root_symbols = self.ensure_globals_symbol_table(failure_cleanup, span)?;
             self.body
@@ -31651,39 +31675,12 @@ impl CGenerator {
             ));
         }
 
-        let (name_bytes, name_len) = self.emit_call_type_static_bytes(
-            "direct_callable_function_name_bytes",
-            &function.decl.name,
-        );
-        let name_handle = self.next_native_name("direct_callable_function_name");
-        let lookup_diagnostic = self.next_native_name("direct_callable_lookup_diagnostic");
-        let callable = self.next_native_name("direct_callable");
-        self.body.push(format!(
-            "phpc_NativeStringHandle {name_handle} = phpc_native_string_from_bytes({name_bytes}, {name_len});"
-        ));
-        self.body.push(format!(
-            "phpc_NativeDiagnosticHandle {lookup_diagnostic} = {{0}};"
-        ));
-        self.body.push(format!(
-            "phpc_NativeCallableHandle {callable} = phpc_native_callable_lookup_with_diagnostic({table}, PHPC_NATIVE_CALLABLE_KIND_FUNCTION, (phpc_NativeStringHandle){{0}}, {name_handle}, &{lookup_diagnostic});"
-        ));
-        self.body
-            .push(format!("phpc_native_string_free({name_handle});"));
-        self.emit_report_native_diagnostic(&lookup_diagnostic);
-        let lookup_error_exit = self.native_error_exit(failure_cleanup);
-        self.body.push(format!(
-            "if ({callable}.ptr == NULL) {{ {lookup_error_exit} }}"
-        ));
-
-        let callable_failure_cleanup =
-            format!("phpc_native_callable_free({callable}); {failure_cleanup}");
         let call_arguments = self.emit_empty_native_source_call_arguments_handle(
             "direct_callable_args",
-            &callable_failure_cleanup,
+            failure_cleanup,
         );
-        let call_cleanup = format!(
-            "phpc_native_call_arguments_free({call_arguments}); {callable_failure_cleanup}"
-        );
+        let call_cleanup =
+            format!("phpc_native_call_arguments_free({call_arguments}); {failure_cleanup}");
         let fixed_count = native_user_function_fixed_param_count(&function.decl);
         for (index, param) in function.decl.params.iter().take(fixed_count).enumerate() {
             let value_expr = if let Some(arg) = args.get(index) {
@@ -31745,26 +31742,30 @@ impl CGenerator {
             self.body.extend(value_aux_cleanup);
         }
 
+        let target_operands = self.emit_native_direct_named_source_call_target_operands(
+            "direct_callable_function_name",
+            &function.decl.name,
+            failure_cleanup,
+        );
         let invoke_diagnostic = self.next_native_name("direct_callable_invoke_diagnostic");
         self.body.push(format!(
             "phpc_NativeDiagnosticHandle {invoke_diagnostic} = {{0}};"
         ));
         let carrier = self.native_source_call_carrier(
-            NativeInvokeResultTarget::MaterializedCallableHandle,
+            NativeInvokeResultTarget::DirectNamedLookup,
             NativeSourceCallResultConsumer::Value,
             span,
         )?;
         let result = self
             .emit_native_source_call_carrier_invocation(
                 carrier,
-                &[callable.clone()],
+                &target_operands.args,
                 &call_arguments,
                 &invoke_diagnostic,
                 "user_function_result",
             )
             .expect("value source-call carrier must produce a value handle");
-        self.body
-            .push(format!("phpc_native_callable_free({callable});"));
+        self.body.extend(target_operands.cleanup_after_invocation);
         self.emit_report_native_diagnostic(&invoke_diagnostic);
         let error_exit = self.native_error_exit(failure_cleanup);
         self.body
@@ -50450,6 +50451,11 @@ echo " 10" < "zeta";
             "source_call_diagnostic_args",
             "cleanup_diagnostic_owner();",
         );
+        let diagnostic_target = generator.emit_native_direct_named_source_call_target_operands(
+            "source_call_diagnostic_name",
+            "general_target",
+            "cleanup_diagnostic_owner();",
+        );
         let diagnostic_carrier = generator
             .native_source_call_carrier(
                 NativeInvokeResultTarget::DirectNamedLookup,
@@ -50462,17 +50468,15 @@ echo " 10" < "zeta";
         generator
             .emit_native_source_call_carrier_invocation(
                 diagnostic_carrier,
-                &[
-                    "callable_table".to_string(),
-                    "PHPC_NATIVE_CALLABLE_KIND_FUNCTION".to_string(),
-                    "(phpc_NativeStringHandle){0}".to_string(),
-                    "function_name".to_string(),
-                ],
+                &diagnostic_target.args,
                 &diagnostic_arguments,
                 "diagnostic_result_diagnostic",
                 "source_call_diagnostic",
             )
             .expect("diagnostic carrier should return a diagnostic result");
+        generator
+            .body
+            .extend(diagnostic_target.cleanup_after_invocation);
 
         let body = generator.body.join("\n");
         assert_eq!(body.matches("phpc_native_call_arguments_new()").count(), 3);
@@ -50481,6 +50485,8 @@ echo " 10" < "zeta";
         assert!(body.contains(
             "phpc_native_callable_lookup_invoke_result_with_diagnostic_and_free_arguments"
         ));
+        assert!(body.contains("PHPC_NATIVE_CALLABLE_KIND_FUNCTION"));
+        assert!(body.contains("phpc_native_string_free(source_call_diagnostic_name_"));
         assert!(body.contains("phpc_native_diagnostic_result_from_call_result_and_free"));
         assert!(generator.uses_native_callable_helpers);
         assert!(generator.uses_native_diagnostic_result_producers);

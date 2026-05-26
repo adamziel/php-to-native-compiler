@@ -1752,8 +1752,8 @@ fn native_executable_direct_user_function_calls_use_runtime_callable_abi_across_
 
     let generated = emit_native_executable_c_source(&parse(source).unwrap()).unwrap();
     assert!(
-        generated.contains("phpc_native_callable_invoke_value_with_diagnostic_and_free"),
-        "direct user-function calls should consume the runtime callable ABI:\n{generated}"
+        generated.contains("phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments"),
+        "direct user-function calls should consume the direct named lookup-plus-invoke source-call ABI:\n{generated}"
     );
     assert!(
         generated.contains("phpc_native_call_frame_read_value"),
@@ -1797,6 +1797,10 @@ fn native_executable_direct_user_function_calls_preserve_reference_arguments_thr
     );
 
     let generated = emit_native_executable_c_source(&parse(source).unwrap()).unwrap();
+    assert!(
+        generated.contains("phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments"),
+        "by-reference direct calls should use the same direct named lookup-plus-invoke carrier:\n{generated}"
+    );
     assert!(
         generated.contains("phpc_native_call_arguments_push_reference_and_free"),
         "by-reference direct arguments should be transported through runtime call arguments:\n{generated}"
