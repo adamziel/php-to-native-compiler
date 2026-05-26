@@ -52,6 +52,13 @@ pub enum NativeCallResultStatus {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeCallFrameConditionalHandoffFeature {
+    ShortTernaryCondition = 0,
+    NullCoalesceLeftOperand = 1,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeTextSurfaceTag {
     FunctionName = 4,
     ExtensionName = 6,
@@ -1538,6 +1545,37 @@ impl NativeCallResultSlot {
             Self::Value(value) => unsafe { phpc_native_value_free(value) },
             Self::Reference(reference) => unsafe { phpc_native_reference_free(reference) },
             Self::Failure(diagnostic) => unsafe { phpc_native_diagnostic_free(diagnostic) },
+        }
+    }
+}
+
+impl NativeCallFrameConditionalHandoffFeature {
+    fn from_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            0 => Self::ShortTernaryCondition,
+            1 => Self::NullCoalesceLeftOperand,
+            _ => return None,
+        })
+    }
+
+    fn call_result_label(self) -> &'static str {
+        match self {
+            Self::ShortTernaryCondition => "call-result short ternary condition",
+            Self::NullCoalesceLeftOperand => "call-result null coalesce condition",
+        }
+    }
+
+    fn operand_label(self) -> &'static str {
+        match self {
+            Self::ShortTernaryCondition => "short ternary condition",
+            Self::NullCoalesceLeftOperand => "null-coalescing left operand",
+        }
+    }
+
+    fn branch_cleanup_label(self) -> &'static str {
+        match self {
+            Self::ShortTernaryCondition => "false-branch discard cleanup ordering",
+            Self::NullCoalesceLeftOperand => "null-branch discard cleanup ordering",
         }
     }
 }
@@ -8115,6 +8153,121 @@ pub unsafe extern "C" fn phpc_native_call_result_take_value_with_diagnostic_and_
     }
 }
 
+unsafe fn native_call_result_conditional_handoff_cleanup_detail(
+    result: NativeCallResultHandle,
+) -> Option<String> {
+    match unsafe { result.as_ref() }.map(|result| result.slot) {
+        Some(NativeCallResultSlot::Value(value)) => unsafe {
+            value
+                .as_ref()
+                .and_then(native_call_result_value_cleanup_ordering_detail)
+        },
+        Some(NativeCallResultSlot::Reference(reference)) => {
+            let value_detail = unsafe {
+                reference.as_ref().and_then(|reference| {
+                    native_call_result_value_cleanup_ordering_detail(&reference.cell.value_cloned())
+                })
+            };
+            Some(
+                value_detail
+                    .map(|detail| format!("reference result containing {detail}"))
+                    .unwrap_or_else(|| "reference result".to_string()),
+            )
+        }
+        Some(NativeCallResultSlot::Failure(_)) | None => None,
+    }
+}
+
+unsafe fn native_call_result_conditional_handoff_contract_result(
+    result: NativeCallResultHandle,
+    feature: NativeCallFrameConditionalHandoffFeature,
+) -> NativeCallResultHandle {
+    if result.is_null() {
+        return NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+            NativeDiagnosticHandle::from_message(
+                "native call frame conditional handoff failed: call result handle is null",
+            ),
+        ));
+    }
+
+    if unsafe { phpc_native_call_result_status(result) } == NativeCallResultStatus::Failure {
+        return result;
+    }
+
+    let Some(cleanup_detail) =
+        (unsafe { native_call_result_conditional_handoff_cleanup_detail(result) })
+    else {
+        return result;
+    };
+
+    unsafe { phpc_native_call_result_free(result) };
+    NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+        NativeDiagnosticHandle::from_message(format!(
+            "unsupported call {}: {} contains {cleanup_detail} requires object destructors, resource finalizers, reference/COW preservation, conditional result handoff, and {}",
+            feature.call_result_label(),
+            feature.operand_label(),
+            feature.branch_cleanup_label(),
+        )),
+    ))
+}
+
+/// # Safety
+///
+/// `result` must be null or an owned call-result handle previously returned by
+/// the runtime ABI and not yet freed. `conditional_feature` must be a
+/// `NativeCallFrameConditionalHandoffFeature` tag. The returned call-result
+/// handle owns the original ordinary result, the propagated diagnostic, or the
+/// centralized blocker diagnostic for cleanup-sensitive values.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_frame_result_conditional_handoff_contract_result(
+    result: NativeCallResultHandle,
+    conditional_feature: u8,
+) -> NativeCallResultHandle {
+    let Some(feature) = NativeCallFrameConditionalHandoffFeature::from_tag(conditional_feature)
+    else {
+        unsafe { phpc_native_call_result_free(result) };
+        return NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+            NativeDiagnosticHandle::from_message(
+                "native call frame conditional handoff failed: unknown conditional handoff feature tag",
+            ),
+        ));
+    };
+
+    unsafe { native_call_result_conditional_handoff_contract_result(result, feature) }
+}
+
+/// # Safety
+///
+/// Same as `phpc_native_call_frame_result_conditional_handoff_contract_result`
+/// with the short-ternary condition feature tag.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_frame_result_short_ternary_condition_contract_result(
+    result: NativeCallResultHandle,
+) -> NativeCallResultHandle {
+    unsafe {
+        native_call_result_conditional_handoff_contract_result(
+            result,
+            NativeCallFrameConditionalHandoffFeature::ShortTernaryCondition,
+        )
+    }
+}
+
+/// # Safety
+///
+/// Same as `phpc_native_call_frame_result_conditional_handoff_contract_result`
+/// with the null-coalescing left-operand feature tag.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_frame_result_null_coalesce_condition_contract_result(
+    result: NativeCallResultHandle,
+) -> NativeCallResultHandle {
+    unsafe {
+        native_call_result_conditional_handoff_contract_result(
+            result,
+            NativeCallFrameConditionalHandoffFeature::NullCoalesceLeftOperand,
+        )
+    }
+}
+
 unsafe fn native_call_result_value_family(result: NativeCallResultHandle) -> &'static str {
     match unsafe { result.as_ref() }.map(|result| result.slot) {
         Some(NativeCallResultSlot::Value(value)) => unsafe { value.as_ref() }
@@ -8148,6 +8301,87 @@ unsafe fn native_call_result_value_family(result: NativeCallResultHandle) -> &'s
         Some(NativeCallResultSlot::Failure(_)) => "diagnostic",
         None => "null",
     }
+}
+
+fn native_call_result_value_cleanup_ordering_detail(value: &Value) -> Option<String> {
+    match value {
+        Value::Array(array) => native_call_result_array_cleanup_ordering_detail(array),
+        Value::Object(_) => Some("object value".to_string()),
+        Value::Closure(closure) => native_call_result_closure_cleanup_ordering_detail(closure),
+        Value::Resource(_) => Some("resource value".to_string()),
+        Value::Null
+        | Value::Bool(_)
+        | Value::Int(_)
+        | Value::Float(_)
+        | Value::String(_)
+        | Value::BinaryString(_) => None,
+    }
+}
+
+fn native_call_result_array_cleanup_ordering_detail(array: &PhpArray) -> Option<String> {
+    for (index, entry) in array.entries().iter().enumerate() {
+        let slot = entry.slot();
+        if slot.is_reference() {
+            return Some("array reference slot".to_string());
+        }
+        if native_call_result_array_slot_shares_value_cell(slot) {
+            return Some("array shared COW slot".to_string());
+        }
+        if let Some(detail) = native_call_result_value_cleanup_ordering_detail(&slot.value_cloned())
+        {
+            return Some(format!("array slot {index} contains {detail}"));
+        }
+    }
+
+    None
+}
+
+fn native_call_result_array_slot_shares_value_cell(slot: &ArraySlot) -> bool {
+    match &slot.storage {
+        ArraySlotStorage::Value(cell) => Rc::strong_count(cell) > 1,
+        ArraySlotStorage::Reference(_) => false,
+    }
+}
+
+fn native_call_result_closure_cleanup_ordering_detail(closure: &PhpClosure) -> Option<String> {
+    for capture in closure.captures() {
+        let captured = capture.value();
+        if let Some(detail) = native_call_result_value_cleanup_ordering_detail(&captured) {
+            return Some(match (capture.by_reference(), detail.as_str()) {
+                (true, "array reference slot") => {
+                    "closure by-reference capture with array reference slot".to_string()
+                }
+                (true, "array shared COW slot") => {
+                    "closure by-reference capture with array shared COW slot".to_string()
+                }
+                (true, "object value") => {
+                    "closure by-reference capture with object value".to_string()
+                }
+                (true, "closure value") => {
+                    "closure by-reference capture with closure value".to_string()
+                }
+                (true, "resource value") => {
+                    "closure by-reference capture with resource value".to_string()
+                }
+                (true, _) => format!("closure by-reference capture containing {detail}"),
+                (false, "array reference slot") => {
+                    "closure capture with array reference slot".to_string()
+                }
+                (false, "array shared COW slot") => {
+                    "closure capture with array shared COW slot".to_string()
+                }
+                (false, "object value") => "closure capture with object value".to_string(),
+                (false, "closure value") => "closure capture with closure value".to_string(),
+                (false, "resource value") => "closure capture with resource value".to_string(),
+                (false, _) => format!("closure capture containing {detail}"),
+            });
+        }
+        if capture.by_reference() {
+            return Some("closure by-reference capture slot".to_string());
+        }
+    }
+
+    Some("closure value".to_string())
 }
 
 unsafe fn native_call_result_vector_failure(
@@ -28782,6 +29016,189 @@ mod tests {
             )
         });
         assert!(discard_diagnostic.is_null());
+    }
+
+    #[test]
+    fn native_call_frame_result_conditional_handoff_contract_preserves_success_and_diagnostics() {
+        for (feature, value, expected) in [
+            (
+                NativeCallFrameConditionalHandoffFeature::ShortTernaryCondition,
+                Value::Int(17),
+                Value::Int(17),
+            ),
+            (
+                NativeCallFrameConditionalHandoffFeature::NullCoalesceLeftOperand,
+                Value::Null,
+                Value::Null,
+            ),
+            (
+                NativeCallFrameConditionalHandoffFeature::ShortTernaryCondition,
+                Value::String("truthy".to_string()),
+                Value::String("truthy".to_string()),
+            ),
+        ] {
+            let passed = unsafe {
+                phpc_native_call_frame_result_conditional_handoff_contract_result(
+                    phpc_native_call_result_from_value(NativeValueHandle::from_value(value)),
+                    feature as u8,
+                )
+            };
+            assert_eq!(
+                unsafe { phpc_native_call_result_status(passed) },
+                NativeCallResultStatus::Value
+            );
+            let selected = unsafe { phpc_native_call_result_take_value_and_free(passed) };
+            assert_eq!(unsafe { selected.as_ref() }, Some(&expected));
+            unsafe { phpc_native_value_free(selected) };
+        }
+
+        let mut plain_array = PhpArray::new();
+        plain_array
+            .append(Value::Int(1))
+            .expect("plain array append should succeed");
+        let passed_array = unsafe {
+            phpc_native_call_frame_result_null_coalesce_condition_contract_result(
+                phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Array(
+                    plain_array,
+                ))),
+            )
+        };
+        assert_eq!(
+            unsafe { phpc_native_call_result_status(passed_array) },
+            NativeCallResultStatus::Value
+        );
+        let selected_array = unsafe { phpc_native_call_result_take_value_and_free(passed_array) };
+        assert!(matches!(
+            unsafe { selected_array.as_ref() },
+            Some(Value::Array(array)) if array.get_cloned(ArrayKey::Int(0)) == Some(Value::Int(1))
+        ));
+        unsafe { phpc_native_value_free(selected_array) };
+
+        let diagnostic = unsafe {
+            phpc_native_call_frame_result_short_ternary_condition_contract_result(
+                phpc_native_call_result_from_diagnostic_and_free(
+                    NativeDiagnosticHandle::from_message("conditional source diagnostic"),
+                ),
+            )
+        };
+        assert_eq!(
+            unsafe { phpc_native_call_result_status(diagnostic) },
+            NativeCallResultStatus::Failure
+        );
+        let diagnostic = unsafe { phpc_native_call_result_take_diagnostic_and_free(diagnostic) };
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some("conditional source diagnostic")
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+    }
+
+    #[test]
+    fn native_call_frame_result_conditional_handoff_contract_centralizes_cleanup_blockers() {
+        let mut reference_array = PhpArray::new();
+        reference_array
+            .append_reference(PhpReferenceCell::new(Value::String("ref".to_string())))
+            .expect("reference array append should succeed");
+
+        let shared_slot = ArraySlot::new(Value::String("shared".to_string()));
+        let mut cow_array = PhpArray::new();
+        cow_array
+            .append_slot(shared_slot.clone())
+            .expect("shared array append should succeed");
+        cow_array
+            .append_slot(ArraySlot::share_cell_from(&shared_slot))
+            .expect("second shared array append should succeed");
+
+        let object_class =
+            PhpClassMetadata::new(ClassId(9901), "ConditionalHandoffBox".to_string());
+        let object_value = Value::Object(PhpObject::from_class(&object_class));
+
+        for (feature, result, expected_detail, expected_branch_detail) in [
+            (
+                NativeCallFrameConditionalHandoffFeature::ShortTernaryCondition,
+                phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Resource(
+                    801,
+                ))),
+                "resource value",
+                "false-branch discard cleanup ordering",
+            ),
+            (
+                NativeCallFrameConditionalHandoffFeature::NullCoalesceLeftOperand,
+                phpc_native_call_result_from_reference(NativeReferenceHandle::from_cell(
+                    PhpReferenceCell::new(Value::Int(3)),
+                )),
+                "reference result",
+                "null-branch discard cleanup ordering",
+            ),
+            (
+                NativeCallFrameConditionalHandoffFeature::ShortTernaryCondition,
+                phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Array(
+                    reference_array.clone(),
+                ))),
+                "array reference slot",
+                "false-branch discard cleanup ordering",
+            ),
+            (
+                NativeCallFrameConditionalHandoffFeature::NullCoalesceLeftOperand,
+                phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Array(
+                    cow_array.clone(),
+                ))),
+                "array shared COW slot",
+                "null-branch discard cleanup ordering",
+            ),
+            (
+                NativeCallFrameConditionalHandoffFeature::ShortTernaryCondition,
+                phpc_native_call_result_from_value(NativeValueHandle::from_value(
+                    object_value.clone(),
+                )),
+                "object value",
+                "false-branch discard cleanup ordering",
+            ),
+        ] {
+            let blocked = unsafe {
+                phpc_native_call_frame_result_conditional_handoff_contract_result(
+                    result,
+                    feature as u8,
+                )
+            };
+            assert_eq!(
+                unsafe { phpc_native_call_result_status(blocked) },
+                NativeCallResultStatus::Failure
+            );
+            let diagnostic = unsafe { phpc_native_call_result_take_diagnostic_and_free(blocked) };
+            let message = unsafe { diagnostic.as_ref() }
+                .map(|diagnostic| diagnostic.message.clone())
+                .unwrap_or_default();
+            for fragment in [
+                "unsupported call call-result",
+                expected_detail,
+                "conditional result handoff",
+                expected_branch_detail,
+                "reference/COW preservation",
+            ] {
+                assert!(message.contains(fragment), "{message}");
+            }
+            unsafe { phpc_native_diagnostic_free(diagnostic) };
+        }
+
+        let invalid = unsafe {
+            phpc_native_call_frame_result_conditional_handoff_contract_result(
+                phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Int(19))),
+                u8::MAX,
+            )
+        };
+        assert_eq!(
+            unsafe { phpc_native_call_result_status(invalid) },
+            NativeCallResultStatus::Failure
+        );
+        let diagnostic = unsafe { phpc_native_call_result_take_diagnostic_and_free(invalid) };
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "native call frame conditional handoff failed: unknown conditional handoff feature tag"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
     }
 
     #[test]
