@@ -7046,6 +7046,23 @@ fn native_callable_value_name(value: &Value, context: &str) -> Result<String, St
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeCallableClassMethodName {
+    class_name: String,
+    method_name: String,
+}
+
+fn native_callable_value_class_method_name(name: &str) -> Option<NativeCallableClassMethodName> {
+    let (class_name, method_name) = name.split_once("::")?;
+    if class_name.is_empty() || method_name.is_empty() {
+        return None;
+    }
+    Some(NativeCallableClassMethodName {
+        class_name: class_name.to_string(),
+        method_name: method_name.to_string(),
+    })
+}
+
 fn native_callable_builtin_for_function_name(name: &str) -> Option<NativeCallableBuiltin> {
     match name.to_ascii_lowercase().as_str() {
         "strlen" => Some(NativeCallableBuiltin::StringLength),
@@ -7139,6 +7156,33 @@ fn native_callable_value_lookup(
     match callable_value {
         Value::String(_) | Value::BinaryString(_) => {
             let name = native_callable_value_name(callable_value, "function callable name")?;
+            if let Some(class_method) = native_callable_value_class_method_name(&name) {
+                let table = table.ok_or_else(|| {
+                    "native callable lookup failed: table is null for class-method string callable"
+                        .to_string()
+                })?;
+                let callable = table.lookup(
+                    NativeCallableKind::Method,
+                    Some(class_method.class_name.clone()),
+                    class_method.method_name,
+                    caller_scope,
+                )?;
+                if !callable.descriptor.is_static {
+                    let scope = callable
+                        .called_scope
+                        .as_deref()
+                        .or(callable.descriptor.scope.as_deref())
+                        .unwrap_or("<unknown>");
+                    return Err(format!(
+                        "native callable lookup failed: non-static method {}::{} cannot be used as a class-method string callable",
+                        scope, callable.descriptor.name
+                    ));
+                }
+                return Ok(NativeCallableValueDispatch::Table {
+                    callable,
+                    bound_receiver: None,
+                });
+            }
             if let Some(table) = table {
                 match table.lookup(
                     NativeCallableKind::Function,
@@ -27567,13 +27611,44 @@ mod tests {
         visibility: NativeCallableVisibility,
         callback: NativeCallableFrameCallback,
     ) {
+        unsafe {
+            register_callable_staticness_for_test(
+                table, kind, scope, name, visibility, false, callback,
+            )
+        };
+    }
+
+    unsafe fn register_static_callable_for_test(
+        table: NativeCallableTableHandle,
+        kind: NativeCallableKind,
+        scope: Option<&str>,
+        name: &str,
+        visibility: NativeCallableVisibility,
+        callback: NativeCallableFrameCallback,
+    ) {
+        unsafe {
+            register_callable_staticness_for_test(
+                table, kind, scope, name, visibility, true, callback,
+            )
+        };
+    }
+
+    unsafe fn register_callable_staticness_for_test(
+        table: NativeCallableTableHandle,
+        kind: NativeCallableKind,
+        scope: Option<&str>,
+        name: &str,
+        visibility: NativeCallableVisibility,
+        is_static: bool,
+        callback: NativeCallableFrameCallback,
+    ) {
         let scope = scope
             .map(native_string_for_test)
             .unwrap_or_else(NativeStringHandle::null);
         let name = native_string_for_test(name);
         assert!(unsafe {
             phpc_native_callable_table_register_visibility_staticness_frame_callback_and_free(
-                table, kind, scope, name, visibility, false, callback,
+                table, kind, scope, name, visibility, is_static, callback,
             )
         });
     }
@@ -27838,13 +27913,13 @@ mod tests {
         frame: NativeCallFrameHandle,
     ) -> NativeCallResultHandle {
         match unsafe { arrayaccess_read_receiver_offset_for_test(frame, "offsetGet") } {
-            Ok((object, offset)) => phpc_native_call_result_from_value(NativeValueHandle::from_value(
-                Value::String(format!(
+            Ok((object, offset)) => phpc_native_call_result_from_value(
+                NativeValueHandle::from_value(Value::String(format!(
                     "{}:{}",
                     object.class_name(),
                     arrayaccess_offset_label_for_test(&offset)
-                )),
-            )),
+                ))),
+            ),
             Err(error) => NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
                 NativeDiagnosticHandle::from_message(error.message()),
             )),
@@ -27883,9 +27958,7 @@ mod tests {
     ) -> NativeCallResultHandle {
         let _ = unsafe { arrayaccess_read_receiver_offset_for_test(frame, "offsetGet") };
         NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
-            NativeDiagnosticHandle::from_message(
-                "test ArrayAccess offsetGet callback failure",
-            ),
+            NativeDiagnosticHandle::from_message("test ArrayAccess offsetGet callback failure"),
         ))
     }
 
@@ -28627,6 +28700,90 @@ mod tests {
         unsafe { phpc_native_value_free(value) };
         unsafe { phpc_native_callable_value_free(callable) };
         unsafe { phpc_native_value_free(inherited_object) };
+
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn native_callable_value_dispatch_resolves_class_method_strings_through_method_table() {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_static_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("StaticScope"),
+                "direct",
+                NativeCallableVisibility::Public,
+                native_scoped_method_callback,
+            );
+            register_static_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("BaseStaticScope"),
+                "inherited",
+                NativeCallableVisibility::Public,
+                native_scoped_method_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("StaticScope"),
+                "instance",
+                NativeCallableVisibility::Public,
+                native_scoped_method_callback,
+            );
+            assert!(phpc_native_callable_table_register_class_parent_and_free(
+                table,
+                native_string_for_test("ChildStaticScope"),
+                native_string_for_test("BaseStaticScope"),
+            ));
+        }
+
+        let direct =
+            NativeValueHandle::from_value(Value::String("StaticScope::DIRECT".to_string()));
+        let (callable, diagnostic) = unsafe { lookup_callable_value_for_test(table, direct, None) };
+        assert!(diagnostic.is_null());
+        assert!(!callable.is_null());
+        let (value, diagnostic) = unsafe { invoke_callable_value_ints_for_test(callable, &[17]) };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { value.as_ref() },
+            Some(&Value::String("StaticScope:17".to_string()))
+        );
+        unsafe { phpc_native_value_free(value) };
+        unsafe { phpc_native_callable_value_free(callable) };
+        unsafe { phpc_native_value_free(direct) };
+
+        let inherited = NativeValueHandle::from_value(Value::BinaryString(
+            b"ChildStaticScope::inherited".to_vec(),
+        ));
+        let (callable, diagnostic) =
+            unsafe { lookup_callable_value_for_test(table, inherited, None) };
+        assert!(diagnostic.is_null());
+        assert!(!callable.is_null());
+        let (value, diagnostic) = unsafe { invoke_callable_value_ints_for_test(callable, &[23]) };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { value.as_ref() },
+            Some(&Value::String("ChildStaticScope:23".to_string()))
+        );
+        unsafe { phpc_native_value_free(value) };
+        unsafe { phpc_native_callable_value_free(callable) };
+        unsafe { phpc_native_value_free(inherited) };
+
+        let instance =
+            NativeValueHandle::from_value(Value::String("StaticScope::instance".to_string()));
+        let (callable, diagnostic) =
+            unsafe { lookup_callable_value_for_test(table, instance, None) };
+        assert!(callable.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "native callable lookup failed: non-static method StaticScope::instance cannot be used as a class-method string callable"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(instance) };
 
         unsafe { phpc_native_callable_table_free(table) };
     }

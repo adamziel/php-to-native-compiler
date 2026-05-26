@@ -35,8 +35,8 @@ use php_runtime::{
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_ARRAY_ITEM_BINDING,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_SOURCE_BINDING,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_TARGET_BINDING,
-    PHPC_NATIVE_DIAGNOSTIC_OPERAND_RMW_LVALUE_EVALUATION_CLEANUP,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_RESULT_OWNERSHIP,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_RMW_LVALUE_EVALUATION_CLEANUP,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_UNKNOWN_CALLEE_DIAGNOSTICS,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_VALUE_EVALUATION_CLEANUP,
@@ -2287,6 +2287,7 @@ fn native_try_stmt_call_operation(stmt: &Stmt) -> Option<NativeCallOperation> {
 struct NativeControlFlowCleanupRequirementOptions {
     allow_return: bool,
     allow_loop_transfer: bool,
+    include_call_operations: bool,
 }
 
 impl NativeControlFlowCleanupRequirementOptions {
@@ -2294,6 +2295,7 @@ impl NativeControlFlowCleanupRequirementOptions {
         Self {
             allow_return: false,
             allow_loop_transfer: false,
+            include_call_operations: true,
         }
     }
 
@@ -2301,6 +2303,15 @@ impl NativeControlFlowCleanupRequirementOptions {
         Self {
             allow_return: true,
             allow_loop_transfer: true,
+            include_call_operations: true,
+        }
+    }
+
+    fn frame_body_cleanup_only() -> Self {
+        Self {
+            allow_return: true,
+            allow_loop_transfer: true,
+            include_call_operations: false,
         }
     }
 }
@@ -2443,6 +2454,7 @@ fn push_native_control_flow_expr_requirements<F>(
 fn push_native_control_flow_assign_target_requirements<F>(
     target: &AssignTarget,
     operand_index: usize,
+    include_call_operations: bool,
     expr_requires_destructor_cleanup: &F,
     requirements: &mut Vec<NativeDiagnosticOperandRequirement>,
 ) where
@@ -2455,8 +2467,14 @@ fn push_native_control_flow_assign_target_requirements<F>(
             operand_index,
         );
     }
-    if let Some(operation) = native_assignment_target_call_operation(target) {
-        push_native_control_flow_call_operation_requirement(requirements, operation, operand_index);
+    if include_call_operations {
+        if let Some(operation) = native_assignment_target_call_operation(target) {
+            push_native_control_flow_call_operation_requirement(
+                requirements,
+                operation,
+                operand_index,
+            );
+        }
     }
     if assign_target_contains_destructor_observable_cleanup(
         target,
@@ -2473,6 +2491,7 @@ fn push_native_control_flow_assign_target_requirements<F>(
 fn push_native_control_flow_unset_target_requirements<F>(
     target: &UnsetTarget,
     operand_index: usize,
+    include_call_operations: bool,
     expr_requires_destructor_cleanup: &F,
     requirements: &mut Vec<NativeDiagnosticOperandRequirement>,
 ) where
@@ -2485,8 +2504,14 @@ fn push_native_control_flow_unset_target_requirements<F>(
             operand_index,
         );
     }
-    if let Some(operation) = native_unset_target_call_operation(target) {
-        push_native_control_flow_call_operation_requirement(requirements, operation, operand_index);
+    if include_call_operations {
+        if let Some(operation) = native_unset_target_call_operation(target) {
+            push_native_control_flow_call_operation_requirement(
+                requirements,
+                operation,
+                operand_index,
+            );
+        }
     }
     if unset_target_contains_destructor_observable_cleanup(target, expr_requires_destructor_cleanup)
     {
@@ -2523,12 +2548,14 @@ fn native_stmt_control_flow_cleanup_requirements<F>(
                     expr_requires_destructor_cleanup,
                     requirements,
                 );
-                if let Some(operation) = native_statement_operand_call_result_operation(value) {
-                    push_native_control_flow_call_operation_requirement(
-                        requirements,
-                        operation,
-                        operand_index,
-                    );
+                if options.include_call_operations {
+                    if let Some(operation) = native_statement_operand_call_result_operation(value) {
+                        push_native_control_flow_call_operation_requirement(
+                            requirements,
+                            operation,
+                            operand_index,
+                        );
+                    }
                 }
             }
         }
@@ -2544,12 +2571,14 @@ fn native_stmt_control_flow_cleanup_requirements<F>(
                 expr_requires_destructor_cleanup,
                 requirements,
             );
-            if let Some(operation) = native_statement_operand_call_result_operation(expr) {
-                push_native_control_flow_call_operation_requirement(
-                    requirements,
-                    operation,
-                    operand_index,
-                );
+            if options.include_call_operations {
+                if let Some(operation) = native_statement_operand_call_result_operation(expr) {
+                    push_native_control_flow_call_operation_requirement(
+                        requirements,
+                        operation,
+                        operand_index,
+                    );
+                }
             }
         }
         Stmt::Goto { .. } => {
@@ -2592,6 +2621,7 @@ fn native_stmt_control_flow_cleanup_requirements<F>(
             push_native_control_flow_assign_target_requirements(
                 target,
                 operand_index,
+                options.include_call_operations,
                 expr_requires_destructor_cleanup,
                 requirements,
             );
@@ -2601,18 +2631,23 @@ fn native_stmt_control_flow_cleanup_requirements<F>(
                 expr_requires_destructor_cleanup,
                 requirements,
             );
-            if let Some(operation) = native_statement_assignment_rhs_call_operation(target, expr) {
-                push_native_control_flow_call_operation_requirement(
-                    requirements,
-                    operation,
-                    operand_index,
-                );
+            if options.include_call_operations {
+                if let Some(operation) =
+                    native_statement_assignment_rhs_call_operation(target, expr)
+                {
+                    push_native_control_flow_call_operation_requirement(
+                        requirements,
+                        operation,
+                        operand_index,
+                    );
+                }
             }
         }
         Stmt::ReferenceAssign { target, source, .. } => {
             push_native_control_flow_assign_target_requirements(
                 target,
                 operand_index,
+                options.include_call_operations,
                 expr_requires_destructor_cleanup,
                 requirements,
             );
@@ -2626,18 +2661,22 @@ fn native_stmt_control_flow_cleanup_requirements<F>(
                     operand_index,
                 );
             }
-            if let Some(operation) = native_reference_assignment_call_operation(target, source) {
-                push_native_control_flow_call_operation_requirement(
-                    requirements,
-                    operation,
-                    operand_index,
-                );
+            if options.include_call_operations {
+                if let Some(operation) = native_reference_assignment_call_operation(target, source)
+                {
+                    push_native_control_flow_call_operation_requirement(
+                        requirements,
+                        operation,
+                        operand_index,
+                    );
+                }
             }
         }
         Stmt::IncrementDecrement { target, .. } => {
             push_native_control_flow_assign_target_requirements(
                 target,
                 operand_index,
+                options.include_call_operations,
                 expr_requires_destructor_cleanup,
                 requirements,
             );
@@ -2700,6 +2739,7 @@ fn native_stmt_control_flow_cleanup_requirements<F>(
                 push_native_control_flow_for_action_requirements(
                     action,
                     operand_index,
+                    options.include_call_operations,
                     expr_requires_destructor_cleanup,
                     requirements,
                 );
@@ -2767,12 +2807,14 @@ fn native_stmt_control_flow_cleanup_requirements<F>(
                 expr_requires_destructor_cleanup,
                 requirements,
             );
-            if let Some(operation) = native_lvalue_operand_call_result_operation(index) {
-                push_native_control_flow_call_operation_requirement(
-                    requirements,
-                    operation,
-                    operand_index,
-                );
+            if options.include_call_operations {
+                if let Some(operation) = native_lvalue_operand_call_result_operation(index) {
+                    push_native_control_flow_call_operation_requirement(
+                        requirements,
+                        operation,
+                        operand_index,
+                    );
+                }
             }
         }
         Stmt::UnsetNestedArrayIndex { indices, .. } => {
@@ -2784,12 +2826,14 @@ fn native_stmt_control_flow_cleanup_requirements<F>(
                     requirements,
                 );
             }
-            if let Some(operation) = native_expr_list_call_result_operation(indices) {
-                push_native_control_flow_call_operation_requirement(
-                    requirements,
-                    operation,
-                    operand_index,
-                );
+            if options.include_call_operations {
+                if let Some(operation) = native_expr_list_call_result_operation(indices) {
+                    push_native_control_flow_call_operation_requirement(
+                        requirements,
+                        operation,
+                        operand_index,
+                    );
+                }
             }
         }
         Stmt::UnsetDynamicObjectProperty { property, .. } => {
@@ -2799,12 +2843,14 @@ fn native_stmt_control_flow_cleanup_requirements<F>(
                 expr_requires_destructor_cleanup,
                 requirements,
             );
-            if let Some(operation) = native_lvalue_operand_call_result_operation(property) {
-                push_native_control_flow_call_operation_requirement(
-                    requirements,
-                    operation,
-                    operand_index,
-                );
+            if options.include_call_operations {
+                if let Some(operation) = native_lvalue_operand_call_result_operation(property) {
+                    push_native_control_flow_call_operation_requirement(
+                        requirements,
+                        operation,
+                        operand_index,
+                    );
+                }
             }
         }
         Stmt::UnsetMany { targets, .. } => {
@@ -2812,6 +2858,7 @@ fn native_stmt_control_flow_cleanup_requirements<F>(
                 push_native_control_flow_unset_target_requirements(
                     target,
                     operand_index,
+                    options.include_call_operations,
                     expr_requires_destructor_cleanup,
                     requirements,
                 );
@@ -2825,14 +2872,16 @@ fn native_stmt_control_flow_cleanup_requirements<F>(
                     expr_requires_destructor_cleanup,
                     requirements,
                 );
-                if let Some(operation) =
-                    native_statement_operand_call_result_operation(&declaration.value)
-                {
-                    push_native_control_flow_call_operation_requirement(
-                        requirements,
-                        operation,
-                        operand_index,
-                    );
+                if options.include_call_operations {
+                    if let Some(operation) =
+                        native_statement_operand_call_result_operation(&declaration.value)
+                    {
+                        push_native_control_flow_call_operation_requirement(
+                            requirements,
+                            operation,
+                            operand_index,
+                        );
+                    }
                 }
             })
         }
@@ -2843,12 +2892,14 @@ fn native_stmt_control_flow_cleanup_requirements<F>(
                 expr_requires_destructor_cleanup,
                 requirements,
             );
-            if let Some(operation) = native_statement_operand_call_result_operation(path) {
-                push_native_control_flow_call_operation_requirement(
-                    requirements,
-                    operation,
-                    operand_index,
-                );
+            if options.include_call_operations {
+                if let Some(operation) = native_statement_operand_call_result_operation(path) {
+                    push_native_control_flow_call_operation_requirement(
+                        requirements,
+                        operation,
+                        operand_index,
+                    );
+                }
             }
         }
         Stmt::Try {
@@ -2881,12 +2932,15 @@ fn native_stmt_control_flow_cleanup_requirements<F>(
                     expr_requires_destructor_cleanup,
                     requirements,
                 );
-                if let Some(operation) = native_statement_operand_call_result_operation(default) {
-                    push_native_control_flow_call_operation_requirement(
-                        requirements,
-                        operation,
-                        operand_index,
-                    );
+                if options.include_call_operations {
+                    if let Some(operation) = native_statement_operand_call_result_operation(default)
+                    {
+                        push_native_control_flow_call_operation_requirement(
+                            requirements,
+                            operation,
+                            operand_index,
+                        );
+                    }
                 }
             }),
         Stmt::Namespace { .. }
@@ -2930,6 +2984,7 @@ fn native_stmt_list_control_flow_cleanup_requirements_at_operand<F>(
 fn push_native_control_flow_for_action_requirements<F>(
     action: &ForAction,
     operand_index: usize,
+    include_call_operations: bool,
     expr_requires_destructor_cleanup: &F,
     requirements: &mut Vec<NativeDiagnosticOperandRequirement>,
 ) where
@@ -2940,6 +2995,7 @@ fn push_native_control_flow_for_action_requirements<F>(
             push_native_control_flow_assign_target_requirements(
                 target,
                 operand_index,
+                include_call_operations,
                 expr_requires_destructor_cleanup,
                 requirements,
             );
@@ -2954,6 +3010,7 @@ fn push_native_control_flow_for_action_requirements<F>(
             push_native_control_flow_assign_target_requirements(
                 target,
                 operand_index,
+                include_call_operations,
                 expr_requires_destructor_cleanup,
                 requirements,
             );
@@ -2967,8 +3024,14 @@ fn push_native_control_flow_for_action_requirements<F>(
             );
         }
     }
-    if let Some(operation) = native_for_action_call_operation(action) {
-        push_native_control_flow_call_operation_requirement(requirements, operation, operand_index);
+    if include_call_operations {
+        if let Some(operation) = native_for_action_call_operation(action) {
+            push_native_control_flow_call_operation_requirement(
+                requirements,
+                operation,
+                operand_index,
+            );
+        }
     }
 }
 
@@ -3408,7 +3471,7 @@ fn expr_contains_exit_construct(expr: &Expr) -> bool {
 fn function_body_contains_native_frame_blocker(statements: &[Stmt]) -> bool {
     !native_control_flow_cleanup_requirements(
         statements,
-        NativeControlFlowCleanupRequirementOptions::allow_return_and_loop_transfer(),
+        NativeControlFlowCleanupRequirementOptions::frame_body_cleanup_only(),
         &|_| false,
     )
     .is_empty()
@@ -18321,9 +18384,9 @@ impl CGenerator {
                 output.push('\n');
             }
             for (_, method) in self.declared_class_methods_in_order() {
-                output.push_str(&self.emit_declared_class_method_callable_wrapper_definition(
-                    &method,
-                ));
+                output.push_str(
+                    &self.emit_declared_class_method_callable_wrapper_definition(&method),
+                );
                 output.push('\n');
             }
         }

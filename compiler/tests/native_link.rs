@@ -18114,6 +18114,100 @@ fn native_executable_c_source_invokes_callable_arrays_through_method_frames() {
 }
 
 #[test]
+fn native_executable_c_source_invokes_class_method_strings_through_runtime_callable_value_abi() {
+    let source = concat!(
+        "<?php\n",
+        "class ClassMethodCallableBase {\n",
+        "    public static function stat($value) { return \"B\" . $value; }\n",
+        "}\n",
+        "class ClassMethodCallableChild extends ClassMethodCallableBase {}\n",
+        "class ClassMethodCallableRelay {\n",
+        "    public static function apply($callback, $value) { return $callback($value); }\n",
+        "}\n",
+        "function apply_class_method_callable($callback, $value) { return $callback($value); }\n",
+        "$direct = \"ClassMethodCallableBase::stat\";\n",
+        "echo $direct(\"A\"), \"|\", apply_class_method_callable($direct, \"B\"), \"|\";\n",
+        "$inherited = \"ClassMethodCallableChild::stat\";\n",
+        "echo $inherited(\"C\"), \"|\", ClassMethodCallableRelay::apply($inherited, \"D\"), \"|\";\n",
+        "$upper = \"CLASSMETHODCALLABLECHILD::STAT\";\n",
+        "echo $upper(\"E\");\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("PHPC_NATIVE_CALLABLE_KIND_METHOD")
+            && source.contains("phpc_native_callable_table_register_visibility_staticness_frame_callback_and_free")
+            && source.contains("phpc_native_callable_table_register_class_parent_and_free")
+            && source.contains("_native_callable_frame"),
+        "declared static methods should be published as runtime callable-table descriptors consumed by class-method string values:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && source
+                .contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
+            && source.contains("phpc_native_call_arguments_push_value_and_free"),
+        "class-method string callables should use callable-value lookup/invoke and shared argument ABI:\n{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic(")
+            .count()
+            >= 4,
+        "direct, relayed, inherited, and case-varied class-method strings should share the runtime lookup boundary:\n{source}"
+    );
+    assert!(
+        !source.contains(ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION)
+            && !source.contains("callable must be a string for generated-C runtime dispatch")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches")
+            && !source.contains("callable_array_matched")
+            && !source.contains("callable_object_matched"),
+        "class-method string callables should not use the legacy generated-C dynamic callable ladder:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_class_method_string_callable_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class ClassMethodCallableBase {\n",
+        "    public static function stat($value) { return \"B\" . $value; }\n",
+        "}\n",
+        "class ClassMethodCallableChild extends ClassMethodCallableBase {}\n",
+        "class ClassMethodCallableRelay {\n",
+        "    public static function apply($callback, $value) { return $callback($value); }\n",
+        "}\n",
+        "function apply_class_method_callable($callback, $value) { return $callback($value); }\n",
+        "$direct = \"ClassMethodCallableBase::stat\";\n",
+        "echo $direct(\"A\"), \"|\", apply_class_method_callable($direct, \"B\"), \"|\";\n",
+        "$inherited = \"ClassMethodCallableChild::stat\";\n",
+        "echo $inherited(\"C\"), \"|\", ClassMethodCallableRelay::apply($inherited, \"D\"), \"|\";\n",
+        "$upper = \"CLASSMETHODCALLABLECHILD::STAT\";\n",
+        "echo $upper(\"E\");\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("class_method_string_callable", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native class-method string callable executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"BA|BB|BC|BD|BE");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn emit_exe_links_and_runs_callable_array_invocation_program() {
     if !has_cc() {
         return;
