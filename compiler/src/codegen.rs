@@ -253,6 +253,128 @@ enum NativeCallBackend {
     Assembly,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+enum NativeDiagnosticResultOperandSurface {
+    Expression,
+    Statement,
+    Terminal,
+    Cleanup,
+}
+
+#[allow(dead_code)]
+impl NativeDiagnosticResultOperandSurface {
+    fn result_prefix(self) -> &'static str {
+        match self {
+            Self::Expression => "expr_diagnostic_result",
+            Self::Statement => "stmt_diagnostic_result",
+            Self::Terminal => "terminal_diagnostic_result",
+            Self::Cleanup => "cleanup_diagnostic_result",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+enum NativeDiagnosticResultProducer<'a> {
+    Value {
+        surface: NativeDiagnosticResultOperandSurface,
+        handle: &'a str,
+    },
+    Diagnostic {
+        surface: NativeDiagnosticResultOperandSurface,
+        handle: &'a str,
+    },
+    Null {
+        surface: NativeDiagnosticResultOperandSurface,
+    },
+}
+
+#[allow(dead_code)]
+impl<'a> NativeDiagnosticResultProducer<'a> {
+    fn value(surface: NativeDiagnosticResultOperandSurface, handle: &'a str) -> Self {
+        Self::Value { surface, handle }
+    }
+
+    fn diagnostic(surface: NativeDiagnosticResultOperandSurface, handle: &'a str) -> Self {
+        Self::Diagnostic { surface, handle }
+    }
+
+    fn null(surface: NativeDiagnosticResultOperandSurface) -> Self {
+        Self::Null { surface }
+    }
+
+    fn surface(self) -> NativeDiagnosticResultOperandSurface {
+        match self {
+            Self::Value { surface, .. }
+            | Self::Diagnostic { surface, .. }
+            | Self::Null { surface } => surface,
+        }
+    }
+
+    fn takes_value_ownership(self) -> bool {
+        matches!(self, Self::Value { .. })
+    }
+
+    fn takes_diagnostic_ownership(self) -> bool {
+        matches!(self, Self::Diagnostic { .. })
+    }
+
+    fn llvm_call(self, result: &str) -> String {
+        match self {
+            Self::Value { handle, .. } => format!(
+                "{result} = call %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_from_value(%phpc.NativeValueHandle {handle})"
+            ),
+            Self::Diagnostic { handle, .. } => format!(
+                "{result} = call %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_from_diagnostic_and_free(%phpc.NativeDiagnosticHandle {handle})"
+            ),
+            Self::Null { .. } => {
+                format!("{result} = call %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_null()")
+            }
+        }
+    }
+
+    fn c_statement(self, result: &str) -> String {
+        match self {
+            Self::Value { handle, .. } => format!(
+                "phpc_NativeDiagnosticResult {result} = phpc_native_diagnostic_result_from_value({handle});"
+            ),
+            Self::Diagnostic { handle, .. } => format!(
+                "phpc_NativeDiagnosticResult {result} = phpc_native_diagnostic_result_from_diagnostic_and_free({handle});"
+            ),
+            Self::Null { .. } => format!(
+                "phpc_NativeDiagnosticResult {result} = phpc_native_diagnostic_result_null();"
+            ),
+        }
+    }
+}
+
+fn llvm_native_diagnostic_result_type() -> &'static str {
+    "%phpc.NativeDiagnosticResult = type { ptr }"
+}
+
+fn llvm_native_diagnostic_result_declarations() -> &'static str {
+    concat!(
+        "declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_null()\n",
+        "declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_from_value(%phpc.NativeValueHandle)\n",
+        "declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_from_diagnostic_and_free(%phpc.NativeDiagnosticHandle)\n",
+        "declare void @phpc_native_diagnostic_result_free(%phpc.NativeDiagnosticResult)\n",
+    )
+}
+
+fn c_native_diagnostic_result_type() -> &'static str {
+    "typedef struct { void *ptr; } phpc_NativeDiagnosticResult;\n"
+}
+
+fn c_native_diagnostic_result_declarations() -> &'static str {
+    concat!(
+        "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_null(void);\n",
+        "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_from_value(phpc_NativeValueHandle value);\n",
+        "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_from_diagnostic_and_free(phpc_NativeDiagnosticHandle diagnostic);\n",
+        "extern void phpc_native_diagnostic_result_free(phpc_NativeDiagnosticResult result);\n",
+    )
+}
+
 impl NativeCallBackend {
     fn function_call_rejection(self) -> &'static str {
         match self {
@@ -336,6 +458,17 @@ enum NativeCallResult {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeCallResultConsumer {
+    StatementOperand,
+    ValueOperand,
+    LvalueOperand,
+    RmwLvalueOperand,
+    FailedValueOperand,
+    ReferenceResult,
+    DereferencedValue,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeCallBlocker {
     DynamicCallableEvaluation,
     ArgumentEvaluationCleanup,
@@ -384,14 +517,38 @@ enum NativeObjectMetadataCallPreflightFailure {
     Arity { span: Span },
 }
 
-impl NativeCallOperation {
-    fn value_result(span: Span, callee: NativeCallCallee, blocker: NativeCallBlocker) -> Self {
-        Self {
+impl NativeCallCallee {
+    fn value_result_operation(self, span: Span, blocker: NativeCallBlocker) -> NativeCallOperation {
+        NativeCallOperation {
             span,
-            callee,
+            callee: self,
             result: NativeCallResult::Value,
             blocker,
         }
+    }
+
+    fn reference_result_operation(self, span: Span) -> NativeCallOperation {
+        NativeCallOperation {
+            span,
+            callee: self,
+            result: NativeCallResult::Reference,
+            blocker: NativeCallBlocker::ReferenceBinding,
+        }
+    }
+
+    fn dereferenced_value_result_operation(self, span: Span) -> NativeCallOperation {
+        NativeCallOperation {
+            span,
+            callee: self,
+            result: NativeCallResult::Value,
+            blocker: NativeCallBlocker::ReturnValueOwnership,
+        }
+    }
+}
+
+impl NativeCallOperation {
+    fn value_result(span: Span, callee: NativeCallCallee, blocker: NativeCallBlocker) -> Self {
+        callee.value_result_operation(span, blocker)
     }
 
     fn direct_named_value(span: Span, blocker: NativeCallBlocker) -> Self {
@@ -446,20 +603,55 @@ impl NativeCallOperation {
     }
 
     fn reference_result(span: Span, callee: NativeCallCallee) -> Self {
-        Self {
-            span,
-            callee,
-            result: NativeCallResult::Reference,
-            blocker: NativeCallBlocker::ReferenceBinding,
-        }
+        callee.reference_result_operation(span)
     }
+}
 
-    fn dereferenced_value_result(span: Span, callee: NativeCallCallee) -> Self {
-        Self {
-            span,
-            callee,
-            result: NativeCallResult::Value,
-            blocker: NativeCallBlocker::ReturnValueOwnership,
+impl NativeCallResultConsumer {
+    fn operation(self, expr: &Expr) -> Option<NativeCallOperation> {
+        match self {
+            Self::StatementOperand => native_expr_call_result_operation(
+                expr,
+                NativeCallBlocker::StatementOperandEvaluationCleanup,
+            ),
+            Self::ValueOperand => native_expr_call_result_operation(
+                expr,
+                NativeCallBlocker::ValueOperandEvaluationCleanup,
+            ),
+            Self::LvalueOperand => native_value_result_expr_call_operation(
+                expr,
+                NativeCallBlocker::LvalueOperandEvaluationCleanup,
+            ),
+            Self::RmwLvalueOperand => {
+                Self::LvalueOperand
+                    .operation(expr)
+                    .map(|operation| NativeCallOperation {
+                        blocker: NativeCallBlocker::RmwLvalueOperandEvaluationCleanup,
+                        ..operation
+                    })
+            }
+            Self::FailedValueOperand => {
+                if native_expr_is_call_operation_root(expr) {
+                    None
+                } else {
+                    Self::ValueOperand.operation(expr)
+                }
+            }
+            Self::ReferenceResult => native_reference_expr_call_callee(expr)
+                .map(|callee| callee.reference_result_operation(expr.span())),
+            Self::DereferencedValue => {
+                let (target, span) = match expr {
+                    Expr::Index { target, span, .. }
+                    | Expr::AppendIndex { target, span }
+                    | Expr::Property { target, span, .. }
+                    | Expr::DynamicProperty { target, span, .. }
+                    | Expr::ObjectStaticProperty { target, span, .. } => (target.as_ref(), *span),
+                    _ => return None,
+                };
+
+                native_reference_expr_call_callee(target)
+                    .map(|callee| callee.dereferenced_value_result_operation(span))
+            }
         }
     }
 }
@@ -1312,23 +1504,19 @@ fn native_expr_call_result_operation(
 }
 
 fn native_lvalue_operand_call_result_operation(expr: &Expr) -> Option<NativeCallOperation> {
-    native_value_result_expr_call_operation(expr, NativeCallBlocker::LvalueOperandEvaluationCleanup)
+    NativeCallResultConsumer::LvalueOperand.operation(expr)
 }
 
 fn native_statement_operand_call_result_operation(expr: &Expr) -> Option<NativeCallOperation> {
-    native_expr_call_result_operation(expr, NativeCallBlocker::StatementOperandEvaluationCleanup)
+    NativeCallResultConsumer::StatementOperand.operation(expr)
 }
 
 fn native_value_operand_call_result_operation(expr: &Expr) -> Option<NativeCallOperation> {
-    native_expr_call_result_operation(expr, NativeCallBlocker::ValueOperandEvaluationCleanup)
+    NativeCallResultConsumer::ValueOperand.operation(expr)
 }
 
 fn native_failed_value_operand_call_result_operation(expr: &Expr) -> Option<NativeCallOperation> {
-    if native_expr_is_call_operation_root(expr) {
-        None
-    } else {
-        native_value_operand_call_result_operation(expr)
-    }
+    NativeCallResultConsumer::FailedValueOperand.operation(expr)
 }
 
 fn native_unemitted_operand_call_operation(
@@ -5393,8 +5581,8 @@ fn native_reference_array_item_call_operation(item: &ArrayItem) -> Option<Native
 }
 
 fn native_reference_array_item_value_call_operation(expr: &Expr) -> Option<NativeCallOperation> {
-    native_reference_expr_call_callee(expr)
-        .map(|callee| NativeCallOperation::reference_result(expr.span(), callee))
+    NativeCallResultConsumer::ReferenceResult
+        .operation(expr)
         .or_else(|| native_lvalue_operand_call_result_operation(expr))
 }
 
@@ -5414,24 +5602,14 @@ fn native_reference_expr_call_callee(expr: &Expr) -> Option<NativeCallCallee> {
 }
 
 fn native_dereferenced_call_result_operation(expr: &Expr) -> Option<NativeCallOperation> {
-    let (target, span) = match expr {
-        Expr::Index { target, span, .. }
-        | Expr::AppendIndex { target, span }
-        | Expr::Property { target, span, .. }
-        | Expr::DynamicProperty { target, span, .. }
-        | Expr::ObjectStaticProperty { target, span, .. } => (target.as_ref(), *span),
-        _ => return None,
-    };
-
-    native_reference_expr_call_callee(target)
-        .map(|callee| NativeCallOperation::dereferenced_value_result(span, callee))
+    NativeCallResultConsumer::DereferencedValue.operation(expr)
 }
 
 fn native_assignment_target_call_result_operation(
     target: &AssignTarget,
 ) -> Option<NativeCallOperation> {
     native_assignment_target_call_result_callee(target)
-        .map(|callee| NativeCallOperation::dereferenced_value_result(target.span(), callee))
+        .map(|callee| callee.dereferenced_value_result_operation(target.span()))
 }
 
 fn native_assignment_target_call_result_callee(target: &AssignTarget) -> Option<NativeCallCallee> {
@@ -5504,10 +5682,7 @@ fn native_rmw_assignment_target_lvalue_operand_call_operation(
 }
 
 fn native_rmw_lvalue_operand_call_result_operation(expr: &Expr) -> Option<NativeCallOperation> {
-    native_lvalue_operand_call_result_operation(expr).map(|operation| NativeCallOperation {
-        blocker: NativeCallBlocker::RmwLvalueOperandEvaluationCleanup,
-        ..operation
-    })
+    NativeCallResultConsumer::RmwLvalueOperand.operation(expr)
 }
 
 fn native_assignment_target_lvalue_operands(target: &AssignTarget) -> Vec<(&Expr, u8)> {
@@ -8485,6 +8660,7 @@ struct LlvmGenerator {
     uses_native_value_truthiness: bool,
     uses_native_reference_helpers: bool,
     uses_native_text_membership_operation: bool,
+    uses_native_diagnostic_result_producers: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -8667,6 +8843,7 @@ impl LlvmGenerator {
         output.push_str("; generated by phpc milestone 1\n");
         let mut emitted_native_value_handle = false;
         let mut emitted_native_diagnostic_handle = false;
+        let mut emitted_native_diagnostic_result = false;
         let mut emitted_native_string_handle = false;
         let mut emitted_native_reference_handle = false;
         let mut emitted_native_scalar_value = false;
@@ -8834,6 +9011,23 @@ impl LlvmGenerator {
                 "%phpc.NativeReferenceHandle = type { ptr }",
             );
         }
+        if self.uses_native_diagnostic_result_producers {
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_value_handle,
+                "%phpc.NativeValueHandle = type { ptr }",
+            );
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_diagnostic_handle,
+                "%phpc.NativeDiagnosticHandle = type { ptr }",
+            );
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_diagnostic_result,
+                llvm_native_diagnostic_result_type(),
+            );
+        }
         output.push_str("declare i32 @printf(ptr, ...)\n");
         if self.uses_strcmp {
             output.push_str("declare i32 @strcmp(ptr, ptr)\n");
@@ -8977,6 +9171,9 @@ impl LlvmGenerator {
                     "declare void @phpc_native_diagnostic_free(%phpc.NativeDiagnosticHandle)\n",
                 );
             }
+        }
+        if self.uses_native_diagnostic_result_producers {
+            output.push_str(llvm_native_diagnostic_result_declarations());
         }
         output.push('\n');
         output.push_str("@.fmt_int = private unnamed_addr constant [5 x i8] c\"%lld\\00\"\n");
@@ -14035,6 +14232,37 @@ impl LlvmGenerator {
         name
     }
 
+    #[allow(dead_code)]
+    fn emit_native_diagnostic_result_operand(
+        &mut self,
+        producer: NativeDiagnosticResultProducer<'_>,
+    ) -> String {
+        self.uses_native_diagnostic_result_producers = true;
+        let result = self.next_temp();
+        self.body.push(producer.llvm_call(&result));
+        result
+    }
+
+    #[allow(dead_code)]
+    fn emit_native_diagnostic_result_list_storage(&mut self, list_name: &str, results: &[String]) {
+        self.uses_native_diagnostic_result_producers = true;
+        let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+        self.body.push(format!(
+            "{list_name} = alloca [{} x %phpc.NativeDiagnosticResult]",
+            results.len()
+        ));
+        for (index, result) in results.iter().enumerate() {
+            let slot = self.next_temp();
+            self.body.push(format!(
+                "{slot} = getelementptr inbounds [{} x %phpc.NativeDiagnosticResult], ptr {list_name}, {usize_type} 0, {usize_type} {index}",
+                results.len()
+            ));
+            self.body.push(format!(
+                "store %phpc.NativeDiagnosticResult {result}, ptr {slot}"
+            ));
+        }
+    }
+
     fn native_call_diagnostics(&self) -> NativeCallDiagnostics {
         NativeCallDiagnostics::new(NativeCallBackend::Llvm)
     }
@@ -14406,6 +14634,7 @@ struct CGenerator {
     uses_native_object_property_offset_read_source: bool,
     uses_native_object_instanceof_helpers: bool,
     uses_native_object_method_helpers: bool,
+    uses_native_diagnostic_result_producers: bool,
     next_static_data: usize,
     next_native_temp: usize,
     native_value_cleanup_handles: Vec<String>,
@@ -15959,6 +16188,31 @@ impl CGenerator {
         format!("{prefix}_{index}")
     }
 
+    #[allow(dead_code)]
+    fn emit_native_diagnostic_result_operand(
+        &mut self,
+        producer: NativeDiagnosticResultProducer<'_>,
+    ) -> String {
+        self.uses_native_diagnostic_result_producers = true;
+        let result = self.next_native_name(producer.surface().result_prefix());
+        self.body.push(producer.c_statement(&result));
+        result
+    }
+
+    #[allow(dead_code)]
+    fn emit_native_diagnostic_result_list_storage(&mut self, list_name: &str, results: &[String]) {
+        self.uses_native_diagnostic_result_producers = true;
+        let operands = if results.is_empty() {
+            String::new()
+        } else {
+            results.join(", ")
+        };
+        self.body.push(format!(
+            "phpc_NativeDiagnosticResult {list_name}[{}] = {{{operands}}};",
+            results.len()
+        ));
+    }
+
     fn scoped_branch_generator(&self) -> Self {
         let mut branch = self.clone();
         branch.body.clear();
@@ -16618,6 +16872,8 @@ impl CGenerator {
             branch.uses_native_object_property_offset_read_source;
         self.uses_native_object_instanceof_helpers |= branch.uses_native_object_instanceof_helpers;
         self.uses_native_object_method_helpers |= branch.uses_native_object_method_helpers;
+        self.uses_native_diagnostic_result_producers |=
+            branch.uses_native_diagnostic_result_producers;
     }
 
     fn merge_scoped_branch_codegen(&mut self, branch: &Self) {
@@ -16655,6 +16911,7 @@ impl CGenerator {
             || self.uses_native_object_property_offset_read_source
             || self.uses_native_object_instanceof_helpers
             || self.uses_native_object_method_helpers
+            || self.uses_native_diagnostic_result_producers
             || !self.function_definitions.is_empty()
     }
 
@@ -18532,6 +18789,9 @@ impl CGenerator {
             output.push_str("typedef struct { void *ptr; } phpc_NativeStringHandle;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeValueHandle;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeDiagnosticHandle;\n");
+            if self.uses_native_diagnostic_result_producers {
+                output.push_str(c_native_diagnostic_result_type());
+            }
             if self.uses_native_reference_handle_type() {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeReferenceHandle;\n");
             }
@@ -19045,6 +19305,9 @@ impl CGenerator {
             output.push_str("extern size_t phpc_native_diagnostic_message_stderr(phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern size_t phpc_native_diagnostic_report(phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern void phpc_native_diagnostic_free(phpc_NativeDiagnosticHandle diagnostic);\n");
+            if self.uses_native_diagnostic_result_producers {
+                output.push_str(c_native_diagnostic_result_declarations());
+            }
             if self.uses_native_reference_helpers
                 || self.uses_native_symbol_table_helpers
                 || self.uses_native_array_lvalue_helpers
@@ -44982,6 +45245,148 @@ mod tests {
     }
 
     #[test]
+    fn native_diagnostic_result_producers_model_owned_value_diagnostic_and_null_operands() {
+        for surface in [
+            NativeDiagnosticResultOperandSurface::Expression,
+            NativeDiagnosticResultOperandSurface::Statement,
+            NativeDiagnosticResultOperandSurface::Terminal,
+            NativeDiagnosticResultOperandSurface::Cleanup,
+        ] {
+            let value = NativeDiagnosticResultProducer::value(surface, "value_handle");
+            assert_eq!(value.surface(), surface);
+            assert!(value.takes_value_ownership());
+            assert!(!value.takes_diagnostic_ownership());
+            assert_eq!(
+                value.llvm_call("%result"),
+                "%result = call %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_from_value(%phpc.NativeValueHandle value_handle)"
+            );
+            assert_eq!(
+                value.c_statement("result"),
+                "phpc_NativeDiagnosticResult result = phpc_native_diagnostic_result_from_value(value_handle);"
+            );
+
+            let diagnostic = NativeDiagnosticResultProducer::diagnostic(surface, "diagnostic");
+            assert_eq!(diagnostic.surface(), surface);
+            assert!(!diagnostic.takes_value_ownership());
+            assert!(diagnostic.takes_diagnostic_ownership());
+            assert_eq!(
+                diagnostic.llvm_call("%result"),
+                "%result = call %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_from_diagnostic_and_free(%phpc.NativeDiagnosticHandle diagnostic)"
+            );
+            assert_eq!(
+                diagnostic.c_statement("result"),
+                "phpc_NativeDiagnosticResult result = phpc_native_diagnostic_result_from_diagnostic_and_free(diagnostic);"
+            );
+
+            let null = NativeDiagnosticResultProducer::null(surface);
+            assert_eq!(null.surface(), surface);
+            assert!(!null.takes_value_ownership());
+            assert!(!null.takes_diagnostic_ownership());
+            assert_eq!(
+                null.llvm_call("%result"),
+                "%result = call %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_null()"
+            );
+            assert_eq!(
+                null.c_statement("result"),
+                "phpc_NativeDiagnosticResult result = phpc_native_diagnostic_result_null();"
+            );
+        }
+    }
+
+    #[test]
+    fn native_diagnostic_result_backend_emitters_build_reusable_result_lists() {
+        let mut llvm = LlvmGenerator::default();
+        let llvm_results = vec![
+            llvm.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::value(
+                NativeDiagnosticResultOperandSurface::Expression,
+                "%expr_value",
+            )),
+            llvm.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::diagnostic(
+                NativeDiagnosticResultOperandSurface::Statement,
+                "%stmt_diagnostic",
+            )),
+            llvm.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::diagnostic(
+                NativeDiagnosticResultOperandSurface::Terminal,
+                "%terminal_diagnostic",
+            )),
+            llvm.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::null(
+                NativeDiagnosticResultOperandSurface::Cleanup,
+            )),
+        ];
+        llvm.emit_native_diagnostic_result_list_storage("%result_operands", &llvm_results);
+
+        assert!(llvm.uses_native_diagnostic_result_producers);
+        assert!(llvm
+            .body
+            .iter()
+            .any(|line| line.contains("@phpc_native_diagnostic_result_from_value")));
+        assert!(llvm
+            .body
+            .iter()
+            .any(|line| line.contains("@phpc_native_diagnostic_result_from_diagnostic_and_free")));
+        assert!(llvm
+            .body
+            .iter()
+            .any(|line| line.contains("@phpc_native_diagnostic_result_null")));
+        assert_eq!(
+            llvm.body
+                .iter()
+                .filter(|line| line.contains("store %phpc.NativeDiagnosticResult"))
+                .count(),
+            4
+        );
+
+        let mut c = CGenerator::default();
+        let c_results = vec![
+            c.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::value(
+                NativeDiagnosticResultOperandSurface::Expression,
+                "expr_value",
+            )),
+            c.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::diagnostic(
+                NativeDiagnosticResultOperandSurface::Statement,
+                "stmt_diagnostic",
+            )),
+            c.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::diagnostic(
+                NativeDiagnosticResultOperandSurface::Terminal,
+                "terminal_diagnostic",
+            )),
+            c.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::null(
+                NativeDiagnosticResultOperandSurface::Cleanup,
+            )),
+        ];
+        c.emit_native_diagnostic_result_list_storage("result_operands", &c_results);
+
+        assert!(c.uses_native_diagnostic_result_producers);
+        assert!(c
+            .body
+            .iter()
+            .any(|line| line.contains("phpc_native_diagnostic_result_from_value")));
+        assert!(c
+            .body
+            .iter()
+            .any(|line| line.contains("phpc_native_diagnostic_result_from_diagnostic_and_free")));
+        assert!(c
+            .body
+            .iter()
+            .any(|line| line.contains("phpc_native_diagnostic_result_null")));
+        assert!(c
+            .body
+            .iter()
+            .any(|line| line.contains("phpc_NativeDiagnosticResult result_operands[4]")));
+
+        assert_eq!(
+            llvm_native_diagnostic_result_type(),
+            "%phpc.NativeDiagnosticResult = type { ptr }"
+        );
+        assert!(llvm_native_diagnostic_result_declarations()
+            .contains("@phpc_native_diagnostic_result_free"));
+        assert!(c_native_diagnostic_result_type()
+            .contains("typedef struct { void *ptr; } phpc_NativeDiagnosticResult"));
+        assert!(c_native_diagnostic_result_declarations()
+            .contains("phpc_native_diagnostic_result_free"));
+    }
+
+    #[test]
     fn native_control_flow_cleanup_requirements_classify_transfer_exit_lvalue_and_destructor_families(
     ) {
         let span = test_span();
@@ -47477,7 +47882,7 @@ echo " 10" < "zeta";
         ] {
             assert_eq!(
                 native_dereferenced_call_result_operation(&expr),
-                Some(NativeCallOperation::dereferenced_value_result(span, callee))
+                Some(callee.dereferenced_value_result_operation(span))
             );
         }
 
@@ -47549,7 +47954,7 @@ echo " 10" < "zeta";
         ] {
             assert_eq!(
                 native_assignment_target_call_result_operation(&target),
-                Some(NativeCallOperation::dereferenced_value_result(span, callee))
+                Some(callee.dereferenced_value_result_operation(span))
             );
         }
 
@@ -48255,6 +48660,120 @@ echo " 10" < "zeta";
         assert_eq!(
             native_value_operand_call_result_operation(&Expr::String("plain".to_string(), span)),
             None
+        );
+    }
+
+    #[test]
+    fn native_call_target_result_consumer_taxonomy_routes_families_and_consumers() {
+        let span = test_span();
+        let call_families = vec![
+            (
+                Expr::Call {
+                    name: "produce".to_string(),
+                    args: vec![Expr::Int(1, span)],
+                    span,
+                },
+                NativeCallCallee::DirectNamed,
+            ),
+            (
+                Expr::DynamicCall {
+                    callee: Box::new(test_variable_expr("callback")),
+                    args: vec![Expr::String("value".to_string(), span)],
+                    span,
+                },
+                NativeCallCallee::DynamicExpression,
+            ),
+            (
+                Expr::MethodCall {
+                    target: Box::new(test_variable_expr("box")),
+                    method: "produce".to_string(),
+                    args: vec![Expr::Bool(true, span)],
+                    span,
+                },
+                NativeCallCallee::MethodDispatch,
+            ),
+            (
+                Expr::New {
+                    class_name: crate::ast::NewClassName::Named("Box".to_string()),
+                    args: vec![Expr::Int(2, span)],
+                    span,
+                },
+                NativeCallCallee::ConstructorDispatch,
+            ),
+        ];
+
+        for (expr, callee) in call_families {
+            assert_eq!(
+                NativeCallResultConsumer::StatementOperand.operation(&expr),
+                Some(callee.value_result_operation(
+                    span,
+                    NativeCallBlocker::StatementOperandEvaluationCleanup,
+                ))
+            );
+            assert_eq!(
+                NativeCallResultConsumer::ValueOperand.operation(&expr),
+                Some(callee.value_result_operation(
+                    span,
+                    NativeCallBlocker::ValueOperandEvaluationCleanup,
+                ))
+            );
+            assert_eq!(
+                NativeCallResultConsumer::ReferenceResult.operation(&expr),
+                Some(callee.reference_result_operation(span))
+            );
+
+            let dereferenced = Expr::Property {
+                target: Box::new(expr),
+                property: "value".to_string(),
+                span,
+            };
+            assert_eq!(
+                NativeCallResultConsumer::DereferencedValue.operation(&dereferenced),
+                Some(callee.dereferenced_value_result_operation(span))
+            );
+        }
+    }
+
+    #[test]
+    fn native_call_result_consumer_taxonomy_centralizes_failed_and_rmw_operands() {
+        let span = test_span();
+        let root_call = Expr::Call {
+            name: "produce".to_string(),
+            args: Vec::new(),
+            span,
+        };
+        assert_eq!(
+            NativeCallResultConsumer::FailedValueOperand.operation(&root_call),
+            None
+        );
+
+        let nested_call = Expr::Array {
+            items: vec![ArrayItem {
+                key: None,
+                value: root_call.clone(),
+                by_reference: false,
+            }],
+            span,
+        };
+        assert_eq!(
+            NativeCallResultConsumer::FailedValueOperand.operation(&nested_call),
+            Some(NativeCallOperation::direct_named_value(
+                span,
+                NativeCallBlocker::ValueOperandEvaluationCleanup,
+            ))
+        );
+
+        let rmw_lvalue_operand = Expr::Index {
+            target: Box::new(test_variable_expr("items")),
+            index: Box::new(root_call),
+            span,
+        };
+        assert_eq!(
+            NativeCallResultConsumer::RmwLvalueOperand.operation(&rmw_lvalue_operand),
+            Some(NativeCallOperation::direct_named_value(
+                span,
+                NativeCallBlocker::RmwLvalueOperandEvaluationCleanup,
+            ))
         );
     }
 
