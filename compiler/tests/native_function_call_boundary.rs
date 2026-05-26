@@ -22,6 +22,7 @@ const ASSEMBLY_METHOD_CALL_REJECTION: &str = "assembly method-call lowering reje
 const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions outside the bounded generated-C declared-object constructor subset, including unsupported constructor declarations, non-public constructors, constructor returns, destructor-observable cleanup, visibility contexts, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors; generated-native C lowers supported named and runtime string-valued declared object allocation for destructor-free declared classes, constructorless argument evaluation, and public constructors with $this frame binding";
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
+const ASSEMBLY_TRY_BLOCK_REJECTION: &str = "assembly try/catch/finally lowering rejects try blocks outside the bounded generated-C normal-flow subset until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during break/continue/return/exit/goto/throw control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; generated-native C executes try bodies, skips catches, and runs finally bodies only when no unwinding-capable transfer is present";
 
 #[test]
 fn phpc_run_still_handles_current_function_call_subset() {
@@ -859,9 +860,9 @@ fn native_statement_preflight_routes_try_catch_finally_body_calls_through_call_b
             ASSEMBLY_FUNCTION_CALL_REJECTION,
         ),
         (
-            "<?php\n$call = \"missing\";\ntry { if (true) { $call(); } } catch (Exception $e) {}\n",
-            LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
-            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+            "<?php\ntry { if (true) { missing(); } } catch (Exception $e) {}\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
         ),
         (
             "<?php\ntry { echo \"ok\"; } catch (Exception $e) { $box->work(); }\n",
@@ -884,6 +885,25 @@ fn native_statement_preflight_routes_try_catch_finally_body_calls_through_call_b
 
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, assembly_expected);
+    }
+}
+
+#[test]
+fn native_try_cleanup_unwind_requirements_route_control_transfers_through_shared_boundary() {
+    for source in [
+        "<?php\ntry { return 1; } catch (Exception $e) {}\n",
+        "<?php\ntry { while (true) { break; } } catch (Exception $e) {}\n",
+        "<?php\ntry { while (true) { continue; } } catch (Exception $e) {}\n",
+        "<?php\ntry { goto done; } catch (Exception $e) {}\ndone:\n",
+        "<?php\ntry { throw 1; } finally {}\n",
+        "<?php\ntry { if (true) { exit(\"done\"); } } finally {}\n",
+        "<?php\nclass Risk { public function __destruct() {} }\ntry { new Risk(); } finally {}\n",
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, ASSEMBLY_TRY_BLOCK_REJECTION, "{source}");
     }
 }
 

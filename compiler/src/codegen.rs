@@ -24,13 +24,25 @@ use php_runtime::{
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_KEY_EVALUATION,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_PROPERTY_EVALUATION,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_RECEIVER_EVALUATION,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_BY_REFERENCE_ARGUMENT_BINDING,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_CONSTRUCTOR_DISPATCH,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_DESTRUCTOR_OBSERVABLE_CLEANUP,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_DYNAMIC_CALLABLE_EVALUATION,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_FRAME_HANDOFF,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_GLOBAL_FRAME_SEPARATION,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_METHOD_DISPATCH,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_ARRAY_ITEM_BINDING,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_SOURCE_BINDING,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_TARGET_BINDING,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_RMW_LVALUE_EVALUATION_CLEANUP,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_RESULT_OWNERSHIP,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_UNKNOWN_CALLEE_DIAGNOSTICS,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_VALUE_EVALUATION_CLEANUP,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_ASSIGNMENT_LVALUE_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_CALL_ARGUMENT_LIST,
+    PHPC_NATIVE_DIAGNOSTIC_OPERATION_CONTROL_FLOW_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_RMW_LVALUE_OPERAND_LIST,
@@ -2271,70 +2283,391 @@ fn native_try_stmt_call_operation(stmt: &Stmt) -> Option<NativeCallOperation> {
     }
 }
 
-fn stmt_list_contains_try_unwind_blocker(statements: &[Stmt]) -> bool {
-    stmt_list_contains_try_unwind_blocker_with_return(statements, false)
-}
-
-fn stmt_list_contains_try_unwind_blocker_with_return(
-    statements: &[Stmt],
-    allow_return: bool,
-) -> bool {
-    stmt_list_contains_try_unwind_blocker_with_options(statements, allow_return, false)
-}
-
-fn stmt_list_contains_try_unwind_blocker_allowing_return_and_loop_transfer(
-    statements: &[Stmt],
-) -> bool {
-    stmt_list_contains_try_unwind_blocker_with_options(statements, true, true)
-}
-
-fn stmt_list_contains_try_unwind_blocker_with_options(
-    statements: &[Stmt],
+#[derive(Clone, Copy)]
+struct NativeControlFlowCleanupRequirementOptions {
     allow_return: bool,
     allow_loop_transfer: bool,
+}
+
+impl NativeControlFlowCleanupRequirementOptions {
+    fn blocked_transfers() -> Self {
+        Self {
+            allow_return: false,
+            allow_loop_transfer: false,
+        }
+    }
+
+    fn allow_return_and_loop_transfer() -> Self {
+        Self {
+            allow_return: true,
+            allow_loop_transfer: true,
+        }
+    }
+}
+
+fn native_control_flow_operand_list_is_blocked(
+    requirements: &[NativeDiagnosticOperandRequirement],
 ) -> bool {
-    statements
+    native_diagnostic_operation_list_is_blocked(
+        PHPC_NATIVE_DIAGNOSTIC_OPERATION_CONTROL_FLOW_OPERAND_LIST,
+        requirements,
+    )
+}
+
+fn native_control_flow_cleanup_requirements<F>(
+    statements: &[Stmt],
+    options: NativeControlFlowCleanupRequirementOptions,
+    expr_requires_destructor_cleanup: &F,
+) -> Vec<NativeDiagnosticOperandRequirement>
+where
+    F: Fn(&Expr) -> bool,
+{
+    let mut requirements = Vec::new();
+    for (operand_index, stmt) in statements.iter().enumerate() {
+        native_stmt_control_flow_cleanup_requirements(
+            stmt,
+            options,
+            operand_index,
+            expr_requires_destructor_cleanup,
+            &mut requirements,
+        );
+    }
+    requirements
+}
+
+fn push_native_control_flow_requirement(
+    requirements: &mut Vec<NativeDiagnosticOperandRequirement>,
+    tag: u8,
+    operand_index: usize,
+) {
+    if !requirements
         .iter()
-        .any(|stmt| stmt_contains_try_unwind_blocker(stmt, allow_return, allow_loop_transfer))
+        .any(|requirement| requirement.tag == tag && requirement.operand_index == operand_index)
+    {
+        requirements.push(NativeDiagnosticOperandRequirement { tag, operand_index });
+    }
 }
 
-fn stmt_contains_try_unwind_blocker(
-    stmt: &Stmt,
-    allow_return: bool,
-    allow_loop_transfer: bool,
+fn native_call_blocker_operand_requirement_tag(blocker: NativeCallBlocker) -> u8 {
+    match blocker {
+        NativeCallBlocker::DynamicCallableEvaluation => {
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_DYNAMIC_CALLABLE_EVALUATION
+        }
+        NativeCallBlocker::ArgumentEvaluationCleanup => {
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP
+        }
+        NativeCallBlocker::StatementOperandEvaluationCleanup => {
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP
+        }
+        NativeCallBlocker::ValueOperandEvaluationCleanup => {
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_VALUE_EVALUATION_CLEANUP
+        }
+        NativeCallBlocker::LvalueOperandEvaluationCleanup => {
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP
+        }
+        NativeCallBlocker::RmwLvalueOperandEvaluationCleanup => {
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_RMW_LVALUE_EVALUATION_CLEANUP
+        }
+        NativeCallBlocker::ReturnValueOwnership => PHPC_NATIVE_DIAGNOSTIC_OPERAND_RESULT_OWNERSHIP,
+        NativeCallBlocker::ByReferenceArgumentBinding => {
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_BY_REFERENCE_ARGUMENT_BINDING
+        }
+        NativeCallBlocker::FunctionFrameHandoff | NativeCallBlocker::ClosureFrameHandoff => {
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_FRAME_HANDOFF
+        }
+        NativeCallBlocker::GlobalFrameSeparation => {
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_GLOBAL_FRAME_SEPARATION
+        }
+        NativeCallBlocker::UnknownCalleeDiagnostics => {
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_UNKNOWN_CALLEE_DIAGNOSTICS
+        }
+        NativeCallBlocker::MethodDispatch => PHPC_NATIVE_DIAGNOSTIC_OPERAND_METHOD_DISPATCH,
+        NativeCallBlocker::ConstructorDispatch => {
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_CONSTRUCTOR_DISPATCH
+        }
+        NativeCallBlocker::DestructorObservableCleanup => {
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_DESTRUCTOR_OBSERVABLE_CLEANUP
+        }
+        NativeCallBlocker::ReferenceBinding => {
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_TARGET_BINDING
+        }
+    }
+}
+
+fn push_native_control_flow_call_operation_requirement(
+    requirements: &mut Vec<NativeDiagnosticOperandRequirement>,
+    operation: NativeCallOperation,
+    operand_index: usize,
+) {
+    push_native_control_flow_requirement(
+        requirements,
+        native_call_blocker_operand_requirement_tag(operation.blocker),
+        operand_index,
+    );
+}
+
+fn native_control_flow_requirements_include_call_operation(
+    requirements: &[NativeDiagnosticOperandRequirement],
+    operation: NativeCallOperation,
 ) -> bool {
+    let tag = native_call_blocker_operand_requirement_tag(operation.blocker);
+    requirements
+        .iter()
+        .any(|requirement| requirement.tag == tag)
+}
+
+fn push_native_control_flow_expr_requirements<F>(
+    expr: &Expr,
+    operand_index: usize,
+    expr_requires_destructor_cleanup: &F,
+    requirements: &mut Vec<NativeDiagnosticOperandRequirement>,
+) where
+    F: Fn(&Expr) -> bool,
+{
+    if expr_contains_exit_construct(expr) {
+        push_native_control_flow_requirement(
+            requirements,
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+            operand_index,
+        );
+    }
+    if expr_requires_destructor_cleanup(expr) {
+        push_native_control_flow_requirement(
+            requirements,
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_DESTRUCTOR_OBSERVABLE_CLEANUP,
+            operand_index,
+        );
+    }
+}
+
+fn push_native_control_flow_assign_target_requirements<F>(
+    target: &AssignTarget,
+    operand_index: usize,
+    expr_requires_destructor_cleanup: &F,
+    requirements: &mut Vec<NativeDiagnosticOperandRequirement>,
+) where
+    F: Fn(&Expr) -> bool,
+{
+    if assign_target_contains_exit_construct(target) {
+        push_native_control_flow_requirement(
+            requirements,
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+            operand_index,
+        );
+    }
+    if let Some(operation) = native_assignment_target_call_operation(target) {
+        push_native_control_flow_call_operation_requirement(requirements, operation, operand_index);
+    }
+    if assign_target_contains_destructor_observable_cleanup(
+        target,
+        expr_requires_destructor_cleanup,
+    ) {
+        push_native_control_flow_requirement(
+            requirements,
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_DESTRUCTOR_OBSERVABLE_CLEANUP,
+            operand_index,
+        );
+    }
+}
+
+fn push_native_control_flow_unset_target_requirements<F>(
+    target: &UnsetTarget,
+    operand_index: usize,
+    expr_requires_destructor_cleanup: &F,
+    requirements: &mut Vec<NativeDiagnosticOperandRequirement>,
+) where
+    F: Fn(&Expr) -> bool,
+{
+    if unset_target_contains_exit_construct(target) {
+        push_native_control_flow_requirement(
+            requirements,
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+            operand_index,
+        );
+    }
+    if let Some(operation) = native_unset_target_call_operation(target) {
+        push_native_control_flow_call_operation_requirement(requirements, operation, operand_index);
+    }
+    if unset_target_contains_destructor_observable_cleanup(target, expr_requires_destructor_cleanup)
+    {
+        push_native_control_flow_requirement(
+            requirements,
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_DESTRUCTOR_OBSERVABLE_CLEANUP,
+            operand_index,
+        );
+    }
+}
+
+fn native_stmt_control_flow_cleanup_requirements<F>(
+    stmt: &Stmt,
+    options: NativeControlFlowCleanupRequirementOptions,
+    operand_index: usize,
+    expr_requires_destructor_cleanup: &F,
+    requirements: &mut Vec<NativeDiagnosticOperandRequirement>,
+) where
+    F: Fn(&Expr) -> bool,
+{
     match stmt {
         Stmt::Return { value, .. } => {
-            !allow_return || value.as_ref().is_some_and(expr_contains_exit_construct)
+            if !options.allow_return {
+                push_native_control_flow_requirement(
+                    requirements,
+                    PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+                    operand_index,
+                );
+            }
+            if let Some(value) = value {
+                push_native_control_flow_expr_requirements(
+                    value,
+                    operand_index,
+                    expr_requires_destructor_cleanup,
+                    requirements,
+                );
+                if let Some(operation) = native_statement_operand_call_result_operation(value) {
+                    push_native_control_flow_call_operation_requirement(
+                        requirements,
+                        operation,
+                        operand_index,
+                    );
+                }
+            }
         }
-        Stmt::Throw { .. } | Stmt::Goto { .. } => true,
-        Stmt::Break { .. } | Stmt::Continue { .. } => !allow_loop_transfer,
-        Stmt::Echo { exprs, .. } => exprs.iter().any(expr_contains_exit_construct),
-        Stmt::Print { expr, .. } | Stmt::Expr { expr, .. } => expr_contains_exit_construct(expr),
+        Stmt::Throw { expr, .. } => {
+            push_native_control_flow_requirement(
+                requirements,
+                PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+                operand_index,
+            );
+            push_native_control_flow_expr_requirements(
+                expr,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
+            if let Some(operation) = native_statement_operand_call_result_operation(expr) {
+                push_native_control_flow_call_operation_requirement(
+                    requirements,
+                    operation,
+                    operand_index,
+                );
+            }
+        }
+        Stmt::Goto { .. } => {
+            push_native_control_flow_requirement(
+                requirements,
+                PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+                operand_index,
+            );
+        }
+        Stmt::Break { .. } | Stmt::Continue { .. } => {
+            if !options.allow_loop_transfer {
+                push_native_control_flow_requirement(
+                    requirements,
+                    PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+                    operand_index,
+                );
+            }
+        }
+        Stmt::Echo { exprs, .. } => {
+            for expr in exprs {
+                push_native_control_flow_expr_requirements(
+                    expr,
+                    operand_index,
+                    expr_requires_destructor_cleanup,
+                    requirements,
+                );
+            }
+        }
+        Stmt::Print { expr, .. } | Stmt::Expr { expr, .. } => {
+            push_native_control_flow_expr_requirements(
+                expr,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
+        }
         Stmt::Assign { target, expr, .. }
         | Stmt::CompoundAssign { target, expr, .. }
         | Stmt::NullCoalesceAssign { target, expr, .. } => {
-            assign_target_contains_exit_construct(target) || expr_contains_exit_construct(expr)
+            push_native_control_flow_assign_target_requirements(
+                target,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
+            push_native_control_flow_expr_requirements(
+                expr,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
+            if let Some(operation) = native_statement_assignment_rhs_call_operation(target, expr) {
+                push_native_control_flow_call_operation_requirement(
+                    requirements,
+                    operation,
+                    operand_index,
+                );
+            }
         }
-        Stmt::ReferenceAssign { target, .. } => assign_target_contains_exit_construct(target),
-        Stmt::IncrementDecrement { target, .. } => assign_target_contains_exit_construct(target),
+        Stmt::ReferenceAssign { target, source, .. } => {
+            push_native_control_flow_assign_target_requirements(
+                target,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
+            if reference_source_contains_destructor_observable_cleanup(
+                source,
+                expr_requires_destructor_cleanup,
+            ) {
+                push_native_control_flow_requirement(
+                    requirements,
+                    PHPC_NATIVE_DIAGNOSTIC_OPERAND_DESTRUCTOR_OBSERVABLE_CLEANUP,
+                    operand_index,
+                );
+            }
+            if let Some(operation) = native_reference_assignment_call_operation(target, source) {
+                push_native_control_flow_call_operation_requirement(
+                    requirements,
+                    operation,
+                    operand_index,
+                );
+            }
+        }
+        Stmt::IncrementDecrement { target, .. } => {
+            push_native_control_flow_assign_target_requirements(
+                target,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
+        }
         Stmt::If {
             condition,
             then_branch,
             else_branch,
             ..
         } => {
-            expr_contains_exit_construct(condition)
-                || stmt_list_contains_try_unwind_blocker_with_options(
-                    then_branch,
-                    allow_return,
-                    allow_loop_transfer,
-                )
-                || stmt_list_contains_try_unwind_blocker_with_options(
-                    else_branch,
-                    allow_return,
-                    allow_loop_transfer,
-                )
+            push_native_control_flow_expr_requirements(
+                condition,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
+            native_stmt_list_control_flow_cleanup_requirements_at_operand(
+                then_branch,
+                options,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
+            native_stmt_list_control_flow_cleanup_requirements_at_operand(
+                else_branch,
+                options,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
         }
         Stmt::While {
             condition, body, ..
@@ -2342,12 +2675,19 @@ fn stmt_contains_try_unwind_blocker(
         | Stmt::DoWhile {
             condition, body, ..
         } => {
-            expr_contains_exit_construct(condition)
-                || stmt_list_contains_try_unwind_blocker_with_options(
-                    body,
-                    allow_return,
-                    allow_loop_transfer,
-                )
+            push_native_control_flow_expr_requirements(
+                condition,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
+            native_stmt_list_control_flow_cleanup_requirements_at_operand(
+                body,
+                options,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
         }
         Stmt::For {
             initializers,
@@ -2356,63 +2696,199 @@ fn stmt_contains_try_unwind_blocker(
             body,
             ..
         } => {
-            initializers.iter().any(for_action_contains_exit_construct)
-                || conditions.iter().any(expr_contains_exit_construct)
-                || increments.iter().any(for_action_contains_exit_construct)
-                || stmt_list_contains_try_unwind_blocker_with_options(
-                    body,
-                    allow_return,
-                    allow_loop_transfer,
-                )
+            for action in initializers.iter().chain(increments.iter()) {
+                push_native_control_flow_for_action_requirements(
+                    action,
+                    operand_index,
+                    expr_requires_destructor_cleanup,
+                    requirements,
+                );
+            }
+            for condition in conditions {
+                push_native_control_flow_expr_requirements(
+                    condition,
+                    operand_index,
+                    expr_requires_destructor_cleanup,
+                    requirements,
+                );
+            }
+            native_stmt_list_control_flow_cleanup_requirements_at_operand(
+                body,
+                options,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
         }
         Stmt::Switch { value, cases, .. } => {
-            expr_contains_exit_construct(value)
-                || cases.iter().any(|case| {
-                    case.condition
-                        .as_ref()
-                        .is_some_and(expr_contains_exit_construct)
-                        || stmt_list_contains_try_unwind_blocker_with_options(
-                            &case.body,
-                            allow_return,
-                            allow_loop_transfer,
-                        )
-                })
+            push_native_control_flow_expr_requirements(
+                value,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
+            for case in cases {
+                if let Some(condition) = &case.condition {
+                    push_native_control_flow_expr_requirements(
+                        condition,
+                        operand_index,
+                        expr_requires_destructor_cleanup,
+                        requirements,
+                    );
+                }
+                native_stmt_list_control_flow_cleanup_requirements_at_operand(
+                    &case.body,
+                    options,
+                    operand_index,
+                    expr_requires_destructor_cleanup,
+                    requirements,
+                );
+            }
         }
         Stmt::Foreach { iterable, body, .. } => {
-            expr_contains_exit_construct(iterable)
-                || stmt_list_contains_try_unwind_blocker_with_options(
-                    body,
-                    allow_return,
-                    allow_loop_transfer,
-                )
+            push_native_control_flow_expr_requirements(
+                iterable,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
+            native_stmt_list_control_flow_cleanup_requirements_at_operand(
+                body,
+                options,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
         }
-        Stmt::UnsetArrayIndex { index, .. } => expr_contains_exit_construct(index),
+        Stmt::UnsetArrayIndex { index, .. } => {
+            push_native_control_flow_expr_requirements(
+                index,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
+            if let Some(operation) = native_lvalue_operand_call_result_operation(index) {
+                push_native_control_flow_call_operation_requirement(
+                    requirements,
+                    operation,
+                    operand_index,
+                );
+            }
+        }
         Stmt::UnsetNestedArrayIndex { indices, .. } => {
-            indices.iter().any(expr_contains_exit_construct)
+            for index in indices {
+                push_native_control_flow_expr_requirements(
+                    index,
+                    operand_index,
+                    expr_requires_destructor_cleanup,
+                    requirements,
+                );
+            }
+            if let Some(operation) = native_expr_list_call_result_operation(indices) {
+                push_native_control_flow_call_operation_requirement(
+                    requirements,
+                    operation,
+                    operand_index,
+                );
+            }
         }
-        Stmt::UnsetDynamicObjectProperty { property, .. } => expr_contains_exit_construct(property),
-        Stmt::UnsetMany { targets, .. } => targets.iter().any(unset_target_contains_exit_construct),
-        Stmt::ConstDeclaration { declarations, .. } => declarations
-            .iter()
-            .any(|declaration| expr_contains_exit_construct(&declaration.value)),
+        Stmt::UnsetDynamicObjectProperty { property, .. } => {
+            push_native_control_flow_expr_requirements(
+                property,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
+            if let Some(operation) = native_lvalue_operand_call_result_operation(property) {
+                push_native_control_flow_call_operation_requirement(
+                    requirements,
+                    operation,
+                    operand_index,
+                );
+            }
+        }
+        Stmt::UnsetMany { targets, .. } => {
+            for target in targets {
+                push_native_control_flow_unset_target_requirements(
+                    target,
+                    operand_index,
+                    expr_requires_destructor_cleanup,
+                    requirements,
+                );
+            }
+        }
+        Stmt::ConstDeclaration { declarations, .. } => {
+            declarations.iter().for_each(|declaration| {
+                push_native_control_flow_expr_requirements(
+                    &declaration.value,
+                    operand_index,
+                    expr_requires_destructor_cleanup,
+                    requirements,
+                );
+                if let Some(operation) =
+                    native_statement_operand_call_result_operation(&declaration.value)
+                {
+                    push_native_control_flow_call_operation_requirement(
+                        requirements,
+                        operation,
+                        operand_index,
+                    );
+                }
+            })
+        }
         Stmt::Require { path, .. } | Stmt::Include { path, .. } => {
-            expr_contains_exit_construct(path)
+            push_native_control_flow_expr_requirements(
+                path,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
+            if let Some(operation) = native_statement_operand_call_result_operation(path) {
+                push_native_control_flow_call_operation_requirement(
+                    requirements,
+                    operation,
+                    operand_index,
+                );
+            }
         }
         Stmt::Try {
             body, finally_body, ..
         } => {
-            stmt_list_contains_try_unwind_blocker_with_options(
+            native_stmt_list_control_flow_cleanup_requirements_at_operand(
                 body,
-                allow_return,
-                allow_loop_transfer,
-            ) || finally_body
-                .as_ref()
-                .is_some_and(|body| stmt_list_contains_try_unwind_blocker(body))
+                options,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
+            if let Some(body) = finally_body {
+                native_stmt_list_control_flow_cleanup_requirements_at_operand(
+                    body,
+                    NativeControlFlowCleanupRequirementOptions::blocked_transfers(),
+                    operand_index,
+                    expr_requires_destructor_cleanup,
+                    requirements,
+                );
+            }
         }
         Stmt::StaticLocal { declarations, .. } => declarations
             .iter()
             .filter_map(|declaration| declaration.default.as_ref())
-            .any(expr_contains_exit_construct),
+            .for_each(|default| {
+                push_native_control_flow_expr_requirements(
+                    default,
+                    operand_index,
+                    expr_requires_destructor_cleanup,
+                    requirements,
+                );
+                if let Some(operation) = native_statement_operand_call_result_operation(default) {
+                    push_native_control_flow_call_operation_requirement(
+                        requirements,
+                        operation,
+                        operand_index,
+                    );
+                }
+            }),
         Stmt::Namespace { .. }
         | Stmt::Use { .. }
         | Stmt::Label { .. }
@@ -2427,19 +2903,72 @@ fn stmt_contains_try_unwind_blocker(
         | Stmt::UnsetSelfStaticProperty { .. }
         | Stmt::UnsetParentStaticProperty { .. }
         | Stmt::UnsetLateStaticProperty { .. }
-        | Stmt::Global { .. } => false,
+        | Stmt::Global { .. } => {}
     }
 }
 
-fn for_action_contains_exit_construct(action: &ForAction) -> bool {
+fn native_stmt_list_control_flow_cleanup_requirements_at_operand<F>(
+    statements: &[Stmt],
+    options: NativeControlFlowCleanupRequirementOptions,
+    operand_index: usize,
+    expr_requires_destructor_cleanup: &F,
+    requirements: &mut Vec<NativeDiagnosticOperandRequirement>,
+) where
+    F: Fn(&Expr) -> bool,
+{
+    for stmt in statements {
+        native_stmt_control_flow_cleanup_requirements(
+            stmt,
+            options,
+            operand_index,
+            expr_requires_destructor_cleanup,
+            requirements,
+        );
+    }
+}
+
+fn push_native_control_flow_for_action_requirements<F>(
+    action: &ForAction,
+    operand_index: usize,
+    expr_requires_destructor_cleanup: &F,
+    requirements: &mut Vec<NativeDiagnosticOperandRequirement>,
+) where
+    F: Fn(&Expr) -> bool,
+{
     match action {
         ForAction::Assign { target, expr } | ForAction::CompoundAssign { target, expr, .. } => {
-            assign_target_contains_exit_construct(target) || expr_contains_exit_construct(expr)
+            push_native_control_flow_assign_target_requirements(
+                target,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
+            push_native_control_flow_expr_requirements(
+                expr,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
         }
         ForAction::IncrementDecrement { target, .. } => {
-            assign_target_contains_exit_construct(target)
+            push_native_control_flow_assign_target_requirements(
+                target,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
         }
-        ForAction::Expr { expr } => expr_contains_exit_construct(expr),
+        ForAction::Expr { expr } => {
+            push_native_control_flow_expr_requirements(
+                expr,
+                operand_index,
+                expr_requires_destructor_cleanup,
+                requirements,
+            );
+        }
+    }
+    if let Some(operation) = native_for_action_call_operation(action) {
+        push_native_control_flow_call_operation_requirement(requirements, operation, operand_index);
     }
 }
 
@@ -2567,6 +3096,217 @@ fn unset_target_contains_exit_construct(target: &UnsetTarget) -> bool {
     }
 }
 
+fn exprs_contain_destructor_observable_cleanup<F>(exprs: &[Expr], contains: &F) -> bool
+where
+    F: Fn(&Expr) -> bool,
+{
+    exprs.iter().any(contains)
+}
+
+fn optional_expr_contains_destructor_observable_cleanup<F>(
+    expr: Option<&Expr>,
+    contains: &F,
+) -> bool
+where
+    F: Fn(&Expr) -> bool,
+{
+    expr.is_some_and(contains)
+}
+
+fn array_item_contains_destructor_observable_cleanup<F>(item: &ArrayItem, contains: &F) -> bool
+where
+    F: Fn(&Expr) -> bool,
+{
+    optional_expr_contains_destructor_observable_cleanup(item.key.as_ref(), contains)
+        || contains(&item.value)
+}
+
+fn assign_target_contains_destructor_observable_cleanup<F>(
+    target: &AssignTarget,
+    contains: &F,
+) -> bool
+where
+    F: Fn(&Expr) -> bool,
+{
+    match target {
+        AssignTarget::ArrayIndex { index, .. } => {
+            optional_expr_contains_destructor_observable_cleanup(index.as_ref(), contains)
+        }
+        AssignTarget::NestedArrayIndex { indices, .. }
+        | AssignTarget::ObjectPropertyArrayIndex { indices, .. } => {
+            exprs_contain_destructor_observable_cleanup(indices, contains)
+        }
+        AssignTarget::NestedArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::ObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            exprs_contain_destructor_observable_cleanup(indices, contains)
+                || exprs_contain_destructor_observable_cleanup(suffix_indices, contains)
+        }
+        AssignTarget::DynamicObjectPropertyArrayAppend {
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            contains(property)
+                || exprs_contain_destructor_observable_cleanup(indices, contains)
+                || exprs_contain_destructor_observable_cleanup(suffix_indices, contains)
+        }
+        AssignTarget::DynamicProperty { property, .. }
+        | AssignTarget::ObjectStaticProperty {
+            target: property, ..
+        } => contains(property),
+        AssignTarget::NonDirectProperty { holder, .. }
+        | AssignTarget::NonDirectObjectPropertyArrayIndex { holder, .. } => contains(holder),
+        AssignTarget::NonDirectObjectPropertyArrayAppend {
+            holder,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            contains(holder)
+                || exprs_contain_destructor_observable_cleanup(indices, contains)
+                || exprs_contain_destructor_observable_cleanup(suffix_indices, contains)
+        }
+        AssignTarget::NonDirectDynamicProperty {
+            holder, property, ..
+        }
+        | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder, property, ..
+        } => contains(holder) || contains(property),
+        AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+            holder,
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            contains(holder)
+                || contains(property)
+                || exprs_contain_destructor_observable_cleanup(indices, contains)
+                || exprs_contain_destructor_observable_cleanup(suffix_indices, contains)
+        }
+        AssignTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => contains(property) || exprs_contain_destructor_observable_cleanup(indices, contains),
+        AssignTarget::Variable { .. }
+        | AssignTarget::List { .. }
+        | AssignTarget::Property { .. }
+        | AssignTarget::StaticProperty { .. }
+        | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::ParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. } => false,
+    }
+}
+
+fn unset_target_contains_destructor_observable_cleanup<F>(
+    target: &UnsetTarget,
+    contains: &F,
+) -> bool
+where
+    F: Fn(&Expr) -> bool,
+{
+    match target {
+        UnsetTarget::ArrayIndex { index, .. }
+        | UnsetTarget::DynamicObjectProperty {
+            property: index, ..
+        } => contains(index),
+        UnsetTarget::NestedArrayIndex { indices, .. }
+        | UnsetTarget::ObjectPropertyArrayIndex { indices, .. } => {
+            exprs_contain_destructor_observable_cleanup(indices, contains)
+        }
+        UnsetTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => contains(property) || exprs_contain_destructor_observable_cleanup(indices, contains),
+        UnsetTarget::NonDirectObjectProperty { holder, .. }
+        | UnsetTarget::NonDirectObjectPropertyArrayIndex { holder, .. } => contains(holder),
+        UnsetTarget::NonDirectDynamicObjectProperty {
+            holder, property, ..
+        }
+        | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder, property, ..
+        } => contains(holder) || contains(property),
+        UnsetTarget::Variable { .. }
+        | UnsetTarget::ObjectProperty { .. }
+        | UnsetTarget::StaticProperty { .. }
+        | UnsetTarget::SelfStaticProperty { .. }
+        | UnsetTarget::ParentStaticProperty { .. }
+        | UnsetTarget::LateStaticProperty { .. } => false,
+    }
+}
+
+fn reference_source_contains_destructor_observable_cleanup<F>(
+    source: &ReferenceSource,
+    contains: &F,
+) -> bool
+where
+    F: Fn(&Expr) -> bool,
+{
+    match source {
+        ReferenceSource::ArrayIndex { index, .. } => contains(index),
+        ReferenceSource::ArrayAppend { indices, .. }
+        | ReferenceSource::NestedArrayIndex { indices, .. }
+        | ReferenceSource::ObjectPropertyArrayAppend { indices, .. }
+        | ReferenceSource::ObjectPropertyNestedArrayIndex { indices, .. } => {
+            exprs_contain_destructor_observable_cleanup(indices, contains)
+        }
+        ReferenceSource::ObjectPropertyArrayIndex { index, .. } => contains(index),
+        ReferenceSource::DynamicObjectPropertyArrayIndex {
+            property, index, ..
+        } => contains(property) || contains(index),
+        ReferenceSource::DynamicObjectPropertyArrayAppend {
+            property, indices, ..
+        }
+        | ReferenceSource::DynamicObjectPropertyNestedArrayIndex {
+            property, indices, ..
+        } => contains(property) || exprs_contain_destructor_observable_cleanup(indices, contains),
+        ReferenceSource::NonDirectObjectPropertyArrayAppend {
+            holder, indices, ..
+        }
+        | ReferenceSource::NonDirectObjectPropertyNestedArrayIndex {
+            holder, indices, ..
+        } => contains(holder) || exprs_contain_destructor_observable_cleanup(indices, contains),
+        ReferenceSource::NonDirectDynamicObjectPropertyArrayAppend {
+            holder,
+            property,
+            indices,
+            ..
+        }
+        | ReferenceSource::NonDirectDynamicObjectPropertyNestedArrayIndex {
+            holder,
+            property,
+            indices,
+            ..
+        } => {
+            contains(holder)
+                || contains(property)
+                || exprs_contain_destructor_observable_cleanup(indices, contains)
+        }
+        ReferenceSource::Property { expr, .. }
+        | ReferenceSource::StaticProperty { expr, .. }
+        | ReferenceSource::MethodCall { expr, .. } => contains(expr),
+        ReferenceSource::StaticPropertyArrayIndex { expr, indices, .. }
+        | ReferenceSource::ExpressionArrayIndex {
+            target: expr,
+            indices,
+            ..
+        }
+        | ReferenceSource::ExpressionArrayAppend {
+            target: expr,
+            indices,
+            ..
+        } => contains(expr) || exprs_contain_destructor_observable_cleanup(indices, contains),
+        ReferenceSource::Variable { .. } => false,
+    }
+}
+
 fn expr_contains_exit_construct(expr: &Expr) -> bool {
     match expr {
         Expr::Call { name, args, .. } => {
@@ -2666,7 +3406,12 @@ fn expr_contains_exit_construct(expr: &Expr) -> bool {
 }
 
 fn function_body_contains_native_frame_blocker(statements: &[Stmt]) -> bool {
-    stmt_list_contains_try_unwind_blocker_allowing_return_and_loop_transfer(statements)
+    !native_control_flow_cleanup_requirements(
+        statements,
+        NativeControlFlowCleanupRequirementOptions::allow_return_and_loop_transfer(),
+        &|_| false,
+    )
+    .is_empty()
         || statements.iter().any(stmt_contains_function_frame_blocker)
 }
 
@@ -24445,17 +25190,38 @@ impl CGenerator {
         span: Span,
     ) -> CompileResult<()> {
         let can_schedule_return = finally_body.is_some() || !self.active_finally_bodies.is_empty();
-        let body_has_blocker = if can_schedule_return {
-            stmt_list_contains_try_unwind_blocker_allowing_return_and_loop_transfer(body)
+        let body_requirements = if can_schedule_return {
+            self.stmt_list_control_flow_cleanup_requirements(
+                body,
+                NativeControlFlowCleanupRequirementOptions::allow_return_and_loop_transfer(),
+            )
         } else {
-            stmt_list_contains_try_unwind_blocker(body)
+            self.stmt_list_control_flow_cleanup_requirements(
+                body,
+                NativeControlFlowCleanupRequirementOptions::blocked_transfers(),
+            )
         };
-        let finally_has_blocker = finally_body.is_some_and(stmt_list_contains_try_unwind_blocker);
+        let finally_requirements = finally_body
+            .map(|finally_body| {
+                self.stmt_list_control_flow_cleanup_requirements(
+                    finally_body,
+                    NativeControlFlowCleanupRequirementOptions::blocked_transfers(),
+                )
+            })
+            .unwrap_or_default();
+        let body_has_blocker = native_control_flow_operand_list_is_blocked(&body_requirements);
+        let finally_has_blocker =
+            native_control_flow_operand_list_is_blocked(&finally_requirements);
         if let Some(operation) = {
             let body_operation = || {
-                body_has_blocker
-                    .then(|| native_try_stmt_list_call_operation(body))
-                    .flatten()
+                body_has_blocker.then(|| {
+                    native_try_stmt_list_call_operation(body).filter(|operation| {
+                        native_control_flow_requirements_include_call_operation(
+                            &body_requirements,
+                            *operation,
+                        )
+                    })
+                })?
             };
             let catch_operation = || {
                 catches
@@ -24463,9 +25229,16 @@ impl CGenerator {
                     .find_map(|catch| native_try_stmt_list_call_operation(&catch.body))
             };
             let finally_operation = || {
-                finally_has_blocker
-                    .then(|| finally_body.and_then(native_try_stmt_list_call_operation))
-                    .flatten()
+                finally_has_blocker.then(|| {
+                    finally_body.and_then(|finally_body| {
+                        native_try_stmt_list_call_operation(finally_body).filter(|operation| {
+                            native_control_flow_requirements_include_call_operation(
+                                &finally_requirements,
+                                *operation,
+                            )
+                        })
+                    })
+                })?
             };
             body_operation()
                 .or_else(catch_operation)
@@ -27360,6 +28133,167 @@ impl CGenerator {
         known_keys
             .iter()
             .any(|key| self.declared_class_requires_destructor_observable_cleanup_boundary(key))
+    }
+
+    fn new_class_name_requires_destructor_observable_cleanup_boundary(
+        &self,
+        class_name: &NewClassName,
+    ) -> bool {
+        match class_name {
+            NewClassName::Named(name) => self
+                .declared_class_requires_destructor_observable_cleanup_boundary(
+                    &Self::declared_class_key(name),
+                ),
+            NewClassName::DynamicVariable(variable) => {
+                self.dynamic_declared_class_constructor_has_destructor_risk(variable)
+            }
+            NewClassName::SelfClass | NewClassName::ParentClass | NewClassName::StaticClass => {
+                false
+            }
+        }
+    }
+
+    fn expr_requires_destructor_observable_cleanup_boundary(&self, expr: &Expr) -> bool {
+        match expr {
+            Expr::New {
+                class_name, args, ..
+            } => {
+                self.new_class_name_requires_destructor_observable_cleanup_boundary(class_name)
+                    || args
+                        .iter()
+                        .any(|arg| self.expr_requires_destructor_observable_cleanup_boundary(arg))
+            }
+            Expr::Call { args, .. }
+            | Expr::StaticMethodCall { args, .. }
+            | Expr::ParentMethodCall { args, .. }
+            | Expr::SelfMethodCall { args, .. }
+            | Expr::LateStaticMethodCall { args, .. } => args
+                .iter()
+                .any(|arg| self.expr_requires_destructor_observable_cleanup_boundary(arg)),
+            Expr::DynamicCall { callee, args, .. } => {
+                self.expr_requires_destructor_observable_cleanup_boundary(callee)
+                    || args
+                        .iter()
+                        .any(|arg| self.expr_requires_destructor_observable_cleanup_boundary(arg))
+            }
+            Expr::MethodCall { target, args, .. }
+            | Expr::ObjectStaticMethodCall { target, args, .. } => {
+                self.expr_requires_destructor_observable_cleanup_boundary(target)
+                    || args
+                        .iter()
+                        .any(|arg| self.expr_requires_destructor_observable_cleanup_boundary(arg))
+            }
+            Expr::DynamicMethodCall {
+                target,
+                method,
+                args,
+                ..
+            } => {
+                self.expr_requires_destructor_observable_cleanup_boundary(target)
+                    || self.expr_requires_destructor_observable_cleanup_boundary(method)
+                    || args
+                        .iter()
+                        .any(|arg| self.expr_requires_destructor_observable_cleanup_boundary(arg))
+            }
+            Expr::Array { items, .. } => items.iter().any(|item| {
+                array_item_contains_destructor_observable_cleanup(item, &|expr| {
+                    self.expr_requires_destructor_observable_cleanup_boundary(expr)
+                })
+            }),
+            Expr::Index { target, index, .. } => {
+                self.expr_requires_destructor_observable_cleanup_boundary(target)
+                    || self.expr_requires_destructor_observable_cleanup_boundary(index)
+            }
+            Expr::AppendIndex { target, .. }
+            | Expr::Property { target, .. }
+            | Expr::ObjectStaticProperty { target, .. }
+            | Expr::InstanceOf { expr: target, .. }
+            | Expr::Clone { expr: target, .. }
+            | Expr::Unary { expr: target, .. }
+            | Expr::ErrorControl { expr: target, .. }
+            | Expr::Include { path: target, .. }
+            | Expr::Require { path: target, .. }
+            | Expr::Cast { expr: target, .. } => {
+                self.expr_requires_destructor_observable_cleanup_boundary(target)
+            }
+            Expr::DynamicProperty {
+                target, property, ..
+            } => {
+                self.expr_requires_destructor_observable_cleanup_boundary(target)
+                    || self.expr_requires_destructor_observable_cleanup_boundary(property)
+            }
+            Expr::Binary { left, right, .. } => {
+                self.expr_requires_destructor_observable_cleanup_boundary(left)
+                    || self.expr_requires_destructor_observable_cleanup_boundary(right)
+            }
+            Expr::Ternary {
+                condition,
+                if_true,
+                if_false,
+                ..
+            } => {
+                self.expr_requires_destructor_observable_cleanup_boundary(condition)
+                    || self.expr_requires_destructor_observable_cleanup_boundary(if_true)
+                    || self.expr_requires_destructor_observable_cleanup_boundary(if_false)
+            }
+            Expr::ShortTernary {
+                condition,
+                if_false,
+                ..
+            } => {
+                self.expr_requires_destructor_observable_cleanup_boundary(condition)
+                    || self.expr_requires_destructor_observable_cleanup_boundary(if_false)
+            }
+            Expr::Assign { target, expr, .. }
+            | Expr::CompoundAssign { target, expr, .. }
+            | Expr::NullCoalesceAssign { target, expr, .. } => {
+                assign_target_contains_destructor_observable_cleanup(target, &|expr| {
+                    self.expr_requires_destructor_observable_cleanup_boundary(expr)
+                }) || self.expr_requires_destructor_observable_cleanup_boundary(expr)
+            }
+            Expr::IncrementDecrement { target, .. } => {
+                assign_target_contains_destructor_observable_cleanup(target, &|expr| {
+                    self.expr_requires_destructor_observable_cleanup_boundary(expr)
+                })
+            }
+            Expr::Closure { .. } => false,
+            Expr::Null(_)
+            | Expr::Bool(_, _)
+            | Expr::Int(_, _)
+            | Expr::Float(_, _)
+            | Expr::String(_, _)
+            | Expr::InterpolatedString { .. }
+            | Expr::Variable(_, _)
+            | Expr::MagicLine { .. }
+            | Expr::MagicFile { .. }
+            | Expr::MagicDir { .. }
+            | Expr::MagicFunction { .. }
+            | Expr::MagicClass { .. }
+            | Expr::MagicMethod { .. }
+            | Expr::GlobalConstant { .. }
+            | Expr::ClassNameConstant { .. }
+            | Expr::SelfClassNameConstant { .. }
+            | Expr::ParentClassNameConstant { .. }
+            | Expr::StaticClassNameConstant { .. }
+            | Expr::ClassConstant { .. }
+            | Expr::SelfClassConstant { .. }
+            | Expr::ParentClassConstant { .. }
+            | Expr::LateStaticClassConstant { .. }
+            | Expr::StaticProperty { .. }
+            | Expr::SelfStaticProperty { .. }
+            | Expr::ParentStaticProperty { .. }
+            | Expr::LateStaticProperty { .. } => false,
+        }
+    }
+
+    fn stmt_list_control_flow_cleanup_requirements(
+        &self,
+        statements: &[Stmt],
+        options: NativeControlFlowCleanupRequirementOptions,
+    ) -> Vec<NativeDiagnosticOperandRequirement> {
+        native_control_flow_cleanup_requirements(statements, options, &|expr| {
+            self.expr_requires_destructor_observable_cleanup_boundary(expr)
+        })
     }
 
     fn declared_class_constructor_for_instantiation(
@@ -40464,6 +41398,131 @@ mod tests {
 
     fn test_span() -> Span {
         Span::new(1, 1)
+    }
+
+    fn requirement(tag: u8, operand_index: usize) -> NativeDiagnosticOperandRequirement {
+        NativeDiagnosticOperandRequirement { tag, operand_index }
+    }
+
+    #[test]
+    fn native_control_flow_cleanup_requirements_classify_transfer_exit_lvalue_and_destructor_families(
+    ) {
+        let span = test_span();
+        let risk_new = || Expr::New {
+            class_name: NewClassName::Named("Risk".to_string()),
+            args: Vec::new(),
+            span,
+        };
+        let statements = vec![
+            Stmt::Return { value: None, span },
+            Stmt::Break { depth: 1, span },
+            Stmt::Continue { depth: 1, span },
+            Stmt::Goto {
+                label: "done".to_string(),
+                span,
+            },
+            Stmt::UnsetArrayIndex {
+                name: "items".to_string(),
+                index: Expr::Call {
+                    name: "key".to_string(),
+                    args: Vec::new(),
+                    span,
+                },
+                span,
+            },
+            Stmt::If {
+                condition: Expr::Bool(true, span),
+                then_branch: vec![Stmt::Expr {
+                    expr: Expr::Call {
+                        name: "exit".to_string(),
+                        args: vec![Expr::String("done".to_string(), span)],
+                        span,
+                    },
+                    span,
+                }],
+                else_branch: Vec::new(),
+                span,
+            },
+            Stmt::Expr {
+                expr: risk_new(),
+                span,
+            },
+            Stmt::Throw {
+                expr: Expr::Int(1, span),
+                span,
+            },
+            Stmt::Switch {
+                value: Expr::Int(1, span),
+                cases: vec![SwitchCase {
+                    condition: None,
+                    body: vec![Stmt::Goto {
+                        label: "done".to_string(),
+                        span,
+                    }],
+                    span,
+                }],
+                span,
+            },
+        ];
+        let requirements = native_control_flow_cleanup_requirements(
+            &statements,
+            NativeControlFlowCleanupRequirementOptions::blocked_transfers(),
+            &|expr| matches!(expr, Expr::New { class_name: NewClassName::Named(name), .. } if name == "Risk"),
+        );
+
+        assert_eq!(
+            requirements,
+            vec![
+                requirement(
+                    PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+                    0
+                ),
+                requirement(
+                    PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+                    1
+                ),
+                requirement(
+                    PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+                    2
+                ),
+                requirement(
+                    PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+                    3
+                ),
+                requirement(PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP, 4),
+                requirement(
+                    PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+                    5
+                ),
+                requirement(
+                    PHPC_NATIVE_DIAGNOSTIC_OPERAND_DESTRUCTOR_OBSERVABLE_CLEANUP,
+                    6
+                ),
+                requirement(
+                    PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+                    7
+                ),
+                requirement(
+                    PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+                    8
+                ),
+            ]
+        );
+        assert!(native_control_flow_operand_list_is_blocked(&requirements));
+
+        let allowed_transfers = vec![
+            Stmt::Return { value: None, span },
+            Stmt::Break { depth: 1, span },
+            Stmt::Continue { depth: 1, span },
+        ];
+        assert_eq!(
+            native_control_flow_cleanup_requirements(
+                &allowed_transfers,
+                NativeControlFlowCleanupRequirementOptions::allow_return_and_loop_transfer(),
+                &|_| false,
+            ),
+            Vec::new()
+        );
     }
 
     fn span(column: usize) -> Span {

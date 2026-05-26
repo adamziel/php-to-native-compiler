@@ -17,13 +17,16 @@ use php_runtime::{
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_KEY_EVALUATION,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_PROPERTY_EVALUATION,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_RECEIVER_EVALUATION,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_DESTRUCTOR_OBSERVABLE_CLEANUP,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_ARRAY_ITEM_BINDING,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_SOURCE_BINDING,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_TARGET_BINDING,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_RMW_LVALUE_EVALUATION_CLEANUP,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_ASSIGNMENT_LVALUE_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_CALL_ARGUMENT_LIST,
+    PHPC_NATIVE_DIAGNOSTIC_OPERATION_CONTROL_FLOW_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_RMW_LVALUE_OPERAND_LIST,
@@ -205,6 +208,57 @@ fn native_call_argument_list_diagnostics_use_generic_runtime_operand_list_bounda
         assert_eq!(c_error.phase, Phase::Codegen);
         assert!(c_error.message.contains(c_expected), "{}", c_error.message);
     }
+}
+
+#[test]
+fn native_control_flow_operand_list_diagnostics_use_generic_runtime_boundary() {
+    let requirements = [
+        NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+            operand_index: 0,
+        },
+        NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_DESTRUCTOR_OBSERVABLE_CLEANUP,
+            operand_index: 2,
+        },
+        NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP,
+            operand_index: 4,
+        },
+    ];
+    let list = unsafe {
+        phpc_native_diagnostic_operand_requirement_list_clone(
+            requirements.as_ptr(),
+            requirements.len(),
+        )
+    };
+    let diagnostic = unsafe {
+        phpc_native_diagnostic_result_operation_blocker_list_and_free(
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_CONTROL_FLOW_OPERAND_LIST,
+            list,
+        )
+    };
+    assert!(unsafe {
+        phpc_native_diagnostic_contains_severity(
+            diagnostic,
+            NativeDiagnosticSeverity::Blocker as u8,
+        )
+    });
+    let message = runtime_diagnostic_message(diagnostic);
+    assert!(message.contains("control-flow operand list"), "{message}");
+    assert!(
+        message.contains("statement evaluation cleanup at operand 0"),
+        "{message}"
+    );
+    assert!(
+        message.contains("destructor-observable cleanup at operand 2"),
+        "{message}"
+    );
+    assert!(
+        message.contains("lvalue evaluation cleanup at operand 4"),
+        "{message}"
+    );
+    unsafe { phpc_native_diagnostic_free(diagnostic) };
 }
 
 #[test]
