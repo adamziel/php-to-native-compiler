@@ -13084,6 +13084,36 @@ const ARRAYACCESS_DYNAMIC_PRODUCER_FACT_SOURCE: &str = concat!(
     "echo $branch[true];\n",
 );
 
+const ARRAYACCESS_CALLABLE_RETURN_PRODUCER_FACT_SOURCE: &str = concat!(
+    "<?php\n",
+    "class ReturnTruthBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { if ($offset) { return \"T\"; } return \"F\"; }\n",
+    "    public function offsetExists($offset) { return $offset; }\n",
+    "    public function offsetSet($offset, $value) { return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class ReturnAltBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { return \"A\"; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "function make_return_bag() { return new ReturnTruthBag(); }\n",
+    "class ReturnFactory {\n",
+    "    public function fromLocal() { $local = new ReturnTruthBag(); return $local; }\n",
+    "    public static function choose($flag) { if ($flag) { return new ReturnTruthBag(); } return new ReturnAltBag(); }\n",
+    "}\n",
+    "echo make_return_bag()[\"slot\"], \"|\";\n",
+    "$assigned = make_return_bag();\n",
+    "echo isset($assigned[true]) ? \"Y\" : \"N\", \"|\";\n",
+    "$factory = new ReturnFactory();\n",
+    "echo $factory->fromLocal()[0], \"|\";\n",
+    "echo ReturnFactory::choose(true)[\"slot\"], \"|\";\n",
+    "echo ReturnFactory::choose(false)[\"slot\"], \"|\";\n",
+    "echo empty(make_return_bag()[0]) ? \"E\" : \"N\";\n",
+    "echo \"|\", ReturnFactory::choose(false)[\"slot\"] ?? \"M\";\n",
+);
+
 #[test]
 fn native_executable_c_source_routes_arrayaccess_read_isset_through_runtime_abi() {
     let program = parse(ARRAYACCESS_READ_ISSET_SOURCE).unwrap();
@@ -13111,6 +13141,78 @@ fn native_executable_c_source_routes_arrayaccess_read_isset_through_runtime_abi(
             && !source.contains("callable_object_matched"),
         "ArrayAccess read/isset lowering should not revive the finite dynamic-callable ladder or rejection path:\n{source}"
     );
+}
+
+#[test]
+fn native_executable_c_source_routes_arrayaccess_callable_return_producer_facts() {
+    let program = parse(ARRAYACCESS_CALLABLE_RETURN_PRODUCER_FACT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_GET")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_EXISTS")
+            && source.contains("user_function_result")
+            && source.contains("method_dispatch_result")
+            && source.contains("static_method_result"),
+        "generated callable return facts should feed existing ArrayAccess read/exists consumers across function, instance method, and static method results:\n{source}"
+    );
+    assert!(
+        !source.contains("ArrayAccess lowering rejects")
+            && !source.contains("callable_array_matched")
+            && !source.contains("callable_object_matched"),
+        "callable return facts must not route through ArrayAccess rejection or finite callable-array/object ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_does_not_route_arrayaccess_callable_return_default_fallthrough_fact()
+{
+    let program = parse(concat!(
+        "<?php\n",
+        "class MaybeReturnBag implements ArrayAccess {\n",
+        "    public function offsetGet($offset) { return \"M\"; }\n",
+        "    public function offsetExists($offset) { return true; }\n",
+        "    public function offsetSet($offset, $value) { return null; }\n",
+        "    public function offsetUnset($offset) { return null; }\n",
+        "}\n",
+        "function maybe_return_bag($flag) { if ($flag) { return new MaybeReturnBag(); } }\n",
+        "echo maybe_return_bag(false)[\"slot\"];\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        !source.contains("phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic")
+            && source.contains("phpc_native_offset_read_source"),
+        "callable return facts must be cleared when a generated function can fall through to default null:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_arrayaccess_callable_return_producer_fact_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "arrayaccess_callable_return_producer_fact",
+        ARRAYACCESS_CALLABLE_RETURN_PRODUCER_FACT_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native callable-return ArrayAccess producer executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"T|Y|F|T|A|E|A");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
 }
 
 #[test]

@@ -3482,6 +3482,30 @@ fn stmt_list_contains_return_statement(statements: &[Stmt]) -> bool {
     statements.iter().any(stmt_contains_return_statement)
 }
 
+fn stmt_list_always_returns(statements: &[Stmt]) -> bool {
+    statements.iter().any(stmt_always_returns)
+}
+
+fn stmt_always_returns(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Return { .. } => true,
+        Stmt::If {
+            then_branch,
+            else_branch,
+            ..
+        } => stmt_list_always_returns(then_branch) && stmt_list_always_returns(else_branch),
+        Stmt::Try {
+            body, finally_body, ..
+        } => {
+            finally_body
+                .as_ref()
+                .is_some_and(|body| stmt_list_always_returns(body))
+                || stmt_list_always_returns(body)
+        }
+        _ => false,
+    }
+}
+
 fn stmt_contains_return_statement(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Return { .. } => true,
@@ -14233,6 +14257,8 @@ struct CGenerator {
     declared_classes: HashMap<String, CDeclaredClass>,
     declared_class_order: Vec<String>,
     function_definitions: Vec<String>,
+    function_return_facts_observed: bool,
+    function_return_facts: Option<CNativeValueFacts>,
     function_return_status: Option<String>,
     function_return_mode: CFunctionReturnMode,
     function_call_depth: Option<String>,
@@ -14341,6 +14367,7 @@ struct CUserFunction {
     c_name: String,
     decl: FunctionDecl,
     frame_environment: CFrameEnvironmentRequirement,
+    return_facts: Option<CNativeValueFacts>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -14542,6 +14569,7 @@ struct CDeclaredClassMethod {
     decl: FunctionDecl,
     visibility: ClassVisibility,
     is_static: bool,
+    return_facts: Option<CNativeValueFacts>,
 }
 
 enum CDirectVariableCompoundAssignmentOwner {
@@ -16177,6 +16205,9 @@ impl CGenerator {
     fn merge_scoped_branch_codegen(&mut self, branch: &Self) {
         self.static_data.extend(branch.static_data.iter().cloned());
         self.merge_branch_feature_flags(branch);
+        if branch.function_return_facts_observed {
+            self.record_function_return_facts(branch.function_return_facts.clone());
+        }
     }
 
     fn uses_native_runtime_helpers(&self) -> bool {
@@ -16434,6 +16465,7 @@ impl CGenerator {
                             decl: method.function.clone(),
                             visibility: method.visibility,
                             is_static: false,
+                            return_facts: None,
                         });
                     } else {
                         if method.function.name.eq_ignore_ascii_case("__destruct") {
@@ -16458,6 +16490,7 @@ impl CGenerator {
                             decl: method.function.clone(),
                             visibility: method.visibility,
                             is_static: method.is_static,
+                            return_facts: None,
                         });
                     }
                 }
@@ -16716,6 +16749,7 @@ impl CGenerator {
                     c_name,
                     decl: function.clone(),
                     frame_environment: stmt_list_frame_environment_requirement(&function.body),
+                    return_facts: None,
                 },
             );
         }
@@ -16981,6 +17015,19 @@ impl CGenerator {
         Ok(())
     }
 
+    fn set_user_function_return_facts(
+        &mut self,
+        function_name: &str,
+        facts: Option<CNativeValueFacts>,
+    ) {
+        if let Some(function) = self
+            .user_functions
+            .get_mut(&Self::user_function_key(function_name))
+        {
+            function.return_facts = facts;
+        }
+    }
+
     fn declared_class_methods_in_order(&self) -> Vec<(String, CDeclaredClassMethod)> {
         let mut methods = Vec::new();
         for key in &self.declared_class_order {
@@ -17015,6 +17062,27 @@ impl CGenerator {
             self.function_definitions.push(definition);
         }
         Ok(())
+    }
+
+    fn set_declared_class_method_return_facts(
+        &mut self,
+        method_c_name: &str,
+        facts: Option<CNativeValueFacts>,
+    ) {
+        for class in self.declared_classes.values_mut() {
+            if let Some(constructor) = class.constructor.as_mut() {
+                if constructor.c_name == method_c_name {
+                    constructor.return_facts = facts;
+                    return;
+                }
+            }
+            for method in &mut class.methods {
+                if method.c_name == method_c_name {
+                    method.return_facts = facts;
+                    return;
+                }
+            }
+        }
     }
 
     fn emit_user_function_definition(&mut self, function: &CUserFunction) -> CompileResult<String> {
@@ -17059,6 +17127,9 @@ impl CGenerator {
         for statement in &function.decl.body {
             generator.emit_statement(statement)?;
         }
+        if !stmt_list_always_returns(&function.decl.body) {
+            generator.record_function_return_facts(None);
+        }
         generator.emit_function_default_return(function.decl.span)?;
 
         self.next_static_data = generator.next_static_data;
@@ -17066,6 +17137,10 @@ impl CGenerator {
         self.static_data
             .extend(generator.static_data.iter().cloned());
         self.merge_branch_feature_flags(&generator);
+        self.set_user_function_return_facts(
+            &function.decl.name,
+            generator.function_return_facts.clone(),
+        );
 
         let mut definition = String::new();
         for nested in &generator.function_definitions {
@@ -17615,6 +17690,9 @@ impl CGenerator {
         for statement in &method.decl.body {
             generator.emit_statement(statement)?;
         }
+        if !stmt_list_always_returns(&method.decl.body) {
+            generator.record_function_return_facts(None);
+        }
         generator.emit_function_default_return(method.decl.span)?;
 
         self.next_static_data = generator.next_static_data;
@@ -17622,6 +17700,10 @@ impl CGenerator {
         self.static_data
             .extend(generator.static_data.iter().cloned());
         self.merge_branch_feature_flags(&generator);
+        self.set_declared_class_method_return_facts(
+            &method.c_name,
+            generator.function_return_facts.clone(),
+        );
 
         let mut definition = String::new();
         for nested in &generator.function_definitions {
@@ -22753,10 +22835,100 @@ impl CGenerator {
         }
     }
 
+    fn intersect_native_value_fact_iter<I>(&self, facts: I) -> Option<CNativeValueFacts>
+    where
+        I: IntoIterator<Item = Option<CNativeValueFacts>>,
+    {
+        let mut merged: Option<CNativeValueFacts> = None;
+        let mut saw_fact = false;
+        for facts in facts {
+            let facts = facts?;
+            saw_fact = true;
+            merged = Some(match merged {
+                Some(previous) => previous.intersection(&facts)?,
+                None => facts,
+            });
+        }
+        saw_fact.then_some(merged).flatten()
+    }
+
+    fn native_value_facts_for_user_function_call(
+        &self,
+        name: &str,
+        args: &[Expr],
+    ) -> Option<CNativeValueFacts> {
+        let function = self.user_functions.get(&Self::user_function_key(name))?;
+        native_user_function_accepts_arg_count(&function.decl, args.len())
+            .then(|| function.return_facts.clone())
+            .flatten()
+    }
+
+    fn native_value_facts_for_declared_method_candidates(
+        &self,
+        candidates: Vec<(CDeclaredClass, CDeclaredClassMethod)>,
+        args: &[Expr],
+    ) -> Option<CNativeValueFacts> {
+        self.intersect_native_value_fact_iter(candidates.into_iter().map(|(_, method)| {
+            native_user_function_accepts_arg_count(&method.decl, args.len())
+                .then(|| method.return_facts)
+                .flatten()
+        }))
+    }
+
+    fn native_value_facts_for_declared_class_method_call(
+        &self,
+        method_name: &str,
+        args: &[Expr],
+    ) -> Option<CNativeValueFacts> {
+        self.native_value_facts_for_declared_method_candidates(
+            self.declared_class_method_candidates(method_name),
+            args,
+        )
+    }
+
+    fn native_value_facts_for_declared_object_static_method_call(
+        &self,
+        method_name: &str,
+        args: &[Expr],
+    ) -> Option<CNativeValueFacts> {
+        self.native_value_facts_for_declared_method_candidates(
+            self.declared_class_static_method_candidates(method_name),
+            args,
+        )
+    }
+
+    fn native_value_facts_for_declared_class_static_method_call(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        args: &[Expr],
+    ) -> Option<CNativeValueFacts> {
+        let (_, method) = self.declared_class_static_method(class_name, method_name)?;
+        native_user_function_accepts_arg_count(&method.decl, args.len())
+            .then(|| method.return_facts)
+            .flatten()
+    }
+
     fn native_value_facts_for_expr(&self, expr: &Expr) -> Option<CNativeValueFacts> {
         match expr {
             Expr::Variable(name, _) => self.native_value_variable_facts.get(name).cloned(),
             Expr::New { class_name, .. } => self.native_value_facts_for_new_class_name(class_name),
+            Expr::Call { name, args, .. } => {
+                self.native_value_facts_for_user_function_call(name, args)
+            }
+            Expr::MethodCall { method, args, .. } => {
+                self.native_value_facts_for_declared_class_method_call(method, args)
+            }
+            Expr::StaticMethodCall {
+                class_name,
+                method,
+                args,
+                ..
+            } => self
+                .native_value_facts_for_declared_class_static_method_call(class_name, method, args),
+            Expr::ObjectStaticMethodCall { method, args, .. } => {
+                self.native_value_facts_for_declared_object_static_method_call(method, args)
+            }
             _ => None,
         }
     }
@@ -25587,10 +25759,45 @@ impl CGenerator {
         }
     }
 
+    fn record_function_return_facts(&mut self, facts: Option<CNativeValueFacts>) {
+        if self.function_return_status.is_none()
+            || self.function_return_mode != CFunctionReturnMode::NativeValue
+        {
+            return;
+        }
+
+        let previous_observed = self.function_return_facts_observed;
+        self.function_return_facts_observed = true;
+        self.function_return_facts = if previous_observed {
+            self.function_return_facts.as_ref().and_then(|previous| {
+                facts
+                    .as_ref()
+                    .and_then(|facts| previous.intersection(facts))
+            })
+        } else {
+            facts
+        };
+    }
+
+    fn record_function_return_facts_for_value(&mut self, value: Option<&Expr>) {
+        let coercive_return_type = self
+            .function_return_type
+            .as_ref()
+            .is_some_and(|decl| !native_function_type_text_is_mixed(decl));
+        let facts = if coercive_return_type {
+            None
+        } else {
+            value.and_then(|value| self.native_value_facts_for_expr(value))
+        };
+        self.record_function_return_facts(facts);
+    }
+
     fn emit_function_return_statement(&mut self, value: Option<&Expr>) -> CompileResult<()> {
         if self.function_return_mode == CFunctionReturnMode::ClosureReference {
             return self.emit_closure_reference_return_statement(value);
         }
+
+        self.record_function_return_facts_for_value(value);
 
         let mut materialized = if let Some(value) = value {
             self.materialize_native_value_result_operand(value, "")?
