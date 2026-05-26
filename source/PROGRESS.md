@@ -164,6 +164,8 @@ Primary-integrated capability:
 - [x] Assignment-lvalue operand-list requirement blockers.
 - [x] RMW-lvalue operand-list requirement blockers.
 - [x] Object/ArrayAccess write-operation blocker classification.
+- [x] Runtime-only Object/ArrayAccess `offsetSet`/append/`offsetUnset`
+  dispatch ABI through callable-value invocation.
 - [x] Declared-class allocation cleanup-risk metadata.
 - [x] Try/catch/finally body call-boundary preflight diagnostics.
 - [x] Selected reference-source/lvalue extraction and reference-backed closure
