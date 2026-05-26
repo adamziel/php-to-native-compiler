@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 03:01 CEST
+Updated: 2026-05-26 03:21 CEST
 Evaluation marker: `20260526T010100Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
@@ -15,11 +15,32 @@ Overall estimated progress: **95%** `[###################-]`
 Executable PHP semantics: **95%** `[###################-]`
 
 Primary was clean and aligned with `origin/master` at
-`b27bbb20 native: add request-state frame environment handoff` before this
+`81c15cd5 native: add assignment-lvalue operand-list requirements` before this
 `PROGRESS.md` edit.
 
 Latest primary-integrated source capability baseline:
-`b27bbb20 native: add request-state frame environment handoff`.
+`81c15cd5 native: add assignment-lvalue operand-list requirements`.
+
+`81c15cd5` extends the shared diagnostic operation and operand-list
+requirement blocker ABI to assignment lvalue target operands. Assignment
+targets now classify receiver, dynamic-property, and key-expression evaluation
+requirements through the generic operation-list vocabulary instead of a
+single first call-result scan. Runtime and compiler tests cover the new
+assignment-lvalue operation tag and requirement names, plus representative
+array-key, dynamic-property, object-property-array, append, and object-static
+target families. This is diagnostic/blocker infrastructure only: it does not
+implement executable PHP assignment, reference binding, COW, writeback,
+assignment-expression results, object/static property storage, or
+cleanup/unwind ordering. Overall, executable, and workstream estimates remain
+flat.
+
+Non-repeat guard: future RMW and assignment-lvalue work must allocate
+non-overlapping diagnostic operation/operand tags and reuse or reconcile the
+shared `AssignTarget` operand-list boundary from `81c15cd5`; do not add
+source-shape, fixture, generated-output, one-branch, one-arity, or
+one-target recognizers. The RMW-lvalue candidate must rebase and renumber
+after this source integration because assignment claimed operation tag `7`
+and operand tags `18..20`.
 
 `b27bbb20` replaces root-symbol-only generated user-function frame metadata
 with `CFrameEnvironmentRequirement { root_symbols, request_state }` and
@@ -117,19 +138,36 @@ risks without changing that accounting.
 
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, byte-string, string-array, array, diagnostic operation/operand-list blocker, reference-binding operand-list blocker, reference, symbol, call-frame, object, comparison, conversion, numeric-unary, request-state, closure-result, reference-source, callable table/arguments/result/frame, runtime callable-value dispatch, and declared-class allocation cleanup-risk metadata surfaces. Remaining runtime gaps include broader PHP callable lookup parity, namespace fallback, autoload, magic calls, constructors, dynamic/closure request-state frame handoff, and cleanup/unwind parity. |
-| Compiler/backend consumers | **99%** | `[####################]` | Generated C has the freshest executable semantics; LLVM and direct assembly still lag several recent semantic packets. Recent compiler-side work routes direct generated-C user-function calls through the runtime callable ABI with root/request frame-environment handoff, improved try/catch/finally body call preflight plus allocatable class cleanup-risk classification, and call-argument/lvalue/reference-binding diagnostics through the shared operand-list requirement blocker boundary without adding dynamic callable dispatch, closure frame-environment capture, exception execution, destructor execution, or reference-binding execution. |
+| Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, byte-string, string-array, array, diagnostic operation/operand-list blocker, reference-binding operand-list blocker, assignment-lvalue operand-list blocker, reference, symbol, call-frame, object, comparison, conversion, numeric-unary, request-state, closure-result, reference-source, callable table/arguments/result/frame, runtime callable-value dispatch, and declared-class allocation cleanup-risk metadata surfaces. Remaining runtime gaps include broader PHP callable lookup parity, namespace fallback, autoload, magic calls, constructors, dynamic/closure request-state frame handoff, and cleanup/unwind parity. |
+| Compiler/backend consumers | **99%** | `[####################]` | Generated C has the freshest executable semantics; LLVM and direct assembly still lag several recent semantic packets. Recent compiler-side work routes direct generated-C user-function calls through the runtime callable ABI with root/request frame-environment handoff, improved try/catch/finally body call preflight plus allocatable class cleanup-risk classification, and call-argument/lvalue/reference-binding/assignment-lvalue diagnostics through the shared operand-list requirement blocker boundary without adding dynamic callable dispatch, closure frame-environment capture, exception execution, destructor execution, reference-binding execution, or assignment/writeback execution. |
 | Executable PHP semantics | **95%** | `[###################-]` | Primary has many selected executable islands, including reference-backed by-value closure capture materialization, closure value/reference returns, and reference-source append/lvalue extraction. |
 | Strings and byte semantics | **62%** | `[############--------]` | Byte-backed values and byte-preserving `explode()` / `str_split()` slots are integrated. Binary source bytes, byte-exact interpreter/session/debug output, `mb_str_split()`, request/global byte keys, and exact diagnostics remain open. |
-| Arrays, lvalues, references, COW | **82%** | `[################----]` | Selected reference-source/lvalue extraction, closure capture from reference-backed slots, and reference-binding diagnostic operand requirements are integrated. Full executable reference binding, COW, arbitrary alias roots, foreach, alias composition, static/magic/non-public properties, ArrayAccess, and broad writeback remain incomplete. |
+| Arrays, lvalues, references, COW | **82%** | `[################----]` | Selected reference-source/lvalue extraction, closure capture from reference-backed slots, reference-binding diagnostic operand requirements, and assignment-lvalue target operand requirements are integrated. Full executable assignment semantics, reference binding, COW, arbitrary alias roots, foreach, alias composition, static/magic/non-public properties, ArrayAccess, and broad writeback remain incomplete. |
 | Symbols, globals, request state | **75%** | `[###############-----]` | Selected globals, root-symbol, active symbol-table reference consumers, request-key blockers, append-shaped symbol reference-source materialization, and direct generated-C user-function request-state frame handoff exist. `$GLOBALS` self-cells, dynamic callable and closure request-state handoff, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
 | Calls, functions, frames | **92%** | `[##################--]` | Descriptor closures, selected captures, selected by-reference parameters, callable/function-table surfaces, method-frame surfaces, descriptor closure value/reference returns, reference-backed by-value captures, a runtime callable table/arguments/result/frame ABI, runtime callable-value dispatch across string/binary functions, callable arrays, descriptor closures, inherited methods, bound receivers, and object `__invoke`, direct generated-C user-function consumers across zero/fixed/default/variadic calls with by-reference argument transport and root/request frame-environment handoff, shared symbol-environment constructor blockers, and try/catch/finally body call-boundary preflight routing are integrated. Compiler dynamic callable-value consumption, `Class::method` strings, namespace fallback, autoload, magic calls, named/spread argument breadth, by-reference variadic breadth, non-descriptor closures, constructors, closure frame-environment handoff, and cleanup/unwind parity remain open. |
 | Objects, properties, methods | **53%** | `[###########---------]` | Public object-property reference-source extraction, object-property reference-slot mutation, and declared-class allocation cleanup-risk metadata exist for selected paths. Full visibility, magic, dynamic/static/typed properties, destructor execution and ordering, references/COW, and `ArrayAccess` execution remain open. |
-| Control flow, cleanup, diagnostics | **51%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, truthiness, conversion consumers, try/catch/finally body call-boundary preflight diagnostics, generic diagnostic operand-list requirement blockers, and reference-binding operand-list requirement blockers exist. Broad unwind/finally/destructor/shutdown execution, executable reference binding, cleanup ownership, and exact source ordering remain open. Current broad diagnostic-lane work beyond the integrated operand-list boundary is not counted. |
-| Broad integrated verification | **92%** | `[##################--]` | Recent focused gates are strong and nonzero, including runtime callable-value dispatch unit coverage, direct user-function callable ABI consumer execution, try-body call-boundary preflight, allocatable destructor-risk metadata gates, diagnostic operand-list blocker boundary tests, and reference-binding operand-list requirement tests. The full `native_runtime_abi` suite still has known current-primary failures, and broad gates remain constrained by lane extraction cost, stale lane expectations, high swap, and backend parity gaps. |
+| Control flow, cleanup, diagnostics | **51%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, truthiness, conversion consumers, try/catch/finally body call-boundary preflight diagnostics, generic diagnostic operand-list requirement blockers, reference-binding operand-list requirement blockers, and assignment-lvalue operand-list requirement blockers exist. Broad unwind/finally/destructor/shutdown execution, executable assignment/writeback/reference binding, cleanup ownership, and exact source ordering remain open. Current broad diagnostic-lane work beyond the integrated operand-list boundary is not counted. |
+| Broad integrated verification | **92%** | `[##################--]` | Recent focused gates are strong and nonzero, including runtime callable-value dispatch unit coverage, direct user-function callable ABI consumer execution, try-body call-boundary preflight, allocatable destructor-risk metadata gates, diagnostic operand-list blocker boundary tests, reference-binding operand-list requirement tests, and assignment-lvalue operand-list requirement tests. The full `native_runtime_abi` suite still has known current-primary failures, and broad gates remain constrained by lane extraction cost, stale lane expectations, high swap, and backend parity gaps. |
 
 ## Recent Primary-Integrated Work
 
+- `81c15cd5`: extended the shared diagnostic operation/operand-list
+  requirement ABI with assignment-lvalue operand requirements. Runtime
+  diagnostics now name assignment target receiver, property, and key
+  evaluation requirements, and compiler blocker discovery routes
+  `AssignTarget` operand families through that shared requirement vocabulary
+  instead of a single first-call-result/source-shape scan. Focused runtime and
+  compiler tests cover the new operation/operand tags plus representative
+  array-key, dynamic-property, object-property-array, append, and object-static
+  target surfaces. This is diagnostic/blocker infrastructure only; executable
+  PHP assignment, references/COW, writeback, assignment-expression results,
+  object/static property storage, and cleanup/unwind ordering remain
+  unimplemented. Future RMW/assignment-lvalue work must allocate
+  non-overlapping diagnostic operation/operand tags and reuse or reconcile the
+  shared `AssignTarget` operand-list boundary rather than adding
+  source-shape, fixture, or generated-output recognizers. The RMW-lvalue
+  candidate must rebase and renumber because assignment claimed operation tag
+  `7` and operand tags `18..20`. Estimates remain flat.
 - `b27bbb20`: replaced root-symbol-only generated user-function frame metadata
   with `CFrameEnvironmentRequirement { root_symbols, request_state }`,
   propagated that requirement through direct generated-C user-function
