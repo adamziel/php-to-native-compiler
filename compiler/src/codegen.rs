@@ -389,6 +389,13 @@ impl NativeDiagnosticCleanupFrame {
         self.results.push(result);
     }
 
+    fn extend_from_frame(&mut self, frame: &NativeDiagnosticCleanupFrame) {
+        debug_assert_eq!(frame.sources.len(), frame.results.len());
+        for (source, result) in frame.sources.iter().copied().zip(frame.results.iter()) {
+            self.push_result(source, result.clone());
+        }
+    }
+
     fn results(&self) -> &[String] {
         &self.results
     }
@@ -403,6 +410,35 @@ impl NativeDiagnosticCleanupFrame {
 
     fn is_empty(&self) -> bool {
         self.results.is_empty()
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
+struct NativeDiagnosticCleanupFrameStack {
+    frames: Vec<NativeDiagnosticCleanupFrame>,
+}
+
+#[allow(dead_code)]
+impl NativeDiagnosticCleanupFrameStack {
+    fn push_frame(&mut self, frame: NativeDiagnosticCleanupFrame) {
+        self.frames.push(frame);
+    }
+
+    fn depth(&self) -> usize {
+        self.frames.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.frames.is_empty()
+    }
+
+    fn aggregate_for_unwind(&self) -> NativeDiagnosticCleanupFrame {
+        let mut aggregate = NativeDiagnosticCleanupFrame::default();
+        for frame in self.frames.iter().rev() {
+            aggregate.extend_from_frame(frame);
+        }
+        aggregate
     }
 }
 
@@ -47036,6 +47072,212 @@ mod tests {
             .contains("phpc_native_diagnostic_result_control_transfer_cleanup_and_free")
             && line.contains("diagnostic_result_operands_")
             && line.contains(", 3")));
+        assert!(c.body.iter().any(|line| line
+            .contains("phpc_native_diagnostic_result_report_stderr_list_and_free")
+            && line.contains(&c_report)));
+    }
+
+    #[test]
+    fn native_diagnostic_cleanup_frame_stack_aggregates_nested_pending_diagnostics_for_unwind() {
+        let outer_source = NativeDiagnosticCleanupFrameSource::DeferredCleanup {
+            requirement: requirement(
+                PHPC_NATIVE_DIAGNOSTIC_OPERAND_DESTRUCTOR_OBSERVABLE_CLEANUP,
+                0,
+            ),
+        };
+        let middle_source = NativeDiagnosticCleanupFrameSource::ControlTransferOperand {
+            requirement: requirement(
+                PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+                1,
+            ),
+        };
+        let inner_source = NativeDiagnosticCleanupFrameSource::TerminalOperand {
+            requirement: requirement(PHPC_NATIVE_DIAGNOSTIC_OPERAND_RESULT_OWNERSHIP, 2),
+        };
+
+        let mut llvm = LlvmGenerator::default();
+        let mut llvm_outer = NativeDiagnosticCleanupFrame::default();
+        let llvm_outer_diagnostic = llvm
+            .emit_native_diagnostic_cleanup_frame_operand(
+                &mut llvm_outer,
+                outer_source,
+                NativeDiagnosticResultProducer::diagnostic(
+                    NativeDiagnosticResultOperandSurface::Cleanup,
+                    "%outer_pending_diagnostic",
+                ),
+            )
+            .unwrap();
+        let mut llvm_middle = NativeDiagnosticCleanupFrame::default();
+        let llvm_middle_value = llvm
+            .emit_native_diagnostic_cleanup_frame_operand(
+                &mut llvm_middle,
+                middle_source,
+                NativeDiagnosticResultProducer::value(
+                    NativeDiagnosticResultOperandSurface::Cleanup,
+                    "%middle_terminal_value",
+                ),
+            )
+            .unwrap();
+        let mut llvm_inner = NativeDiagnosticCleanupFrame::default();
+        let llvm_inner_diagnostic = llvm
+            .emit_native_diagnostic_cleanup_frame_operand(
+                &mut llvm_inner,
+                inner_source,
+                NativeDiagnosticResultProducer::diagnostic(
+                    NativeDiagnosticResultOperandSurface::Cleanup,
+                    "%inner_pending_diagnostic",
+                ),
+            )
+            .unwrap();
+        let llvm_inner_null = llvm
+            .emit_native_diagnostic_cleanup_frame_operand(
+                &mut llvm_inner,
+                inner_source,
+                NativeDiagnosticResultProducer::null(NativeDiagnosticResultOperandSurface::Cleanup),
+            )
+            .unwrap();
+
+        let mut llvm_stack = NativeDiagnosticCleanupFrameStack::default();
+        assert!(llvm_stack.is_empty());
+        llvm_stack.push_frame(llvm_outer);
+        llvm_stack.push_frame(llvm_middle);
+        llvm_stack.push_frame(llvm_inner);
+        assert_eq!(llvm_stack.depth(), 3);
+        let llvm_aggregate = llvm_stack.aggregate_for_unwind();
+        assert_eq!(
+            llvm_aggregate.results(),
+            &[
+                llvm_inner_diagnostic.clone(),
+                llvm_inner_null,
+                llvm_middle_value.clone(),
+                llvm_outer_diagnostic.clone()
+            ]
+        );
+        assert_eq!(
+            llvm_aggregate.sources(),
+            &[inner_source, inner_source, middle_source, outer_source]
+        );
+        let llvm_report = llvm
+            .emit_native_diagnostic_cleanup_frame_control_transfer_report(&llvm_aggregate)
+            .expect("aggregated cleanup frames feed the control-transfer cleanup report bridge");
+        assert!(llvm.body.iter().any(|line| line
+            .contains("@phpc_native_diagnostic_result_control_transfer_cleanup_and_free")
+            && line.contains("i64 4")));
+        let llvm_inner_index = llvm
+            .body
+            .iter()
+            .position(|line| {
+                line.contains("store %phpc.NativeDiagnosticResult")
+                    && line.contains(&llvm_inner_diagnostic)
+            })
+            .unwrap();
+        let llvm_middle_index = llvm
+            .body
+            .iter()
+            .position(|line| {
+                line.contains("store %phpc.NativeDiagnosticResult")
+                    && line.contains(&llvm_middle_value)
+            })
+            .unwrap();
+        let llvm_outer_index = llvm
+            .body
+            .iter()
+            .position(|line| {
+                line.contains("store %phpc.NativeDiagnosticResult")
+                    && line.contains(&llvm_outer_diagnostic)
+            })
+            .unwrap();
+        assert!(llvm_inner_index < llvm_middle_index);
+        assert!(llvm_middle_index < llvm_outer_index);
+        assert!(llvm.body.iter().any(|line| line
+            .contains("@phpc_native_diagnostic_result_report_stderr_list_and_free")
+            && line.contains(&llvm_report)));
+
+        let mut c = CGenerator::default();
+        let mut c_outer = NativeDiagnosticCleanupFrame::default();
+        let c_outer_diagnostic = c
+            .emit_native_diagnostic_cleanup_frame_operand(
+                &mut c_outer,
+                outer_source,
+                NativeDiagnosticResultProducer::diagnostic(
+                    NativeDiagnosticResultOperandSurface::Cleanup,
+                    "outer_pending_diagnostic",
+                ),
+            )
+            .unwrap();
+        let mut c_middle = NativeDiagnosticCleanupFrame::default();
+        let c_middle_value = c
+            .emit_native_diagnostic_cleanup_frame_operand(
+                &mut c_middle,
+                middle_source,
+                NativeDiagnosticResultProducer::value(
+                    NativeDiagnosticResultOperandSurface::Cleanup,
+                    "middle_terminal_value",
+                ),
+            )
+            .unwrap();
+        let mut c_inner = NativeDiagnosticCleanupFrame::default();
+        let c_inner_diagnostic = c
+            .emit_native_diagnostic_cleanup_frame_operand(
+                &mut c_inner,
+                inner_source,
+                NativeDiagnosticResultProducer::diagnostic(
+                    NativeDiagnosticResultOperandSurface::Cleanup,
+                    "inner_pending_diagnostic",
+                ),
+            )
+            .unwrap();
+        let c_inner_null = c
+            .emit_native_diagnostic_cleanup_frame_operand(
+                &mut c_inner,
+                inner_source,
+                NativeDiagnosticResultProducer::null(NativeDiagnosticResultOperandSurface::Cleanup),
+            )
+            .unwrap();
+
+        let mut c_stack = NativeDiagnosticCleanupFrameStack::default();
+        c_stack.push_frame(c_outer);
+        c_stack.push_frame(c_middle);
+        c_stack.push_frame(c_inner);
+        let c_aggregate = c_stack.aggregate_for_unwind();
+        assert_eq!(
+            c_aggregate.results(),
+            &[
+                c_inner_diagnostic.clone(),
+                c_inner_null,
+                c_middle_value.clone(),
+                c_outer_diagnostic.clone()
+            ]
+        );
+        assert_eq!(
+            c_aggregate.sources(),
+            &[inner_source, inner_source, middle_source, outer_source]
+        );
+        let c_report = c
+            .emit_native_diagnostic_cleanup_frame_control_transfer_report(&c_aggregate)
+            .expect("aggregated cleanup frames feed the control-transfer cleanup report bridge");
+        assert!(c.body.iter().any(|line| line
+            .contains("phpc_native_diagnostic_result_control_transfer_cleanup_and_free")
+            && line.contains("diagnostic_result_operands_")
+            && line.contains(", 4")));
+        let c_aggregate_storage = c
+            .body
+            .iter()
+            .find(|line| {
+                line.contains("phpc_NativeDiagnosticResult diagnostic_result_operands_")
+                    && line.contains(&c_inner_diagnostic)
+                    && line.contains(&c_middle_value)
+                    && line.contains(&c_outer_diagnostic)
+            })
+            .unwrap();
+        assert!(
+            c_aggregate_storage.find(&c_inner_diagnostic)
+                < c_aggregate_storage.find(&c_middle_value)
+        );
+        assert!(
+            c_aggregate_storage.find(&c_middle_value)
+                < c_aggregate_storage.find(&c_outer_diagnostic)
+        );
         assert!(c.body.iter().any(|line| line
             .contains("phpc_native_diagnostic_result_report_stderr_list_and_free")
             && line.contains(&c_report)));
