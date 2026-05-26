@@ -254,6 +254,16 @@ const NATIVE_DECLARED_CLASS_DYNAMIC_METHOD_SOURCE: &str = concat!(
     "echo $box->name, \"\\n\";\n",
 );
 
+const NATIVE_DECLARED_CLASS_DYNAMIC_METHOD_LOOKUP_SOURCE: &str = concat!(
+    "<?php\n",
+    "class Box {\n",
+    "    public function store() { return \"ok\"; }\n",
+    "}\n",
+    "$box = new Box();\n",
+    "$method = \"store\";\n",
+    "echo $box->$method(), \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_STATIC_METHOD_SOURCE: &str = concat!(
     "<?php\n",
     "class Label {\n",
@@ -3093,7 +3103,7 @@ fn native_executable_c_source_invokes_dynamic_instance_methods_through_runtime_n
 
     assert!(
         body.contains("dynamic_method_dispatch_status")
-            && body.contains("phpc_native_value_dynamic_call_name_matches")
+            && body.contains("phpc_native_value_dynamic_method_name_matches")
             && body.contains("phpc_native_value_instanceof_class_with_diagnostic")
             && body.contains("phpc_declared_method_")
             && source.contains("phpc_NativeValueHandle phpc_this"),
@@ -3102,6 +3112,23 @@ fn native_executable_c_source_invokes_dynamic_instance_methods_through_runtime_n
     assert!(
         body.contains("phpc_native_value_object_dynamic_method_failure_with_diagnostic"),
         "dynamic method misses should use the shared object-method diagnostic ABI:\n{source}"
+    );
+    assert!(!source.contains("method-call lowering rejects"), "{source}");
+}
+
+#[test]
+fn native_executable_c_source_uses_scalar_normalizing_dynamic_method_name_helper() {
+    let program = parse(NATIVE_DECLARED_CLASS_DYNAMIC_METHOD_LOOKUP_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("dynamic_method_dispatch_status")
+            && body.contains("phpc_native_value_dynamic_method_name_matches")
+            && body.contains("phpc_native_value_instanceof_class_with_diagnostic")
+            && body.contains("phpc_declared_method_")
+            && !body.contains("phpc_native_value_dynamic_call_name_matches"),
+        "dynamic instance method calls should use the scalar-normalizing method-name helper, not the function-call name helper:\n{source}"
     );
     assert!(!source.contains("method-call lowering rejects"), "{source}");
 }

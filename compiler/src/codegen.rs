@@ -18952,6 +18952,7 @@ impl CGenerator {
             }
             if self.uses_native_object_method_helpers {
                 output.push_str("extern void phpc_native_value_object_method_failure_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *method_name, size_t method_name_len, const uint8_t *reason, size_t reason_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern _Bool phpc_native_value_dynamic_method_name_matches(phpc_NativeValueHandle value, const uint8_t *name_ptr, size_t name_len);\n");
                 output.push_str("extern void phpc_native_value_object_dynamic_method_failure_with_diagnostic(phpc_NativeValueHandle value, phpc_NativeValueHandle method_name, const uint8_t *reason, size_t reason_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             output.push_str("extern void phpc_native_value_free(phpc_NativeValueHandle value);\n");
@@ -30991,7 +30992,7 @@ impl CGenerator {
             let diagnostic = self.next_native_name("dynamic_method_dispatch_match_diagnostic");
             let class_match = self.next_native_name("dynamic_method_dispatch_class_match");
             self.body.push(format!(
-                "if (!{matched} && phpc_native_value_dynamic_call_name_matches({}, {method_name_bytes}, {method_name_len})) {{",
+                "if (!{matched} && phpc_native_value_dynamic_method_name_matches({}, {method_name_bytes}, {method_name_len})) {{",
                 method_name.handle
             ));
             self.body

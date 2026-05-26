@@ -4466,6 +4466,42 @@ pub unsafe extern "C" fn phpc_native_value_dynamic_call_name_matches(
 /// # Safety
 ///
 /// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. `name_ptr..name_ptr+name_len` must either be a valid
+/// byte slice or be null with a zero length. Dynamic method-name matching
+/// normalizes PHP scalar operands before generated method lookup.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_dynamic_method_name_matches(
+    handle: NativeValueHandle,
+    name_ptr: *const u8,
+    name_len: usize,
+) -> bool {
+    let Some(name) = (unsafe { native_abi_bytes(name_ptr, name_len) }) else {
+        return false;
+    };
+    let Some(method_name) = (unsafe { handle.as_ref() })
+        .and_then(native_value_dynamic_method_name_string)
+        .filter(|method_name| !method_name.is_empty())
+    else {
+        return false;
+    };
+    method_name.as_bytes().eq_ignore_ascii_case(name)
+}
+
+fn native_value_dynamic_method_name_string(value: &Value) -> Option<String> {
+    match value {
+        Value::Null
+        | Value::Bool(_)
+        | Value::Int(_)
+        | Value::Float(_)
+        | Value::String(_)
+        | Value::BinaryString(_) => Some(value.echo_string()),
+        Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => None,
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
 /// ABI and not yet freed. `reason_ptr..reason_ptr+reason_len` must be valid
 /// UTF-8 bytes. On return, `diagnostic` owns a diagnostic handle when non-null.
 #[no_mangle]
@@ -26614,23 +26650,25 @@ unsafe fn native_value_object_dynamic_method_failure_message(
             Err(error) => return error.message().to_string(),
         };
     let method_name = match unsafe { method_name.as_ref() } {
-        Some(Value::String(name)) if !name.is_empty() => name.to_string(),
-        Some(Value::String(_)) => "<empty>".to_string(),
-        Some(method_value) => {
-            let reason = format!(
-                "method name must be a string for generated-C runtime dispatch, got {}; {}",
-                method_value.type_name(),
-                reason
-            );
-            return native_value_object_method_failure_message_for_name(
-                value,
-                "<dynamic>",
-                &reason,
-            );
-        }
+        Some(method_value) => match native_value_dynamic_method_name_string(method_value) {
+            Some(name) if !name.is_empty() => name,
+            Some(_) => "<empty>".to_string(),
+            None => {
+                let reason = format!(
+                    "dynamic method name must be a scalar-convertible non-empty string for generated-C runtime dispatch, got {}; {}",
+                    method_value.type_name(),
+                    reason
+                );
+                return native_value_object_method_failure_message_for_name(
+                    value,
+                    "<dynamic>",
+                    &reason,
+                );
+            }
+        },
         None => {
             let reason = format!(
-                "method name value handle is null for generated-C runtime dispatch; {}",
+                "dynamic method name value handle is null for generated-C runtime dispatch; {}",
                 reason
             );
             return native_value_object_method_failure_message_for_name(
@@ -31496,11 +31534,75 @@ mod tests {
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
 
-        let non_string_method = NativeValueHandle::from_value(Value::Int(3));
+        let int_method = NativeValueHandle::from_value(Value::Int(3));
         unsafe {
             phpc_native_value_object_dynamic_method_failure_with_diagnostic(
                 object,
-                non_string_method,
+                int_method,
+                reason.as_ptr(),
+                reason.len(),
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "native method dispatch for NativeBox::3 is not supported: receiver class did not provide a supported generated public method"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let true_method = NativeValueHandle::from_value(Value::Bool(true));
+        unsafe {
+            phpc_native_value_object_dynamic_method_failure_with_diagnostic(
+                object,
+                true_method,
+                reason.as_ptr(),
+                reason.len(),
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "native method dispatch for NativeBox::1 is not supported: receiver class did not provide a supported generated public method"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let float_method = NativeValueHandle::from_value(Value::Float(2.5));
+        unsafe {
+            phpc_native_value_object_dynamic_method_failure_with_diagnostic(
+                object,
+                float_method,
+                reason.as_ptr(),
+                reason.len(),
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "native method dispatch for NativeBox::2.5 is not supported: receiver class did not provide a supported generated public method"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let false_method = NativeValueHandle::from_value(Value::Bool(false));
+        unsafe {
+            phpc_native_value_object_dynamic_method_failure_with_diagnostic(
+                object,
+                false_method,
+                reason.as_ptr(),
+                reason.len(),
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "native method dispatch for NativeBox::<empty> is not supported: receiver class did not provide a supported generated public method"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let array_method = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
+        unsafe {
+            phpc_native_value_object_dynamic_method_failure_with_diagnostic(
+                object,
+                array_method,
                 reason.as_ptr(),
                 reason.len(),
                 &mut diagnostic,
@@ -31509,7 +31611,8 @@ mod tests {
         let message = native_diagnostic_message_for_test(diagnostic);
         assert!(
             message.contains("NativeBox::<dynamic>")
-                && message.contains("method name must be a string"),
+                && message
+                    .contains("dynamic method name must be a scalar-convertible non-empty string"),
             "{message}"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
@@ -31529,7 +31632,11 @@ mod tests {
             "invalid method-name ABI should be centralized in the runtime helper"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
-        unsafe { phpc_native_value_free(non_string_method) };
+        unsafe { phpc_native_value_free(array_method) };
+        unsafe { phpc_native_value_free(false_method) };
+        unsafe { phpc_native_value_free(float_method) };
+        unsafe { phpc_native_value_free(true_method) };
+        unsafe { phpc_native_value_free(int_method) };
         unsafe { phpc_native_value_free(dynamic_method) };
         unsafe { phpc_native_value_free(scalar) };
         unsafe { phpc_native_value_free(object) };
@@ -33488,6 +33595,48 @@ mod tests {
         );
         unsafe { phpc_native_diagnostic_free(type_diagnostic) };
         unsafe { phpc_native_value_free(non_string) };
+    }
+
+    #[test]
+    fn native_dynamic_method_lookup_normalizes_scalar_method_names() {
+        for (value, candidate) in [
+            (Value::String("Store".to_string()), "store"),
+            (Value::BinaryString(b"Store".to_vec()), "store"),
+            (Value::Int(7), "7"),
+            (Value::Bool(true), "1"),
+            (Value::Float(2.5), "2.5"),
+        ] {
+            let method_name = NativeValueHandle::from_value(value);
+            assert!(unsafe {
+                phpc_native_value_dynamic_method_name_matches(
+                    method_name,
+                    candidate.as_ptr(),
+                    candidate.len(),
+                )
+            });
+            assert!(!unsafe {
+                phpc_native_value_dynamic_method_name_matches(method_name, b"missing".as_ptr(), 7)
+            });
+            unsafe { phpc_native_value_free(method_name) };
+        }
+
+        for value in [
+            Value::String(String::new()),
+            Value::BinaryString(Vec::new()),
+            Value::Bool(false),
+            Value::Null,
+            Value::Array(PhpArray::new()),
+            Value::Object(PhpObject::from_class_with_id(
+                &PhpClassMetadata::new(ClassId(9901), "NameObject".to_string()),
+                9901,
+            )),
+        ] {
+            let method_name = NativeValueHandle::from_value(value);
+            assert!(!unsafe {
+                phpc_native_value_dynamic_method_name_matches(method_name, b"store".as_ptr(), 5)
+            });
+            unsafe { phpc_native_value_free(method_name) };
+        }
     }
 
     #[test]
