@@ -15,6 +15,7 @@ use php_runtime::{
     phpc_native_diagnostic_contains_severity, phpc_native_diagnostic_free,
     phpc_native_diagnostic_message_clone_bytes,
     phpc_native_diagnostic_operand_requirement_list_clone,
+    phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free,
     phpc_native_diagnostic_result_diagnostic_count,
     phpc_native_diagnostic_result_diagnostic_message_clone_bytes_at,
     phpc_native_diagnostic_result_diagnostic_severity_at, phpc_native_diagnostic_result_free,
@@ -565,6 +566,130 @@ fn native_diagnostic_result_value_required_list_consumes_results_across_shapes()
     let message = runtime_result_diagnostic_message(blocked, 0);
     assert!(message.contains("control-flow operand list"), "{message}");
     assert!(message.contains("has no operand results"), "{message}");
+    unsafe { phpc_native_diagnostic_result_free(blocked) };
+}
+
+#[test]
+fn native_diagnostic_result_deferred_cleanup_blocker_sequences_result_shapes() {
+    fn terminal_cleanup_diagnostic() -> php_runtime::NativeDiagnosticResult {
+        let requirements = [NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP,
+            operand_index: 1,
+        }];
+        let list = unsafe {
+            phpc_native_diagnostic_operand_requirement_list_clone(
+                requirements.as_ptr(),
+                requirements.len(),
+            )
+        };
+        unsafe {
+            phpc_native_diagnostic_result_from_diagnostic_and_free(
+                phpc_native_diagnostic_result_operation_blocker_list_and_free(
+                    PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST,
+                    list,
+                ),
+            )
+        }
+    }
+
+    let value_cleanup = [
+        phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(Value::Int(11))),
+        phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(Value::String(
+            "cleanup value".to_string(),
+        ))),
+    ];
+    let blocked = unsafe {
+        phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free(
+            value_cleanup.as_ptr(),
+            value_cleanup.len(),
+        )
+    };
+    assert!(!unsafe { phpc_native_diagnostic_result_has_value(blocked) });
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_diagnostic_count(blocked) },
+        1
+    );
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_diagnostic_severity_at(blocked, 0) },
+        NativeDiagnosticSeverity::Blocker as u8
+    );
+    let message = runtime_result_diagnostic_message(blocked, 0);
+    assert!(message.contains("deferred cleanup diagnostic semantics blocked"));
+    assert!(message.contains("finally/destructor/shutdown cleanup"));
+    unsafe { phpc_native_diagnostic_result_free(blocked) };
+
+    let terminal_cleanup = [
+        phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(Value::Int(13))),
+        terminal_cleanup_diagnostic(),
+        phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(Value::Int(17))),
+    ];
+    let blocked = unsafe {
+        phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free(
+            terminal_cleanup.as_ptr(),
+            terminal_cleanup.len(),
+        )
+    };
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_diagnostic_count(blocked) },
+        1
+    );
+    let message = runtime_result_diagnostic_message(blocked, 0);
+    assert!(message.contains("lvalue operand list"), "{message}");
+    assert!(
+        message.contains("lvalue evaluation cleanup at operand 1"),
+        "{message}"
+    );
+    assert!(
+        !message.contains("deferred cleanup diagnostic semantics blocked"),
+        "{message}"
+    );
+    unsafe { phpc_native_diagnostic_result_free(blocked) };
+
+    let null_item_cleanup = [
+        phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(Value::Int(19))),
+        phpc_native_diagnostic_result_null(),
+        phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(Value::Int(23))),
+    ];
+    let blocked = unsafe {
+        phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free(
+            null_item_cleanup.as_ptr(),
+            null_item_cleanup.len(),
+        )
+    };
+    let message = runtime_result_diagnostic_message(blocked, 0);
+    assert!(
+        message.contains("deferred cleanup diagnostic result list"),
+        "{message}"
+    );
+    assert!(
+        message.contains("deferred cleanup diagnostic result at operand 1"),
+        "{message}"
+    );
+    unsafe { phpc_native_diagnostic_result_free(blocked) };
+
+    let blocked = unsafe {
+        phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free(std::ptr::null(), 2)
+    };
+    let message = runtime_result_diagnostic_message(blocked, 0);
+    assert!(
+        message.contains("deferred cleanup diagnostic result list"),
+        "{message}"
+    );
+    assert!(
+        message.contains("deferred cleanup diagnostic result at operand 0"),
+        "{message}"
+    );
+    assert!(
+        !message.contains("deferred cleanup diagnostic semantics blocked"),
+        "{message}"
+    );
+    unsafe { phpc_native_diagnostic_result_free(blocked) };
+
+    let blocked = unsafe {
+        phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free(std::ptr::null(), 0)
+    };
+    let message = runtime_result_diagnostic_message(blocked, 0);
+    assert!(message.contains("deferred cleanup diagnostic semantics blocked"));
     unsafe { phpc_native_diagnostic_result_free(blocked) };
 }
 

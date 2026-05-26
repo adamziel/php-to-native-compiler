@@ -19422,28 +19422,111 @@ pub unsafe extern "C" fn phpc_native_diagnostic_result_value_required_operation_
     result_count: usize,
 ) -> NativeDiagnosticResult {
     unsafe {
-        native_diagnostic_result_value_required_operation_blocker_list_and_free(
-            operation,
-            results,
-            result_count,
-        )
+        NativeDiagnosticResultListBlocker::Operation { operation }
+            .consume_value_required_results_and_free(results, result_count)
     }
 }
 
-unsafe fn native_diagnostic_result_value_required_operation_blocker_list_and_free(
-    operation: u8,
+/// # Safety
+///
+/// `cleanup_results` must point to `cleanup_result_count` contiguous
+/// `NativeDiagnosticResult` values returned by the runtime ABI, or be null with
+/// a zero length. This helper consumes every available deferred cleanup result,
+/// releases unselected values, stops diagnostic sequencing after a terminal
+/// diagnostic, and releases any remaining unconsumed results. Non-terminal
+/// cleanup lists append a centralized cleanup-ordering blocker until
+/// generalized finally/destructor/shutdown unwinding semantics exist.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free(
+    cleanup_results: *const NativeDiagnosticResult,
+    cleanup_result_count: usize,
+) -> NativeDiagnosticResult {
+    unsafe {
+        NativeDiagnosticResultListBlocker::DeferredCleanup
+            .consume_value_required_results_and_free(cleanup_results, cleanup_result_count)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum NativeDiagnosticResultListBlocker {
+    Operation { operation: u8 },
+    DeferredCleanup,
+}
+
+impl NativeDiagnosticResultListBlocker {
+    unsafe fn consume_value_required_results_and_free(
+        self,
+        results: *const NativeDiagnosticResult,
+        result_count: usize,
+    ) -> NativeDiagnosticResult {
+        unsafe {
+            native_diagnostic_result_value_required_list_blocker_and_free(
+                self,
+                results,
+                result_count,
+            )
+        }
+    }
+
+    fn empty_blocker_result(self) -> NativeDiagnosticResult {
+        match self {
+            Self::Operation { operation } => NativeDiagnosticResult::from_blocker_message(format!(
+                "native diagnostic result operation blocker: {} has no operand results",
+                native_diagnostic_operation_name(operation)
+            )),
+            Self::DeferredCleanup => native_deferred_cleanup_blocker_result(),
+        }
+    }
+
+    fn final_blocker_result(self) -> NativeDiagnosticResult {
+        match self {
+            Self::Operation { operation } => NativeDiagnosticResult::from_diagnostic(
+                native_diagnostic_operation_list_diagnostic(
+                    NativeDiagnosticSeverity::Blocker,
+                    operation,
+                    &[],
+                ),
+            ),
+            Self::DeferredCleanup => native_deferred_cleanup_blocker_result(),
+        }
+    }
+
+    fn value_requirement_blocker_result(self, operand_index: usize) -> NativeDiagnosticResult {
+        NativeDiagnosticResult::from_diagnostic(self.value_requirement_diagnostic(operand_index))
+    }
+
+    fn value_requirement_diagnostic(self, operand_index: usize) -> NativeDiagnostic {
+        match self {
+            Self::Operation { operation } => native_diagnostic_operation_list_diagnostic(
+                NativeDiagnosticSeverity::Blocker,
+                operation,
+                &[NativeDiagnosticOperandRequirement {
+                    tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_RESULT_OWNERSHIP,
+                    operand_index,
+                }],
+            ),
+            Self::DeferredCleanup => NativeDiagnostic {
+                severity: NativeDiagnosticSeverity::Blocker,
+                message: format!(
+                    "native diagnostic result cleanup-ordering blocker: deferred cleanup diagnostic result list requires deferred cleanup diagnostic result at operand {operand_index}"
+                ),
+                source_location: None,
+            },
+        }
+    }
+}
+
+unsafe fn native_diagnostic_result_value_required_list_blocker_and_free(
+    blocker: NativeDiagnosticResultListBlocker,
     results: *const NativeDiagnosticResult,
     result_count: usize,
 ) -> NativeDiagnosticResult {
     if result_count == 0 {
-        return NativeDiagnosticResult::from_blocker_message(format!(
-            "native diagnostic result operation blocker: {} has no operand results",
-            native_diagnostic_operation_name(operation)
-        ));
+        return blocker.empty_blocker_result();
     }
 
     if results.is_null() {
-        return native_diagnostic_result_value_requirement_blocker(operation, 0);
+        return blocker.value_requirement_blocker_result(0);
     }
 
     let results = unsafe { std::slice::from_raw_parts(results, result_count) };
@@ -19457,14 +19540,7 @@ unsafe fn native_diagnostic_result_value_required_operation_blocker_list_and_fre
         let Some(mut state) = (unsafe { result.into_state() }) else {
             sequenced
                 .diagnostics
-                .push(native_diagnostic_operation_list_diagnostic(
-                    NativeDiagnosticSeverity::Blocker,
-                    operation,
-                    &[NativeDiagnosticOperandRequirement {
-                        tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_RESULT_OWNERSHIP,
-                        operand_index: index,
-                    }],
-                ));
+                .push(blocker.value_requirement_diagnostic(index));
             terminal = true;
             native_diagnostic_result_free_remaining(&results[(index + 1)..]);
             break;
@@ -19477,14 +19553,7 @@ unsafe fn native_diagnostic_result_value_required_operation_blocker_list_and_fre
         if state.value.is_null() && !result_terminal {
             state
                 .diagnostics
-                .push(native_diagnostic_operation_list_diagnostic(
-                    NativeDiagnosticSeverity::Blocker,
-                    operation,
-                    &[NativeDiagnosticOperandRequirement {
-                        tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_RESULT_OWNERSHIP,
-                        operand_index: index,
-                    }],
-                ));
+                .push(blocker.value_requirement_diagnostic(index));
         }
         unsafe { phpc_native_value_free(state.value) };
         sequenced.diagnostics.append(&mut state.diagnostics);
@@ -19502,13 +19571,10 @@ unsafe fn native_diagnostic_result_value_required_operation_blocker_list_and_fre
     }
 
     if !terminal {
-        sequenced
-            .diagnostics
-            .push(native_diagnostic_operation_list_diagnostic(
-                NativeDiagnosticSeverity::Blocker,
-                operation,
-                &[],
-            ));
+        if let Some(mut blocker_state) = unsafe { blocker.final_blocker_result().into_state() } {
+            sequenced.diagnostics.append(&mut blocker_state.diagnostics);
+            unsafe { phpc_native_value_free(blocker_state.value) };
+        }
     }
 
     NativeDiagnosticResult::from_state(sequenced)
@@ -19518,20 +19584,6 @@ fn native_diagnostic_result_free_remaining(results: &[NativeDiagnosticResult]) {
     for result in results {
         unsafe { phpc_native_diagnostic_result_free(*result) };
     }
-}
-
-fn native_diagnostic_result_value_requirement_blocker(
-    operation: u8,
-    operand_index: usize,
-) -> NativeDiagnosticResult {
-    NativeDiagnosticResult::from_diagnostic(native_diagnostic_operation_list_diagnostic(
-        NativeDiagnosticSeverity::Blocker,
-        operation,
-        &[NativeDiagnosticOperandRequirement {
-            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_RESULT_OWNERSHIP,
-            operand_index,
-        }],
-    ))
 }
 
 fn native_diagnostic_operation_list_diagnostic(
@@ -19544,6 +19596,12 @@ fn native_diagnostic_operation_list_diagnostic(
         message: native_diagnostic_operation_list_message(operation, requirements),
         source_location: None,
     }
+}
+
+fn native_deferred_cleanup_blocker_result() -> NativeDiagnosticResult {
+    NativeDiagnosticResult::from_blocker_message(
+        "native deferred cleanup diagnostic semantics blocked: finally/destructor/shutdown cleanup needs reusable unwinding stacks, pending diagnostic aggregation, exception/fatal ownership, return/control-transfer joins, and exact cleanup ordering",
+    )
 }
 
 fn native_diagnostic_operation_list_message(
