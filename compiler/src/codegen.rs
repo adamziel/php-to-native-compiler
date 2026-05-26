@@ -355,6 +355,39 @@ impl<'a> NativeDiagnosticResultProducer<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
+enum NativeDiagnosticCleanupFrameOperandBlocker {
+    NonCleanupSurface {
+        surface: NativeDiagnosticResultOperandSurface,
+    },
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
+struct NativeDiagnosticCleanupFrame {
+    results: Vec<String>,
+}
+
+#[allow(dead_code)]
+impl NativeDiagnosticCleanupFrame {
+    fn push_result(&mut self, result: String) {
+        self.results.push(result);
+    }
+
+    fn results(&self) -> &[String] {
+        &self.results
+    }
+
+    fn len(&self) -> usize {
+        self.results.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.results.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 enum NativeDiagnosticResultConsumerFamily {
     ExpressionOperand,
     StatementOperand,
@@ -14776,6 +14809,25 @@ impl LlvmGenerator {
     }
 
     #[allow(dead_code)]
+    fn emit_native_diagnostic_cleanup_frame_operand(
+        &mut self,
+        frame: &mut NativeDiagnosticCleanupFrame,
+        producer: NativeDiagnosticResultProducer<'_>,
+    ) -> Result<String, NativeDiagnosticCleanupFrameOperandBlocker> {
+        if producer.surface() != NativeDiagnosticResultOperandSurface::Cleanup {
+            return Err(
+                NativeDiagnosticCleanupFrameOperandBlocker::NonCleanupSurface {
+                    surface: producer.surface(),
+                },
+            );
+        }
+
+        let result = self.emit_native_diagnostic_result_operand(producer);
+        frame.push_result(result.clone());
+        Ok(result)
+    }
+
+    #[allow(dead_code)]
     fn emit_native_diagnostic_result_list_storage(&mut self, list_name: &str, results: &[String]) {
         self.uses_native_diagnostic_result_producers = true;
         let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
@@ -14864,6 +14916,14 @@ impl LlvmGenerator {
             NativeDiagnosticResultReportSink::DiagnosticsOnly,
             &[cleanup_result],
         ))
+    }
+
+    #[allow(dead_code)]
+    fn emit_native_diagnostic_cleanup_frame_control_transfer_report(
+        &mut self,
+        frame: &NativeDiagnosticCleanupFrame,
+    ) -> Result<String, NativeDiagnosticResultConsumerBlocker> {
+        self.emit_native_diagnostic_result_control_transfer_cleanup_report(frame.results())
     }
 
     fn emit_native_diagnostic_result_value_operand(
@@ -16857,6 +16917,25 @@ impl CGenerator {
     }
 
     #[allow(dead_code)]
+    fn emit_native_diagnostic_cleanup_frame_operand(
+        &mut self,
+        frame: &mut NativeDiagnosticCleanupFrame,
+        producer: NativeDiagnosticResultProducer<'_>,
+    ) -> Result<String, NativeDiagnosticCleanupFrameOperandBlocker> {
+        if producer.surface() != NativeDiagnosticResultOperandSurface::Cleanup {
+            return Err(
+                NativeDiagnosticCleanupFrameOperandBlocker::NonCleanupSurface {
+                    surface: producer.surface(),
+                },
+            );
+        }
+
+        let result = self.emit_native_diagnostic_result_operand(producer);
+        frame.push_result(result.clone());
+        Ok(result)
+    }
+
+    #[allow(dead_code)]
     fn emit_native_diagnostic_result_list_storage(&mut self, list_name: &str, results: &[String]) {
         self.uses_native_diagnostic_result_producers = true;
         let operands = if results.is_empty() {
@@ -16937,6 +17016,14 @@ impl CGenerator {
             NativeDiagnosticResultReportSink::DiagnosticsOnly,
             &[cleanup_result],
         ))
+    }
+
+    #[allow(dead_code)]
+    fn emit_native_diagnostic_cleanup_frame_control_transfer_report(
+        &mut self,
+        frame: &NativeDiagnosticCleanupFrame,
+    ) -> Result<String, NativeDiagnosticResultConsumerBlocker> {
+        self.emit_native_diagnostic_result_control_transfer_cleanup_report(frame.results())
     }
 
     fn emit_native_diagnostic_result_value_operand_for_c_value(
@@ -46637,23 +46724,150 @@ mod tests {
     }
 
     #[test]
+    fn native_diagnostic_cleanup_frames_accept_only_cleanup_operands_across_backends() {
+        let mut llvm = LlvmGenerator::default();
+        let mut llvm_frame = NativeDiagnosticCleanupFrame::default();
+        assert!(llvm_frame.is_empty());
+        let llvm_value = llvm
+            .emit_native_diagnostic_cleanup_frame_operand(
+                &mut llvm_frame,
+                NativeDiagnosticResultProducer::value(
+                    NativeDiagnosticResultOperandSurface::Cleanup,
+                    "%cleanup_value",
+                ),
+            )
+            .expect("cleanup value operands can enter cleanup frames");
+        let llvm_diagnostic = llvm
+            .emit_native_diagnostic_cleanup_frame_operand(
+                &mut llvm_frame,
+                NativeDiagnosticResultProducer::diagnostic(
+                    NativeDiagnosticResultOperandSurface::Cleanup,
+                    "%cleanup_diagnostic",
+                ),
+            )
+            .expect("cleanup diagnostics can enter cleanup frames");
+        let llvm_null = llvm
+            .emit_native_diagnostic_cleanup_frame_operand(
+                &mut llvm_frame,
+                NativeDiagnosticResultProducer::null(NativeDiagnosticResultOperandSurface::Cleanup),
+            )
+            .expect("null cleanup results can enter cleanup frames");
+
+        assert_eq!(llvm_frame.len(), 3);
+        assert_eq!(
+            llvm_frame.results(),
+            &[llvm_value, llvm_diagnostic, llvm_null]
+        );
+        let before_rejected = llvm.body.len();
+        assert_eq!(
+            llvm.emit_native_diagnostic_cleanup_frame_operand(
+                &mut llvm_frame,
+                NativeDiagnosticResultProducer::value(
+                    NativeDiagnosticResultOperandSurface::Statement,
+                    "%stmt_value",
+                ),
+            ),
+            Err(
+                NativeDiagnosticCleanupFrameOperandBlocker::NonCleanupSurface {
+                    surface: NativeDiagnosticResultOperandSurface::Statement
+                }
+            )
+        );
+        assert_eq!(llvm.body.len(), before_rejected);
+        let llvm_report = llvm
+            .emit_native_diagnostic_cleanup_frame_control_transfer_report(&llvm_frame)
+            .expect("cleanup frames feed the control-transfer cleanup report bridge");
+        assert!(llvm.body.iter().any(|line| line
+            .contains("@phpc_native_diagnostic_result_control_transfer_cleanup_and_free")
+            && line.contains("i64 3")));
+        assert!(llvm.body.iter().any(|line| line
+            .contains("@phpc_native_diagnostic_result_report_stderr_list_and_free")
+            && line.contains(&llvm_report)));
+
+        let mut c = CGenerator::default();
+        let mut c_frame = NativeDiagnosticCleanupFrame::default();
+        let c_value = c
+            .emit_native_diagnostic_cleanup_frame_operand(
+                &mut c_frame,
+                NativeDiagnosticResultProducer::value(
+                    NativeDiagnosticResultOperandSurface::Cleanup,
+                    "cleanup_value",
+                ),
+            )
+            .expect("cleanup value operands can enter cleanup frames");
+        let c_diagnostic = c
+            .emit_native_diagnostic_cleanup_frame_operand(
+                &mut c_frame,
+                NativeDiagnosticResultProducer::diagnostic(
+                    NativeDiagnosticResultOperandSurface::Cleanup,
+                    "cleanup_diagnostic",
+                ),
+            )
+            .expect("cleanup diagnostics can enter cleanup frames");
+        let c_null = c
+            .emit_native_diagnostic_cleanup_frame_operand(
+                &mut c_frame,
+                NativeDiagnosticResultProducer::null(NativeDiagnosticResultOperandSurface::Cleanup),
+            )
+            .expect("null cleanup results can enter cleanup frames");
+
+        assert_eq!(c_frame.len(), 3);
+        assert_eq!(c_frame.results(), &[c_value, c_diagnostic, c_null]);
+        let before_rejected = c.body.len();
+        assert_eq!(
+            c.emit_native_diagnostic_cleanup_frame_operand(
+                &mut c_frame,
+                NativeDiagnosticResultProducer::diagnostic(
+                    NativeDiagnosticResultOperandSurface::Output,
+                    "output_diagnostic",
+                ),
+            ),
+            Err(
+                NativeDiagnosticCleanupFrameOperandBlocker::NonCleanupSurface {
+                    surface: NativeDiagnosticResultOperandSurface::Output
+                }
+            )
+        );
+        assert_eq!(c.body.len(), before_rejected);
+        let c_report = c
+            .emit_native_diagnostic_cleanup_frame_control_transfer_report(&c_frame)
+            .expect("cleanup frames feed the control-transfer cleanup report bridge");
+        assert!(c.body.iter().any(|line| line
+            .contains("phpc_native_diagnostic_result_control_transfer_cleanup_and_free")
+            && line.contains("diagnostic_result_operands_")
+            && line.contains(", 3")));
+        assert!(c.body.iter().any(|line| line
+            .contains("phpc_native_diagnostic_result_report_stderr_list_and_free")
+            && line.contains(&c_report)));
+    }
+
+    #[test]
     fn native_diagnostic_result_control_transfer_cleanup_reports_reusable_cleanup_operands() {
         let mut llvm = LlvmGenerator::default();
-        let llvm_cleanup_results = vec![
-            llvm.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::value(
+        let mut llvm_frame = NativeDiagnosticCleanupFrame::default();
+        llvm.emit_native_diagnostic_cleanup_frame_operand(
+            &mut llvm_frame,
+            NativeDiagnosticResultProducer::value(
                 NativeDiagnosticResultOperandSurface::Cleanup,
                 "%first_cleanup_value",
-            )),
-            llvm.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::diagnostic(
+            ),
+        )
+        .unwrap();
+        llvm.emit_native_diagnostic_cleanup_frame_operand(
+            &mut llvm_frame,
+            NativeDiagnosticResultProducer::diagnostic(
                 NativeDiagnosticResultOperandSurface::Cleanup,
                 "%cleanup_diagnostic",
-            )),
-            llvm.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::null(
-                NativeDiagnosticResultOperandSurface::Cleanup,
-            )),
-        ];
+            ),
+        )
+        .unwrap();
+        llvm.emit_native_diagnostic_cleanup_frame_operand(
+            &mut llvm_frame,
+            NativeDiagnosticResultProducer::null(NativeDiagnosticResultOperandSurface::Cleanup),
+        )
+        .unwrap();
         let llvm_report = llvm
-            .emit_native_diagnostic_result_control_transfer_cleanup_report(&llvm_cleanup_results)
+            .emit_native_diagnostic_cleanup_frame_control_transfer_report(&llvm_frame)
             .expect("control-transfer cleanup report uses the cleanup result consumer");
 
         assert!(llvm.uses_native_diagnostic_result_producers);
@@ -46667,24 +46881,35 @@ mod tests {
             && line.contains("i64 1")));
 
         let mut c = CGenerator::default();
-        let c_cleanup_results = vec![
-            c.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::value(
+        let mut c_frame = NativeDiagnosticCleanupFrame::default();
+        c.emit_native_diagnostic_cleanup_frame_operand(
+            &mut c_frame,
+            NativeDiagnosticResultProducer::value(
                 NativeDiagnosticResultOperandSurface::Cleanup,
                 "first_cleanup_value",
-            )),
-            c.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::diagnostic(
+            ),
+        )
+        .unwrap();
+        c.emit_native_diagnostic_cleanup_frame_operand(
+            &mut c_frame,
+            NativeDiagnosticResultProducer::diagnostic(
                 NativeDiagnosticResultOperandSurface::Cleanup,
                 "cleanup_diagnostic",
-            )),
-            c.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::null(
-                NativeDiagnosticResultOperandSurface::Cleanup,
-            )),
-        ];
+            ),
+        )
+        .unwrap();
+        c.emit_native_diagnostic_cleanup_frame_operand(
+            &mut c_frame,
+            NativeDiagnosticResultProducer::null(NativeDiagnosticResultOperandSurface::Cleanup),
+        )
+        .unwrap();
         let c_report = c
-            .emit_native_diagnostic_result_control_transfer_cleanup_report(&c_cleanup_results)
+            .emit_native_diagnostic_cleanup_frame_control_transfer_report(&c_frame)
             .expect("control-transfer cleanup report uses the cleanup result consumer");
-        c.emit_native_diagnostic_result_control_transfer_cleanup_report(&[])
-            .expect("empty cleanup lists still route through the same bridge");
+        c.emit_native_diagnostic_cleanup_frame_control_transfer_report(
+            &NativeDiagnosticCleanupFrame::default(),
+        )
+        .expect("empty cleanup lists still route through the same bridge");
 
         assert!(c.uses_native_diagnostic_result_producers);
         assert!(c.uses_native_diagnostic_result_consumers);
