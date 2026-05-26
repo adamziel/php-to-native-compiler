@@ -103,6 +103,19 @@ risks without changing that accounting.
 
 ## Recent Primary-Integrated Work
 
+- `b4b21937`: extended the shared diagnostic operation/operand-list
+  requirement ABI with reference-binding operand-list requirements. Runtime
+  diagnostics now name reference target, source, and array-item binding
+  requirements, and compiler blocker discovery routes reference assignment
+  target/source operands plus by-reference array items through that shared
+  requirement vocabulary instead of source-shape recognizers. Focused runtime
+  and compiler tests cover multiple binding requirement tags and representative
+  assignment/source/array item surfaces. This is diagnostic/blocker
+  infrastructure only; executable reference binding, full alias/COW behavior,
+  writeback, cleanup/unwind ordering, and exact source-ordered diagnostics
+  remain unimplemented. Future reference-binding work must extend or consume
+  the shared operation-list and operand requirement ABI rather than adding
+  source-shape or generated-output recognizers. Estimates remain flat.
 - `a544daa8`: added a generic diagnostic operation and operand-list
   requirement blocker boundary across runtime and compiler code. Call-argument
   and lvalue operand-list blockers now consume the shared runtime-backed
