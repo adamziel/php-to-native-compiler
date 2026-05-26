@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 17:24 CEST
+Updated: 2026-05-26 17:59 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -20,14 +20,36 @@ latest source capability. The worktree still has preserved foreign scratch
 state: untracked `examples/class.php`.
 
 Latest primary-integrated source capability baseline:
-`885bde45 runtime: add deferred cleanup diagnostic results`.
+`a3c8b315 native: add call and diagnostic result carriers`.
 
-`885bde45` adds a deferred-cleanup diagnostic-result family on top of the owned
-`NativeDiagnosticResult` list contract. Operation result-list blockers and
-deferred-cleanup blockers now share `NativeDiagnosticResultListBlocker`, so
-value-required result sequencing, null result item/list handling, terminal
-diagnostic short-circuiting, remaining-result cleanup, and final blocker
-append flow through one runtime list consumer. The new
+`a3c8b315` adds two compiler/backend prerequisites for the next generalized
+result-consumer migrations. Call-result diagnostics now share a compact
+`NativeCallResultConsumer` taxonomy across existing statement, value, lvalue,
+RMW-lvalue, failed-value, reference-result, and dereferenced-value consumers,
+with `NativeCallCallee` producing value/reference/dereferenced operation
+records for direct named, dynamic callable, method, constructor, and adjacent
+call families without importing broad source-call lowering. Emitted LLVM and
+generated native C now also have reusable `NativeDiagnosticResult` producer and
+list-storage infrastructure over current primary's pointer-backed runtime ABI,
+covering owned value handles, owned diagnostic handles, and null results across
+expression, statement, terminal, and cleanup operand surfaces. Focused proof
+covers call-family/result-consumer classification, failed and RMW operands,
+existing value/dereferenced call-result diagnostics, diagnostic-result
+producer/list emitters, value-required and deferred-cleanup runtime ABI
+consumers, fmt, and diff checks. Still open: expression-owned
+`NativeCallResultHandle` carriers, invoke-result helper ABIs and argument
+ownership/cleanup, diagnostic-result consumer selection for real emitted
+operation/deferred-cleanup sites, branch-aware conditional handoff cleanup,
+actual unwind/finally/destructor execution, references/COW, object/property/
+ArrayAccess breadth, and backend parity.
+
+This follows `885bde45`, which adds a deferred-cleanup diagnostic-result family
+on top of the owned `NativeDiagnosticResult` list contract. Operation result-
+list blockers and deferred-cleanup blockers now share
+`NativeDiagnosticResultListBlocker`, so value-required result sequencing, null
+result item/list handling, terminal diagnostic short-circuiting, remaining-
+result cleanup, and final blocker append flow through one runtime list
+consumer. The new
 `phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free(...)`
 wrapper consumes ordered cleanup results and appends a centralized
 finally/destructor/shutdown cleanup-ordering blocker until generalized
