@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 05:04 CEST
-Evaluation marker: `20260526T030441Z`
+Updated: 2026-05-26 05:13 CEST
+Evaluation marker: `20260526T031317Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, candidate worktrees, lane-local
@@ -15,33 +15,31 @@ Overall supervised-roadmap progress: **95%** `[###################-]`
 Selected executable PHP semantics: **95%** `[###################-]`
 
 Primary `HEAD` is aligned with `origin/master` at
-`0f4a8603 runtime: add ArrayAccess offset read dispatch ABI`.
+`e17998ef native: add RMW array-lvalue owner writeback`.
 
 Latest primary-integrated source capability baseline:
-`0f4a8603 runtime: add ArrayAccess offset read dispatch ABI`.
+`e17998ef native: add RMW array-lvalue owner writeback`.
 
 Recent source progress is real but still selected-path rather than full PHP
-parity. `0f4a8603` adds a runtime-only ArrayAccess offset read/existence
-dispatch ABI for `ArrayAccess::offsetGet($offset)` and
-`ArrayAccess::offsetExists($offset)` through runtime object/interface metadata,
-callable-table method lookup, bound receiver invocation, and the shared native
-call-result ABI. `offsetExists` returns a PHP-truthiness bool from the callback
-result.
+parity. `e17998ef` adds generated-C RMW array-lvalue owner materialization and
+writeback for local native array handles and active-symbol/global-import
+reference-slot owners. The shared owner path is consumed by compound
+assignment, null-coalesce assignment, and increment/decrement RMW families.
 
-This complements `682f3aef` runtime write/unset dispatch and `d2adc130`
-generated declared-method callable-table publication. It does not add compiler
-lowering, generated-C/LLVM consumers, `isset`, `empty`, null-coalesce
-sequencing, nested ArrayAccess reads, assignment/RMW owner writeback,
-reference/COW identity, reference-return `offsetGet`, cleanup/unwind, exact
-diagnostics, or backend parity.
+This complements `0f4a8603` runtime ArrayAccess read/exists dispatch,
+`682f3aef` runtime write/unset dispatch, and `d2adc130` generated
+declared-method callable-table publication. It does not add object/static
+property storage, ArrayAccess RMW dispatch, broad alias roots, exact
+reference/COW parity, cleanup/unwind, exact diagnostics, generated-C coverage
+beyond the selected array-lvalue owner families, LLVM consumers, or backend
+parity.
 
 Full PHP callable, object, lvalue, cleanup, diagnostic, and backend parity
 remain incomplete. Overall and selected-executable percentages remain flat.
 
-Current lane-local signals are explicitly not counted. The RMW executable
-writeback candidate now has current-head shadow approval after `0f4a8603`, but
-it remains unintegrated. Cleanup/unwind drift is still current after the
-runtime-only head change, and dead dynamic-callable ladder cleanup remains
+Current lane-local signals are explicitly not counted. Cleanup/unwind needs a
+fresh post-RMW current-head reconcile because `e17998ef` touched
+`compiler/src/codegen.rs`, and dead dynamic-callable ladder cleanup remains
 approved-but-deferred cleanup debt.
 
 ## Grand Roadmap Position
@@ -49,10 +47,10 @@ approved-but-deferred cleanup debt.
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, byte-string, array, reference, symbol, callable table, callable-value dispatch, call-frame/result, request-state, diagnostics, lvalue, and ArrayAccess read/write dispatch surfaces. Remaining gaps include broader callable lookup parity, namespace fallback, autoload, magic calls, constructors, closure frame handoff, reference-return ArrayAccess, and cleanup/unwind parity. |
-| Compiler/backend consumers | **99%** | `[####################]` | Generated C has the freshest executable consumers for direct/dynamic callables and declared methods. Recent ArrayAccess read/write dispatch is runtime-only; generated-C, LLVM, and direct assembly still need consumers for object offset operations and newer lvalue/runtime ABIs. |
-| Executable PHP semantics | **95%** | `[###################-]` | Many selected executable islands exist, but major PHP semantics remain open: full assignment/RMW/writeback, references/COW, executable object/ArrayAccess operations, cleanup/unwind/finally/destructors, exact diagnostics, and backend parity. |
+| Compiler/backend consumers | **99%** | `[####################]` | Generated C has the freshest executable consumers for direct/dynamic callables, declared methods, and selected RMW array-lvalue owner/writeback. Recent ArrayAccess read/write dispatch is runtime-only; generated-C, LLVM, and direct assembly still need consumers for object offset operations and broader lvalue/runtime ABIs. |
+| Executable PHP semantics | **95%** | `[###################-]` | Many selected executable islands exist, including selected generated-C RMW array-lvalue owner/writeback, but major PHP semantics remain open: full assignment/RMW/writeback, references/COW, executable object/ArrayAccess operations, cleanup/unwind/finally/destructors, exact diagnostics, and backend parity. |
 | Strings and byte semantics | **62%** | `[############--------]` | Byte-backed values and byte-preserving selected string-array slots are integrated. Binary source bytes, byte-exact interpreter/session/debug output, `mb_str_split()`, request/global byte keys, and exact diagnostics remain open. |
-| Arrays, lvalues, references, COW | **82%** | `[################----]` | Selected reference-source/lvalue extraction, closure capture from reference-backed slots, reference-binding diagnostics, assignment/RMW-lvalue diagnostics, and Object/ArrayAccess blocker/runtime dispatch pieces are integrated. Executable broad writeback, arbitrary alias roots, foreach, property storage, ArrayAccess lowering, and full COW remain incomplete. |
+| Arrays, lvalues, references, COW | **83%** | `[#################---]` | Selected reference-source/lvalue extraction, closure capture from reference-backed slots, reference-binding diagnostics, assignment/RMW-lvalue diagnostics, generated-C RMW array-lvalue owner/writeback for local arrays and reference-slot owners, and Object/ArrayAccess blocker/runtime dispatch pieces are integrated. Object/static property storage, ArrayAccess RMW dispatch, arbitrary alias roots, foreach, broader writeback, and full COW remain incomplete. |
 | Symbols, globals, request state | **75%** | `[###############-----]` | Selected globals, root-symbol consumers, active symbol-table consumers, request-key blockers, append-shaped symbol reference-source materialization, direct generated-C request-state frame handoff, and generated-C dynamic user-function handoff proof exist. `$GLOBALS` self-cells, closure request-state handoff, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
 | Calls, functions, frames | **93%** | `[###################-]` | Runtime callable table/value dispatch, call arguments/frame/result ABI, direct generated-C user-function consumers, generated-C dynamic callable-value consumers, generated declared-method callable registration/wrapper frames, by-reference argument transport, descriptor closures, closure returns, and direct/dynamic generated-C request-state frame handoff are integrated. Full object/method callable parity, callable array validation parity, `Class::method` strings, namespace fallback, autoload, magic calls beyond declared `__invoke`, named/spread breadth, return references, constructors, closure frame-environment handoff, cleanup/unwind parity, and backend parity remain open. |
 | Objects, properties, methods | **57%** | `[###########---------]` | Public object-property reference-source extraction, object-property reference-slot mutation, declared-class allocation cleanup-risk metadata, Object/ArrayAccess write blockers, runtime ArrayAccess write/read/exists dispatch, and generated declared-method callable-table publication exist for selected paths. Compiler-consumed ArrayAccess lowering, non-public visibility parity, magic, dynamic/static/typed properties, destructors, interfaces/traits execution, references/COW, constructors, and backend parity remain open. |
@@ -61,6 +59,14 @@ approved-but-deferred cleanup debt.
 
 ## Recent Primary-Integrated Work
 
+- `e17998ef`: added generated-C native array-lvalue owner materialization and
+  writeback for RMW families over local native array handles and
+  active-symbol/global-import reference-slot owners. Compound assignment,
+  null-coalesce assignment, and increment/decrement now consume the shared
+  owner/writeback path for selected array lvalues. Object/static property
+  storage, ArrayAccess RMW dispatch, broad alias roots, exact reference/COW
+  parity, cleanup/unwind, exact diagnostics, LLVM consumers, and backend
+  parity remain open.
 - `0f4a8603`: added runtime ABI
   `phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic` for
   `ArrayAccess::offsetGet($offset)` and
@@ -147,8 +153,8 @@ Primary-integrated capability and lane-local work are separated explicitly.
 | RMW-lvalue operand-list diagnostics | **100%** `[####################]` | **100%** `[####################]` | **14%** `[###-----------------]` | Integrated at `b918d3b1`. Generalized diagnostic boundary uses operation tag `8`, operand tag `21`, shared `AssignTarget` operand enumeration, and `NativeDiagnosticOperandRequirement` operation-list diagnostics. Executable RMW writeback/reference/COW behavior remains open. |
 | Object/ArrayAccess runtime read/exists dispatch ABI | **100%** `[####################]` | **100%** `[####################]` | **40%** `[########------------]` | Integrated at `0f4a8603`. Runtime `offsetGet`/`offsetExists` dispatch exists, including truthiness conversion for `offsetExists`; no compiler lowering, `isset`/`empty`/null-coalesce sequencing, or reference/COW parity yet. |
 | Object/ArrayAccess runtime write dispatch ABI | **100%** `[####################]` | **100%** `[####################]` | **35%** `[#######-------------]` | Integrated at `682f3aef`. Runtime dispatch exists for keyed `offsetSet`, append `offsetSet(null, value)`, and `offsetUnset`; no compiler lowering or owner/writeback consumer yet. |
-| RMW executable array-lvalue owner/writeback | **0%** `[--------------------]` | **55%** `[###########---------]` | **32%** `[######--------------]` | Lane-local candidate has current-head shadow approval after `0f4a8603`, applies cleanly, and passed focused native-link gates. Not integrated; still excludes object/static property storage, ArrayAccess RMW dispatch, broad alias roots, cleanup/unwind, exact diagnostics, and backend parity. |
-| Cleanup/unwind requirement boundary | **0%** `[--------------------]` | **55%** `[###########---------]` | **20%** `[####----------------]` | Shadow-approved before `0f4a8603` and drift-audited current because the new source commit was runtime-only and file-disjoint. Valuable, but still diagnostic/preflight rather than unwind execution. |
+| RMW executable array-lvalue owner/writeback | **100%** `[####################]` | **100%** `[####################]` | **36%** `[#######-------------]` | Integrated at `e17998ef`. Generated-C RMW owner materialization/writeback now covers local native array handles and active-symbol/global-import reference-slot owners across compound assignment, null-coalesce assignment, and increment/decrement. Object/static property storage, ArrayAccess RMW dispatch, broad alias roots, exact reference/COW parity, cleanup/unwind, exact diagnostics, LLVM consumers, and backend parity remain open. |
+| Cleanup/unwind requirement boundary | **0%** `[--------------------]` | **55%** `[###########---------]` | **20%** `[####----------------]` | Shadow-approved before `0f4a8603` and drift-audited current for that runtime-only head, but now needs post-RMW reconcile because `e17998ef` touched overlapping `compiler/src/codegen.rs`. Valuable, but still diagnostic/preflight rather than unwind execution. |
 | Generated declared-method callable-table registration | **100%** `[####################]` | **100%** `[####################]` | **45%** `[#########-----------]` | Integrated at `d2adc130`. Generated declared methods are registered in the runtime callable table and wrapper frames bridge `NativeCallFrame` receiver/value/reference arguments into declared method frames. Full callable/object parity remains open. |
 | `Class::method` string callable resolution | **0%** `[--------------------]` | **25%** `[#####---------------]` | **28%** `[######--------------]` | Scout plan recommends consuming `d2adc130` method descriptors through runtime callable-value string parsing. No candidate implementation yet. |
 | Trait effective-method metadata | **0%** `[--------------------]` | **30%** `[######--------------]` | **20%** `[####----------------]` | Lane-local/stale relative to current primary. Metadata-only until trait-composed method execution and cleanup consumers exist. |
@@ -178,6 +184,10 @@ Primary-integrated capability:
 - [x] Reference-binding operand-list requirement blockers.
 - [x] Assignment-lvalue operand-list requirement blockers.
 - [x] RMW-lvalue operand-list requirement blockers.
+- [x] Generated-C RMW array-lvalue owner materialization/writeback for local
+  native array handles and active-symbol/global-import reference-slot owners
+  across compound assignment, null-coalesce assignment, and increment/
+  decrement.
 - [x] Object/ArrayAccess write-operation blocker classification.
 - [x] Runtime-only Object/ArrayAccess `offsetSet`/append/`offsetUnset`
   dispatch ABI through callable-value invocation.
@@ -193,10 +203,9 @@ Primary-integrated capability:
 
 In progress but not counted:
 
-- [ ] RMW executable array-lvalue owner/writeback packet, shadow-approved
-  after `0f4a8603` but not integrated.
 - [ ] Cleanup/unwind requirement boundary, shadow-approved before `0f4a8603`
-  and drift-audited current but not integrated.
+  but needing post-RMW current-head reconcile because `e17998ef` touched
+  overlapping `compiler/src/codegen.rs`.
 - [ ] `Class::method` string callable resolution candidate based on the scout
   plan.
 - [ ] Compiler-generated-C/LLVM ArrayAccess read/write/isset/empty lowering
@@ -208,8 +217,9 @@ In progress but not counted:
 
 Not done:
 
-- [ ] Full executable assignment and RMW semantics, including expression
-  results, writeback, ordered key coercion, and property/array storage.
+- [ ] Full broad executable assignment and RMW semantics, including all
+  expression results, ordered key coercion, property/static storage,
+  ArrayAccess dispatch, arbitrary alias roots, and COW-preserving writeback.
 - [ ] Full PHP reference binding, references/COW identity, arbitrary alias
   roots, and alias-preserving write-through.
 - [ ] Full callable parity beyond the integrated generated-C dynamic callable
@@ -238,8 +248,15 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary source is clean and synced at `0f4a8603`.
-- [x] Latest source capability is `0f4a8603`.
+- [x] Primary source is clean and synced at `e17998ef`.
+- [x] Latest source capability is `e17998ef`.
+- [x] `e17998ef` is accounted as generated-C RMW array-lvalue owner
+  materialization/writeback for local native array handles and active-symbol/
+  global-import reference-slot owners across compound assignment,
+  null-coalesce assignment, and increment/decrement. It is not counted as
+  object/static property storage, ArrayAccess RMW dispatch, broad alias roots,
+  exact reference/COW parity, cleanup/unwind, exact diagnostics, LLVM/backend
+  parity, or full PHP RMW parity.
 - [x] `0f4a8603` is accounted as runtime-only Object/ArrayAccess
   `offsetGet`/`offsetExists` dispatch ABI progress, not compiler lowering,
   `isset`/`empty`/null-coalesce sequencing, reference/COW identity,
@@ -258,16 +275,14 @@ Primary-integrated:
   progress only, not executable RMW owner/writeback, references/COW,
   object/static property storage, ArrayAccess dispatch, cleanup ownership, or
   exact diagnostic ordering.
-- [x] Overall and selected-executable percentages remain flat for this review.
+- [x] Overall and selected-executable percentages remain flat for this
+  accounting; the arrays/lvalues workstream and RMW item now reflect the
+  selected generated-C owner/writeback integration.
 
 Lane-local:
 
-- [ ] RMW executable writeback has current-head shadow approval after
-  `0f4a8603`, but it remains lane-local until a primary integration window
-  owner-checks the accounting state and reruns focused gates.
-- [ ] Cleanup/unwind remains lane-local; the drift audit says the
-  pre-`0f4a8603` shadow is still current because the new source change was
-  runtime-only and file-disjoint.
+- [ ] Cleanup/unwind remains lane-local and needs post-RMW current-head
+  reconcile because `e17998ef` touched overlapping `compiler/src/codegen.rs`.
 - [ ] `Class::method` string callable work is a plan, not an implementation.
 - [ ] Dead dynamic callable ladder cleanup is approved-but-deferred and should
   not preempt stronger semantic packets.
@@ -310,12 +325,15 @@ cleanup/unwind ownership, object handle/visibility/magic property behavior,
 exact diagnostics, or backend parity through a shared semantic boundary.
 
 Future RMW work must not repeat the same RMW-lvalue diagnostic boundary/tag
-proof as standalone progress. Operation tag `8`, operand tag `21`, shared
-`AssignTarget` operand enumeration, and
-`NativeDiagnosticOperandRequirement` operation-list diagnostics are already
-accounted. Distinct next progress should implement owner/writeback,
-references/COW, object/static property storage, ArrayAccess dispatch, cleanup
-ownership, or exact diagnostic ordering.
+proof or the selected generated-C array-lvalue owner/writeback path from
+`e17998ef` as standalone progress. Operation tag `8`, operand tag `21`, shared
+`AssignTarget` operand enumeration,
+`NativeDiagnosticOperandRequirement` operation-list diagnostics, local array
+handle owners, active-symbol/global-import reference-slot owners, and
+compound/null-coalesce/increment/decrement generated-C owner writeback are
+already accounted. Distinct next progress should implement broader
+references/COW, object/static property storage, ArrayAccess dispatch, broad
+alias roots, cleanup ownership, exact diagnostic ordering, or backend parity.
 
 ## Next Steering Read
 
@@ -328,13 +346,11 @@ Best next action:
   immediately toward compiler consumers for ArrayAccess reads/writes,
   `isset`/`empty`/null-coalesce sequencing, assignment/RMW owner writeback, or
   reference/COW behavior.
-- Consider the RMW executable owner/writeback packet as the next primary source
-  route only if the integration window starts from clean accounting state,
-  preserves its narrow generated-C array-lvalue scope, and reruns focused gates
-  across local and reference-slot owners.
-- Push the next RMW work toward executable owner/writeback, references/COW,
-  object/static property storage, ArrayAccess dispatch, cleanup ownership, or
-  exact diagnostic ordering rather than repeating operand-list diagnostics.
+- Treat `e17998ef` as integrated generated-C RMW array-lvalue
+  owner/writeback progress for local array handles and active-symbol/global-
+  import reference-slot owners; steer follow-up RMW work toward broader
+  references/COW, object/static property storage, ArrayAccess dispatch, broad
+  alias roots, cleanup ownership, exact diagnostic ordering, or backend parity.
 - Push the next object/ArrayAccess work toward compiler-consumed
   `offsetSet()` / `offsetUnset()` owner writeback, `offsetGet()` /
   `offsetExists()`, or reference/COW-aware writeback rather than more blocker
@@ -348,6 +364,8 @@ Avoid:
   dispatch from `0f4a8603`.
 - Recounting RMW-lvalue operand-list diagnostics; they are already in primary
   at `b918d3b1`.
+- Recounting selected generated-C RMW array-lvalue owner/writeback; it is
+  already in primary at `e17998ef`.
 - Treating runtime-only ArrayAccess dispatch as full compiler/execution parity.
 - Recounting generated declared-method callable-table registration or wrapper
   frames; they are already in primary at `d2adc130`.
