@@ -20591,6 +20591,30 @@ pub unsafe extern "C" fn phpc_native_diagnostic_result_control_transfer_cleanup_
     }
 }
 
+/// # Safety
+///
+/// `terminal_result` must be a `NativeDiagnosticResult` returned by the runtime
+/// ABI and not yet freed. `cleanup_results` must point to
+/// `cleanup_result_count` contiguous `NativeDiagnosticResult` values returned by
+/// the runtime ABI, or be null with a zero length. This helper consumes the
+/// pending terminal result and every available cleanup result, preserves the
+/// terminal value when cleanup sequencing stays non-terminal, and releases the
+/// terminal value when cleanup produces or reports a terminal diagnostic.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_result_terminal_value_transfer_cleanup_and_free(
+    terminal_result: NativeDiagnosticResult,
+    cleanup_results: *const NativeDiagnosticResult,
+    cleanup_result_count: usize,
+) -> NativeDiagnosticResult {
+    unsafe {
+        native_diagnostic_result_terminal_value_transfer_cleanup_and_free(
+            terminal_result,
+            cleanup_results,
+            cleanup_result_count,
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum NativeDiagnosticResultReportMode {
     DiagnosticsOnly,
@@ -20866,41 +20890,124 @@ unsafe fn native_diagnostic_result_control_transfer_cleanup_list_and_free(
     results: *const NativeDiagnosticResult,
     result_count: usize,
 ) -> NativeDiagnosticResult {
-    if result_count == 0 {
-        return NativeDiagnosticResult::null();
-    }
-
-    if results.is_null() {
-        return NativeDiagnosticResult::from_blocker_message(
-            "native diagnostic result control-transfer cleanup list requires result ownership at operand 0",
-        );
-    }
-
-    let results = unsafe { std::slice::from_raw_parts(results, result_count) };
     let mut sequenced = NativeDiagnosticResultState {
         value: NativeValueHandle::null(),
         diagnostics: Vec::new(),
     };
+    unsafe {
+        native_diagnostic_result_append_control_transfer_cleanup_and_free(
+            &mut sequenced,
+            results,
+            result_count,
+        );
+    }
+    NativeDiagnosticResult::from_state(sequenced)
+}
+
+unsafe fn native_diagnostic_result_terminal_value_transfer_cleanup_and_free(
+    terminal_result: NativeDiagnosticResult,
+    cleanup_results: *const NativeDiagnosticResult,
+    cleanup_result_count: usize,
+) -> NativeDiagnosticResult {
+    let Some(mut terminal_state) = (unsafe { terminal_result.into_state() }) else {
+        let sequenced = NativeDiagnosticResultState {
+            value: NativeValueHandle::null(),
+            diagnostics: vec![native_diagnostic_result_terminal_value_requirement_diagnostic(0)],
+        };
+        unsafe {
+            native_diagnostic_result_free_result_list(cleanup_results, cleanup_result_count);
+        }
+        return NativeDiagnosticResult::from_state(sequenced);
+    };
+
+    if native_diagnostic_result_state_contains_terminal(&terminal_state) {
+        unsafe { native_diagnostic_result_free_result_list(cleanup_results, cleanup_result_count) };
+        unsafe { phpc_native_value_free(terminal_state.value) };
+        terminal_state.value = NativeValueHandle::null();
+        return NativeDiagnosticResult::from_state(*terminal_state);
+    }
+
+    if terminal_state.value.is_null() {
+        terminal_state
+            .diagnostics
+            .push(native_diagnostic_result_terminal_value_requirement_diagnostic(0));
+        unsafe { native_diagnostic_result_free_result_list(cleanup_results, cleanup_result_count) };
+        return NativeDiagnosticResult::from_state(*terminal_state);
+    }
+
+    let cleanup_terminal = unsafe {
+        native_diagnostic_result_append_control_transfer_cleanup_and_free(
+            &mut terminal_state,
+            cleanup_results,
+            cleanup_result_count,
+        )
+    };
+    if cleanup_terminal {
+        unsafe { phpc_native_value_free(terminal_state.value) };
+        terminal_state.value = NativeValueHandle::null();
+    }
+
+    NativeDiagnosticResult::from_state(*terminal_state)
+}
+
+unsafe fn native_diagnostic_result_append_control_transfer_cleanup_and_free(
+    sequenced: &mut NativeDiagnosticResultState,
+    results: *const NativeDiagnosticResult,
+    result_count: usize,
+) -> bool {
+    if result_count == 0 {
+        return false;
+    }
+
+    if results.is_null() {
+        sequenced.diagnostics.push(NativeDiagnostic {
+            severity: NativeDiagnosticSeverity::Blocker,
+            message:
+                "native diagnostic result control-transfer cleanup list requires result ownership at operand 0"
+                    .to_string(),
+            source_location: None,
+        });
+        return true;
+    }
+
+    let results = unsafe { std::slice::from_raw_parts(results, result_count) };
+    let mut terminal = false;
 
     for (index, result) in results.iter().copied().enumerate() {
         let Some(mut state) = (unsafe { result.into_state() }) else {
             continue;
         };
 
-        let result_terminal = state
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.severity.is_terminal());
+        let result_terminal = native_diagnostic_result_state_contains_terminal(&state);
         unsafe { phpc_native_value_free(state.value) };
         sequenced.diagnostics.append(&mut state.diagnostics);
 
         if result_terminal {
             native_diagnostic_result_free_remaining(&results[(index + 1)..]);
+            terminal = true;
             break;
         }
     }
 
-    NativeDiagnosticResult::from_state(sequenced)
+    terminal
+}
+
+fn native_diagnostic_result_state_contains_terminal(state: &NativeDiagnosticResultState) -> bool {
+    state
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.severity.is_terminal())
+}
+
+unsafe fn native_diagnostic_result_free_result_list(
+    results: *const NativeDiagnosticResult,
+    result_count: usize,
+) {
+    if result_count == 0 || results.is_null() {
+        return;
+    }
+    let results = unsafe { std::slice::from_raw_parts(results, result_count) };
+    native_diagnostic_result_free_remaining(results);
 }
 
 fn native_diagnostic_result_free_remaining(results: &[NativeDiagnosticResult]) {
@@ -20925,6 +21032,18 @@ fn native_deferred_cleanup_blocker_result() -> NativeDiagnosticResult {
     NativeDiagnosticResult::from_blocker_message(
         "native deferred cleanup diagnostic semantics blocked: finally/destructor/shutdown cleanup needs reusable unwinding stacks, pending diagnostic aggregation, exception/fatal ownership, return/control-transfer joins, and exact cleanup ordering",
     )
+}
+
+fn native_diagnostic_result_terminal_value_requirement_diagnostic(
+    operand_index: usize,
+) -> NativeDiagnostic {
+    NativeDiagnostic {
+        severity: NativeDiagnosticSeverity::Blocker,
+        message: format!(
+            "native diagnostic result terminal value transfer requires terminal value ownership at operand {operand_index}"
+        ),
+        source_location: None,
+    }
 }
 
 fn native_diagnostic_operation_list_message(

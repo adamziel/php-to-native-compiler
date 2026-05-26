@@ -679,6 +679,7 @@ fn llvm_native_diagnostic_result_consumer_declarations(usize_type: &str) -> Stri
         "declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free(i8, ptr, {usize_type})\n\
          declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free(ptr, {usize_type})\n\
          declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_control_transfer_cleanup_and_free(ptr, {usize_type})\n\
+         declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_terminal_value_transfer_cleanup_and_free(%phpc.NativeDiagnosticResult, ptr, {usize_type})\n\
          declare i1 @phpc_native_diagnostic_result_list_contains_terminal(ptr, {usize_type})\n\
          declare {usize_type} @phpc_native_diagnostic_result_report_stderr_list_and_free(ptr, {usize_type})\n\
          declare {usize_type} @phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free(ptr, {usize_type})\n"
@@ -707,6 +708,7 @@ fn c_native_diagnostic_result_consumer_declarations() -> &'static str {
         "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free(uint8_t operation, const phpc_NativeDiagnosticResult *results, size_t result_count);\n",
         "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free(const phpc_NativeDiagnosticResult *cleanup_results, size_t cleanup_result_count);\n",
         "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_control_transfer_cleanup_and_free(const phpc_NativeDiagnosticResult *cleanup_results, size_t cleanup_result_count);\n",
+        "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_terminal_value_transfer_cleanup_and_free(phpc_NativeDiagnosticResult terminal_result, const phpc_NativeDiagnosticResult *cleanup_results, size_t cleanup_result_count);\n",
     )
 }
 
@@ -46815,6 +46817,8 @@ mod tests {
         assert!(llvm_native_diagnostic_result_consumer_declarations("i64")
             .contains("@phpc_native_diagnostic_result_control_transfer_cleanup_and_free"));
         assert!(llvm_native_diagnostic_result_consumer_declarations("i64")
+            .contains("@phpc_native_diagnostic_result_terminal_value_transfer_cleanup_and_free"));
+        assert!(llvm_native_diagnostic_result_consumer_declarations("i64")
             .contains("@phpc_native_diagnostic_result_list_contains_terminal"));
         let echo_report = llvm.emit_native_diagnostic_result_report_sink(
             NativeDiagnosticResultReportSink::EchoStdout,
@@ -46869,6 +46873,8 @@ mod tests {
             .contains("phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free"));
         assert!(c_native_diagnostic_result_consumer_declarations()
             .contains("phpc_native_diagnostic_result_control_transfer_cleanup_and_free"));
+        assert!(c_native_diagnostic_result_consumer_declarations()
+            .contains("phpc_native_diagnostic_result_terminal_value_transfer_cleanup_and_free"));
         assert!(c_native_diagnostic_result_declarations()
             .contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"));
         assert!(c_native_diagnostic_result_declarations()

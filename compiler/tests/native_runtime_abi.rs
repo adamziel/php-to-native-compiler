@@ -27,6 +27,7 @@ use php_runtime::{
     phpc_native_diagnostic_result_operation_blocker_list_and_free,
     phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free,
     phpc_native_diagnostic_result_report_stderr_list_and_free,
+    phpc_native_diagnostic_result_terminal_value_transfer_cleanup_and_free,
     phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free,
     phpc_native_string_free, phpc_native_value_cast_result, NativeDiagnosticHandle,
     NativeDiagnosticOperandRequirement, NativeDiagnosticResult, NativeDiagnosticSeverity,
@@ -824,6 +825,131 @@ fn native_diagnostic_result_control_transfer_cleanup_sequences_result_shapes() {
         0
     );
     unsafe { phpc_native_diagnostic_result_free(empty_cleanup) };
+}
+
+#[test]
+fn native_diagnostic_result_terminal_value_transfer_sequences_cleanup_without_losing_terminal_value(
+) {
+    for terminal_value in [
+        Value::Int(42),
+        Value::String("return-value".to_string()),
+        Value::Array(PhpArray::new()),
+    ] {
+        let terminal_result =
+            phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(terminal_value));
+        let (cleanup_warning, cleanup_value) = native_array_string_cast_diagnostic_result_pair();
+        let cleanup = [
+            cleanup_value,
+            phpc_native_diagnostic_result_null(),
+            cleanup_warning,
+        ];
+        let transferred = unsafe {
+            phpc_native_diagnostic_result_terminal_value_transfer_cleanup_and_free(
+                terminal_result,
+                cleanup.as_ptr(),
+                cleanup.len(),
+            )
+        };
+
+        assert!(unsafe { phpc_native_diagnostic_result_has_value(transferred) });
+        assert!(unsafe { phpc_native_diagnostic_result_can_continue(transferred) });
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_result_diagnostic_count(transferred) },
+            1
+        );
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_result_diagnostic_severity_at(transferred, 0) },
+            NativeDiagnosticSeverity::Warning.tag()
+        );
+        unsafe { phpc_native_diagnostic_result_free(transferred) };
+    }
+}
+
+#[test]
+fn native_diagnostic_result_terminal_value_transfer_releases_value_after_terminal_cleanup() {
+    let terminal_result = phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(
+        Value::String("pending-terminal".to_string()),
+    ));
+    let (before_terminal_warning, before_terminal_value) =
+        native_array_string_cast_diagnostic_result_pair();
+    let terminal_cleanup = native_diagnostic_result_blocker(
+        PHPC_NATIVE_DIAGNOSTIC_OPERATION_CONTROL_FLOW_OPERAND_LIST,
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+        13,
+    );
+    let (after_terminal_warning, after_terminal_value) =
+        native_array_string_cast_diagnostic_result_pair();
+    let cleanup = [
+        before_terminal_value,
+        before_terminal_warning,
+        terminal_cleanup,
+        after_terminal_warning,
+        after_terminal_value,
+    ];
+    let transferred = unsafe {
+        phpc_native_diagnostic_result_terminal_value_transfer_cleanup_and_free(
+            terminal_result,
+            cleanup.as_ptr(),
+            cleanup.len(),
+        )
+    };
+
+    assert!(!unsafe { phpc_native_diagnostic_result_has_value(transferred) });
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_diagnostic_count(transferred) },
+        2
+    );
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_diagnostic_severity_at(transferred, 0) },
+        NativeDiagnosticSeverity::Warning.tag()
+    );
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_diagnostic_severity_at(transferred, 1) },
+        NativeDiagnosticSeverity::Blocker.tag()
+    );
+    let terminal_message = runtime_result_diagnostic_message(transferred, 1);
+    assert!(terminal_message.contains("control-flow operand list"));
+    assert!(terminal_message.contains("statement evaluation cleanup at operand 13"));
+    unsafe { phpc_native_diagnostic_result_free(transferred) };
+}
+
+#[test]
+fn native_diagnostic_result_terminal_value_transfer_blocks_missing_terminal_or_cleanup_ownership() {
+    let missing_terminal = unsafe {
+        phpc_native_diagnostic_result_terminal_value_transfer_cleanup_and_free(
+            phpc_native_diagnostic_result_null(),
+            std::ptr::null(),
+            0,
+        )
+    };
+    assert!(!unsafe { phpc_native_diagnostic_result_has_value(missing_terminal) });
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_diagnostic_severity_at(missing_terminal, 0) },
+        NativeDiagnosticSeverity::Blocker.tag()
+    );
+    let message = runtime_result_diagnostic_message(missing_terminal, 0);
+    assert!(message.contains("terminal value transfer"));
+    assert!(message.contains("terminal value ownership at operand 0"));
+    unsafe { phpc_native_diagnostic_result_free(missing_terminal) };
+
+    let terminal_result =
+        phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(Value::Int(99)));
+    let missing_cleanup = unsafe {
+        phpc_native_diagnostic_result_terminal_value_transfer_cleanup_and_free(
+            terminal_result,
+            std::ptr::null(),
+            2,
+        )
+    };
+    assert!(!unsafe { phpc_native_diagnostic_result_has_value(missing_cleanup) });
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_diagnostic_severity_at(missing_cleanup, 0) },
+        NativeDiagnosticSeverity::Blocker.tag()
+    );
+    let message = runtime_result_diagnostic_message(missing_cleanup, 0);
+    assert!(message.contains("control-transfer cleanup list"));
+    assert!(message.contains("result ownership at operand 0"));
+    unsafe { phpc_native_diagnostic_result_free(missing_cleanup) };
 }
 
 #[test]
