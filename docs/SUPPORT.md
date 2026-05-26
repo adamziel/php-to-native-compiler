@@ -3041,7 +3041,7 @@
   `version_compare`, `microtime`, `ini_get`, `ini_set`,
   `get_include_path`, `set_include_path`, `min`, `rand`, `uniqid`,
   `hash_hmac`, `isset`, `empty`, `count`, `compact`, `define`, `constant`, `defined`,
-  `array_key_exists`, `array_key_first`, `array_key_last`, `current`,
+  `array_key_exists`, `key_exists`, `array_key_first`, `array_key_last`, `current`,
   `array_is_list`, `array_values`, `array_keys`, `array_reverse`, `array_slice`, `array_chunk`,
   `array_pad`, `array_merge`, `array_replace`, `array_combine`,
   `array_intersect_key`,
@@ -8538,10 +8538,10 @@
   type-boundary diagnostic.
   `print_r` can also render the current minimal object values. `strlen` remains
   scalar-only and rejects arrays and objects. `count` accepts arrays only.
-  `array_key_exists($key, $array)` accepts integer
+  `array_key_exists($key, $array)` and `key_exists($key, $array)` accept integer
   and string keys over the current ordered array value model, plus `null`
   keys as the empty-string key, boolean keys as integer `0`/`1`, and integral
-  finite float keys as integers. It returns
+  finite float keys as integers. They return
   true for existing keys even when the stored value is `null`, returns false
   for missing keys, rejects non-array second arguments, and rejects unsupported
   key values such as lossy or non-finite floats, arrays, objects, and future
