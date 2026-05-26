@@ -14,10 +14,14 @@ use php_runtime::{
     phpc_native_diagnostic_result_operation_blocker_list_and_free,
     NativeDiagnosticOperandRequirement, NativeDiagnosticSeverity,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_KEY_EVALUATION,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_PROPERTY_EVALUATION,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_RECEIVER_EVALUATION,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_ARRAY_ITEM_BINDING,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_SOURCE_BINDING,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_TARGET_BINDING,
+    PHPC_NATIVE_DIAGNOSTIC_OPERATION_ASSIGNMENT_LVALUE_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_CALL_ARGUMENT_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST,
@@ -253,6 +257,91 @@ fn native_reference_binding_diagnostics_extend_generic_runtime_operand_list_boun
         "{message}"
     );
     unsafe { phpc_native_diagnostic_free(diagnostic) };
+}
+
+#[test]
+fn native_assignment_lvalue_diagnostics_extend_generic_runtime_operand_list_boundary() {
+    let requirements = [
+        NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_RECEIVER_EVALUATION,
+            operand_index: 0,
+        },
+        NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_PROPERTY_EVALUATION,
+            operand_index: 1,
+        },
+        NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_KEY_EVALUATION,
+            operand_index: 2,
+        },
+    ];
+    let list = unsafe {
+        phpc_native_diagnostic_operand_requirement_list_clone(
+            requirements.as_ptr(),
+            requirements.len(),
+        )
+    };
+    let diagnostic = unsafe {
+        phpc_native_diagnostic_result_operation_blocker_list_and_free(
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_ASSIGNMENT_LVALUE_OPERAND_LIST,
+            list,
+        )
+    };
+    assert!(unsafe {
+        phpc_native_diagnostic_contains_severity(
+            diagnostic,
+            NativeDiagnosticSeverity::Blocker as u8,
+        )
+    });
+    let message = runtime_diagnostic_message(diagnostic);
+    assert!(
+        message.contains("assignment-lvalue operand list"),
+        "{message}"
+    );
+    assert!(
+        message.contains("assignment target receiver evaluation at operand 0"),
+        "{message}"
+    );
+    assert!(
+        message.contains("assignment target property evaluation at operand 1"),
+        "{message}"
+    );
+    assert!(
+        message.contains("assignment target key evaluation at operand 2"),
+        "{message}"
+    );
+    unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+    for (source, llvm_expected, c_expected) in [
+        (
+            "<?php\n$items[key_name()] = 1;\n",
+            "LLVM function-call lowering rejects",
+            "assembly function-call lowering rejects",
+        ),
+        (
+            "<?php\n$box->{property_name()} = 1;\n",
+            "LLVM function-call lowering rejects",
+            "assembly function-call lowering rejects",
+        ),
+        (
+            "<?php\n$box->items[new Key()] = 1;\n",
+            "LLVM object-instantiation lowering rejects",
+            "assembly object-instantiation lowering rejects",
+        ),
+    ] {
+        let llvm_error = emit_ir_source(source).unwrap_err();
+        assert_eq!(llvm_error.phase, Phase::Codegen);
+        assert!(
+            llvm_error.message.contains(llvm_expected),
+            "{}",
+            llvm_error.message
+        );
+
+        let program = parse(source).unwrap();
+        let c_error = emit_native_executable_c_source(&program).unwrap_err();
+        assert_eq!(c_error.phase, Phase::Codegen);
+        assert!(c_error.message.contains(c_expected), "{}", c_error.message);
+    }
 }
 
 fn request_superglobal_array_key_consumer_rejection(backend: &str, subject: &str) -> String {

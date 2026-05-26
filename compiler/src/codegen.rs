@@ -21,10 +21,14 @@ use php_runtime::{
     NativeStringPredicate, NativeStringResultOperation, NativeStringSearchOperation,
     PhpPrimitiveArithmeticError, PhpPrimitiveArithmeticOperation, PhpPrimitiveArithmeticValue,
     PhpPrimitiveValue, PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_KEY_EVALUATION,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_PROPERTY_EVALUATION,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_RECEIVER_EVALUATION,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_ARRAY_ITEM_BINDING,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_SOURCE_BINDING,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_TARGET_BINDING,
+    PHPC_NATIVE_DIAGNOSTIC_OPERATION_ASSIGNMENT_LVALUE_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_CALL_ARGUMENT_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST,
@@ -690,6 +694,29 @@ fn native_reference_binding_operand_list_is_blocked(
         PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST,
         requirements,
     )
+}
+
+fn native_assignment_lvalue_operand_list_is_blocked(
+    requirements: &[NativeDiagnosticOperandRequirement],
+) -> bool {
+    native_diagnostic_operation_list_is_blocked(
+        PHPC_NATIVE_DIAGNOSTIC_OPERATION_ASSIGNMENT_LVALUE_OPERAND_LIST,
+        requirements,
+    )
+}
+
+fn native_assignment_target_lvalue_operand_requirements(
+    target: &AssignTarget,
+) -> Vec<NativeDiagnosticOperandRequirement> {
+    native_assignment_target_lvalue_operands(target)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(operand_index, (expr, tag))| {
+            native_lvalue_operand_call_result_operation(expr)
+                .is_some()
+                .then_some(NativeDiagnosticOperandRequirement { tag, operand_index })
+        })
+        .collect()
 }
 
 fn native_reference_assignment_operand_list_requirements(
@@ -4489,13 +4516,29 @@ fn native_assignment_target_call_operation(target: &AssignTarget) -> Option<Nati
 fn native_assignment_target_lvalue_operand_call_operation(
     target: &AssignTarget,
 ) -> Option<NativeCallOperation> {
+    let requirements = native_assignment_target_lvalue_operand_requirements(target);
+    if !native_assignment_lvalue_operand_list_is_blocked(&requirements) {
+        return None;
+    }
+
+    native_assignment_target_lvalue_operands(target)
+        .into_iter()
+        .find_map(|(expr, _)| native_lvalue_operand_call_result_operation(expr))
+}
+
+fn native_assignment_target_lvalue_operands(target: &AssignTarget) -> Vec<(&Expr, u8)> {
+    let receiver_tag = PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_RECEIVER_EVALUATION;
+    let property_tag = PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_PROPERTY_EVALUATION;
+    let key_tag = PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_KEY_EVALUATION;
+
+    let mut operands = Vec::new();
     match target {
-        AssignTarget::ArrayIndex { index, .. } => index
-            .as_ref()
-            .and_then(native_lvalue_operand_call_result_operation),
+        AssignTarget::ArrayIndex { index, .. } => {
+            operands.extend(index.iter().map(|index| (index, key_tag)));
+        }
         AssignTarget::NestedArrayIndex { indices, .. }
         | AssignTarget::ObjectPropertyArrayIndex { indices, .. } => {
-            native_expr_list_call_result_operation(indices)
+            operands.extend(indices.iter().map(|index| (index, key_tag)));
         }
         AssignTarget::NestedArrayAppend {
             indices,
@@ -4506,69 +4549,88 @@ fn native_assignment_target_lvalue_operand_call_operation(
             indices,
             suffix_indices,
             ..
-        } => native_expr_list_call_result_operation(indices)
-            .or_else(|| native_expr_list_call_result_operation(suffix_indices)),
+        } => {
+            operands.extend(indices.iter().map(|index| (index, key_tag)));
+            operands.extend(suffix_indices.iter().map(|index| (index, key_tag)));
+        }
         AssignTarget::NonDirectProperty { holder, .. } => {
-            native_lvalue_operand_call_result_operation(holder)
+            operands.push((holder, receiver_tag));
         }
         AssignTarget::NonDirectDynamicProperty {
             holder, property, ..
-        } => native_lvalue_operand_call_result_operation(holder)
-            .or_else(|| native_lvalue_operand_call_result_operation(property)),
+        } => {
+            operands.push((holder, receiver_tag));
+            operands.push((property, property_tag));
+        }
         AssignTarget::DynamicObjectPropertyArrayIndex {
             property, indices, ..
-        } => native_lvalue_operand_call_result_operation(property)
-            .or_else(|| native_expr_list_call_result_operation(indices)),
+        } => {
+            operands.push((property, property_tag));
+            operands.extend(indices.iter().map(|index| (index, key_tag)));
+        }
         AssignTarget::NonDirectObjectPropertyArrayIndex {
             holder, indices, ..
-        } => native_lvalue_operand_call_result_operation(holder)
-            .or_else(|| native_expr_list_call_result_operation(indices)),
+        } => {
+            operands.push((holder, receiver_tag));
+            operands.extend(indices.iter().map(|index| (index, key_tag)));
+        }
         AssignTarget::NonDirectObjectPropertyArrayAppend {
             holder,
             indices,
             suffix_indices,
             ..
-        } => native_lvalue_operand_call_result_operation(holder)
-            .or_else(|| native_expr_list_call_result_operation(indices))
-            .or_else(|| native_expr_list_call_result_operation(suffix_indices)),
+        } => {
+            operands.push((holder, receiver_tag));
+            operands.extend(indices.iter().map(|index| (index, key_tag)));
+            operands.extend(suffix_indices.iter().map(|index| (index, key_tag)));
+        }
         AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
             holder,
             property,
             indices,
             ..
-        } => native_lvalue_operand_call_result_operation(holder)
-            .or_else(|| native_lvalue_operand_call_result_operation(property))
-            .or_else(|| native_expr_list_call_result_operation(indices)),
+        } => {
+            operands.push((holder, receiver_tag));
+            operands.push((property, property_tag));
+            operands.extend(indices.iter().map(|index| (index, key_tag)));
+        }
         AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
             holder,
             property,
             indices,
             suffix_indices,
             ..
-        } => native_lvalue_operand_call_result_operation(holder)
-            .or_else(|| native_lvalue_operand_call_result_operation(property))
-            .or_else(|| native_expr_list_call_result_operation(indices))
-            .or_else(|| native_expr_list_call_result_operation(suffix_indices)),
+        } => {
+            operands.push((holder, receiver_tag));
+            operands.push((property, property_tag));
+            operands.extend(indices.iter().map(|index| (index, key_tag)));
+            operands.extend(suffix_indices.iter().map(|index| (index, key_tag)));
+        }
         AssignTarget::DynamicObjectPropertyArrayAppend {
             property,
             indices,
             suffix_indices,
             ..
-        } => native_lvalue_operand_call_result_operation(property)
-            .or_else(|| native_expr_list_call_result_operation(indices))
-            .or_else(|| native_expr_list_call_result_operation(suffix_indices)),
-        AssignTarget::DynamicProperty { property, .. }
-        | AssignTarget::ObjectStaticProperty {
-            target: property, ..
-        } => native_lvalue_operand_call_result_operation(property),
+        } => {
+            operands.push((property, property_tag));
+            operands.extend(indices.iter().map(|index| (index, key_tag)));
+            operands.extend(suffix_indices.iter().map(|index| (index, key_tag)));
+        }
+        AssignTarget::DynamicProperty { property, .. } => {
+            operands.push((property, property_tag));
+        }
+        AssignTarget::ObjectStaticProperty { target, .. } => {
+            operands.push((target, receiver_tag));
+        }
         AssignTarget::Variable { .. }
         | AssignTarget::List { .. }
         | AssignTarget::Property { .. }
         | AssignTarget::StaticProperty { .. }
         | AssignTarget::SelfStaticProperty { .. }
         | AssignTarget::ParentStaticProperty { .. }
-        | AssignTarget::LateStaticProperty { .. } => None,
+        | AssignTarget::LateStaticProperty { .. } => {}
     }
+    operands
 }
 
 fn native_unset_target_call_operation(target: &UnsetTarget) -> Option<NativeCallOperation> {
@@ -41196,6 +41258,109 @@ echo " 10" < "zeta";
                 span,
                 NativeCallBlocker::LvalueOperandEvaluationCleanup,
             ))
+        );
+    }
+
+    #[test]
+    fn native_assignment_lvalue_operand_requirements_cover_target_families() {
+        let span = test_span();
+
+        let array_target = AssignTarget::ArrayIndex {
+            name: "items".to_string(),
+            index: Some(Expr::Call {
+                name: "key_name".to_string(),
+                args: vec![Expr::Int(1, span)],
+                span,
+            }),
+            span,
+        };
+        assert_eq!(
+            native_assignment_target_lvalue_operand_requirements(&array_target),
+            vec![NativeDiagnosticOperandRequirement {
+                tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_KEY_EVALUATION,
+                operand_index: 0,
+            }]
+        );
+
+        let dynamic_property_target = AssignTarget::NonDirectDynamicProperty {
+            holder: test_variable_expr("box"),
+            property: Expr::MethodCall {
+                target: Box::new(test_variable_expr("namer")),
+                method: "property".to_string(),
+                args: vec![Expr::Bool(true, span)],
+                span,
+            },
+            span,
+        };
+        assert_eq!(
+            native_assignment_target_lvalue_operand_requirements(&dynamic_property_target),
+            vec![NativeDiagnosticOperandRequirement {
+                tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_PROPERTY_EVALUATION,
+                operand_index: 1,
+            }]
+        );
+
+        let append_target = AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+            holder: Expr::DynamicCall {
+                callee: Box::new(test_variable_expr("receiver")),
+                args: Vec::new(),
+                span,
+            },
+            property: Expr::MethodCall {
+                target: Box::new(test_variable_expr("namer")),
+                method: "property".to_string(),
+                args: Vec::new(),
+                span,
+            },
+            indices: vec![Expr::String("plain".to_string(), span)],
+            suffix_indices: vec![Expr::New {
+                class_name: crate::ast::NewClassName::Named("Key".to_string()),
+                args: vec![Expr::Int(2, span)],
+                span,
+            }],
+            span,
+        };
+        assert_eq!(
+            native_assignment_target_lvalue_operand_requirements(&append_target),
+            vec![
+                NativeDiagnosticOperandRequirement {
+                    tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_RECEIVER_EVALUATION,
+                    operand_index: 0,
+                },
+                NativeDiagnosticOperandRequirement {
+                    tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_PROPERTY_EVALUATION,
+                    operand_index: 1,
+                },
+                NativeDiagnosticOperandRequirement {
+                    tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_KEY_EVALUATION,
+                    operand_index: 3,
+                },
+            ]
+        );
+
+        let object_static_target = AssignTarget::ObjectStaticProperty {
+            target: Expr::New {
+                class_name: crate::ast::NewClassName::Named("Box".to_string()),
+                args: vec![Expr::Int(3, span)],
+                span,
+            },
+            property: "value".to_string(),
+            span,
+        };
+        assert_eq!(
+            native_assignment_target_lvalue_operand_requirements(&object_static_target),
+            vec![NativeDiagnosticOperandRequirement {
+                tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_RECEIVER_EVALUATION,
+                operand_index: 0,
+            }]
+        );
+        assert_eq!(
+            native_assignment_target_lvalue_operand_requirements(&AssignTarget::Property {
+                object: "box".to_string(),
+                property: "value".to_string(),
+                span,
+            }),
+            Vec::new()
         );
     }
 
