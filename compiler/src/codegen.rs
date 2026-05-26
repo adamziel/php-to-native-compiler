@@ -15492,6 +15492,8 @@ struct CGenerator {
     uses_native_closure_helpers: bool,
     uses_native_output_buffer_operation: bool,
     uses_native_object_instantiation_helpers: bool,
+    uses_native_user_class_declaration: bool,
+    uses_native_class_metadata_exists: bool,
     uses_native_object_property_helpers: bool,
     uses_native_conversion_source_helpers: bool,
     uses_native_offset_read_source: bool,
@@ -18011,6 +18013,8 @@ impl CGenerator {
         self.uses_native_text_membership_operation |= branch.uses_native_text_membership_operation;
         self.uses_native_object_instantiation_helpers |=
             branch.uses_native_object_instantiation_helpers;
+        self.uses_native_user_class_declaration |= branch.uses_native_user_class_declaration;
+        self.uses_native_class_metadata_exists |= branch.uses_native_class_metadata_exists;
         self.uses_native_object_property_helpers |= branch.uses_native_object_property_helpers;
         self.uses_native_conversion_source_helpers |= branch.uses_native_conversion_source_helpers;
         self.uses_native_offset_read_source |= branch.uses_native_offset_read_source;
@@ -18053,6 +18057,8 @@ impl CGenerator {
             || self.uses_native_closure_helpers
             || self.uses_native_output_buffer_operation
             || self.uses_native_object_instantiation_helpers
+            || self.uses_native_user_class_declaration
+            || self.uses_native_class_metadata_exists
             || self.uses_native_object_property_helpers
             || self.uses_native_conversion_source_helpers
             || self.uses_native_offset_read_source
@@ -19917,6 +19923,8 @@ impl CGenerator {
                 || self.uses_native_callable_helpers
                 || self.uses_native_diagnostic_result_producers
                 || self.uses_native_diagnostic_result_consumers
+                || self.uses_native_user_class_declaration
+                || self.uses_native_class_metadata_exists
             {
                 output.push_str("#include <stdbool.h>\n");
             }
@@ -20472,6 +20480,15 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_new_declared_class_with_diagnostic(size_t class_id, const uint8_t *class_name, size_t class_name_len, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, size_t property_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_new_declared_class_with_ancestors_and_diagnostic(size_t class_id, const uint8_t *class_name, size_t class_name_len, const size_t *property_declaring_class_ids, const uint8_t *const *property_declaring_class_names, const size_t *property_declaring_class_name_lens, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, size_t property_count, const uint8_t *const *ancestor_class_names, const size_t *ancestor_class_name_lens, size_t ancestor_class_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_new_declared_class_with_relationships_and_diagnostic(size_t class_id, const uint8_t *class_name, size_t class_name_len, const size_t *property_declaring_class_ids, const uint8_t *const *property_declaring_class_names, const size_t *property_declaring_class_name_lens, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, size_t property_count, const uint8_t *const *ancestor_class_names, const size_t *ancestor_class_name_lens, size_t ancestor_class_count, const uint8_t *const *interface_names, const size_t *interface_name_lens, size_t interface_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            }
+            if self.uses_native_user_class_declaration {
+                output.push_str("extern bool phpc_native_declare_user_class_bytes(const uint8_t *ptr, size_t len);\n");
+                output.push_str("extern bool phpc_native_declare_user_class_parent_bytes(const uint8_t *class_ptr, size_t class_len, const uint8_t *parent_ptr, size_t parent_len);\n");
+                output.push_str("extern bool phpc_native_declare_user_class_method_bytes(const uint8_t *class_ptr, size_t class_len, const uint8_t *method_ptr, size_t method_len, uint8_t visibility, bool is_static);\n");
+                output.push_str("extern bool phpc_native_declare_user_class_property_bytes(const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, uint8_t visibility, bool is_static);\n");
+            }
+            if self.uses_native_class_metadata_exists {
+                output.push_str("extern bool phpc_native_value_class_metadata_exists_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle member, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_object_property_helpers {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_public_property_operation_with_diagnostic(phpc_NativeValueHandle object, const uint8_t *property_name, size_t property_name_len, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -28950,6 +28967,86 @@ impl CGenerator {
         Ok(())
     }
 
+    fn emit_native_user_class_declaration(&mut self, class: &ClassDecl) {
+        self.uses_native_string_helpers = true;
+        self.uses_native_user_class_declaration = true;
+
+        let class_index = self.next_static_data;
+        self.next_static_data += 1;
+        let class_data = format!("phpc_user_class_name_{class_index}");
+        self.static_data.push(format!(
+            "static const uint8_t {class_data}[] = {{{}}};",
+            c_byte_array(class.name.as_bytes())
+        ));
+        let declared = format!("user_class_declared_{class_index}");
+        self.body.push(format!(
+            "bool {declared} = phpc_native_declare_user_class_bytes({class_data}, (size_t){});",
+            class.name.len()
+        ));
+        self.body.push(format!("(void){declared};"));
+
+        if let Some(parent) = &class.parent {
+            let parent_index = self.next_static_data;
+            self.next_static_data += 1;
+            let parent_data = format!("phpc_user_class_parent_name_{parent_index}");
+            self.static_data.push(format!(
+                "static const uint8_t {parent_data}[] = {{{}}};",
+                c_byte_array(parent.as_bytes())
+            ));
+            let declared = format!("user_class_parent_declared_{parent_index}");
+            self.body.push(format!(
+                "bool {declared} = phpc_native_declare_user_class_parent_bytes({class_data}, (size_t){}, {parent_data}, (size_t){});",
+                class.name.len(),
+                parent.len()
+            ));
+            self.body.push(format!("(void){declared};"));
+        }
+
+        for member in &class.members {
+            match member {
+                ClassMember::Method(method) => {
+                    let member_index = self.next_static_data;
+                    self.next_static_data += 1;
+                    let method_data = format!("phpc_user_class_method_name_{member_index}");
+                    self.static_data.push(format!(
+                        "static const uint8_t {method_data}[] = {{{}}};",
+                        c_byte_array(method.function.name.as_bytes())
+                    ));
+                    let declared = format!("user_class_method_declared_{member_index}");
+                    let visibility =
+                        Self::declared_class_property_visibility_tag(method.visibility);
+                    let is_static = if method.is_static { "true" } else { "false" };
+                    self.body.push(format!(
+                        "bool {declared} = phpc_native_declare_user_class_method_bytes({class_data}, (size_t){}, {method_data}, (size_t){}, (uint8_t){visibility}, {is_static});",
+                        class.name.len(),
+                        method.function.name.len()
+                    ));
+                    self.body.push(format!("(void){declared};"));
+                }
+                ClassMember::Property(property) => {
+                    let member_index = self.next_static_data;
+                    self.next_static_data += 1;
+                    let property_data = format!("phpc_user_class_property_name_{member_index}");
+                    self.static_data.push(format!(
+                        "static const uint8_t {property_data}[] = {{{}}};",
+                        c_byte_array(property.name.as_bytes())
+                    ));
+                    let declared = format!("user_class_property_declared_{member_index}");
+                    let visibility =
+                        Self::declared_class_property_visibility_tag(property.visibility);
+                    let is_static = if property.is_static { "true" } else { "false" };
+                    self.body.push(format!(
+                        "bool {declared} = phpc_native_declare_user_class_property_bytes({class_data}, (size_t){}, {property_data}, (size_t){}, (uint8_t){visibility}, {is_static});",
+                        class.name.len(),
+                        property.name.len()
+                    ));
+                    self.body.push(format!("(void){declared};"));
+                }
+                ClassMember::Constant(_) => {}
+            }
+        }
+    }
+
     fn emit_statement(&mut self, stmt: &Stmt) -> CompileResult<()> {
         if !matches!(
             stmt,
@@ -29239,6 +29336,7 @@ impl CGenerator {
                 }
                 let key = Self::declared_class_key(&class.name);
                 if self.declared_classes.contains_key(&key) && !class.is_nested {
+                    self.emit_native_user_class_declaration(class);
                     Ok(())
                 } else {
                     Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION))
@@ -38512,6 +38610,7 @@ impl CGenerator {
                     ),
                 NativeObjectMetadataCallKind::MemberMetadataExists => self
                     .emit_native_member_metadata_exists_call(
+                        metadata_call.name,
                         metadata_call.args,
                         metadata_call.span,
                     ),
@@ -38667,20 +38766,22 @@ impl CGenerator {
             }
         }
 
-        if builtin_name.eq_ignore_ascii_case("class_exists") {
-            return self
-                .class_exists_result_for_value(&name)
-                .map(CValue::Bool)
-                .ok_or_else(|| {
-                    self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
-                });
+        if !builtin_name.eq_ignore_ascii_case("class_exists") {
+            return Ok(CValue::Bool(false));
         }
 
-        Ok(CValue::Bool(false))
+        Ok(self.emit_native_class_metadata_exists_value(
+            name,
+            None,
+            native_class_metadata_exists_operation_tag(builtin_name)
+                .expect("class_exists operation tag is defined"),
+            span,
+        )?)
     }
 
     fn emit_native_member_metadata_exists_call(
         &mut self,
+        builtin_name: &str,
         args: &[Expr],
         span: Span,
     ) -> CompileResult<CValue> {
@@ -38703,7 +38804,44 @@ impl CGenerator {
             return Err(self.unsupported(span, ASSEMBLY_OBJECT_METADATA_REJECTION));
         }
 
-        Ok(CValue::Bool(false))
+        let operation = native_class_metadata_exists_operation_tag(builtin_name)
+            .expect("member metadata operation tag is defined");
+        Ok(self.emit_native_class_metadata_exists_value(
+            object_or_class,
+            Some(member),
+            operation,
+            span,
+        )?)
+    }
+
+    fn emit_native_class_metadata_exists_value(
+        &mut self,
+        subject: CValue,
+        member: Option<CValue>,
+        operation: &'static str,
+        span: Span,
+    ) -> CompileResult<CValue> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_class_metadata_exists = true;
+        let subject = self.emit_native_value_for_cvalue(subject, span)?;
+        let member = match member {
+            Some(member) => self.emit_native_value_for_cvalue(member, span)?,
+            None => "(phpc_NativeValueHandle){0}".to_string(),
+        };
+        let diagnostic = self.next_native_name("class_metadata_diagnostic");
+        let result = self.next_native_name("class_metadata_exists");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "bool {result} = phpc_native_value_class_metadata_exists_with_diagnostic({subject}, {member}, {operation}, &{diagnostic});"
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        if member != "(phpc_NativeValueHandle){0}" {
+            self.body.push(format!("phpc_native_value_free({member});"));
+        }
+        self.body
+            .push(format!("phpc_native_value_free({subject});"));
+        Ok(CValue::BoolExpr(result))
     }
 
     fn emit_native_relationship_metadata_call(
@@ -45811,6 +45949,15 @@ fn is_native_member_metadata_exists_builtin(name: &str) -> bool {
         name.to_ascii_lowercase().as_str(),
         "property_exists" | "method_exists"
     )
+}
+
+fn native_class_metadata_exists_operation_tag(name: &str) -> Option<&'static str> {
+    match name.to_ascii_lowercase().as_str() {
+        "class_exists" => Some("0"),
+        "method_exists" => Some("1"),
+        "property_exists" => Some("2"),
+        _ => None,
+    }
 }
 
 fn is_native_relationship_metadata_builtin(name: &str) -> bool {

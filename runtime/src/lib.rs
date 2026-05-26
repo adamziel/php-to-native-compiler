@@ -76,6 +76,14 @@ pub enum NativeTextSurfaceTag {
     ExtensionName = 6,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeClassMetadataOperation {
+    ClassExists = 0,
+    MethodExists = 1,
+    PropertyExists = 2,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TextOnlySurface {
     FunctionName,
@@ -24661,8 +24669,18 @@ impl PhpClassTable {
         self.get(*id)
     }
 
+    pub fn lookup_class_bytes(&self, name: &[u8]) -> Option<&PhpClassMetadata> {
+        let name = std::str::from_utf8(name.strip_prefix(b"\\").unwrap_or(name)).ok()?;
+        self.lookup_class(name)
+    }
+
     pub fn lookup_class_id(&self, name: &str) -> Option<ClassId> {
         self.lookup.get(&normalize_class_lookup_name(name)).copied()
+    }
+
+    pub fn lookup_class_id_bytes(&self, name: &[u8]) -> Option<ClassId> {
+        let name = std::str::from_utf8(name.strip_prefix(b"\\").unwrap_or(name)).ok()?;
+        self.lookup_class_id(name)
     }
 
     pub fn lookup_names_for_class_id(&self, class_id: ClassId) -> Vec<String> {
@@ -24898,6 +24916,11 @@ impl PhpClassMetadata {
         self.properties.get(*index)
     }
 
+    pub fn property_bytes(&self, name: &[u8]) -> Option<&PhpPropertyMetadata> {
+        let name = std::str::from_utf8(name).ok()?;
+        self.property(name)
+    }
+
     pub fn constant(&self, name: &str) -> Option<&PhpClassConstantMetadata> {
         let index = self.constant_lookup.get(name)?;
         self.constants.get(*index)
@@ -24906,6 +24929,11 @@ impl PhpClassMetadata {
     pub fn method(&self, name: &str) -> Option<&PhpMethodMetadata> {
         let index = self.method_lookup.get(&normalize_class_lookup_name(name))?;
         self.methods.get(*index)
+    }
+
+    pub fn method_bytes(&self, name: &[u8]) -> Option<&PhpMethodMetadata> {
+        let name = std::str::from_utf8(name).ok()?;
+        self.method(name)
     }
 
     pub fn object_shape(&self) -> PhpObjectShape {
@@ -28553,6 +28581,422 @@ fn native_declared_class_property_visibility(tag: u8) -> Option<Visibility> {
     }
 }
 
+fn native_class_metadata_lookup_key(bytes: &[u8]) -> Vec<u8> {
+    bytes
+        .strip_prefix(b"\\")
+        .unwrap_or(bytes)
+        .iter()
+        .map(|byte| byte.to_ascii_lowercase())
+        .collect()
+}
+
+fn native_declare_user_class_bytes_result(bytes: &[u8]) -> bool {
+    let lookup_key = native_class_metadata_lookup_key(bytes);
+    NATIVE_USER_CLASSES.with(|classes| {
+        let mut classes = classes.borrow_mut();
+        if classes.iter().any(|class| class.lookup_key == lookup_key) {
+            return false;
+        }
+        classes.push(NativeUserClassMetadata {
+            name: bytes.to_vec(),
+            lookup_key,
+            parent: None,
+            methods: Vec::new(),
+            properties: Vec::new(),
+        });
+        true
+    })
+}
+
+/// # Safety
+///
+/// `ptr` must be null only when `len == 0`, or point to at least `len`
+/// readable bytes. The declared name is stored as PHP class-name bytes for the
+/// generated userland metadata registry.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_declare_user_class_bytes(ptr: *const u8, len: usize) -> bool {
+    let result: Result<bool, ()> = (|| unsafe {
+        let bytes = native_abi_bytes(ptr, len).ok_or(())?;
+        Ok(native_declare_user_class_bytes_result(bytes))
+    })();
+    result.unwrap_or(false)
+}
+
+/// # Safety
+///
+/// Class and parent pointers follow the same pointer/length rules as
+/// `phpc_native_declare_user_class_bytes`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_declare_user_class_parent_bytes(
+    class_ptr: *const u8,
+    class_len: usize,
+    parent_ptr: *const u8,
+    parent_len: usize,
+) -> bool {
+    let result: Result<bool, ()> = (|| unsafe {
+        let class = native_abi_bytes(class_ptr, class_len).ok_or(())?;
+        let parent = native_abi_bytes(parent_ptr, parent_len).ok_or(())?;
+        Ok(native_declare_user_class_parent_bytes_result(class, parent))
+    })();
+    result.unwrap_or(false)
+}
+
+/// # Safety
+///
+/// Class and member pointers follow the same pointer/length rules as
+/// `phpc_native_declare_user_class_bytes`. `visibility` uses
+/// 0=public, 1=protected, 2=private.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_declare_user_class_method_bytes(
+    class_ptr: *const u8,
+    class_len: usize,
+    method_ptr: *const u8,
+    method_len: usize,
+    visibility: u8,
+    is_static: bool,
+) -> bool {
+    let result: Result<bool, ()> = (|| unsafe {
+        let class = native_abi_bytes(class_ptr, class_len).ok_or(())?;
+        let method = native_abi_bytes(method_ptr, method_len).ok_or(())?;
+        native_declare_user_class_method_bytes_result(class, method, visibility, is_static)
+    })();
+    result.unwrap_or(false)
+}
+
+/// # Safety
+///
+/// Class and member pointers follow the same pointer/length rules as
+/// `phpc_native_declare_user_class_bytes`. `visibility` uses
+/// 0=public, 1=protected, 2=private.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_declare_user_class_property_bytes(
+    class_ptr: *const u8,
+    class_len: usize,
+    property_ptr: *const u8,
+    property_len: usize,
+    visibility: u8,
+    _is_static: bool,
+) -> bool {
+    let result: Result<bool, ()> = (|| unsafe {
+        let class = native_abi_bytes(class_ptr, class_len).ok_or(())?;
+        let property = native_abi_bytes(property_ptr, property_len).ok_or(())?;
+        native_declare_user_class_property_bytes_result(class, property, visibility)
+    })();
+    result.unwrap_or(false)
+}
+
+fn native_declare_user_class_parent_bytes_result(class: &[u8], parent: &[u8]) -> bool {
+    let class_key = native_class_metadata_lookup_key(class);
+    NATIVE_USER_CLASSES.with(|classes| {
+        let mut classes = classes.borrow_mut();
+        let Some(class) = classes
+            .iter_mut()
+            .find(|class| class.lookup_key == class_key)
+        else {
+            return false;
+        };
+        match &class.parent {
+            Some(existing) => existing.as_slice() == parent,
+            None => {
+                class.parent = Some(parent.to_vec());
+                true
+            }
+        }
+    })
+}
+
+fn native_declare_user_class_method_bytes_result(
+    class: &[u8],
+    method: &[u8],
+    visibility: u8,
+    is_static: bool,
+) -> Result<bool, ()> {
+    let visibility = native_declared_class_property_visibility(visibility).ok_or(())?;
+    let class_key = native_class_metadata_lookup_key(class);
+    let method_key = native_class_metadata_lookup_key(method);
+    NATIVE_USER_CLASSES.with(|classes| {
+        let mut classes = classes.borrow_mut();
+        let Some(class) = classes
+            .iter_mut()
+            .find(|class| class.lookup_key == class_key)
+        else {
+            return Ok(false);
+        };
+        if class
+            .methods
+            .iter()
+            .any(|method| method.lookup_key == method_key)
+        {
+            return Ok(false);
+        }
+        class.methods.push(NativeUserClassMethodMetadata {
+            name: method.to_vec(),
+            lookup_key: method_key,
+            visibility,
+            is_static,
+        });
+        Ok(true)
+    })
+}
+
+fn native_declare_user_class_property_bytes_result(
+    class: &[u8],
+    property: &[u8],
+    visibility: u8,
+) -> Result<bool, ()> {
+    let visibility = native_declared_class_property_visibility(visibility).ok_or(())?;
+    let class_key = native_class_metadata_lookup_key(class);
+    NATIVE_USER_CLASSES.with(|classes| {
+        let mut classes = classes.borrow_mut();
+        let Some(class) = classes
+            .iter_mut()
+            .find(|class| class.lookup_key == class_key)
+        else {
+            return Ok(false);
+        };
+        if class
+            .properties
+            .iter()
+            .any(|candidate| candidate.name == property)
+        {
+            return Ok(false);
+        }
+        class.properties.push(NativeUserClassPropertyMetadata {
+            name: property.to_vec(),
+            visibility,
+        });
+        Ok(true)
+    })
+}
+
+fn native_user_class_canonical_name_bytes(name: &[u8]) -> Option<Vec<u8>> {
+    let lookup_key = native_class_metadata_lookup_key(name);
+    NATIVE_USER_CLASSES.with(|classes| {
+        classes
+            .borrow()
+            .iter()
+            .find(|class| class.lookup_key == lookup_key)
+            .map(|class| class.name.clone())
+    })
+}
+
+fn native_user_class_metadata_bytes(class_name: &[u8]) -> Option<NativeUserClassMetadata> {
+    let class_name = native_user_class_canonical_name_bytes(class_name)?;
+    let class_key = native_class_metadata_lookup_key(&class_name);
+    NATIVE_USER_CLASSES.with(|classes| {
+        classes
+            .borrow()
+            .iter()
+            .find(|class| class.lookup_key == class_key)
+            .cloned()
+    })
+}
+
+#[cfg(test)]
+fn native_user_classes_reset_for_test() {
+    NATIVE_USER_CLASSES.with(|classes| classes.borrow_mut().clear());
+}
+
+fn native_core_class_canonical_name_bytes(classes: &PhpClassTable, name: &[u8]) -> Option<Vec<u8>> {
+    classes
+        .lookup_class_bytes(name)
+        .map(|class| class.name().as_bytes().to_vec())
+}
+
+fn native_user_class_has_member_bytes(
+    class_name: &[u8],
+    member: &[u8],
+    operation: NativeClassMetadataOperation,
+) -> bool {
+    let classes = PhpClassTable::with_core_classes();
+    let mut current = native_user_class_canonical_name_bytes(class_name);
+    let member_key = native_class_metadata_lookup_key(member);
+    let mut visited = HashSet::new();
+    while let Some(class_name) = current {
+        if let Some(core_id) = classes.lookup_class_id_bytes(&class_name) {
+            return match operation {
+                NativeClassMetadataOperation::MethodExists => classes
+                    .get(core_id)
+                    .and_then(|class| class.method_bytes(member))
+                    .is_some(),
+                NativeClassMetadataOperation::PropertyExists => classes
+                    .get(core_id)
+                    .and_then(|class| class.property_bytes(member))
+                    .is_some(),
+                NativeClassMetadataOperation::ClassExists => true,
+            };
+        }
+        let lookup = native_class_metadata_lookup_key(&class_name);
+        if !visited.insert(lookup) {
+            return false;
+        }
+        let Some(class) = native_user_class_metadata_bytes(&class_name) else {
+            return false;
+        };
+        let found = match operation {
+            NativeClassMetadataOperation::MethodExists => class
+                .methods
+                .iter()
+                .any(|method| method.lookup_key == member_key),
+            NativeClassMetadataOperation::PropertyExists => class
+                .properties
+                .iter()
+                .any(|property| property.name.as_slice() == member),
+            NativeClassMetadataOperation::ClassExists => true,
+        };
+        if found {
+            return true;
+        }
+        current = class.parent.and_then(|parent| {
+            native_core_class_canonical_name_bytes(&classes, &parent)
+                .or_else(|| native_user_class_canonical_name_bytes(&parent))
+        });
+    }
+    false
+}
+
+unsafe fn native_value_class_metadata_exists(
+    subject: NativeValueHandle,
+    member: NativeValueHandle,
+    operation: u8,
+) -> RuntimeResult<bool> {
+    let classes = PhpClassTable::with_core_classes();
+    match operation {
+        tag if tag == NativeClassMetadataOperation::ClassExists as u8 => {
+            let class_name = unsafe {
+                native_value_metadata_php_string_bytes_argument(
+                    subject,
+                    "class_exists()",
+                    "class name",
+                )
+            }?;
+            Ok(classes.lookup_class_bytes(&class_name).is_some()
+                || native_user_class_canonical_name_bytes(&class_name).is_some())
+        }
+        tag if tag == NativeClassMetadataOperation::MethodExists as u8 => {
+            let class_name = unsafe {
+                native_value_metadata_object_or_class_name_bytes_argument(
+                    subject,
+                    "method_exists()",
+                )
+            }?;
+            let method_name = unsafe {
+                native_value_metadata_php_string_bytes_argument(
+                    member,
+                    "method_exists()",
+                    "method name",
+                )
+            }?;
+            Ok(classes
+                .lookup_class_bytes(&class_name)
+                .and_then(|class| class.method_bytes(&method_name))
+                .is_some()
+                || native_user_class_has_member_bytes(
+                    &class_name,
+                    &method_name,
+                    NativeClassMetadataOperation::MethodExists,
+                ))
+        }
+        tag if tag == NativeClassMetadataOperation::PropertyExists as u8 => {
+            let class_name = unsafe {
+                native_value_metadata_object_or_class_name_bytes_argument(
+                    subject,
+                    "property_exists()",
+                )
+            }?;
+            let property_name = unsafe {
+                native_value_metadata_php_string_bytes_argument(
+                    member,
+                    "property_exists()",
+                    "property name",
+                )
+            }?;
+            Ok(classes
+                .lookup_class_bytes(&class_name)
+                .and_then(|class| class.property_bytes(&property_name))
+                .is_some()
+                || native_user_class_has_member_bytes(
+                    &class_name,
+                    &property_name,
+                    NativeClassMetadataOperation::PropertyExists,
+                ))
+        }
+        _ => Err(RuntimeError::invalid_string_conversion(
+            "native class metadata exists failed: unsupported operation tag",
+        )),
+    }
+}
+
+unsafe fn native_value_metadata_php_string_bytes_argument(
+    handle: NativeValueHandle,
+    callable: &'static str,
+    label: &'static str,
+) -> RuntimeResult<Vec<u8>> {
+    let Some(value) = (unsafe { handle.as_ref() }) else {
+        return Err(RuntimeError::unsupported_call(
+            callable,
+            format!("{label} value handle is null"),
+        ));
+    };
+
+    match value {
+        Value::String(value) => Ok(value.as_bytes().to_vec()),
+        Value::BinaryString(value) => Ok(value.clone()),
+        value => Err(RuntimeError::unsupported_call(
+            callable,
+            format!("{label} must be string, got {}", value.type_name()),
+        )),
+    }
+}
+
+unsafe fn native_value_metadata_object_or_class_name_bytes_argument(
+    handle: NativeValueHandle,
+    callable: &'static str,
+) -> RuntimeResult<Vec<u8>> {
+    let Some(value) = (unsafe { handle.as_ref() }) else {
+        return Err(RuntimeError::unsupported_call(
+            callable,
+            "object/class value handle is null",
+        ));
+    };
+
+    match value {
+        Value::Object(object) => Ok(object.class_name().as_bytes().to_vec()),
+        Value::String(value) => Ok(value.as_bytes().to_vec()),
+        Value::BinaryString(value) => Ok(value.clone()),
+        value => Err(RuntimeError::unsupported_call(
+            callable,
+            format!(
+                "object/class argument must be object or string, got {}",
+                value.type_name()
+            ),
+        )),
+    }
+}
+
+/// # Safety
+///
+/// `subject` and `member` must be null or value handles returned by the
+/// runtime ABI and not yet freed. The diagnostic slot is overwritten on
+/// metadata argument or operation errors.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_class_metadata_exists_with_diagnostic(
+    subject: NativeValueHandle,
+    member: NativeValueHandle,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe { native_value_class_metadata_exists(subject, member, operation) } {
+        Ok(result) => result,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
 /// # Safety
 ///
 /// `object` and `replacement` must be null or value handles previously
@@ -30148,8 +30592,32 @@ struct NativeOutputBuffer {
     bytes: Vec<u8>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeUserClassMetadata {
+    name: Vec<u8>,
+    lookup_key: Vec<u8>,
+    parent: Option<Vec<u8>>,
+    methods: Vec<NativeUserClassMethodMetadata>,
+    properties: Vec<NativeUserClassPropertyMetadata>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeUserClassMethodMetadata {
+    name: Vec<u8>,
+    lookup_key: Vec<u8>,
+    visibility: Visibility,
+    is_static: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeUserClassPropertyMetadata {
+    name: Vec<u8>,
+    visibility: Visibility,
+}
+
 thread_local! {
     static NATIVE_OUTPUT_BUFFERS: RefCell<Vec<NativeOutputBuffer>> = RefCell::new(Vec::new());
+    static NATIVE_USER_CLASSES: RefCell<Vec<NativeUserClassMetadata>> = RefCell::new(Vec::new());
 }
 
 #[cfg(test)]
@@ -34156,6 +34624,82 @@ mod tests {
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(scalar) };
         unsafe { phpc_native_value_free(object) };
+    }
+
+    #[test]
+    fn native_user_class_metadata_registry_feeds_class_member_surfaces() {
+        native_user_classes_reset_for_test();
+        assert!(native_declare_user_class_bytes_result(b"UserBase"));
+        assert!(native_declare_user_class_method_bytes_result(
+            b"UserBase",
+            b"BaseStatic",
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+            true,
+        )
+        .expect("parent method metadata should declare"));
+        assert!(native_declare_user_class_property_bytes_result(
+            b"UserBase",
+            b"baseSlot",
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+        )
+        .expect("parent property metadata should declare"));
+        assert!(native_declare_user_class_bytes_result(b"UserChild"));
+        assert!(native_declare_user_class_parent_bytes_result(
+            b"UserChild",
+            b"UserBase",
+        ));
+        assert!(native_declare_user_class_method_bytes_result(
+            b"UserChild",
+            b"run",
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+            false,
+        )
+        .expect("child method metadata should declare"));
+        assert!(native_declare_user_class_property_bytes_result(
+            b"UserChild",
+            b"childSlot",
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+        )
+        .expect("child property metadata should declare"));
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let child = NativeValueHandle::from_value(Value::BinaryString(b"\\UserChild".to_vec()));
+        assert!(unsafe {
+            phpc_native_value_class_metadata_exists_with_diagnostic(
+                child,
+                NativeValueHandle::null(),
+                NativeClassMetadataOperation::ClassExists as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let method = NativeValueHandle::from_value(Value::BinaryString(b"basestatic".to_vec()));
+        assert!(unsafe {
+            phpc_native_value_class_metadata_exists_with_diagnostic(
+                child,
+                method,
+                NativeClassMetadataOperation::MethodExists as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let property = NativeValueHandle::from_value(Value::String("baseSlot".to_string()));
+        assert!(unsafe {
+            phpc_native_value_class_metadata_exists_with_diagnostic(
+                child,
+                property,
+                NativeClassMetadataOperation::PropertyExists as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        unsafe { phpc_native_value_free(property) };
+        unsafe { phpc_native_value_free(method) };
+        unsafe { phpc_native_value_free(child) };
+        native_user_classes_reset_for_test();
     }
 
     #[test]
