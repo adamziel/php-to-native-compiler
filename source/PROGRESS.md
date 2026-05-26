@@ -187,7 +187,6 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary source is clean and synced at `513dbf21`.
 - [x] Primary source is clean and synced at `b918d3b1`.
 - [x] Latest source capability is `b918d3b1`.
 - [x] `6a73b186` is accounted as executable generated-C dynamic callable
