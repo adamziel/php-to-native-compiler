@@ -15240,8 +15240,76 @@ impl CNativeValueReferenceSlot {
 
 struct CNativeConstructorArgumentArray {
     handles: String,
-    count: usize,
+    argument_handles: NativeObjectCallDispatchArgumentHandles,
     cleanup_after_use: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeObjectCallDispatchArgumentHandles {
+    handles: Vec<String>,
+    cleanup_after_use: Vec<String>,
+}
+
+impl NativeObjectCallDispatchArgumentHandles {
+    fn new(handles: Vec<String>) -> Self {
+        let cleanup_after_use = handles
+            .iter()
+            .map(|handle| format!("phpc_native_value_free({handle});"))
+            .collect();
+        Self {
+            handles,
+            cleanup_after_use,
+        }
+    }
+
+    fn empty() -> Self {
+        Self::new(Vec::new())
+    }
+
+    fn push(&mut self, value: &CNativeValueMaterialization) {
+        self.handles.push(value.handle.clone());
+        self.cleanup_after_use
+            .extend(value.cleanup_after_use.iter().cloned());
+    }
+
+    fn as_slice(&self) -> &[String] {
+        &self.handles
+    }
+
+    fn len(&self) -> usize {
+        self.handles.len()
+    }
+
+    fn cleanup_after_use(&self) -> &[String] {
+        &self.cleanup_after_use
+    }
+
+    fn c_array_argument(&self) -> String {
+        if self.handles.is_empty() {
+            "NULL".to_string()
+        } else {
+            self.handles.join(", ")
+        }
+    }
+}
+
+impl CNativeConstructorArgumentArray {
+    fn count(&self) -> usize {
+        self.argument_handles.len()
+    }
+}
+
+struct CNativeObjectCallDispatchFrameArguments {
+    call_args: Vec<String>,
+    argument_handles: NativeObjectCallDispatchArgumentHandles,
+    cleanup_after_use: Vec<String>,
+}
+
+impl CNativeObjectCallDispatchFrameArguments {
+    fn into_call_args_and_cleanup(self) -> (Vec<String>, Vec<String>) {
+        debug_assert!(self.argument_handles.len() <= self.call_args.len());
+        (self.call_args, self.cleanup_after_use)
+    }
 }
 
 struct CNativeReferenceMaterialization {
@@ -19631,7 +19699,7 @@ impl CGenerator {
                 class.clone(),
                 &allocation_failure_cleanup,
             );
-            if constructor_args.count > 0 {
+            if constructor_args.count() > 0 {
                 self.body
                     .push(format!("(void){};", constructor_args.handles));
             }
@@ -19704,7 +19772,7 @@ impl CGenerator {
                     &result,
                     &allocation_failure_cleanup,
                 );
-                if constructor_args.count > 0 {
+                if constructor_args.count() > 0 {
                     self.body
                         .push(format!("(void){};", constructor_args.handles));
                 }
@@ -19753,42 +19821,45 @@ impl CGenerator {
         args: &[Expr],
         failure_cleanup: &str,
     ) -> CompileResult<CNativeConstructorArgumentArray> {
-        let mut values = Vec::new();
-        let mut cleanup_after_use = Vec::new();
-        for arg in args {
-            let arg_failure_cleanup = format!(
-                "{}{}",
-                c_cleanup_sequence(&cleanup_after_use),
-                failure_cleanup
-            );
-            let value = self.materialize_native_value_result_operand(arg, &arg_failure_cleanup)?;
-            cleanup_after_use.extend(value.cleanup_after_use.clone());
-            values.push(value);
-        }
-
-        if values.is_empty() {
+        let arguments =
+            self.materialize_native_object_call_dispatch_argument_handles(args, failure_cleanup)?;
+        if arguments.as_slice().is_empty() {
             return Ok(CNativeConstructorArgumentArray {
                 handles: "NULL".to_string(),
-                count: 0,
-                cleanup_after_use,
+                argument_handles: arguments,
+                cleanup_after_use: Vec::new(),
             });
         }
 
         let handles = self.next_native_name("constructor_arg_values");
-        let value_handles = values
-            .iter()
-            .map(|value| value.handle.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
         self.body.push(format!(
-            "phpc_NativeValueHandle {handles}[] = {{ {value_handles} }};"
+            "phpc_NativeValueHandle {handles}[] = {{ {} }};",
+            arguments.c_array_argument()
         ));
 
         Ok(CNativeConstructorArgumentArray {
             handles,
-            count: values.len(),
-            cleanup_after_use,
+            cleanup_after_use: arguments.cleanup_after_use().to_vec(),
+            argument_handles: arguments,
         })
+    }
+
+    fn materialize_native_object_call_dispatch_argument_handles(
+        &mut self,
+        args: &[Expr],
+        failure_cleanup: &str,
+    ) -> CompileResult<NativeObjectCallDispatchArgumentHandles> {
+        let mut arguments = NativeObjectCallDispatchArgumentHandles::empty();
+        for arg in args {
+            let arg_failure_cleanup = format!(
+                "{}{}",
+                c_cleanup_sequence(arguments.cleanup_after_use()),
+                failure_cleanup
+            );
+            let value = self.materialize_native_value_result_operand(arg, &arg_failure_cleanup)?;
+            arguments.push(&value);
+        }
+        Ok(arguments)
     }
 
     fn emit_declared_class_constructor_call(
@@ -19813,7 +19884,7 @@ impl CGenerator {
             return Ok(());
         }
 
-        let (mut call_args, argument_cleanup) = self.materialize_declared_method_frame_arguments(
+        let frame_arguments = self.materialize_declared_method_frame_arguments(
             class_name,
             constructor,
             Some(receiver_handle),
@@ -19822,6 +19893,7 @@ impl CGenerator {
             failure_cleanup,
             NativeCallCallee::ConstructorDispatch,
         )?;
+        let (mut call_args, argument_cleanup) = frame_arguments.into_call_args_and_cleanup();
         let status = self.next_native_name("constructor_status");
         let result = self.next_native_name("constructor_result");
         self.body.push(format!("int {status} = 0;"));
@@ -29308,16 +29380,16 @@ impl CGenerator {
                 c_cleanup_sequence(shared_cleanup),
                 failure_cleanup
             );
-            let (mut call_args, branch_cleanup) = self
-                .materialize_declared_method_frame_arguments(
-                    &method_class.name,
-                    &method,
-                    None,
-                    args,
-                    span,
-                    &argument_failure_cleanup,
-                    NativeCallCallee::DynamicExpression,
-                )?;
+            let frame_arguments = self.materialize_declared_method_frame_arguments(
+                &method_class.name,
+                &method,
+                None,
+                args,
+                span,
+                &argument_failure_cleanup,
+                NativeCallCallee::DynamicExpression,
+            )?;
+            let (mut call_args, branch_cleanup) = frame_arguments.into_call_args_and_cleanup();
             self.body.push(format!("      {status} = 0;"));
             call_args.push(format!("&{status}"));
             self.body.push(format!(
@@ -29394,16 +29466,16 @@ impl CGenerator {
                 c_cleanup_sequence(shared_cleanup),
                 failure_cleanup
             );
-            let (mut call_args, branch_cleanup) = self
-                .materialize_declared_method_frame_arguments(
-                    &class.name,
-                    &method,
-                    Some(&format!("{parts}.target")),
-                    args,
-                    span,
-                    &argument_failure_cleanup,
-                    NativeCallCallee::DynamicExpression,
-                )?;
+            let frame_arguments = self.materialize_declared_method_frame_arguments(
+                &class.name,
+                &method,
+                Some(&format!("{parts}.target")),
+                args,
+                span,
+                &argument_failure_cleanup,
+                NativeCallCallee::DynamicExpression,
+            )?;
+            let (mut call_args, branch_cleanup) = frame_arguments.into_call_args_and_cleanup();
             self.body.push(format!("        {status} = 0;"));
             call_args.push(format!("&{status}"));
             self.body.push(format!(
@@ -29523,16 +29595,16 @@ impl CGenerator {
 
             let argument_failure_cleanup =
                 format!("{}{}", c_cleanup_sequence(shared_cleanup), failure_cleanup);
-            let (mut call_args, branch_cleanup) = self
-                .materialize_declared_method_frame_arguments(
-                    &class.name,
-                    &method,
-                    Some(callee_handle),
-                    args,
-                    span,
-                    &argument_failure_cleanup,
-                    NativeCallCallee::DynamicExpression,
-                )?;
+            let frame_arguments = self.materialize_declared_method_frame_arguments(
+                &class.name,
+                &method,
+                Some(callee_handle),
+                args,
+                span,
+                &argument_failure_cleanup,
+                NativeCallCallee::DynamicExpression,
+            )?;
+            let (mut call_args, branch_cleanup) = frame_arguments.into_call_args_and_cleanup();
             self.body.push(format!("      {status} = 0;"));
             call_args.push(format!("&{status}"));
             self.body.push(format!(
@@ -30646,8 +30718,9 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
         callee: NativeCallCallee,
-    ) -> CompileResult<(Vec<String>, Vec<String>)> {
+    ) -> CompileResult<CNativeObjectCallDispatchFrameArguments> {
         let mut cleanup_after_use = Vec::new();
+        let mut argument_handles = NativeObjectCallDispatchArgumentHandles::empty();
         let mut call_args = vec![self.user_function_call_depth_argument()];
         if let Some(receiver_handle) = receiver_handle {
             call_args.push(receiver_handle.to_string());
@@ -30682,6 +30755,7 @@ impl CGenerator {
             } else {
                 let value = self
                     .materialize_native_value_result_operand(value_expr, &value_failure_cleanup)?;
+                argument_handles.push(&value);
                 cleanup_after_use.extend(value.cleanup_after_use.clone());
                 call_args.push(value.handle);
             }
@@ -30699,11 +30773,16 @@ impl CGenerator {
                 &callable_name,
                 &variadic_failure_cleanup,
             )?;
+            argument_handles.push(&variadic_value);
             cleanup_after_use.extend(variadic_value.cleanup_after_use.clone());
             call_args.push(variadic_value.handle);
         }
 
-        Ok((call_args, cleanup_after_use))
+        Ok(CNativeObjectCallDispatchFrameArguments {
+            call_args,
+            argument_handles,
+            cleanup_after_use,
+        })
     }
 
     fn emit_declared_method_value_result_call(
@@ -30817,16 +30896,16 @@ impl CGenerator {
             }
 
             let argument_failure_cleanup = format!("{receiver_cleanup}{failure_cleanup}");
-            let (mut call_args, branch_cleanup) = self
-                .materialize_declared_method_frame_arguments(
-                    &class.name,
-                    &method,
-                    Some(&receiver.handle),
-                    args,
-                    span,
-                    &argument_failure_cleanup,
-                    NativeCallCallee::MethodDispatch,
-                )?;
+            let frame_arguments = self.materialize_declared_method_frame_arguments(
+                &class.name,
+                &method,
+                Some(&receiver.handle),
+                args,
+                span,
+                &argument_failure_cleanup,
+                NativeCallCallee::MethodDispatch,
+            )?;
+            let (mut call_args, branch_cleanup) = frame_arguments.into_call_args_and_cleanup();
 
             self.body.push(format!("{status} = 0;"));
             call_args.push(format!("&{status}"));
@@ -30947,16 +31026,16 @@ impl CGenerator {
                 continue;
             }
 
-            let (mut call_args, branch_cleanup) = self
-                .materialize_declared_method_frame_arguments(
-                    &class.name,
-                    &method,
-                    Some(&receiver.handle),
-                    args,
-                    span,
-                    &shared_failure_cleanup,
-                    NativeCallCallee::MethodDispatch,
-                )?;
+            let frame_arguments = self.materialize_declared_method_frame_arguments(
+                &class.name,
+                &method,
+                Some(&receiver.handle),
+                args,
+                span,
+                &shared_failure_cleanup,
+                NativeCallCallee::MethodDispatch,
+            )?;
+            let (mut call_args, branch_cleanup) = frame_arguments.into_call_args_and_cleanup();
 
             self.body.push(format!("{status} = 0;"));
             call_args.push(format!("&{status}"));
@@ -31064,16 +31143,16 @@ impl CGenerator {
             }
 
             let argument_failure_cleanup = format!("{receiver_cleanup}{failure_cleanup}");
-            let (mut call_args, branch_cleanup) = self
-                .materialize_declared_method_frame_arguments(
-                    &class.name,
-                    &method,
-                    None,
-                    args,
-                    span,
-                    &argument_failure_cleanup,
-                    NativeCallCallee::MethodDispatch,
-                )?;
+            let frame_arguments = self.materialize_declared_method_frame_arguments(
+                &class.name,
+                &method,
+                None,
+                args,
+                span,
+                &argument_failure_cleanup,
+                NativeCallCallee::MethodDispatch,
+            )?;
+            let (mut call_args, branch_cleanup) = frame_arguments.into_call_args_and_cleanup();
 
             self.body.push(format!("{status} = 0;"));
             call_args.push(format!("&{status}"));
@@ -31136,7 +31215,7 @@ impl CGenerator {
             );
         }
 
-        let (mut call_args, cleanup_after_use) = self.materialize_declared_method_frame_arguments(
+        let frame_arguments = self.materialize_declared_method_frame_arguments(
             &class.name,
             &method,
             None,
@@ -31145,6 +31224,7 @@ impl CGenerator {
             failure_cleanup,
             NativeCallCallee::MethodDispatch,
         )?;
+        let (mut call_args, cleanup_after_use) = frame_arguments.into_call_args_and_cleanup();
         let status = self.next_native_name("static_method_status");
         let result = self.next_native_name("static_method_result");
         self.body.push(format!("int {status} = 0;"));
@@ -45002,6 +45082,127 @@ mod tests {
                 root_symbols: false,
                 request_state: true,
             }
+        );
+    }
+
+    #[test]
+    fn native_object_call_dispatch_argument_handles_cover_method_static_and_constructor_families() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "class DispatchArgumentBox {\n",
+            "    public function __construct($seed, ...$rest) {}\n",
+            "    public function inst($first, $second = \"default\") { return $first; }\n",
+            "    public static function stat($value) { return $value; }\n",
+            "}\n",
+            "class ConstructorlessDispatchArgumentBox {}\n",
+        ))
+        .unwrap();
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            uses_native_value_clone: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .unwrap();
+
+        let (instance_class, instance_method) = generator
+            .declared_class_method_candidates("inst")
+            .into_iter()
+            .find(|(class, _)| class.name == "DispatchArgumentBox")
+            .expect("instance method candidate");
+        let instance_frame = generator
+            .materialize_declared_method_frame_arguments(
+                &instance_class.name,
+                &instance_method,
+                Some("receiver_handle"),
+                &[Expr::Int(7, span(10))],
+                span(1),
+                "fail();",
+                NativeCallCallee::MethodDispatch,
+            )
+            .unwrap();
+        assert_eq!(
+            instance_frame.call_args.first().map(String::as_str),
+            Some("1")
+        );
+        assert!(instance_frame
+            .call_args
+            .iter()
+            .any(|arg| arg == "receiver_handle"));
+        assert_eq!(instance_frame.argument_handles.len(), 2);
+        assert_eq!(
+            instance_frame.cleanup_after_use,
+            instance_frame.argument_handles.cleanup_after_use().to_vec()
+        );
+
+        let (static_class, static_method) = generator
+            .declared_class_static_method("DispatchArgumentBox", "stat")
+            .expect("static method candidate");
+        let static_frame = generator
+            .materialize_declared_method_frame_arguments(
+                &static_class.name,
+                &static_method,
+                None,
+                &[Expr::String("value".to_string(), span(20))],
+                span(2),
+                "fail();",
+                NativeCallCallee::MethodDispatch,
+            )
+            .unwrap();
+        assert_eq!(static_frame.call_args.len(), 2);
+        assert_eq!(static_frame.argument_handles.len(), 1);
+        assert!(!static_frame
+            .call_args
+            .iter()
+            .any(|arg| arg == "receiver_handle"));
+
+        let constructor_class = generator
+            .declared_classes
+            .get(&CGenerator::declared_class_key("DispatchArgumentBox"))
+            .expect("declared class")
+            .clone();
+        let (constructor_scope, constructor) = generator
+            .declared_class_constructor_for_instantiation(&constructor_class)
+            .expect("constructor candidate");
+        let constructor_frame = generator
+            .materialize_declared_method_frame_arguments(
+                &constructor_scope.name,
+                &constructor,
+                Some("object_handle"),
+                &[
+                    Expr::Int(1, span(30)),
+                    Expr::String("extra".to_string(), span(31)),
+                ],
+                span(3),
+                "fail();",
+                NativeCallCallee::ConstructorDispatch,
+            )
+            .unwrap();
+        assert!(constructor_frame
+            .call_args
+            .iter()
+            .any(|arg| arg == "object_handle"));
+        assert_eq!(constructor_frame.argument_handles.len(), 2);
+
+        let constructorless_arguments = generator
+            .materialize_constructor_argument_value_array(
+                &[
+                    Expr::Int(2, span(40)),
+                    Expr::String("unused".to_string(), span(41)),
+                ],
+                "fail();",
+            )
+            .unwrap();
+        assert_ne!(constructorless_arguments.handles, "NULL");
+        assert_eq!(constructorless_arguments.count(), 2);
+        assert_eq!(constructorless_arguments.argument_handles.len(), 2);
+        assert_eq!(
+            constructorless_arguments.cleanup_after_use,
+            constructorless_arguments
+                .argument_handles
+                .cleanup_after_use()
+                .to_vec()
         );
     }
 
