@@ -14556,6 +14556,22 @@ enum CNativeArrayLvalueOwnerSource {
     SymbolTableRoot(String),
 }
 
+enum CNativeValueOwnerSource {
+    DirectVariable {
+        name: String,
+        span: Span,
+        facts: Option<CNativeValueFacts>,
+    },
+}
+
+enum CNativeValueOwnerCommit {
+    DirectVariable {
+        name: String,
+        span: Span,
+        facts: Option<CNativeValueFacts>,
+    },
+}
+
 #[derive(Debug, Clone, Copy)]
 enum CDynamicCallableBuiltinRuntimeCandidate {
     StringLength,
@@ -14935,6 +14951,11 @@ struct CNativeArrayLvalueTargetMaterialization {
 struct CNativeValueMaterialization {
     handle: String,
     cleanup_after_use: Vec<String>,
+}
+
+struct CNativeValueOwnerMaterialization {
+    subject: CNativeValueMaterialization,
+    commit: CNativeValueOwnerCommit,
 }
 
 struct CNativeArrayAccessOffsetReadOperands {
@@ -22743,6 +22764,64 @@ impl CGenerator {
             span,
             "ArrayAccess",
         )
+    }
+
+    fn native_arrayaccess_direct_variable_owner_source(
+        &self,
+        name: &str,
+        span: Span,
+    ) -> Option<CNativeValueOwnerSource> {
+        let facts = self.native_arrayaccess_subject_facts_for_variable(name, span)?;
+        Some(CNativeValueOwnerSource::DirectVariable {
+            name: name.to_string(),
+            span,
+            facts: Some(facts),
+        })
+    }
+
+    fn materialize_native_value_owner(
+        &mut self,
+        source: CNativeValueOwnerSource,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueOwnerMaterialization> {
+        match source {
+            CNativeValueOwnerSource::DirectVariable { name, span, facts } => {
+                let subject_expr = Expr::Variable(name.clone(), span);
+                let subject =
+                    self.materialize_native_value_result_operand(&subject_expr, failure_cleanup)?;
+                Ok(CNativeValueOwnerMaterialization {
+                    subject,
+                    commit: CNativeValueOwnerCommit::DirectVariable { name, span, facts },
+                })
+            }
+        }
+    }
+
+    fn emit_native_value_owner_commit(
+        &mut self,
+        commit: CNativeValueOwnerCommit,
+        replacement: &str,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        match commit {
+            CNativeValueOwnerCommit::DirectVariable { name, span, facts } => {
+                self.emit_active_symbol_table_root_value_write(
+                    &name,
+                    replacement,
+                    span,
+                    failure_cleanup,
+                )?;
+                self.store_native_value_result_variable_with_native_value_facts(
+                    &name,
+                    CNativeValueMaterialization {
+                        handle: replacement.to_string(),
+                        cleanup_after_use: Vec::new(),
+                    },
+                    facts,
+                );
+                Ok(())
+            }
+        }
     }
 
     fn emit_symbol_table_variable_value_read(
@@ -39066,20 +39145,17 @@ impl CGenerator {
         operation: CNativeArrayAccessOffsetWriteOperation,
         span: Span,
         failure_cleanup: &str,
-    ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let subject_facts = self.native_arrayaccess_subject_facts_for_variable(name, span);
-        if subject_facts.is_none() {
-            return Ok(None);
-        }
+    ) -> CompileResult<bool> {
+        let Some(source) = self.native_arrayaccess_direct_variable_owner_source(name, span) else {
+            return Ok(false);
+        };
 
         self.uses_native_string_helpers = true;
         self.uses_native_callable_helpers = true;
         self.uses_native_arrayaccess_offset_write_helpers = true;
 
-        let subject_expr = Expr::Variable(name.to_string(), span);
-        let subject =
-            self.materialize_native_value_result_operand(&subject_expr, failure_cleanup)?;
-        let subject_cleanup = c_cleanup_sequence(&subject.cleanup_after_use);
+        let owner = self.materialize_native_value_owner(source, failure_cleanup)?;
+        let subject_cleanup = c_cleanup_sequence(&owner.subject.cleanup_after_use);
         let offset_failure_cleanup = format!("{subject_cleanup}{failure_cleanup}");
         let offset = match operation {
             CNativeArrayAccessOffsetWriteOperation::Append => CNativeValueMaterialization {
@@ -39114,26 +39190,22 @@ impl CGenerator {
             }
         };
 
-        self.emit_native_arrayaccess_offset_write_operation_from_materialized(
-            name,
-            subject,
+        self.emit_native_arrayaccess_offset_write_operation_for_owner(
+            owner,
             offset,
             replacement,
             operation,
-            span,
             failure_cleanup,
-        )
-        .map(Some)
+        )?;
+        Ok(true)
     }
 
-    fn emit_native_arrayaccess_offset_write_operation_from_materialized(
+    fn emit_native_arrayaccess_offset_write_operation_for_owner(
         &mut self,
-        name: &str,
-        subject: CNativeValueMaterialization,
+        owner: CNativeValueOwnerMaterialization,
         offset: CNativeValueMaterialization,
         replacement: CNativeValueMaterialization,
         operation: CNativeArrayAccessOffsetWriteOperation,
-        span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<CNativeValueMaterialization> {
         self.uses_native_string_helpers = true;
@@ -39142,7 +39214,7 @@ impl CGenerator {
 
         let mut operand_cleanup = replacement.cleanup_after_use;
         operand_cleanup.extend(offset.cleanup_after_use);
-        operand_cleanup.extend(subject.cleanup_after_use);
+        operand_cleanup.extend(owner.subject.cleanup_after_use);
         let operand_cleanup_sequence = c_cleanup_sequence(&operand_cleanup);
         let table = self
             .ensure_native_callable_table(&format!("{operand_cleanup_sequence}{failure_cleanup}"));
@@ -39153,7 +39225,7 @@ impl CGenerator {
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
         self.body.push(format!(
             "phpc_NativeValueHandle {result} = phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic({table}, {}, {}, {}, {}, (phpc_NativeStringHandle){{0}}, &{diagnostic});",
-            subject.handle,
+            owner.subject.handle,
             offset.handle,
             replacement.handle,
             operation.c_tag()
@@ -39165,10 +39237,9 @@ impl CGenerator {
             .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
         self.body
             .push(format!("phpc_native_diagnostic_free({diagnostic});"));
-        self.emit_active_symbol_table_root_value_write(
-            name,
+        self.emit_native_value_owner_commit(
+            owner.commit,
             &result,
-            span,
             &format!(
                 "phpc_native_value_free({result}); {operand_cleanup_sequence}{failure_cleanup}"
             ),
@@ -39195,23 +39266,16 @@ impl CGenerator {
         } else {
             CNativeArrayAccessOffsetWriteOperation::Append
         };
-        let Some(result) = self.emit_native_arrayaccess_offset_write_operation_for_variable(
+        if !self.emit_native_arrayaccess_offset_write_operation_for_variable(
             name,
             index.as_ref(),
             Some(replacement_expr),
             operation,
             *span,
             failure_cleanup,
-        )?
-        else {
+        )? {
             return Ok(false);
-        };
-        let subject_facts = self.native_arrayaccess_subject_facts_for_variable(name, *span);
-        self.store_native_value_result_variable_with_native_value_facts(
-            name,
-            result,
-            subject_facts,
-        );
+        }
         Ok(true)
     }
 
@@ -39225,20 +39289,17 @@ impl CGenerator {
         let AssignTarget::ArrayIndex { name, index, .. } = target else {
             return Ok(None);
         };
-        let subject_facts = self.native_arrayaccess_subject_facts_for_variable(name, span);
-        if subject_facts.is_none() {
+        let Some(source) = self.native_arrayaccess_direct_variable_owner_source(name, span) else {
             return Ok(None);
-        }
+        };
 
         let operation = if index.is_some() {
             CNativeArrayAccessOffsetWriteOperation::Write
         } else {
             CNativeArrayAccessOffsetWriteOperation::Append
         };
-        let subject_expr = Expr::Variable(name.to_string(), span);
-        let subject =
-            self.materialize_native_value_result_operand(&subject_expr, failure_cleanup)?;
-        let subject_cleanup = c_cleanup_sequence(&subject.cleanup_after_use);
+        let owner = self.materialize_native_value_owner(source, failure_cleanup)?;
+        let subject_cleanup = c_cleanup_sequence(&owner.subject.cleanup_after_use);
         let offset_failure_cleanup = format!("{subject_cleanup}{failure_cleanup}");
         let offset = if let Some(index) = index.as_ref() {
             self.materialize_native_value_result_operand(index, &offset_failure_cleanup)?
@@ -39256,20 +39317,13 @@ impl CGenerator {
                 replacement_expr,
                 &replacement_failure_cleanup,
             )?;
-        let result = self.emit_native_arrayaccess_offset_write_operation_from_materialized(
-            name,
-            subject,
+        self.emit_native_arrayaccess_offset_write_operation_for_owner(
+            owner,
             offset,
             replacement,
             operation,
-            span,
             failure_cleanup,
         )?;
-        self.store_native_value_result_variable_with_native_value_facts(
-            name,
-            result,
-            subject_facts,
-        );
         Ok(Some(replacement_value))
     }
 
@@ -39280,23 +39334,16 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<bool> {
-        let Some(result) = self.emit_native_arrayaccess_offset_write_operation_for_variable(
+        if !self.emit_native_arrayaccess_offset_write_operation_for_variable(
             name,
             Some(index),
             None,
             CNativeArrayAccessOffsetWriteOperation::Unset,
             span,
             failure_cleanup,
-        )?
-        else {
+        )? {
             return Ok(false);
-        };
-        let subject_facts = self.native_arrayaccess_subject_facts_for_variable(name, span);
-        self.store_native_value_result_variable_with_native_value_facts(
-            name,
-            result,
-            subject_facts,
-        );
+        }
         Ok(true)
     }
 
