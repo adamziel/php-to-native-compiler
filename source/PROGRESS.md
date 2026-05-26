@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 02:20 CEST
+Updated: 2026-05-26 02:34 CEST
 Evaluation marker: `20260526T001830Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
@@ -15,18 +15,27 @@ Overall estimated progress: **95%** `[###################-]`
 Executable PHP semantics: **95%** `[###################-]`
 
 Primary was clean and aligned with `origin/master` at
-`c8795349 docs: account diagnostic operand-list blocker boundary` before this
+`b4b21937 native: add reference-binding operand-list blocker requirements` before this
 `PROGRESS.md` edit.
 
 Latest primary-integrated source capability baseline:
-`a544daa8 native: add diagnostic operand-list blocker boundary`.
+`b4b21937 native: add reference-binding operand-list blocker requirements`.
 
-This review found no newer primary-integrated source capability after
-`a544daa8`; `c8795349` is progress accounting only. Lane-local reference
-binding operation-list follow-up, dynamic callable compiler-consumer mapping,
-request/global direct-handoff, and trait metadata work remain uncounted until
-they are narrowed, reviewed, integrated, committed, and pushed from current
-primary.
+`b4b21937` extends the generalized diagnostic operation and operand-list
+requirement blocker ABI to reference-binding surfaces. Reference-assignment
+target/source blockers and by-reference array item blockers now route through
+the shared operation-list requirement vocabulary, with runtime and compiler
+tests covering target binding, source binding, and array-item binding
+requirements across multiple expression/reference surfaces. This is
+diagnostic/blocker infrastructure only: it does not implement executable PHP
+reference binding, full alias/COW behavior, writeback, cleanup/unwind ordering,
+or source-ordered diagnostics. Overall, executable, and workstream estimates
+remain flat.
+
+Non-repeat guard: future reference-binding work must extend or consume the
+shared diagnostic operation-list and operand requirement ABI from `a544daa8`
+and `b4b21937`, not add source-shape blockers, generated-output recognizers,
+or fixture-specific reference-binding branches.
 
 `a544daa8` adds a generalized diagnostic operation and operand-list
 requirement blocker boundary in the runtime and compiler. Call-argument and
@@ -39,9 +48,8 @@ ownership, frame handoff, callable dispatch, reference binding, or executable
 operand-evaluation semantics. Overall, executable, and workstream estimates
 remain flat.
 
-Non-repeat guard: reference-binding and later diagnostic work must layer on the
-generic operand-list requirement boundary from `a544daa8` instead of adding
-source-shape blockers.
+Non-repeat guard: diagnostic work must layer on the generic operand-list
+requirement boundary from `a544daa8` instead of adding source-shape blockers.
 
 `dae1b44c` repairs the runtime callable-value dispatch foundation already
 counted at `5abf8525`: inherited callable lookup now preserves the requested
