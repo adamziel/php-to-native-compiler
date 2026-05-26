@@ -127,6 +127,8 @@
 <p>destructor-observable allocatable and constructor-allocation blockers.</p>
 <li>[x] Shared diagnostic operation/operand-list requirement blocker boundary for</li>
 <p>call-argument and lvalue diagnostic families.</p>
+<li>[x] Shared reference-binding operand-list requirement blockers for</li>
+<p>reference-assignment target/source operands and by-reference array item operands.</p>
 </ul>
 <p>In progress but lane-local or not yet executable primary support:</p>
 <ul>
@@ -135,7 +137,7 @@
 <li>[ ] <code>impl-native-call-semantics</code> has broad dirty evidence for call ordering,</li>
 <p>callable-value dispatch, source-call ordering, and object/call blockers. The try-body call-routing and allocatable destructor-risk packets now count only through their pushed primary commits; remaining lane-local work still needs fresh current-primary review and integration.</p>
 <li>[ ] <code>impl-native-error-diagnostic-semantics</code> has broad dirty diagnostic</li>
-<p>result/scanner contracts beyond the integrated operand-list blocker boundary. Useful evidence, but not primary progress and not a substitute for executable PHP semantics.</p>
+<p>result/scanner contracts beyond the integrated operand-list blocker boundary, except for the integrated <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b4b21937">b4b21937</a></code> reference-binding operand-list requirement packet. Useful evidence, but not primary progress and not a substitute for executable PHP semantics.</p>
 <li>[ ] Broader closure/call reference returns need reusable consumers beyond</li>
 <p>descriptor closures: user functions, methods, static calls, constructors, discarded calls, and non-descriptor closure surfaces.</p>
 <li>[ ] Broad parked lanes remain evidence only until exact current-primary prep,</li>
@@ -143,8 +145,8 @@
 </ul>
 <p>Not done:</p>
 <ul>
-<li>[ ] Full references/COW identity, arbitrary alias roots, and alias-preserving</li>
-<p>write-through.</p>
+<li>[ ] Full executable reference binding, references/COW identity, arbitrary</li>
+<p>alias roots, and alias-preserving write-through.</p>
 <li>[ ] Executable request storage/writeback, <code>$GLOBALS</code> self-cells,</li>
 <p>request/global alias parity, request foreach, and mutation-during-iteration behavior.</p>
 <li>[ ] Includes, variable variables, and dynamic symbol behavior.</li>
@@ -244,6 +246,6 @@
 <li>Extending inline generated-C <code>phpc_NativeReferenceHandle</code> typedef predicates;</li>
 <p>native-link helpers that can emit reference-handle declarations must use <code>uses_native_reference_handle_type()</code>.</p>
 </ul></section></main>
-  <footer><span>Generated 2026-05-26T00:36:02.291Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
+  <footer><span>Generated 2026-05-26T00:36:11.870Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
 </body>
 </html>

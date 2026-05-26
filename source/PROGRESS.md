@@ -287,6 +287,9 @@ Primary-integrated executable or executable-prerequisite capability:
   destructor-observable allocatable and constructor-allocation blockers.
 - [x] Shared diagnostic operation/operand-list requirement blocker boundary for
   call-argument and lvalue diagnostic families.
+- [x] Shared reference-binding operand-list requirement blockers for
+  reference-assignment target/source operands and by-reference array item
+  operands.
 
 In progress but lane-local or not yet executable primary support:
 
@@ -302,8 +305,9 @@ In progress but lane-local or not yet executable primary support:
   needs fresh current-primary review and integration.
 - [ ] `impl-native-error-diagnostic-semantics` has broad dirty diagnostic
   result/scanner contracts beyond the integrated operand-list blocker
-  boundary. Useful evidence, but not primary progress and not a substitute for
-  executable PHP semantics.
+  boundary, except for the integrated `b4b21937` reference-binding
+  operand-list requirement packet. Useful evidence, but not primary progress
+  and not a substitute for executable PHP semantics.
 - [ ] Broader closure/call reference returns need reusable consumers beyond
   descriptor closures: user functions, methods, static calls, constructors,
   discarded calls, and non-descriptor closure surfaces.
@@ -312,8 +316,8 @@ In progress but lane-local or not yet executable primary support:
 
 Not done:
 
-- [ ] Full references/COW identity, arbitrary alias roots, and alias-preserving
-  write-through.
+- [ ] Full executable reference binding, references/COW identity, arbitrary
+  alias roots, and alias-preserving write-through.
 - [ ] Executable request storage/writeback, `$GLOBALS` self-cells,
   request/global alias parity, request foreach, and mutation-during-iteration
   behavior.
