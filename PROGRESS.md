@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 02:20 CEST
+Updated: 2026-05-26 02:34 CEST
 Evaluation marker: `20260526T001830Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
@@ -15,18 +15,27 @@ Overall estimated progress: **95%** `[###################-]`
 Executable PHP semantics: **95%** `[###################-]`
 
 Primary was clean and aligned with `origin/master` at
-`c8795349 docs: account diagnostic operand-list blocker boundary` before this
+`b4b21937 native: add reference-binding operand-list blocker requirements` before this
 `PROGRESS.md` edit.
 
 Latest primary-integrated source capability baseline:
-`a544daa8 native: add diagnostic operand-list blocker boundary`.
+`b4b21937 native: add reference-binding operand-list blocker requirements`.
 
-This review found no newer primary-integrated source capability after
-`a544daa8`; `c8795349` is progress accounting only. Lane-local reference
-binding operation-list follow-up, dynamic callable compiler-consumer mapping,
-request/global direct-handoff, and trait metadata work remain uncounted until
-they are narrowed, reviewed, integrated, committed, and pushed from current
-primary.
+`b4b21937` extends the generalized diagnostic operation and operand-list
+requirement blocker ABI to reference-binding surfaces. Reference-assignment
+target/source blockers and by-reference array item blockers now route through
+the shared operation-list requirement vocabulary, with runtime and compiler
+tests covering target binding, source binding, and array-item binding
+requirements across multiple expression/reference surfaces. This is
+diagnostic/blocker infrastructure only: it does not implement executable PHP
+reference binding, full alias/COW behavior, writeback, cleanup/unwind ordering,
+or source-ordered diagnostics. Overall, executable, and workstream estimates
+remain flat.
+
+Non-repeat guard: future reference-binding work must extend or consume the
+shared diagnostic operation-list and operand requirement ABI from `a544daa8`
+and `b4b21937`, not add source-shape blockers, generated-output recognizers,
+or fixture-specific reference-binding branches.
 
 `a544daa8` adds a generalized diagnostic operation and operand-list
 requirement blocker boundary in the runtime and compiler. Call-argument and
@@ -39,9 +48,8 @@ ownership, frame handoff, callable dispatch, reference binding, or executable
 operand-evaluation semantics. Overall, executable, and workstream estimates
 remain flat.
 
-Non-repeat guard: reference-binding and later diagnostic work must layer on the
-generic operand-list requirement boundary from `a544daa8` instead of adding
-source-shape blockers.
+Non-repeat guard: diagnostic work must layer on the generic operand-list
+requirement boundary from `a544daa8` instead of adding source-shape blockers.
 
 `dae1b44c` repairs the runtime callable-value dispatch foundation already
 counted at `5abf8525`: inherited callable lookup now preserves the requested
@@ -82,19 +90,32 @@ risks without changing that accounting.
 
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, byte-string, string-array, array, diagnostic operation/operand-list blocker, reference, symbol, call-frame, object, comparison, conversion, numeric-unary, request-state, closure-result, reference-source, callable table/arguments/result/frame, runtime callable-value dispatch, and declared-class allocation cleanup-risk metadata surfaces. Remaining runtime gaps include broader PHP callable lookup parity, namespace fallback, autoload, magic calls, constructors, request/global frame separation, and cleanup/unwind parity. |
-| Compiler/backend consumers | **99%** | `[####################]` | Generated C has the freshest executable semantics; LLVM and direct assembly still lag several recent semantic packets. Recent compiler-side work routes direct generated-C user-function calls through the runtime callable ABI, improved try/catch/finally body call preflight plus allocatable class cleanup-risk classification, and call-argument/lvalue diagnostics through the shared operand-list requirement blocker boundary without adding dynamic callable dispatch, exception execution, destructor execution, or reference-binding execution. |
+| Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, byte-string, string-array, array, diagnostic operation/operand-list blocker, reference-binding operand-list blocker, reference, symbol, call-frame, object, comparison, conversion, numeric-unary, request-state, closure-result, reference-source, callable table/arguments/result/frame, runtime callable-value dispatch, and declared-class allocation cleanup-risk metadata surfaces. Remaining runtime gaps include broader PHP callable lookup parity, namespace fallback, autoload, magic calls, constructors, request/global frame separation, and cleanup/unwind parity. |
+| Compiler/backend consumers | **99%** | `[####################]` | Generated C has the freshest executable semantics; LLVM and direct assembly still lag several recent semantic packets. Recent compiler-side work routes direct generated-C user-function calls through the runtime callable ABI, improved try/catch/finally body call preflight plus allocatable class cleanup-risk classification, and call-argument/lvalue/reference-binding diagnostics through the shared operand-list requirement blocker boundary without adding dynamic callable dispatch, exception execution, destructor execution, or reference-binding execution. |
 | Executable PHP semantics | **95%** | `[###################-]` | Primary has many selected executable islands, including reference-backed by-value closure capture materialization, closure value/reference returns, and reference-source append/lvalue extraction. |
 | Strings and byte semantics | **62%** | `[############--------]` | Byte-backed values and byte-preserving `explode()` / `str_split()` slots are integrated. Binary source bytes, byte-exact interpreter/session/debug output, `mb_str_split()`, request/global byte keys, and exact diagnostics remain open. |
-| Arrays, lvalues, references, COW | **82%** | `[################----]` | Selected reference-source/lvalue extraction and closure capture from reference-backed slots are integrated. Full COW, arbitrary alias roots, foreach, alias composition, static/magic/non-public properties, ArrayAccess, and broad writeback remain incomplete. |
+| Arrays, lvalues, references, COW | **82%** | `[################----]` | Selected reference-source/lvalue extraction, closure capture from reference-backed slots, and reference-binding diagnostic operand requirements are integrated. Full executable reference binding, COW, arbitrary alias roots, foreach, alias composition, static/magic/non-public properties, ArrayAccess, and broad writeback remain incomplete. |
 | Symbols, globals, request state | **74%** | `[###############-----]` | Selected globals, root-symbol, active symbol-table reference consumers, request-key blockers, and append-shaped symbol reference-source materialization exist. `$GLOBALS` self-cells, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
 | Calls, functions, frames | **91%** | `[##################--]` | Descriptor closures, selected captures, selected by-reference parameters, callable/function-table surfaces, method-frame surfaces, descriptor closure value/reference returns, reference-backed by-value captures, a runtime callable table/arguments/result/frame ABI, runtime callable-value dispatch across string/binary functions, callable arrays, descriptor closures, inherited methods, bound receivers, and object `__invoke`, direct generated-C user-function consumers across zero/fixed/default/variadic calls and by-reference argument transport, shared symbol-environment constructor blockers, and try/catch/finally body call-boundary preflight routing are integrated. Compiler dynamic callable-value consumption, `Class::method` strings, namespace fallback, autoload, magic calls, named/spread argument breadth, by-reference variadic breadth, non-descriptor closures, constructors, request/global frame separation, and cleanup/unwind parity remain open. |
 | Objects, properties, methods | **53%** | `[###########---------]` | Public object-property reference-source extraction, object-property reference-slot mutation, and declared-class allocation cleanup-risk metadata exist for selected paths. Full visibility, magic, dynamic/static/typed properties, destructor execution and ordering, references/COW, and `ArrayAccess` execution remain open. |
-| Control flow, cleanup, diagnostics | **51%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, truthiness, conversion consumers, try/catch/finally body call-boundary preflight diagnostics, and generic diagnostic operand-list requirement blockers exist. Broad unwind/finally/destructor/shutdown execution, reference binding, cleanup ownership, and exact source ordering remain open. Current broad diagnostic-lane work beyond the integrated operand-list boundary is not counted. |
-| Broad integrated verification | **92%** | `[##################--]` | Recent focused gates are strong and nonzero, including runtime callable-value dispatch unit coverage, direct user-function callable ABI consumer execution, try-body call-boundary preflight, allocatable destructor-risk metadata gates, and diagnostic operand-list blocker boundary tests. The full `native_runtime_abi` suite still has known current-primary failures, and broad gates remain constrained by lane extraction cost, stale lane expectations, high swap, and backend parity gaps. |
+| Control flow, cleanup, diagnostics | **51%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, truthiness, conversion consumers, try/catch/finally body call-boundary preflight diagnostics, generic diagnostic operand-list requirement blockers, and reference-binding operand-list requirement blockers exist. Broad unwind/finally/destructor/shutdown execution, executable reference binding, cleanup ownership, and exact source ordering remain open. Current broad diagnostic-lane work beyond the integrated operand-list boundary is not counted. |
+| Broad integrated verification | **92%** | `[##################--]` | Recent focused gates are strong and nonzero, including runtime callable-value dispatch unit coverage, direct user-function callable ABI consumer execution, try-body call-boundary preflight, allocatable destructor-risk metadata gates, diagnostic operand-list blocker boundary tests, and reference-binding operand-list requirement tests. The full `native_runtime_abi` suite still has known current-primary failures, and broad gates remain constrained by lane extraction cost, stale lane expectations, high swap, and backend parity gaps. |
 
 ## Recent Primary-Integrated Work
 
+- `b4b21937`: extended the shared diagnostic operation/operand-list
+  requirement ABI with reference-binding operand-list requirements. Runtime
+  diagnostics now name reference target, source, and array-item binding
+  requirements, and compiler blocker discovery routes reference assignment
+  target/source operands plus by-reference array items through that shared
+  requirement vocabulary instead of source-shape recognizers. Focused runtime
+  and compiler tests cover multiple binding requirement tags and representative
+  assignment/source/array item surfaces. This is diagnostic/blocker
+  infrastructure only; executable reference binding, full alias/COW behavior,
+  writeback, cleanup/unwind ordering, and exact source-ordered diagnostics
+  remain unimplemented. Future reference-binding work must extend or consume
+  the shared operation-list and operand requirement ABI rather than adding
+  source-shape or generated-output recognizers. Estimates remain flat.
 - `a544daa8`: added a generic diagnostic operation and operand-list
   requirement blocker boundary across runtime and compiler code. Call-argument
   and lvalue operand-list blockers now consume the shared runtime-backed
@@ -197,6 +218,7 @@ Primary-integrated capability and lane-local candidate work are separated here.
 | Try/catch/finally body call-boundary preflight | **100%** `[####################]` | **18%** `[####----------------]` | Integrated at `6f7d550d`. Try body, catch body, and finally body traversal now routes contained call families through the shared call-boundary diagnostic contract before generic unsupported-try rejection. Exception execution, catch matching, unwinding, finally ordering, and compiler dynamic callable-value consumption remain unimplemented. |
 | Dynamic constructor symbol-environment blockers | **100%** `[####################]` | **22%** `[####----------------]` | Integrated at `ea0c7675`. Dynamic constructor class-name operands from `$GLOBALS` and request superglobals now route to `NativeCallBlocker::GlobalFrameSeparation` before constructor lookup, destructor-risk classification, argument cleanup, or generated-C object materialization. Request/global frame separation execution remains unimplemented. |
 | Diagnostic operand-list blocker boundary | **100%** `[####################]` | **14%** `[###-----------------]` | Integrated at `a544daa8`. Runtime and compiler diagnostics now share a generic operation/operand-list requirement boundary for call-argument and lvalue blocker families, with runtime ownership/free coverage and compiler boundary tests across representative shapes. This is not cleanup, ownership, frame handoff, reference-binding, callable-dispatch, or exact diagnostic-order execution; later reference-binding and diagnostic work must consume the generic operand-list requirement boundary rather than adding source-shape blockers. |
+| Reference-binding operand-list blocker requirements | **100%** `[####################]` | **15%** `[###-----------------]` | Integrated at `b4b21937`. Reference-assignment target/source blockers and by-reference array item blockers now consume the shared diagnostic operation-list and operand requirement ABI with runtime/compiler coverage across multiple binding requirement tags and representative operand families. This is not executable PHP reference binding, full alias/COW identity, writeback, cleanup/unwind ordering, or source-ordered diagnostics; future reference-binding work must extend or consume this shared ABI rather than adding source-shape or generated-output recognizers. |
 | Runtime callable ABI, callable-value dispatch, and direct user-function consumers | **100%** `[####################]` | **58%** `[############--------]` | Runtime callable table, arguments/result/frame ownership, function/method/constructor invocation callbacks, called-scope propagation, and public/protected/private visibility checks are integrated at `e32f5735`. Direct generated-C user-function registration, lookup, argument transport, frame entry, and value-result consumption are integrated at `f0cc17c1` across zero/fixed/default/variadic calls and by-reference argument transport. Runtime callable-value dispatch is integrated at `5abf8525` for string/binary function names, callable arrays, descriptor-backed closures, inherited table-backed methods, bound object receivers, and object `__invoke` over the shared callable table and call-arguments/frame/result ABI, with `dae1b44c` repairing inherited called-scope carriage, protected same-hierarchy visibility, and descriptor-aware closure argument modes. Compiler dynamic callable-value consumers, `Class::method` strings, namespace fallback, autoload, magic calls, named/spread argument breadth, by-reference variadic breadth, constructor `new` execution, return references, request/global frame separation, and cleanup/unwind parity remain unimplemented. |
 | Reference-backed by-value closure captures | **100%** `[####################]` | **48%** `[##########----------]` | Integrated at `90e53401`. Covers descriptor closure value captures from ordinary locals, native reference handles, and active symbol-table storage across direct function, static method, receiver method, and closure factory frames. Non-static implicit `$this`, secondary-alias writeback, and broad callable/object semantics remain open. |
 | Reference-source append/lvalue extraction | **100%** `[####################]` | **52%** `[##########----------]` | Integrated at `7aa162ca`. Covers selected symbol, native reference local, public object-property, object-property array-path, append, reference assignment, and by-reference call consumers. Static/magic/non-public properties, ArrayAccess, arbitrary alias roots, and full references/COW remain open. |
@@ -265,6 +287,9 @@ Primary-integrated executable or executable-prerequisite capability:
   destructor-observable allocatable and constructor-allocation blockers.
 - [x] Shared diagnostic operation/operand-list requirement blocker boundary for
   call-argument and lvalue diagnostic families.
+- [x] Shared reference-binding operand-list requirement blockers for
+  reference-assignment target/source operands and by-reference array item
+  operands.
 
 In progress but lane-local or not yet executable primary support:
 
@@ -280,8 +305,9 @@ In progress but lane-local or not yet executable primary support:
   needs fresh current-primary review and integration.
 - [ ] `impl-native-error-diagnostic-semantics` has broad dirty diagnostic
   result/scanner contracts beyond the integrated operand-list blocker
-  boundary. Useful evidence, but not primary progress and not a substitute for
-  executable PHP semantics.
+  boundary, except for the integrated `b4b21937` reference-binding
+  operand-list requirement packet. Useful evidence, but not primary progress
+  and not a substitute for executable PHP semantics.
 - [ ] Broader closure/call reference returns need reusable consumers beyond
   descriptor closures: user functions, methods, static calls, constructors,
   discarded calls, and non-descriptor closure surfaces.
@@ -290,8 +316,8 @@ In progress but lane-local or not yet executable primary support:
 
 Not done:
 
-- [ ] Full references/COW identity, arbitrary alias roots, and alias-preserving
-  write-through.
+- [ ] Full executable reference binding, references/COW identity, arbitrary
+  alias roots, and alias-preserving write-through.
 - [ ] Executable request storage/writeback, `$GLOBALS` self-cells,
   request/global alias parity, request foreach, and mutation-during-iteration
   behavior.
@@ -320,15 +346,18 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary is clean and synced at `c8795349` before this `PROGRESS.md` edit;
-  latest source capability remains `a544daa8`.
-- [x] Latest primary-integrated source capability head is `a544daa8`.
+- [x] Primary is clean and synced at `b4b21937` before this `PROGRESS.md` edit;
+  latest source capability is `b4b21937`.
+- [x] Latest primary-integrated source capability head is `b4b21937`.
 - [x] Overall and executable estimates remain 95% under current project-local
   accounting.
 - [x] Diagnostic operand-list blocker boundary is now a completed non-repeat
-  diagnostic prerequisite: reference-binding and later diagnostic work must
-  layer on the generic operand-list requirement boundary instead of adding
-  source-shape blockers.
+  diagnostic prerequisite: later diagnostic work must layer on the generic
+  operand-list requirement boundary instead of adding source-shape blockers.
+- [x] Reference-binding operand-list blocker requirements are now a completed
+  non-repeat diagnostic prerequisite: future reference-binding work must extend
+  or consume the shared operation-list and operand requirement ABI rather than
+  adding source-shape or generated-output recognizers.
 - [x] Native-link reference-handle typedef emission is now a completed
   non-repeat declaration-order repair: future helpers that can emit
   `phpc_NativeReferenceHandle` declarations must use
@@ -364,9 +393,9 @@ Lane-local:
 - [ ] Next callable work should target compiler consumption of dynamic
   callable-value dispatch and method/static/constructor consumer packets over
   the integrated ABI, not another direct user-function or ABI-only inventory.
-- [ ] Reference-binding operation-list follow-up is ready for current-primary
-  review as a diagnostic/blocker extension over `a544daa8`; it is not
-  executable reference binding and should not move percentages if integrated.
+- [x] Reference-binding operation-list follow-up is integrated at `b4b21937`
+  as a diagnostic/blocker extension over `a544daa8`; it is not executable
+  reference binding and does not move percentages.
 - [ ] Dynamic callable compiler-consumer work is mapped after the runtime
   repair, but still needs a narrow implementation patch that consumes the
   repaired runtime callable-value ABI instead of extending legacy generated-C
@@ -378,10 +407,10 @@ Lane-local:
   proof, but it is metadata-only and still leaves trait method execution,
   destructor execution, and object lifetime cleanup open.
 - [ ] Call-lane loop/call ordering work is fresh but broad and dirty.
-- [ ] Diagnostic-lane callable operand, reference-binding, RMW, report dispatch,
-  and control-flow scanner contracts beyond the generic operand-list
-  requirement boundary are broad and dirty; status chronology is not fully
-  reliable.
+- [ ] Diagnostic-lane callable operand, RMW, report dispatch, control-flow
+  scanner contracts, and any reference-binding work beyond the integrated
+  operand-list requirement packet are broad and dirty; status chronology is not
+  fully reliable.
 - [ ] Multiple broad lanes are evidence repositories. Do not route them to
   primary without a new narrow extraction.
 
@@ -400,9 +429,10 @@ Resource posture:
 Best next action:
 
 - Keep diagnostic reference-binding and scanner work layered on the generic
-  operand-list requirement boundary from `a544daa8`; do not add source-shape
-  blockers for one PHP source shape, one operand layout, or one diagnostic
-  fixture. Keep callable compiler consumer work focused on consuming the
+  operand-list requirement boundary from `a544daa8` and the reference-binding
+  requirement extension from `b4b21937`; do not add source-shape blockers for
+  one PHP source shape, one operand layout, or one diagnostic fixture. Keep
+  callable compiler consumer work focused on consuming the
   repaired runtime callable lookup/called-scope/visibility/descriptor-argument
   boundary beyond direct user functions rather than extending old dynamic-call
   branch helpers. Future exception/destructor work should first add reusable
@@ -425,7 +455,7 @@ Avoid:
 - Extending generated-C dynamic-call shape helpers instead of consuming the
   integrated runtime callable ABI.
 - Adding reference-binding or diagnostic source-shape blockers instead of
-  consuming the generic operand-list requirement boundary.
+  consuming the generic operation-list and operand requirement boundary.
 - Extending inline generated-C `phpc_NativeReferenceHandle` typedef predicates;
   native-link helpers that can emit reference-handle declarations must use
   `uses_native_reference_handle_type()`.
