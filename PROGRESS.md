@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 06:54 CEST
+Updated: 2026-05-26 07:10 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,16 +19,17 @@ Primary `HEAD` is clean and aligned with `origin/master` after accounting for
 the latest source capability.
 
 Latest primary-integrated source capability baseline:
-`4311df7e native: add ArrayAccess empty null-coalesce consumers`.
+`1a9f0a1c native: add ArrayAccess owner writeback boundary`.
 
-`4311df7e` adds generated-C ArrayAccess `empty($aa[$key])` and
-`$aa[$key] ?? rhs` consumers over the shared ArrayAccess offset read ABI.
-`empty()` uses `Exists`, conditional `Get`, and the native PHP truthiness
-boundary; null-coalesce uses `Exists`, conditional `Get`, native null
-predicate, and lazy RHS materialization.
+`1a9f0a1c` adds a shared generated-C direct-variable ArrayAccess owner
+materialization and writeback boundary for offset write, append, unset, and
+assignment-expression writeback. It preserves the existing runtime ABI behavior
+while replacing path-local subject/offset/replacement handling with reusable
+owner materialization and commit helpers.
 
 This composes with `4ddbfc47` generated-C ArrayAccess read/`isset`,
-`9aa933a8` generated-C ArrayAccess write/append/unset, receiver-free static
+`9aa933a8` generated-C ArrayAccess write/append/unset, `4311df7e`
+generated-C ArrayAccess `empty()`/null-coalesce consumers, receiver-free static
 `Class::method` string callable lookup, `f9b721a2` shared native value/object
 facts for known generated declared ArrayAccess producers, cleanup/unwind
 requirement preflight, selected generated-C RMW array-lvalue owner/writeback,
@@ -65,6 +66,15 @@ gaps.
 
 ## Recent Primary-Integrated Work
 
+- `1a9f0a1c`: shared generated-C direct-variable ArrayAccess owner
+  materialization and writeback commit boundary for keyed write, append, unset,
+  and assignment-expression writeback over compiler-known generated declared
+  `ArrayAccess` object values. The focused proof preserves existing
+  write/unset and broader ArrayAccess native-link behavior while making the
+  subject/offset/replacement ownership contract reusable for upcoming RMW and
+  `??=` routing. Property-held/nested owners, ArrayAccess RMW, `??=`,
+  reference-returning `offsetGet`, references/COW, cleanup/unwind, exact
+  diagnostics, LLVM consumers, and backend parity remain open.
 - `4311df7e`: generated-C compiler consumption of ArrayAccess `empty()` and
   null-coalesce over the shared runtime ArrayAccess read/exists ABI for
   compiler-known generated declared `ArrayAccess` objects, including the
@@ -136,7 +146,7 @@ explicitly.
 | Item | Primary Integrated | Candidate Readiness | Toward Full Feature | Status |
 | --- | ---: | ---: | ---: | --- |
 | ArrayAccess read/isset compiler consumer | **100%** `[####################]` | **100%** `[####################]` | **48%** `[##########----------]` | Integrated at `4ddbfc47` for generated-C direct object offset read and `isset` on compiler-known generated declared `ArrayAccess` objects. |
-| ArrayAccess write/append/unset compiler consumer | **100%** `[####################]` | **100%** `[####################]` | **52%** `[##########----------]` | Integrated at `9aa933a8` for generated-C direct-variable keyed write, append, assignment-expression result, and unset over compiler-known generated declared `ArrayAccess` object values, including copied and branch-joined subject facts. |
+| ArrayAccess write/append/unset compiler consumer | **100%** `[####################]` | **100%** `[####################]` | **54%** `[###########---------]` | Integrated through `1a9f0a1c` for generated-C direct-variable keyed write, append, assignment-expression result, and unset over compiler-known generated declared `ArrayAccess` object values, with shared owner materialization/writeback replacing path-local lowering. |
 | ArrayAccess `empty`/null-coalesce sequencing | **100%** `[####################]` | **100%** `[####################]` | **46%** `[#########-----------]` | Integrated at `4311df7e` for generated-C direct object offset `empty()` and `$aa[$key] ?? rhs` over compiler-known generated declared `ArrayAccess` object values, including known dynamic generated-declared class-name facts. |
 | Dynamic object/interface fact carrier | **100%** `[####################]` | **100%** `[####################]` | **53%** `[###########---------]` | Integrated at `f9b721a2` for generated-C native value/object facts over generated declared objects, known dynamic class-name `new`, copies, gotos, and branch joins, consumed by ArrayAccess read/isset/write/append/unset/empty/null-coalesce. Producers from properties, calls, methods, clones, static properties, symbols, and references remain open. |
 | Object/method callable receiver parity fallback | **0%** `[--------------------]` | **80%** `[################----]` | **42%** `[########------------]` | Route-audited fallback if ArrayAccess write/unset blocks. Not the active primary route. |
@@ -169,6 +179,9 @@ Primary-integrated capability:
 - [x] Generated-C ArrayAccess direct-variable keyed write, append,
   assignment-expression result, and unset compiler consumer for compiler-known
   generated declared `ArrayAccess` objects.
+- [x] Shared generated-C direct-variable ArrayAccess owner materialization and
+  writeback commit boundary for keyed write, append, unset, and
+  assignment-expression writeback.
 - [x] Shared generated-C native value/object facts for generated declared
   `ArrayAccess` objects, including known dynamic class-name `new`, copies, and
   branch joins consumed by read/isset/write/append/unset/empty/null-coalesce.
