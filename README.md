@@ -203,6 +203,10 @@ until a native runtime ABI exists.
 straight-line subset. It currently supports scalar literals, direct scalar
 variable assignment/readback, scalar `echo`/`print`, selected scalar operators,
 selected folds, and a documented set of native builtin folds.
+Native metadata/type-introspection builtin families share a backend-neutral
+preflight for class/interface/trait/enum existence, property/method existence,
+and relationship metadata calls, so call-result argument dependencies and arity
+failures route through the same native call diagnostics in LLVM and generated C.
 
 Anything outside that lowerable subset is rejected before misleading IR is
 emitted. Arrays, objects, class-name constants, `instanceof` relationship
