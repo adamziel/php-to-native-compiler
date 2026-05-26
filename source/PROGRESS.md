@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 02:05 CEST
+Updated: 2026-05-26 02:12 CEST
 Evaluation marker: `20260525T233616Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
@@ -15,11 +15,26 @@ Overall estimated progress: **95%** `[###################-]`
 Executable PHP semantics: **95%** `[###################-]`
 
 Primary was clean and aligned with `origin/master` at
-`dae1b44c native: repair callable value dispatch semantics` before this
+`a544daa8 native: add diagnostic operand-list blocker boundary` before this
 `PROGRESS.md` edit.
 
 Latest primary-integrated source capability baseline:
-`dae1b44c native: repair callable value dispatch semantics`.
+`a544daa8 native: add diagnostic operand-list blocker boundary`.
+
+`a544daa8` adds a generalized diagnostic operation and operand-list
+requirement blocker boundary in the runtime and compiler. Call-argument and
+lvalue operand-list blockers now route through the shared runtime-backed
+requirement list vocabulary instead of source-shape call-result scans, with
+tests covering multiple operation families, requirement tags, expression
+surfaces, ownership paths, and call-expression families. This is diagnostic
+blocker infrastructure only: it does not implement the blocked cleanup,
+ownership, frame handoff, callable dispatch, reference binding, or executable
+operand-evaluation semantics. Overall, executable, and workstream estimates
+remain flat.
+
+Non-repeat guard: reference-binding and later diagnostic work must layer on the
+generic operand-list requirement boundary from `a544daa8` instead of adding
+source-shape blockers.
 
 `dae1b44c` repairs the runtime callable-value dispatch foundation already
 counted at `5abf8525`: inherited callable lookup now preserves the requested
