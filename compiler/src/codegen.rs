@@ -22,8 +22,12 @@ use php_runtime::{
     PhpPrimitiveArithmeticError, PhpPrimitiveArithmeticOperation, PhpPrimitiveArithmeticValue,
     PhpPrimitiveValue, PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_ARRAY_ITEM_BINDING,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_SOURCE_BINDING,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_TARGET_BINDING,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_CALL_ARGUMENT_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST,
+    PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST,
 };
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
@@ -679,6 +683,53 @@ fn native_call_argument_list_blocker(args: &[Expr]) -> Option<NativeCallBlocker>
     .then_some(NativeCallBlocker::ArgumentEvaluationCleanup)
 }
 
+fn native_reference_binding_operand_list_is_blocked(
+    requirements: &[NativeDiagnosticOperandRequirement],
+) -> bool {
+    native_diagnostic_operation_list_is_blocked(
+        PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST,
+        requirements,
+    )
+}
+
+fn native_reference_assignment_operand_list_requirements(
+    target: &AssignTarget,
+    source: &ReferenceSource,
+) -> Vec<NativeDiagnosticOperandRequirement> {
+    [
+        (
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_TARGET_BINDING,
+            native_assignment_target_call_operation(target).is_some(),
+        ),
+        (
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_SOURCE_BINDING,
+            native_reference_source_call_operation(source).is_some(),
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    .filter_map(|(operand_index, (tag, is_required))| {
+        is_required.then_some(NativeDiagnosticOperandRequirement { tag, operand_index })
+    })
+    .collect()
+}
+
+fn native_reference_array_item_operand_list_requirements(
+    items: &[ArrayItem],
+) -> Vec<NativeDiagnosticOperandRequirement> {
+    items
+        .iter()
+        .enumerate()
+        .filter_map(|(operand_index, item)| {
+            (item.by_reference && native_reference_array_item_call_operation(item).is_some())
+                .then_some(NativeDiagnosticOperandRequirement {
+                    tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_ARRAY_ITEM_BINDING,
+                    operand_index,
+                })
+        })
+        .collect()
+}
+
 fn native_direct_call_argument_result_operation(
     args: &[Expr],
     span: Span,
@@ -1027,12 +1078,15 @@ fn native_expr_call_result_operation(
             *span,
             native_closure_frame_blocker(params, *returns_by_reference),
         )),
-        Expr::Array { items, .. } => items.iter().find_map(|item| {
-            item.key
-                .as_ref()
-                .and_then(|key| native_expr_call_result_operation(key, blocker))
-                .or_else(|| native_expr_call_result_operation(&item.value, blocker))
-        }),
+        Expr::Array { items, .. } => native_reference_array_item_list_call_operation(items)
+            .or_else(|| {
+                items.iter().find_map(|item| {
+                    item.key
+                        .as_ref()
+                        .and_then(|key| native_expr_call_result_operation(key, blocker))
+                        .or_else(|| native_expr_call_result_operation(&item.value, blocker))
+                })
+            }),
         Expr::Index { target, index, .. } => native_expr_call_result_operation(target, blocker)
             .or_else(|| native_expr_call_result_operation(index, blocker)),
         Expr::AppendIndex { target, .. }
@@ -4112,6 +4166,11 @@ fn native_reference_assignment_call_operation(
     target: &AssignTarget,
     source: &ReferenceSource,
 ) -> Option<NativeCallOperation> {
+    let requirements = native_reference_assignment_operand_list_requirements(target, source);
+    if !native_reference_binding_operand_list_is_blocked(&requirements) {
+        return None;
+    }
+
     native_assignment_target_call_operation(target)
         .or_else(|| native_reference_source_call_operation(source))
 }
@@ -4201,6 +4260,33 @@ fn native_reference_source_lvalue_operand_call_operation(
             .or_else(|| native_expr_list_call_result_operation(indices)),
         ReferenceSource::Variable { .. } | ReferenceSource::MethodCall { .. } => None,
     }
+}
+
+fn native_reference_array_item_list_call_operation(
+    items: &[ArrayItem],
+) -> Option<NativeCallOperation> {
+    let requirements = native_reference_array_item_operand_list_requirements(items);
+    if !native_reference_binding_operand_list_is_blocked(&requirements) {
+        return None;
+    }
+
+    items
+        .iter()
+        .find_map(native_reference_array_item_call_operation)
+}
+
+fn native_reference_array_item_call_operation(item: &ArrayItem) -> Option<NativeCallOperation> {
+    if !item.by_reference {
+        return None;
+    }
+
+    native_reference_array_item_value_call_operation(&item.value)
+}
+
+fn native_reference_array_item_value_call_operation(expr: &Expr) -> Option<NativeCallOperation> {
+    native_reference_expr_call_callee(expr)
+        .map(|callee| NativeCallOperation::reference_result(expr.span(), callee))
+        .or_else(|| native_lvalue_operand_call_result_operation(expr))
 }
 
 fn native_reference_expr_call_callee(expr: &Expr) -> Option<NativeCallCallee> {
@@ -39564,6 +39650,122 @@ echo " 10" < "zeta";
             Some(NativeCallOperation::direct_named_value(
                 span,
                 NativeCallBlocker::LvalueOperandEvaluationCleanup,
+            ))
+        );
+    }
+
+    #[test]
+    fn native_reference_binding_uses_generic_operand_requirement_boundary_across_assignments_sources_and_array_items(
+    ) {
+        let span = test_span();
+        let source_variable = ReferenceSource::Variable {
+            name: "value".to_string(),
+            span,
+        };
+        let target = AssignTarget::DynamicProperty {
+            object: "box".to_string(),
+            property: Expr::MethodCall {
+                target: Box::new(test_variable_expr("names")),
+                method: "current".to_string(),
+                args: vec![Expr::Int(2, span)],
+                span,
+            },
+            span,
+        };
+        assert_eq!(
+            native_reference_assignment_operand_list_requirements(&target, &source_variable),
+            vec![NativeDiagnosticOperandRequirement {
+                tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_TARGET_BINDING,
+                operand_index: 0,
+            }]
+        );
+        assert_eq!(
+            native_reference_assignment_call_operation(&target, &source_variable),
+            Some(NativeCallOperation::method_value_with_blocker(
+                span,
+                NativeCallBlocker::LvalueOperandEvaluationCleanup,
+            ))
+        );
+
+        let target_variable = AssignTarget::Variable {
+            name: "alias".to_string(),
+            span,
+        };
+        let source = ReferenceSource::ArrayIndex {
+            name: "items".to_string(),
+            index: Expr::Call {
+                name: "source_key".to_string(),
+                args: vec![Expr::Int(4, span)],
+                span,
+            },
+            span,
+        };
+        assert_eq!(
+            native_reference_assignment_operand_list_requirements(&target_variable, &source),
+            vec![NativeDiagnosticOperandRequirement {
+                tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_SOURCE_BINDING,
+                operand_index: 1,
+            }]
+        );
+        assert_eq!(
+            native_reference_assignment_call_operation(&target_variable, &source),
+            Some(NativeCallOperation::direct_named_value(
+                span,
+                NativeCallBlocker::LvalueOperandEvaluationCleanup,
+            ))
+        );
+
+        let array_items = [
+            ArrayItem {
+                key: None,
+                value: Expr::Variable("plain".to_string(), span),
+                by_reference: true,
+            },
+            ArrayItem {
+                key: Some(Expr::String("dynamic".to_string(), span)),
+                value: Expr::DynamicCall {
+                    callee: Box::new(test_variable_expr("producer")),
+                    args: Vec::new(),
+                    span,
+                },
+                by_reference: true,
+            },
+            ArrayItem {
+                key: None,
+                value: Expr::MethodCall {
+                    target: Box::new(test_variable_expr("box")),
+                    method: "borrow".to_string(),
+                    args: Vec::new(),
+                    span,
+                },
+                by_reference: false,
+            },
+        ];
+        assert_eq!(
+            native_reference_array_item_operand_list_requirements(&array_items),
+            vec![NativeDiagnosticOperandRequirement {
+                tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_ARRAY_ITEM_BINDING,
+                operand_index: 1,
+            }]
+        );
+        assert_eq!(
+            native_reference_array_item_list_call_operation(&array_items),
+            Some(NativeCallOperation::reference_result(
+                span,
+                NativeCallCallee::DynamicExpression,
+            ))
+        );
+        assert_eq!(
+            native_expr_call_result_operation(
+                &Expr::Array {
+                    items: array_items.to_vec(),
+                    span,
+                },
+                NativeCallBlocker::StatementOperandEvaluationCleanup,
+            ),
+            Some(NativeCallOperation::reference_result(
+                span,
+                NativeCallCallee::DynamicExpression,
             ))
         );
     }

@@ -15,8 +15,12 @@ use php_runtime::{
     NativeDiagnosticOperandRequirement, NativeDiagnosticSeverity,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_ARRAY_ITEM_BINDING,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_SOURCE_BINDING,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_TARGET_BINDING,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_CALL_ARGUMENT_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST,
+    PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST,
 };
 
 const STRING_INT_IR_SOURCE: &str = "<?php\n$payload = \"A\\0bA\\0b\";\necho strcasecmp($payload, \"a\\0B\");\necho strcmp($payload, \"A\\0c\");\necho strncmp($payload, \"A\\0bZ\", \"3\");\necho strncasecmp($payload, \"a\\0Bz\", 3);\necho ord(\"A\");\necho crc32($payload);\n";
@@ -195,6 +199,60 @@ fn native_call_argument_list_diagnostics_use_generic_runtime_operand_list_bounda
         assert_eq!(c_error.phase, Phase::Codegen);
         assert!(c_error.message.contains(c_expected), "{}", c_error.message);
     }
+}
+
+#[test]
+fn native_reference_binding_diagnostics_extend_generic_runtime_operand_list_boundary() {
+    let requirements = [
+        NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_TARGET_BINDING,
+            operand_index: 0,
+        },
+        NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_SOURCE_BINDING,
+            operand_index: 1,
+        },
+        NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_ARRAY_ITEM_BINDING,
+            operand_index: 2,
+        },
+    ];
+    let list = unsafe {
+        phpc_native_diagnostic_operand_requirement_list_clone(
+            requirements.as_ptr(),
+            requirements.len(),
+        )
+    };
+    let diagnostic = unsafe {
+        phpc_native_diagnostic_result_operation_blocker_list_and_free(
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST,
+            list,
+        )
+    };
+    assert!(unsafe {
+        phpc_native_diagnostic_contains_severity(
+            diagnostic,
+            NativeDiagnosticSeverity::Blocker as u8,
+        )
+    });
+    let message = runtime_diagnostic_message(diagnostic);
+    assert!(
+        message.contains("reference binding operand list"),
+        "{message}"
+    );
+    assert!(
+        message.contains("reference target binding at operand 0"),
+        "{message}"
+    );
+    assert!(
+        message.contains("reference source binding at operand 1"),
+        "{message}"
+    );
+    assert!(
+        message.contains("reference array-item binding at operand 2"),
+        "{message}"
+    );
+    unsafe { phpc_native_diagnostic_free(diagnostic) };
 }
 
 fn request_superglobal_array_key_consumer_rejection(backend: &str, subject: &str) -> String {

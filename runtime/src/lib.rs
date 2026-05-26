@@ -218,6 +218,7 @@ pub const PHPC_NATIVE_DIAGNOSTIC_OPERATION_VALUE_OPERAND_LIST: u8 = 2;
 pub const PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST: u8 = 3;
 pub const PHPC_NATIVE_DIAGNOSTIC_OPERATION_STATEMENT_OPERAND_LIST: u8 = 4;
 pub const PHPC_NATIVE_DIAGNOSTIC_OPERATION_CONTROL_FLOW_OPERAND_LIST: u8 = 5;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST: u8 = 6;
 
 pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP: u8 = 1;
 pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_VALUE_EVALUATION_CLEANUP: u8 = 2;
@@ -232,6 +233,9 @@ pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_DYNAMIC_CALLABLE_EVALUATION: u8 = 11;
 pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_METHOD_DISPATCH: u8 = 12;
 pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_CONSTRUCTOR_DISPATCH: u8 = 13;
 pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_BY_REFERENCE_ARGUMENT_BINDING: u8 = 14;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_TARGET_BINDING: u8 = 15;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_SOURCE_BINDING: u8 = 16;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_ARRAY_ITEM_BINDING: u8 = 17;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17755,6 +17759,9 @@ fn native_diagnostic_operation_name(operation: u8) -> &'static str {
         PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST => "lvalue operand list",
         PHPC_NATIVE_DIAGNOSTIC_OPERATION_STATEMENT_OPERAND_LIST => "statement operand list",
         PHPC_NATIVE_DIAGNOSTIC_OPERATION_CONTROL_FLOW_OPERAND_LIST => "control-flow operand list",
+        PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST => {
+            "reference binding operand list"
+        }
         _ => "unknown operation list",
     }
 }
@@ -17779,6 +17786,11 @@ fn native_diagnostic_operand_requirement_name(requirement: u8) -> &'static str {
         PHPC_NATIVE_DIAGNOSTIC_OPERAND_CONSTRUCTOR_DISPATCH => "constructor dispatch",
         PHPC_NATIVE_DIAGNOSTIC_OPERAND_BY_REFERENCE_ARGUMENT_BINDING => {
             "by-reference argument binding"
+        }
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_TARGET_BINDING => "reference target binding",
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_SOURCE_BINDING => "reference source binding",
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_ARRAY_ITEM_BINDING => {
+            "reference array-item binding"
         }
         _ => "unknown operand requirement",
     }
@@ -17901,6 +17913,60 @@ fn native_diagnostic_operation_blocker_list_models_operation_requirements_and_ow
     let clone_from_null =
         unsafe { phpc_native_diagnostic_operand_requirement_list_clone(ptr::null(), 3) };
     unsafe { phpc_native_diagnostic_operand_requirement_list_free(clone_from_null) };
+}
+
+#[test]
+fn native_diagnostic_reference_binding_operand_requirements_model_binding_cleanup() {
+    fn diagnostic_message(handle: NativeDiagnosticHandle) -> String {
+        let buffer = unsafe { phpc_native_diagnostic_message_clone_bytes(handle) };
+        let bytes = if buffer.ptr().is_null() {
+            Vec::new()
+        } else {
+            unsafe { std::slice::from_raw_parts(buffer.ptr(), buffer.len()) }.to_vec()
+        };
+        unsafe { phpc_native_byte_buffer_free(buffer) };
+        String::from_utf8(bytes).expect("runtime diagnostics should be valid UTF-8")
+    }
+
+    let requirements = [
+        NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_TARGET_BINDING,
+            operand_index: 0,
+        },
+        NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_SOURCE_BINDING,
+            operand_index: 1,
+        },
+        NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_ARRAY_ITEM_BINDING,
+            operand_index: 3,
+        },
+    ];
+    let list = unsafe {
+        phpc_native_diagnostic_operand_requirement_list_clone(
+            requirements.as_ptr(),
+            requirements.len(),
+        )
+    };
+    let diagnostic = unsafe {
+        phpc_native_diagnostic_result_operation_blocker_list_and_free(
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST,
+            list,
+        )
+    };
+
+    assert!(unsafe {
+        phpc_native_diagnostic_contains_severity(
+            diagnostic,
+            NativeDiagnosticSeverity::Blocker as u8,
+        )
+    });
+    let message = diagnostic_message(diagnostic);
+    assert!(message.contains("reference binding operand list"));
+    assert!(message.contains("reference target binding at operand 0"));
+    assert!(message.contains("reference source binding at operand 1"));
+    assert!(message.contains("reference array-item binding at operand 3"));
+    unsafe { phpc_native_diagnostic_free(diagnostic) };
 }
 
 /// # Safety
