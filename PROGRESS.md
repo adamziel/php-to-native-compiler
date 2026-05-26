@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 00:14 CEST
+Updated: 2026-05-27 00:19 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,19 +19,20 @@ Overall integrated-roadmap progress: **70%** `[##############------]`
 
 Selected executable PHP semantics: **70%** `[##############------]`
 
-Latest accounted source capability: `a7054ed1` adds a runtime terminal cleanup
-transfer ABI that consumes a pending terminal `NativeDiagnosticResult` plus an
-aggregated cleanup result list, preserves the pending terminal value across
-non-terminal cleanup sequencing, and releases it when cleanup becomes terminal.
-Previous source commit `d67c7f14` adds reusable receiver-method and static-method
-source-call target operands over access-context lookup-plus-invoke helpers.
+Latest accounted source capability: `53bef000` adds `NativeSourceCallBindingOperands`,
+a shared binding boundary that composes receiver/static source-call targets,
+pre-invocation target cleanup, signature-driven by-reference argument binding,
+and the existing exactly-once `NativeCallArgumentsHandle` emitter. Previous
+source commit `a7054ed1` adds runtime terminal cleanup transfer over aggregated
+cleanup results.
 
-Why the headline bars did not jump: the new source adds a reusable terminal
-value transfer boundary, but executable return/throw/exit cleanup still needs
-terminal-kind contracts, exact finally/destructor/shutdown ordering, and
-exception/fatal diagnostic ordering. Executable method/static production still
-needs receiver evaluation order, delayed by-reference/named/spread argument
-binding, visibility/magic/class-context policy, and result-consumer integration.
+Why the headline bars did not jump: the new source hardens the method/static
+binding boundary, but executable method/static production still needs receiver
+ownership across lookup/preinvoke/invoke outcomes, caller-scope policy,
+namespace/autoload and visibility/magic contracts, return summaries, alias
+transfer, named/spread metadata, and diagnostic-result operand migration.
+Executable return/throw/exit cleanup still needs terminal-kind contracts and
+exact finally/destructor/shutdown ordering.
 
 Current critical path to 100%:
 
@@ -61,7 +62,7 @@ Current critical path to 100%:
 | Strings and byte semantics | **60%** | `[############--------]` | Byte-backed values and selected byte-preserving string-array slots are integrated. Binary source bytes, byte-exact interpreter/session/debug output, `mb_str_split()`, request/global byte keys, and exact diagnostics remain open. |
 | Arrays, lvalues, references, COW | **70%** | `[##############------]` | Selected lvalue/reference-source extraction, ReferenceSlot owner facts, reference-cell predicates, membership helpers, RMW array-lvalue owner/writeback, and selected ArrayAccess RMW/`??=` paths are integrated. Object/static property storage, property-held/nested ArrayAccess, arbitrary alias roots, foreach breadth, broader writeback, and full COW remain incomplete. |
 | Symbols, globals, request state | **70%** | `[##############------]` | Selected globals, root-symbol consumers, active symbol-table consumers, request-key blockers, append-shaped symbol reference-source materialization, direct generated-C request-state frame handoff, and dynamic user-function handoff proof exist. `$GLOBALS` self-cells, closure request-state handoff, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
-| Calls, functions, frames | **85%** | `[#################---]` | Runtime callable table/value dispatch, call arguments/frame/result ABI, conditional handoff, generated-C direct/dynamic callable consumers, declared-method registration/wrapper frames, callable return facts, by-reference argument transport, descriptor closures, closure returns, request-state frame handoff, access-context lookup ABI, lookup-plus-invoke exactly-once argument ownership helpers, source-call result carrier selectors, selected production source-call carrier emission, direct generated user-function lookup-plus-invoke production, and method/static source-call target operands are integrated. Unknown runtime callables, executable method/static source-call production, builtin return summaries, executable by-reference alias transfer, full object/method parity, namespace fallback, autoload, magic calls, named/spread breadth, broader return references, constructors, cleanup/unwind, and backend parity remain open. |
+| Calls, functions, frames | **85%** | `[#################---]` | Runtime callable table/value dispatch, call arguments/frame/result ABI, conditional handoff, generated-C direct/dynamic callable consumers, declared-method registration/wrapper frames, callable return facts, by-reference argument transport, descriptor closures, closure returns, request-state frame handoff, access-context lookup ABI, lookup-plus-invoke exactly-once argument ownership helpers, source-call result carrier selectors, selected production source-call carrier emission, direct generated user-function lookup-plus-invoke production, method/static source-call target operands, and method/static source-call binding operands are integrated. Unknown runtime callables, executable method/static source-call production, builtin return summaries, executable by-reference alias transfer, full object/method parity, namespace fallback, autoload, magic calls, named/spread breadth, broader return references, constructors, cleanup/unwind, and backend parity remain open. |
 | Objects, properties, methods | **65%** | `[#############-------]` | Selected object metadata, public property reference-source extraction, object-property reference-slot mutation, ArrayAccess dispatch, generated-C ArrayAccess consumers for compiler-known generated objects, dynamic generated class-name producers, object-call argument handles, declared-method callable-table publication, allocatable class metadata, and access-context preflights exist. Property/magic/unknown-runtime-dynamic-call/clone/static-property producers, property-held/nested ArrayAccess, broader visibility parity, typed properties, destructors, interfaces/traits execution, references/COW, constructors, and backend parity remain open. |
 | Control flow, cleanup, diagnostics | **65%** | `[#############-------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostic blockers, owned diagnostic-result list contracts, consumer contracts, backend family consumers, deferred-cleanup blockers, control-transfer cleanup result consumers, terminal cleanup transfer ABI, cleanup-frame producers/source metadata/report bridges, cleanup-frame stack aggregation, cleanup-frame enqueue validation, try-body call-boundary preflight, report sinks, continuation helpers, discarded statement-expression operands, and echo/print output operands exist. Broad unwind/finally/destructor/shutdown execution, cleanup result production from real control flow, executable reference binding, remaining semantic diagnostic-result producer migration, and source-ordered diagnostics remain open. |
 | Broad integrated verification | **70%** | `[##############------]` | Focused gates around recent source work are strong. Broad verification is still constrained by lane extraction cost, stale candidate expectations, heavy formatter/log pressure, and backend parity gaps. |
@@ -70,6 +71,7 @@ Current critical path to 100%:
 
 | Commit | Capability | Proof shape |
 | --- | --- | --- |
+| `53bef000` | Source-call binding operands compose method/static target preinvoke cleanup, owner cleanup, signature-driven by-reference argument binding, and the shared `NativeCallArgumentsHandle` path across receiver-method and static-method carrier families. | Source-call emitter carrier test across direct, callable-value, materialized callable, receiver-method, and static-method targets with by-reference signature handoff; carrier selector tests; fmt, diff check. |
 | `a7054ed1` | Runtime terminal cleanup transfer consumes a pending terminal result plus aggregated cleanup results, preserves terminal values across non-terminal cleanup, releases them after terminal cleanup, and exposes the ABI to LLVM/generated C without enabling production lowering. | Runtime ABI tests across int/string/array terminal values, mixed cleanup lists, terminal cleanup, and ownership blockers; backend declaration regression; existing cleanup sequencing regression; fmt, diff check. |
 | `d67c7f14` | Receiver-method and static-method source-call target operands now compose access-context lookup-plus-invoke helpers with `NativeSourceCallResultCarrier` and the shared exactly-once `NativeCallArgumentsHandle` path, while separating pre-invocation failure cleanup from post-invocation auxiliary cleanup. | Source-call emitter carrier test across direct, callable-value, materialized callable, receiver-method, and static-method targets; carrier selector tests; lookup-plus-invoke declaration test; fmt, diff check. |
 | `4d6f0f1e` | Cleanup-frame enqueueing validates producer surfaces and rejects terminal-source value ownership before LLVM/generated C backend emission while preserving the existing cleanup-frame stack/report path. | Cross-backend cleanup-frame surface and terminal-value blocker test, stack aggregation regression, cleanup report bridge regression, fmt, diff check. |
@@ -104,7 +106,7 @@ Primary-integrated capability and candidate/lane-local work are separated.
 | Item | Primary Integrated | Candidate Readiness | Toward Full Feature | Status |
 | --- | ---: | ---: | ---: | --- |
 | Diagnostic-result carrier stack | **100%** `[####################]` | **100%** `[####################]` | **60%** `[############--------]` | Runtime/result contracts, family consumers, continuation helpers, report sinks, discarded statement-expression operands, echo/print output operands, source-call result conversion, control-transfer cleanup result consumers/report bridges, and cleanup-frame producers are integrated. Terminal producers, semantic cleanup result production from real control flow, lvalue, reference, RMW, and call-argument operands still need exact ownership and ordering migrations. |
-| Callable access context and class metadata | **100%** `[####################]` | **100%** `[####################]` | **60%** `[############--------]` | Shared runtime access-context policy, lookup-plus-invoke argument ownership, source-call result carrier selectors, selected production source-call carrier emission, direct generated user-function lookup-plus-invoke production, method/static source-call target operands, and allocatable-class metadata are integrated for function/method/static/constructor lookup preflights. Executable method/static source-call production, constructor execution, closure argument-handle ownership, namespace fallback, autoload, magic, and full visibility parity remain open. |
+| Callable access context and class metadata | **100%** `[####################]` | **100%** `[####################]` | **60%** `[############--------]` | Shared runtime access-context policy, lookup-plus-invoke argument ownership, source-call result carrier selectors, selected production source-call carrier emission, direct generated user-function lookup-plus-invoke production, method/static source-call target and binding operands, and allocatable-class metadata are integrated for function/method/static/constructor lookup preflights. Executable method/static source-call production, constructor execution, closure argument-handle ownership, namespace fallback, autoload, magic, and full visibility parity remain open. |
 | ArrayAccess compiler consumers | **100%** `[####################]` | **100%** `[####################]` | **55%** `[###########---------]` | Generated-C direct-object/direct-variable read, `isset`, `empty`, `??`, write, append, unset, compound assignment, and `??=` are integrated for compiler-known generated declared `ArrayAccess` objects. Property-held/nested owners, append RMW, increment/decrement, reference-returning `offsetGet`, references/COW, cleanup/unwind, and backend parity remain open. |
 | ReferenceSlot owner facts | **100%** `[####################]` | **100%** `[####################]` | **45%** `[#########-----------]` | Compiler-visible native reference handles can recover facts, source owners, and commit writeback for selected paths. Arbitrary alias roots, request/superglobal path facts, property-held references, closure callback fact transport, references/COW, and backend parity remain open. |
 | Callable identity return summaries | **100%** `[####################]` | **100%** `[####################]` | **60%** `[############--------]` | Generated functions, declared methods/static methods, descriptor closures, known strings, definite `__invoke` objects, and compiler-known callable arrays can publish selected return facts. Unknown runtime callables, builtins, non-descriptor closures, recursive summaries, reference returns, property/magic producers, references/COW, and backend parity remain open. |
@@ -129,6 +131,9 @@ Primary-integrated capability and candidate/lane-local work are separated.
   compose access-context lookup-plus-invoke helpers with shared source-call
   carriers and distinguish pre-invocation failure cleanup from post-invocation
   auxiliary cleanup.
+- Source-call binding operands compose method/static targets with signature-
+  driven by-reference argument binding over the shared
+  `NativeCallArgumentsHandle` emitter.
 - Selected generated-C production source-call paths build
   `NativeCallArgumentsHandle` once and invoke dynamic callable values,
   scoped callable-string reference assignments, and direct generated
@@ -214,8 +219,8 @@ Primary-integrated capability and candidate/lane-local work are separated.
 
 ## Latest Focused Verification
 
-For `a7054ed1`, `d67c7f14`, `4d6f0f1e`, `8ebeae19`, `964e3e2b`, `0430efcc`,
-`75f20f3f`, `d26c64f7`, `50d19f99`, and `7891fcf3`:
+For `53bef000`, `a7054ed1`, `d67c7f14`, `4d6f0f1e`, `8ebeae19`, `964e3e2b`,
+`0430efcc`, `75f20f3f`, `d26c64f7`, `50d19f99`, and `7891fcf3`:
 
 - `cargo test -p phpc --lib native_diagnostic_cleanup_frame_stack_aggregates_nested_pending_diagnostics_for_unwind -- --nocapture`
 - `cargo test -p phpc --lib native_diagnostic_cleanup_frames_enforce_cleanup_surface_and_terminal_value_ownership -- --nocapture`
