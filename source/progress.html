@@ -31,7 +31,7 @@
 <h3 id="executive-read">Executive Read</h3>
 <p>Overall supervised-roadmap progress: <strong>95%</strong> <code>[###################-]</code></p>
 <p>Selected executable PHP semantics: <strong>95%</strong> <code>[###################-]</code></p>
-<p>Primary <code>HEAD</code> is aligned with <code>origin/master</code> at <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/682f3aef">682f3aef</a> runtime: add ArrayAccess offset write dispatch ABI</code>.</p>
+<p>Primary <code>HEAD</code> is aligned with <code>origin/master</code> after the docs/accounting update for <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/682f3aef">682f3aef</a></code>.</p>
 <p>Latest primary-integrated source capability baseline: <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/682f3aef">682f3aef</a> runtime: add ArrayAccess offset write dispatch ABI</code>.</p>
 <p>Recent source progress is real but still selected-path rather than full PHP parity. <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/6a73b186">6a73b186</a></code> routed generated-C dynamic callable expressions through the shared runtime callable-value ABI. <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/513dbf21">513dbf21</a></code> adds a generalized object/property ArrayAccess write-operation blocker boundary across write, append, compound update, null-coalesce write, and unset operation families. The classification is driven by shared <code>AssignTarget</code> / <code>UnsetTarget</code> operation results and backend blocker boundaries. It does not execute <code>ArrayAccess::offsetSet()</code> or <code>ArrayAccess::offsetUnset()</code>. <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b918d3b1">b918d3b1</a></code> adds a generalized RMW-lvalue diagnostic operand-list boundary for compound assignment, null-coalesce assignment, and increment/decrement target operands. It reserves operation tag <code>8</code> and operand tag <code>21</code>, reuses shared <code>AssignTarget</code> operand enumeration, and routes requirements through <code>NativeDiagnosticOperandRequirement</code> operation-list diagnostics. It does not execute RMW owner/writeback behavior, references/COW, object/static property storage, ArrayAccess dispatch, cleanup ownership, or exact diagnostic ordering. <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/682f3aef">682f3aef</a></code> adds a runtime-only ArrayAccess offset write dispatch ABI for keyed <code>offsetSet($offset, $value)</code>, append <code>offsetSet(null, $value)</code>, and <code>offsetUnset($offset)</code> through runtime object/interface/callable semantics. It does not add compiler lowering, assignment/RMW owner writeback, cleanup/unwind parity, <code>offsetGet</code>, <code>offsetExists</code>, reference/COW, magic, constructor, visibility, exact diagnostic, or backend parity behavior.</p>
 <p>Full PHP callable, object, lvalue, cleanup, diagnostic, and backend parity remain incomplete. Overall and selected-executable percentages remain flat.</p>
@@ -129,7 +129,7 @@
 <h3 id="current-work-snapshot">Current Work Snapshot</h3>
 <p>Primary-integrated:</p>
 <ul>
-<li>[x] Primary source is clean and synced at <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/682f3aef">682f3aef</a></code>.</li>
+<li>[x] Primary is clean and synced after docs/accounting for <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/682f3aef">682f3aef</a></code>.</li>
 <li>[x] Latest source capability is <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/682f3aef">682f3aef</a></code>.</li>
 <li>[x] <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/682f3aef">682f3aef</a></code> is accounted as runtime-only Object/ArrayAccess offset write</li>
 <p>dispatch ABI progress, not compiler lowering or full ArrayAccess parity.</p>
@@ -193,6 +193,6 @@
 <li>Reintroducing or extending compiler-side finite dynamic-call or builtin-name</li>
 <p>ladders instead of consuming shared runtime callable-value semantics.</p>
 </ul></section></main>
-  <footer><span>Generated 2026-05-26T02:43:31.003Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
+  <footer><span>Generated 2026-05-26T02:44:08.513Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
 </body>
 </html>
