@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 02:34 CEST
-Evaluation marker: `20260526T001830Z`
+Updated: 2026-05-26 03:01 CEST
+Evaluation marker: `20260526T010100Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, candidate worktrees, lane-local
@@ -15,11 +15,38 @@ Overall estimated progress: **95%** `[###################-]`
 Executable PHP semantics: **95%** `[###################-]`
 
 Primary was clean and aligned with `origin/master` at
-`b4b21937 native: add reference-binding operand-list blocker requirements` before this
+`b27bbb20 native: add request-state frame environment handoff` before this
 `PROGRESS.md` edit.
 
 Latest primary-integrated source capability baseline:
-`b4b21937 native: add reference-binding operand-list blocker requirements`.
+`b27bbb20 native: add request-state frame environment handoff`.
+
+`b27bbb20` replaces root-symbol-only generated user-function frame metadata
+with `CFrameEnvironmentRequirement { root_symbols, request_state }` and
+propagates that requirement through direct generated-C user-function callable
+handoff. Direct calls now carry root-symbol and request-state frame needs
+through the existing runtime callable table, call arguments, call frame,
+wrapper, and invoke ABI. Detection is AST-semantic across statements,
+expressions, lvalues, reference sources, unset targets, for-actions,
+interpolated strings, direct request superglobals, and conservative `$GLOBALS`
+request-superglobal alias paths. Focused tests cover direct request reads,
+request mutation, `$GLOBALS["_GET"]` alias mutation, mixed ordinary `global`
+plus request-state frame needs, direct-call propagation, and callable ABI
+behavior across representative surfaces. This closes the direct generated-C
+user-function request/global frame handoff gap. Dynamic callable request-state
+handoff, closure frame-environment capture/handoff, `$GLOBALS` self-cells,
+full request/global alias parity, request writeback, includes, variable
+variables, object/method environments, references/COW, and cleanup/unwind
+parity remain open.
+
+Non-repeat guard: future request/global frame work must consume or extend
+`CFrameEnvironmentRequirement` and the shared callable/frame environment
+handoff. Do not reintroduce `CUserFunction.requires_root_symbols`, split
+root-symbol and request-state handoff into unrelated ad hoc paths, add
+request/global support keyed to one function spelling/key/superglobal/local/
+fixture/generated substring/arity/branch/direct-or-dynamic call shape, or
+weaken the dynamic request-state blocker without a semantic-family runtime
+handoff.
 
 `b4b21937` extends the generalized diagnostic operation and operand-list
 requirement blocker ABI to reference-binding surfaces. Reference-assignment
