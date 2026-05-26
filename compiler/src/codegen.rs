@@ -933,6 +933,12 @@ struct NativeSourceCallStringHandleOperand {
     cleanup_after_use: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeSourceCallBindingOperands {
+    target: NativeSourceCallTargetOperands,
+    arguments: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeSourceCallResultCarrierSelection {
     Carrier(NativeSourceCallResultCarrier),
@@ -30288,6 +30294,32 @@ impl CGenerator {
         Ok(call_arguments)
     }
 
+    fn emit_native_source_call_binding_operands(
+        &mut self,
+        argument_prefix: &str,
+        target: NativeSourceCallTargetOperands,
+        args: &[Expr],
+        span: Span,
+        owner_failure_cleanup: &str,
+        callee: NativeCallCallee,
+        signature: Option<&CScopedCallableStringSignature>,
+    ) -> CompileResult<NativeSourceCallBindingOperands> {
+        let binding_failure_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&target.cleanup_on_preinvoke_failure),
+            owner_failure_cleanup
+        );
+        let arguments = self.emit_native_source_call_arguments_handle(
+            argument_prefix,
+            args,
+            span,
+            &binding_failure_cleanup,
+            callee,
+            signature,
+        )?;
+        Ok(NativeSourceCallBindingOperands { target, arguments })
+    }
+
     fn emit_native_source_call_carrier_invocation(
         &mut self,
         carrier: NativeSourceCallResultCarrier,
@@ -50919,6 +50951,15 @@ echo " 10" < "zeta";
             .body
             .extend(diagnostic_target.cleanup_after_invocation);
 
+        let method_args = vec![
+            test_variable_expr("ref_arg"),
+            Expr::String("method-argument".to_string(), span),
+        ];
+        let method_signature = CScopedCallableStringSignature {
+            fixed_param_by_reference: vec![true, false],
+            returns_by_reference: false,
+        };
+
         let receiver_target = generator.emit_native_receiver_method_source_call_target_operands(
             CNativeValueMaterialization {
                 handle: "receiver_value".to_string(),
@@ -50931,13 +50972,17 @@ echo " 10" < "zeta";
             NativeSourceCallAccessContext::ObjectReceiver,
             "cleanup_receiver_owner();",
         );
-        let receiver_arguments = generator.emit_empty_native_source_call_arguments_handle(
-            "source_call_receiver_args",
-            &format!(
-                "{}cleanup_receiver_owner();",
-                c_cleanup_sequence(&receiver_target.cleanup_on_preinvoke_failure),
-            ),
-        );
+        let receiver_binding = generator
+            .emit_native_source_call_binding_operands(
+                "source_call_receiver_args",
+                receiver_target,
+                &method_args,
+                span,
+                "cleanup_receiver_owner();",
+                NativeCallCallee::MethodDispatch,
+                Some(&method_signature),
+            )
+            .expect("receiver-method source-call binding should emit");
         let receiver_carrier = generator
             .native_source_call_carrier(
                 NativeInvokeResultTarget::ReceiverMethodLookupWithAccessContext,
@@ -50948,15 +50993,15 @@ echo " 10" < "zeta";
         generator
             .emit_native_source_call_carrier_invocation(
                 receiver_carrier,
-                &receiver_target.args,
-                &receiver_arguments,
+                &receiver_binding.target.args,
+                &receiver_binding.arguments,
                 "receiver_method_diagnostic",
                 "source_call_receiver_method",
             )
             .expect("receiver-method carrier should return a value handle");
         generator
             .body
-            .extend(receiver_target.cleanup_after_invocation);
+            .extend(receiver_binding.target.cleanup_after_invocation);
 
         let static_scope = generator
             .emit_native_static_text_source_call_string_operand("static_method_scope", "AnyClass");
@@ -50974,13 +51019,17 @@ echo " 10" < "zeta";
             },
             "cleanup_static_owner();",
         );
-        let static_arguments = generator.emit_empty_native_source_call_arguments_handle(
-            "source_call_static_args",
-            &format!(
-                "{}cleanup_static_owner();",
-                c_cleanup_sequence(&static_target.cleanup_on_preinvoke_failure),
-            ),
-        );
+        let static_binding = generator
+            .emit_native_source_call_binding_operands(
+                "source_call_static_args",
+                static_target,
+                &method_args,
+                span,
+                "cleanup_static_owner();",
+                NativeCallCallee::MethodDispatch,
+                Some(&method_signature),
+            )
+            .expect("static-method source-call binding should emit");
         let static_carrier = generator
             .native_source_call_carrier(
                 NativeInvokeResultTarget::StaticMethodLookupWithAccessContext,
@@ -50991,15 +51040,15 @@ echo " 10" < "zeta";
         generator
             .emit_native_source_call_carrier_invocation(
                 static_carrier,
-                &static_target.args,
-                &static_arguments,
+                &static_binding.target.args,
+                &static_binding.arguments,
                 "static_method_diagnostic",
                 "source_call_static_method",
             )
             .expect("static-method carrier should return a bool");
         generator
             .body
-            .extend(static_target.cleanup_after_invocation);
+            .extend(static_binding.target.cleanup_after_invocation);
 
         let body = generator.body.join("\n");
         assert_eq!(body.matches("phpc_native_call_arguments_new()").count(), 5);
@@ -51019,6 +51068,16 @@ echo " 10" < "zeta";
         assert!(body.contains("PHPC_NATIVE_CALLABLE_ACCESS_CLASS_CONTEXT"));
         assert!(body.contains("cleanup_receiver_owner();"));
         assert!(body.contains("cleanup_static_owner();"));
+        assert_eq!(
+            body.matches("phpc_native_call_arguments_push_reference_and_free")
+                .count(),
+            2
+        );
+        assert_eq!(
+            body.matches("phpc_native_call_arguments_push_value_and_free")
+                .count(),
+            4
+        );
         assert!(body.contains("phpc_native_string_free(source_call_diagnostic_name_"));
         assert!(body.contains("phpc_native_string_free(static_method_scope_"));
         assert!(body.contains("phpc_native_string_free(method_call_caller_scope_"));
