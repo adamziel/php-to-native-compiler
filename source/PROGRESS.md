@@ -29,8 +29,8 @@ current-primary reconciliation evidence, but both remain lane-local candidate
 work until integrated and pushed. Dynamic callable compiler consumption still
 conflicts with the request/global frame-environment change and should be
 rebased after that semantic boundary lands. Focused current-primary smoke after
-accounting had three gates passed and `cargo check -p php_runtime -p phpc`
-pending at last read. Estimates remain flat.
+accounting is clean: the assigned focused runtime/compiler/direct-call gates
+and `cargo check -p php_runtime -p phpc` passed. Estimates remain flat.
 
 `b4b21937` extends the generalized diagnostic operation and operand-list
 requirement blocker ABI to reference-binding surfaces. Reference-assignment
@@ -449,9 +449,10 @@ Resource posture:
 Best next action:
 
 - Consider request/global frame direct handoff before dynamic callable compiler
-  consumption if the running smoke and final integration gates finish cleanly,
-  because dynamic callable work still depends on the old root-symbol-only frame
-  model. If trait metadata lands first, account it as metadata/destructor-risk
+  consumption if strict final integration gates hold, because dynamic callable
+  work still depends on the old root-symbol-only frame model and current-primary
+  focused smoke is clean. If trait metadata lands first, account it as
+  metadata/destructor-risk
   classification only. Keep diagnostic reference-binding, assignment-lvalue,
   and RMW-lvalue work layered on the generic operand-list requirement boundary
   from `a544daa8`/`b4b21937`; do not add source-shape blockers for one PHP
