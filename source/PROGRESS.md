@@ -346,15 +346,18 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary is clean and synced at `c8795349` before this `PROGRESS.md` edit;
-  latest source capability remains `a544daa8`.
-- [x] Latest primary-integrated source capability head is `a544daa8`.
+- [x] Primary is clean and synced at `b4b21937` before this `PROGRESS.md` edit;
+  latest source capability is `b4b21937`.
+- [x] Latest primary-integrated source capability head is `b4b21937`.
 - [x] Overall and executable estimates remain 95% under current project-local
   accounting.
 - [x] Diagnostic operand-list blocker boundary is now a completed non-repeat
-  diagnostic prerequisite: reference-binding and later diagnostic work must
-  layer on the generic operand-list requirement boundary instead of adding
-  source-shape blockers.
+  diagnostic prerequisite: later diagnostic work must layer on the generic
+  operand-list requirement boundary instead of adding source-shape blockers.
+- [x] Reference-binding operand-list blocker requirements are now a completed
+  non-repeat diagnostic prerequisite: future reference-binding work must extend
+  or consume the shared operation-list and operand requirement ABI rather than
+  adding source-shape or generated-output recognizers.
 - [x] Native-link reference-handle typedef emission is now a completed
   non-repeat declaration-order repair: future helpers that can emit
   `phpc_NativeReferenceHandle` declarations must use
@@ -390,9 +393,9 @@ Lane-local:
 - [ ] Next callable work should target compiler consumption of dynamic
   callable-value dispatch and method/static/constructor consumer packets over
   the integrated ABI, not another direct user-function or ABI-only inventory.
-- [ ] Reference-binding operation-list follow-up is ready for current-primary
-  review as a diagnostic/blocker extension over `a544daa8`; it is not
-  executable reference binding and should not move percentages if integrated.
+- [x] Reference-binding operation-list follow-up is integrated at `b4b21937`
+  as a diagnostic/blocker extension over `a544daa8`; it is not executable
+  reference binding and does not move percentages.
 - [ ] Dynamic callable compiler-consumer work is mapped after the runtime
   repair, but still needs a narrow implementation patch that consumes the
   repaired runtime callable-value ABI instead of extending legacy generated-C
@@ -404,10 +407,10 @@ Lane-local:
   proof, but it is metadata-only and still leaves trait method execution,
   destructor execution, and object lifetime cleanup open.
 - [ ] Call-lane loop/call ordering work is fresh but broad and dirty.
-- [ ] Diagnostic-lane callable operand, reference-binding, RMW, report dispatch,
-  and control-flow scanner contracts beyond the generic operand-list
-  requirement boundary are broad and dirty; status chronology is not fully
-  reliable.
+- [ ] Diagnostic-lane callable operand, RMW, report dispatch, control-flow
+  scanner contracts, and any reference-binding work beyond the integrated
+  operand-list requirement packet are broad and dirty; status chronology is not
+  fully reliable.
 - [ ] Multiple broad lanes are evidence repositories. Do not route them to
   primary without a new narrow extraction.
 

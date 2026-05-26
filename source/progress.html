@@ -169,13 +169,15 @@
 <h3 id="current-work-snapshot">Current Work Snapshot</h3>
 <p>Primary-integrated:</p>
 <ul>
-<li>[x] Primary is clean and synced at <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/c8795349">c8795349</a></code> before this <code>PROGRESS.md</code> edit;</li>
-<p>latest source capability remains <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/a544daa8">a544daa8</a></code>.</p>
-<li>[x] Latest primary-integrated source capability head is <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/a544daa8">a544daa8</a></code>.</li>
+<li>[x] Primary is clean and synced at <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b4b21937">b4b21937</a></code> before this <code>PROGRESS.md</code> edit;</li>
+<p>latest source capability is <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b4b21937">b4b21937</a></code>.</p>
+<li>[x] Latest primary-integrated source capability head is <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b4b21937">b4b21937</a></code>.</li>
 <li>[x] Overall and executable estimates remain 95% under current project-local</li>
 <p>accounting.</p>
 <li>[x] Diagnostic operand-list blocker boundary is now a completed non-repeat</li>
-<p>diagnostic prerequisite: reference-binding and later diagnostic work must layer on the generic operand-list requirement boundary instead of adding source-shape blockers.</p>
+<p>diagnostic prerequisite: later diagnostic work must layer on the generic operand-list requirement boundary instead of adding source-shape blockers.</p>
+<li>[x] Reference-binding operand-list blocker requirements are now a completed</li>
+<p>non-repeat diagnostic prerequisite: future reference-binding work must extend or consume the shared operation-list and operand requirement ABI rather than adding source-shape or generated-output recognizers.</p>
 <li>[x] Native-link reference-handle typedef emission is now a completed</li>
 <p>non-repeat declaration-order repair: future helpers that can emit <code>phpc_NativeReferenceHandle</code> declarations must use <code>uses_native_reference_handle_type()</code> rather than adding inline typedef predicates.</p>
 <li>[x] Calls/functions/frames advances to 91% because runtime callable-value</li>
@@ -202,8 +204,8 @@
 <p><code>needs-architecture</code>; the runtime ABI split, runtime callable-value dispatch, and direct generated-C user-function consumer are now integrated.</p>
 <li>[ ] Next callable work should target compiler consumption of dynamic</li>
 <p>callable-value dispatch and method/static/constructor consumer packets over the integrated ABI, not another direct user-function or ABI-only inventory.</p>
-<li>[ ] Reference-binding operation-list follow-up is ready for current-primary</li>
-<p>review as a diagnostic/blocker extension over <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/a544daa8">a544daa8</a></code>; it is not executable reference binding and should not move percentages if integrated.</p>
+<li>[x] Reference-binding operation-list follow-up is integrated at <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b4b21937">b4b21937</a></code></li>
+<p>as a diagnostic/blocker extension over <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/a544daa8">a544daa8</a></code>; it is not executable reference binding and does not move percentages.</p>
 <li>[ ] Dynamic callable compiler-consumer work is mapped after the runtime</li>
 <p>repair, but still needs a narrow implementation patch that consumes the repaired runtime callable-value ABI instead of extending legacy generated-C branch ladders.</p>
 <li>[ ] Request/global direct handoff has a large apply-ready candidate and needs</li>
@@ -211,8 +213,8 @@
 <li>[ ] Trait effective-method metadata prep has current-primary reconciliation</li>
 <p>proof, but it is metadata-only and still leaves trait method execution, destructor execution, and object lifetime cleanup open.</p>
 <li>[ ] Call-lane loop/call ordering work is fresh but broad and dirty.</li>
-<li>[ ] Diagnostic-lane callable operand, reference-binding, RMW, report dispatch,</li>
-<p>and control-flow scanner contracts beyond the generic operand-list requirement boundary are broad and dirty; status chronology is not fully reliable.</p>
+<li>[ ] Diagnostic-lane callable operand, RMW, report dispatch, control-flow</li>
+<p>scanner contracts, and any reference-binding work beyond the integrated operand-list requirement packet are broad and dirty; status chronology is not fully reliable.</p>
 <li>[ ] Multiple broad lanes are evidence repositories. Do not route them to</li>
 <p>primary without a new narrow extraction.</p>
 </ul>
@@ -230,7 +232,7 @@
 <p>Best next action:</p>
 <ul>
 <li>Keep diagnostic reference-binding and scanner work layered on the generic</li>
-<p>operand-list requirement boundary from <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/a544daa8">a544daa8</a></code>; do not add source-shape blockers for one PHP source shape, one operand layout, or one diagnostic fixture. Keep callable compiler consumer work focused on consuming the repaired runtime callable lookup/called-scope/visibility/descriptor-argument boundary beyond direct user functions rather than extending old dynamic-call branch helpers. Future exception/destructor work should first add reusable execution, cleanup-ordering, or metadata boundaries rather than one-shape try, constructor, or destructor recognizers.</p>
+<p>operand-list requirement boundary from <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/a544daa8">a544daa8</a></code> and the reference-binding requirement extension from <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b4b21937">b4b21937</a></code>; do not add source-shape blockers for one PHP source shape, one operand layout, or one diagnostic fixture. Keep callable compiler consumer work focused on consuming the repaired runtime callable lookup/called-scope/visibility/descriptor-argument boundary beyond direct user functions rather than extending old dynamic-call branch helpers. Future exception/destructor work should first add reusable execution, cleanup-ordering, or metadata boundaries rather than one-shape try, constructor, or destructor recognizers.</p>
 </ul>
 <p>Avoid:</p>
 <ul>
@@ -242,10 +244,10 @@
 <li>Extending generated-C dynamic-call shape helpers instead of consuming the</li>
 <p>integrated runtime callable ABI.</p>
 <li>Adding reference-binding or diagnostic source-shape blockers instead of</li>
-<p>consuming the generic operand-list requirement boundary.</p>
+<p>consuming the generic operation-list and operand requirement boundary.</p>
 <li>Extending inline generated-C <code>phpc_NativeReferenceHandle</code> typedef predicates;</li>
 <p>native-link helpers that can emit reference-handle declarations must use <code>uses_native_reference_handle_type()</code>.</p>
 </ul></section></main>
-  <footer><span>Generated 2026-05-26T00:36:11.870Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
+  <footer><span>Generated 2026-05-26T00:36:20.968Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
 </body>
 </html>
