@@ -890,6 +890,26 @@ fn native_diagnostic_result_report_sinks_handle_null_entries_and_empty_lists() {
 }
 
 #[test]
+fn native_diagnostic_result_echo_sink_reports_value_conversion_diagnostics() {
+    let array_value = phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(
+        Value::Array(PhpArray::new()),
+    ));
+    let scalar_value =
+        phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(Value::Int(7)));
+    let results = [array_value, scalar_value];
+
+    assert_eq!(
+        unsafe {
+            phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free(
+                results.as_ptr(),
+                results.len(),
+            )
+        },
+        "Warning: Array to string conversion".len() + "Array7".len()
+    );
+}
+
+#[test]
 fn native_control_flow_operand_list_diagnostics_use_generic_runtime_boundary() {
     let requirements = [
         NativeDiagnosticOperandRequirement {

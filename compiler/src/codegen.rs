@@ -260,6 +260,7 @@ enum NativeCallBackend {
 enum NativeDiagnosticResultOperandSurface {
     Expression,
     Statement,
+    Output,
     Terminal,
     Cleanup,
 }
@@ -270,6 +271,7 @@ impl NativeDiagnosticResultOperandSurface {
         match self {
             Self::Expression => "expr_diagnostic_result",
             Self::Statement => "stmt_diagnostic_result",
+            Self::Output => "output_diagnostic_result",
             Self::Terminal => "terminal_diagnostic_result",
             Self::Cleanup => "cleanup_diagnostic_result",
         }
@@ -9418,23 +9420,20 @@ impl LlvmGenerator {
             }
             Stmt::Echo { exprs, .. } => {
                 for (index, expr) in exprs.iter().enumerate() {
-                    let value = match self.emit_expr(expr) {
-                        Ok(value) => value,
+                    match self.emit_native_diagnostic_result_output_expr_statement(expr) {
+                        Ok(()) => {}
                         Err(error) => {
                             return Err(self.unsupported_unemitted_statement_operands_or_original(
                                 &exprs[index + 1..],
                                 error,
                             ));
                         }
-                    };
-                    self.emit_echo(value);
+                    }
                 }
                 Ok(())
             }
             Stmt::Print { expr, .. } => {
-                let value = self.emit_expr(expr)?;
-                self.emit_print(value);
-                Ok(())
+                self.emit_native_diagnostic_result_output_expr_statement(expr)
             }
             Stmt::Assign { target, expr, .. } => self.emit_assignment(target, expr),
             Stmt::ReferenceAssign {
@@ -14558,6 +14557,21 @@ impl LlvmGenerator {
         Ok(())
     }
 
+    fn emit_native_diagnostic_result_output_expr_statement(
+        &mut self,
+        expr: &Expr,
+    ) -> CompileResult<()> {
+        let result = self.emit_native_diagnostic_result_expr_operand(
+            NativeDiagnosticResultOperandSurface::Output,
+            expr,
+        )?;
+        self.emit_native_diagnostic_result_report_sink(
+            NativeDiagnosticResultReportSink::EchoStdout,
+            &[result],
+        );
+        Ok(())
+    }
+
     fn native_call_diagnostics(&self) -> NativeCallDiagnostics {
         NativeCallDiagnostics::new(NativeCallBackend::Llvm)
     }
@@ -16585,6 +16599,23 @@ impl CGenerator {
         )
     }
 
+    fn emit_native_diagnostic_result_value_operand_for_materialized(
+        &mut self,
+        surface: NativeDiagnosticResultOperandSurface,
+        value: CNativeValueMaterialization,
+    ) -> String {
+        let result = self.emit_native_diagnostic_result_operand(
+            NativeDiagnosticResultProducer::value(surface, &value.handle),
+        );
+        let consumed_value_cleanup = format!("phpc_native_value_free({});", value.handle);
+        for cleanup in value.cleanup_after_use {
+            if cleanup != consumed_value_cleanup {
+                self.body.push(cleanup);
+            }
+        }
+        result
+    }
+
     fn emit_native_diagnostic_result_expr_operand(
         &mut self,
         surface: NativeDiagnosticResultOperandSurface,
@@ -16604,6 +16635,22 @@ impl CGenerator {
         )?;
         self.emit_native_diagnostic_result_report_sink(
             NativeDiagnosticResultReportSink::DiagnosticsOnly,
+            &[result],
+        );
+        Ok(())
+    }
+
+    fn emit_native_diagnostic_result_output_expr_statement(
+        &mut self,
+        expr: &Expr,
+    ) -> CompileResult<()> {
+        let value = self.materialize_native_value_result_operand(expr, "")?;
+        let result = self.emit_native_diagnostic_result_value_operand_for_materialized(
+            NativeDiagnosticResultOperandSurface::Output,
+            value,
+        );
+        self.emit_native_diagnostic_result_report_sink(
+            NativeDiagnosticResultReportSink::EchoStdout,
             &[result],
         );
         Ok(())
@@ -28180,40 +28227,20 @@ impl CGenerator {
             }
             Stmt::Echo { exprs, .. } => {
                 for (index, expr) in exprs.iter().enumerate() {
-                    if self.try_emit_native_value_result_output(expr)? {
-                        continue;
-                    }
-                    if self.try_emit_array_index_output(expr)? {
-                        continue;
-                    }
-                    let value = match self.emit_expr(expr) {
-                        Ok(value) => value,
+                    match self.emit_native_diagnostic_result_output_expr_statement(expr) {
+                        Ok(()) => {}
                         Err(error) => {
                             return Err(self.unsupported_unemitted_statement_operands_or_original(
                                 &exprs[index + 1..],
                                 error,
                             ));
                         }
-                    };
-                    if let Err(error) = self.emit_echo(value, expr.span()) {
-                        return Err(self.unsupported_unemitted_statement_operands_or_original(
-                            &exprs[index + 1..],
-                            error,
-                        ));
                     }
                 }
                 Ok(())
             }
             Stmt::Print { expr, .. } => {
-                if self.try_emit_native_value_result_output(expr)? {
-                    return Ok(());
-                }
-                if self.try_emit_array_index_output(expr)? {
-                    return Ok(());
-                }
-                let value = self.emit_expr(expr)?;
-                self.emit_echo(value, expr.span())?;
-                Ok(())
+                self.emit_native_diagnostic_result_output_expr_statement(expr)
             }
             Stmt::Assign { target, expr, .. } => self.emit_assignment(target, expr),
             Stmt::ReferenceAssign {
@@ -45676,6 +45703,7 @@ mod tests {
         for surface in [
             NativeDiagnosticResultOperandSurface::Expression,
             NativeDiagnosticResultOperandSurface::Statement,
+            NativeDiagnosticResultOperandSurface::Output,
             NativeDiagnosticResultOperandSurface::Terminal,
             NativeDiagnosticResultOperandSurface::Cleanup,
         ] {
@@ -46226,6 +46254,62 @@ mod tests {
             line.contains("phpc_NativeDiagnosticResult diagnostic_result_operands_")
                 && line.contains("[1]")
         }));
+    }
+
+    #[test]
+    fn native_diagnostic_result_semantic_output_operands_route_echo_and_print_values() {
+        let llvm_program =
+            crate::parse("<?php\necho 1, \"two\";\n$flag = true;\necho $flag;\nprint \"done\";\n")
+                .unwrap();
+
+        let mut llvm = LlvmGenerator::default();
+        for stmt in &llvm_program.statements {
+            llvm.emit_statement(stmt)
+                .expect("LLVM output diagnostic-result operands should lower");
+        }
+        assert!(llvm.uses_native_diagnostic_result_producers);
+        assert!(llvm.uses_native_diagnostic_result_consumers);
+        assert_eq!(
+            llvm.body
+                .iter()
+                .filter(|line| line.contains(
+                    "@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"
+                ))
+                .count(),
+            4
+        );
+        assert!(llvm.body.iter().any(|line| line
+            .contains("@phpc_native_diagnostic_result_from_value(%phpc.NativeValueHandle")));
+
+        let c_program = crate::parse("<?php\n$value = \"native\";\n$ref =& $value;\necho 1, \"two\", $value, $ref, [3];\nprint \"done\";\n").unwrap();
+        let mut c = CGenerator::default();
+        for stmt in &c_program.statements {
+            c.emit_statement(stmt)
+                .expect("C output diagnostic-result operands should lower");
+        }
+        assert!(c.uses_native_diagnostic_result_producers);
+        assert!(c.uses_native_diagnostic_result_consumers);
+        assert_eq!(
+            c.body
+                .iter()
+                .filter(|line| line.contains(
+                    "phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"
+                ))
+                .count(),
+            6
+        );
+        assert!(c
+            .body
+            .iter()
+            .any(|line| line.contains("phpc_native_diagnostic_result_from_value")));
+        assert!(c.body.iter().any(|line| {
+            line.contains("phpc_NativeDiagnosticResult diagnostic_result_operands_")
+                && line.contains("[1]")
+        }));
+        assert!(!c
+            .body
+            .iter()
+            .any(|line| line.contains("phpc_native_value_format_stdout_with_diagnostic")));
     }
 
     #[test]

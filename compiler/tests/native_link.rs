@@ -101,6 +101,15 @@ const NATIVE_DIAGNOSTIC_RESULT_DISCARDED_EXPR_SOURCE: &str = concat!(
     "echo \"ok\";\n",
 );
 
+const NATIVE_DIAGNOSTIC_RESULT_OUTPUT_OPERANDS_SOURCE: &str = concat!(
+    "<?php\n",
+    "$value = \"V\";\n",
+    "$ref =& $value;\n",
+    "echo \"A\", 2, $value, $ref, \"|\";\n",
+    "echo [1];\n",
+    "print \"|done\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_OBJECT_SOURCE: &str = concat!(
     "<?php\n",
     "class Box { public $name; private $secret; }\n",
@@ -1338,6 +1347,52 @@ fn emit_exe_links_and_runs_discarded_expression_diagnostic_result_operands() {
     );
     assert_eq!(run.stdout, b"ok");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_output_diagnostic_result_operands() {
+    if !has_cc() {
+        return;
+    }
+
+    let program = parse(NATIVE_DIAGNOSTIC_RESULT_OUTPUT_OPERANDS_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    assert!(
+        source.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
+        "echo/print operands should report/free through diagnostic-result echo sinks:\n{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_diagnostic_result_from_value")
+            .count()
+            >= 6,
+        "echo/print operands should materialize owned diagnostic-result value operands:\n{source}"
+    );
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "diagnostic_result_output_operands",
+        NATIVE_DIAGNOSTIC_RESULT_OUTPUT_OPERANDS_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run diagnostic-result output executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"A2VV|Array|done\n");
+    assert!(
+        String::from_utf8_lossy(&run.stderr).contains("Warning: Array to string conversion"),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
 
     let _ = fs::remove_file(source_path);
     let _ = fs::remove_file(output_path);

@@ -20041,7 +20041,7 @@ unsafe fn native_diagnostic_result_report_list_and_free(
             written += native_diagnostic_report_stderr(diagnostic);
         }
         if mode.echoes_values() && !terminal {
-            written += unsafe { phpc_native_value_echo_stdout(state.value) };
+            written += unsafe { native_diagnostic_result_echo_value_stdout(state.value) };
         }
         unsafe { phpc_native_value_free(state.value) };
         state.diagnostics.clear();
@@ -20053,6 +20053,43 @@ unsafe fn native_diagnostic_result_report_list_and_free(
     }
 
     written
+}
+
+unsafe fn native_diagnostic_result_echo_value_stdout(handle: NativeValueHandle) -> usize {
+    let Some(value) = (unsafe { handle.as_ref() }) else {
+        return 0;
+    };
+
+    let mut written = 0;
+    if matches!(value, Value::Array(_)) {
+        written += native_diagnostic_report_stderr(&NativeDiagnostic {
+            severity: NativeDiagnosticSeverity::Warning,
+            message: "Warning: Array to string conversion".to_string(),
+            source_location: None,
+        });
+    }
+
+    match value.try_echo_bytes() {
+        Ok(bytes) => match native_output_write_bytes(&bytes) {
+            Ok(bytes_written) => written + bytes_written,
+            Err(error) => {
+                written
+                    + native_diagnostic_report_stderr(&NativeDiagnostic {
+                        severity: NativeDiagnosticSeverity::Error,
+                        message: error.message().to_string(),
+                        source_location: None,
+                    })
+            }
+        },
+        Err(error) => {
+            written
+                + native_diagnostic_report_stderr(&NativeDiagnostic {
+                    severity: NativeDiagnosticSeverity::Error,
+                    message: error.message().to_string(),
+                    source_location: None,
+                })
+        }
+    }
 }
 
 unsafe fn native_diagnostic_result_can_continue(result: NativeDiagnosticResult) -> bool {
