@@ -736,6 +736,19 @@ enum NativeSourceCallResultReturn {
     DiagnosticResult(NativeDiagnosticResultOperandSurface),
 }
 
+impl NativeSourceCallResultReturn {
+    fn c_type(self) -> Option<&'static str> {
+        match self {
+            Self::CallResultHandle => Some("phpc_NativeCallResultHandle"),
+            Self::ValueHandle => Some("phpc_NativeValueHandle"),
+            Self::ReferenceHandle => Some("phpc_NativeReferenceHandle"),
+            Self::Void => None,
+            Self::Bool => Some("bool"),
+            Self::DiagnosticResult(_) => Some("phpc_NativeDiagnosticResult"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeInvokeResultTarget {
     MaterializedCallableHandle,
@@ -754,6 +767,18 @@ enum NativeInvokeResultReturn {
     ReferenceHandle,
     Void,
     Bool,
+}
+
+impl NativeInvokeResultReturn {
+    fn c_type(self) -> Option<&'static str> {
+        match self {
+            Self::CallResultHandle => Some("phpc_NativeCallResultHandle"),
+            Self::ValueHandle => Some("phpc_NativeValueHandle"),
+            Self::ReferenceHandle => Some("phpc_NativeReferenceHandle"),
+            Self::Void => None,
+            Self::Bool => Some("bool"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23598,25 +23623,14 @@ impl CGenerator {
             "if ({callable}.ptr == NULL) {{ {lookup_error_exit} }}"
         ));
 
-        let call_arguments = self.next_native_name("dynamic_callable_args");
-        self.body.push(format!(
-            "phpc_NativeCallArgumentsHandle {call_arguments} = phpc_native_call_arguments_new();"
-        ));
-        let arguments_error_exit = self.native_error_exit(&format!(
+        let callable_failure_cleanup = format!(
             "phpc_native_callable_value_free({callable}); {callee_cleanup}{failure_cleanup}"
-        ));
-        self.body.push(format!(
-            "if (phpc_native_call_arguments_is_null({call_arguments})) {{ {arguments_error_exit} }}"
-        ));
-
-        let call_cleanup = format!(
-            "phpc_native_call_arguments_free({call_arguments}); phpc_native_callable_value_free({callable}); {callee_cleanup}{failure_cleanup}"
         );
-        self.emit_runtime_callable_value_call_arguments(
-            &call_arguments,
+        let call_arguments = self.emit_native_source_call_arguments_handle(
+            "dynamic_callable_args",
             args,
             call_span,
-            &call_cleanup,
+            &callable_failure_cleanup,
             NativeCallCallee::DynamicExpression,
             Some(&signature),
         )?;
@@ -23626,8 +23640,22 @@ impl CGenerator {
         self.body.push(format!(
             "phpc_NativeDiagnosticHandle {invoke_diagnostic} = {{0}};"
         ));
+        let carrier = self.native_source_call_carrier(
+            NativeInvokeResultTarget::CallableValueHandle,
+            NativeSourceCallResultConsumer::Reference,
+            call_span,
+        )?;
+        let emitted_reference = self
+            .emit_native_source_call_carrier_invocation(
+                carrier,
+                &[callable.clone()],
+                &call_arguments,
+                &invoke_diagnostic,
+                "dynamic_callable_reference_result",
+            )
+            .expect("reference source-call carrier must produce a reference handle");
         self.body.push(format!(
-            "phpc_NativeReferenceHandle {reference} = phpc_native_callable_value_invoke_reference_with_diagnostic_and_free({callable}, {call_arguments}, &{invoke_diagnostic});"
+            "phpc_NativeReferenceHandle {reference} = {emitted_reference};"
         ));
         self.body
             .push(format!("phpc_native_callable_value_free({callable});"));
@@ -30031,37 +30059,36 @@ impl CGenerator {
             "if ({callable}.ptr == NULL) {{ {lookup_error_exit} }}"
         ));
 
-        let call_arguments = self.next_native_name("dynamic_callable_args");
-        self.body.push(format!(
-            "phpc_NativeCallArgumentsHandle {call_arguments} = phpc_native_call_arguments_new();"
-        ));
-        let arguments_error_exit = self.native_error_exit(&format!(
+        let callable_failure_cleanup = format!(
             "phpc_native_callable_value_free({callable}); {callee_cleanup}{failure_cleanup}"
-        ));
-        self.body.push(format!(
-            "if (phpc_native_call_arguments_is_null({call_arguments})) {{ {arguments_error_exit} }}"
-        ));
-
-        let call_cleanup = format!(
-            "phpc_native_call_arguments_free({call_arguments}); phpc_native_callable_value_free({callable}); {callee_cleanup}{failure_cleanup}"
         );
-        self.emit_runtime_callable_value_call_arguments(
-            &call_arguments,
+        let call_arguments = self.emit_native_source_call_arguments_handle(
+            "dynamic_callable_args",
             args,
             span,
-            &call_cleanup,
+            &callable_failure_cleanup,
             NativeCallCallee::DynamicExpression,
             scoped_signature.as_ref(),
         )?;
 
-        let result = self.next_native_name("dynamic_callable_result");
         let invoke_diagnostic = self.next_native_name("dynamic_callable_invoke_diagnostic");
         self.body.push(format!(
             "phpc_NativeDiagnosticHandle {invoke_diagnostic} = {{0}};"
         ));
-        self.body.push(format!(
-            "phpc_NativeValueHandle {result} = phpc_native_callable_value_invoke_value_with_diagnostic_and_free({callable}, {call_arguments}, &{invoke_diagnostic});"
-        ));
+        let carrier = self.native_source_call_carrier(
+            NativeInvokeResultTarget::CallableValueHandle,
+            NativeSourceCallResultConsumer::Value,
+            span,
+        )?;
+        let result = self
+            .emit_native_source_call_carrier_invocation(
+                carrier,
+                &[callable.clone()],
+                &call_arguments,
+                &invoke_diagnostic,
+                "dynamic_callable_result",
+            )
+            .expect("value source-call carrier must produce a value handle");
         self.body
             .push(format!("phpc_native_callable_value_free({callable});"));
         self.emit_report_native_diagnostic(&invoke_diagnostic);
@@ -30076,6 +30103,134 @@ impl CGenerator {
             handle: result.clone(),
             cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
         }))
+    }
+
+    fn native_source_call_carrier(
+        &self,
+        target: NativeInvokeResultTarget,
+        consumer: NativeSourceCallResultConsumer,
+        span: Span,
+    ) -> CompileResult<NativeSourceCallResultCarrier> {
+        match target.source_call_result_carrier_for_consumer(consumer) {
+            NativeSourceCallResultCarrierSelection::Carrier(carrier) => Ok(carrier),
+            NativeSourceCallResultCarrierSelection::Blocked(blocker) => {
+                let native_blocker = match blocker {
+                    NativeInvokeResultHelperBlocker::MissingConstructorAllocationAbi => {
+                        NativeCallBlocker::ConstructorDispatch
+                    }
+                    NativeInvokeResultHelperBlocker::MissingClosureArgumentHandleAbi => {
+                        NativeCallBlocker::ClosureFrameHandoff
+                    }
+                };
+                Err(
+                    self.unsupported_call_operation(NativeCallOperation::value_result(
+                        span,
+                        match target {
+                            NativeInvokeResultTarget::ConstructorAllocation => {
+                                NativeCallCallee::ConstructorDispatch
+                            }
+                            NativeInvokeResultTarget::ClosureArgumentHandle => {
+                                NativeCallCallee::ClosureFrame
+                            }
+                            NativeInvokeResultTarget::MaterializedCallableHandle
+                            | NativeInvokeResultTarget::CallableValueHandle
+                            | NativeInvokeResultTarget::DirectNamedLookup => {
+                                NativeCallCallee::DirectNamed
+                            }
+                            NativeInvokeResultTarget::ReceiverMethodLookupWithAccessContext
+                            | NativeInvokeResultTarget::StaticMethodLookupWithAccessContext => {
+                                NativeCallCallee::MethodDispatch
+                            }
+                        },
+                        native_blocker,
+                    )),
+                )
+            }
+        }
+    }
+
+    fn emit_empty_native_source_call_arguments_handle(
+        &mut self,
+        prefix: &str,
+        owner_failure_cleanup: &str,
+    ) -> String {
+        self.uses_native_callable_helpers = true;
+        let call_arguments = self.next_native_name(prefix);
+        self.body.push(format!(
+            "phpc_NativeCallArgumentsHandle {call_arguments} = phpc_native_call_arguments_new();"
+        ));
+        let arguments_error_exit = self.native_error_exit(owner_failure_cleanup);
+        self.body.push(format!(
+            "if (phpc_native_call_arguments_is_null({call_arguments})) {{ {arguments_error_exit} }}"
+        ));
+        call_arguments
+    }
+
+    fn emit_native_source_call_arguments_handle(
+        &mut self,
+        prefix: &str,
+        args: &[Expr],
+        span: Span,
+        owner_failure_cleanup: &str,
+        callee: NativeCallCallee,
+        signature: Option<&CScopedCallableStringSignature>,
+    ) -> CompileResult<String> {
+        let call_arguments =
+            self.emit_empty_native_source_call_arguments_handle(prefix, owner_failure_cleanup);
+        let call_cleanup =
+            format!("phpc_native_call_arguments_free({call_arguments}); {owner_failure_cleanup}");
+        self.emit_runtime_callable_value_call_arguments(
+            &call_arguments,
+            args,
+            span,
+            &call_cleanup,
+            callee,
+            signature,
+        )?;
+        Ok(call_arguments)
+    }
+
+    fn emit_native_source_call_carrier_invocation(
+        &mut self,
+        carrier: NativeSourceCallResultCarrier,
+        target_args: &[String],
+        call_arguments: &str,
+        diagnostic: &str,
+        result_prefix: &str,
+    ) -> Option<String> {
+        self.uses_native_callable_helpers = true;
+        debug_assert!(carrier.invoke_helper.consumes_arguments);
+
+        let mut args = target_args.to_vec();
+        args.push(call_arguments.to_string());
+        args.push(format!("&{diagnostic}"));
+        let args = args.join(", ");
+
+        let invoke_result = carrier.invoke_helper.result.c_type().map(|result_type| {
+            let result = self.next_native_name(result_prefix);
+            self.body.push(format!(
+                "{result_type} {result} = {}({args});",
+                carrier.invoke_helper.name
+            ));
+            result
+        });
+
+        if let Some(converter) = carrier.diagnostic_result_converter {
+            self.uses_native_diagnostic_result_producers = true;
+            let result_type = carrier
+                .result
+                .c_type()
+                .expect("diagnostic-result carrier must declare a C result type");
+            let converted = self.next_native_name(result_prefix);
+            let invoke_result = invoke_result
+                .expect("diagnostic-result carrier must invoke through an owned call result");
+            self.body.push(format!(
+                "{result_type} {converted} = {converter}({invoke_result});"
+            ));
+            return Some(converted);
+        }
+
+        invoke_result
     }
 
     fn emit_runtime_callable_value_call_arguments(
@@ -31514,19 +31669,15 @@ impl CGenerator {
             "if ({callable}.ptr == NULL) {{ {lookup_error_exit} }}"
         ));
 
-        let call_arguments = self.next_native_name("direct_callable_args");
-        self.body.push(format!(
-            "phpc_NativeCallArgumentsHandle {call_arguments} = phpc_native_call_arguments_new();"
-        ));
-        let arguments_error_exit = self.native_error_exit(&format!(
-            "phpc_native_callable_free({callable}); {failure_cleanup}"
-        ));
-        self.body.push(format!(
-            "if (phpc_native_call_arguments_is_null({call_arguments})) {{ {arguments_error_exit} }}"
-        ));
-
-        let call_cleanup =
-            format!("phpc_native_call_arguments_free({call_arguments}); phpc_native_callable_free({callable}); {failure_cleanup}");
+        let callable_failure_cleanup =
+            format!("phpc_native_callable_free({callable}); {failure_cleanup}");
+        let call_arguments = self.emit_empty_native_source_call_arguments_handle(
+            "direct_callable_args",
+            &callable_failure_cleanup,
+        );
+        let call_cleanup = format!(
+            "phpc_native_call_arguments_free({call_arguments}); {callable_failure_cleanup}"
+        );
         let fixed_count = native_user_function_fixed_param_count(&function.decl);
         for (index, param) in function.decl.params.iter().take(fixed_count).enumerate() {
             let value_expr = if let Some(arg) = args.get(index) {
@@ -31588,14 +31739,24 @@ impl CGenerator {
             self.body.extend(value_aux_cleanup);
         }
 
-        let result = self.next_native_name("user_function_result");
         let invoke_diagnostic = self.next_native_name("direct_callable_invoke_diagnostic");
         self.body.push(format!(
             "phpc_NativeDiagnosticHandle {invoke_diagnostic} = {{0}};"
         ));
-        self.body.push(format!(
-            "phpc_NativeValueHandle {result} = phpc_native_callable_invoke_value_with_diagnostic_and_free({callable}, {call_arguments}, &{invoke_diagnostic});"
-        ));
+        let carrier = self.native_source_call_carrier(
+            NativeInvokeResultTarget::MaterializedCallableHandle,
+            NativeSourceCallResultConsumer::Value,
+            span,
+        )?;
+        let result = self
+            .emit_native_source_call_carrier_invocation(
+                carrier,
+                &[callable.clone()],
+                &call_arguments,
+                &invoke_diagnostic,
+                "user_function_result",
+            )
+            .expect("value source-call carrier must produce a value handle");
         self.body
             .push(format!("phpc_native_callable_free({callable});"));
         self.emit_report_native_diagnostic(&invoke_diagnostic);
@@ -50166,6 +50327,103 @@ echo " 10" < "zeta";
                 NativeSourceCallResultCarrierSelection::Blocked(_)
             ));
         }
+    }
+
+    #[test]
+    fn native_source_call_emitter_builds_arguments_once_and_routes_carriers() {
+        let span = test_span();
+        let mut generator = CGenerator::default();
+        let args = vec![
+            Expr::Int(1, span),
+            Expr::String("argument".to_string(), span),
+        ];
+
+        let value_arguments = generator
+            .emit_native_source_call_arguments_handle(
+                "source_call_value_args",
+                &args,
+                span,
+                "cleanup_value_owner();",
+                NativeCallCallee::DynamicExpression,
+                None,
+            )
+            .expect("value source-call arguments should emit");
+        let value_carrier = generator
+            .native_source_call_carrier(
+                NativeInvokeResultTarget::CallableValueHandle,
+                NativeSourceCallResultConsumer::Value,
+                span,
+            )
+            .expect("callable-value value carrier should select");
+        generator
+            .emit_native_source_call_carrier_invocation(
+                value_carrier,
+                &["callable_value".to_string()],
+                &value_arguments,
+                "value_diagnostic",
+                "source_call_value",
+            )
+            .expect("value carrier should return a value handle");
+
+        let reference_arguments = generator.emit_empty_native_source_call_arguments_handle(
+            "source_call_reference_args",
+            "cleanup_reference_owner();",
+        );
+        let reference_carrier = generator
+            .native_source_call_carrier(
+                NativeInvokeResultTarget::MaterializedCallableHandle,
+                NativeSourceCallResultConsumer::Reference,
+                span,
+            )
+            .expect("materialized-callable reference carrier should select");
+        generator
+            .emit_native_source_call_carrier_invocation(
+                reference_carrier,
+                &["callable_handle".to_string()],
+                &reference_arguments,
+                "reference_diagnostic",
+                "source_call_reference",
+            )
+            .expect("reference carrier should return a reference handle");
+
+        let diagnostic_arguments = generator.emit_empty_native_source_call_arguments_handle(
+            "source_call_diagnostic_args",
+            "cleanup_diagnostic_owner();",
+        );
+        let diagnostic_carrier = generator
+            .native_source_call_carrier(
+                NativeInvokeResultTarget::DirectNamedLookup,
+                NativeSourceCallResultConsumer::DiagnosticResult(
+                    NativeDiagnosticResultOperandSurface::Statement,
+                ),
+                span,
+            )
+            .expect("direct lookup diagnostic carrier should select");
+        generator
+            .emit_native_source_call_carrier_invocation(
+                diagnostic_carrier,
+                &[
+                    "callable_table".to_string(),
+                    "PHPC_NATIVE_CALLABLE_KIND_FUNCTION".to_string(),
+                    "(phpc_NativeStringHandle){0}".to_string(),
+                    "function_name".to_string(),
+                ],
+                &diagnostic_arguments,
+                "diagnostic_result_diagnostic",
+                "source_call_diagnostic",
+            )
+            .expect("diagnostic carrier should return a diagnostic result");
+
+        let body = generator.body.join("\n");
+        assert_eq!(body.matches("phpc_native_call_arguments_new()").count(), 3);
+        assert!(body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"));
+        assert!(body.contains("phpc_native_callable_invoke_reference_with_diagnostic_and_free"));
+        assert!(body.contains(
+            "phpc_native_callable_lookup_invoke_result_with_diagnostic_and_free_arguments"
+        ));
+        assert!(body.contains("phpc_native_diagnostic_result_from_call_result_and_free"));
+        assert!(generator.uses_native_callable_helpers);
+        assert!(generator.uses_native_diagnostic_result_producers);
     }
 
     #[test]
