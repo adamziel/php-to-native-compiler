@@ -429,9 +429,10 @@ Resource posture:
 Best next action:
 
 - Keep diagnostic reference-binding and scanner work layered on the generic
-  operand-list requirement boundary from `a544daa8`; do not add source-shape
-  blockers for one PHP source shape, one operand layout, or one diagnostic
-  fixture. Keep callable compiler consumer work focused on consuming the
+  operand-list requirement boundary from `a544daa8` and the reference-binding
+  requirement extension from `b4b21937`; do not add source-shape blockers for
+  one PHP source shape, one operand layout, or one diagnostic fixture. Keep
+  callable compiler consumer work focused on consuming the
   repaired runtime callable lookup/called-scope/visibility/descriptor-argument
   boundary beyond direct user functions rather than extending old dynamic-call
   branch helpers. Future exception/destructor work should first add reusable
@@ -454,7 +455,7 @@ Avoid:
 - Extending generated-C dynamic-call shape helpers instead of consuming the
   integrated runtime callable ABI.
 - Adding reference-binding or diagnostic source-shape blockers instead of
-  consuming the generic operand-list requirement boundary.
+  consuming the generic operation-list and operand requirement boundary.
 - Extending inline generated-C `phpc_NativeReferenceHandle` typedef predicates;
   native-link helpers that can emit reference-handle declarations must use
   `uses_native_reference_handle_type()`.
