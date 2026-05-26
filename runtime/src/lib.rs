@@ -25660,8 +25660,11 @@ pub unsafe extern "C" fn phpc_native_value_cast_result(
         return NativeValueOperationResult::diagnostic(message);
     }
 
-    match native_value_cast_value(value, op) {
-        Ok(value) => NativeValueOperationResult::value(value),
+    match native_value_cast_value_with_diagnostic(value, op) {
+        Ok((value, Some(message))) => {
+            NativeValueOperationResult::value_with_diagnostic(value, message)
+        }
+        Ok((value, None)) => NativeValueOperationResult::value(value),
         Err(error) => NativeValueOperationResult::diagnostic(format!(
             "native value cast rejected by runtime cast semantics: {}",
             error.message()
@@ -25684,12 +25687,20 @@ pub unsafe extern "C" fn phpc_native_value_cast_operation_with_diagnostic(
 ) -> NativeValueHandle {
     unsafe { native_clear_diagnostic_slot(diagnostic) };
 
-    match unsafe { native_value_cast_operation_value(handle, operation) } {
-        Ok(value) => NativeValueHandle::from_value(value),
-        Err(error) => {
-            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
-            NativeValueHandle::null()
-        }
+    let mut result = unsafe { phpc_native_value_cast_result(handle, operation) };
+    let value = result.value;
+    result.value = NativeValueHandle::null();
+    if !diagnostic.is_null() {
+        unsafe { *diagnostic = result.diagnostic };
+        result.diagnostic = NativeDiagnosticHandle::null();
+    }
+    let succeeded = result.tag == NativeValueOperationResultTag::Ok;
+    unsafe { phpc_native_value_operation_result_free(result) };
+    if succeeded {
+        value
+    } else {
+        unsafe { phpc_native_value_free(value) };
+        NativeValueHandle::null()
     }
 }
 
@@ -25727,6 +25738,20 @@ fn native_value_cast_value(value: &Value, op: u8) -> RuntimeResult<Value> {
             format!("native value cast operation tag {op} is not supported"),
         )),
     }
+}
+
+fn native_value_cast_value_with_diagnostic(
+    value: &Value,
+    op: u8,
+) -> RuntimeResult<(Value, Option<String>)> {
+    if matches!((op, value), (NATIVE_VALUE_CAST_STRING, Value::Array(_))) {
+        return Ok((
+            Value::String("Array".to_string()),
+            Some("Warning: Array to string conversion".to_string()),
+        ));
+    }
+
+    native_value_cast_value(value, op).map(|value| (value, None))
 }
 
 fn native_value_string_cast(value: &Value) -> RuntimeResult<Value> {
@@ -25891,7 +25916,6 @@ fn native_value_cast_blocker(value: &Value, op: u8) -> Option<String> {
     }
 
     let unsupported = match (op, value) {
-        (NATIVE_VALUE_CAST_STRING, Value::Array(_)) => "array-to-string diagnostics",
         (NATIVE_VALUE_CAST_STRING, Value::Object(_) | Value::Closure(_)) => {
             "object __toString()/ArrayAccess coercion hooks"
         }
@@ -30619,6 +30643,19 @@ mod tests {
         assert_eq!(native_value_echo_bytes_for_test(string_cast.value), b"7");
         unsafe { phpc_native_value_operation_result_free(string_cast) };
 
+        let array_string_cast =
+            unsafe { phpc_native_value_cast_result(array_value, NATIVE_VALUE_CAST_STRING) };
+        assert!(array_string_cast.succeeded());
+        assert_eq!(
+            native_value_echo_bytes_for_test(array_string_cast.value),
+            b"Array"
+        );
+        assert_eq!(
+            native_diagnostic_message_for_test(array_string_cast.diagnostic),
+            "Warning: Array to string conversion"
+        );
+        unsafe { phpc_native_value_operation_result_free(array_string_cast) };
+
         let false_cast =
             unsafe { phpc_native_value_cast_result(string_zero, NATIVE_VALUE_CAST_BOOL) };
         assert!(false_cast.succeeded());
@@ -31808,16 +31845,33 @@ mod tests {
         assert!(diagnostic.is_null());
         assert_eq!(native_value_echo_bytes_for_test(nonempty_array_float), b"1");
 
+        let array_string = unsafe {
+            phpc_native_value_cast_operation_with_diagnostic(
+                empty_array,
+                NativeValueCastOperation::String as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(!diagnostic.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "Warning: Array to string conversion"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        diagnostic = NativeDiagnosticHandle::null();
+        assert_eq!(native_value_echo_bytes_for_test(array_string), b"Array");
+
         let bad_op =
             unsafe { phpc_native_value_cast_operation_with_diagnostic(text, 255, &mut diagnostic) };
         assert!(bad_op.is_null());
         assert_eq!(
             native_diagnostic_message_for_test(diagnostic),
-            "unsupported call native value cast: native value cast operation tag 255 is not supported"
+            "native value cast operation tag is not supported"
         );
 
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(nonempty_array_float) };
+        unsafe { phpc_native_value_free(array_string) };
         unsafe { phpc_native_value_free(empty_array_int) };
         unsafe { phpc_native_value_free(array) };
         unsafe { phpc_native_value_free(boolean) };

@@ -18917,7 +18917,7 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_binary_result(phpc_NativeValueHandle left, uint8_t op, phpc_NativeValueHandle right);\n");
                 output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_compare_result(phpc_NativeValueHandle left, uint8_t op, phpc_NativeValueHandle right);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_bitwise_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle operand, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
-                output.push_str("extern phpc_NativeValueHandle phpc_native_value_cast_operation_with_diagnostic(phpc_NativeValueHandle value, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_cast_result(phpc_NativeValueHandle value, uint8_t op);\n");
                 output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_type_name_result(phpc_NativeValueHandle value, uint8_t kind);\n");
                 output.push_str("extern bool phpc_native_value_type_predicate(phpc_NativeValueHandle value, uint8_t predicate);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_type_name_with_diagnostic(phpc_NativeValueHandle value, bool debug, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -42177,31 +42177,18 @@ impl CGenerator {
         op_tag: &str,
         failure_cleanup: &str,
     ) -> CNativeValueMaterialization {
-        self.uses_native_array_helpers = true;
-
         let value_handle = value.handle.clone();
-        let diagnostic = self.next_native_name("value_cast_diagnostic");
-        let result = self.next_native_name("native_value_cast");
-        self.body
-            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
-        self.body.push(format!(
-            "phpc_NativeValueHandle {result} = phpc_native_value_cast_operation_with_diagnostic({value_handle}, {op_tag}, &{diagnostic});"
-        ));
-        self.emit_report_native_diagnostic(&diagnostic);
-        let cleanup = format!(
-            "{}{}",
-            c_cleanup_sequence(&value.cleanup_after_use),
-            failure_cleanup
-        );
-        let error_exit = self.native_error_exit(&cleanup);
-        self.body
-            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
-        self.body.extend(value.cleanup_after_use);
-
-        CNativeValueMaterialization {
-            handle: result.clone(),
-            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
-        }
+        self.emit_native_value_result_handle(
+            "native_value_cast_result",
+            "native_value_cast",
+            value.cleanup_after_use,
+            failure_cleanup,
+            |this, result| {
+                this.body.push(format!(
+                    "phpc_NativeValueOperationResult {result} = phpc_native_value_cast_result({value_handle}, {op_tag});"
+                ));
+            },
+        )
     }
 
     fn emit_native_string_result_operation_handle(

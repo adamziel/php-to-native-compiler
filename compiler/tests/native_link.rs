@@ -2255,7 +2255,7 @@ fn native_executable_c_source_routes_value_result_offset_reads_through_shared_bo
     );
     assert!(
         body.contains("phpc_native_value_array_callback_result")
-            && body.contains("phpc_native_value_cast_operation_with_diagnostic")
+            && body.contains("phpc_native_value_cast_result")
             && body.contains("phpc_native_value_binary_result"),
         "{source}"
     );
@@ -7152,6 +7152,8 @@ const DIRECT_VARIABLE_NATIVE_RESULT_ASSIGNMENT_EXPRESSION_SOURCE: &str = concat!
 
 const ARRAY_LVALUE_COMPOUND_ARRAY_UNION_SOURCE: &str = "<?php\n$box = [];\n$box[\"left\"] = [0 => \"left-zero\", \"name\" => \"left-name\"];\n$box[\"left\"] += [0 => \"right-zero\", 1 => \"right-one\", \"name\" => \"right-name\", \"role\" => \"right-role\"];\n$outer = \"outer\";\n$slot = \"slot\";\n$box[$outer][$slot] = [\"keep\" => \"nested-left\"];\n$box[$outer][$slot] += [\"keep\" => \"nested-right\", \"add\" => \"nested-add\"];\necho $box[\"left\"][0], \"|\", $box[\"left\"][1], \"|\", $box[\"left\"][\"name\"], \"|\", $box[\"left\"][\"role\"], \"|\", $box[$outer][$slot][\"keep\"], \"|\", $box[$outer][$slot][\"add\"];\n";
 
+const ARRAY_CAST_VALUE_RESULT_SOURCE: &str = "<?php\n$box = [];\n$fallback = [0 => 2];\n$box[\"union\"] = [\"left\" => 1];\necho (string)($box[\"direct\"] = [\"a\" => 1]), \"|\", strval($box[\"coalesced\"] ??= $fallback), \"|\", (string)($box[\"union\"] += [\"right\" => 2]), \"|\", $box[\"union\"][\"right\"];\n";
+
 const ARRAY_LVALUE_INCREMENT_DECREMENT_SOURCE: &str = "<?php\n$key = \"slot\";\n$float = \"float\";\n$items = [$key => 4, $float => 1.5, \"other\" => 9];\n$items[$key]++;\necho ++$items[$key], \"|\", $items[$key]--, \"|\", $items[$key], \"|\";\n$oldFloat = $items[$float]--;\necho $oldFloat, \"|\", $items[$float], \"|\";\n$out = [];\n$out[++$items[$key]] = $items[$key]--;\necho $out[6], \"|\", $items[$key];\n";
 
 const ARRAY_LVALUE_INCREMENT_DECREMENT_MISSING_SOURCE: &str = "<?php\n$key = \"missing\";\n$leaf = \"leaf\";\n$items = [\"nil\" => null, \"outer\" => [\"null_leaf\" => null]];\n$post = $items[$key]++;\n$pre = ++$items[\"outer\"][$leaf];\n$items[\"down\"]--;\n$nullPost = $items[\"nil\"]++;\n$nullPre = ++$items[\"outer\"][\"null_leaf\"];\necho $post, \"|\", $items[$key], \"|\", $pre, \"|\", $items[\"outer\"][$leaf], \"|\", empty($items[\"down\"]) ? 1 : 0, \"|\", $nullPost, \"|\", $items[\"nil\"], \"|\", $nullPre, \"|\", $items[\"outer\"][\"null_leaf\"];\n";
@@ -8483,6 +8485,34 @@ fn native_executable_c_source_routes_array_compound_union_through_value_result_b
 }
 
 #[test]
+fn native_executable_c_source_routes_array_cast_warnings_through_value_result_boundary() {
+    let program = parse(ARRAY_CAST_VALUE_RESULT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.matches(" = phpc_native_value_cast_result(").count() >= 3,
+        "string casts should use the shared native value-result cast carrier:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_array_lvalue_owner_value_operation_result")
+            .count()
+            >= 3,
+        "assignment, null-coalescing assignment, and compound assignment values should share the lvalue value-result carrier:\n{source}"
+    );
+    assert!(
+        body.contains(".diagnostic")
+            && !body.contains(" = phpc_native_value_cast_operation_with_diagnostic("),
+        "cast warnings should flow through the value-result diagnostic carrier:\n{source}"
+    );
+    assert!(
+        !source.contains("native value cast rejects array-to-string diagnostics")
+            && !source.contains("assembly cast lowering rejects"),
+        "array-to-string casts should not hit the old cast blockers:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_array_lvalue_increment_decrement_through_update_boundary() {
     let program = parse(ARRAY_LVALUE_INCREMENT_DECREMENT_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -9090,10 +9120,7 @@ fn native_executable_c_source_routes_request_roots_through_root_value_boundary()
         source.contains("phpc_native_request_state_free"),
         "{source}"
     );
-    assert!(
-        source.contains("phpc_native_value_cast_operation_with_diagnostic"),
-        "{source}"
-    );
+    assert!(source.contains("phpc_native_value_cast_result"), "{source}");
     assert!(
         source.contains("phpc_native_value_type_name_result"),
         "{source}"
@@ -11364,7 +11391,7 @@ fn native_executable_c_source_stores_native_value_results_in_direct_variables() 
         "stored native values should feed string-result consumers:\n{source}"
     );
     assert!(
-        body.contains("phpc_native_value_cast_operation_with_diagnostic"),
+        body.contains("phpc_native_value_cast_result"),
         "cast results should store through the same native value handle path:\n{source}"
     );
     assert!(
@@ -14076,6 +14103,45 @@ fn emit_exe_links_array_compound_assignment_unions_through_value_result_boundary
         b"left-zero|right-one|left-name|right-role|nested-left|nested-add"
     );
     assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_array_to_string_cast_warnings_through_value_result_boundary() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "array_to_string_cast_value_result_boundary",
+        ARRAY_CAST_VALUE_RESULT_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run native array-cast executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"Array|Array|Array|2");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert_eq!(
+        stderr
+            .matches("Warning: Array to string conversion")
+            .count(),
+        3
+    );
+    assert!(
+        !stderr.contains("native value cast rejects array-to-string diagnostics")
+            && !stderr.contains("assembly cast lowering rejects"),
+        "{stderr}"
+    );
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&source_path);
@@ -16861,7 +16927,7 @@ fn native_executable_c_source_routes_compare_cast_and_type_name_results_through_
 
     for declaration in [
         "extern phpc_NativeValueOperationResult phpc_native_value_compare_result",
-        "extern phpc_NativeValueHandle phpc_native_value_cast_operation_with_diagnostic",
+        "extern phpc_NativeValueOperationResult phpc_native_value_cast_result",
         "extern phpc_NativeValueOperationResult phpc_native_value_type_name_result",
     ] {
         assert!(source.contains(declaration), "{declaration}\n\n{source}");
@@ -16887,14 +16953,11 @@ fn native_executable_c_source_routes_compare_cast_and_type_name_results_through_
         "{source}"
     );
     assert!(
-        source
-            .matches(" = phpc_native_value_cast_operation_with_diagnostic(")
-            .count()
-            >= 6,
+        source.matches(" = phpc_native_value_cast_result(").count() >= 6,
         "{source}"
     );
     assert!(
-        !source.contains(" = phpc_native_value_cast_result("),
+        !source.contains(" = phpc_native_value_cast_operation_with_diagnostic("),
         "{source}"
     );
     assert!(
@@ -17132,7 +17195,7 @@ fn native_executable_c_source_routes_type_predicates_through_value_result_abi() 
     assert!(
         source.contains(" = phpc_native_value_binary_result(")
             && source.contains(" = phpc_native_value_compare_result(")
-            && source.contains(" = phpc_native_value_cast_operation_with_diagnostic(")
+            && source.contains(" = phpc_native_value_cast_result(")
             && source.contains(" = phpc_native_value_type_name_result("),
         "type predicates should consume existing value-result operation, comparison, cast, and type-name materialization:\n{source}"
     );
@@ -17164,7 +17227,7 @@ fn native_executable_c_source_routes_stored_value_type_introspection_through_run
     assert!(
         source.contains(" = phpc_native_value_binary_result(")
             && source.contains(" = phpc_native_value_string_result_operation_with_diagnostic(")
-            && source.contains(" = phpc_native_value_cast_operation_with_diagnostic(")
+            && source.contains(" = phpc_native_value_cast_result(")
             && source.contains(" = phpc_native_value_compare_result("),
         "stored type-introspection should compose with existing operation, string, cast, and comparison value owners:\n{source}"
     );
@@ -17267,7 +17330,7 @@ fn native_executable_c_source_routes_stored_value_isset_empty_through_runtime_ab
     assert!(
         source.contains(" = phpc_native_value_string_result_operation_with_diagnostic(")
             && source.contains(" = phpc_native_value_binary_result(")
-            && source.contains(" = phpc_native_value_cast_operation_with_diagnostic("),
+            && source.contains(" = phpc_native_value_cast_result("),
         "isset()/empty() should consume stored native owners from string, arithmetic, and cast value families:\n{source}"
     );
     assert!(
@@ -17441,9 +17504,7 @@ fn native_executable_c_source_routes_cast_echoes_through_value_cast_operation_ab
     let source = emit_native_executable_c_source(&program).unwrap();
 
     assert!(
-        source.contains(
-            "extern phpc_NativeValueHandle phpc_native_value_cast_operation_with_diagnostic"
-        ),
+        source.contains("extern phpc_NativeValueOperationResult phpc_native_value_cast_result"),
         "{source}"
     );
     assert!(
@@ -17452,14 +17513,11 @@ fn native_executable_c_source_routes_cast_echoes_through_value_cast_operation_ab
         "{source}"
     );
     assert!(
-        source
-            .matches(" = phpc_native_value_cast_operation_with_diagnostic(")
-            .count()
-            >= 5,
+        source.matches(" = phpc_native_value_cast_result(").count() >= 5,
         "{source}"
     );
     assert!(
-        !source.contains(" = phpc_native_value_cast_result("),
+        !source.contains(" = phpc_native_value_cast_operation_with_diagnostic("),
         "{source}"
     );
     assert!(
@@ -17577,7 +17635,7 @@ fn native_executable_c_source_routes_print_values_through_value_result_and_array
         "extern phpc_NativeValueOperationResult phpc_native_value_unary_result",
         "extern phpc_NativeValueOperationResult phpc_native_value_binary_result",
         "extern phpc_NativeValueOperationResult phpc_native_value_type_name_result",
-        "extern phpc_NativeValueHandle phpc_native_value_cast_operation_with_diagnostic",
+        "extern phpc_NativeValueOperationResult phpc_native_value_cast_result",
         "extern phpc_NativeValueHandle phpc_native_value_offset_operation_with_diagnostic",
     ] {
         assert!(source.contains(declaration), "{declaration}\n\n{source}");
@@ -17597,7 +17655,7 @@ fn native_executable_c_source_routes_print_values_through_value_result_and_array
     assert!(
         source.contains(" = phpc_native_value_binary_result(")
             && source.contains(" = phpc_native_value_type_name_result(")
-            && source.contains(" = phpc_native_value_cast_operation_with_diagnostic(")
+            && source.contains(" = phpc_native_value_cast_result(")
             && source.contains(" = phpc_native_value_offset_operation_with_diagnostic("),
         "print should use the existing runtime value-result and value-offset boundaries:\n{source}"
     );
@@ -17613,20 +17671,15 @@ fn native_executable_c_source_routes_scalar_cast_builtins_through_value_cast_con
     let source = emit_native_executable_c_source(&program).unwrap();
 
     assert!(
-        source.contains(
-            "extern phpc_NativeValueHandle phpc_native_value_cast_operation_with_diagnostic"
-        ),
+        source.contains("extern phpc_NativeValueOperationResult phpc_native_value_cast_result"),
         "{source}"
     );
     assert!(
-        source
-            .matches(" = phpc_native_value_cast_operation_with_diagnostic(")
-            .count()
-            >= 6,
+        source.matches(" = phpc_native_value_cast_result(").count() >= 6,
         "{source}"
     );
     assert!(
-        !source.contains(" = phpc_native_value_cast_result("),
+        !source.contains(" = phpc_native_value_cast_operation_with_diagnostic("),
         "{source}"
     );
     assert!(
@@ -17680,10 +17733,7 @@ fn native_executable_c_source_routes_array_handles_through_value_operand_boundar
         "temporary array literals cloned into value handles should release the source array immediately:\n{source}"
     );
     assert!(
-        source
-            .matches(" = phpc_native_value_cast_operation_with_diagnostic(")
-            .count()
-            >= 4,
+        source.matches(" = phpc_native_value_cast_result(").count() >= 4,
         "{source}"
     );
     assert!(
@@ -18973,7 +19023,7 @@ fn native_executable_c_source_lowers_runtime_string_dynamic_builtin_calls() {
             && source.contains("phpc_native_value_to_string_bytes")
             && source.contains("phpc_native_value_string_result_operation_with_diagnostic")
             && source.contains("phpc_native_value_string_predicate_with_diagnostic")
-            && source.contains("phpc_native_value_cast_operation_with_diagnostic")
+            && source.contains("phpc_native_value_cast_result")
             && source.contains("phpc_native_value_type_name_result")
             && source.contains("phpc_native_value_type_predicate"),
         "runtime dynamic builtins should dispatch across multiple existing builtin semantic families:\n{source}"
