@@ -559,9 +559,11 @@ fn native_function_type_text_is_supported(text: &str) -> bool {
 
 fn native_closure_frame_blocker(
     params: &[FunctionParam],
-    _returns_by_reference: bool,
+    returns_by_reference: bool,
 ) -> NativeCallBlocker {
-    if params
+    if returns_by_reference {
+        NativeCallBlocker::ReturnValueOwnership
+    } else if params
         .iter()
         .any(native_user_function_param_has_unsupported_by_reference_shape)
     {
@@ -14198,6 +14200,7 @@ struct CGenerator {
     by_reference_foreach_linger_variables: HashSet<String>,
     global_import_names: HashSet<String>,
     native_value_variable_facts: HashMap<String, CNativeValueFacts>,
+    native_callable_variable_identities: HashMap<String, HashSet<CNativeCallableIdentity>>,
     native_reference_fact_slots: HashMap<String, usize>,
     native_reference_slot_facts: HashMap<usize, CNativeValueFacts>,
     next_native_reference_fact_slot: usize,
@@ -14247,6 +14250,7 @@ struct CGenerator {
     next_static_data: usize,
     next_native_temp: usize,
     native_value_cleanup_handles: Vec<String>,
+    native_callable_value_identities: HashMap<String, HashSet<CNativeCallableIdentity>>,
     native_reference_cleanup_handles: Vec<String>,
     native_request_state_handle: Option<String>,
     native_request_state_owned: bool,
@@ -14257,6 +14261,7 @@ struct CGenerator {
     active_finally_bodies: Vec<Vec<Stmt>>,
     user_functions: HashMap<String, CUserFunction>,
     user_function_order: Vec<String>,
+    native_descriptor_closure_return_summaries: HashMap<String, CNativeDescriptorClosureSummary>,
     declared_classes: HashMap<String, CDeclaredClass>,
     declared_class_order: Vec<String>,
     function_definitions: Vec<String>,
@@ -14340,6 +14345,7 @@ struct CGotoStateSnapshot {
     by_reference_foreach_linger_variables: HashSet<String>,
     global_import_names: HashSet<String>,
     native_value_variable_facts: HashMap<String, CNativeValueFacts>,
+    native_callable_variable_identities: HashMap<String, HashSet<CNativeCallableIdentity>>,
     native_reference_fact_slots: HashMap<String, usize>,
     native_reference_slot_facts: HashMap<usize, CNativeValueFacts>,
     array_cleanup_handles: Vec<String>,
@@ -14458,6 +14464,14 @@ struct CNativeCallableReturnSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct CNativeDescriptorClosureSummary {
+    required_arg_count: usize,
+    param_count: usize,
+    is_variadic: bool,
+    return_summary: CNativeCallableReturnSummary,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct CNativeObjectFacts {
     declared_class_keys: HashSet<String>,
     implemented_interface_keys: HashSet<String>,
@@ -14528,6 +14542,24 @@ impl CNativeObjectFacts {
     fn has_definite_interface(&self, interface_name: &str) -> bool {
         self.implemented_interface_keys
             .contains(&interface_name.to_ascii_lowercase())
+    }
+}
+
+impl CNativeDescriptorClosureSummary {
+    fn for_function(function: &FunctionDecl, return_summary: CNativeCallableReturnSummary) -> Self {
+        Self {
+            required_arg_count: native_user_function_required_arg_count(function),
+            param_count: function.params.len(),
+            is_variadic: native_user_function_variadic_param(function).is_some(),
+            return_summary,
+        }
+    }
+
+    fn accepts_arg_count(&self, arg_count: usize) -> bool {
+        if arg_count < self.required_arg_count {
+            return false;
+        }
+        self.is_variadic || arg_count <= self.param_count
     }
 }
 
@@ -15740,6 +15772,7 @@ impl CGenerator {
                 == other.by_reference_foreach_linger_variables
             && self.global_import_names == other.global_import_names
             && self.native_value_variable_facts == other.native_value_variable_facts
+            && self.native_callable_variable_identities == other.native_callable_variable_identities
             && self.native_reference_fact_slots == other.native_reference_fact_slots
             && self.native_reference_slot_facts == other.native_reference_slot_facts
             && self.array_cleanup_handles == other.array_cleanup_handles
@@ -15763,6 +15796,7 @@ impl CGenerator {
                 .clone(),
             global_import_names: self.global_import_names.clone(),
             native_value_variable_facts: self.native_value_variable_facts.clone(),
+            native_callable_variable_identities: self.native_callable_variable_identities.clone(),
             native_reference_fact_slots: self.native_reference_fact_slots.clone(),
             native_reference_slot_facts: self.native_reference_slot_facts.clone(),
             array_cleanup_handles: self.array_cleanup_handles.clone(),
@@ -15884,6 +15918,11 @@ impl CGenerator {
         self.variable_order = then_branch.variable_order.clone();
         self.native_value_variable_facts =
             Self::join_native_value_variable_facts(then_branch, else_branch, &self.variables);
+        self.native_callable_variable_identities = Self::join_native_callable_variable_identities(
+            then_branch,
+            else_branch,
+            &self.variables,
+        );
         self.native_reference_fact_slots = then_branch.native_reference_fact_slots.clone();
         self.native_reference_slot_facts =
             Self::join_native_reference_slot_facts(then_branch, else_branch);
@@ -15912,6 +15951,31 @@ impl CGenerator {
             };
             if !facts.is_empty() {
                 joined.insert(name.clone(), facts);
+            }
+        }
+        joined
+    }
+
+    fn join_native_callable_variable_identities(
+        then_branch: &Self,
+        else_branch: &Self,
+        variables: &HashMap<String, CValue>,
+    ) -> HashMap<String, HashSet<CNativeCallableIdentity>> {
+        let mut joined = HashMap::new();
+        for (name, then_identities) in &then_branch.native_callable_variable_identities {
+            if !variables.contains_key(name) {
+                continue;
+            }
+            let Some(else_identities) = else_branch.native_callable_variable_identities.get(name)
+            else {
+                continue;
+            };
+            let identities = then_identities
+                .union(else_identities)
+                .cloned()
+                .collect::<HashSet<_>>();
+            if !identities.is_empty() {
+                joined.insert(name.clone(), identities);
             }
         }
         joined
@@ -16921,6 +16985,7 @@ impl CGenerator {
             .iter()
             .any(|capture| !self.native_closure_capture_is_supported(capture))
             || native_function_params_have_malformed_variadic_params(params)
+            || returns_by_reference
             || stmt_list_frame_environment_requirement(body).any()
             || calls_root_symbol_frame
             || return_type.is_some_and(|decl| !native_function_type_decl_is_supported(decl))
@@ -17387,7 +17452,7 @@ impl CGenerator {
         let callback_index = self.next_native_temp;
         self.next_native_temp += 1;
         let callback_name = Self::c_closure_frame_callback_name(callback_index);
-        let definition = self.emit_closure_frame_callback_definition(
+        let (definition, return_summary) = self.emit_closure_frame_callback_definition(
             &callback_name,
             params,
             &descriptor_captures,
@@ -17396,6 +17461,11 @@ impl CGenerator {
             body,
             span,
         )?;
+        let closure_identity = CNativeCallableIdentity::DescriptorClosure {
+            closure_key: callback_name.clone(),
+        };
+        self.native_descriptor_closure_return_summaries
+            .insert(callback_name.clone(), return_summary);
         self.function_definitions.push(definition);
 
         let param_flags = if params
@@ -17516,6 +17586,8 @@ impl CGenerator {
         let error_exit = self.native_error_exit("");
         self.body
             .push(format!("if ({value}.ptr == NULL) {{ {error_exit} }}"));
+        self.native_callable_value_identities
+            .insert(value.clone(), HashSet::from([closure_identity]));
 
         Ok(CNativeValueMaterialization {
             handle: value.clone(),
@@ -17641,7 +17713,7 @@ impl CGenerator {
         returns_by_reference: bool,
         body: &[Stmt],
         span: Span,
-    ) -> CompileResult<String> {
+    ) -> CompileResult<(String, CNativeDescriptorClosureSummary)> {
         let function = FunctionDecl {
             name: "Closure::__invoke".to_string(),
             params: params.to_vec(),
@@ -17713,7 +17785,20 @@ impl CGenerator {
         for statement in &function.body {
             generator.emit_statement(statement)?;
         }
+        if !stmt_list_always_returns(&function.body) {
+            generator.record_function_return_facts(None);
+        }
         generator.emit_function_default_return(span)?;
+        let return_summary = CNativeCallableReturnSummary {
+            result_kind: if returns_by_reference {
+                CNativeCallableResultKind::Reference
+            } else {
+                CNativeCallableResultKind::NativeValue
+            },
+            facts: generator.function_return_facts.clone(),
+        };
+        let descriptor_summary =
+            CNativeDescriptorClosureSummary::for_function(&function, return_summary);
 
         self.next_static_data = generator.next_static_data;
         self.next_native_temp = generator.next_native_temp;
@@ -17733,7 +17818,7 @@ impl CGenerator {
             definition.push('\n');
         }
         definition.push_str("}\n");
-        Ok(definition)
+        Ok((definition, descriptor_summary))
     }
 
     fn emit_declared_class_method_definition(
@@ -18975,10 +19060,12 @@ impl CGenerator {
 
     fn release_variable_native_value_handle(&mut self, name: &str) {
         self.native_value_variable_facts.remove(name);
+        self.native_callable_variable_identities.remove(name);
         let value = self.variables.get(name).cloned();
         match value {
             Some(CValue::NativeValueHandle(handle)) => {
                 self.release_native_value_cleanup_handle(&handle);
+                self.native_callable_value_identities.remove(&handle);
                 self.body.push(format!("phpc_native_value_free({handle});"));
             }
             Some(CValue::NativeReferenceHandle(handle)) => {
@@ -23036,13 +23123,15 @@ impl CGenerator {
                     facts: method.return_facts.clone(),
                 })
             }
-            CNativeCallableIdentity::RuntimeBuiltin { .. }
-            | CNativeCallableIdentity::DescriptorClosure { .. } => {
-                Some(CNativeCallableReturnSummary {
-                    result_kind: CNativeCallableResultKind::Unknown,
-                    facts: None,
-                })
-            }
+            CNativeCallableIdentity::RuntimeBuiltin { .. } => Some(CNativeCallableReturnSummary {
+                result_kind: CNativeCallableResultKind::Unknown,
+                facts: None,
+            }),
+            CNativeCallableIdentity::DescriptorClosure { closure_key } => self
+                .native_descriptor_closure_return_summaries
+                .get(closure_key)
+                .filter(|summary| summary.accepts_arg_count(arg_count))
+                .map(|summary| summary.return_summary.clone()),
         }
     }
 
@@ -23162,6 +23251,27 @@ impl CGenerator {
         self.native_value_facts_for_callable_identities(vec![identity], args.len())
     }
 
+    fn native_callable_identities_for_expr(
+        &self,
+        expr: &Expr,
+    ) -> Option<HashSet<CNativeCallableIdentity>> {
+        match expr {
+            Expr::Variable(name, _) => self.native_callable_variable_identities.get(name).cloned(),
+            _ => None,
+        }
+    }
+
+    fn native_value_facts_for_dynamic_callable_expr(
+        &self,
+        callee: &Expr,
+        args: &[Expr],
+    ) -> Option<CNativeValueFacts> {
+        self.native_value_facts_for_callable_identities(
+            self.native_callable_identities_for_expr(callee)?,
+            args.len(),
+        )
+    }
+
     fn native_value_facts_for_variable(&self, name: &str) -> Option<CNativeValueFacts> {
         match self.variables.get(name) {
             Some(CValue::NativeReferenceHandle(reference)) => {
@@ -23190,6 +23300,9 @@ impl CGenerator {
                 .native_value_facts_for_declared_class_static_method_call(class_name, method, args),
             Expr::ObjectStaticMethodCall { method, args, .. } => {
                 self.native_value_facts_for_declared_object_static_method_call(method, args)
+            }
+            Expr::DynamicCall { callee, args, .. } => {
+                self.native_value_facts_for_dynamic_callable_expr(callee, args)
             }
             _ => None,
         }
@@ -23486,6 +23599,10 @@ impl CGenerator {
         self.body.push(format!(
             "phpc_NativeValueHandle {cloned} = phpc_native_value_clone({handle});"
         ));
+        if let Some(identities) = self.native_callable_value_identities.get(handle).cloned() {
+            self.native_callable_value_identities
+                .insert(cloned.clone(), identities);
+        }
         cloned
     }
 
@@ -23529,8 +23646,10 @@ impl CGenerator {
         self.remember_variable_order(name);
         if self.try_store_mutable_scalar_slot_value(name, &value) {
             self.native_value_variable_facts.remove(name);
+            self.native_callable_variable_identities.remove(name);
             return;
         }
+        let callable_identities = self.native_callable_identities_for_cvalue(&value);
         let stored = self.value_for_variable_storage(value);
         self.release_variable_native_value_handle(name);
         self.variables.insert(name.to_string(), stored);
@@ -23543,6 +23662,7 @@ impl CGenerator {
                 self.native_value_variable_facts.remove(name);
             }
         }
+        self.store_native_callable_variable_identities(name, callable_identities);
     }
 
     fn store_native_value_result_variable(
@@ -23559,6 +23679,10 @@ impl CGenerator {
         value: CNativeValueMaterialization,
         facts: Option<CNativeValueFacts>,
     ) {
+        let callable_identities = self
+            .native_callable_value_identities
+            .get(&value.handle)
+            .cloned();
         self.release_variable_native_value_handle(name);
         self.retain_native_value_cleanup_handle(&value.handle);
         self.variables
@@ -23572,6 +23696,43 @@ impl CGenerator {
                 self.native_value_variable_facts.remove(name);
             }
         }
+        self.store_native_callable_variable_identities(name, callable_identities);
+    }
+
+    fn store_native_callable_variable_identities(
+        &mut self,
+        name: &str,
+        identities: Option<HashSet<CNativeCallableIdentity>>,
+    ) {
+        match identities.filter(|identities| !identities.is_empty()) {
+            Some(identities) => {
+                self.native_callable_variable_identities
+                    .insert(name.to_string(), identities);
+            }
+            None => {
+                self.native_callable_variable_identities.remove(name);
+            }
+        }
+    }
+
+    fn native_callable_identities_for_cvalue(
+        &self,
+        value: &CValue,
+    ) -> Option<HashSet<CNativeCallableIdentity>> {
+        let CValue::NativeValueHandle(handle) = value else {
+            return None;
+        };
+        self.native_callable_value_identities
+            .get(handle)
+            .cloned()
+            .or_else(|| {
+                self.variables.iter().find_map(|(name, value)| match value {
+                    CValue::NativeValueHandle(variable_handle) if variable_handle == handle => {
+                        self.native_callable_variable_identities.get(name).cloned()
+                    }
+                    _ => None,
+                })
+            })
     }
 
     fn checked_clone_native_value_handle(&mut self, handle: &str, failure_cleanup: &str) -> String {
@@ -26074,7 +26235,7 @@ impl CGenerator {
 
     fn record_function_return_facts(&mut self, facts: Option<CNativeValueFacts>) {
         if self.function_return_status.is_none()
-            || self.function_return_mode != CFunctionReturnMode::NativeValue
+            || self.function_return_mode == CFunctionReturnMode::ClosureReference
         {
             return;
         }
@@ -43630,6 +43791,26 @@ mod tests {
         );
     }
 
+    fn test_native_object_facts(class_key: &str, interface_key: &str) -> CNativeValueFacts {
+        CNativeValueFacts::object(CNativeObjectFacts {
+            declared_class_keys: HashSet::from([class_key.to_string()]),
+            implemented_interface_keys: HashSet::from([interface_key.to_string()]),
+        })
+        .expect("test object facts are non-empty")
+    }
+
+    fn test_descriptor_closure_summary(
+        params: Vec<FunctionParam>,
+        result_kind: CNativeCallableResultKind,
+        facts: Option<CNativeValueFacts>,
+    ) -> CNativeDescriptorClosureSummary {
+        let function = test_function(params, result_kind == CNativeCallableResultKind::Reference);
+        CNativeDescriptorClosureSummary::for_function(
+            &function,
+            CNativeCallableReturnSummary { result_kind, facts },
+        )
+    }
+
     #[test]
     fn native_callable_return_summary_resolves_generated_functions_and_methods() {
         let program = crate::parse(concat!(
@@ -43727,6 +43908,137 @@ mod tests {
                 .is_none(),
             "arity-incompatible generated callables should not publish return facts"
         );
+    }
+
+    #[test]
+    fn descriptor_closure_summaries_resolve_through_callable_identities_by_arity_and_result_kind() {
+        let mut generator = CGenerator::default();
+        let variadic_identity = CNativeCallableIdentity::DescriptorClosure {
+            closure_key: "phpc_closure_frame_variadic".to_string(),
+        };
+        let exactly_two_identity = CNativeCallableIdentity::DescriptorClosure {
+            closure_key: "phpc_closure_frame_two".to_string(),
+        };
+        let reference_identity = CNativeCallableIdentity::DescriptorClosure {
+            closure_key: "phpc_closure_frame_reference".to_string(),
+        };
+
+        generator.native_descriptor_closure_return_summaries.insert(
+            "phpc_closure_frame_variadic".to_string(),
+            test_descriptor_closure_summary(
+                vec![test_param(false, true)],
+                CNativeCallableResultKind::NativeValue,
+                Some(test_native_object_facts("box_one", "arrayaccess")),
+            ),
+        );
+        generator.native_descriptor_closure_return_summaries.insert(
+            "phpc_closure_frame_two".to_string(),
+            test_descriptor_closure_summary(
+                vec![test_param(false, false), test_param(false, false)],
+                CNativeCallableResultKind::NativeValue,
+                Some(test_native_object_facts("box_two", "arrayaccess")),
+            ),
+        );
+        generator.native_descriptor_closure_return_summaries.insert(
+            "phpc_closure_frame_reference".to_string(),
+            test_descriptor_closure_summary(
+                Vec::new(),
+                CNativeCallableResultKind::Reference,
+                Some(test_native_object_facts("box_reference", "arrayaccess")),
+            ),
+        );
+
+        let one_arg_facts = generator
+            .native_value_facts_for_callable_identities(vec![variadic_identity.clone()], 1)
+            .expect("variadic descriptor closure accepts one argument");
+        assert!(one_arg_facts
+            .object
+            .as_ref()
+            .expect("object facts")
+            .declared_class_keys
+            .contains("box_one"));
+
+        assert!(
+            generator
+                .native_value_facts_for_callable_identities(
+                    HashSet::from([variadic_identity.clone(), exactly_two_identity.clone()]),
+                    1,
+                )
+                .is_none(),
+            "mixed callable identity sets with an arity-incompatible target should not publish facts"
+        );
+
+        let two_arg_facts = generator
+            .native_value_facts_for_callable_identities(
+                HashSet::from([variadic_identity, exactly_two_identity]),
+                2,
+            )
+            .expect("both descriptor closures accept two arguments");
+        let object = two_arg_facts.object.as_ref().expect("object facts");
+        assert!(object.declared_class_keys.is_empty());
+        assert!(object.implemented_interface_keys.contains("arrayaccess"));
+
+        assert!(
+            generator
+                .native_value_facts_for_callable_identities(vec![reference_identity], 0)
+                .is_none(),
+            "by-reference descriptor closures should not publish value-return facts"
+        );
+    }
+
+    #[test]
+    fn descriptor_closure_callable_identities_drive_dynamic_call_facts_across_variable_surfaces() {
+        let mut generator = CGenerator::default();
+        let identity = CNativeCallableIdentity::DescriptorClosure {
+            closure_key: "phpc_closure_frame_return_box".to_string(),
+        };
+        generator.native_descriptor_closure_return_summaries.insert(
+            "phpc_closure_frame_return_box".to_string(),
+            test_descriptor_closure_summary(
+                Vec::new(),
+                CNativeCallableResultKind::NativeValue,
+                Some(test_native_object_facts("box", "arrayaccess")),
+            ),
+        );
+        generator
+            .native_callable_value_identities
+            .insert("closure_handle".to_string(), HashSet::from([identity]));
+
+        generator.store_native_value_result_variable_with_native_value_facts(
+            "callback",
+            CNativeValueMaterialization {
+                handle: "closure_handle".to_string(),
+                cleanup_after_use: Vec::new(),
+            },
+            None,
+        );
+
+        let span = test_span();
+        let variable_call = Expr::DynamicCall {
+            callee: Box::new(test_variable_expr("callback")),
+            args: Vec::new(),
+            span,
+        };
+        assert!(generator
+            .native_value_facts_for_expr(&variable_call)
+            .expect("descriptor closure dynamic call facts")
+            .has_definite_native_object_interface("arrayaccess"));
+
+        let copied = generator
+            .variables
+            .get("callback")
+            .expect("callback variable was stored")
+            .clone();
+        generator.store_variable_value("copied_callback", copied);
+        let copied_call = Expr::DynamicCall {
+            callee: Box::new(test_variable_expr("copied_callback")),
+            args: Vec::new(),
+            span,
+        };
+        assert!(generator
+            .native_value_facts_for_expr(&copied_call)
+            .expect("copied descriptor closure dynamic call facts")
+            .has_definite_native_object_interface("arrayaccess"));
     }
 
     fn property_offset_with_error_control_receiver() -> Expr {
