@@ -14658,7 +14658,7 @@ enum CDirectVariableCompoundAssignmentOwner {
 }
 
 enum CNativeArrayLvalueOwnerSource {
-    ArrayHandle(String),
+    ArrayHandle { name: String, handle: String },
     ReferenceSlot(String),
     SymbolTableRoot(String),
 }
@@ -15056,6 +15056,7 @@ struct CNativeArrayLvaluePath {
 struct CNativeArrayLvalueOwnerMaterialization {
     owner: String,
     cleanup_after_use: Vec<String>,
+    callable_identity_invalidation_name: Option<String>,
 }
 
 struct CNativeArrayLvalueTargetMaterialization {
@@ -23927,6 +23928,19 @@ impl CGenerator {
         }
     }
 
+    fn invalidate_native_callable_array_owner_identities(&mut self, name: &str) {
+        self.native_callable_variable_identities.remove(name);
+    }
+
+    fn invalidate_native_array_lvalue_owner_callable_identities(
+        &mut self,
+        owner: &CNativeArrayLvalueOwnerMaterialization,
+    ) {
+        if let Some(name) = owner.callable_identity_invalidation_name.clone() {
+            self.invalidate_native_callable_array_owner_identities(&name);
+        }
+    }
+
     fn native_callable_identities_for_cvalue(
         &self,
         value: &CValue,
@@ -24069,8 +24083,10 @@ impl CGenerator {
 
         let owner = self.next_native_name(result_prefix);
         let mut cleanup_after_use = Vec::new();
+        let mut callable_identity_invalidation_name = None;
         let call = match source {
-            CNativeArrayLvalueOwnerSource::ArrayHandle(handle) => {
+            CNativeArrayLvalueOwnerSource::ArrayHandle { name, handle } => {
+                callable_identity_invalidation_name = Some(name);
                 format!("phpc_native_array_lvalue_owner_array({handle})")
             }
             CNativeArrayLvalueOwnerSource::ReferenceSlot(reference) => {
@@ -24092,6 +24108,7 @@ impl CGenerator {
         Ok(CNativeArrayLvalueOwnerMaterialization {
             owner,
             cleanup_after_use,
+            callable_identity_invalidation_name,
         })
     }
 
@@ -31998,6 +32015,7 @@ impl CGenerator {
         self.uses_native_array_lvalue_helpers = true;
 
         let CNativeArrayLvalueTargetMaterialization { owner, path } = target;
+        self.invalidate_native_array_lvalue_owner_callable_identities(&owner);
         let owner_cleanup = c_cleanup_sequence(&owner.cleanup_after_use);
         let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
         let target_cleanup = format!("{owner_cleanup}{path_cleanup}");
@@ -32219,6 +32237,7 @@ impl CGenerator {
 
     fn emit_array_lvalue_unset_for_handle(
         &mut self,
+        name: &str,
         handle: &str,
         indices: &[&Expr],
         span: Span,
@@ -32242,6 +32261,7 @@ impl CGenerator {
         self.body
             .push(format!("phpc_native_array_lvalue_result_free({result});"));
         self.body.extend(path.cleanup_after_use);
+        self.invalidate_native_callable_array_owner_identities(name);
         Ok(())
     }
 
@@ -32372,12 +32392,14 @@ impl CGenerator {
         self.uses_native_array_helpers = true;
         self.uses_native_array_lvalue_helpers = true;
 
-        let Some((handle, indices, lvalue_span)) = self.native_array_foreach_lvalue_parts(iterable)
+        let Some((name, handle, indices, lvalue_span)) =
+            self.native_array_foreach_lvalue_parts(iterable)
         else {
             return Err(
                 self.unsupported(span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
             );
         };
+        self.invalidate_native_callable_array_owner_identities(&name);
 
         let (path_arg, path_len, path_cleanup) = if indices.is_empty() {
             ("NULL".to_string(), 0, Vec::new())
@@ -32542,7 +32564,7 @@ impl CGenerator {
         self.uses_native_array_helpers = true;
         self.uses_native_array_lvalue_helpers = true;
 
-        if let Some((handle, indices, lvalue_span)) =
+        if let Some((_name, handle, indices, lvalue_span)) =
             self.native_array_foreach_lvalue_parts(iterable)
         {
             return self.materialize_native_array_foreach_iterable_for_handle(
@@ -32618,10 +32640,12 @@ impl CGenerator {
     fn native_array_foreach_lvalue_parts<'a>(
         &self,
         iterable: &'a Expr,
-    ) -> Option<(String, Vec<&'a Expr>, Span)> {
+    ) -> Option<(String, String, Vec<&'a Expr>, Span)> {
         match iterable {
             Expr::Variable(name, span) => match self.variables.get(name) {
-                Some(CValue::ArrayHandle(handle)) => Some((handle.clone(), Vec::new(), *span)),
+                Some(CValue::ArrayHandle(handle)) => {
+                    Some((name.clone(), handle.clone(), Vec::new(), *span))
+                }
                 _ => None,
             },
             Expr::Index {
@@ -32629,9 +32653,10 @@ impl CGenerator {
                 index,
                 span,
             } => {
-                let (handle, mut indices, _) = self.native_array_foreach_lvalue_parts(target)?;
+                let (name, handle, mut indices, _) =
+                    self.native_array_foreach_lvalue_parts(target)?;
                 indices.push(index);
-                Some((handle, indices, *span))
+                Some((name, handle, indices, *span))
             }
             _ => None,
         }
@@ -32653,7 +32678,8 @@ impl CGenerator {
                 self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
             );
         };
-        let Some((handle, indices, lvalue_span)) = self.native_array_foreach_lvalue_parts(argument)
+        let Some((_name, handle, indices, lvalue_span)) =
+            self.native_array_foreach_lvalue_parts(argument)
         else {
             return Err(self.unsupported(argument.span(), ASSEMBLY_ARRAY_REJECTION));
         };
@@ -32711,10 +32737,12 @@ impl CGenerator {
                 self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
             );
         };
-        let Some((handle, indices, lvalue_span)) = self.native_array_foreach_lvalue_parts(argument)
+        let Some((name, handle, indices, lvalue_span)) =
+            self.native_array_foreach_lvalue_parts(argument)
         else {
             return Err(self.unsupported(argument.span(), ASSEMBLY_ARRAY_REJECTION));
         };
+        self.invalidate_native_callable_array_owner_identities(&name);
 
         let (path_arg, path_len, path_cleanup) = if indices.is_empty() {
             ("NULL".to_string(), 0, Vec::new())
@@ -32797,10 +32825,12 @@ impl CGenerator {
                 self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
             );
         };
-        let Some((handle, indices, lvalue_span)) = self.native_array_foreach_lvalue_parts(argument)
+        let Some((name, handle, indices, lvalue_span)) =
+            self.native_array_foreach_lvalue_parts(argument)
         else {
             return Err(self.unsupported(argument.span(), ASSEMBLY_ARRAY_REJECTION));
         };
+        self.invalidate_native_callable_array_owner_identities(&name);
 
         let (path_arg, path_len, path_cleanup) = if indices.is_empty() {
             ("NULL".to_string(), 0, Vec::new())
@@ -33503,6 +33533,7 @@ impl CGenerator {
 
     fn emit_array_lvalue_write_for_handle(
         &mut self,
+        name: &str,
         handle: &str,
         indices: &[&Expr],
         replacement_expr: &Expr,
@@ -33517,6 +33548,7 @@ impl CGenerator {
         let replacement =
             self.materialize_native_value_result_operand(replacement_expr, &path_cleanup)?;
         self.emit_array_lvalue_write_materialized_for_handle(
+            Some(name),
             handle,
             path,
             replacement,
@@ -33526,6 +33558,7 @@ impl CGenerator {
 
     fn emit_array_lvalue_write_materialized_for_handle(
         &mut self,
+        name: Option<&str>,
         handle: &str,
         path: CNativeArrayLvaluePath,
         replacement: CNativeValueMaterialization,
@@ -33555,6 +33588,9 @@ impl CGenerator {
             .push(format!("phpc_native_array_lvalue_result_free({result});"));
         self.body.extend(replacement.cleanup_after_use);
         self.body.extend(path.cleanup_after_use);
+        if let Some(name) = name {
+            self.invalidate_native_callable_array_owner_identities(name);
+        }
         Ok(())
     }
 
@@ -33598,6 +33634,7 @@ impl CGenerator {
 
     fn emit_array_lvalue_append_write_for_handle(
         &mut self,
+        name: &str,
         handle: &str,
         prefix_indices: &[&Expr],
         suffix_indices: &[&Expr],
@@ -33618,6 +33655,7 @@ impl CGenerator {
         let replacement =
             self.materialize_native_value_result_operand(replacement_expr, &path_cleanup)?;
         self.emit_array_lvalue_write_materialized_for_handle(
+            Some(name),
             handle,
             path,
             replacement,
@@ -33655,7 +33693,7 @@ impl CGenerator {
 
         match self.variables.get(name).cloned() {
             Some(CValue::ArrayHandle(handle)) => {
-                self.emit_array_lvalue_unset_for_handle(&handle, &[index_expr], span)
+                self.emit_array_lvalue_unset_for_handle(name, &handle, &[index_expr], span)
             }
             Some(CValue::String(_) | CValue::StringExpr(_)) => {
                 Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION))
@@ -33705,7 +33743,7 @@ impl CGenerator {
         match self.variables.get(name).cloned() {
             Some(CValue::ArrayHandle(handle)) => {
                 let indices = indices.iter().collect::<Vec<_>>();
-                self.emit_array_lvalue_unset_for_handle(&handle, &indices, span)
+                self.emit_array_lvalue_unset_for_handle(name, &handle, &indices, span)
             }
             Some(CValue::String(_) | CValue::StringExpr(_)) => {
                 Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION))
@@ -33914,14 +33952,14 @@ impl CGenerator {
             return Ok(None);
         }
 
-        let (handle, path) = match target {
+        let (name, handle, path) = match target {
             AssignTarget::NestedArrayIndex { name, indices, .. } => {
                 match self.variables.get(name).cloned() {
                     Some(CValue::ArrayHandle(handle)) => {
                         let indices = indices.iter().collect::<Vec<_>>();
                         let path =
                             self.materialize_native_array_lvalue_key_path(&indices, span, "")?;
-                        (handle, path)
+                        (name.as_str(), handle, path)
                     }
                     Some(subject)
                         if !matches!(subject, CValue::String(_) | CValue::StringExpr(_)) =>
@@ -33954,7 +33992,7 @@ impl CGenerator {
                         span,
                         "",
                     )?;
-                    (handle, path)
+                    (name.as_str(), handle, path)
                 }
                 Some(subject) if !matches!(subject, CValue::String(_) | CValue::StringExpr(_)) => {
                     return self
@@ -33980,6 +34018,7 @@ impl CGenerator {
         )?;
 
         self.emit_array_lvalue_write_materialized_for_handle(
+            Some(name),
             &handle,
             path,
             replacement,
@@ -34006,9 +34045,10 @@ impl CGenerator {
             ));
         }
         match self.variables.get(name) {
-            Some(CValue::ArrayHandle(handle)) => {
-                Some(CNativeArrayLvalueOwnerSource::ArrayHandle(handle.clone()))
-            }
+            Some(CValue::ArrayHandle(handle)) => Some(CNativeArrayLvalueOwnerSource::ArrayHandle {
+                name: name.to_string(),
+                handle: handle.clone(),
+            }),
             _ => None,
         }
     }
@@ -34425,6 +34465,7 @@ impl CGenerator {
         self.uses_native_array_lvalue_helpers = true;
 
         let CNativeArrayLvalueTargetMaterialization { owner, path } = target;
+        self.invalidate_native_array_lvalue_owner_callable_identities(&owner);
         let owner_cleanup = c_cleanup_sequence(&owner.cleanup_after_use);
         let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
         let target_cleanup = format!("{owner_cleanup}{path_cleanup}");
@@ -34592,6 +34633,7 @@ impl CGenerator {
         self.uses_native_array_lvalue_helpers = true;
 
         let CNativeArrayLvalueTargetMaterialization { owner, path } = target;
+        self.invalidate_native_array_lvalue_owner_callable_identities(&owner);
         let owner_cleanup = c_cleanup_sequence(&owner.cleanup_after_use);
         let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
         let target_cleanup = format!("{owner_cleanup}{path_cleanup}");
@@ -36265,8 +36307,9 @@ impl CGenerator {
                 if self.uses_native_string_helpers {
                     if let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() {
                         let indices = indices.iter().collect::<Vec<_>>();
-                        return self
-                            .emit_array_lvalue_write_for_handle(&handle, &indices, expr, *span);
+                        return self.emit_array_lvalue_write_for_handle(
+                            name, &handle, &indices, expr, *span,
+                        );
                     }
                     if let Some(subject) = self.variables.get(name).cloned() {
                         if matches!(subject, CValue::String(_) | CValue::StringExpr(_)) {
@@ -36333,6 +36376,7 @@ impl CGenerator {
                         let prefix_indices = indices.iter().collect::<Vec<_>>();
                         let suffix_indices = suffix_indices.iter().collect::<Vec<_>>();
                         return self.emit_array_lvalue_append_write_for_handle(
+                            name,
                             &handle,
                             &prefix_indices,
                             &suffix_indices,
@@ -44555,6 +44599,101 @@ mod tests {
                 .native_value_facts_for_expr(&dynamic_call)
                 .is_none(),
             "non-callable reassignment should clear stored callable-array identities"
+        );
+    }
+
+    #[test]
+    fn callable_array_identities_clear_across_array_owner_mutations() {
+        fn prepared_generator() -> (CGenerator, Span, Expr, Expr) {
+            let program = crate::parse(concat!(
+                "<?php\n",
+                "class CallableArrayMutationProduct {}\n",
+                "class CallableArrayMutationFactory {\n",
+                "    public static function make() { return new CallableArrayMutationProduct(); }\n",
+                "}\n",
+            ))
+            .unwrap();
+            let mut generator = CGenerator {
+                uses_native_string_helpers: true,
+                uses_native_value_clone: true,
+                ..CGenerator::default()
+            };
+            generator
+                .register_top_level_declared_classes(&program.statements)
+                .unwrap();
+            generator.emit_declared_class_method_definitions().unwrap();
+
+            let span = test_span();
+            let callable = callable_array_expr(
+                Expr::String("CallableArrayMutationFactory".to_string(), span),
+                Expr::String("make".to_string(), span),
+            );
+            generator
+                .emit_assignment(
+                    &AssignTarget::Variable {
+                        name: "callback".to_string(),
+                        span,
+                    },
+                    &callable,
+                )
+                .unwrap();
+            let dynamic_call = Expr::DynamicCall {
+                callee: Box::new(test_variable_expr("callback")),
+                args: Vec::new(),
+                span,
+            };
+            assert_native_object_fact_contains_class(
+                generator.native_value_facts_for_expr(&dynamic_call),
+                "CallableArrayMutationProduct",
+            );
+            (generator, span, callable, dynamic_call)
+        }
+
+        let (mut generator, span, _callable, dynamic_call) = prepared_generator();
+        generator
+            .emit_assignment(
+                &AssignTarget::ArrayIndex {
+                    name: "callback".to_string(),
+                    index: Some(Expr::Int(1, span)),
+                    span,
+                },
+                &Expr::String("other".to_string(), span),
+            )
+            .unwrap();
+        assert!(
+            generator
+                .native_value_facts_for_expr(&dynamic_call)
+                .is_none(),
+            "direct array element writes should clear callable-array identities"
+        );
+
+        let (mut generator, span, _callable, dynamic_call) = prepared_generator();
+        generator
+            .emit_assignment(
+                &AssignTarget::ArrayIndex {
+                    name: "callback".to_string(),
+                    index: None,
+                    span,
+                },
+                &Expr::String("extra".to_string(), span),
+            )
+            .unwrap();
+        assert!(
+            generator
+                .native_value_facts_for_expr(&dynamic_call)
+                .is_none(),
+            "array appends should clear callable-array identities"
+        );
+
+        let (mut generator, span, _callable, dynamic_call) = prepared_generator();
+        generator
+            .emit_unset_array_index("callback", &Expr::Int(0, span), span)
+            .unwrap();
+        assert!(
+            generator
+                .native_value_facts_for_expr(&dynamic_call)
+                .is_none(),
+            "array offset unsets should clear callable-array identities"
         );
     }
 
