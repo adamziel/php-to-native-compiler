@@ -14415,6 +14415,48 @@ struct CNativeValueFacts {
     object: Option<CNativeObjectFacts>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum CNativeCallableIdentity {
+    GeneratedFunction {
+        function_key: String,
+    },
+    DeclaredInstanceMethod {
+        class_key: String,
+        method_key: String,
+    },
+    DeclaredStaticMethod {
+        class_key: String,
+        method_key: String,
+    },
+    #[allow(dead_code)]
+    RuntimeBuiltin {
+        name: String,
+    },
+    #[allow(dead_code)]
+    DescriptorClosure {
+        closure_key: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CNativeCallableResultKind {
+    NativeValue,
+    Reference,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CNativeCallableDeclaredMethodStaticness {
+    Instance,
+    Static,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CNativeCallableReturnSummary {
+    result_kind: CNativeCallableResultKind,
+    facts: Option<CNativeValueFacts>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CNativeObjectFacts {
     declared_class_keys: HashSet<String>,
@@ -22947,27 +22989,139 @@ impl CGenerator {
         saw_fact.then_some(merged).flatten()
     }
 
+    fn native_callable_return_summary_for_identity(
+        &self,
+        identity: &CNativeCallableIdentity,
+        arg_count: usize,
+    ) -> Option<CNativeCallableReturnSummary> {
+        match identity {
+            CNativeCallableIdentity::GeneratedFunction { function_key } => {
+                let function = self.user_functions.get(function_key)?;
+                if !native_user_function_accepts_arg_count(&function.decl, arg_count) {
+                    return None;
+                }
+                let result_kind = if function.decl.returns_by_reference {
+                    CNativeCallableResultKind::Reference
+                } else {
+                    CNativeCallableResultKind::NativeValue
+                };
+                Some(CNativeCallableReturnSummary {
+                    result_kind,
+                    facts: function.return_facts.clone(),
+                })
+            }
+            CNativeCallableIdentity::DeclaredInstanceMethod {
+                class_key,
+                method_key,
+            }
+            | CNativeCallableIdentity::DeclaredStaticMethod {
+                class_key,
+                method_key,
+            } => {
+                let class = self.declared_classes.get(class_key)?;
+                let method = class
+                    .methods
+                    .iter()
+                    .find(|method| Self::declared_method_key(&method.decl.name) == *method_key)?;
+                if !native_user_function_accepts_arg_count(&method.decl, arg_count) {
+                    return None;
+                }
+                let result_kind = if method.decl.returns_by_reference {
+                    CNativeCallableResultKind::Reference
+                } else {
+                    CNativeCallableResultKind::NativeValue
+                };
+                Some(CNativeCallableReturnSummary {
+                    result_kind,
+                    facts: method.return_facts.clone(),
+                })
+            }
+            CNativeCallableIdentity::RuntimeBuiltin { .. }
+            | CNativeCallableIdentity::DescriptorClosure { .. } => {
+                Some(CNativeCallableReturnSummary {
+                    result_kind: CNativeCallableResultKind::Unknown,
+                    facts: None,
+                })
+            }
+        }
+    }
+
+    fn native_value_facts_for_callable_identities<I>(
+        &self,
+        identities: I,
+        arg_count: usize,
+    ) -> Option<CNativeValueFacts>
+    where
+        I: IntoIterator<Item = CNativeCallableIdentity>,
+    {
+        self.intersect_native_value_fact_iter(identities.into_iter().map(|identity| {
+            let summary = self.native_callable_return_summary_for_identity(&identity, arg_count)?;
+            (summary.result_kind == CNativeCallableResultKind::NativeValue)
+                .then_some(summary.facts)
+                .flatten()
+        }))
+    }
+
+    fn native_callable_identities_for_user_function_call(
+        &self,
+        name: &str,
+    ) -> Option<Vec<CNativeCallableIdentity>> {
+        let function_key = Self::user_function_key(name);
+        self.user_functions
+            .contains_key(&function_key)
+            .then(|| vec![CNativeCallableIdentity::GeneratedFunction { function_key }])
+    }
+
     fn native_value_facts_for_user_function_call(
         &self,
         name: &str,
         args: &[Expr],
     ) -> Option<CNativeValueFacts> {
-        let function = self.user_functions.get(&Self::user_function_key(name))?;
-        native_user_function_accepts_arg_count(&function.decl, args.len())
-            .then(|| function.return_facts.clone())
-            .flatten()
+        self.native_value_facts_for_callable_identities(
+            self.native_callable_identities_for_user_function_call(name)?,
+            args.len(),
+        )
+    }
+
+    fn native_callable_identities_for_declared_method_candidates(
+        &self,
+        candidates: Vec<(CDeclaredClass, CDeclaredClassMethod)>,
+        staticness: CNativeCallableDeclaredMethodStaticness,
+    ) -> Option<Vec<CNativeCallableIdentity>> {
+        let identities = candidates
+            .into_iter()
+            .map(|(class, method)| {
+                let class_key = Self::declared_class_key(&class.name);
+                let method_key = Self::declared_method_key(&method.decl.name);
+                match staticness {
+                    CNativeCallableDeclaredMethodStaticness::Instance => {
+                        CNativeCallableIdentity::DeclaredInstanceMethod {
+                            class_key,
+                            method_key,
+                        }
+                    }
+                    CNativeCallableDeclaredMethodStaticness::Static => {
+                        CNativeCallableIdentity::DeclaredStaticMethod {
+                            class_key,
+                            method_key,
+                        }
+                    }
+                }
+            })
+            .collect::<Vec<_>>();
+        (!identities.is_empty()).then_some(identities)
     }
 
     fn native_value_facts_for_declared_method_candidates(
         &self,
         candidates: Vec<(CDeclaredClass, CDeclaredClassMethod)>,
+        staticness: CNativeCallableDeclaredMethodStaticness,
         args: &[Expr],
     ) -> Option<CNativeValueFacts> {
-        self.intersect_native_value_fact_iter(candidates.into_iter().map(|(_, method)| {
-            native_user_function_accepts_arg_count(&method.decl, args.len())
-                .then(|| method.return_facts)
-                .flatten()
-        }))
+        self.native_value_facts_for_callable_identities(
+            self.native_callable_identities_for_declared_method_candidates(candidates, staticness)?,
+            args.len(),
+        )
     }
 
     fn native_value_facts_for_declared_class_method_call(
@@ -22977,6 +23131,7 @@ impl CGenerator {
     ) -> Option<CNativeValueFacts> {
         self.native_value_facts_for_declared_method_candidates(
             self.declared_class_method_candidates(method_name),
+            CNativeCallableDeclaredMethodStaticness::Instance,
             args,
         )
     }
@@ -22988,6 +23143,7 @@ impl CGenerator {
     ) -> Option<CNativeValueFacts> {
         self.native_value_facts_for_declared_method_candidates(
             self.declared_class_static_method_candidates(method_name),
+            CNativeCallableDeclaredMethodStaticness::Static,
             args,
         )
     }
@@ -22998,10 +23154,12 @@ impl CGenerator {
         method_name: &str,
         args: &[Expr],
     ) -> Option<CNativeValueFacts> {
-        let (_, method) = self.declared_class_static_method(class_name, method_name)?;
-        native_user_function_accepts_arg_count(&method.decl, args.len())
-            .then(|| method.return_facts)
-            .flatten()
+        let (class, method) = self.declared_class_static_method(class_name, method_name)?;
+        let identity = CNativeCallableIdentity::DeclaredStaticMethod {
+            class_key: Self::declared_class_key(&class.name),
+            method_key: Self::declared_method_key(&method.decl.name),
+        };
+        self.native_value_facts_for_callable_identities(vec![identity], args.len())
     }
 
     fn native_value_facts_for_variable(&self, name: &str) -> Option<CNativeValueFacts> {
@@ -43455,6 +43613,119 @@ mod tests {
                 root_symbols: false,
                 request_state: true,
             }
+        );
+    }
+
+    fn assert_native_object_fact_contains_class(
+        facts: Option<CNativeValueFacts>,
+        class_name: &str,
+    ) {
+        let facts = facts.expect("native value facts should exist");
+        let object = facts.object.expect("object facts should exist");
+        assert!(
+            object
+                .declared_class_keys
+                .contains(&CGenerator::declared_class_key(class_name)),
+            "object facts should include declared class {class_name}: {object:?}"
+        );
+    }
+
+    #[test]
+    fn native_callable_return_summary_resolves_generated_functions_and_methods() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "class CallableSummaryProduct {}\n",
+            "function make_summary_product() { return new CallableSummaryProduct(); }\n",
+            "class CallableSummaryFactory {\n",
+            "    public function make() { return new CallableSummaryProduct(); }\n",
+            "    public static function stat() { return new CallableSummaryProduct(); }\n",
+            "}\n",
+        ))
+        .unwrap();
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            uses_native_value_clone: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .unwrap();
+        generator
+            .register_top_level_user_functions(&program.statements)
+            .unwrap();
+        generator.emit_declared_class_method_definitions().unwrap();
+        generator
+            .emit_registered_user_function_definitions()
+            .unwrap();
+
+        let function_identity = CNativeCallableIdentity::GeneratedFunction {
+            function_key: CGenerator::user_function_key("make_summary_product"),
+        };
+        let function_summary = generator
+            .native_callable_return_summary_for_identity(&function_identity, 0)
+            .expect("generated function should resolve to a return summary");
+        assert_eq!(
+            function_summary.result_kind,
+            CNativeCallableResultKind::NativeValue
+        );
+        assert_native_object_fact_contains_class(
+            function_summary.facts.clone(),
+            "CallableSummaryProduct",
+        );
+
+        let instance_identities = generator
+            .native_callable_identities_for_declared_method_candidates(
+                generator.declared_class_method_candidates("make"),
+                CNativeCallableDeclaredMethodStaticness::Instance,
+            )
+            .expect("instance method identities should resolve");
+        assert_native_object_fact_contains_class(
+            generator.native_value_facts_for_callable_identities(instance_identities, 0),
+            "CallableSummaryProduct",
+        );
+
+        let static_identities = generator
+            .native_callable_identities_for_declared_method_candidates(
+                generator.declared_class_static_method_candidates("stat"),
+                CNativeCallableDeclaredMethodStaticness::Static,
+            )
+            .expect("static method identities should resolve");
+        assert_native_object_fact_contains_class(
+            generator.native_value_facts_for_callable_identities(static_identities, 0),
+            "CallableSummaryProduct",
+        );
+
+        assert_native_object_fact_contains_class(
+            generator.native_value_facts_for_expr(&Expr::Call {
+                name: "make_summary_product".to_string(),
+                args: vec![],
+                span: span(1),
+            }),
+            "CallableSummaryProduct",
+        );
+        assert_native_object_fact_contains_class(
+            generator.native_value_facts_for_expr(&Expr::MethodCall {
+                target: Box::new(Expr::Variable("factory".to_string(), span(1))),
+                method: "make".to_string(),
+                args: vec![],
+                span: span(1),
+            }),
+            "CallableSummaryProduct",
+        );
+        assert_native_object_fact_contains_class(
+            generator.native_value_facts_for_expr(&Expr::StaticMethodCall {
+                class_name: "CallableSummaryFactory".to_string(),
+                method: "stat".to_string(),
+                args: vec![],
+                span: span(1),
+            }),
+            "CallableSummaryProduct",
+        );
+        assert!(
+            generator
+                .native_callable_return_summary_for_identity(&function_identity, 1)
+                .is_none(),
+            "arity-incompatible generated callables should not publish return facts"
         );
     }
 
