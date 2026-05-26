@@ -13000,6 +13000,48 @@ const ARRAYACCESS_READ_ISSET_SOURCE: &str = concat!(
     "echo isset($child[1]) ? \"Y\" : \"N\";\n",
 );
 
+const ARRAYACCESS_DYNAMIC_PRODUCER_FACT_SOURCE: &str = concat!(
+    "<?php\n",
+    "class DynamicTruthBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { if ($offset) { return \"T\"; } return \"F\"; }\n",
+    "    public function offsetExists($offset) { return $offset; }\n",
+    "    public function offsetSet($offset, $value) { echo \"T:set:\"; if ($offset) { echo $offset; } else { echo \"NULL\"; } echo \"=\", $value, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { echo \"T:unset:\", $offset, \";\"; return null; }\n",
+    "}\n",
+    "class DynamicBaseBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { if ($offset) { return \"B\"; } return \"b\"; }\n",
+    "    public function offsetExists($offset) { return $offset; }\n",
+    "    public function offsetSet($offset, $value) { echo \"B:set:\"; if ($offset) { echo $offset; } else { echo \"NULL\"; } echo \"=\", $value, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { echo \"B:unset:\"; if ($offset) { echo $offset; } else { echo \"NULL\"; } echo \";\"; return null; }\n",
+    "}\n",
+    "class DynamicChildBag extends DynamicBaseBag {}\n",
+    "$flag = 2 + \"1\";\n",
+    "if ($flag) {\n",
+    "    $class = \"dynamictruthbag\";\n",
+    "} else {\n",
+    "    $class = \"DynamicChildBag\";\n",
+    "}\n",
+    "$bag = new $class();\n",
+    "echo $bag[\"slot\"], \"|\", isset($bag[\"slot\"]) ? \"Y\" : \"N\", \"|\";\n",
+    "$bag[\"write\"] = \"W\";\n",
+    "$bag[] = \"A\";\n",
+    "unset($bag[\"write\"]);\n",
+    "echo $bag[\"after\"], \"|\";\n",
+    "$alias = $bag;\n",
+    "echo $alias[0], \"|\";\n",
+    "$alias[\"copy\"] = \"C\";\n",
+    "$alias[] = 4 + 5;\n",
+    "unset($alias[false]);\n",
+    "echo $alias[true], \"|\";\n",
+    "echo (new $class())[true], \"|\";\n",
+    "if ($flag) {\n",
+    "    $branch = new DynamicTruthBag();\n",
+    "} else {\n",
+    "    $branch = new DynamicChildBag();\n",
+    "}\n",
+    "echo $branch[true];\n",
+);
+
 #[test]
 fn native_executable_c_source_routes_arrayaccess_read_isset_through_runtime_abi() {
     let program = parse(ARRAYACCESS_READ_ISSET_SOURCE).unwrap();
@@ -13027,6 +13069,79 @@ fn native_executable_c_source_routes_arrayaccess_read_isset_through_runtime_abi(
             && !source.contains("callable_object_matched"),
         "ArrayAccess read/isset lowering should not revive the finite dynamic-callable ladder or rejection path:\n{source}"
     );
+}
+
+#[test]
+fn native_executable_c_source_routes_arrayaccess_dynamic_producer_facts() {
+    let program = parse(ARRAYACCESS_DYNAMIC_PRODUCER_FACT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_dynamic_call_name_matches")
+            && source.contains("phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic")
+            && source.contains("phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_GET")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_EXISTS")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_SET")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_APPEND")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_UNSET"),
+        "known dynamic declared-object producers should feed the shared ArrayAccess interface fact query for read, isset, write, append, and unset:\n{source}"
+    );
+    assert!(
+        !source.contains("ArrayAccess lowering rejects"),
+        "dynamic ArrayAccess producer facts should not fall through the object-offset rejection path:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_rejects_arrayaccess_dynamic_unknown_class_name_fact() {
+    let program = parse(concat!(
+        "<?php\n",
+        "class DynamicUnknownBag implements ArrayAccess {\n",
+        "    public function offsetGet($offset) { return \"A\"; }\n",
+        "    public function offsetExists($offset) { return true; }\n",
+        "    public function offsetSet($offset, $value) { return null; }\n",
+        "    public function offsetUnset($offset) { return null; }\n",
+        "}\n",
+        "$class = strtoupper(\"dynamicunknownbag\");\n",
+        "echo (new $class())[\"slot\"];\n",
+    ))
+    .unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert!(
+        error.message.contains("ArrayAccess lowering rejects"),
+        "dynamic class-name new must not become ArrayAccess without a known generated-candidate interface fact: {error:?}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_arrayaccess_dynamic_producer_fact_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "arrayaccess_dynamic_producer_fact",
+        ARRAYACCESS_DYNAMIC_PRODUCER_FACT_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native dynamic ArrayAccess producer executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(
+        run.stdout,
+        b"T|Y|T:set:write=W;T:set:NULL=A;T:unset:write;T|F|T:set:copy=C;T:set:NULL=9;T:unset:;T|T|T"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
 }
 
 #[test]

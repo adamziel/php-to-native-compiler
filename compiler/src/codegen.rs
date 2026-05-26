@@ -14173,7 +14173,7 @@ struct CGenerator {
     mutable_scalar_slots: HashMap<String, CMutableScalarSlot>,
     by_reference_foreach_linger_variables: HashSet<String>,
     global_import_names: HashSet<String>,
-    native_arrayaccess_value_variables: HashSet<String>,
+    native_value_variable_facts: HashMap<String, CNativeValueFacts>,
     array_cleanup_handles: Vec<String>,
     owned_native_byte_buffers: Vec<String>,
     known_ints: HashMap<String, KnownInt>,
@@ -14310,7 +14310,7 @@ struct CGotoStateSnapshot {
     mutable_scalar_slots: HashMap<String, CMutableScalarSlot>,
     by_reference_foreach_linger_variables: HashSet<String>,
     global_import_names: HashSet<String>,
-    native_arrayaccess_value_variables: HashSet<String>,
+    native_value_variable_facts: HashMap<String, CNativeValueFacts>,
     array_cleanup_handles: Vec<String>,
     owned_native_byte_buffers: Vec<String>,
     native_byte_buffer_string_exprs: HashMap<String, String>,
@@ -14376,6 +14376,85 @@ struct CDeclaredClass {
     properties: Vec<CDeclaredClassProperty>,
     constructor: Option<CDeclaredClassMethod>,
     methods: Vec<CDeclaredClassMethod>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct CNativeValueFacts {
+    object: Option<CNativeObjectFacts>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CNativeObjectFacts {
+    declared_class_keys: HashSet<String>,
+    implemented_interface_keys: HashSet<String>,
+}
+
+impl CNativeValueFacts {
+    fn is_empty(&self) -> bool {
+        self.object
+            .as_ref()
+            .map_or(true, CNativeObjectFacts::is_empty)
+    }
+
+    fn object(object: CNativeObjectFacts) -> Option<Self> {
+        if object.is_empty() {
+            None
+        } else {
+            Some(Self {
+                object: Some(object),
+            })
+        }
+    }
+
+    fn intersection(&self, other: &Self) -> Option<Self> {
+        match (&self.object, &other.object) {
+            (Some(left), Some(right)) => Self::object(left.intersection(right)),
+            _ => None,
+        }
+    }
+
+    fn has_definite_native_object_interface(&self, interface_name: &str) -> bool {
+        self.object
+            .as_ref()
+            .is_some_and(|object| object.has_definite_interface(interface_name))
+    }
+}
+
+impl CNativeObjectFacts {
+    fn is_empty(&self) -> bool {
+        self.declared_class_keys.is_empty() && self.implemented_interface_keys.is_empty()
+    }
+
+    fn for_declared_class(class_key: String, class: &CDeclaredClass) -> Self {
+        Self {
+            declared_class_keys: HashSet::from([class_key]),
+            implemented_interface_keys: class
+                .interface_names
+                .iter()
+                .map(|interface| interface.to_ascii_lowercase())
+                .collect(),
+        }
+    }
+
+    fn intersection(&self, other: &Self) -> Self {
+        Self {
+            declared_class_keys: self
+                .declared_class_keys
+                .intersection(&other.declared_class_keys)
+                .cloned()
+                .collect(),
+            implemented_interface_keys: self
+                .implemented_interface_keys
+                .intersection(&other.implemented_interface_keys)
+                .cloned()
+                .collect(),
+        }
+    }
+
+    fn has_definite_interface(&self, interface_name: &str) -> bool {
+        self.implemented_interface_keys
+            .contains(&interface_name.to_ascii_lowercase())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15522,7 +15601,7 @@ impl CGenerator {
             && self.by_reference_foreach_linger_variables
                 == other.by_reference_foreach_linger_variables
             && self.global_import_names == other.global_import_names
-            && self.native_arrayaccess_value_variables == other.native_arrayaccess_value_variables
+            && self.native_value_variable_facts == other.native_value_variable_facts
             && self.array_cleanup_handles == other.array_cleanup_handles
             && self.owned_native_byte_buffers == other.owned_native_byte_buffers
             && self.native_byte_buffer_string_exprs == other.native_byte_buffer_string_exprs
@@ -15543,7 +15622,7 @@ impl CGenerator {
                 .by_reference_foreach_linger_variables
                 .clone(),
             global_import_names: self.global_import_names.clone(),
-            native_arrayaccess_value_variables: self.native_arrayaccess_value_variables.clone(),
+            native_value_variable_facts: self.native_value_variable_facts.clone(),
             array_cleanup_handles: self.array_cleanup_handles.clone(),
             owned_native_byte_buffers: self.owned_native_byte_buffers.clone(),
             native_byte_buffer_string_exprs: self.native_byte_buffer_string_exprs.clone(),
@@ -15661,17 +15740,36 @@ impl CGenerator {
 
         self.variables = merged_variables;
         self.variable_order = then_branch.variable_order.clone();
-        self.native_arrayaccess_value_variables = then_branch
-            .native_arrayaccess_value_variables
-            .intersection(&else_branch.native_arrayaccess_value_variables)
-            .filter(|name| self.variables.contains_key(*name))
-            .cloned()
-            .collect();
+        self.native_value_variable_facts =
+            Self::join_native_value_variable_facts(then_branch, else_branch, &self.variables);
         self.native_value_cleanup_handles = merged_native_value_cleanup_handles;
         self.array_cleanup_handles = base.array_cleanup_handles.clone();
         self.owned_native_byte_buffers = base.owned_native_byte_buffers.clone();
         self.native_byte_buffer_string_exprs = base.native_byte_buffer_string_exprs.clone();
         Ok(())
+    }
+
+    fn join_native_value_variable_facts(
+        then_branch: &Self,
+        else_branch: &Self,
+        variables: &HashMap<String, CValue>,
+    ) -> HashMap<String, CNativeValueFacts> {
+        let mut joined = HashMap::new();
+        for (name, then_facts) in &then_branch.native_value_variable_facts {
+            if !variables.contains_key(name) {
+                continue;
+            }
+            let Some(else_facts) = else_branch.native_value_variable_facts.get(name) else {
+                continue;
+            };
+            let Some(facts) = then_facts.intersection(else_facts) else {
+                continue;
+            };
+            if !facts.is_empty() {
+                joined.insert(name.clone(), facts);
+            }
+        }
+        joined
     }
 
     fn cleanup_scoped_branch_local_native_values(branch: &mut Self, expected: &[String]) -> bool {
@@ -18603,7 +18701,7 @@ impl CGenerator {
     }
 
     fn release_variable_native_value_handle(&mut self, name: &str) {
-        self.native_arrayaccess_value_variables.remove(name);
+        self.native_value_variable_facts.remove(name);
         let value = self.variables.get(name).cloned();
         match value {
             Some(CValue::NativeValueHandle(handle)) => {
@@ -22553,35 +22651,91 @@ impl CGenerator {
             || self.global_import_names.contains(name)
     }
 
-    fn declared_class_implements_arrayaccess(&self, class_name: &str) -> bool {
-        let key = Self::declared_class_key(class_name);
-        self.declared_classes
-            .get(&key)
-            .map(|class| {
-                class
-                    .interface_names
-                    .iter()
-                    .any(|interface| interface.eq_ignore_ascii_case("ArrayAccess"))
-            })
-            .unwrap_or(false)
+    fn native_value_facts_for_declared_class_key(
+        &self,
+        class_key: &str,
+    ) -> Option<CNativeValueFacts> {
+        let class = self.declared_classes.get(class_key)?;
+        CNativeValueFacts::object(CNativeObjectFacts::for_declared_class(
+            class_key.to_string(),
+            class,
+        ))
     }
 
-    fn new_expr_implements_arrayaccess(&self, class_name: &NewClassName) -> bool {
-        match class_name {
-            NewClassName::Named(name) => self.declared_class_implements_arrayaccess(name),
-            NewClassName::DynamicVariable(_)
-            | NewClassName::SelfClass
-            | NewClassName::ParentClass
-            | NewClassName::StaticClass => false,
+    fn native_value_facts_for_dynamic_declared_class_variable(
+        &self,
+        variable: &str,
+    ) -> Option<CNativeValueFacts> {
+        let values = self
+            .variables
+            .get(variable)
+            .and_then(|value| self.known_string_values_for_value(value))?;
+        let mut facts: Option<CNativeValueFacts> = None;
+        for class_name in values.values() {
+            let class_key = Self::declared_class_key(class_name);
+            let class_facts = self.native_value_facts_for_declared_class_key(&class_key)?;
+            facts = Some(match facts {
+                Some(previous) => previous.intersection(&class_facts)?,
+                None => class_facts,
+            });
         }
+        facts
+    }
+
+    fn native_value_facts_for_new_class_name(
+        &self,
+        class_name: &NewClassName,
+    ) -> Option<CNativeValueFacts> {
+        match class_name {
+            NewClassName::Named(name) => {
+                let key = Self::declared_class_key(name);
+                self.native_value_facts_for_declared_class_key(&key)
+            }
+            NewClassName::DynamicVariable(variable) => {
+                self.native_value_facts_for_dynamic_declared_class_variable(variable)
+            }
+            NewClassName::SelfClass | NewClassName::ParentClass | NewClassName::StaticClass => None,
+        }
+    }
+
+    fn native_value_facts_for_expr(&self, expr: &Expr) -> Option<CNativeValueFacts> {
+        match expr {
+            Expr::Variable(name, _) => self.native_value_variable_facts.get(name).cloned(),
+            Expr::New { class_name, .. } => self.native_value_facts_for_new_class_name(class_name),
+            _ => None,
+        }
+    }
+
+    fn expr_has_definite_native_object_interface(&self, expr: &Expr, interface_name: &str) -> bool {
+        self.native_value_facts_for_expr(expr)
+            .is_some_and(|facts| facts.has_definite_native_object_interface(interface_name))
     }
 
     fn expr_is_native_arrayaccess_subject(&self, expr: &Expr) -> bool {
-        match expr {
-            Expr::Variable(name, _) => self.native_arrayaccess_value_variables.contains(name),
-            Expr::New { class_name, .. } => self.new_expr_implements_arrayaccess(class_name),
-            _ => false,
-        }
+        self.expr_has_definite_native_object_interface(expr, "ArrayAccess")
+    }
+
+    fn native_value_facts_for_variable_with_definite_native_object_interface(
+        &self,
+        name: &str,
+        span: Span,
+        interface_name: &str,
+    ) -> Option<CNativeValueFacts> {
+        let expr = Expr::Variable(name.to_string(), span);
+        self.native_value_facts_for_expr(&expr)
+            .filter(|facts| facts.has_definite_native_object_interface(interface_name))
+    }
+
+    fn native_arrayaccess_subject_facts_for_variable(
+        &self,
+        name: &str,
+        span: Span,
+    ) -> Option<CNativeValueFacts> {
+        self.native_value_facts_for_variable_with_definite_native_object_interface(
+            name,
+            span,
+            "ArrayAccess",
+        )
     }
 
     fn emit_symbol_table_variable_value_read(
@@ -22765,28 +22919,31 @@ impl CGenerator {
     }
 
     fn store_variable_value(&mut self, name: &str, value: CValue) {
-        self.store_variable_value_with_arrayaccess_subject(name, value, false);
+        self.store_variable_value_with_native_value_facts(name, value, None);
     }
 
-    fn store_variable_value_with_arrayaccess_subject(
+    fn store_variable_value_with_native_value_facts(
         &mut self,
         name: &str,
         value: CValue,
-        is_arrayaccess_subject: bool,
+        facts: Option<CNativeValueFacts>,
     ) {
         self.remember_variable_order(name);
         if self.try_store_mutable_scalar_slot_value(name, &value) {
-            self.native_arrayaccess_value_variables.remove(name);
+            self.native_value_variable_facts.remove(name);
             return;
         }
         let stored = self.value_for_variable_storage(value);
         self.release_variable_native_value_handle(name);
         self.variables.insert(name.to_string(), stored);
-        if is_arrayaccess_subject {
-            self.native_arrayaccess_value_variables
-                .insert(name.to_string());
-        } else {
-            self.native_arrayaccess_value_variables.remove(name);
+        match facts.filter(|facts| !facts.is_empty()) {
+            Some(facts) => {
+                self.native_value_variable_facts
+                    .insert(name.to_string(), facts);
+            }
+            None => {
+                self.native_value_variable_facts.remove(name);
+            }
         }
     }
 
@@ -22795,24 +22952,27 @@ impl CGenerator {
         name: &str,
         value: CNativeValueMaterialization,
     ) {
-        self.store_native_value_result_variable_with_arrayaccess_subject(name, value, false);
+        self.store_native_value_result_variable_with_native_value_facts(name, value, None);
     }
 
-    fn store_native_value_result_variable_with_arrayaccess_subject(
+    fn store_native_value_result_variable_with_native_value_facts(
         &mut self,
         name: &str,
         value: CNativeValueMaterialization,
-        is_arrayaccess_subject: bool,
+        facts: Option<CNativeValueFacts>,
     ) {
         self.release_variable_native_value_handle(name);
         self.retain_native_value_cleanup_handle(&value.handle);
         self.variables
             .insert(name.to_string(), CValue::NativeValueHandle(value.handle));
-        if is_arrayaccess_subject {
-            self.native_arrayaccess_value_variables
-                .insert(name.to_string());
-        } else {
-            self.native_arrayaccess_value_variables.remove(name);
+        match facts.filter(|facts| !facts.is_empty()) {
+            Some(facts) => {
+                self.native_value_variable_facts
+                    .insert(name.to_string(), facts);
+            }
+            None => {
+                self.native_value_variable_facts.remove(name);
+            }
         }
     }
 
@@ -34668,7 +34828,7 @@ impl CGenerator {
                         "",
                     );
                 }
-                let is_arrayaccess_subject = self.expr_is_native_arrayaccess_subject(expr);
+                let native_value_facts = self.native_value_facts_for_expr(expr);
                 if (self.uses_native_string_helpers || native_string_search_result_expr(expr))
                     && !self.mutable_scalar_slots.contains_key(name)
                 {
@@ -34683,10 +34843,10 @@ impl CGenerator {
                                 "",
                             );
                         }
-                        self.store_native_value_result_variable_with_arrayaccess_subject(
+                        self.store_native_value_result_variable_with_native_value_facts(
                             name,
                             value,
-                            is_arrayaccess_subject,
+                            native_value_facts,
                         );
                         return Ok(());
                     }
@@ -34703,11 +34863,7 @@ impl CGenerator {
                         "",
                     );
                 }
-                self.store_variable_value_with_arrayaccess_subject(
-                    name,
-                    value,
-                    is_arrayaccess_subject,
-                );
+                self.store_variable_value_with_native_value_facts(name, value, native_value_facts);
                 Ok(())
             }
             AssignTarget::List { span, .. } => {
@@ -38846,7 +39002,8 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        if !self.native_arrayaccess_value_variables.contains(name) {
+        let subject_facts = self.native_arrayaccess_subject_facts_for_variable(name, span);
+        if subject_facts.is_none() {
             return Ok(None);
         }
 
@@ -38984,7 +39141,12 @@ impl CGenerator {
         else {
             return Ok(false);
         };
-        self.store_native_value_result_variable_with_arrayaccess_subject(name, result, true);
+        let subject_facts = self.native_arrayaccess_subject_facts_for_variable(name, *span);
+        self.store_native_value_result_variable_with_native_value_facts(
+            name,
+            result,
+            subject_facts,
+        );
         Ok(true)
     }
 
@@ -38998,7 +39160,8 @@ impl CGenerator {
         let AssignTarget::ArrayIndex { name, index, .. } = target else {
             return Ok(None);
         };
-        if !self.native_arrayaccess_value_variables.contains(name) {
+        let subject_facts = self.native_arrayaccess_subject_facts_for_variable(name, span);
+        if subject_facts.is_none() {
             return Ok(None);
         }
 
@@ -39037,7 +39200,11 @@ impl CGenerator {
             span,
             failure_cleanup,
         )?;
-        self.store_native_value_result_variable_with_arrayaccess_subject(name, result, true);
+        self.store_native_value_result_variable_with_native_value_facts(
+            name,
+            result,
+            subject_facts,
+        );
         Ok(Some(replacement_value))
     }
 
@@ -39059,7 +39226,12 @@ impl CGenerator {
         else {
             return Ok(false);
         };
-        self.store_native_value_result_variable_with_arrayaccess_subject(name, result, true);
+        let subject_facts = self.native_arrayaccess_subject_facts_for_variable(name, span);
+        self.store_native_value_result_variable_with_native_value_facts(
+            name,
+            result,
+            subject_facts,
+        );
         Ok(true)
     }
 
