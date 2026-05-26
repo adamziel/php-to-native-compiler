@@ -937,15 +937,20 @@ broad production runtime string-helper lowering are not implemented.
 The linked native executable C path handles bounded direct `exit()`/`die()`
 termination for materializable no-argument, `null`, `int`, and `string`
 operands, plus scoped `if`/`else` branches that do not require persistent
-environment merging. LLVM IR and assembly lowering still reject `exit()`/`die()`
-and structured statement control flow.
+environment merging. It also handles selected known scoped `Class::method`
+callable strings for declared public static methods, including by-reference
+argument planning through the shared native call-arguments carrier and selected
+by-reference method returns. LLVM IR and assembly lowering still reject
+`exit()`/`die()`, structured statement control flow, and scoped callable-string
+execution.
 
 Native lowering rejects arrays, array destructuring, objects, `instanceof`
 relationship checks, static class members, ArrayAccess object-offset dispatch,
 clone expressions, user functions, closure values,
 include/require, broad control flow, branch environment merging, exception
 boundaries, scalar casts, mutation forms that require symbol-table effects,
-double-quoted string interpolation, dynamic calls, `assert()`, runtime constant tables,
+double-quoted string interpolation, dynamic calls outside the documented
+generated-C known string/callable surfaces, `assert()`, runtime constant tables,
 direct request superglobal reads such as `$_GET`/`$_POST`/`$_COOKIE`/
 `$_REQUEST`/`$_FILES`,
 direct `str_starts_with(...)` string-prefix calls,
