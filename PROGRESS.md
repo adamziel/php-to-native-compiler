@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 17:27 CEST
+Updated: 2026-05-26 17:24 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -20,9 +20,28 @@ latest source capability. The worktree still has preserved foreign scratch
 state: untracked `examples/class.php`.
 
 Latest primary-integrated source capability baseline:
-`099b76fc runtime: add diagnostic result list contract`.
+`885bde45 runtime: add deferred cleanup diagnostic results`.
 
-`099b76fc` adds a runtime-owned `NativeDiagnosticResult` contract plus a
+`885bde45` adds a deferred-cleanup diagnostic-result family on top of the owned
+`NativeDiagnosticResult` list contract. Operation result-list blockers and
+deferred-cleanup blockers now share `NativeDiagnosticResultListBlocker`, so
+value-required result sequencing, null result item/list handling, terminal
+diagnostic short-circuiting, remaining-result cleanup, and final blocker
+append flow through one runtime list consumer. The new
+`phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free(...)`
+wrapper consumes ordered cleanup results and appends a centralized
+finally/destructor/shutdown cleanup-ordering blocker until generalized
+unwinding semantics exist. Focused proof covers value-only cleanup results,
+terminal diagnostics, null result items, null result-list pointers, empty
+cleanup lists, the existing value-required operation result-list path, adjacent
+diagnostic operation blockers, `cargo check -p php_runtime`, `cargo check -p
+phpc --lib`, fmt, and diff checks. Compiler/backend cleanup-result consumers,
+real finally/destructor/shutdown unwinding, pending diagnostic aggregation,
+exception/fatal ownership, return/control-transfer joins, references/COW,
+exact cleanup ordering, and source-aware diagnostic reporting remain open.
+
+This follows `099b76fc`, which adds a runtime-owned `NativeDiagnosticResult`
+contract plus a
 value-required diagnostic-result list consumer. Runtime results can now carry
 an owned value with zero or more owned diagnostics, expose diagnostic count,
 severity, and message-byte inspection, and be consumed by
@@ -185,7 +204,8 @@ elements, unknown array shapes or runtime mutations, arity mismatches,
 by-reference returns, and mixed receiver sets where any possible class lacks the
 method do not publish facts.
 
-This composes with `099b76fc` diagnostic result-list contracts,
+This composes with `885bde45` deferred-cleanup diagnostic results,
+`099b76fc` diagnostic result-list contracts,
 `08d00fe1` conditional call-result handoff,
 `7fb9db15` object metadata preflight diagnostics,
 `a3826e2f` dynamic method-name normalization,
@@ -211,16 +231,17 @@ generated declared-method callable-table publication, native value-result cast
 diagnostics, shared generated-C object-call argument handles, and
 method-specific generated-C dynamic method-name matching.
 
-Lane-local momentum is active but not counted. The diagnostic result-list
-contract, conditional call-result handoff boundary, object metadata preflight,
-dynamic method-name normalization, object-call argument-handle,
+Lane-local momentum is active but not counted. The deferred-cleanup
+diagnostic-result family, diagnostic result-list contract, conditional
+call-result handoff boundary, object metadata preflight, dynamic method-name
+normalization, object-call argument-handle,
 array-cast value-result, scoped callable-string, and function-frame
 by-reference alias-transfer routes have now been primary-integrated. The fresh
 property-held ArrayAccess, ordered symbol diagnostic cleanup, interface parent
-descriptor, method lookup candidate-miss, deferred-cleanup diagnostic-result,
-and call-preflight/source-aware lanes are parked as blocker maps; the broader
-compiler-side conditional-handoff consumer and deferred-cleanup result-family
-routes remain pending worker review.
+descriptor, method lookup candidate-miss, and call-preflight/source-aware lanes
+are parked as blocker maps; the broader compiler-side conditional-handoff
+consumer and compiler/backend deferred-cleanup result consumers remain pending
+worker review.
 Broader producer fact work, property/nested owner design, unknown runtime
 callable consumers, runtime array-shape callable identity facts, builtin return
 summaries, and callable receiver fallback remain advisory until routed,
@@ -247,11 +268,26 @@ gaps.
 | Symbols, globals, request state | **75%** | `[###############-----]` | Selected globals, root-symbol consumers, active symbol-table consumers, request-key blockers, append-shaped symbol reference-source materialization, direct generated-C request-state frame handoff, and generated-C dynamic user-function handoff proof exist. `$GLOBALS` self-cells, closure request-state handoff, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
 | Calls, functions, frames | **96%** | `[###################-]` | Runtime callable table/value dispatch, call arguments/frame/result ABI, conditional call-result handoff, direct and dynamic generated-C callable consumers, generated declared-method callable registration/wrapper frames, method-specific dynamic method-name normalization, shared generated-C object-call argument handles, receiver-free static `Class::method` strings, scoped callable-string public static method signatures with by-reference argument planning and selected reference-return consumers, generated-callable return-result facts, produced-call-result by-reference alias-transfer diagnostics for direct user-function calls, callable identity return-summary resolution with PHP-compatible external declared-method policy, descriptor-closure return summaries, known string callable, callable-array, and definite `__invoke` object return facts, by-reference argument transport, descriptor closures, closure returns, generated-C request-state frame handoff, and null call-result diagnostic cleanup are integrated. Unknown runtime callable strings/objects/arrays, builtin return summaries, executable by-reference alias transfer, compiler-side conditional result consumers, full object/method callable parity, namespace fallback, autoload, magic calls, named/spread breadth, broader return references, constructors, cleanup/unwind execution, and backend parity remain open. |
 | Objects, properties, methods | **65%** | `[#############-------]` | Public object-property reference-source extraction, object-property reference-slot mutation, declared-class allocation cleanup-risk metadata, shared native object-metadata preflight diagnostics, Object/ArrayAccess write blockers, runtime ArrayAccess write/read/exists dispatch, generated-C ArrayAccess read/isset/write/append/unset/empty/null-coalesce/RMW/`??=` consumers for compiler-known generated objects and selected reference slots, known dynamic generated-declared class-name producers, generated-callable, descriptor-closure, known string callable, callable-array, definite `__invoke` object return producers, shared generated-C object-call argument handles, PHP-compatible object receiver public static callable facts, and generated declared-method callable-table publication exist for selected paths. Property/magic/unknown-runtime-dynamic-call/clone/static-property producers, property-held/nested ArrayAccess owners, broader visibility parity, magic, dynamic/static/typed properties, destructors, interfaces/traits execution, references/COW, constructors, and backend parity remain open. |
-| Control flow, cleanup, diagnostics | **54%** | `[###########---------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, owned diagnostic-result list contracts, try-body call-boundary preflight, generic operand-list blockers, reference/assignment/RMW blockers, Object/ArrayAccess write blockers, and cleanup/unwind requirement preflight exist. Broad unwind/finally/destructor/shutdown execution, cleanup ownership, executable reference binding, diagnostic-result compiler migration, and source-ordered diagnostics remain open. |
+| Control flow, cleanup, diagnostics | **54%** | `[###########---------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, owned diagnostic-result list contracts, deferred-cleanup diagnostic-result blockers, try-body call-boundary preflight, generic operand-list blockers, reference/assignment/RMW blockers, Object/ArrayAccess write blockers, and cleanup/unwind requirement preflight exist. Broad unwind/finally/destructor/shutdown execution, cleanup ownership, executable reference binding, cleanup-result compiler migration, and source-ordered diagnostics remain open. |
 | Broad integrated verification | **92%** | `[##################--]` | Focused gates around recent source work are strong. Broad verification is still constrained by lane extraction cost, stale candidate expectations, heavy swap usage, and backend parity gaps. |
 
 ## Recent Primary-Integrated Work
 
+- `885bde45`: deferred-cleanup diagnostic results now share
+  `NativeDiagnosticResultListBlocker` with the existing value-required
+  operation result-list consumer. The new
+  `phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free(...)`
+  ABI consumes ordered cleanup results, releases owned values, preserves
+  terminal diagnostics, cleans up remaining entries, handles null
+  item/list/empty-list shapes, and appends a centralized cleanup-ordering
+  blocker for finally/destructor/shutdown cleanup semantics. Focused proof
+  covers value-only cleanup results, terminal diagnostics, null result items,
+  null result-list pointers, empty cleanup lists, the existing operation
+  result-list path, adjacent diagnostic operation blockers, `cargo check` for
+  `php_runtime` and `phpc --lib`, fmt, and diff checks. Compiler/backend
+  cleanup-result consumers, real unwinding, diagnostic aggregation,
+  exception/fatal ownership, return/control-transfer joins, references/COW,
+  exact cleanup ordering, and source-aware reporting remain open.
 - `099b76fc`: runtime diagnostics now have an owned
   `NativeDiagnosticResult` result/value contract and
   `phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free(...)`
