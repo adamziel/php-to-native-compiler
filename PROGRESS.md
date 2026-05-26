@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 23:38 CEST
+Updated: 2026-05-26 23:41 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,19 +19,19 @@ Overall integrated-roadmap progress: **70%** `[##############------]`
 
 Selected executable PHP semantics: **70%** `[##############------]`
 
-Latest accounted source capability: `964e3e2b` routes direct generated-C
-user-function calls through direct named lookup-plus-invoke source-call
-carriers over the shared exactly-once `NativeCallArgumentsHandle` path.
-Previous source commit `0430efcc` adds cleanup-frame source metadata and
-removes raw cleanup-result slice report helpers, forcing control-transfer
-cleanup reports through `NativeDiagnosticCleanupFrame`.
+Latest accounted source capability: `8ebeae19` adds a cleanup-frame stack
+aggregation boundary that preserves cleanup-frame source metadata and aggregates
+nested frames in innermost-first unwind order before reporting. Previous source
+commit `964e3e2b` routes direct generated-C user-function calls through direct
+named lookup-plus-invoke source-call carriers over the shared exactly-once
+`NativeCallArgumentsHandle` path.
 
 Why the headline bars did not jump: the new source closes an important
-direct generated user-function source-call gap, but method/static source
-calls, constructors, closure invocation, by-reference alias transfer, spread
-ownership, and cleanup operands from real `finally`, destructor, shutdown,
-unwind, or terminal control-flow frames still need their own generalized
-contracts.
+direct generated user-function source-call gap and adds reusable nested cleanup
+aggregation, but method/static source calls, constructors, closure invocation,
+by-reference alias transfer, spread ownership, and cleanup operands from real
+`finally`, destructor, shutdown, unwind, or terminal control-flow frames still
+need their own generalized contracts.
 
 Current critical path to 100%:
 
@@ -63,13 +63,14 @@ Current critical path to 100%:
 | Symbols, globals, request state | **70%** | `[##############------]` | Selected globals, root-symbol consumers, active symbol-table consumers, request-key blockers, append-shaped symbol reference-source materialization, direct generated-C request-state frame handoff, and dynamic user-function handoff proof exist. `$GLOBALS` self-cells, closure request-state handoff, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
 | Calls, functions, frames | **85%** | `[#################---]` | Runtime callable table/value dispatch, call arguments/frame/result ABI, conditional handoff, generated-C direct/dynamic callable consumers, declared-method registration/wrapper frames, callable return facts, by-reference argument transport, descriptor closures, closure returns, request-state frame handoff, access-context lookup ABI, lookup-plus-invoke exactly-once argument ownership helpers, source-call result carrier selectors, selected production source-call carrier emission, and direct generated user-function lookup-plus-invoke production are integrated. Unknown runtime callables, method/static source-call production, builtin return summaries, executable by-reference alias transfer, full object/method parity, namespace fallback, autoload, magic calls, named/spread breadth, broader return references, constructors, cleanup/unwind, and backend parity remain open. |
 | Objects, properties, methods | **65%** | `[#############-------]` | Selected object metadata, public property reference-source extraction, object-property reference-slot mutation, ArrayAccess dispatch, generated-C ArrayAccess consumers for compiler-known generated objects, dynamic generated class-name producers, object-call argument handles, declared-method callable-table publication, allocatable class metadata, and access-context preflights exist. Property/magic/unknown-runtime-dynamic-call/clone/static-property producers, property-held/nested ArrayAccess, broader visibility parity, typed properties, destructors, interfaces/traits execution, references/COW, constructors, and backend parity remain open. |
-| Control flow, cleanup, diagnostics | **65%** | `[#############-------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostic blockers, owned diagnostic-result list contracts, consumer contracts, backend family consumers, deferred-cleanup blockers, control-transfer cleanup result consumers, cleanup-frame producers/source metadata/report bridges, try-body call-boundary preflight, report sinks, continuation helpers, discarded statement-expression operands, and echo/print output operands exist. Broad unwind/finally/destructor/shutdown execution, cleanup result production from real control flow, executable reference binding, remaining semantic diagnostic-result producer migration, and source-ordered diagnostics remain open. |
+| Control flow, cleanup, diagnostics | **65%** | `[#############-------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostic blockers, owned diagnostic-result list contracts, consumer contracts, backend family consumers, deferred-cleanup blockers, control-transfer cleanup result consumers, cleanup-frame producers/source metadata/report bridges, cleanup-frame stack aggregation, try-body call-boundary preflight, report sinks, continuation helpers, discarded statement-expression operands, and echo/print output operands exist. Broad unwind/finally/destructor/shutdown execution, cleanup result production from real control flow, executable reference binding, remaining semantic diagnostic-result producer migration, and source-ordered diagnostics remain open. |
 | Broad integrated verification | **70%** | `[##############------]` | Focused gates around recent source work are strong. Broad verification is still constrained by lane extraction cost, stale candidate expectations, heavy formatter/log pressure, and backend parity gaps. |
 
 ## Recently Accounted Source Work
 
 | Commit | Capability | Proof shape |
 | --- | --- | --- |
+| `8ebeae19` | Cleanup frames can aggregate nested frame stacks in innermost-first unwind order while preserving `NativeDiagnosticCleanupFrameSource` metadata and feeding the existing cleanup report bridge across LLVM and generated C. | New stack aggregation test across LLVM/generated C, cleanup-frame operand/source regression, cleanup report bridge regression, runtime cleanup sequencing, fmt, diff check. |
 | `964e3e2b` | Direct generated-C user-function calls route through direct named lookup-plus-invoke source-call carriers and reusable target operands while preserving the shared call-arguments ownership path. | Carrier/emitter and carrier-selector unit tests, generated-C link/run proof across zero/fixed/default/variadic arities and by-reference argument transport, fmt, diff check. |
 | `0430efcc` | Cleanup frames carry terminal/control-transfer/deferred-cleanup source metadata and report helpers now consume frames instead of raw result slices. | Compiler cleanup-frame source tests across accepted/rejected operands and both backends, existing report regression, runtime cleanup sequencing, fmt, diff check. |
 | `75f20f3f` | Selected generated-C production source-call paths build call arguments once and invoke dynamic callable values, scoped callable-string reference assignments, and materialized direct user-function callables through source-call carriers. | Carrier/emitter unit tests, source-call selector tests, generated-C link/run proof for dynamic callable values and direct user-function frames, fmt, diff check. |
@@ -105,7 +106,7 @@ Primary-integrated capability and candidate/lane-local work are separated.
 | ReferenceSlot owner facts | **100%** `[####################]` | **100%** `[####################]` | **45%** `[#########-----------]` | Compiler-visible native reference handles can recover facts, source owners, and commit writeback for selected paths. Arbitrary alias roots, request/superglobal path facts, property-held references, closure callback fact transport, references/COW, and backend parity remain open. |
 | Callable identity return summaries | **100%** `[####################]` | **100%** `[####################]` | **60%** `[############--------]` | Generated functions, declared methods/static methods, descriptor closures, known strings, definite `__invoke` objects, and compiler-known callable arrays can publish selected return facts. Unknown runtime callables, builtins, non-descriptor closures, recursive summaries, reference returns, property/magic producers, references/COW, and backend parity remain open. |
 | Dynamic object/interface fact carrier | **100%** `[####################]` | **100%** `[####################]` | **65%** `[#############-------]` | Generated declared objects, known dynamic class-name `new`, copies, gotos, branches, generated-callable returns, descriptor closures, known string/invokable/callable-array summaries, and compiler-visible reference slots feed existing object/interface consumers. Properties, clones, static properties, arbitrary symbols, unknown runtime callables/arrays, and non-descriptor closures remain open. |
-| Cleanup/unwind execution | **25%** `[#####---------------]` | **25%** `[#####---------------]` | **25%** `[#####---------------]` | Requirement/preflight boundaries, cleanup result consumers, cleanup report bridges, cleanup-frame producer queues, and cleanup-frame source metadata are integrated. Actual exception propagation, catch/finally/destructor/shutdown execution, cleanup ordering, and object lifetime cleanup are still not implemented. |
+| Cleanup/unwind execution | **30%** `[######--------------]` | **30%** `[######--------------]` | **30%** `[######--------------]` | Requirement/preflight boundaries, cleanup result consumers, cleanup report bridges, cleanup-frame producer queues, cleanup-frame source metadata, and nested cleanup-frame stack aggregation are integrated. Actual exception propagation, catch/finally/destructor/shutdown execution, production cleanup operand enqueueing, and object lifetime cleanup are still not implemented. |
 | Broad dirty lane extraction backlog | **0%** `[--------------------]` | **35%** `[#######-------------]` | **35%** `[#######-------------]` | Dirty call, diagnostic, object, control-flow, symbol, byte/string, and array lanes remain evidence pools until split into fresh current-head candidates with focused proof. |
 
 ## Done
@@ -150,6 +151,8 @@ Primary-integrated capability and candidate/lane-local work are separated.
 - Cleanup frames carry terminal/control-transfer/deferred-cleanup source
   metadata and control-transfer cleanup reports consume frames instead of raw
   result slices.
+- Cleanup-frame stacks aggregate nested frames innermost-first while preserving
+  source metadata before feeding the shared cleanup report bridge.
 - Reference-binding, assignment-lvalue, and RMW-lvalue operand-list blockers.
 - Generated-C selected RMW array-lvalue owner/writeback for local native arrays
   and active-symbol/global-import reference-slot owners.
@@ -191,14 +194,15 @@ Primary-integrated capability and candidate/lane-local work are separated.
   call-argument families; exact PHP diagnostics, source ordering,
   suppression/custom handlers, and backend parity across generated C, LLVM,
   and direct assembly.
-- Nested cleanup-frame aggregation, pending diagnostic aggregation, and exact
+- Pending diagnostic production from real control-flow cleanup and exact
   `finally`/destructor/shutdown sequencing.
 
 ## Latest Focused Verification
 
-For `964e3e2b`, `0430efcc`, `75f20f3f`, `d26c64f7`, `50d19f99`, and
-`7891fcf3`:
+For `8ebeae19`, `964e3e2b`, `0430efcc`, `75f20f3f`, `d26c64f7`,
+`50d19f99`, and `7891fcf3`:
 
+- `cargo test -p phpc --lib native_diagnostic_cleanup_frame_stack_aggregates_nested_pending_diagnostics_for_unwind -- --nocapture`
 - `cargo test -p phpc --lib native_diagnostic_cleanup_frames_accept_only_cleanup_operands_across_backends -- --nocapture`
 - `cargo test -p phpc --lib native_diagnostic_result_control_transfer_cleanup_reports_reusable_cleanup_operands -- --nocapture`
 - `cargo test -p phpc --test native_runtime_abi native_diagnostic_result_control_transfer_cleanup_sequences_result_shapes -- --nocapture`
