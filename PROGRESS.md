@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 20:24 CEST
+Updated: 2026-05-26 22:14 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,26 +19,26 @@ Overall integrated-roadmap progress: **70%** `[##############------]`
 
 Selected executable PHP semantics: **70%** `[##############------]`
 
-Latest accounted source capability: `5902369c` adds shared native callable
-access-context lookup/class allocation metadata and diagnostic-result
-continuation/report sink ABIs. The work is generalized runtime/compiler
-surface area, not exact-shape lowering: it covers function/method/static/
-constructor visibility preflights, allocatable-class metadata, terminal-result
-detection, stderr reporting, and echo-to-stdout reporting over owned
-diagnostic-result lists.
+Latest accounted source capability: `dcdd330f` lowers discarded expression
+statements into owned `NativeDiagnosticResult` operands and reports/frees them
+through the shared diagnostic-result sinks. The work is generalized compiler
+semantics, not exact-shape lowering: existing LLVM and generated-C expression
+evaluation now produce statement-surface diagnostic-result value operands for
+real discarded expressions, with generated-C executable link/run proof.
 
-Why the headline bars did not jump: the new source closes important ABI gaps,
-but the compiler still needs real semantic lowering to produce these operands
-and route ordinary PHP expressions/statements through the result/reporting
-stack. The biggest remaining gap is executable breadth, not isolated helper
-availability.
+Why the headline bars did not jump: the new source is the first production
+semantic operand migration onto the diagnostic-result stack, but it is still
+one statement-expression family. Echo/output, terminal/control-flow, cleanup,
+lvalue, RMW, reference-binding, and call-argument operands still need their
+own ownership and ordering contracts.
 
 Current critical path to 100%:
 
 1. Finish expression-owned `NativeCallResultHandle` carriers, invoke-result
    helper ABIs, and exactly-once call argument ownership/cleanup.
-2. Migrate expression, statement, terminal, cleanup, lvalue, reference, and
-   call-argument lowering onto produced `NativeDiagnosticResult` operands.
+2. Continue migrating expression, statement, terminal, cleanup, lvalue,
+   reference, and call-argument lowering onto produced
+   `NativeDiagnosticResult` operands.
 3. Route value/reference/return/deferred-cleanup consumers through the shared
    diagnostic-result and call-result carrier stack.
 4. Implement references/COW, arbitrary alias-root writeback, property-held and
@@ -53,20 +53,21 @@ Current critical path to 100%:
 | Workstream | Integrated | Bar | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **90%** | `[##################--]` | Strong selected-path value, byte-string, array, reference, symbol, callable, call-frame/result, diagnostic-result, request-state, lvalue, and ArrayAccess surfaces. Recent source adds callable access contexts, allocatable class metadata, diagnostic continuation helpers, and report sinks. Remaining gaps include executable alias transfer, autoload, namespace fallback, magic calls, closure frame handoff, cleanup/unwind parity, and broader lookup parity. |
-| Compiler/backend consumers | **75%** | `[###############-----]` | Generated C has the freshest consumers for calls, callable facts, selected object metadata, selected ArrayAccess/lvalue paths, value-result casts, and diagnostic-result family consumers. LLVM/direct assembly still lag newer object-offset/lvalue/runtime ABIs, and real semantic lowering still must produce diagnostic-result operands. |
+| Compiler/backend consumers | **75%** | `[###############-----]` | Generated C has the freshest consumers for calls, callable facts, selected object metadata, selected ArrayAccess/lvalue paths, value-result casts, diagnostic-result family consumers, and discarded statement-expression diagnostic operands. LLVM now shares that discarded-expression operand path, while direct assembly still lags newer object-offset/lvalue/runtime ABIs and most semantic result operands remain unmigrated. |
 | Executable PHP semantics | **70%** | `[##############------]` | Many executable islands exist, but full assignment/RMW/writeback, references/COW, object/ArrayAccess operations, cleanup/unwind/finally/destructors, exact diagnostics, and backend parity remain open. |
 | Strings and byte semantics | **60%** | `[############--------]` | Byte-backed values and selected byte-preserving string-array slots are integrated. Binary source bytes, byte-exact interpreter/session/debug output, `mb_str_split()`, request/global byte keys, and exact diagnostics remain open. |
 | Arrays, lvalues, references, COW | **70%** | `[##############------]` | Selected lvalue/reference-source extraction, ReferenceSlot owner facts, reference-cell predicates, membership helpers, RMW array-lvalue owner/writeback, and selected ArrayAccess RMW/`??=` paths are integrated. Object/static property storage, property-held/nested ArrayAccess, arbitrary alias roots, foreach breadth, broader writeback, and full COW remain incomplete. |
 | Symbols, globals, request state | **70%** | `[##############------]` | Selected globals, root-symbol consumers, active symbol-table consumers, request-key blockers, append-shaped symbol reference-source materialization, direct generated-C request-state frame handoff, and dynamic user-function handoff proof exist. `$GLOBALS` self-cells, closure request-state handoff, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
 | Calls, functions, frames | **80%** | `[################----]` | Runtime callable table/value dispatch, call arguments/frame/result ABI, conditional handoff, generated-C direct/dynamic callable consumers, declared-method registration/wrapper frames, callable return facts, by-reference argument transport, descriptor closures, closure returns, request-state frame handoff, and recent access-context lookup ABI are integrated. Unknown runtime callables, builtin return summaries, executable by-reference alias transfer, full object/method parity, namespace fallback, autoload, magic calls, named/spread breadth, broader return references, constructors, cleanup/unwind, and backend parity remain open. |
 | Objects, properties, methods | **65%** | `[#############-------]` | Selected object metadata, public property reference-source extraction, object-property reference-slot mutation, ArrayAccess dispatch, generated-C ArrayAccess consumers for compiler-known generated objects, dynamic generated class-name producers, object-call argument handles, declared-method callable-table publication, allocatable class metadata, and access-context preflights exist. Property/magic/unknown-runtime-dynamic-call/clone/static-property producers, property-held/nested ArrayAccess, broader visibility parity, typed properties, destructors, interfaces/traits execution, references/COW, constructors, and backend parity remain open. |
-| Control flow, cleanup, diagnostics | **50%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostic blockers, owned diagnostic-result list contracts, consumer contracts, backend family consumers, deferred-cleanup blockers, try-body call-boundary preflight, report sinks, and continuation helpers exist. Broad unwind/finally/destructor/shutdown execution, cleanup ownership, executable reference binding, semantic diagnostic-result producer migration, and source-ordered diagnostics remain open. |
+| Control flow, cleanup, diagnostics | **55%** | `[###########---------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostic blockers, owned diagnostic-result list contracts, consumer contracts, backend family consumers, deferred-cleanup blockers, try-body call-boundary preflight, report sinks, continuation helpers, and discarded statement-expression diagnostic operands exist. Broad unwind/finally/destructor/shutdown execution, cleanup ownership, executable reference binding, wider semantic diagnostic-result producer migration, and source-ordered diagnostics remain open. |
 | Broad integrated verification | **70%** | `[##############------]` | Focused gates around recent source work are strong. Broad verification is still constrained by lane extraction cost, stale candidate expectations, heavy formatter/log pressure, and backend parity gaps. |
 
 ## Recently Accounted Source Work
 
 | Commit | Capability | Proof shape |
 | --- | --- | --- |
+| `dcdd330f` | Discarded expression statements lower into owned `NativeDiagnosticResult` operands and report/free through diagnostics-only sinks in LLVM and generated C. | Compiler result-operand tests, `native_runtime_abi` sink tests, executable generated-C link/run proof, fmt, diff check. |
 | `5902369c` | Shared callable access-context lookup, allocatable class metadata, diagnostic-result continuation helpers, and stderr/echo report sinks. | Runtime focused tests, compiler ABI declaration tests, `native_runtime_abi` tests, fmt, diff check. |
 | `950a17fe` | LLVM/generated-C diagnostic-result family consumers over already-produced operand lists. | Family selector, backend emission, empty-list, missing-runtime-ABI, fmt, diff check. |
 | `81c60f38` | Runtime diagnostic-result consumer contracts for value-required and cleanup families. | Result-list ownership, terminal preservation, null/empty list behavior. |
@@ -86,7 +87,7 @@ Primary-integrated capability and candidate/lane-local work are separated.
 
 | Item | Primary Integrated | Candidate Readiness | Toward Full Feature | Status |
 | --- | ---: | ---: | ---: | --- |
-| Diagnostic-result carrier stack | **100%** `[####################]` | **100%** `[####################]` | **45%** `[#########-----------]` | Runtime/result contracts, family consumers, continuation helpers, and report sinks are integrated. Real semantic lowering still must produce and hand off operands for expression, statement, terminal, cleanup, lvalue, reference, and call-argument paths. |
+| Diagnostic-result carrier stack | **100%** `[####################]` | **100%** `[####################]` | **50%** `[##########----------]` | Runtime/result contracts, family consumers, continuation helpers, report sinks, and discarded statement-expression operands are integrated. Echo/output, terminal, cleanup, lvalue, reference, RMW, and call-argument operands still need exact ownership and ordering migrations. |
 | Callable access context and class metadata | **100%** `[####################]` | **100%** `[####################]` | **40%** `[########------------]` | Shared runtime access-context policy and allocatable-class metadata are integrated for function/method/static/constructor lookup preflights. Generated semantic call lowering, constructor execution, autoload, magic, and full visibility parity remain open. |
 | ArrayAccess compiler consumers | **100%** `[####################]` | **100%** `[####################]` | **55%** `[###########---------]` | Generated-C direct-object/direct-variable read, `isset`, `empty`, `??`, write, append, unset, compound assignment, and `??=` are integrated for compiler-known generated declared `ArrayAccess` objects. Property-held/nested owners, append RMW, increment/decrement, reference-returning `offsetGet`, references/COW, cleanup/unwind, and backend parity remain open. |
 | ReferenceSlot owner facts | **100%** `[####################]` | **100%** `[####################]` | **45%** `[#########-----------]` | Compiler-visible native reference handles can recover facts, source owners, and commit writeback for selected paths. Arbitrary alias roots, request/superglobal path facts, property-held references, closure callback fact transport, references/COW, and backend parity remain open. |
@@ -109,6 +110,9 @@ Primary-integrated capability and candidate/lane-local work are separated.
 - Shared diagnostic operation/operand-list blocker boundary.
 - Owned diagnostic-result contracts, family consumers, continuation helpers,
   and report sinks for selected diagnostic-result paths.
+- Discarded expression statements in LLVM and generated C lower through owned
+  `NativeDiagnosticResult` statement operands and diagnostics-only report
+  sinks.
 - Reference-binding, assignment-lvalue, and RMW-lvalue operand-list blockers.
 - Generated-C selected RMW array-lvalue owner/writeback for local native arrays
   and active-symbol/global-import reference-slot owners.
@@ -141,20 +145,16 @@ Primary-integrated capability and candidate/lane-local work are separated.
   destructors, shutdown cleanup, and object lifetime cleanup.
 - Namespace fallback, autoload, class aliases, broader visibility, magic calls,
   constructors, named/spread arguments, and return references.
-- Exact PHP diagnostics, source ordering, suppression/custom handlers, and
-  backend parity across generated C, LLVM, and direct assembly.
+- Wider semantic diagnostic-result operand migration, exact PHP diagnostics,
+  source ordering, suppression/custom handlers, and backend parity across
+  generated C, LLVM, and direct assembly.
 
 ## Latest Focused Verification
 
-For `5902369c`:
+For `dcdd330f`:
 
-- `cargo test -p php_runtime native_callable_access_context_preflights_receiver_and_static_method_lookup -- --nocapture`
-- `cargo test -p php_runtime native_constructor_lookup_uses_allocatable_class_metadata_and_visibility_context -- --nocapture`
-- `cargo test -p php_runtime native_callable_table_invokes_function_method_and_constructor_with_shared_arguments -- --nocapture`
-- `cargo test -p php_runtime native_callable_value_dispatch_invokes_across_callable_value_shapes_with_shared_arguments -- --nocapture`
-- `cargo test -p phpc --lib native_callable_runtime_boundary_declares_access_context_and_class_metadata_helpers -- --nocapture`
-- `cargo test -p phpc --lib native_call_target_result_consumer_taxonomy_routes_families_and_consumers -- --nocapture`
 - `cargo test -p phpc --lib native_diagnostic_result_ -- --nocapture`
 - `cargo test -p phpc --test native_runtime_abi native_diagnostic_result_ -- --nocapture`
+- `cargo test -p phpc --test native_link emit_exe_links_and_runs_discarded_expression_diagnostic_result_operands -- --nocapture`
 - `cargo fmt --check -p phpc`
 - `git diff --check`
