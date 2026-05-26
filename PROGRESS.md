@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 06:37 CEST
+Updated: 2026-05-26 06:54 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,31 +19,31 @@ Primary `HEAD` is clean and aligned with `origin/master` after accounting for
 the latest source capability.
 
 Latest primary-integrated source capability baseline:
-`f9b721a2 native: add dynamic ArrayAccess producer facts`.
+`4311df7e native: add ArrayAccess empty null-coalesce consumers`.
 
-`f9b721a2` replaces the generated-C split ArrayAccess variable fact set with
-reusable native value/object facts carrying declared-class and implemented-
-interface metadata. ArrayAccess read, `isset`, write, append, and unset now
-consume the same definite native object/interface fact query, including known
-dynamic generated-declared class-name `new` producers, copy propagation, and
-branch joins.
+`4311df7e` adds generated-C ArrayAccess `empty($aa[$key])` and
+`$aa[$key] ?? rhs` consumers over the shared ArrayAccess offset read ABI.
+`empty()` uses `Exists`, conditional `Get`, and the native PHP truthiness
+boundary; null-coalesce uses `Exists`, conditional `Get`, native null
+predicate, and lazy RHS materialization.
 
 This composes with `4ddbfc47` generated-C ArrayAccess read/`isset`,
 `9aa933a8` generated-C ArrayAccess write/append/unset, receiver-free static
-`Class::method` string callable lookup, cleanup/unwind requirement preflight,
-selected generated-C RMW array-lvalue owner/writeback, runtime ArrayAccess
-read/write dispatch ABIs, and generated declared-method callable-table
-publication.
+`Class::method` string callable lookup, `f9b721a2` shared native value/object
+facts for known generated declared ArrayAccess producers, cleanup/unwind
+requirement preflight, selected generated-C RMW array-lvalue owner/writeback,
+runtime ArrayAccess read/write dispatch ABIs, and generated declared-method
+callable-table publication.
 
-Lane-local momentum is active but not counted. ArrayAccess `empty`/
-null-coalesce sequencing, broader producer fact work, property/nested owner
-design, ArrayAccess RMW/`??=` scouting, and callable receiver fallback remain
-advisory until routed, audited, integrated, committed, and pushed.
+Lane-local momentum is active but not counted. Broader producer fact work,
+property/nested owner design, ArrayAccess RMW/`??=` scouting, and callable
+receiver fallback remain advisory until routed, audited, integrated, committed,
+and pushed.
 
 The project continues moving through reusable runtime/compiler boundaries, but
 this is not full PHP parity. Broader object/interface facts for properties,
 calls, methods, clones, static properties, and references, property-held and
-nested object offsets, ArrayAccess RMW, `empty`/`??`, references/COW,
+nested object offsets, ArrayAccess RMW/`??=`, references/COW,
 destructors/finally/unwind execution, object/static property storage, exact
 diagnostics, magic/autoload/name resolution, and backend parity remain major
 gaps.
@@ -53,18 +53,29 @@ gaps.
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, byte-string, array, reference, symbol, callable table, callable-value dispatch, call-frame/result, request-state, diagnostics, lvalue, and ArrayAccess read/write dispatch surfaces. Remaining gaps include broader callable lookup parity, namespace fallback, autoload, magic calls, constructors, closure frame handoff, reference-return ArrayAccess, and cleanup/unwind parity. |
-| Compiler/backend consumers | **99%** | `[####################]` | Generated C has the freshest executable consumers for direct/dynamic callables, declared methods, selected RMW array-lvalue owner/writeback, and compiler-known generated declared ArrayAccess read/isset/write/append/unset, including known dynamic generated-declared class-name producers. LLVM and direct assembly still lag recent object offset and lvalue/runtime ABIs. |
+| Compiler/backend consumers | **99%** | `[####################]` | Generated C has the freshest executable consumers for direct/dynamic callables, declared methods, selected RMW array-lvalue owner/writeback, and compiler-known generated declared ArrayAccess read/isset/write/append/unset/empty/null-coalesce, including known dynamic generated-declared class-name producers. LLVM and direct assembly still lag recent object offset and lvalue/runtime ABIs. |
 | Executable PHP semantics | **95%** | `[###################-]` | Many selected executable islands exist, but major semantics remain open: full assignment/RMW/writeback, references/COW, executable object/ArrayAccess operations, cleanup/unwind/finally/destructors, exact diagnostics, and backend parity. |
 | Strings and byte semantics | **62%** | `[############--------]` | Byte-backed values and byte-preserving selected string-array slots are integrated. Binary source bytes, byte-exact interpreter/session/debug output, `mb_str_split()`, request/global byte keys, and exact diagnostics remain open. |
 | Arrays, lvalues, references, COW | **83%** | `[#################---]` | Selected reference-source/lvalue extraction, closure capture from reference-backed slots, reference-binding diagnostics, assignment/RMW-lvalue diagnostics, generated-C RMW array-lvalue owner/writeback, and Object/ArrayAccess blocker/runtime dispatch pieces are integrated. Object/static property storage, ArrayAccess RMW dispatch, arbitrary alias roots, foreach, broader writeback, and full COW remain incomplete. |
 | Symbols, globals, request state | **75%** | `[###############-----]` | Selected globals, root-symbol consumers, active symbol-table consumers, request-key blockers, append-shaped symbol reference-source materialization, direct generated-C request-state frame handoff, and generated-C dynamic user-function handoff proof exist. `$GLOBALS` self-cells, closure request-state handoff, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
 | Calls, functions, frames | **94%** | `[###################-]` | Runtime callable table/value dispatch, call arguments/frame/result ABI, direct and dynamic generated-C callable consumers, generated declared-method callable registration/wrapper frames, receiver-free static `Class::method` strings, by-reference argument transport, descriptor closures, closure returns, and generated-C request-state frame handoff are integrated. Full object/method callable parity, callable array validation parity, namespace fallback, autoload, magic calls, named/spread breadth, return references, constructors, closure frame handoff, cleanup/unwind execution, and backend parity remain open. |
-| Objects, properties, methods | **60%** | `[############--------]` | Public object-property reference-source extraction, object-property reference-slot mutation, declared-class allocation cleanup-risk metadata, Object/ArrayAccess write blockers, runtime ArrayAccess write/read/exists dispatch, generated-C ArrayAccess read/isset/write/append/unset consumers for compiler-known generated objects and known dynamic generated-declared class-name producers, and generated declared-method callable-table publication exist for selected paths. Property/call/method/clone/static-property producers, property-held/nested ArrayAccess, `empty`/null-coalesce/RMW lowering, visibility parity, magic, dynamic/static/typed properties, destructors, interfaces/traits execution, references/COW, constructors, and backend parity remain open. |
+| Objects, properties, methods | **61%** | `[############--------]` | Public object-property reference-source extraction, object-property reference-slot mutation, declared-class allocation cleanup-risk metadata, Object/ArrayAccess write blockers, runtime ArrayAccess write/read/exists dispatch, generated-C ArrayAccess read/isset/write/append/unset/empty/null-coalesce consumers for compiler-known generated objects and known dynamic generated-declared class-name producers, and generated declared-method callable-table publication exist for selected paths. Property/call/method/clone/static-property producers, property-held/nested ArrayAccess, RMW/`??=` lowering, visibility parity, magic, dynamic/static/typed properties, destructors, interfaces/traits execution, references/COW, constructors, and backend parity remain open. |
 | Control flow, cleanup, diagnostics | **54%** | `[###########---------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, try-body call-boundary preflight, generic operand-list blockers, reference/assignment/RMW blockers, Object/ArrayAccess write blockers, and cleanup/unwind requirement preflight exist. Broad unwind/finally/destructor/shutdown execution, cleanup ownership, executable reference binding, and source-ordered diagnostics remain open. |
 | Broad integrated verification | **92%** | `[##################--]` | Focused gates around recent source work are strong. Broad verification is still constrained by lane extraction cost, stale candidate expectations, heavy swap usage, and backend parity gaps. |
 
 ## Recent Primary-Integrated Work
 
+- `4311df7e`: generated-C compiler consumption of ArrayAccess `empty()` and
+  null-coalesce over the shared runtime ArrayAccess read/exists ABI for
+  compiler-known generated declared `ArrayAccess` objects, including the
+  shared native value/object facts from `f9b721a2`. `empty($aa[$key])` uses
+  `offsetExists`, conditional `offsetGet`, and native PHP truthiness;
+  `$aa[$key] ?? rhs` uses `offsetExists`, conditional `offsetGet`, native null
+  checks, and lazy RHS materialization. The executable proof covers missing
+  offsets, present truthy values, integer zero, string zero, null reads, and
+  fallback side effects. Property-held/nested owners, ArrayAccess RMW,
+  `??=`, reference-returning `offsetGet`, references/COW, cleanup/unwind,
+  exact diagnostics, LLVM consumers, and backend parity remain open.
 - `f9b721a2`: shared generated-C native value/object fact carrier for
   ArrayAccess-capable generated declared objects. Read, `isset`, write, append,
   and unset now consume the same definite native object/interface fact query
@@ -126,8 +137,8 @@ explicitly.
 | --- | ---: | ---: | ---: | --- |
 | ArrayAccess read/isset compiler consumer | **100%** `[####################]` | **100%** `[####################]` | **48%** `[##########----------]` | Integrated at `4ddbfc47` for generated-C direct object offset read and `isset` on compiler-known generated declared `ArrayAccess` objects. |
 | ArrayAccess write/append/unset compiler consumer | **100%** `[####################]` | **100%** `[####################]` | **52%** `[##########----------]` | Integrated at `9aa933a8` for generated-C direct-variable keyed write, append, assignment-expression result, and unset over compiler-known generated declared `ArrayAccess` object values, including copied and branch-joined subject facts. |
-| ArrayAccess `empty`/null-coalesce sequencing | **0%** `[--------------------]` | **75%** `[###############-----]` | **38%** `[########------------]` | Lane-local candidate has focused gates and lazy sequencing claims. It overlaps the write/unset route and should wait unless explicitly reprioritized. |
-| Dynamic object/interface fact carrier | **100%** `[####################]` | **100%** `[####################]` | **52%** `[##########----------]` | Integrated at `f9b721a2` for generated-C native value/object facts over generated declared objects, known dynamic class-name `new`, copies, gotos, and branch joins, consumed by ArrayAccess read/isset/write/append/unset. Producers from properties, calls, methods, clones, static properties, symbols, and references remain open. |
+| ArrayAccess `empty`/null-coalesce sequencing | **100%** `[####################]` | **100%** `[####################]` | **46%** `[#########-----------]` | Integrated at `4311df7e` for generated-C direct object offset `empty()` and `$aa[$key] ?? rhs` over compiler-known generated declared `ArrayAccess` object values, including known dynamic generated-declared class-name facts. |
+| Dynamic object/interface fact carrier | **100%** `[####################]` | **100%** `[####################]` | **53%** `[###########---------]` | Integrated at `f9b721a2` for generated-C native value/object facts over generated declared objects, known dynamic class-name `new`, copies, gotos, and branch joins, consumed by ArrayAccess read/isset/write/append/unset/empty/null-coalesce. Producers from properties, calls, methods, clones, static properties, symbols, and references remain open. |
 | Object/method callable receiver parity fallback | **0%** `[--------------------]` | **80%** `[################----]` | **42%** `[########------------]` | Route-audited fallback if ArrayAccess write/unset blocks. Not the active primary route. |
 | Cleanup/unwind execution | **25%** `[#####---------------]` | **25%** `[#####---------------]` | **25%** `[#####---------------]` | Requirement/preflight boundary is integrated; actual unwind/finally/destructor execution is still not implemented. |
 | Broad dirty lane extraction backlog | **0%** `[--------------------]` | **35%** `[#######-------------]` | **36%** `[#######-------------]` | Dirty call, diagnostic, object, control-flow, symbol, byte/string, and array lanes remain evidence pools until split into fresh current-head candidates. |
@@ -160,7 +171,9 @@ Primary-integrated capability:
   generated declared `ArrayAccess` objects.
 - [x] Shared generated-C native value/object facts for generated declared
   `ArrayAccess` objects, including known dynamic class-name `new`, copies, and
-  branch joins consumed by read/isset/write/append/unset.
+  branch joins consumed by read/isset/write/append/unset/empty/null-coalesce.
+- [x] Generated-C ArrayAccess `empty()` and null-coalesce compiler consumers
+  for compiler-known generated declared `ArrayAccess` objects.
 - [x] Declared-class allocation cleanup-risk metadata.
 - [x] Selected reference-source/lvalue extraction, reference-backed closure
   capture materialization, descriptor closure returns, byte-backed PHP string
@@ -168,9 +181,9 @@ Primary-integrated capability:
 
 Lane-local or currently routed, not counted:
 
-- [ ] ArrayAccess `empty`/null-coalesce lazy probe/read sequencing candidate.
 - [ ] Broader object/interface fact carriers for producers beyond generated
   declared-object `new`, copies, and branch joins.
+- [ ] ArrayAccess RMW and null-coalesce assignment sequencing.
 - [ ] Object/method callable receiver parity fallback.
 - [ ] Broad lane extraction into fresh current-head, owned-scope candidates.
 - [ ] Pages repair blocked by gh-pages generated-output deletions.
