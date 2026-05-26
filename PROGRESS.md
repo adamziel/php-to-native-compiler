@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 12:46 CEST
+Updated: 2026-05-26 12:53 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -15,8 +15,9 @@ Overall supervised-roadmap progress: **95%** `[###################-]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Primary `HEAD` is clean and aligned with `origin/master` after accounting for
-the latest source capability.
+Primary tracked `HEAD` is aligned with `origin/master` after accounting for the
+latest source capability. The worktree still has preserved foreign scratch
+state: untracked `examples/class.php`.
 
 Latest primary-integrated source capability baseline:
 `273c2e6e native: add scoped callable string signatures`.
