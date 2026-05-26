@@ -18699,6 +18699,9 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_call_frame_read_receiver(phpc_NativeCallFrameHandle frame);\n");
                 output.push_str("extern phpc_NativeCallResultHandle phpc_native_call_result_from_value(phpc_NativeValueHandle value);\n");
                 output.push_str("extern phpc_NativeCallResultHandle phpc_native_call_result_from_reference(phpc_NativeReferenceHandle reference);\n");
+                output.push_str("extern void phpc_native_call_result_free(phpc_NativeCallResultHandle result);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_call_result_take_value_with_diagnostic_and_free(phpc_NativeCallResultHandle result, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeCallResultHandle phpc_native_call_frame_reference_parameter_alias_transfer_result_from_results_with_diagnostic(phpc_NativeStringHandle callable, phpc_NativeCallResultHandle *argument_results, size_t argument_count, const phpc_NativeStringHandle *parameter_names, const size_t *parameter_indices, const phpc_NativeStringHandle *argument_targets, size_t count, phpc_NativeStringHandle missing_semantics);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_callable_invoke_value_with_diagnostic_and_free(phpc_NativeCallableHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_callable_value_invoke_value_with_diagnostic_and_free(phpc_NativeCallableValueHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_callable_value_invoke_reference_with_diagnostic_and_free(phpc_NativeCallableValueHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -29882,6 +29885,225 @@ impl CGenerator {
         ));
     }
 
+    fn user_function_call_has_produced_by_reference_argument(
+        &self,
+        function: &FunctionDecl,
+        args: &[Expr],
+    ) -> bool {
+        function
+            .params
+            .iter()
+            .take(native_user_function_fixed_param_count(function))
+            .enumerate()
+            .any(|(index, param)| {
+                param.by_reference
+                    && args
+                        .get(index)
+                        .is_some_and(|arg| native_expr_contains_call_result(arg))
+            })
+    }
+
+    fn by_reference_argument_target_label(expr: &Expr) -> String {
+        match expr {
+            Expr::Variable(name, _) => format!("caller variable ${name}"),
+            Expr::Index { .. } | Expr::AppendIndex { .. } => "caller array offset".to_string(),
+            Expr::Property { property, .. } => format!("caller object property ${property}"),
+            Expr::DynamicProperty { .. } => "caller dynamic object property".to_string(),
+            Expr::StaticProperty {
+                class_name,
+                property,
+                ..
+            } => format!("caller static property {class_name}::${property}"),
+            Expr::SelfStaticProperty { property, .. } => {
+                format!("caller static property self::${property}")
+            }
+            Expr::ParentStaticProperty { property, .. } => {
+                format!("caller static property parent::${property}")
+            }
+            Expr::LateStaticProperty { property, .. } => {
+                format!("caller static property static::${property}")
+            }
+            _ if native_expr_contains_call_result(expr) => "produced argument".to_string(),
+            _ => "caller argument".to_string(),
+        }
+    }
+
+    fn emit_native_string_handle_for_static_text(&mut self, prefix: &str, text: &str) -> String {
+        let (bytes, len) = self.emit_call_type_static_bytes(prefix, text);
+        let handle = self.next_native_name(prefix);
+        self.body.push(format!(
+            "phpc_NativeStringHandle {handle} = phpc_native_string_from_bytes({bytes}, {len});"
+        ));
+        handle
+    }
+
+    fn materialize_native_call_result_vector_from_args(
+        &mut self,
+        args: &[Expr],
+        failure_cleanup: &str,
+    ) -> CompileResult<(String, Vec<String>)> {
+        let mut cleanup_after_use = Vec::new();
+        let mut result_handles = Vec::with_capacity(args.len());
+        for arg in args {
+            let argument_failure_cleanup = format!(
+                "{}{}",
+                c_cleanup_sequence(&cleanup_after_use),
+                failure_cleanup
+            );
+            let value =
+                self.materialize_native_value_result_operand(arg, &argument_failure_cleanup)?;
+            let result = self.next_native_name("alias_transfer_arg_result");
+            self.body.push(format!(
+                "phpc_NativeCallResultHandle {result} = phpc_native_call_result_from_value({});",
+                value.handle
+            ));
+            let aux_cleanup = native_value_aux_cleanup_after_consuming_handle(&value);
+            let result_failure_cleanup = format!(
+                "{}{}{}",
+                c_cleanup_sequence(&aux_cleanup),
+                c_cleanup_sequence(&cleanup_after_use),
+                failure_cleanup
+            );
+            self.body.push(format!(
+                "if ({result}.ptr == NULL) {{ {} }}",
+                self.native_error_exit(&result_failure_cleanup)
+            ));
+            cleanup_after_use.extend(aux_cleanup);
+            cleanup_after_use.push(format!("phpc_native_call_result_free({result});"));
+            result_handles.push(result);
+        }
+
+        let result_array = self.next_native_name("alias_transfer_arg_results");
+        if result_handles.is_empty() {
+            self.body.push(format!(
+                "phpc_NativeCallResultHandle {result_array}[1] = {{ (phpc_NativeCallResultHandle){{0}} }};"
+            ));
+        } else {
+            self.body.push(format!(
+                "phpc_NativeCallResultHandle {result_array}[{}] = {{ {} }};",
+                result_handles.len(),
+                result_handles.join(", ")
+            ));
+        }
+
+        Ok((result_array, cleanup_after_use))
+    }
+
+    fn materialize_user_function_produced_byref_alias_transfer_result(
+        &mut self,
+        function: &CUserFunction,
+        args: &[Expr],
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_callable_helpers = true;
+
+        let callable_name = format!("{}()", function.decl.name);
+        let callable = self
+            .emit_native_string_handle_for_static_text("alias_transfer_callable", &callable_name);
+        let missing = self.emit_native_string_handle_for_static_text(
+            "alias_transfer_missing",
+            "by-reference parameter alias transfer from produced arguments",
+        );
+        let string_cleanup = format!(
+            "phpc_native_string_free({missing}); phpc_native_string_free({callable}); {failure_cleanup}"
+        );
+        let (argument_results, mut cleanup_after_use) =
+            self.materialize_native_call_result_vector_from_args(args, &string_cleanup)?;
+
+        let fixed_count = native_user_function_fixed_param_count(&function.decl);
+        let mut parameter_names = Vec::new();
+        let mut parameter_indices = Vec::new();
+        let mut argument_targets = Vec::new();
+        for (index, param) in function.decl.params.iter().take(fixed_count).enumerate() {
+            if !param.by_reference {
+                continue;
+            }
+            parameter_names.push(
+                self.emit_native_string_handle_for_static_text("alias_transfer_param", &param.name),
+            );
+            parameter_indices.push(index.to_string());
+            let target = args
+                .get(index)
+                .map(Self::by_reference_argument_target_label)
+                .unwrap_or_else(|| "omitted default argument".to_string());
+            argument_targets.push(
+                self.emit_native_string_handle_for_static_text("alias_transfer_target", &target),
+            );
+        }
+
+        let parameter_name_array = self.next_native_name("alias_transfer_param_names");
+        let parameter_index_array = self.next_native_name("alias_transfer_param_indices");
+        let argument_target_array = self.next_native_name("alias_transfer_targets");
+        let binding_count = parameter_names.len();
+        if binding_count == 0 {
+            self.body.push(format!(
+                "phpc_NativeStringHandle {parameter_name_array}[1] = {{ (phpc_NativeStringHandle){{0}} }};"
+            ));
+            self.body
+                .push(format!("size_t {parameter_index_array}[1] = {{ 0 }};"));
+            self.body.push(format!(
+                "phpc_NativeStringHandle {argument_target_array}[1] = {{ (phpc_NativeStringHandle){{0}} }};"
+            ));
+        } else {
+            self.body.push(format!(
+                "phpc_NativeStringHandle {parameter_name_array}[{binding_count}] = {{ {} }};",
+                parameter_names.join(", ")
+            ));
+            self.body.push(format!(
+                "size_t {parameter_index_array}[{binding_count}] = {{ {} }};",
+                parameter_indices.join(", ")
+            ));
+            self.body.push(format!(
+                "phpc_NativeStringHandle {argument_target_array}[{binding_count}] = {{ {} }};",
+                argument_targets.join(", ")
+            ));
+        }
+
+        let result = self.next_native_name("alias_transfer_result");
+        self.body.push(format!(
+            "phpc_NativeCallResultHandle {result} = phpc_native_call_frame_reference_parameter_alias_transfer_result_from_results_with_diagnostic({callable}, {argument_results}, {}, {parameter_name_array}, {parameter_index_array}, {argument_target_array}, {binding_count}, {missing});",
+            args.len()
+        ));
+        cleanup_after_use.clear();
+        let diagnostic = self.next_native_name("alias_transfer_diagnostic");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        let value = self.next_native_name("alias_transfer_value");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value} = phpc_native_call_result_take_value_with_diagnostic_and_free({result}, &{diagnostic});"
+        ));
+
+        let mut local_cleanup = String::new();
+        for handle in parameter_names
+            .iter()
+            .chain(argument_targets.iter())
+            .chain([missing.clone(), callable.clone()].iter())
+        {
+            local_cleanup.push_str(&format!("phpc_native_string_free({handle}); "));
+        }
+        local_cleanup.push_str(failure_cleanup);
+        let error_exit = self.native_error_exit(&local_cleanup);
+        self.body.push(format!(
+            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {error_exit} }}"
+        ));
+        self.body
+            .push(format!("if ({value}.ptr == NULL) {{ {error_exit} }}"));
+        for handle in parameter_names
+            .iter()
+            .chain(argument_targets.iter())
+            .chain([missing, callable].iter())
+        {
+            self.body
+                .push(format!("phpc_native_string_free({handle});"));
+        }
+
+        Ok(CNativeValueMaterialization {
+            handle: value.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
+        })
+    }
+
     fn materialize_user_function_call(
         &mut self,
         function: &CUserFunction,
@@ -29897,6 +30119,14 @@ impl CGenerator {
                     callee,
                     NativeCallBlocker::UnknownCalleeDiagnostics,
                 )),
+            );
+        }
+
+        if self.user_function_call_has_produced_by_reference_argument(&function.decl, args) {
+            return self.materialize_user_function_produced_byref_alias_transfer_result(
+                function,
+                args,
+                failure_cleanup,
             );
         }
 

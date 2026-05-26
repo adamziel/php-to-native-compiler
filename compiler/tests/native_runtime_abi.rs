@@ -8,11 +8,16 @@ use php_compiler::{
     NativeRuntimeIrTarget,
 };
 use php_runtime::{
-    phpc_native_byte_buffer_free, phpc_native_diagnostic_contains_severity,
-    phpc_native_diagnostic_free, phpc_native_diagnostic_message_clone_bytes,
+    phpc_native_byte_buffer_free,
+    phpc_native_call_frame_reference_parameter_alias_transfer_result_from_results_with_diagnostic,
+    phpc_native_call_result_from_diagnostic_and_free, phpc_native_call_result_from_value,
+    phpc_native_call_result_is_null, phpc_native_call_result_take_value_with_diagnostic_and_free,
+    phpc_native_diagnostic_contains_severity, phpc_native_diagnostic_free,
+    phpc_native_diagnostic_message_clone_bytes,
     phpc_native_diagnostic_operand_requirement_list_clone,
-    phpc_native_diagnostic_result_operation_blocker_list_and_free,
-    NativeDiagnosticOperandRequirement, NativeDiagnosticSeverity,
+    phpc_native_diagnostic_result_operation_blocker_list_and_free, phpc_native_string_free,
+    NativeDiagnosticHandle, NativeDiagnosticOperandRequirement, NativeDiagnosticSeverity,
+    NativeStringHandle, NativeValueHandle, Value,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_KEY_EVALUATION,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_PROPERTY_EVALUATION,
@@ -48,6 +53,203 @@ fn runtime_diagnostic_message(handle: php_runtime::NativeDiagnosticHandle) -> St
     };
     unsafe { phpc_native_byte_buffer_free(buffer) };
     String::from_utf8(bytes).expect("runtime diagnostics should be valid UTF-8")
+}
+
+#[test]
+fn native_call_frame_byref_alias_transfer_result_vector_preserves_targets_and_families() {
+    let callable = NativeStringHandle::from_vec(b"alias_pair()".to_vec());
+    let left_name = NativeStringHandle::from_vec(b"left".to_vec());
+    let right_name = NativeStringHandle::from_vec(b"right".to_vec());
+    let left_target = NativeStringHandle::from_vec(b"caller variable $left".to_vec());
+    let right_target = NativeStringHandle::from_vec(b"produced argument".to_vec());
+    let missing = NativeStringHandle::from_vec(
+        b"by-reference parameter alias transfer from produced arguments".to_vec(),
+    );
+    let parameter_names = [left_name, right_name];
+    let parameter_indices = [0usize, 1usize];
+    let argument_targets = [left_target, right_target];
+    let mut produced = [
+        phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::String(
+            "left".to_string(),
+        ))),
+        phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Int(7))),
+    ];
+
+    let result = unsafe {
+        phpc_native_call_frame_reference_parameter_alias_transfer_result_from_results_with_diagnostic(
+            callable,
+            produced.as_mut_ptr(),
+            produced.len(),
+            parameter_names.as_ptr(),
+            parameter_indices.as_ptr(),
+            argument_targets.as_ptr(),
+            parameter_indices.len(),
+            missing,
+        )
+    };
+    assert!(produced
+        .iter()
+        .copied()
+        .all(|result| phpc_native_call_result_is_null(result)));
+
+    let mut diagnostic = NativeDiagnosticHandle::null();
+    let value = unsafe {
+        phpc_native_call_result_take_value_with_diagnostic_and_free(result, &mut diagnostic)
+    };
+    assert!(value.is_null());
+    let message = runtime_diagnostic_message(diagnostic);
+    assert!(
+        message.contains("unsupported call alias_pair(): by-reference parameter alias transfer from produced arguments"),
+        "{message}"
+    );
+    assert!(
+        message.contains("$left at parameter slot 0 from caller argument slot 0 from caller variable $left carrying caller argument value family string"),
+        "{message}"
+    );
+    assert!(
+        message.contains("$right at parameter slot 1 from caller argument slot 1 from produced argument carrying caller argument value family int"),
+        "{message}"
+    );
+    assert!(
+        message.contains(
+            "owned argument result cleanup via by-reference-parameter alias-transfer boundary"
+        ),
+        "{message}"
+    );
+    unsafe {
+        phpc_native_diagnostic_free(diagnostic);
+        phpc_native_string_free(right_target);
+        phpc_native_string_free(left_target);
+        phpc_native_string_free(right_name);
+        phpc_native_string_free(left_name);
+        phpc_native_string_free(missing);
+        phpc_native_string_free(callable);
+    }
+}
+
+#[test]
+fn native_call_frame_byref_alias_transfer_result_vector_preserves_argument_diagnostics() {
+    let callable = NativeStringHandle::from_vec(b"alias_diagnostic()".to_vec());
+    let parameter_name = NativeStringHandle::from_vec(b"value".to_vec());
+    let argument_target = NativeStringHandle::from_vec(b"produced argument".to_vec());
+    let missing = NativeStringHandle::from_vec(b"alias transfer".to_vec());
+    let parameter_names = [parameter_name];
+    let parameter_indices = [1usize];
+    let argument_targets = [argument_target];
+    let requirements = [NativeDiagnosticOperandRequirement {
+        tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
+        operand_index: 1,
+    }];
+    let list = unsafe {
+        phpc_native_diagnostic_operand_requirement_list_clone(
+            requirements.as_ptr(),
+            requirements.len(),
+        )
+    };
+    let diagnostic = unsafe {
+        phpc_native_diagnostic_result_operation_blocker_list_and_free(
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_CALL_ARGUMENT_LIST,
+            list,
+        )
+    };
+    let mut produced = [
+        phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Int(1))),
+        phpc_native_call_result_from_diagnostic_and_free(diagnostic),
+    ];
+
+    let result = unsafe {
+        phpc_native_call_frame_reference_parameter_alias_transfer_result_from_results_with_diagnostic(
+            callable,
+            produced.as_mut_ptr(),
+            produced.len(),
+            parameter_names.as_ptr(),
+            parameter_indices.as_ptr(),
+            argument_targets.as_ptr(),
+            parameter_indices.len(),
+            missing,
+        )
+    };
+    assert!(produced
+        .iter()
+        .copied()
+        .all(|result| phpc_native_call_result_is_null(result)));
+
+    let mut consumer_diagnostic = NativeDiagnosticHandle::null();
+    let value = unsafe {
+        phpc_native_call_result_take_value_with_diagnostic_and_free(
+            result,
+            &mut consumer_diagnostic,
+        )
+    };
+    assert!(value.is_null());
+    let message = runtime_diagnostic_message(consumer_diagnostic);
+    assert!(message.contains("call argument list"), "{message}");
+    assert!(
+        !message.contains("by-reference parameter alias transfer"),
+        "{message}"
+    );
+    unsafe {
+        phpc_native_diagnostic_free(consumer_diagnostic);
+        phpc_native_string_free(argument_target);
+        phpc_native_string_free(parameter_name);
+        phpc_native_string_free(missing);
+        phpc_native_string_free(callable);
+    }
+}
+
+#[test]
+fn native_c_byref_produced_argument_consumers_use_alias_transfer_result_vector() {
+    let source = r#"<?php
+function produced($value) { return $value; }
+function alias_pair(&$slot) { return $slot; }
+echo alias_pair(produced("echo"));
+print alias_pair(produced("print"));
+alias_pair(produced(7));
+"#;
+    let program = parse(source).unwrap();
+    let c_source = emit_native_executable_c_source(&program).unwrap();
+    assert!(
+        c_source
+            .matches(" = phpc_native_call_frame_reference_parameter_alias_transfer_result_from_results_with_diagnostic(")
+            .count()
+            >= 3,
+        "{c_source}"
+    );
+    assert!(c_source.contains("alias_transfer_missing"), "{c_source}");
+    assert!(c_source.contains("alias_transfer_targets"), "{c_source}");
+    assert!(
+        c_source.contains("phpc_native_call_result_take_value_with_diagnostic_and_free"),
+        "{c_source}"
+    );
+}
+
+#[test]
+fn native_c_adjacent_argument_binding_avoids_alias_transfer_without_produced_byref_args() {
+    let source = r#"<?php
+function produced($value) { return $value; }
+function by_value($slot) { return $slot; }
+function by_ref(&$slot) { return $slot; }
+$slot = "kept";
+echo by_value(produced("value"));
+echo by_ref($slot);
+"#;
+    let program = parse(source).unwrap();
+    let c_source = emit_native_executable_c_source(&program).unwrap();
+    assert_eq!(
+        c_source
+            .matches(" = phpc_native_call_frame_reference_parameter_alias_transfer_result_from_results_with_diagnostic(")
+            .count(),
+        0,
+        "{c_source}"
+    );
+    assert!(
+        c_source.contains("phpc_native_call_arguments_push_value_and_free"),
+        "{c_source}"
+    );
+    assert!(
+        c_source.contains("phpc_native_call_arguments_push_reference_and_free"),
+        "{c_source}"
+    );
 }
 
 fn assert_llvm_conversion_result_consumers_are_guarded(ir: &str, minimum_consumers: usize) {

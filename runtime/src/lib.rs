@@ -8061,6 +8061,215 @@ unsafe fn native_call_result_discard_with_diagnostic_and_free(
     true
 }
 
+/// # Safety
+///
+/// Same as the native call-result value consumer. `diagnostic` must be null or
+/// point to writable diagnostic storage.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_result_take_value_with_diagnostic_and_free(
+    result: NativeCallResultHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe {
+        native_call_result_take_value_with_diagnostic_and_free(
+            result,
+            diagnostic,
+            "native call result consumption failed: result did not contain a value",
+        )
+    }
+}
+
+unsafe fn native_call_result_value_family(result: NativeCallResultHandle) -> &'static str {
+    match unsafe { result.as_ref() }.map(|result| result.slot) {
+        Some(NativeCallResultSlot::Value(value)) => unsafe { value.as_ref() }
+            .map(|value| match value {
+                Value::Null => "null",
+                Value::Bool(_) => "bool",
+                Value::Int(_) => "int",
+                Value::Float(_) => "float",
+                Value::String(_) => "string",
+                Value::BinaryString(_) => "string",
+                Value::Array(_) => "array",
+                Value::Object(_) => "object",
+                Value::Resource(_) => "resource",
+                Value::Closure(_) => "closure",
+            })
+            .unwrap_or("null"),
+        Some(NativeCallResultSlot::Reference(reference)) => unsafe { reference.as_ref() }
+            .map(|reference| match reference.cell.value_cloned() {
+                Value::Null => "null",
+                Value::Bool(_) => "bool",
+                Value::Int(_) => "int",
+                Value::Float(_) => "float",
+                Value::String(_) => "string",
+                Value::BinaryString(_) => "string",
+                Value::Array(_) => "array",
+                Value::Object(_) => "object",
+                Value::Resource(_) => "resource",
+                Value::Closure(_) => "closure",
+            })
+            .unwrap_or("null"),
+        Some(NativeCallResultSlot::Failure(_)) => "diagnostic",
+        None => "null",
+    }
+}
+
+unsafe fn native_call_result_vector_failure(
+    results: *mut NativeCallResultHandle,
+    result_count: usize,
+) -> Option<NativeDiagnosticHandle> {
+    if result_count == 0 {
+        return None;
+    }
+    let results = unsafe { std::slice::from_raw_parts_mut(results, result_count) };
+    for result in results.iter_mut() {
+        if unsafe { phpc_native_call_result_status(*result) } == NativeCallResultStatus::Failure {
+            let diagnostic = unsafe { phpc_native_call_result_take_diagnostic(*result) };
+            for owned in results.iter_mut() {
+                unsafe { phpc_native_call_result_free(*owned) };
+                *owned = NativeCallResultHandle::null();
+            }
+            return Some(diagnostic);
+        }
+    }
+    None
+}
+
+unsafe fn native_call_result_vector_free(
+    results: *mut NativeCallResultHandle,
+    result_count: usize,
+) {
+    if result_count == 0 || results.is_null() {
+        return;
+    }
+    for result in unsafe { std::slice::from_raw_parts_mut(results, result_count) } {
+        unsafe { phpc_native_call_result_free(*result) };
+        *result = NativeCallResultHandle::null();
+    }
+}
+
+/// # Safety
+///
+/// `callable` and `missing_semantics` must be borrowed string handles. When
+/// `argument_count` is nonzero, `argument_results` must point to
+/// `argument_count` owned call-result handles, which this helper consumes and
+/// nulls. When `count` is nonzero, `parameter_names`, `parameter_indices`, and
+/// `argument_targets` must point to `count` borrowed entries. The helper does
+/// not execute alias transfer; it centralizes the produced-result diagnostic
+/// boundary while preserving caller-visible target labels and value families.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_frame_reference_parameter_alias_transfer_result_from_results_with_diagnostic(
+    callable: NativeStringHandle,
+    argument_results: *mut NativeCallResultHandle,
+    argument_count: usize,
+    parameter_names: *const NativeStringHandle,
+    parameter_indices: *const usize,
+    argument_targets: *const NativeStringHandle,
+    count: usize,
+    missing_semantics: NativeStringHandle,
+) -> NativeCallResultHandle {
+    if argument_count > 0 && argument_results.is_null() {
+        return NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+            NativeDiagnosticHandle::from_message(
+                "native call frame by-reference alias-transfer contract failed: argument result vector pointer is null",
+            ),
+        ));
+    }
+    if count > 0 {
+        if parameter_names.is_null() {
+            unsafe { native_call_result_vector_free(argument_results, argument_count) };
+            return NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+                NativeDiagnosticHandle::from_message(
+                    "native call frame by-reference alias-transfer contract failed: parameter-name vector pointer is null",
+                ),
+            ));
+        }
+        if parameter_indices.is_null() {
+            unsafe { native_call_result_vector_free(argument_results, argument_count) };
+            return NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+                NativeDiagnosticHandle::from_message(
+                    "native call frame by-reference alias-transfer contract failed: parameter-index vector pointer is null",
+                ),
+            ));
+        }
+        if argument_targets.is_null() {
+            unsafe { native_call_result_vector_free(argument_results, argument_count) };
+            return NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+                NativeDiagnosticHandle::from_message(
+                    "native call frame by-reference alias-transfer contract failed: caller target vector pointer is null",
+                ),
+            ));
+        }
+    }
+
+    if let Some(diagnostic) =
+        unsafe { native_call_result_vector_failure(argument_results, argument_count) }
+    {
+        return NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(diagnostic));
+    }
+
+    let callable = unsafe { native_string_handle_to_string(callable) }
+        .unwrap_or_else(|| "<unknown callable>".to_string());
+    let missing_semantics = unsafe { native_string_handle_to_string(missing_semantics) }
+        .unwrap_or_else(|| "by-reference parameter alias transfer".to_string());
+    let parameter_names = if count == 0 {
+        &[][..]
+    } else {
+        unsafe { std::slice::from_raw_parts(parameter_names, count) }
+    };
+    let parameter_indices = if count == 0 {
+        &[][..]
+    } else {
+        unsafe { std::slice::from_raw_parts(parameter_indices, count) }
+    };
+    let argument_targets = if count == 0 {
+        &[][..]
+    } else {
+        unsafe { std::slice::from_raw_parts(argument_targets, count) }
+    };
+    let argument_results_slice = if argument_count == 0 {
+        &[][..]
+    } else {
+        unsafe { std::slice::from_raw_parts(argument_results, argument_count) }
+    };
+
+    let mut entries = Vec::with_capacity(count);
+    for entry_index in 0..count {
+        let parameter_index = parameter_indices[entry_index];
+        if parameter_index >= argument_count {
+            unsafe { native_call_result_vector_free(argument_results, argument_count) };
+            return NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+                NativeDiagnosticHandle::from_message(
+                    "native call frame by-reference alias-transfer contract failed: parameter index exceeds argument result vector count",
+                ),
+            ));
+        }
+        let parameter_name =
+            unsafe { native_string_handle_to_string(parameter_names[entry_index]) }
+                .unwrap_or_else(|| format!("param{entry_index}"));
+        let argument_target =
+            unsafe { native_string_handle_to_string(argument_targets[entry_index]) }
+                .unwrap_or_else(|| "caller argument".to_string());
+        let family =
+            unsafe { native_call_result_value_family(argument_results_slice[parameter_index]) };
+        entries.push(format!(
+            "${parameter_name} at parameter slot {entry_index} from caller argument slot {parameter_index} from {argument_target} carrying caller argument value family {family}"
+        ));
+    }
+    unsafe { native_call_result_vector_free(argument_results, argument_count) };
+
+    let detail = if entries.is_empty() {
+        "no by-reference parameters were supplied".to_string()
+    } else {
+        entries.join("; ")
+    };
+    NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+        NativeDiagnosticHandle::from_message(format!(
+            "unsupported call {callable}: {missing_semantics}; {detail}; caller-visible target slot binding, reference/COW preservation, alias writeback ordering, and owned argument result cleanup via by-reference-parameter alias-transfer boundary"
+        )),
+    ))
+}
+
 unsafe fn native_diagnostic_slot_is_set(diagnostic: *mut NativeDiagnosticHandle) -> bool {
     !diagnostic.is_null() && !unsafe { (*diagnostic).is_null() }
 }
