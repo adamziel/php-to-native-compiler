@@ -14937,6 +14937,13 @@ struct CNativeValueMaterialization {
     cleanup_after_use: Vec<String>,
 }
 
+struct CNativeArrayAccessOffsetReadOperands {
+    subject_handle: String,
+    offset_handle: String,
+    callable_table: String,
+    cleanup_after_use: Vec<String>,
+}
+
 struct CNativeConversionSource {
     value: String,
     cleanup_after_use: Vec<String>,
@@ -26914,6 +26921,14 @@ impl CGenerator {
                     return self.emit_scalar_comparison_expr(left, *op, right, *span);
                 }
                 if matches!(op, BinaryOp::NullCoalesce) {
+                    if let Some(value) = self
+                        .try_materialize_native_arrayaccess_offset_null_coalesce_expr(
+                            left, right, "",
+                        )?
+                    {
+                        self.retain_native_value_cleanup_handle(&value.handle);
+                        return Ok(CValue::NativeValueHandle(value.handle));
+                    }
                     if let Some(result) = native_object_array_access_operation_result_from_expr(
                         left,
                         NativeObjectArrayAccessOperation::NullCoalesceRead,
@@ -29779,6 +29794,10 @@ impl CGenerator {
 
         if let Some(superglobal_span) = request_superglobal_expr_span(arg) {
             return Err(self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION));
+        }
+
+        if let Some(value) = self.emit_native_arrayaccess_offset_empty_expr(arg, "")? {
+            return Ok(value);
         }
 
         if let Some(result) = native_object_array_access_operation_result_from_expr(
@@ -38010,6 +38029,15 @@ impl CGenerator {
                     {
                         return Ok(Some(value));
                     }
+                    if let Some(value) = self
+                        .try_materialize_native_arrayaccess_offset_null_coalesce_expr(
+                            left,
+                            right,
+                            failure_cleanup,
+                        )?
+                    {
+                        return Ok(Some(value));
+                    }
                     return self.try_materialize_native_value_offset_null_coalesce_expr(
                         left,
                         right,
@@ -38937,12 +38965,11 @@ impl CGenerator {
         )))
     }
 
-    fn materialize_native_arrayaccess_offset_read_operation_expr(
+    fn materialize_native_arrayaccess_offset_read_operands_expr(
         &mut self,
         expr: &Expr,
-        operation: CNativeArrayAccessOffsetReadOperation,
         failure_cleanup: &str,
-    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+    ) -> CompileResult<Option<CNativeArrayAccessOffsetReadOperands>> {
         let Expr::Index { target, index, .. } = expr else {
             return Ok(None);
         };
@@ -38968,15 +38995,32 @@ impl CGenerator {
         let table = self
             .ensure_native_callable_table(&format!("{operand_cleanup_sequence}{failure_cleanup}"));
 
+        Ok(Some(CNativeArrayAccessOffsetReadOperands {
+            subject_handle: subject.handle,
+            offset_handle: offset.handle,
+            callable_table: table,
+            cleanup_after_use: operand_cleanup,
+        }))
+    }
+
+    fn emit_native_arrayaccess_offset_read_operation(
+        &mut self,
+        operands: &CNativeArrayAccessOffsetReadOperands,
+        operation: CNativeArrayAccessOffsetReadOperation,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        let operand_cleanup_sequence = c_cleanup_sequence(&operands.cleanup_after_use);
+
         let result = self.next_native_name(operation.result_prefix());
         let diagnostic = self.next_native_name("arrayaccess_offset_read_diagnostic");
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
         self.body.push(format!(
             "phpc_NativeValueHandle {result} = phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic({table}, {}, {}, {}, (phpc_NativeStringHandle){{0}}, &{diagnostic});",
-            subject.handle,
-            offset.handle,
-            operation.c_tag()
+            operands.subject_handle,
+            operands.offset_handle,
+            operation.c_tag(),
+            table = operands.callable_table
         ));
         let error_exit = self.native_error_exit(&format!(
             "phpc_native_diagnostic_report({diagnostic}); {operand_cleanup_sequence}{failure_cleanup}"
@@ -38985,12 +39029,33 @@ impl CGenerator {
             .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
         self.body
             .push(format!("phpc_native_diagnostic_free({diagnostic});"));
-        self.body.extend(operand_cleanup);
 
-        Ok(Some(CNativeValueMaterialization {
+        CNativeValueMaterialization {
             handle: result.clone(),
             cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
-        }))
+        }
+    }
+
+    fn materialize_native_arrayaccess_offset_read_operation_expr(
+        &mut self,
+        expr: &Expr,
+        operation: CNativeArrayAccessOffsetReadOperation,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some(operands) =
+            self.materialize_native_arrayaccess_offset_read_operands_expr(expr, failure_cleanup)?
+        else {
+            return Ok(None);
+        };
+
+        let result = self.emit_native_arrayaccess_offset_read_operation(
+            &operands,
+            operation,
+            failure_cleanup,
+        );
+        self.body.extend(operands.cleanup_after_use);
+
+        Ok(Some(result))
     }
 
     fn emit_native_arrayaccess_offset_write_operation_for_variable(
@@ -39267,6 +39332,161 @@ impl CGenerator {
         self.body.extend(value.cleanup_after_use);
 
         Ok(Some(CValue::BoolExpr(bool_result)))
+    }
+
+    fn emit_native_arrayaccess_offset_empty_expr(
+        &mut self,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CValue>> {
+        let Some(operands) =
+            self.materialize_native_arrayaccess_offset_read_operands_expr(expr, failure_cleanup)?
+        else {
+            return Ok(None);
+        };
+
+        let operand_cleanup_sequence = c_cleanup_sequence(&operands.cleanup_after_use);
+        let result = self.next_native_name("arrayaccess_offset_empty");
+        self.body.push(format!("_Bool {result} = 1;"));
+
+        let exists = self.emit_native_arrayaccess_offset_read_operation(
+            &operands,
+            CNativeArrayAccessOffsetReadOperation::Exists,
+            failure_cleanup,
+        );
+        let exists_bool_diagnostic =
+            self.next_native_name("arrayaccess_offset_empty_exists_bool_diagnostic");
+        let exists_present = self.next_native_name("arrayaccess_offset_empty_exists_present");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {exists_bool_diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "_Bool {exists_present} = phpc_native_value_bool_with_diagnostic({}, &{exists_bool_diagnostic});",
+            exists.handle
+        ));
+        let exists_cleanup = c_cleanup_sequence(&exists.cleanup_after_use);
+        let exists_bool_error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_report({exists_bool_diagnostic}); {exists_cleanup}{operand_cleanup_sequence}{failure_cleanup}"
+        ));
+        self.body.push(format!(
+            "if ({exists_bool_diagnostic}.ptr != NULL) {{ {exists_bool_error_exit} }}"
+        ));
+        self.body.push(format!(
+            "phpc_native_diagnostic_free({exists_bool_diagnostic});"
+        ));
+        self.body.extend(exists.cleanup_after_use);
+
+        self.body.push(format!("if ({exists_present}) {{"));
+        let read = self.emit_native_arrayaccess_offset_read_operation(
+            &operands,
+            CNativeArrayAccessOffsetReadOperation::Get,
+            failure_cleanup,
+        );
+        let truthy = self.emit_native_value_reference_slot_truthiness(
+            CNativeValueReferenceSlot::value(read),
+            "arrayaccess_offset_empty_truthy",
+        );
+        self.body.push(format!("{result} = !({truthy});"));
+        self.body.push("}".to_string());
+        self.body.extend(operands.cleanup_after_use);
+
+        Ok(Some(CValue::BoolExpr(result)))
+    }
+
+    fn try_materialize_native_arrayaccess_offset_null_coalesce_expr(
+        &mut self,
+        left: &Expr,
+        right: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some(operands) =
+            self.materialize_native_arrayaccess_offset_read_operands_expr(left, failure_cleanup)?
+        else {
+            return Ok(None);
+        };
+
+        self.emit_native_arrayaccess_offset_null_coalesce_result_handle(
+            operands,
+            right,
+            failure_cleanup,
+        )
+        .map(Some)
+    }
+
+    fn emit_native_arrayaccess_offset_null_coalesce_result_handle(
+        &mut self,
+        operands: CNativeArrayAccessOffsetReadOperands,
+        right: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        self.uses_native_array_helpers = true;
+        let operand_cleanup_sequence = c_cleanup_sequence(&operands.cleanup_after_use);
+        let right_failure_cleanup = format!("{operand_cleanup_sequence}{failure_cleanup}");
+        self.prepare_lazy_native_value_rhs_branch(right, &right_failure_cleanup)?;
+
+        let result = self.next_native_name("arrayaccess_offset_null_coalesce");
+        self.body
+            .push(format!("phpc_NativeValueHandle {result} = {{0}};"));
+
+        let exists = self.emit_native_arrayaccess_offset_read_operation(
+            &operands,
+            CNativeArrayAccessOffsetReadOperation::Exists,
+            failure_cleanup,
+        );
+        let exists_bool_diagnostic =
+            self.next_native_name("arrayaccess_offset_null_coalesce_bool_diagnostic");
+        let present = self.next_native_name("arrayaccess_offset_null_coalesce_present");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {exists_bool_diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "_Bool {present} = phpc_native_value_bool_with_diagnostic({}, &{exists_bool_diagnostic});",
+            exists.handle
+        ));
+        let exists_cleanup = c_cleanup_sequence(&exists.cleanup_after_use);
+        let exists_bool_error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_report({exists_bool_diagnostic}); {exists_cleanup}{operand_cleanup_sequence}{failure_cleanup}"
+        ));
+        self.body.push(format!(
+            "if ({exists_bool_diagnostic}.ptr != NULL) {{ {exists_bool_error_exit} }}"
+        ));
+        self.body.push(format!(
+            "phpc_native_diagnostic_free({exists_bool_diagnostic});"
+        ));
+        self.body.extend(exists.cleanup_after_use);
+
+        self.body.push(format!("if ({present}) {{"));
+        let read = self.emit_native_arrayaccess_offset_read_operation(
+            &operands,
+            CNativeArrayAccessOffsetReadOperation::Get,
+            failure_cleanup,
+        );
+        let read_is_null = self.next_native_name("arrayaccess_offset_null_coalesce_read_is_null");
+        self.body.push(format!(
+            "bool {read_is_null} = phpc_native_value_type_predicate({}, PHPC_NATIVE_VALUE_TYPE_IS_NULL);",
+            read.handle
+        ));
+        self.body.push(format!("if ({read_is_null}) {{"));
+        self.body.extend(read.cleanup_after_use.clone());
+        let null_read_rhs =
+            self.materialize_native_value_result_operand(right, &right_failure_cleanup)?;
+        self.body
+            .push(format!("{result} = {};", null_read_rhs.handle));
+        self.body.push("} else {".to_string());
+        self.body.push(format!("{result} = {};", read.handle));
+        self.body.push("}".to_string());
+        self.body.push("} else {".to_string());
+        let missing_rhs =
+            self.materialize_native_value_result_operand(right, &right_failure_cleanup)?;
+        self.body
+            .push(format!("{result} = {};", missing_rhs.handle));
+        self.body.push("}".to_string());
+        self.body.extend(operands.cleanup_after_use);
+
+        Ok(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        })
     }
 
     fn emit_native_conversion_source_from_value(

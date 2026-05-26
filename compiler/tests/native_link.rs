@@ -13000,6 +13000,48 @@ const ARRAYACCESS_READ_ISSET_SOURCE: &str = concat!(
     "echo isset($child[1]) ? \"Y\" : \"N\";\n",
 );
 
+const ARRAYACCESS_EMPTY_NULLCOALESCE_SOURCE: &str = concat!(
+    "<?php\n",
+    "class ValueBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { return \"V\"; }\n",
+    "    public function offsetExists($offset) { return $offset; }\n",
+    "    public function offsetSet($offset, $value) { return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class ZeroBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { return 0; }\n",
+    "    public function offsetExists($offset) { return $offset; }\n",
+    "    public function offsetSet($offset, $value) { return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class StringZeroBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { return \"0\"; }\n",
+    "    public function offsetExists($offset) { return $offset; }\n",
+    "    public function offsetSet($offset, $value) { return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class NullBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { return null; }\n",
+    "    public function offsetExists($offset) { return $offset; }\n",
+    "    public function offsetSet($offset, $value) { return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "function fallback_value($value) { echo \"R\"; return $value; }\n",
+    "$value = new ValueBag();\n",
+    "$zero = new ZeroBag();\n",
+    "$string_zero = new StringZeroBag();\n",
+    "$nulls = new NullBag();\n",
+    "echo empty($value[0]) ? \"EM\" : \"EX\";\n",
+    "echo \"|\", empty($value[true]) ? \"ET\" : \"EF\";\n",
+    "echo \"|\", empty($zero[true]) ? \"ZT\" : \"ZF\";\n",
+    "echo \"|\", empty($string_zero[true]) ? \"ST\" : \"SF\";\n",
+    "echo \"|\", $value[0] ?? fallback_value(\"M\");\n",
+    "echo \"|\", $value[true] ?? fallback_value(\"B\");\n",
+    "echo \"|\", $zero[true] ?? fallback_value(\"Z\");\n",
+    "echo \"|\", $string_zero[true] ?? fallback_value(\"S\");\n",
+    "echo \"|\", $nulls[true] ?? fallback_value(\"N\");\n",
+);
+
 const ARRAYACCESS_DYNAMIC_PRODUCER_FACT_SOURCE: &str = concat!(
     "<?php\n",
     "class DynamicTruthBag implements ArrayAccess {\n",
@@ -13069,6 +13111,54 @@ fn native_executable_c_source_routes_arrayaccess_read_isset_through_runtime_abi(
             && !source.contains("callable_object_matched"),
         "ArrayAccess read/isset lowering should not revive the finite dynamic-callable ladder or rejection path:\n{source}"
     );
+}
+
+#[test]
+fn native_executable_c_source_routes_arrayaccess_empty_nullcoalesce_through_runtime_abi() {
+    let program = parse(ARRAYACCESS_EMPTY_NULLCOALESCE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_EXISTS")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_GET")
+            && source.contains("phpc_native_value_truthy_with_reference_slot_with_diagnostic")
+            && source.contains("phpc_native_value_type_predicate"),
+        "ArrayAccess empty/null-coalesce should use the shared exists/read ABI plus PHP truthiness and null checks:\n{source}"
+    );
+    assert!(
+        !source.contains("ArrayAccess lowering rejects")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches")
+            && !source.contains("callable_array_matched")
+            && !source.contains("callable_object_matched"),
+        "ArrayAccess empty/null-coalesce lowering should stay on declared-interface metadata and callable-table dispatch:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_arrayaccess_empty_nullcoalesce_runtime_consumer_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "arrayaccess_empty_nullcoalesce_runtime_consumer",
+        ARRAYACCESS_EMPTY_NULLCOALESCE_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native ArrayAccess empty/null-coalesce executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"EM|EF|ZT|ST|RM|V|0|0|RN");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
 }
 
 #[test]
