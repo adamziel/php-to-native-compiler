@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 09:55 CEST
+Updated: 2026-05-26 10:25 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,21 +19,30 @@ Primary `HEAD` is clean and aligned with `origin/master` after accounting for
 the latest source capability.
 
 Latest primary-integrated source capability baseline:
-`7aa27530 native: add callable array return facts`.
+`4dc4d791 native: invalidate callable array identities on mutation`.
 
-`7aa27530` extends the same dynamic-call return-fact boundary to compiler-known
-callable arrays. Literal/static callable arrays such as
-`["ClassName", "method"]`, keyed numeric forms such as
+`4dc4d791` keeps compiler-known callable-array identities honest after native
+array owner mutations. Variable-backed callable arrays can still publish facts
+when stable, but direct element writes, append/unset, compound/update writes,
+null-coalesce lvalue writes, by-reference foreach over native array owners, and
+native array mutating builtins now clear those identities before later dynamic
+calls can consume stale class/method pairs.
+
+This builds on `7aa27530`, which extended the same dynamic-call return-fact
+boundary to compiler-known callable arrays. Literal/static callable arrays such
+as `["ClassName", "method"]`, keyed numeric forms such as
 `[1 => "method", 0 => $object]`, and object receiver arrays such as
-`[$object, "method"]` now resolve through the shared callable identity and
-return-summary intersection path. Callable-array identities also survive
-ordinary variable assignment, so `$cb = ["Class", "method"]; $cb()` can publish
-known native object/interface facts for downstream consumers. The resolver stays
-conservative: by-reference array elements, unknown array shapes, arity
-mismatches, by-reference returns, and mixed receiver sets where any possible
-class lacks the method do not publish facts.
+`[$object, "method"]` resolve through the shared callable identity and
+return-summary intersection path. Callable-array identities survive ordinary
+variable assignment, so `$cb = ["Class", "method"]; $cb()` can publish known
+native object/interface facts for downstream consumers until a compiler-visible
+mutation invalidates them. The resolver stays conservative: by-reference array
+elements, unknown array shapes or runtime mutations, arity mismatches,
+by-reference returns, and mixed receiver sets where any possible class lacks the
+method do not publish facts.
 
-This composes with `d2b60ba7` known string/invokable dynamic callable return
+This composes with `7aa27530` callable-array return facts, `d2b60ba7` known
+string/invokable dynamic callable return
 facts, `4ddbfc47` generated-C ArrayAccess read/`isset`,
 `9aa933a8` generated-C ArrayAccess write/append/unset, `4311df7e`
 generated-C ArrayAccess `empty()`/null-coalesce consumers, receiver-free static
@@ -48,11 +57,14 @@ generated declared-method callable-table publication.
 
 Lane-local momentum is active but not counted. The fresh property/reference and
 owner-scoped audits found stale/property-held paths blocked or overlapped by
-the integrated ReferenceSlot owner/fact boundary and did not import them.
-Broader producer fact work, property/nested owner design, unknown runtime
-callable consumers, runtime array-shape callable identity facts, builtin return
-summaries, and callable receiver fallback remain advisory until routed, audited,
-integrated, committed, and pushed.
+the integrated ReferenceSlot owner/fact boundary and did not import them. A
+callable identity visibility/staticness candidate was also kept out of primary
+because it overasserted that `[$object, "staticMethod"]` must not publish facts,
+which contradicts local PHP 8.2 callable behavior. Broader producer fact work,
+property/nested owner design, unknown runtime callable consumers, runtime
+array-shape callable identity facts, builtin return summaries, and callable
+receiver fallback remain advisory until routed, audited, integrated, committed,
+and pushed.
 
 The project continues moving through reusable runtime/compiler boundaries, but
 this is not full PHP parity. Broader object/interface facts for properties,
@@ -80,6 +92,17 @@ gaps.
 
 ## Recent Primary-Integrated Work
 
+- `4dc4d791`: callable-array variable identities are now invalidated across
+  shared native-array owner mutation boundaries. Direct element writes, append,
+  unset, null-coalesce lvalue writes, compound/update lvalue writes,
+  by-reference foreach over native array owners, and native array mutating
+  builtins clear stale callable-array facts before later dynamic calls can
+  publish return facts from outdated class/method pairs. Focused proof covers
+  pre-mutation callable-array facts followed by post-mutation refusal for
+  element assignment, append, and unset, plus neighboring callable-array and
+  native-link callable-array regressions. Unknown runtime arrays, runtime-only
+  mutations, list/destructuring replacement, broader references/COW, cleanup/
+  unwind, LLVM consumers, and backend parity remain open.
 - `7aa27530`: callable-array return facts now consume compiler-known callable
   array identities through the shared generated-C callable summary boundary.
   Literal class/static arrays, object receiver arrays, explicit numeric key
@@ -251,9 +274,9 @@ explicitly.
 | ArrayAccess `empty`/null-coalesce sequencing | **100%** `[####################]` | **100%** `[####################]` | **46%** `[#########-----------]` | Integrated at `4311df7e` for generated-C direct object offset `empty()` and `$aa[$key] ?? rhs` over compiler-known generated declared `ArrayAccess` object values, including known dynamic generated-declared class-name facts. |
 | ArrayAccess RMW/null-coalesce assignment sequencing | **100%** `[####################]` | **100%** `[####################]` | **52%** `[##########----------]` | Integrated at `653a5918` for generated-C direct-variable compound assignment and `$aa[$key] ??= rhs` over compiler-known generated declared `ArrayAccess` object values using the shared owner/writeback boundary. Property-held/nested owners, append RMW, increment/decrement, reference-returning `offsetGet`, references/COW, cleanup/unwind, and backend parity remain open. |
 | ReferenceSlot value owner facts | **100%** `[####################]` | **100%** `[####################]` | **45%** `[#########-----------]` | Integrated at `2ee642ff` for compiler-visible native reference handles, including by-reference closure capture promotion and `global` import roots feeding existing ArrayAccess write/RMW consumers through the shared owner source/commit boundary. Arbitrary alias roots, request/superglobal path facts, property-held references, closure callback fact transport, references/COW, and backend parity remain open. |
-| Callable identity return summaries | **100%** `[####################]` | **100%** `[####################]` | **60%** `[############--------]` | Integrated through `7aa27530` for generated functions, declared instance methods, declared static methods, compiler-owned descriptor closures, known string callables, definite `__invoke` objects, and compiler-known callable arrays through shared callable identities and return summaries. Unknown runtime strings/arrays/objects/builtins, non-descriptor closures, recursive/fixed-point summaries, reference returns, property/magic producers, references/COW, and backend parity remain open. |
-| Callable return producer facts | **100%** `[####################]` | **100%** `[####################]` | **60%** `[############--------]` | Integrated through `7aa27530` for generated function/method/static-method, descriptor-closure, known string/invokable, and compiler-known callable-array return summaries feeding existing object/interface fact consumers through the shared callable identity resolver. Recursive/fixed-point summaries, unknown runtime callables/arrays, property/magic producers, references/COW, and backend parity remain open. |
-| Dynamic object/interface fact carrier | **100%** `[####################]` | **100%** `[####################]` | **65%** `[#############-------]` | Integrated through `7aa27530` for generated-C native value/object facts over generated declared objects, known dynamic class-name `new`, copies, gotos, branch joins, generated-callable, descriptor-closure, known string/invokable, and compiler-known callable-array identity return summaries, and compiler-visible reference slots, consumed by ArrayAccess read/isset/write/append/unset/empty/null-coalesce/RMW/`??=`. Producers from properties, clones, static properties, arbitrary symbols, unknown runtime callables/arrays, and non-descriptor closures remain open. |
+| Callable identity return summaries | **100%** `[####################]` | **100%** `[####################]` | **60%** `[############--------]` | Integrated through `4dc4d791` for generated functions, declared instance methods, declared static methods, compiler-owned descriptor closures, known string callables, definite `__invoke` objects, compiler-known callable arrays, and compiler-visible callable-array identity invalidation after native array owner mutation. Unknown runtime strings/arrays/objects/builtins, non-descriptor closures, recursive/fixed-point summaries, reference returns, property/magic producers, references/COW, and backend parity remain open. |
+| Callable return producer facts | **100%** `[####################]` | **100%** `[####################]` | **60%** `[############--------]` | Integrated through `4dc4d791` for generated function/method/static-method, descriptor-closure, known string/invokable, and compiler-known callable-array return summaries feeding existing object/interface fact consumers through the shared callable identity resolver, with stale variable-held callable-array identities cleared after compiler-visible native array mutations. Recursive/fixed-point summaries, unknown runtime callables/arrays, property/magic producers, references/COW, and backend parity remain open. |
+| Dynamic object/interface fact carrier | **100%** `[####################]` | **100%** `[####################]` | **65%** `[#############-------]` | Integrated through `4dc4d791` for generated-C native value/object facts over generated declared objects, known dynamic class-name `new`, copies, gotos, branch joins, generated-callable, descriptor-closure, known string/invokable, and compiler-known callable-array identity return summaries, including invalidation after compiler-visible native array mutations, and compiler-visible reference slots, consumed by ArrayAccess read/isset/write/append/unset/empty/null-coalesce/RMW/`??=`. Producers from properties, clones, static properties, arbitrary symbols, unknown runtime callables/arrays, and non-descriptor closures remain open. |
 | Object/method callable receiver parity fallback | **0%** `[--------------------]` | **80%** `[################----]` | **42%** `[########------------]` | Route-audited fallback if ArrayAccess write/unset blocks. Not the active primary route. |
 | Cleanup/unwind execution | **25%** `[#####---------------]` | **25%** `[#####---------------]` | **25%** `[#####---------------]` | Requirement/preflight boundary is integrated; actual unwind/finally/destructor execution is still not implemented. |
 | Broad dirty lane extraction backlog | **0%** `[--------------------]` | **35%** `[#######-------------]` | **36%** `[#######-------------]` | Dirty call, diagnostic, object, control-flow, symbol, byte/string, and array lanes remain evidence pools until split into fresh current-head candidates. |
