@@ -370,6 +370,7 @@ enum NativeDiagnosticResultConsumerFamily {
     StaticLocalInitializer,
     GlobalDeclaration,
     DeferredCleanup,
+    ControlTransferCleanup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -383,6 +384,7 @@ enum NativeDiagnosticResultConsumerBlocker {
 enum NativeDiagnosticResultListConsumer {
     ValueRequiredOperation { operation: u8 },
     DeferredCleanup,
+    ControlTransferCleanup,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -442,6 +444,9 @@ impl NativeDiagnosticResultConsumerFamily {
                 })
             }
             Self::DeferredCleanup => Ok(NativeDiagnosticResultListConsumer::DeferredCleanup),
+            Self::ControlTransferCleanup => {
+                Ok(NativeDiagnosticResultListConsumer::ControlTransferCleanup)
+            }
             Self::Termination
             | Self::DeclarationInitializer
             | Self::StaticLocalInitializer
@@ -462,6 +467,9 @@ impl NativeDiagnosticResultListConsumer {
             Self::DeferredCleanup => {
                 "phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free"
             }
+            Self::ControlTransferCleanup => {
+                "phpc_native_diagnostic_result_control_transfer_cleanup_and_free"
+            }
         }
     }
 
@@ -477,7 +485,7 @@ impl NativeDiagnosticResultListConsumer {
             Self::ValueRequiredOperation { operation } => format!(
                 "{result} = call %phpc.NativeDiagnosticResult @{abi_name}(i8 {operation}, ptr {first_operand}, {usize_type} {count})"
             ),
-            Self::DeferredCleanup => format!(
+            Self::DeferredCleanup | Self::ControlTransferCleanup => format!(
                 "{result} = call %phpc.NativeDiagnosticResult @{abi_name}(ptr {first_operand}, {usize_type} {count})"
             ),
         }
@@ -489,7 +497,7 @@ impl NativeDiagnosticResultListConsumer {
             Self::ValueRequiredOperation { operation } => format!(
                 "phpc_NativeDiagnosticResult {result} = {abi_name}({operation}, {first_operand}, {count});"
             ),
-            Self::DeferredCleanup => format!(
+            Self::DeferredCleanup | Self::ControlTransferCleanup => format!(
                 "phpc_NativeDiagnosticResult {result} = {abi_name}({first_operand}, {count});"
             ),
         }
@@ -543,6 +551,7 @@ fn llvm_native_diagnostic_result_consumer_declarations(usize_type: &str) -> Stri
     format!(
         "declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free(i8, ptr, {usize_type})\n\
          declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free(ptr, {usize_type})\n\
+         declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_control_transfer_cleanup_and_free(ptr, {usize_type})\n\
          declare i1 @phpc_native_diagnostic_result_list_contains_terminal(ptr, {usize_type})\n\
          declare {usize_type} @phpc_native_diagnostic_result_report_stderr_list_and_free(ptr, {usize_type})\n\
          declare {usize_type} @phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free(ptr, {usize_type})\n"
@@ -570,6 +579,7 @@ fn c_native_diagnostic_result_consumer_declarations() -> &'static str {
     concat!(
         "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free(uint8_t operation, const phpc_NativeDiagnosticResult *results, size_t result_count);\n",
         "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free(const phpc_NativeDiagnosticResult *cleanup_results, size_t cleanup_result_count);\n",
+        "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_control_transfer_cleanup_and_free(const phpc_NativeDiagnosticResult *cleanup_results, size_t cleanup_result_count);\n",
     )
 }
 
@@ -46140,6 +46150,10 @@ mod tests {
             NativeDiagnosticResultConsumerFamily::DeferredCleanup.list_consumer(),
             Ok(NativeDiagnosticResultListConsumer::DeferredCleanup)
         );
+        assert_eq!(
+            NativeDiagnosticResultConsumerFamily::ControlTransferCleanup.list_consumer(),
+            Ok(NativeDiagnosticResultListConsumer::ControlTransferCleanup)
+        );
 
         for family in [
             NativeDiagnosticResultConsumerFamily::Termination,
@@ -46166,6 +46180,9 @@ mod tests {
         let cleanup_consumer = NativeDiagnosticResultConsumerFamily::DeferredCleanup
             .list_consumer()
             .expect("deferred cleanup uses cleanup consumer");
+        let control_cleanup_consumer = NativeDiagnosticResultConsumerFamily::ControlTransferCleanup
+            .list_consumer()
+            .expect("control-transfer cleanup uses cleanup result consumer");
 
         let value_result =
             llvm.emit_native_diagnostic_result_list_consumer(value_consumer, "%value_results", 2);
@@ -46179,10 +46196,16 @@ mod tests {
             "%cleanup_results",
             1,
         );
+        let control_cleanup_result = llvm.emit_native_diagnostic_result_list_consumer(
+            control_cleanup_consumer,
+            "%terminal_cleanup_results",
+            2,
+        );
 
         assert!(llvm.uses_native_diagnostic_result_consumers);
         assert_ne!(value_result, assignment_result);
         assert_ne!(assignment_result, cleanup_result);
+        assert_ne!(cleanup_result, control_cleanup_result);
         assert!(llvm.body.iter().any(|line| line.contains(
             "@phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free"
         ) && line.contains(&format!(
@@ -46197,6 +46220,10 @@ mod tests {
         ))));
         assert!(llvm.body.iter().any(|line| line
             .contains("@phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free")));
+        assert!(llvm.body.iter().any(|line| line
+            .contains("@phpc_native_diagnostic_result_control_transfer_cleanup_and_free")
+            && line.contains("%terminal_cleanup_results")
+            && line.contains("i64 2")));
         assert!(
             llvm_native_diagnostic_result_consumer_declarations("i64").contains(
                 "@phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free"
@@ -46204,6 +46231,8 @@ mod tests {
         );
         assert!(llvm_native_diagnostic_result_consumer_declarations("i64")
             .contains("@phpc_native_diagnostic_result_report_stderr_list_and_free"));
+        assert!(llvm_native_diagnostic_result_consumer_declarations("i64")
+            .contains("@phpc_native_diagnostic_result_control_transfer_cleanup_and_free"));
         assert!(llvm_native_diagnostic_result_consumer_declarations("i64")
             .contains("@phpc_native_diagnostic_result_list_contains_terminal"));
         let echo_report = llvm.emit_native_diagnostic_result_report_sink(
@@ -46227,10 +46256,16 @@ mod tests {
         );
         let cleanup_result =
             c.emit_native_diagnostic_result_list_consumer(cleanup_consumer, "cleanup_results", 1);
+        let control_cleanup_result = c.emit_native_diagnostic_result_list_consumer(
+            control_cleanup_consumer,
+            "terminal_cleanup_results",
+            2,
+        );
 
         assert!(c.uses_native_diagnostic_result_consumers);
         assert_ne!(value_result, assignment_result);
         assert_ne!(assignment_result, cleanup_result);
+        assert_ne!(cleanup_result, control_cleanup_result);
         assert!(c.body.iter().any(|line| line.contains(
             "phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free"
         ) && line.contains(&format!(
@@ -46245,8 +46280,14 @@ mod tests {
         ))));
         assert!(c.body.iter().any(|line| line
             .contains("phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free")));
+        assert!(c.body.iter().any(|line| line
+            .contains("phpc_native_diagnostic_result_control_transfer_cleanup_and_free")
+            && line.contains("terminal_cleanup_results")
+            && line.contains(", 2")));
         assert!(c_native_diagnostic_result_consumer_declarations()
             .contains("phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free"));
+        assert!(c_native_diagnostic_result_consumer_declarations()
+            .contains("phpc_native_diagnostic_result_control_transfer_cleanup_and_free"));
         assert!(c_native_diagnostic_result_declarations()
             .contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"));
         assert!(c_native_diagnostic_result_declarations()
@@ -46309,6 +46350,12 @@ mod tests {
                 &llvm_cleanup_operands,
             )
             .expect("deferred cleanup operands use deferred-cleanup consumer");
+        let terminal_cleanup_result = llvm
+            .emit_native_diagnostic_result_family_consumer(
+                NativeDiagnosticResultConsumerFamily::ControlTransferCleanup,
+                &llvm_cleanup_operands,
+            )
+            .expect("control-transfer cleanup operands use cleanup result consumer");
         let empty_statement_result = llvm
             .emit_native_diagnostic_result_family_consumer(
                 NativeDiagnosticResultConsumerFamily::StatementOperand,
@@ -46329,7 +46376,8 @@ mod tests {
         assert!(llvm.uses_native_diagnostic_result_consumers);
         assert_ne!(value_result, assignment_result);
         assert_ne!(assignment_result, cleanup_result);
-        assert_ne!(cleanup_result, empty_statement_result);
+        assert_ne!(cleanup_result, terminal_cleanup_result);
+        assert_ne!(terminal_cleanup_result, empty_statement_result);
         assert_eq!(
             llvm.body
                 .iter()
@@ -46351,6 +46399,9 @@ mod tests {
         )) && line.contains("i64 2")));
         assert!(llvm.body.iter().any(|line| line
             .contains("@phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free")
+            && line.contains("i64 1")));
+        assert!(llvm.body.iter().any(|line| line
+            .contains("@phpc_native_diagnostic_result_control_transfer_cleanup_and_free")
             && line.contains("i64 1")));
         assert!(llvm.body.iter().any(|line| line.contains(
             "@phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free"
@@ -46403,6 +46454,11 @@ mod tests {
         )
         .expect("deferred cleanup operands use deferred-cleanup consumer");
         c.emit_native_diagnostic_result_family_consumer(
+            NativeDiagnosticResultConsumerFamily::ControlTransferCleanup,
+            &c_cleanup_operands,
+        )
+        .expect("control-transfer cleanup operands use cleanup result consumer");
+        c.emit_native_diagnostic_result_family_consumer(
             NativeDiagnosticResultConsumerFamily::StatementOperand,
             &[],
         )
@@ -46437,6 +46493,10 @@ mod tests {
         )) && line.contains(", 2")));
         assert!(c.body.iter().any(|line| line
             .contains("phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free")
+            && line.contains("diagnostic_result_operands_")
+            && line.contains(", 1")));
+        assert!(c.body.iter().any(|line| line
+            .contains("phpc_native_diagnostic_result_control_transfer_cleanup_and_free")
             && line.contains("diagnostic_result_operands_")
             && line.contains(", 1")));
         assert!(c.body.iter().any(|line| line.contains(

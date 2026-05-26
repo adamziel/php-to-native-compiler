@@ -16,6 +16,7 @@ use php_runtime::{
     phpc_native_diagnostic_message_clone_bytes,
     phpc_native_diagnostic_operand_requirement_list_clone,
     phpc_native_diagnostic_result_can_continue,
+    phpc_native_diagnostic_result_control_transfer_cleanup_and_free,
     phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free,
     phpc_native_diagnostic_result_diagnostic_count,
     phpc_native_diagnostic_result_diagnostic_message_clone_bytes_at,
@@ -727,6 +728,102 @@ fn native_diagnostic_result_deferred_cleanup_blocker_sequences_result_shapes() {
     let message = runtime_result_diagnostic_message(blocked, 0);
     assert!(message.contains("deferred cleanup diagnostic semantics blocked"));
     unsafe { phpc_native_diagnostic_result_free(blocked) };
+}
+
+#[test]
+fn native_diagnostic_result_control_transfer_cleanup_sequences_result_shapes() {
+    let (first_warning, first_value) = native_array_string_cast_diagnostic_result_pair();
+    let (second_warning, second_value) = native_array_string_cast_diagnostic_result_pair();
+    let cleanup = [
+        first_value,
+        first_warning,
+        phpc_native_diagnostic_result_null(),
+        second_warning,
+        second_value,
+    ];
+    let sequenced = unsafe {
+        phpc_native_diagnostic_result_control_transfer_cleanup_and_free(
+            cleanup.as_ptr(),
+            cleanup.len(),
+        )
+    };
+    assert!(!unsafe { phpc_native_diagnostic_result_has_value(sequenced) });
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_diagnostic_count(sequenced) },
+        2
+    );
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_diagnostic_severity_at(sequenced, 0) },
+        NativeDiagnosticSeverity::Warning.tag()
+    );
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_diagnostic_severity_at(sequenced, 1) },
+        NativeDiagnosticSeverity::Warning.tag()
+    );
+    unsafe { phpc_native_diagnostic_result_free(sequenced) };
+
+    let (before_terminal_warning, before_terminal_value) =
+        native_array_string_cast_diagnostic_result_pair();
+    let terminal = native_diagnostic_result_blocker(
+        PHPC_NATIVE_DIAGNOSTIC_OPERATION_CONTROL_FLOW_OPERAND_LIST,
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+        7,
+    );
+    let (after_terminal_warning, after_terminal_value) =
+        native_array_string_cast_diagnostic_result_pair();
+    let terminal_cleanup = [
+        before_terminal_value,
+        before_terminal_warning,
+        terminal,
+        after_terminal_warning,
+        after_terminal_value,
+    ];
+    let sequenced = unsafe {
+        phpc_native_diagnostic_result_control_transfer_cleanup_and_free(
+            terminal_cleanup.as_ptr(),
+            terminal_cleanup.len(),
+        )
+    };
+    assert!(!unsafe { phpc_native_diagnostic_result_has_value(sequenced) });
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_diagnostic_count(sequenced) },
+        2
+    );
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_diagnostic_severity_at(sequenced, 0) },
+        NativeDiagnosticSeverity::Warning.tag()
+    );
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_diagnostic_severity_at(sequenced, 1) },
+        NativeDiagnosticSeverity::Blocker.tag()
+    );
+    let terminal_message = runtime_result_diagnostic_message(sequenced, 1);
+    assert!(terminal_message.contains("control-flow operand list"));
+    assert!(terminal_message.contains("statement evaluation cleanup at operand 7"));
+    unsafe { phpc_native_diagnostic_result_free(sequenced) };
+
+    let null_list = unsafe {
+        phpc_native_diagnostic_result_control_transfer_cleanup_and_free(std::ptr::null(), 2)
+    };
+    assert!(!unsafe { phpc_native_diagnostic_result_has_value(null_list) });
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_diagnostic_severity_at(null_list, 0) },
+        NativeDiagnosticSeverity::Blocker.tag()
+    );
+    let message = runtime_result_diagnostic_message(null_list, 0);
+    assert!(message.contains("control-transfer cleanup list"));
+    assert!(message.contains("result ownership at operand 0"));
+    unsafe { phpc_native_diagnostic_result_free(null_list) };
+
+    let empty_cleanup = unsafe {
+        phpc_native_diagnostic_result_control_transfer_cleanup_and_free(std::ptr::null(), 0)
+    };
+    assert!(!unsafe { phpc_native_diagnostic_result_has_value(empty_cleanup) });
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_diagnostic_count(empty_cleanup) },
+        0
+    );
+    unsafe { phpc_native_diagnostic_result_free(empty_cleanup) };
 }
 
 #[test]
