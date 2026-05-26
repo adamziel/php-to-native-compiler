@@ -10,6 +10,9 @@ use std::sync::atomic::{AtomicI64, Ordering as AtomicOrdering};
 
 pub type RuntimeResult<T> = Result<T, RuntimeError>;
 
+#[cfg(test)]
+static NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST: AtomicI64 = AtomicI64::new(0);
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeScalarTag {
@@ -8234,6 +8237,9 @@ pub unsafe extern "C" fn phpc_native_call_arguments_read_reference(
 /// runtime ABI and not yet freed.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_call_arguments_free(handle: NativeCallArgumentsHandle) {
+    #[cfg(test)]
+    NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.fetch_add(1, AtomicOrdering::SeqCst);
+
     if handle.ptr.is_null() {
         return;
     }
@@ -9283,6 +9289,186 @@ pub unsafe extern "C" fn phpc_native_callable_invoke_discard_with_diagnostic_and
     unsafe { native_call_result_discard_with_diagnostic_and_free(result, diagnostic) };
 }
 
+unsafe fn native_callable_lookup_invoke_result_with_access_context_and_free_arguments(
+    table: NativeCallableTableHandle,
+    kind: NativeCallableKind,
+    scope: NativeStringHandle,
+    name: NativeStringHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallResultHandle {
+    let callable = unsafe {
+        phpc_native_callable_lookup_with_access_context_diagnostic(
+            table,
+            kind,
+            scope,
+            name,
+            access_context,
+            caller_scope,
+            diagnostic,
+        )
+    };
+    if callable.is_null() {
+        unsafe { phpc_native_call_arguments_free(arguments) };
+        return NativeCallResultHandle::null();
+    }
+    let result = unsafe {
+        phpc_native_callable_invoke_result_with_diagnostic_and_free(callable, arguments, diagnostic)
+    };
+    unsafe { phpc_native_callable_free(callable) };
+    result
+}
+
+/// # Safety
+///
+/// `table`, `scope`, `name`, `arguments`, and `diagnostic` must be valid for
+/// the runtime ABI. This helper owns and frees `arguments` on lookup failure,
+/// frame creation failure, invoke failure, and successful result handoff.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_lookup_invoke_result_with_diagnostic_and_free_arguments(
+    table: NativeCallableTableHandle,
+    kind: NativeCallableKind,
+    scope: NativeStringHandle,
+    name: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallResultHandle {
+    unsafe {
+        native_callable_lookup_invoke_result_with_access_context_and_free_arguments(
+            table,
+            kind,
+            scope,
+            name,
+            NativeCallableAccessContextTag::External,
+            NativeStringHandle::null(),
+            arguments,
+            diagnostic,
+        )
+    }
+}
+
+/// # Safety
+///
+/// Same ownership contract as
+/// [`phpc_native_callable_lookup_invoke_result_with_diagnostic_and_free_arguments`],
+/// with an explicit callable access context.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_lookup_invoke_result_with_access_context_diagnostic_and_free_arguments(
+    table: NativeCallableTableHandle,
+    kind: NativeCallableKind,
+    scope: NativeStringHandle,
+    name: NativeStringHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallResultHandle {
+    unsafe {
+        native_callable_lookup_invoke_result_with_access_context_and_free_arguments(
+            table,
+            kind,
+            scope,
+            name,
+            access_context,
+            caller_scope,
+            arguments,
+            diagnostic,
+        )
+    }
+}
+
+/// # Safety
+///
+/// Direct lookup-plus-invoke value consumer. The argument handle is consumed
+/// exactly once by the shared lookup-plus-invoke result helper.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments(
+    table: NativeCallableTableHandle,
+    kind: NativeCallableKind,
+    scope: NativeStringHandle,
+    name: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = unsafe {
+        phpc_native_callable_lookup_invoke_result_with_diagnostic_and_free_arguments(
+            table, kind, scope, name, arguments, diagnostic,
+        )
+    };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return NativeValueHandle::null();
+    }
+    unsafe {
+        native_call_result_take_value_with_diagnostic_and_free(
+            result,
+            diagnostic,
+            "native callable lookup invocation failed: result did not contain a value",
+        )
+    }
+}
+
+/// # Safety
+///
+/// Direct lookup-plus-invoke reference consumer. The argument handle is
+/// consumed exactly once by the shared lookup-plus-invoke result helper.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_lookup_invoke_reference_with_diagnostic_and_free_arguments(
+    table: NativeCallableTableHandle,
+    kind: NativeCallableKind,
+    scope: NativeStringHandle,
+    name: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeReferenceHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = unsafe {
+        phpc_native_callable_lookup_invoke_result_with_diagnostic_and_free_arguments(
+            table, kind, scope, name, arguments, diagnostic,
+        )
+    };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return NativeReferenceHandle::null();
+    }
+    unsafe {
+        native_call_result_take_reference_with_diagnostic_and_free(
+            result,
+            diagnostic,
+            "native callable lookup invocation failed: result did not contain a reference",
+        )
+    }
+}
+
+/// # Safety
+///
+/// Direct lookup-plus-invoke discard consumer. The argument handle is consumed
+/// exactly once by the shared lookup-plus-invoke result helper.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_lookup_invoke_discard_with_diagnostic_and_free_arguments(
+    table: NativeCallableTableHandle,
+    kind: NativeCallableKind,
+    scope: NativeStringHandle,
+    name: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = unsafe {
+        phpc_native_callable_lookup_invoke_result_with_diagnostic_and_free_arguments(
+            table, kind, scope, name, arguments, diagnostic,
+        )
+    };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return false;
+    }
+    unsafe { native_call_result_discard_with_diagnostic_and_free(result, diagnostic) }
+}
+
 unsafe fn native_closure_arguments_from_call_arguments(
     descriptor: NativeClosureDescriptor,
     arguments: NativeCallArgumentsHandle,
@@ -9700,6 +9886,372 @@ pub unsafe extern "C" fn phpc_native_callable_value_invoke_discard_with_diagnost
         return;
     }
     unsafe { native_call_result_discard_with_diagnostic_and_free(result, diagnostic) };
+}
+
+unsafe fn native_method_lookup_invoke_result_with_access_context_and_free_receiver_method_arguments(
+    table: NativeCallableTableHandle,
+    receiver: NativeValueHandle,
+    method: NativeValueHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallResultHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| -> Result<NativeCallResultHandle, String> {
+        let Some(table) = (unsafe { table.as_ref() }) else {
+            return Err("native method invocation failed: table is null".to_string());
+        };
+        let Some(receiver_value) = (unsafe { receiver.as_ref() }) else {
+            return Err("native method invocation failed: receiver handle is null".to_string());
+        };
+        let Some(method_value) = (unsafe { method.as_ref() }) else {
+            return Err("native method invocation failed: method handle is null".to_string());
+        };
+        let method_name =
+            native_callable_value_name(method_value, "method name").map_err(|message| {
+                message.replace(
+                    "native callable lookup failed",
+                    "native method invocation failed",
+                )
+            })?;
+        let access_context =
+            unsafe { NativeCallableAccessContext::from_abi(access_context, caller_scope) }
+                .map_err(|message| {
+                    message.replace(
+                        "native callable access context failed",
+                        "native method invocation failed",
+                    )
+                })?;
+        let callable = table
+            .lookup_receiver_method(receiver_value, method_name, access_context)
+            .map_err(|message| {
+                message.replace(
+                    "native callable lookup failed",
+                    "native method invocation failed",
+                )
+            })?;
+        Ok(unsafe {
+            native_callable_value_invoke_table_result(
+                &callable,
+                Some(receiver_value),
+                arguments,
+                diagnostic,
+            )
+        })
+    })();
+    unsafe { phpc_native_value_free(receiver) };
+    unsafe { phpc_native_value_free(method) };
+    unsafe { phpc_native_call_arguments_free(arguments) };
+
+    match result {
+        Ok(result) => result,
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeCallResultHandle::null()
+        }
+    }
+}
+
+unsafe fn native_static_method_lookup_invoke_result_with_access_context_and_free_scope_method_arguments(
+    table: NativeCallableTableHandle,
+    scope: NativeStringHandle,
+    method: NativeValueHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallResultHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| -> Result<NativeCallResultHandle, String> {
+        let Some(table) = (unsafe { table.as_ref() }) else {
+            return Err("native static method invocation failed: table is null".to_string());
+        };
+        let Some(scope) = (unsafe { native_string_handle_to_string(scope) }) else {
+            return Err("native static method invocation failed: scope is null".to_string());
+        };
+        let Some(method_value) = (unsafe { method.as_ref() }) else {
+            return Err(
+                "native static method invocation failed: method handle is null".to_string(),
+            );
+        };
+        let method_name =
+            native_callable_value_name(method_value, "static method name").map_err(|message| {
+                message.replace(
+                    "native callable lookup failed",
+                    "native static method invocation failed",
+                )
+            })?;
+        let access_context =
+            unsafe { NativeCallableAccessContext::from_abi(access_context, caller_scope) }
+                .map_err(|message| {
+                    message.replace(
+                        "native callable access context failed",
+                        "native static method invocation failed",
+                    )
+                })?;
+        let callable = table
+            .lookup_static_method(scope, method_name, access_context)
+            .map_err(|message| {
+                message
+                    .replace(
+                        "native callable lookup failed",
+                        "native static method invocation failed",
+                    )
+                    .replace(
+                        "native static method lookup failed",
+                        "native static method invocation failed",
+                    )
+            })?;
+        Ok(unsafe {
+            native_callable_value_invoke_table_result(&callable, None, arguments, diagnostic)
+        })
+    })();
+    unsafe { phpc_native_value_free(method) };
+    unsafe { phpc_native_call_arguments_free(arguments) };
+
+    match result {
+        Ok(result) => result,
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeCallResultHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `receiver`, `method`, and `arguments` are owned by this call and are freed
+/// on every lookup, binding, invoke, and result handoff exit.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_method_invoke_result_with_access_context_diagnostic_and_free_receiver_method_arguments(
+    table: NativeCallableTableHandle,
+    receiver: NativeValueHandle,
+    method: NativeValueHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallResultHandle {
+    unsafe {
+        native_method_lookup_invoke_result_with_access_context_and_free_receiver_method_arguments(
+            table,
+            receiver,
+            method,
+            access_context,
+            caller_scope,
+            arguments,
+            diagnostic,
+        )
+    }
+}
+
+/// # Safety
+///
+/// Receiver-method lookup-plus-invoke value consumer over the shared owned
+/// argument result helper.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments(
+    table: NativeCallableTableHandle,
+    receiver: NativeValueHandle,
+    method: NativeValueHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    let result = unsafe {
+        phpc_native_method_invoke_result_with_access_context_diagnostic_and_free_receiver_method_arguments(
+            table, receiver, method, access_context, caller_scope, arguments, diagnostic,
+        )
+    };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return NativeValueHandle::null();
+    }
+    unsafe {
+        native_call_result_take_value_with_diagnostic_and_free(
+            result,
+            diagnostic,
+            "native method invocation failed: result did not contain a value",
+        )
+    }
+}
+
+/// # Safety
+///
+/// Receiver-method lookup-plus-invoke reference consumer over the shared owned
+/// argument result helper.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_method_invoke_reference_with_access_context_diagnostic_and_free_receiver_method_arguments(
+    table: NativeCallableTableHandle,
+    receiver: NativeValueHandle,
+    method: NativeValueHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeReferenceHandle {
+    let result = unsafe {
+        phpc_native_method_invoke_result_with_access_context_diagnostic_and_free_receiver_method_arguments(
+            table, receiver, method, access_context, caller_scope, arguments, diagnostic,
+        )
+    };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return NativeReferenceHandle::null();
+    }
+    unsafe {
+        native_call_result_take_reference_with_diagnostic_and_free(
+            result,
+            diagnostic,
+            "native method invocation failed: result did not contain a reference",
+        )
+    }
+}
+
+/// # Safety
+///
+/// Receiver-method lookup-plus-invoke discard consumer over the shared owned
+/// argument result helper.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_method_invoke_discard_with_access_context_diagnostic_and_free_receiver_method_arguments(
+    table: NativeCallableTableHandle,
+    receiver: NativeValueHandle,
+    method: NativeValueHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    let result = unsafe {
+        phpc_native_method_invoke_result_with_access_context_diagnostic_and_free_receiver_method_arguments(
+            table, receiver, method, access_context, caller_scope, arguments, diagnostic,
+        )
+    };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return false;
+    }
+    unsafe { native_call_result_discard_with_diagnostic_and_free(result, diagnostic) }
+}
+
+/// # Safety
+///
+/// `method` and `arguments` are owned by this call and are freed on every
+/// lookup, binding, invoke, and result handoff exit. `scope` and
+/// `caller_scope` remain caller-owned.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_method_invoke_result_with_access_context_diagnostic_and_free_scope_method_arguments(
+    table: NativeCallableTableHandle,
+    scope: NativeStringHandle,
+    method: NativeValueHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallResultHandle {
+    unsafe {
+        native_static_method_lookup_invoke_result_with_access_context_and_free_scope_method_arguments(
+            table,
+            scope,
+            method,
+            access_context,
+            caller_scope,
+            arguments,
+            diagnostic,
+        )
+    }
+}
+
+/// # Safety
+///
+/// Static-method lookup-plus-invoke value consumer over the shared owned
+/// argument result helper.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments(
+    table: NativeCallableTableHandle,
+    scope: NativeStringHandle,
+    method: NativeValueHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    let result = unsafe {
+        phpc_native_static_method_invoke_result_with_access_context_diagnostic_and_free_scope_method_arguments(
+            table, scope, method, access_context, caller_scope, arguments, diagnostic,
+        )
+    };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return NativeValueHandle::null();
+    }
+    unsafe {
+        native_call_result_take_value_with_diagnostic_and_free(
+            result,
+            diagnostic,
+            "native static method invocation failed: result did not contain a value",
+        )
+    }
+}
+
+/// # Safety
+///
+/// Static-method lookup-plus-invoke reference consumer over the shared owned
+/// argument result helper.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_method_invoke_reference_with_access_context_diagnostic_and_free_scope_method_arguments(
+    table: NativeCallableTableHandle,
+    scope: NativeStringHandle,
+    method: NativeValueHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeReferenceHandle {
+    let result = unsafe {
+        phpc_native_static_method_invoke_result_with_access_context_diagnostic_and_free_scope_method_arguments(
+            table, scope, method, access_context, caller_scope, arguments, diagnostic,
+        )
+    };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return NativeReferenceHandle::null();
+    }
+    unsafe {
+        native_call_result_take_reference_with_diagnostic_and_free(
+            result,
+            diagnostic,
+            "native static method invocation failed: result did not contain a reference",
+        )
+    }
+}
+
+/// # Safety
+///
+/// Static-method lookup-plus-invoke discard consumer over the shared owned
+/// argument result helper.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_method_invoke_discard_with_access_context_diagnostic_and_free_scope_method_arguments(
+    table: NativeCallableTableHandle,
+    scope: NativeStringHandle,
+    method: NativeValueHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    let result = unsafe {
+        phpc_native_static_method_invoke_result_with_access_context_diagnostic_and_free_scope_method_arguments(
+            table, scope, method, access_context, caller_scope, arguments, diagnostic,
+        )
+    };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return false;
+    }
+    unsafe { native_call_result_discard_with_diagnostic_and_free(result, diagnostic) }
 }
 
 #[no_mangle]
@@ -30657,6 +31209,185 @@ mod tests {
         unsafe { phpc_native_value_free(plain) };
         unsafe { phpc_native_value_free(guarded) };
         unsafe { phpc_native_value_free(receiver) };
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    unsafe fn call_arguments_from_ints_for_test(values: &[i64]) -> NativeCallArgumentsHandle {
+        let arguments = phpc_native_call_arguments_new();
+        for value in values {
+            assert!(unsafe {
+                phpc_native_call_arguments_push_value_and_free(
+                    arguments,
+                    NativeValueHandle::from_value(Value::Int(*value)),
+                )
+            });
+        }
+        arguments
+    }
+
+    fn reset_call_arguments_free_count_for_test() {
+        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.store(0, AtomicOrdering::SeqCst);
+    }
+
+    fn call_arguments_free_count_for_test() -> i64 {
+        NATIVE_CALL_ARGUMENTS_FREE_COUNT_FOR_TEST.load(AtomicOrdering::SeqCst)
+    }
+
+    #[test]
+    fn native_lookup_plus_invoke_helpers_free_arguments_once_across_target_families() {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "sum",
+                NativeCallableVisibility::Public,
+                native_sum_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("InvokeChild"),
+                "add",
+                NativeCallableVisibility::Public,
+                native_receiver_method_callback,
+            );
+            register_static_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("InvokeBase"),
+                "stat",
+                NativeCallableVisibility::Protected,
+                native_scoped_method_callback,
+            );
+            assert!(phpc_native_callable_table_register_class_parent_and_free(
+                table,
+                native_string_for_test("InvokeChild"),
+                native_string_for_test("InvokeBase"),
+            ));
+        }
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        reset_call_arguments_free_count_for_test();
+        let direct_name = native_string_for_test("SUM");
+        let direct_result = unsafe {
+            phpc_native_callable_lookup_invoke_result_with_diagnostic_and_free_arguments(
+                table,
+                NativeCallableKind::Function,
+                NativeStringHandle::null(),
+                direct_name,
+                call_arguments_from_ints_for_test(&[2, 5]),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        let direct_value = unsafe { phpc_native_call_result_take_value_and_free(direct_result) };
+        assert_eq!(unsafe { direct_value.as_ref() }, Some(&Value::Int(7)));
+        unsafe { phpc_native_value_free(direct_value) };
+        unsafe { phpc_native_string_free(direct_name) };
+
+        reset_call_arguments_free_count_for_test();
+        let missing_name = native_string_for_test("missing_sum");
+        let missing_direct = unsafe {
+            phpc_native_callable_lookup_invoke_result_with_diagnostic_and_free_arguments(
+                table,
+                NativeCallableKind::Function,
+                NativeStringHandle::null(),
+                missing_name,
+                call_arguments_from_ints_for_test(&[1]),
+                &mut diagnostic,
+            )
+        };
+        assert!(missing_direct.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some("native callable lookup failed: Function missing_sum is not registered")
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_string_free(missing_name) };
+
+        let mut classes = PhpClassTable::new();
+        let child_id = classes.declare_class("InvokeChild").unwrap();
+
+        reset_call_arguments_free_count_for_test();
+        let receiver = NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+            classes.get(child_id).unwrap(),
+        )));
+        let method = NativeValueHandle::from_value(Value::String("add".to_string()));
+        let method_result = unsafe {
+            phpc_native_method_invoke_result_with_access_context_diagnostic_and_free_receiver_method_arguments(
+                table,
+                receiver,
+                method,
+                NativeCallableAccessContextTag::ObjectReceiver,
+                NativeStringHandle::null(),
+                call_arguments_from_ints_for_test(&[9]),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        let method_value = unsafe { phpc_native_call_result_take_value_and_free(method_result) };
+        assert_eq!(
+            unsafe { method_value.as_ref() },
+            Some(&Value::String("InvokeChild:9".to_string()))
+        );
+        unsafe { phpc_native_value_free(method_value) };
+
+        reset_call_arguments_free_count_for_test();
+        let blocked_receiver = NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+            classes.get(child_id).unwrap(),
+        )));
+        let missing_method = NativeValueHandle::from_value(Value::String("missing".to_string()));
+        let blocked_method = unsafe {
+            phpc_native_method_invoke_result_with_access_context_diagnostic_and_free_receiver_method_arguments(
+                table,
+                blocked_receiver,
+                missing_method,
+                NativeCallableAccessContextTag::ObjectReceiver,
+                NativeStringHandle::null(),
+                call_arguments_from_ints_for_test(&[3]),
+                &mut diagnostic,
+            )
+        };
+        assert!(blocked_method.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some("native method invocation failed: Method missing is not registered")
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        reset_call_arguments_free_count_for_test();
+        let static_scope = native_string_for_test("InvokeChild");
+        let static_method = NativeValueHandle::from_value(Value::String("stat".to_string()));
+        let static_caller = native_string_for_test("InvokeChild");
+        let static_result = unsafe {
+            phpc_native_static_method_invoke_result_with_access_context_diagnostic_and_free_scope_method_arguments(
+                table,
+                static_scope,
+                static_method,
+                NativeCallableAccessContextTag::ClassContext,
+                static_caller,
+                call_arguments_from_ints_for_test(&[4]),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        let static_value = unsafe { phpc_native_call_result_take_value_and_free(static_result) };
+        assert_eq!(
+            unsafe { static_value.as_ref() },
+            Some(&Value::String("InvokeChild:4".to_string()))
+        );
+        unsafe { phpc_native_value_free(static_value) };
+        unsafe { phpc_native_string_free(static_scope) };
+        unsafe { phpc_native_string_free(static_caller) };
+
         unsafe { phpc_native_callable_table_free(table) };
     }
 

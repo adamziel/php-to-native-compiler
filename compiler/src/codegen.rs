@@ -667,6 +667,53 @@ enum NativeCallResultConsumer {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeInvokeResultConsumer {
+    OwnedResult,
+    Value,
+    Reference,
+    Discard,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeInvokeResultTarget {
+    MaterializedCallableHandle,
+    CallableValueHandle,
+    DirectNamedLookup,
+    ReceiverMethodLookupWithAccessContext,
+    StaticMethodLookupWithAccessContext,
+    ConstructorAllocation,
+    ClosureArgumentHandle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeInvokeResultReturn {
+    CallResultHandle,
+    ValueHandle,
+    ReferenceHandle,
+    Void,
+    Bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NativeInvokeResultHelper {
+    name: &'static str,
+    result: NativeInvokeResultReturn,
+    consumes_arguments: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeInvokeResultHelperBlocker {
+    MissingConstructorAllocationAbi,
+    MissingClosureArgumentHandleAbi,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeInvokeResultHelperSelection {
+    Helper(NativeInvokeResultHelper),
+    Blocked(NativeInvokeResultHelperBlocker),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeCallBlocker {
     DynamicCallableEvaluation,
     ArgumentEvaluationCleanup,
@@ -741,6 +788,187 @@ impl NativeCallCallee {
             result: NativeCallResult::Value,
             blocker: NativeCallBlocker::ReturnValueOwnership,
         }
+    }
+}
+
+impl NativeInvokeResultConsumer {
+    fn materialized_return(self) -> NativeInvokeResultReturn {
+        match self {
+            Self::OwnedResult => NativeInvokeResultReturn::CallResultHandle,
+            Self::Value => NativeInvokeResultReturn::ValueHandle,
+            Self::Reference => NativeInvokeResultReturn::ReferenceHandle,
+            Self::Discard => NativeInvokeResultReturn::Void,
+        }
+    }
+
+    fn lookup_plus_invoke_return(self) -> NativeInvokeResultReturn {
+        match self {
+            Self::Discard => NativeInvokeResultReturn::Bool,
+            _ => self.materialized_return(),
+        }
+    }
+}
+
+impl NativeInvokeResultHelper {
+    fn materialized(name: &'static str, consumer: NativeInvokeResultConsumer) -> Self {
+        Self {
+            name,
+            result: consumer.materialized_return(),
+            consumes_arguments: true,
+        }
+    }
+
+    fn lookup_plus_invoke(name: &'static str, consumer: NativeInvokeResultConsumer) -> Self {
+        Self {
+            name,
+            result: consumer.lookup_plus_invoke_return(),
+            consumes_arguments: true,
+        }
+    }
+}
+
+impl NativeInvokeResultTarget {
+    fn helper_for_consumer(
+        self,
+        consumer: NativeInvokeResultConsumer,
+    ) -> NativeInvokeResultHelperSelection {
+        let helper = match (self, consumer) {
+            (Self::MaterializedCallableHandle, NativeInvokeResultConsumer::OwnedResult) => {
+                NativeInvokeResultHelper::materialized(
+                    "phpc_native_callable_invoke_result_with_diagnostic_and_free",
+                    consumer,
+                )
+            }
+            (Self::MaterializedCallableHandle, NativeInvokeResultConsumer::Value) => {
+                NativeInvokeResultHelper::materialized(
+                    "phpc_native_callable_invoke_value_with_diagnostic_and_free",
+                    consumer,
+                )
+            }
+            (Self::MaterializedCallableHandle, NativeInvokeResultConsumer::Reference) => {
+                NativeInvokeResultHelper::materialized(
+                    "phpc_native_callable_invoke_reference_with_diagnostic_and_free",
+                    consumer,
+                )
+            }
+            (Self::MaterializedCallableHandle, NativeInvokeResultConsumer::Discard) => {
+                NativeInvokeResultHelper::materialized(
+                    "phpc_native_callable_invoke_discard_with_diagnostic_and_free",
+                    consumer,
+                )
+            }
+            (Self::CallableValueHandle, NativeInvokeResultConsumer::OwnedResult) => {
+                NativeInvokeResultHelper::materialized(
+                    "phpc_native_callable_value_invoke_result_with_diagnostic_and_free",
+                    consumer,
+                )
+            }
+            (Self::CallableValueHandle, NativeInvokeResultConsumer::Value) => {
+                NativeInvokeResultHelper::materialized(
+                    "phpc_native_callable_value_invoke_value_with_diagnostic_and_free",
+                    consumer,
+                )
+            }
+            (Self::CallableValueHandle, NativeInvokeResultConsumer::Reference) => {
+                NativeInvokeResultHelper::materialized(
+                    "phpc_native_callable_value_invoke_reference_with_diagnostic_and_free",
+                    consumer,
+                )
+            }
+            (Self::CallableValueHandle, NativeInvokeResultConsumer::Discard) => {
+                NativeInvokeResultHelper::materialized(
+                    "phpc_native_callable_value_invoke_discard_with_diagnostic_and_free",
+                    consumer,
+                )
+            }
+            (Self::DirectNamedLookup, NativeInvokeResultConsumer::OwnedResult) => {
+                NativeInvokeResultHelper::lookup_plus_invoke(
+                    "phpc_native_callable_lookup_invoke_result_with_diagnostic_and_free_arguments",
+                    consumer,
+                )
+            }
+            (Self::DirectNamedLookup, NativeInvokeResultConsumer::Value) => {
+                NativeInvokeResultHelper::lookup_plus_invoke(
+                    "phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments",
+                    consumer,
+                )
+            }
+            (Self::DirectNamedLookup, NativeInvokeResultConsumer::Reference) => {
+                NativeInvokeResultHelper::lookup_plus_invoke(
+                    "phpc_native_callable_lookup_invoke_reference_with_diagnostic_and_free_arguments",
+                    consumer,
+                )
+            }
+            (Self::DirectNamedLookup, NativeInvokeResultConsumer::Discard) => {
+                NativeInvokeResultHelper::lookup_plus_invoke(
+                    "phpc_native_callable_lookup_invoke_discard_with_diagnostic_and_free_arguments",
+                    consumer,
+                )
+            }
+            (
+                Self::ReceiverMethodLookupWithAccessContext,
+                NativeInvokeResultConsumer::OwnedResult,
+            ) => NativeInvokeResultHelper::lookup_plus_invoke(
+                "phpc_native_method_invoke_result_with_access_context_diagnostic_and_free_receiver_method_arguments",
+                consumer,
+            ),
+            (Self::ReceiverMethodLookupWithAccessContext, NativeInvokeResultConsumer::Value) => {
+                NativeInvokeResultHelper::lookup_plus_invoke(
+                    "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments",
+                    consumer,
+                )
+            }
+            (
+                Self::ReceiverMethodLookupWithAccessContext,
+                NativeInvokeResultConsumer::Reference,
+            ) => NativeInvokeResultHelper::lookup_plus_invoke(
+                "phpc_native_method_invoke_reference_with_access_context_diagnostic_and_free_receiver_method_arguments",
+                consumer,
+            ),
+            (Self::ReceiverMethodLookupWithAccessContext, NativeInvokeResultConsumer::Discard) => {
+                NativeInvokeResultHelper::lookup_plus_invoke(
+                    "phpc_native_method_invoke_discard_with_access_context_diagnostic_and_free_receiver_method_arguments",
+                    consumer,
+                )
+            }
+            (
+                Self::StaticMethodLookupWithAccessContext,
+                NativeInvokeResultConsumer::OwnedResult,
+            ) => NativeInvokeResultHelper::lookup_plus_invoke(
+                "phpc_native_static_method_invoke_result_with_access_context_diagnostic_and_free_scope_method_arguments",
+                consumer,
+            ),
+            (Self::StaticMethodLookupWithAccessContext, NativeInvokeResultConsumer::Value) => {
+                NativeInvokeResultHelper::lookup_plus_invoke(
+                    "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments",
+                    consumer,
+                )
+            }
+            (
+                Self::StaticMethodLookupWithAccessContext,
+                NativeInvokeResultConsumer::Reference,
+            ) => NativeInvokeResultHelper::lookup_plus_invoke(
+                "phpc_native_static_method_invoke_reference_with_access_context_diagnostic_and_free_scope_method_arguments",
+                consumer,
+            ),
+            (Self::StaticMethodLookupWithAccessContext, NativeInvokeResultConsumer::Discard) => {
+                NativeInvokeResultHelper::lookup_plus_invoke(
+                    "phpc_native_static_method_invoke_discard_with_access_context_diagnostic_and_free_scope_method_arguments",
+                    consumer,
+                )
+            }
+            (Self::ConstructorAllocation, _) => {
+                return NativeInvokeResultHelperSelection::Blocked(
+                    NativeInvokeResultHelperBlocker::MissingConstructorAllocationAbi,
+                );
+            }
+            (Self::ClosureArgumentHandle, _) => {
+                return NativeInvokeResultHelperSelection::Blocked(
+                    NativeInvokeResultHelperBlocker::MissingClosureArgumentHandleAbi,
+                );
+            }
+        };
+        NativeInvokeResultHelperSelection::Helper(helper)
     }
 }
 
@@ -19578,9 +19806,26 @@ impl CGenerator {
                 output.push_str("extern void phpc_native_call_result_free(phpc_NativeCallResultHandle result);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_call_result_take_value_with_diagnostic_and_free(phpc_NativeCallResultHandle result, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeCallResultHandle phpc_native_call_frame_reference_parameter_alias_transfer_result_from_results_with_diagnostic(phpc_NativeStringHandle callable, phpc_NativeCallResultHandle *argument_results, size_t argument_count, const phpc_NativeStringHandle *parameter_names, const size_t *parameter_indices, const phpc_NativeStringHandle *argument_targets, size_t count, phpc_NativeStringHandle missing_semantics);\n");
+                output.push_str("extern phpc_NativeCallResultHandle phpc_native_callable_invoke_result_with_diagnostic_and_free(phpc_NativeCallableHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_callable_invoke_value_with_diagnostic_and_free(phpc_NativeCallableHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeReferenceHandle phpc_native_callable_invoke_reference_with_diagnostic_and_free(phpc_NativeCallableHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern void phpc_native_callable_invoke_discard_with_diagnostic_and_free(phpc_NativeCallableHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeCallResultHandle phpc_native_callable_value_invoke_result_with_diagnostic_and_free(phpc_NativeCallableValueHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_callable_value_invoke_value_with_diagnostic_and_free(phpc_NativeCallableValueHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_callable_value_invoke_reference_with_diagnostic_and_free(phpc_NativeCallableValueHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern void phpc_native_callable_value_invoke_discard_with_diagnostic_and_free(phpc_NativeCallableValueHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeCallResultHandle phpc_native_callable_lookup_invoke_result_with_diagnostic_and_free_arguments(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeReferenceHandle phpc_native_callable_lookup_invoke_reference_with_diagnostic_and_free_arguments(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_callable_lookup_invoke_discard_with_diagnostic_and_free_arguments(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeCallResultHandle phpc_native_method_invoke_result_with_access_context_diagnostic_and_free_receiver_method_arguments(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle receiver, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle receiver, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeReferenceHandle phpc_native_method_invoke_reference_with_access_context_diagnostic_and_free_receiver_method_arguments(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle receiver, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_method_invoke_discard_with_access_context_diagnostic_and_free_receiver_method_arguments(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle receiver, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeCallResultHandle phpc_native_static_method_invoke_result_with_access_context_diagnostic_and_free_scope_method_arguments(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeReferenceHandle phpc_native_static_method_invoke_reference_with_access_context_diagnostic_and_free_scope_method_arguments(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_static_method_invoke_discard_with_access_context_diagnostic_and_free_scope_method_arguments(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 if self.uses_native_arrayaccess_offset_read_helpers {
                     output.push_str("extern phpc_NativeValueHandle phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle subject, phpc_NativeValueHandle offset, uint8_t operation, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 }
@@ -49277,6 +49522,125 @@ echo " 10" < "zeta";
                 NativeCallBlocker::RmwLvalueOperandEvaluationCleanup,
             ))
         );
+    }
+
+    #[test]
+    fn native_invoke_result_helper_selector_routes_lookup_plus_invoke_families() {
+        let expected = [
+            (
+                NativeInvokeResultTarget::MaterializedCallableHandle,
+                NativeInvokeResultConsumer::OwnedResult,
+                NativeInvokeResultReturn::CallResultHandle,
+                "phpc_native_callable_invoke_result_with_diagnostic_and_free",
+            ),
+            (
+                NativeInvokeResultTarget::MaterializedCallableHandle,
+                NativeInvokeResultConsumer::Discard,
+                NativeInvokeResultReturn::Void,
+                "phpc_native_callable_invoke_discard_with_diagnostic_and_free",
+            ),
+            (
+                NativeInvokeResultTarget::CallableValueHandle,
+                NativeInvokeResultConsumer::Reference,
+                NativeInvokeResultReturn::ReferenceHandle,
+                "phpc_native_callable_value_invoke_reference_with_diagnostic_and_free",
+            ),
+            (
+                NativeInvokeResultTarget::DirectNamedLookup,
+                NativeInvokeResultConsumer::Value,
+                NativeInvokeResultReturn::ValueHandle,
+                "phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments",
+            ),
+            (
+                NativeInvokeResultTarget::DirectNamedLookup,
+                NativeInvokeResultConsumer::Discard,
+                NativeInvokeResultReturn::Bool,
+                "phpc_native_callable_lookup_invoke_discard_with_diagnostic_and_free_arguments",
+            ),
+            (
+                NativeInvokeResultTarget::ReceiverMethodLookupWithAccessContext,
+                NativeInvokeResultConsumer::OwnedResult,
+                NativeInvokeResultReturn::CallResultHandle,
+                "phpc_native_method_invoke_result_with_access_context_diagnostic_and_free_receiver_method_arguments",
+            ),
+            (
+                NativeInvokeResultTarget::ReceiverMethodLookupWithAccessContext,
+                NativeInvokeResultConsumer::Reference,
+                NativeInvokeResultReturn::ReferenceHandle,
+                "phpc_native_method_invoke_reference_with_access_context_diagnostic_and_free_receiver_method_arguments",
+            ),
+            (
+                NativeInvokeResultTarget::StaticMethodLookupWithAccessContext,
+                NativeInvokeResultConsumer::Value,
+                NativeInvokeResultReturn::ValueHandle,
+                "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments",
+            ),
+            (
+                NativeInvokeResultTarget::StaticMethodLookupWithAccessContext,
+                NativeInvokeResultConsumer::Discard,
+                NativeInvokeResultReturn::Bool,
+                "phpc_native_static_method_invoke_discard_with_access_context_diagnostic_and_free_scope_method_arguments",
+            ),
+        ];
+
+        for (target, consumer, result, name) in expected {
+            assert_eq!(
+                target.helper_for_consumer(consumer),
+                NativeInvokeResultHelperSelection::Helper(NativeInvokeResultHelper {
+                    name,
+                    result,
+                    consumes_arguments: true,
+                })
+            );
+        }
+
+        for (target, blocker) in [
+            (
+                NativeInvokeResultTarget::ConstructorAllocation,
+                NativeInvokeResultHelperBlocker::MissingConstructorAllocationAbi,
+            ),
+            (
+                NativeInvokeResultTarget::ClosureArgumentHandle,
+                NativeInvokeResultHelperBlocker::MissingClosureArgumentHandleAbi,
+            ),
+        ] {
+            for consumer in [
+                NativeInvokeResultConsumer::OwnedResult,
+                NativeInvokeResultConsumer::Value,
+                NativeInvokeResultConsumer::Reference,
+                NativeInvokeResultConsumer::Discard,
+            ] {
+                assert_eq!(
+                    target.helper_for_consumer(consumer),
+                    NativeInvokeResultHelperSelection::Blocked(blocker),
+                    "{target:?} {consumer:?} must stay blocked until the shared ABI exists",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn native_callable_runtime_boundary_declares_lookup_plus_invoke_helpers() {
+        let mut generator = CGenerator {
+            uses_native_callable_helpers: true,
+            ..CGenerator::default()
+        };
+        let output = generator
+            .emit_program(&Program { statements: vec![] })
+            .expect("empty program with native callable helpers should emit");
+
+        for expected in [
+            "extern phpc_NativeCallResultHandle phpc_native_callable_invoke_result_with_diagnostic_and_free(phpc_NativeCallableHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);",
+            "extern phpc_NativeCallResultHandle phpc_native_callable_lookup_invoke_result_with_diagnostic_and_free_arguments(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);",
+            "extern phpc_NativeReferenceHandle phpc_native_callable_lookup_invoke_reference_with_diagnostic_and_free_arguments(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);",
+            "extern bool phpc_native_callable_lookup_invoke_discard_with_diagnostic_and_free_arguments(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);",
+            "extern phpc_NativeCallResultHandle phpc_native_method_invoke_result_with_access_context_diagnostic_and_free_receiver_method_arguments(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle receiver, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);",
+            "extern phpc_NativeValueHandle phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle receiver, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);",
+            "extern phpc_NativeCallResultHandle phpc_native_static_method_invoke_result_with_access_context_diagnostic_and_free_scope_method_arguments(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);",
+            "extern bool phpc_native_static_method_invoke_discard_with_access_context_diagnostic_and_free_scope_method_arguments(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);",
+        ] {
+            assert!(output.contains(expected), "missing {expected}\n{output}");
+        }
     }
 
     #[test]
