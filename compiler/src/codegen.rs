@@ -363,6 +363,27 @@ struct NativeCallOperation {
     blocker: NativeCallBlocker,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeObjectMetadataCallKind {
+    MetadataExists,
+    MemberMetadataExists,
+    RelationshipMetadata,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct NativeObjectMetadataCallOperation<'a> {
+    name: &'a str,
+    kind: NativeObjectMetadataCallKind,
+    args: &'a [Expr],
+    span: Span,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeObjectMetadataCallPreflightFailure {
+    ArgumentDependency(NativeCallOperation),
+    Arity { span: Span },
+}
+
 impl NativeCallOperation {
     fn value_result(span: Span, callee: NativeCallCallee, blocker: NativeCallBlocker) -> Self {
         Self {
@@ -493,6 +514,61 @@ impl NativeCallDiagnostics {
 
     fn subject(self, subject: NativeCallDiagnosticSubject<'_>) -> Diagnostic {
         native_call_operation_diagnostic(self.backend, subject.operation())
+    }
+}
+
+impl<'a> NativeObjectMetadataCallOperation<'a> {
+    fn from_builtin(name: &'a str, args: &'a [Expr], span: Span) -> Option<Self> {
+        let kind = NativeObjectMetadataCallKind::from_builtin(name)?;
+        Some(Self {
+            name,
+            kind,
+            args,
+            span,
+        })
+    }
+
+    fn preflight_failure(self) -> Option<NativeObjectMetadataCallPreflightFailure> {
+        native_direct_call_argument_result_operation(self.args, self.span)
+            .map(NativeObjectMetadataCallPreflightFailure::ArgumentDependency)
+            .or_else(|| {
+                (!self.kind.has_valid_arity(self.args.len()))
+                    .then_some(NativeObjectMetadataCallPreflightFailure::Arity { span: self.span })
+            })
+    }
+}
+
+impl NativeObjectMetadataCallKind {
+    fn from_builtin(name: &str) -> Option<Self> {
+        if is_native_metadata_exists_builtin(name) {
+            Some(Self::MetadataExists)
+        } else if is_native_member_metadata_exists_builtin(name) {
+            Some(Self::MemberMetadataExists)
+        } else if is_native_relationship_metadata_builtin(name) {
+            Some(Self::RelationshipMetadata)
+        } else {
+            None
+        }
+    }
+
+    fn has_valid_arity(self, arity: usize) -> bool {
+        match self {
+            Self::MetadataExists => (1..=2).contains(&arity),
+            Self::MemberMetadataExists => arity == 2,
+            Self::RelationshipMetadata => (2..=3).contains(&arity),
+        }
+    }
+}
+
+impl NativeObjectMetadataCallPreflightFailure {
+    fn diagnostic(self, backend: NativeCallBackend) -> Diagnostic {
+        match self {
+            Self::ArgumentDependency(operation) => {
+                NativeCallDiagnostics::new(backend).operation(operation)
+            }
+            Self::Arity { span } => NativeCallDiagnostics::new(backend)
+                .direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup),
+        }
     }
 }
 
@@ -10560,18 +10636,28 @@ impl LlvmGenerator {
         args: &[Expr],
         span: Span,
     ) -> CompileResult<IrValue> {
-        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
-            return Err(self.unsupported_call_operation(operation));
+        if let Some(metadata_call) =
+            NativeObjectMetadataCallOperation::from_builtin(name, args, span)
+        {
+            if let Some(failure) = metadata_call.preflight_failure() {
+                return Err(failure.diagnostic(NativeCallBackend::Llvm));
+            }
+            return match metadata_call.kind {
+                NativeObjectMetadataCallKind::MetadataExists => {
+                    self.emit_native_metadata_exists_call(metadata_call.args, metadata_call.span)
+                }
+                NativeObjectMetadataCallKind::MemberMetadataExists => self
+                    .emit_native_member_metadata_exists_call(
+                        metadata_call.args,
+                        metadata_call.span,
+                    ),
+                NativeObjectMetadataCallKind::RelationshipMetadata => self
+                    .emit_native_relationship_metadata_call(metadata_call.args, metadata_call.span),
+            };
         }
 
-        if is_native_metadata_exists_builtin(name) {
-            return self.emit_native_metadata_exists_call(args, span);
-        }
-        if is_native_member_metadata_exists_builtin(name) {
-            return self.emit_native_member_metadata_exists_call(args, span);
-        }
-        if is_native_relationship_metadata_builtin(name) {
-            return self.emit_native_relationship_metadata_call(args, span);
+        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(operation));
         }
 
         if args.len() != 1 {
@@ -36641,18 +36727,31 @@ impl CGenerator {
             }
         }
 
-        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
-            return Err(self.unsupported_call_operation(operation));
+        if let Some(metadata_call) =
+            NativeObjectMetadataCallOperation::from_builtin(name, args, span)
+        {
+            if let Some(failure) = metadata_call.preflight_failure() {
+                return Err(failure.diagnostic(NativeCallBackend::Assembly));
+            }
+            return match metadata_call.kind {
+                NativeObjectMetadataCallKind::MetadataExists => self
+                    .emit_native_metadata_exists_call(
+                        metadata_call.name,
+                        metadata_call.args,
+                        metadata_call.span,
+                    ),
+                NativeObjectMetadataCallKind::MemberMetadataExists => self
+                    .emit_native_member_metadata_exists_call(
+                        metadata_call.args,
+                        metadata_call.span,
+                    ),
+                NativeObjectMetadataCallKind::RelationshipMetadata => self
+                    .emit_native_relationship_metadata_call(metadata_call.args, metadata_call.span),
+            };
         }
 
-        if is_native_metadata_exists_builtin(name) {
-            return self.emit_native_metadata_exists_call(name, args, span);
-        }
-        if is_native_member_metadata_exists_builtin(name) {
-            return self.emit_native_member_metadata_exists_call(args, span);
-        }
-        if is_native_relationship_metadata_builtin(name) {
-            return self.emit_native_relationship_metadata_call(args, span);
+        if let Some(operation) = native_direct_call_argument_result_operation(args, span) {
+            return Err(self.unsupported_call_operation(operation));
         }
 
         if args.len() != 1 {
@@ -48615,6 +48714,99 @@ echo " 10" < "zeta";
             ),
             None
         );
+    }
+
+    #[test]
+    fn native_object_metadata_call_preflight_reuses_direct_call_diagnostics() {
+        let call_span = span(9);
+        let nested_call = || Expr::Call {
+            name: "produce".to_string(),
+            args: Vec::new(),
+            span: span(3),
+        };
+        let string_arg = |value: &str, column| Expr::String(value.to_string(), span(column));
+
+        for (name, args, kind) in [
+            (
+                "class_exists",
+                vec![nested_call()],
+                NativeObjectMetadataCallKind::MetadataExists,
+            ),
+            (
+                "property_exists",
+                vec![string_arg("Box", 1), nested_call()],
+                NativeObjectMetadataCallKind::MemberMetadataExists,
+            ),
+            (
+                "is_a",
+                vec![string_arg("Box", 1), nested_call()],
+                NativeObjectMetadataCallKind::RelationshipMetadata,
+            ),
+        ] {
+            let operation = NativeObjectMetadataCallOperation::from_builtin(name, &args, call_span)
+                .expect("metadata builtin should classify");
+            assert_eq!(operation.kind, kind);
+            assert_eq!(
+                operation.preflight_failure(),
+                Some(
+                    NativeObjectMetadataCallPreflightFailure::ArgumentDependency(
+                        NativeCallOperation::direct_named_value(
+                            call_span,
+                            NativeCallBlocker::ArgumentEvaluationCleanup,
+                        ),
+                    )
+                )
+            );
+
+            let mut llvm = LlvmGenerator::default();
+            let llvm_error = llvm
+                .emit_native_type_introspection_call(name, &args, call_span)
+                .expect_err("LLVM metadata call should reject argument dependency");
+            assert_eq!(llvm_error.message, LLVM_FUNCTION_CALL_REJECTION);
+
+            let mut c = CGenerator::default();
+            let c_error = c
+                .emit_native_type_introspection_call(name, &args, call_span)
+                .expect_err("generated-C metadata call should reject argument dependency");
+            assert_eq!(c_error.message, ASSEMBLY_FUNCTION_CALL_REJECTION);
+        }
+
+        for (name, args) in [
+            ("class_exists", Vec::new()),
+            ("property_exists", vec![string_arg("Box", 1)]),
+            ("is_a", vec![string_arg("Box", 1)]),
+        ] {
+            let operation = NativeObjectMetadataCallOperation::from_builtin(name, &args, call_span)
+                .expect("metadata builtin should classify");
+            let failure = operation
+                .preflight_failure()
+                .expect("invalid metadata arity should reject in preflight");
+            assert_eq!(
+                failure,
+                NativeObjectMetadataCallPreflightFailure::Arity { span: call_span }
+            );
+            assert_eq!(
+                failure.diagnostic(NativeCallBackend::Llvm).message,
+                LLVM_FUNCTION_CALL_REJECTION
+            );
+            assert_eq!(
+                failure.diagnostic(NativeCallBackend::Assembly).message,
+                ASSEMBLY_FUNCTION_CALL_REJECTION
+            );
+        }
+
+        for (name, args) in [
+            ("class_exists", vec![string_arg("Box", 1)]),
+            (
+                "property_exists",
+                vec![string_arg("Box", 1), string_arg("name", 2)],
+            ),
+            ("is_a", vec![string_arg("Box", 1), string_arg("Box", 2)]),
+        ] {
+            let operation = NativeObjectMetadataCallOperation::from_builtin(name, &args, call_span)
+                .expect("metadata builtin should classify");
+            assert_eq!(operation.preflight_failure(), None);
+        }
     }
 
     #[test]
