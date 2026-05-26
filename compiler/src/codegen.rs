@@ -23161,6 +23161,41 @@ impl CGenerator {
             .then(|| vec![CNativeCallableIdentity::GeneratedFunction { function_key }])
     }
 
+    fn native_callable_identity_for_string_value(
+        &self,
+        value: &str,
+    ) -> Option<CNativeCallableIdentity> {
+        let function_key = Self::user_function_key(value);
+        if self.user_functions.contains_key(&function_key) {
+            return Some(CNativeCallableIdentity::GeneratedFunction { function_key });
+        }
+
+        if let Some((class_name, method_name)) = value.split_once("::") {
+            let (class, method) = self.declared_class_static_method(class_name, method_name)?;
+            return Some(CNativeCallableIdentity::DeclaredStaticMethod {
+                class_key: Self::declared_class_key(&class.name),
+                method_key: Self::declared_method_key(&method.decl.name),
+            });
+        }
+
+        native_dynamic_callable_builtin_canonical_name(value).map(|name| {
+            CNativeCallableIdentity::RuntimeBuiltin {
+                name: name.to_string(),
+            }
+        })
+    }
+
+    fn native_callable_identities_for_known_string_values(
+        &self,
+        values: KnownString,
+    ) -> Option<HashSet<CNativeCallableIdentity>> {
+        let mut identities = HashSet::new();
+        for value in values.values() {
+            identities.insert(self.native_callable_identity_for_string_value(value)?);
+        }
+        (!identities.is_empty()).then_some(identities)
+    }
+
     fn native_value_facts_for_user_function_call(
         &self,
         name: &str,
@@ -23251,14 +23286,64 @@ impl CGenerator {
         self.native_value_facts_for_callable_identities(vec![identity], args.len())
     }
 
+    fn native_callable_identities_for_invokable_object_facts(
+        &self,
+        facts: CNativeValueFacts,
+    ) -> Option<HashSet<CNativeCallableIdentity>> {
+        let object = facts.object?;
+        if object.declared_class_keys.is_empty() {
+            return None;
+        }
+
+        let mut identities = HashSet::new();
+        for class_key in object.declared_class_keys {
+            let mut class_identity = None;
+            let method_key = Self::declared_method_key("__invoke");
+            for lookup_key in self.declared_class_lookup_keys(&class_key)? {
+                let class = self
+                    .declared_classes
+                    .get(&lookup_key)
+                    .expect("declared class lookup key has metadata");
+                if let Some(method) = class.methods.iter().find(|method| {
+                    !method.is_static && Self::declared_method_key(&method.decl.name) == method_key
+                }) {
+                    class_identity = Some(CNativeCallableIdentity::DeclaredInstanceMethod {
+                        class_key: Self::declared_class_key(&class.name),
+                        method_key: Self::declared_method_key(&method.decl.name),
+                    });
+                    break;
+                }
+            }
+            identities.insert(class_identity?);
+        }
+
+        (!identities.is_empty()).then_some(identities)
+    }
+
     fn native_callable_identities_for_expr(
         &self,
         expr: &Expr,
     ) -> Option<HashSet<CNativeCallableIdentity>> {
-        match expr {
-            Expr::Variable(name, _) => self.native_callable_variable_identities.get(name).cloned(),
-            _ => None,
+        if let Expr::Variable(name, _) = expr {
+            if let Some(identities) = self.native_callable_variable_identities.get(name).cloned() {
+                return Some(identities);
+            }
         }
+
+        let string_values = match expr {
+            Expr::String(value, _) => Some(KnownString::one(value.clone())),
+            Expr::Variable(name, _) => self
+                .variables
+                .get(name)
+                .and_then(|value| self.known_string_values_for_value(value)),
+            _ => None,
+        };
+        if let Some(values) = string_values {
+            return self.native_callable_identities_for_known_string_values(values);
+        }
+
+        self.native_value_facts_for_expr(expr)
+            .and_then(|facts| self.native_callable_identities_for_invokable_object_facts(facts))
     }
 
     fn native_value_facts_for_dynamic_callable_expr(
@@ -44038,6 +44123,134 @@ mod tests {
         assert!(generator
             .native_value_facts_for_expr(&copied_call)
             .expect("copied descriptor closure dynamic call facts")
+            .has_definite_native_object_interface("arrayaccess"));
+    }
+
+    #[test]
+    fn dynamic_callable_identities_drive_return_facts_for_strings_and_invokable_objects() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "class StringFactBag implements ArrayAccess {\n",
+            "    public function offsetGet($offset) { return \"S\"; }\n",
+            "    public function offsetExists($offset) { return true; }\n",
+            "    public function offsetSet($offset, $value) { return null; }\n",
+            "    public function offsetUnset($offset) { return null; }\n",
+            "}\n",
+            "class AltStringFactBag implements ArrayAccess {\n",
+            "    public function offsetGet($offset) { return \"A\"; }\n",
+            "    public function offsetExists($offset) { return true; }\n",
+            "    public function offsetSet($offset, $value) { return null; }\n",
+            "    public function offsetUnset($offset) { return null; }\n",
+            "}\n",
+            "function make_string_fact_bag() { return new StringFactBag(); }\n",
+            "function make_alt_string_fact_bag() { return new AltStringFactBag(); }\n",
+            "class StaticStringFactFactory {\n",
+            "    public static function make() { return new StringFactBag(); }\n",
+            "}\n",
+            "class InvokeStringFactFactory {\n",
+            "    public function __invoke() { return new StringFactBag(); }\n",
+            "}\n",
+            "class ChildInvokeStringFactFactory extends InvokeStringFactFactory {}\n",
+        ))
+        .unwrap();
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            uses_native_value_clone: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .unwrap();
+        generator
+            .register_top_level_user_functions(&program.statements)
+            .unwrap();
+        generator.emit_declared_class_method_definitions().unwrap();
+        generator
+            .emit_registered_user_function_definitions()
+            .unwrap();
+
+        let span = test_span();
+        generator.variables.insert(
+            "function_callback".to_string(),
+            CValue::String("make_string_fact_bag".to_string()),
+        );
+        assert!(generator
+            .native_value_facts_for_expr(&Expr::DynamicCall {
+                callee: Box::new(test_variable_expr("function_callback")),
+                args: Vec::new(),
+                span,
+            })
+            .expect("generated-function string callable facts")
+            .has_definite_native_object_interface("arrayaccess"));
+
+        generator.known_strings.insert(
+            "string_callable_selector".to_string(),
+            KnownString::from_values([
+                "make_string_fact_bag".to_string(),
+                "make_alt_string_fact_bag".to_string(),
+            ])
+            .expect("known string callable set"),
+        );
+        generator.variables.insert(
+            "branched_function_callback".to_string(),
+            CValue::StringExpr("string_callable_selector".to_string()),
+        );
+        let branched_facts = generator
+            .native_value_facts_for_expr(&Expr::DynamicCall {
+                callee: Box::new(test_variable_expr("branched_function_callback")),
+                args: Vec::new(),
+                span,
+            })
+            .expect("branched generated-function string callable facts");
+        assert!(branched_facts.has_definite_native_object_interface("arrayaccess"));
+        assert!(
+            branched_facts
+                .object
+                .as_ref()
+                .expect("object facts")
+                .declared_class_keys
+                .is_empty(),
+            "branched string callables should intersect facts across possible identities"
+        );
+
+        generator.variables.insert(
+            "static_method_callback".to_string(),
+            CValue::String("StaticStringFactFactory::make".to_string()),
+        );
+        assert!(generator
+            .native_value_facts_for_expr(&Expr::DynamicCall {
+                callee: Box::new(test_variable_expr("static_method_callback")),
+                args: Vec::new(),
+                span,
+            })
+            .expect("declared static-method string callable facts")
+            .has_definite_native_object_interface("arrayaccess"));
+
+        let child_class = generator
+            .declared_classes
+            .get(&CGenerator::declared_class_key(
+                "ChildInvokeStringFactFactory",
+            ))
+            .expect("child invokable class metadata");
+        generator.native_value_variable_facts.insert(
+            "invokable".to_string(),
+            CNativeValueFacts::object(CNativeObjectFacts::for_declared_class(
+                CGenerator::declared_class_key("ChildInvokeStringFactFactory"),
+                child_class,
+            ))
+            .expect("invokable object facts"),
+        );
+        generator.variables.insert(
+            "invokable".to_string(),
+            CValue::NativeValueHandle("invokable_handle".to_string()),
+        );
+        assert!(generator
+            .native_value_facts_for_expr(&Expr::DynamicCall {
+                callee: Box::new(test_variable_expr("invokable")),
+                args: Vec::new(),
+                span,
+            })
+            .expect("inherited __invoke callable facts")
             .has_definite_native_object_interface("arrayaccess"));
     }
 

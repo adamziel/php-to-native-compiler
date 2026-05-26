@@ -13114,6 +13114,30 @@ const ARRAYACCESS_CALLABLE_RETURN_PRODUCER_FACT_SOURCE: &str = concat!(
     "echo \"|\", ReturnFactory::choose(false)[\"slot\"] ?? \"M\";\n",
 );
 
+const ARRAYACCESS_DYNAMIC_CALLABLE_RETURN_PRODUCER_FACT_SOURCE: &str = concat!(
+    "<?php\n",
+    "class DynamicCallableReturnBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { return \"D\"; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "function make_dynamic_callable_return_bag() { return new DynamicCallableReturnBag(); }\n",
+    "class DynamicCallableReturnFactory {\n",
+    "    public static function make() { return new DynamicCallableReturnBag(); }\n",
+    "    public function __invoke() { return new DynamicCallableReturnBag(); }\n",
+    "}\n",
+    "$function = \"make_dynamic_callable_return_bag\";\n",
+    "echo $function()[\"slot\"], \"|\";\n",
+    "$static = \"DynamicCallableReturnFactory::make\";\n",
+    "echo $static()[\"slot\"], \"|\";\n",
+    "$object = new DynamicCallableReturnFactory();\n",
+    "echo $object()[\"slot\"], \"|\";\n",
+    "$closure = function () { return new DynamicCallableReturnBag(); };\n",
+    "$copied = $closure;\n",
+    "echo $copied()[\"slot\"];\n",
+);
+
 #[test]
 fn native_executable_c_source_routes_arrayaccess_read_isset_through_runtime_abi() {
     let program = parse(ARRAYACCESS_READ_ISSET_SOURCE).unwrap();
@@ -13166,6 +13190,30 @@ fn native_executable_c_source_routes_arrayaccess_callable_return_producer_facts(
 }
 
 #[test]
+fn native_executable_c_source_routes_arrayaccess_dynamic_callable_return_producer_facts() {
+    let program = parse(ARRAYACCESS_DYNAMIC_CALLABLE_RETURN_PRODUCER_FACT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source
+            .matches("phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic")
+            .count()
+            >= 4
+            && source.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && source.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
+            && source.contains("phpc_native_value_is_descriptor_closure"),
+        "dynamic callable return facts should feed ArrayAccess consumers through shared callable identity and runtime invocation boundaries:\n{source}"
+    );
+    assert!(
+        !source.contains("ArrayAccess lowering rejects")
+            && !source.contains("callable_array_matched")
+            && !source.contains("callable_object_matched")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches"),
+        "dynamic callable return facts must not use ArrayAccess-specific or legacy finite callable ladders:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_does_not_route_arrayaccess_callable_return_default_fallthrough_fact()
 {
     let program = parse(concat!(
@@ -13209,6 +13257,32 @@ fn emit_exe_links_and_runs_arrayaccess_callable_return_producer_fact_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"T|Y|F|T|A|E|A");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_arrayaccess_dynamic_callable_return_producer_fact_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "arrayaccess_dynamic_callable_return_producer_fact",
+        ARRAYACCESS_DYNAMIC_CALLABLE_RETURN_PRODUCER_FACT_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native dynamic callable-return ArrayAccess producer executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"D|D|D|D");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);
