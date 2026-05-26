@@ -906,7 +906,29 @@ struct NativeSourceCallResultCarrier {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct NativeSourceCallTargetOperands {
     args: Vec<String>,
+    cleanup_on_preinvoke_failure: Vec<String>,
     cleanup_after_invocation: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeSourceCallAccessContextOperands {
+    access_context: &'static str,
+    caller_scope: String,
+    cleanup_after_use: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeSourceCallAccessContext<'a> {
+    External,
+    Static,
+    ObjectReceiver,
+    ClassContext { caller_scope: &'a str },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeSourceCallStringHandleOperand {
+    handle: String,
+    cleanup_after_use: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30322,7 +30344,120 @@ impl CGenerator {
                 "(phpc_NativeStringHandle){0}".to_string(),
                 name_handle.clone(),
             ],
+            cleanup_on_preinvoke_failure: vec![format!("phpc_native_string_free({name_handle});")],
             cleanup_after_invocation: vec![format!("phpc_native_string_free({name_handle});")],
+        }
+    }
+
+    fn emit_native_source_call_access_context_operands(
+        &mut self,
+        access_context: NativeSourceCallAccessContext<'_>,
+    ) -> NativeSourceCallAccessContextOperands {
+        match access_context {
+            NativeSourceCallAccessContext::External => NativeSourceCallAccessContextOperands {
+                access_context: "PHPC_NATIVE_CALLABLE_ACCESS_EXTERNAL",
+                caller_scope: "(phpc_NativeStringHandle){0}".to_string(),
+                cleanup_after_use: Vec::new(),
+            },
+            NativeSourceCallAccessContext::Static => NativeSourceCallAccessContextOperands {
+                access_context: "PHPC_NATIVE_CALLABLE_ACCESS_STATIC",
+                caller_scope: "(phpc_NativeStringHandle){0}".to_string(),
+                cleanup_after_use: Vec::new(),
+            },
+            NativeSourceCallAccessContext::ObjectReceiver => {
+                NativeSourceCallAccessContextOperands {
+                    access_context: "PHPC_NATIVE_CALLABLE_ACCESS_OBJECT_RECEIVER",
+                    caller_scope: "(phpc_NativeStringHandle){0}".to_string(),
+                    cleanup_after_use: Vec::new(),
+                }
+            }
+            NativeSourceCallAccessContext::ClassContext { caller_scope } => {
+                let caller_scope_handle = self.emit_native_string_handle_for_static_text(
+                    "method_call_caller_scope",
+                    caller_scope,
+                );
+                NativeSourceCallAccessContextOperands {
+                    access_context: "PHPC_NATIVE_CALLABLE_ACCESS_CLASS_CONTEXT",
+                    caller_scope: caller_scope_handle.clone(),
+                    cleanup_after_use: vec![format!(
+                        "phpc_native_string_free({caller_scope_handle});"
+                    )],
+                }
+            }
+        }
+    }
+
+    fn emit_native_static_text_source_call_string_operand(
+        &mut self,
+        prefix: &str,
+        text: &str,
+    ) -> NativeSourceCallStringHandleOperand {
+        let handle = self.emit_native_string_handle_for_static_text(prefix, text);
+        NativeSourceCallStringHandleOperand {
+            handle: handle.clone(),
+            cleanup_after_use: vec![format!("phpc_native_string_free({handle});")],
+        }
+    }
+
+    fn emit_native_receiver_method_source_call_target_operands(
+        &mut self,
+        receiver: CNativeValueMaterialization,
+        method: CNativeValueMaterialization,
+        access_context: NativeSourceCallAccessContext<'_>,
+        failure_cleanup: &str,
+    ) -> NativeSourceCallTargetOperands {
+        let table = self.ensure_native_callable_table(failure_cleanup);
+        let access_context = self.emit_native_source_call_access_context_operands(access_context);
+
+        let mut cleanup_on_preinvoke_failure = method.cleanup_after_use.clone();
+        cleanup_on_preinvoke_failure.extend(receiver.cleanup_after_use.clone());
+        cleanup_on_preinvoke_failure.extend(access_context.cleanup_after_use.clone());
+
+        let mut cleanup_after_invocation = native_value_aux_cleanup_after_consuming_handle(&method);
+        cleanup_after_invocation.extend(native_value_aux_cleanup_after_consuming_handle(&receiver));
+        cleanup_after_invocation.extend(access_context.cleanup_after_use);
+
+        NativeSourceCallTargetOperands {
+            args: vec![
+                table,
+                receiver.handle,
+                method.handle,
+                access_context.access_context.to_string(),
+                access_context.caller_scope,
+            ],
+            cleanup_on_preinvoke_failure,
+            cleanup_after_invocation,
+        }
+    }
+
+    fn emit_native_static_method_source_call_target_operands(
+        &mut self,
+        scope: NativeSourceCallStringHandleOperand,
+        method: CNativeValueMaterialization,
+        access_context: NativeSourceCallAccessContext<'_>,
+        failure_cleanup: &str,
+    ) -> NativeSourceCallTargetOperands {
+        let table = self.ensure_native_callable_table(failure_cleanup);
+        let access_context = self.emit_native_source_call_access_context_operands(access_context);
+
+        let mut cleanup_on_preinvoke_failure = method.cleanup_after_use.clone();
+        cleanup_on_preinvoke_failure.extend(scope.cleanup_after_use.clone());
+        cleanup_on_preinvoke_failure.extend(access_context.cleanup_after_use.clone());
+
+        let mut cleanup_after_invocation = native_value_aux_cleanup_after_consuming_handle(&method);
+        cleanup_after_invocation.extend(scope.cleanup_after_use);
+        cleanup_after_invocation.extend(access_context.cleanup_after_use);
+
+        NativeSourceCallTargetOperands {
+            args: vec![
+                table,
+                scope.handle,
+                method.handle,
+                access_context.access_context.to_string(),
+                access_context.caller_scope,
+            ],
+            cleanup_on_preinvoke_failure,
+            cleanup_after_invocation,
         }
     }
 
@@ -50778,16 +50913,111 @@ echo " 10" < "zeta";
             .body
             .extend(diagnostic_target.cleanup_after_invocation);
 
+        let receiver_target = generator.emit_native_receiver_method_source_call_target_operands(
+            CNativeValueMaterialization {
+                handle: "receiver_value".to_string(),
+                cleanup_after_use: vec!["phpc_native_value_free(receiver_value);".to_string()],
+            },
+            CNativeValueMaterialization {
+                handle: "method_value".to_string(),
+                cleanup_after_use: vec!["phpc_native_value_free(method_value);".to_string()],
+            },
+            NativeSourceCallAccessContext::ObjectReceiver,
+            "cleanup_receiver_owner();",
+        );
+        let receiver_arguments = generator.emit_empty_native_source_call_arguments_handle(
+            "source_call_receiver_args",
+            &format!(
+                "{}cleanup_receiver_owner();",
+                c_cleanup_sequence(&receiver_target.cleanup_on_preinvoke_failure),
+            ),
+        );
+        let receiver_carrier = generator
+            .native_source_call_carrier(
+                NativeInvokeResultTarget::ReceiverMethodLookupWithAccessContext,
+                NativeSourceCallResultConsumer::Value,
+                span,
+            )
+            .expect("receiver-method value carrier should select");
+        generator
+            .emit_native_source_call_carrier_invocation(
+                receiver_carrier,
+                &receiver_target.args,
+                &receiver_arguments,
+                "receiver_method_diagnostic",
+                "source_call_receiver_method",
+            )
+            .expect("receiver-method carrier should return a value handle");
+        generator
+            .body
+            .extend(receiver_target.cleanup_after_invocation);
+
+        let static_scope = generator
+            .emit_native_static_text_source_call_string_operand("static_method_scope", "AnyClass");
+        let static_target = generator.emit_native_static_method_source_call_target_operands(
+            static_scope,
+            CNativeValueMaterialization {
+                handle: "static_method_value".to_string(),
+                cleanup_after_use: vec![
+                    "phpc_native_value_free(static_method_value);".to_string(),
+                    "release_static_method_aux();".to_string(),
+                ],
+            },
+            NativeSourceCallAccessContext::ClassContext {
+                caller_scope: "CallerClass",
+            },
+            "cleanup_static_owner();",
+        );
+        let static_arguments = generator.emit_empty_native_source_call_arguments_handle(
+            "source_call_static_args",
+            &format!(
+                "{}cleanup_static_owner();",
+                c_cleanup_sequence(&static_target.cleanup_on_preinvoke_failure),
+            ),
+        );
+        let static_carrier = generator
+            .native_source_call_carrier(
+                NativeInvokeResultTarget::StaticMethodLookupWithAccessContext,
+                NativeSourceCallResultConsumer::Discard,
+                span,
+            )
+            .expect("static-method discard carrier should select");
+        generator
+            .emit_native_source_call_carrier_invocation(
+                static_carrier,
+                &static_target.args,
+                &static_arguments,
+                "static_method_diagnostic",
+                "source_call_static_method",
+            )
+            .expect("static-method carrier should return a bool");
+        generator
+            .body
+            .extend(static_target.cleanup_after_invocation);
+
         let body = generator.body.join("\n");
-        assert_eq!(body.matches("phpc_native_call_arguments_new()").count(), 3);
+        assert_eq!(body.matches("phpc_native_call_arguments_new()").count(), 5);
         assert!(body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"));
         assert!(body.contains("phpc_native_callable_invoke_reference_with_diagnostic_and_free"));
         assert!(body.contains(
             "phpc_native_callable_lookup_invoke_result_with_diagnostic_and_free_arguments"
         ));
+        assert!(body.contains(
+            "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+        ));
+        assert!(body.contains(
+            "phpc_native_static_method_invoke_discard_with_access_context_diagnostic_and_free_scope_method_arguments"
+        ));
         assert!(body.contains("PHPC_NATIVE_CALLABLE_KIND_FUNCTION"));
+        assert!(body.contains("PHPC_NATIVE_CALLABLE_ACCESS_OBJECT_RECEIVER"));
+        assert!(body.contains("PHPC_NATIVE_CALLABLE_ACCESS_CLASS_CONTEXT"));
+        assert!(body.contains("cleanup_receiver_owner();"));
+        assert!(body.contains("cleanup_static_owner();"));
         assert!(body.contains("phpc_native_string_free(source_call_diagnostic_name_"));
+        assert!(body.contains("phpc_native_string_free(static_method_scope_"));
+        assert!(body.contains("phpc_native_string_free(method_call_caller_scope_"));
         assert!(body.contains("phpc_native_diagnostic_result_from_call_result_and_free"));
+        assert!(body.contains("release_static_method_aux();"));
         assert!(generator.uses_native_callable_helpers);
         assert!(generator.uses_native_diagnostic_result_producers);
     }
