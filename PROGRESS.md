@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 18:15 CEST
+Updated: 2026-05-26 18:44 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -11,310 +11,57 @@ notes, and dashboard-only commits are excluded.
 
 ## Executive Read
 
-Overall supervised-roadmap progress: **95%** `[###################-]`
+Overall integrated-roadmap progress: **70%** `[##############------]`
 
-Selected executable PHP semantics: **95%** `[###################-]`
+Selected executable PHP semantics: **70%** `[##############------]`
 
-Primary tracked `HEAD` is aligned with `origin/master` after accounting for the
-latest source capability. The worktree still has preserved foreign scratch
-state: untracked `examples/class.php`.
+Calibration: bars count only primary-integrated, tested, committed, and pushed
+work. Each bar has 20 slots, so each `#` is 5%. Dirty lanes and candidate
+artifacts do not count until integrated.
 
-Latest primary-integrated source capability baseline:
-`81c60f38 native: add diagnostic result consumer contracts`.
+Primary `HEAD` is synced with `origin/master` at `0f9132ab` (`docs: account
+diagnostic result consumer contracts`). The primary worktree is clean except
+for preserved untracked `examples/class.php`.
 
-`81c60f38` adds the compiler/backend consumer-selector counterpart to the
-diagnostic-result producer/list-storage contract. Generated LLVM and native C
-now share a semantic-family-driven `NativeDiagnosticResultConsumerFamily` /
-`NativeDiagnosticResultListConsumer` boundary for runtime-supported
-value-required operation result lists and deferred-cleanup result lists.
-Expression/value, statement, terminal/control-flow, cleanup/control-flow,
-assignment-lvalue, lvalue, RMW-lvalue, reference-binding, and call-argument
-families route through the existing value-required operation-list ABI;
-deferred cleanup routes through the existing cleanup-result ABI; and
-termination, declaration-initializer, static-local-initializer, and
-global-declaration families centralize as missing-runtime-ABI blockers instead
-of exact-shape backend lowering. Focused proof covers selector family routing,
-LLVM/native-C consumer emission and declarations, adjacent diagnostic-result
-producer/list tests, value-required and deferred-cleanup runtime ABI consumers,
-fmt, and diff checks. Still open: wiring real expression/statement/terminal/
-cleanup/lvalue/reference/call-argument lowering into these consumers,
-runtime/compiler consumers for the blocked declaration/termination families,
-cleanup-result operands, expression-owned `NativeCallResultHandle` carriers,
-invoke-result helper ABIs and argument ownership/cleanup, branch-aware
-conditional handoff cleanup, actual unwind/finally/destructor execution,
-references/COW, object/property/ArrayAccess breadth, and backend parity.
+Latest source capability: `81c60f38` adds semantic-family-driven diagnostic-
+result list consumer contracts for generated LLVM/native C. Supported
+expression/statement/control-flow/lvalue/reference/call-argument families now
+select the shared value-required operation-list ABI; deferred cleanup selects
+the cleanup-list ABI; declaration/termination families are explicit
+missing-runtime-ABI blockers.
 
-This follows `a3c8b315`, which adds two compiler/backend prerequisites for the
-next generalized result-consumer migrations. Call-result diagnostics now share
-a compact `NativeCallResultConsumer` taxonomy across existing statement,
-value, lvalue, RMW-lvalue, failed-value, reference-result, and dereferenced-
-value consumers,
-with `NativeCallCallee` producing value/reference/dereferenced operation
-records for direct named, dynamic callable, method, constructor, and adjacent
-call families without importing broad source-call lowering. Emitted LLVM and
-generated native C now also have reusable `NativeDiagnosticResult` producer and
-list-storage infrastructure over current primary's pointer-backed runtime ABI,
-covering owned value handles, owned diagnostic handles, and null results across
-expression, statement, terminal, and cleanup operand surfaces. Focused proof
-covers call-family/result-consumer classification, failed and RMW operands,
-existing value/dereferenced call-result diagnostics, diagnostic-result
-producer/list emitters, value-required and deferred-cleanup runtime ABI
-consumers, fmt, and diff checks. Still open: expression-owned
-`NativeCallResultHandle` carriers, invoke-result helper ABIs and argument
-ownership/cleanup, diagnostic-result consumer selection for real emitted
-operation/deferred-cleanup sites, branch-aware conditional handoff cleanup,
-actual unwind/finally/destructor execution, references/COW, object/property/
-ArrayAccess breadth, and backend parity.
+Current blockers to 100%:
 
-This follows `885bde45`, which adds a deferred-cleanup diagnostic-result family
-on top of the owned `NativeDiagnosticResult` list contract. Operation result-
-list blockers and deferred-cleanup blockers now share
-`NativeDiagnosticResultListBlocker`, so value-required result sequencing, null
-result item/list handling, terminal diagnostic short-circuiting, remaining-
-result cleanup, and final blocker append flow through one runtime list
-consumer. The new
-`phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free(...)`
-wrapper consumes ordered cleanup results and appends a centralized
-finally/destructor/shutdown cleanup-ordering blocker until generalized
-unwinding semantics exist. Focused proof covers value-only cleanup results,
-terminal diagnostics, null result items, null result-list pointers, empty
-cleanup lists, the existing value-required operation result-list path, adjacent
-diagnostic operation blockers, `cargo check -p php_runtime`, `cargo check -p
-phpc --lib`, fmt, and diff checks. Compiler/backend cleanup-result consumers,
-real finally/destructor/shutdown unwinding, pending diagnostic aggregation,
-exception/fatal ownership, return/control-transfer joins, references/COW,
-exact cleanup ordering, and source-aware diagnostic reporting remain open.
+- expression-owned `NativeCallResultHandle` carriers, invoke-result helper
+  ABIs, and exactly-once argument ownership/cleanup;
+- real diagnostic-result consumer wiring for emitted expression, statement,
+  terminal, cleanup, lvalue, reference, and call-argument operands;
+- references/COW, arbitrary alias-root writeback, property-held/nested
+  ArrayAccess, and broader object/static/dynamic/typed property storage;
+- actual exception/Throwable propagation, catch/finally/destructor/shutdown
+  cleanup, and source-ordered diagnostics;
+- namespace fallback, autoload, aliases, visibility/magic, constructors,
+  named/spread breadth, return references, and backend parity.
 
-This follows `099b76fc`, which adds a runtime-owned `NativeDiagnosticResult`
-contract plus a
-value-required diagnostic-result list consumer. Runtime results can now carry
-an owned value with zero or more owned diagnostics, expose diagnostic count,
-severity, and message-byte inspection, and be consumed by
-`phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free(...)`.
-The generic consumer handles ordinary value operands, terminal diagnostic
-operands, null result items, null result-list pointers, empty result lists, and
-cleanup of unconsumed remaining result operands while preserving the older
-handle-based operand-requirement ABI for current compiler consumers. Focused
-proof covers value, terminal-diagnostic, null-item, null-list, and empty-list
-shapes, adjacent existing diagnostic operation blockers, `cargo check -p
-php_runtime`, `cargo check -p phpc --lib`, fmt, and diff checks. Compiler and
-backend consumers still need to migrate selected expression/result semantics
-onto this owned result contract; deferred cleanup/finally/destructor/shutdown
-result families, source/error-handler freezing, references/COW, exact cleanup
-ordering, and full executable unwinding remain open.
-
-This follows `08d00fe1`, which adds a runtime call-frame conditional
-result-handoff boundary on
-the existing owned `NativeCallResultHandle` carrier. Short-ternary condition
-handoff and null-coalescing left-operand handoff now share
-`NativeCallFrameConditionalHandoffFeature` and
-`phpc_native_call_frame_result_conditional_handoff_contract_result(...)`.
-The boundary preserves ordinary owned scalar/string/null/plain-array results,
-propagates existing failure diagnostics unchanged, and centralizes blockers for
-cleanup-sensitive values before conditional branch discard/handoff decisions:
-resources, objects, reference results, arrays with reference slots, arrays with
-shared COW slots, and closure capture families. Focused proof covers both
-conditional feature tags, success preservation, diagnostic propagation,
-cleanup-sensitive blockers, adjacent call-result consumers,
-`cargo check -p php_runtime`, `cargo check -p phpc --lib`, fmt, and diff
-checks. Compiler-side consumers for call-result short ternary/null coalesce,
-real destructor/resource cleanup, branch discard ordering, references/COW,
-structured unwind/finally behavior, exact diagnostics, and backend integration
-remain open.
-
-This follows `7fb9db15`, which adds a shared
-`NativeObjectMetadataCallOperation` /
-`NativeObjectMetadataCallPreflightFailure` boundary for native
-metadata/type-introspection builtin families. Class/interface/trait/enum
-existence, property/method existence, and relationship metadata calls now
-classify their semantic family once, check call-result argument dependencies
-before arity, and project failures through the existing backend-neutral
-`NativeCallDiagnostics` path for both LLVM and generated C. Existing metadata
-execution remains intentionally narrow; the patch centralizes rejection
-selection without importing lane-local object-property WIP or widening
-production lowering. Focused proof covers dependency-before-arity and arity
-preflight across `class_exists`, `property_exists`, and `is_a`, LLVM/generated-C
-diagnostic projection, adjacent direct-call cleanup diagnostics, current
-builtin-class metadata rejection, `cargo check -p phpc --lib`, fmt, and diff
-checks. The older static metadata IR snapshot gate still fails on stale stdout
-helper text (`phpc_native_value_echo_stdout` versus
-`phpc_native_value_format_stdout_with_diagnostic`) and was recorded as a
-non-gate; the affected metadata fixtures still emit IR successfully. Full
-object metadata tables, object-property rejection carriers, receiver/static
-receiver execution, visibility/magic/typed-property policy, references/COW,
-exact diagnostics, and backend parity remain open.
-
-This follows `a3826e2f`, which adds the runtime ABI helper
-`phpc_native_value_dynamic_method_name_matches()` and routes generated-C dynamic
-instance method dispatch through it. Dynamic method-name matching now uses a
-method-specific scalar-normalization boundary instead of the string-only
-dynamic function-call matcher: string and binary-string names compare
-case-insensitively, int/true/float operands normalize through PHP echo-string
-conversion for lookup and diagnostics, and false/null/empty/non-scalar values
-remain centralized misses or diagnostics. Focused proof covers runtime method
-lookup normalization, dynamic method failure diagnostics, generated-C helper
-selection, fmt, and diff checks. Broader method-frame lookup, inherited/magic
-method fallback, visibility policy, executable object/property assignment,
-references/COW, exact diagnostics, and backend parity remain open.
-
-This follows `3ac78d8b`, which adds
-`NativeObjectCallDispatchArgumentHandles` as the shared generated-C
-argument-handle materialization boundary for object call dispatch.
-Declared constructor calls, declared instance methods, dynamic declared instance
-method branches, object/static receiver calls, named static methods,
-callable-array method branches, invokable-object branches, and constructorless
-argument arrays now retain call arguments, owned `NativeValue` handles, and
-cleanup through one frame-argument carrier instead of repeated tuple/local
-aggregation. The extraction intentionally leaves LLVM object/class parity and
-broader policy-check ABI work blocked until the missing method-frame,
-receiver/static receiver, lifecycle, visibility/magic/typed-property,
-references/COW, and exact diagnostic surfaces exist.
-
-This follows `73195f96`, which routes generated-C cast lowering through the shared
-`phpc_native_value_cast_result()` / `NativeValueOperationResult` carrier.
-Array-to-string casts now produce the PHP-shaped value `"Array"` while carrying
-`Warning: Array to string conversion` through the same value-result diagnostic
-path used by unary, binary, comparison, and type-name operations. The legacy
-diagnostic-pointer cast helper remains available for runtime callers but now
-delegates through the shared result boundary, keeping generated C and runtime
-callers aligned. Focused proof covers runtime cast results, legacy helper
-compatibility, generated C source routing, linked executable warning/output
-behavior for `(string)` and `strval()` over array values, and neighboring cast
-ABI consumers.
-
-This follows `0bebd2e9`, which adds a reusable runtime/compiler boundary for
-produced call results
-supplied to fixed by-reference user-function parameters. Generated C now
-detects direct declared user-function calls where a by-reference parameter is
-fed by a produced call result, packages all arguments as owned
-`NativeCallResultHandle` values, and routes them through
-`phpc_native_call_frame_reference_parameter_alias_transfer_result_from_results_with_diagnostic()`.
-The helper preserves prior argument diagnostics, records caller-visible target
-labels and value families, nulls consumed result handles, and reports the
-missing executable alias-transfer semantics through the shared call-result
-consumer path instead of using a backend-local rejection.
-
-This follows `273c2e6e`, which adds generated-C scoped callable-string signature planning for
-known `Class::method` strings. Variable-held, concatenated, ternary, and
-short-ternary finite string sets can now resolve declared public static-method
-metadata before runtime callable-value invocation, so by-reference argument
-planning uses the shared `NativeCallArgumentsHandle` carrier instead of the
-older finite function-string ladder. Known by-reference public static method
-returns can satisfy reference-assignment consumers through the runtime
-callable-value reference path, while known non-reference returns stay on the
-central dynamic-call return-ownership blocker.
-
-This follows `b3d90dbc`, which adds shared runtime/compiler reference-cell predicate and membership
-boundaries. Reference-backed `isset`, `empty`, and truthiness now route through
-`phpc_native_reference_predicate()` instead of cloning the reference value just
-to ask null/truthiness questions. `array_key_exists()` and `key_exists()` now
-share diagnostic-aware value and reference-cell membership helpers, so LLVM and
-generated-C consumers can handle direct values, aliases, symbol/reference slots,
-and by-reference foreach cells through one key-coercion and array-membership
-surface.
-
-`73a9c58d` tightens runtime call-result ownership by
-routing value, reference, and discard consumers through one diagnostic-aware
-call-result boundary. Stale
-diagnostic slots are cleared before a consumer inspects even a null
-`NativeCallResultHandle`, so missing-result and failure-result cleanup no longer
-leaks an unrelated prior diagnostic through direct callable and callable-value
-invocation wrappers.
-
-`05214fd4` aligns compiler-known declared-method callable
-identity facts with PHP receiver policy. Class-method strings and class-string
-callable arrays now publish facts only for public static methods. Object
-receiver callable arrays can publish facts for public instance and public static
-methods, matching PHP's `[$object, "staticMethod"]` behavior. Invokable object
-facts reject static `__invoke` metadata while preserving PHP's current
-non-public `__invoke` warning-but-callable behavior.
-
-`4dc4d791` keeps compiler-known callable-array identities honest after native
-array owner mutations. Variable-backed callable arrays can still publish facts
-when stable, but direct element writes, append/unset, compound/update writes,
-null-coalesce lvalue writes, by-reference foreach over native array owners, and
-native array mutating builtins now clear those identities before later dynamic
-calls can consume stale class/method pairs.
-
-This builds on `7aa27530`, which extended the same dynamic-call return-fact
-boundary to compiler-known callable arrays. Literal/static callable arrays such
-as `["ClassName", "method"]`, keyed numeric forms such as
-`[1 => "method", 0 => $object]`, and object receiver arrays such as
-`[$object, "method"]` resolve through the shared callable identity and
-return-summary intersection path. Callable-array identities survive ordinary
-variable assignment, so `$cb = ["Class", "method"]; $cb()` can publish known
-native object/interface facts for downstream consumers until a compiler-visible
-mutation invalidates them. The resolver stays conservative: by-reference array
-elements, unknown array shapes or runtime mutations, arity mismatches,
-by-reference returns, and mixed receiver sets where any possible class lacks the
-method do not publish facts.
-
-This composes with `885bde45` deferred-cleanup diagnostic results,
-`099b76fc` diagnostic result-list contracts,
-`08d00fe1` conditional call-result handoff,
-`7fb9db15` object metadata preflight diagnostics,
-`a3826e2f` dynamic method-name normalization,
-`73195f96` native value-result cast diagnostics,
-`0bebd2e9` by-reference alias-transfer result diagnostics,
-`273c2e6e` scoped callable-string signatures, `b3d90dbc`
-reference-cell predicate/membership helpers, `73a9c58d` call-result diagnostic
-cleanup, `05214fd4` callable method identity policy, `4dc4d791`
-callable-array identity invalidation, `7aa27530` callable-array return facts,
-`d2b60ba7` known string/invokable dynamic callable return facts, `4ddbfc47`
-generated-C
-ArrayAccess read/`isset`,
-`9aa933a8` generated-C ArrayAccess write/append/unset, `4311df7e`
-generated-C ArrayAccess `empty()`/null-coalesce consumers, receiver-free static
-`Class::method` string callable lookup, `f9b721a2` shared native value/object
-facts for known generated declared ArrayAccess producers, `1a9f0a1c`
-ArrayAccess owner writeback, `653a5918` ArrayAccess RMW/`??=`, `369099d7`
-callable return producer facts, `6caaa387` callable identity return summaries,
-`67efa804` descriptor-closure return summaries, `2ee642ff` ReferenceSlot owner
-facts, cleanup/unwind requirement preflight, selected generated-C RMW
-array-lvalue owner/writeback, runtime ArrayAccess read/write dispatch ABIs,
-generated declared-method callable-table publication, native value-result cast
-diagnostics, shared generated-C object-call argument handles, and
-method-specific generated-C dynamic method-name matching.
-
-Lane-local momentum is active but not counted. The deferred-cleanup
-diagnostic-result family, diagnostic result-list contract, conditional
-call-result handoff boundary, object metadata preflight, dynamic method-name
-normalization, object-call argument-handle,
-array-cast value-result, scoped callable-string, and function-frame
-by-reference alias-transfer routes have now been primary-integrated. The fresh
-property-held ArrayAccess, ordered symbol diagnostic cleanup, interface parent
-descriptor, method lookup candidate-miss, and call-preflight/source-aware lanes
-are parked as blocker maps; the broader compiler-side conditional-handoff
-consumer and compiler/backend deferred-cleanup result consumers remain pending
-worker review.
-Broader producer fact work, property/nested owner design, unknown runtime
-callable consumers, runtime array-shape callable identity facts, builtin return
-summaries, and callable receiver fallback remain advisory until routed,
-audited, integrated, committed, and pushed.
-
-The project continues moving through reusable runtime/compiler boundaries, but
-this is not full PHP parity. Broader object/interface facts for properties,
-calls, methods, clones, static properties, and references, property-held and
-nested object offsets, ArrayAccess append/increment/reference-returning and
-property-held/nested RMW/`??=` shapes, references/COW,
-destructors/finally/unwind execution, object/static property storage, exact
-diagnostics, magic/autoload/name resolution, and backend parity remain major
-gaps.
+Next direction: finish the call-result and diagnostic-result carrier stack
+first, then migrate conditional/deferred-cleanup/value/reference/return
+consumers onto it, then broaden objects/properties/ArrayAccess/references/
+unwind with focused proof.
 
 ## Grand Roadmap Position
 
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, byte-string, array, reference, symbol, callable table, callable-value dispatch, call-frame/result, conditional call-result handoff, owned diagnostic-result list contracts, native value-result cast diagnostics, produced-result by-reference alias-transfer diagnostics, request-state, diagnostics, lvalue, and ArrayAccess read/write dispatch surfaces, including diagnostic cleanup for null call-result consumers and shared reference-cell predicate/membership helpers. Remaining gaps include executable alias transfer, compiler/backend migration to owned diagnostic results, broader callable lookup parity, namespace fallback, autoload, magic calls, constructors, compiler-side conditional handoff consumers, closure frame handoff, reference-return ArrayAccess, and cleanup/unwind parity. |
-| Compiler/backend consumers | **99%** | `[####################]` | Generated C has the freshest executable consumers for direct/dynamic callables, declared methods, selected dynamic method-name normalization, selected native object-metadata preflight diagnostics, selected known scoped `Class::method` callable-string signatures, shared generated-C object-call argument handles, selected known string/invokable/callable-array callable return facts, selected reference-cell predicates and `array_key_exists`/`key_exists` membership, selected native value-result cast diagnostics including array-to-string warnings, selected RMW array-lvalue owner/writeback, and compiler-known generated declared ArrayAccess read/isset/write/append/unset/empty/null-coalesce/RMW/`??=`, including known dynamic generated-declared class-name producers. LLVM and direct assembly still lag recent object offset and lvalue/runtime ABIs. |
-| Executable PHP semantics | **95%** | `[###################-]` | Many selected executable islands exist, but major semantics remain open: full assignment/RMW/writeback, references/COW, executable object/ArrayAccess operations, cleanup/unwind/finally/destructors, exact diagnostics, and backend parity. |
-| Strings and byte semantics | **62%** | `[############--------]` | Byte-backed values and byte-preserving selected string-array slots are integrated. Binary source bytes, byte-exact interpreter/session/debug output, `mb_str_split()`, request/global byte keys, and exact diagnostics remain open. |
-| Arrays, lvalues, references, COW | **85%** | `[#################---]` | Selected reference-source/lvalue extraction, closure capture from reference-backed slots, ReferenceSlot value-owner facts/commit, reference-cell predicates, reference/value array-key membership, reference-binding diagnostics, assignment/RMW-lvalue diagnostics, generated-C RMW array-lvalue owner/writeback, direct-variable and selected reference-slot ArrayAccess RMW/`??=`, and Object/ArrayAccess blocker/runtime dispatch pieces are integrated. Object/static property storage, property-held/nested ArrayAccess RMW, arbitrary alias roots, foreach, broader writeback, and full COW remain incomplete. |
-| Symbols, globals, request state | **75%** | `[###############-----]` | Selected globals, root-symbol consumers, active symbol-table consumers, request-key blockers, append-shaped symbol reference-source materialization, direct generated-C request-state frame handoff, and generated-C dynamic user-function handoff proof exist. `$GLOBALS` self-cells, closure request-state handoff, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
-| Calls, functions, frames | **96%** | `[###################-]` | Runtime callable table/value dispatch, call arguments/frame/result ABI, conditional call-result handoff, direct and dynamic generated-C callable consumers, generated declared-method callable registration/wrapper frames, method-specific dynamic method-name normalization, shared generated-C object-call argument handles, receiver-free static `Class::method` strings, scoped callable-string public static method signatures with by-reference argument planning and selected reference-return consumers, generated-callable return-result facts, produced-call-result by-reference alias-transfer diagnostics for direct user-function calls, callable identity return-summary resolution with PHP-compatible external declared-method policy, descriptor-closure return summaries, known string callable, callable-array, and definite `__invoke` object return facts, by-reference argument transport, descriptor closures, closure returns, generated-C request-state frame handoff, and null call-result diagnostic cleanup are integrated. Unknown runtime callable strings/objects/arrays, builtin return summaries, executable by-reference alias transfer, compiler-side conditional result consumers, full object/method callable parity, namespace fallback, autoload, magic calls, named/spread breadth, broader return references, constructors, cleanup/unwind execution, and backend parity remain open. |
+| Runtime and ABI foundations | **90%** | `[##################--]` | Strong selected-path value, byte-string, array, reference, symbol, callable table, callable-value dispatch, call-frame/result, conditional call-result handoff, owned diagnostic-result list contracts, diagnostic-result consumer contracts, native value-result cast diagnostics, produced-result by-reference alias-transfer diagnostics, request-state, diagnostics, lvalue, and ArrayAccess read/write dispatch surfaces. Remaining gaps include executable alias transfer, broader callable lookup parity, namespace fallback, autoload, magic calls, constructors, compiler-side conditional handoff consumers, closure frame handoff, reference-return ArrayAccess, and cleanup/unwind parity. |
+| Compiler/backend consumers | **75%** | `[###############-----]` | Generated C has the freshest executable consumers for direct/dynamic callables, declared methods, selected dynamic method-name normalization, selected object-metadata preflight diagnostics, selected scoped `Class::method` signatures, shared object-call argument handles, selected callable return facts, selected reference-cell predicates, selected value-result cast diagnostics, selected RMW array-lvalue owner/writeback, and selected compiler-known ArrayAccess consumers. LLVM/direct assembly still lag recent object-offset/lvalue/runtime ABIs, and real diagnostic-result consumer wiring is still pending. |
+| Executable PHP semantics | **70%** | `[##############------]` | Many selected executable islands exist, but major semantics remain open: full assignment/RMW/writeback, references/COW, executable object/ArrayAccess operations, cleanup/unwind/finally/destructors, exact diagnostics, and backend parity. |
+| Strings and byte semantics | **60%** | `[############--------]` | Byte-backed values and byte-preserving selected string-array slots are integrated. Binary source bytes, byte-exact interpreter/session/debug output, `mb_str_split()`, request/global byte keys, and exact diagnostics remain open. |
+| Arrays, lvalues, references, COW | **70%** | `[##############------]` | Selected reference-source/lvalue extraction, ReferenceSlot owner facts, reference-cell predicates, membership helpers, reference/assignment/RMW diagnostics, selected RMW array-lvalue owner/writeback, and selected ArrayAccess RMW/`??=` paths are integrated. Object/static property storage, property-held/nested ArrayAccess RMW, arbitrary alias roots, foreach, broader writeback, and full COW remain incomplete. |
+| Symbols, globals, request state | **70%** | `[##############------]` | Selected globals, root-symbol consumers, active symbol-table consumers, request-key blockers, append-shaped symbol reference-source materialization, direct generated-C request-state frame handoff, and generated-C dynamic user-function handoff proof exist. `$GLOBALS` self-cells, closure request-state handoff, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
+| Calls, functions, frames | **80%** | `[################----]` | Runtime callable table/value dispatch, call arguments/frame/result ABI, conditional call-result handoff, direct/dynamic generated-C callable consumers, generated declared-method registration/wrapper frames, selected dynamic method-name normalization, shared object-call argument handles, selected callable identity/return facts, by-reference argument transport, descriptor closures, closure returns, request-state frame handoff, and null call-result diagnostic cleanup are integrated. Unknown runtime callables, builtin return summaries, executable by-reference alias transfer, compiler-side conditional result consumers, full object/method parity, namespace fallback, autoload, magic calls, named/spread breadth, broader return references, constructors, cleanup/unwind execution, and backend parity remain open. |
 | Objects, properties, methods | **65%** | `[#############-------]` | Public object-property reference-source extraction, object-property reference-slot mutation, declared-class allocation cleanup-risk metadata, shared native object-metadata preflight diagnostics, Object/ArrayAccess write blockers, runtime ArrayAccess write/read/exists dispatch, generated-C ArrayAccess read/isset/write/append/unset/empty/null-coalesce/RMW/`??=` consumers for compiler-known generated objects and selected reference slots, known dynamic generated-declared class-name producers, generated-callable, descriptor-closure, known string callable, callable-array, definite `__invoke` object return producers, shared generated-C object-call argument handles, PHP-compatible object receiver public static callable facts, and generated declared-method callable-table publication exist for selected paths. Property/magic/unknown-runtime-dynamic-call/clone/static-property producers, property-held/nested ArrayAccess owners, broader visibility parity, magic, dynamic/static/typed properties, destructors, interfaces/traits execution, references/COW, constructors, and backend parity remain open. |
-| Control flow, cleanup, diagnostics | **54%** | `[###########---------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, owned diagnostic-result list contracts, deferred-cleanup diagnostic-result blockers, try-body call-boundary preflight, generic operand-list blockers, reference/assignment/RMW blockers, Object/ArrayAccess write blockers, and cleanup/unwind requirement preflight exist. Broad unwind/finally/destructor/shutdown execution, cleanup ownership, executable reference binding, cleanup-result compiler migration, and source-ordered diagnostics remain open. |
-| Broad integrated verification | **92%** | `[##################--]` | Focused gates around recent source work are strong. Broad verification is still constrained by lane extraction cost, stale candidate expectations, heavy swap usage, and backend parity gaps. |
+| Control flow, cleanup, diagnostics | **50%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, owned diagnostic-result list contracts, diagnostic-result consumer contracts, deferred-cleanup diagnostic-result blockers, try-body call-boundary preflight, generic operand-list blockers, reference/assignment/RMW blockers, Object/ArrayAccess write blockers, and cleanup/unwind requirement preflight exist. Broad unwind/finally/destructor/shutdown execution, cleanup ownership, executable reference binding, cleanup-result compiler migration, and source-ordered diagnostics remain open. |
+| Broad integrated verification | **75%** | `[###############-----]` | Focused gates around recent source work are strong. Broad verification is still constrained by lane extraction cost, stale candidate expectations, heavy swap/log pressure, and backend parity gaps. |
 
 ## Recent Primary-Integrated Work
 
@@ -670,17 +417,17 @@ explicitly.
 
 | Item | Primary Integrated | Candidate Readiness | Toward Full Feature | Status |
 | --- | ---: | ---: | ---: | --- |
-| ArrayAccess read/isset compiler consumer | **100%** `[####################]` | **100%** `[####################]` | **48%** `[##########----------]` | Integrated at `4ddbfc47` for generated-C direct object offset read and `isset` on compiler-known generated declared `ArrayAccess` objects. |
-| ArrayAccess write/append/unset compiler consumer | **100%** `[####################]` | **100%** `[####################]` | **54%** `[###########---------]` | Integrated through `1a9f0a1c` for generated-C direct-variable keyed write, append, assignment-expression result, and unset over compiler-known generated declared `ArrayAccess` object values, with shared owner materialization/writeback replacing path-local lowering. |
-| ArrayAccess `empty`/null-coalesce sequencing | **100%** `[####################]` | **100%** `[####################]` | **46%** `[#########-----------]` | Integrated at `4311df7e` for generated-C direct object offset `empty()` and `$aa[$key] ?? rhs` over compiler-known generated declared `ArrayAccess` object values, including known dynamic generated-declared class-name facts. |
-| ArrayAccess RMW/null-coalesce assignment sequencing | **100%** `[####################]` | **100%** `[####################]` | **52%** `[##########----------]` | Integrated at `653a5918` for generated-C direct-variable compound assignment and `$aa[$key] ??= rhs` over compiler-known generated declared `ArrayAccess` object values using the shared owner/writeback boundary. Property-held/nested owners, append RMW, increment/decrement, reference-returning `offsetGet`, references/COW, cleanup/unwind, and backend parity remain open. |
+| ArrayAccess read/isset compiler consumer | **100%** `[####################]` | **100%** `[####################]` | **50%** `[##########----------]` | Integrated at `4ddbfc47` for generated-C direct object offset read and `isset` on compiler-known generated declared `ArrayAccess` objects. |
+| ArrayAccess write/append/unset compiler consumer | **100%** `[####################]` | **100%** `[####################]` | **55%** `[###########---------]` | Integrated through `1a9f0a1c` for generated-C direct-variable keyed write, append, assignment-expression result, and unset over compiler-known generated declared `ArrayAccess` object values, with shared owner materialization/writeback replacing path-local lowering. |
+| ArrayAccess `empty`/null-coalesce sequencing | **100%** `[####################]` | **100%** `[####################]` | **45%** `[#########-----------]` | Integrated at `4311df7e` for generated-C direct object offset `empty()` and `$aa[$key] ?? rhs` over compiler-known generated declared `ArrayAccess` object values, including known dynamic generated-declared class-name facts. |
+| ArrayAccess RMW/null-coalesce assignment sequencing | **100%** `[####################]` | **100%** `[####################]` | **50%** `[##########----------]` | Integrated at `653a5918` for generated-C direct-variable compound assignment and `$aa[$key] ??= rhs` over compiler-known generated declared `ArrayAccess` object values using the shared owner/writeback boundary. Property-held/nested owners, append RMW, increment/decrement, reference-returning `offsetGet`, references/COW, cleanup/unwind, and backend parity remain open. |
 | ReferenceSlot value owner facts | **100%** `[####################]` | **100%** `[####################]` | **45%** `[#########-----------]` | Integrated at `2ee642ff` for compiler-visible native reference handles, including by-reference closure capture promotion and `global` import roots feeding existing ArrayAccess write/RMW consumers through the shared owner source/commit boundary. Arbitrary alias roots, request/superglobal path facts, property-held references, closure callback fact transport, references/COW, and backend parity remain open. |
-| Callable identity return summaries | **100%** `[####################]` | **100%** `[####################]` | **61%** `[############--------]` | Integrated through `05214fd4` for generated functions, declared instance methods, declared static methods, compiler-owned descriptor closures, known string callables, definite `__invoke` objects, compiler-known callable arrays, compiler-visible callable-array identity invalidation after native array owner mutation, and PHP-compatible declared-method external callable policy. Unknown runtime strings/arrays/objects/builtins, non-descriptor closures, recursive/fixed-point summaries, reference returns, property/magic producers, references/COW, and backend parity remain open. |
-| Callable return producer facts | **100%** `[####################]` | **100%** `[####################]` | **61%** `[############--------]` | Integrated through `05214fd4` for generated function/method/static-method, descriptor-closure, known string/invokable, and compiler-known callable-array return summaries feeding existing object/interface fact consumers through the shared callable identity resolver, with stale variable-held callable-array identities cleared after compiler-visible native array mutations and method identity facts filtered by PHP-compatible declared-method receiver policy. Recursive/fixed-point summaries, unknown runtime callables/arrays, property/magic producers, references/COW, and backend parity remain open. |
-| Dynamic object/interface fact carrier | **100%** `[####################]` | **100%** `[####################]` | **66%** `[#############-------]` | Integrated through `05214fd4` for generated-C native value/object facts over generated declared objects, known dynamic class-name `new`, copies, gotos, branch joins, generated-callable, descriptor-closure, known string/invokable, and compiler-known callable-array identity return summaries, including invalidation after compiler-visible native array mutations and PHP-compatible object receiver public static callable facts, and compiler-visible reference slots, consumed by ArrayAccess read/isset/write/append/unset/empty/null-coalesce/RMW/`??=`. Producers from properties, clones, static properties, arbitrary symbols, unknown runtime callables/arrays, and non-descriptor closures remain open. |
-| Object/method callable receiver parity fallback | **0%** `[--------------------]` | **80%** `[################----]` | **42%** `[########------------]` | Route-audited fallback if ArrayAccess write/unset blocks. Not the active primary route. |
+| Callable identity return summaries | **100%** `[####################]` | **100%** `[####################]` | **60%** `[############--------]` | Integrated through `05214fd4` for generated functions, declared instance methods, declared static methods, compiler-owned descriptor closures, known string callables, definite `__invoke` objects, compiler-known callable arrays, compiler-visible callable-array identity invalidation after native array owner mutation, and PHP-compatible declared-method external callable policy. Unknown runtime strings/arrays/objects/builtins, non-descriptor closures, recursive/fixed-point summaries, reference returns, property/magic producers, references/COW, and backend parity remain open. |
+| Callable return producer facts | **100%** `[####################]` | **100%** `[####################]` | **60%** `[############--------]` | Integrated through `05214fd4` for generated function/method/static-method, descriptor-closure, known string/invokable, and compiler-known callable-array return summaries feeding existing object/interface fact consumers through the shared callable identity resolver, with stale variable-held callable-array identities cleared after compiler-visible native array mutations and method identity facts filtered by PHP-compatible declared-method receiver policy. Recursive/fixed-point summaries, unknown runtime callables/arrays, property/magic producers, references/COW, and backend parity remain open. |
+| Dynamic object/interface fact carrier | **100%** `[####################]` | **100%** `[####################]` | **65%** `[#############-------]` | Integrated through `05214fd4` for generated-C native value/object facts over generated declared objects, known dynamic class-name `new`, copies, gotos, branch joins, generated-callable, descriptor-closure, known string/invokable, and compiler-known callable-array identity return summaries, including invalidation after compiler-visible native array mutations and PHP-compatible object receiver public static callable facts, and compiler-visible reference slots, consumed by ArrayAccess read/isset/write/append/unset/empty/null-coalesce/RMW/`??=`. Producers from properties, clones, static properties, arbitrary symbols, unknown runtime callables/arrays, and non-descriptor closures remain open. |
+| Object/method callable receiver parity fallback | **0%** `[--------------------]` | **80%** `[################----]` | **40%** `[########------------]` | Route-audited fallback if ArrayAccess write/unset blocks. Not the active primary route. |
 | Cleanup/unwind execution | **25%** `[#####---------------]` | **25%** `[#####---------------]` | **25%** `[#####---------------]` | Requirement/preflight boundary is integrated; actual unwind/finally/destructor execution is still not implemented. |
-| Broad dirty lane extraction backlog | **0%** `[--------------------]` | **35%** `[#######-------------]` | **36%** `[#######-------------]` | Dirty call, diagnostic, object, control-flow, symbol, byte/string, and array lanes remain evidence pools until split into fresh current-head candidates. |
+| Broad dirty lane extraction backlog | **0%** `[--------------------]` | **35%** `[#######-------------]` | **35%** `[#######-------------]` | Dirty call, diagnostic, object, control-flow, symbol, byte/string, and array lanes remain evidence pools until split into fresh current-head candidates. |
 
 ## Done / In Progress / Not Done
 
