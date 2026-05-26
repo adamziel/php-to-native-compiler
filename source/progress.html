@@ -24,13 +24,14 @@
 <article class="card"><h3>Broader lvalue/reference-slot materializer</h3><div class="mini"><span>Primary</span><progress max="100" value="42">42%</progress><strong>42%</strong></div><span class="tag mixed">Improved by recent reference-source and closure-capture packets. Non-variable expression families, static/magic/non-public properties, ArrayAccess, arbitrary alias roots, and writeback remain open.</span></article>
 <article class="card"><h3>Object/resource source materialization</h3><div class="mini"><span>Primary</span><progress max="100" value="25">25%</progress><strong>25%</strong></div><span class="tag early">Still a recurring blocker for generic conversion and offset/source consumers. Needs a general value reconstruction/materialization boundary.</span></article>
 <article class="card"><h3>Broad lane extraction backlog</h3><div class="mini"><span>Primary</span><progress max="100" value="35">35%</progress><strong>35%</strong></div><span class="tag mixed">Broad dirty lanes remain useful evidence repositories, not integration units. Several are parked, stale, or only current as lane-local artifacts.</span></article></div><h2 id="php-native-compiler-progress">PHP Native Compiler Progress</h2>
-<p>Updated: 2026-05-26 02:12 CEST Evaluation marker: <code>20260525T233616Z</code></p>
+<p>Updated: 2026-05-26 02:20 CEST Evaluation marker: <code>20260526T001830Z</code></p>
 <p>Accounting rule: only generalized, tested, committed, and pushed primary work counts as integrated capability. Dirty WIP, candidate worktrees, lane-local claims, review-only work, failed prep proofs, probe-only commits, architecture notes, and dashboard-only commits are excluded.</p>
 <h3 id="executive-read">Executive Read</h3>
 <p>Overall estimated progress: <strong>95%</strong> <code>[###################-]</code></p>
 <p>Executable PHP semantics: <strong>95%</strong> <code>[###################-]</code></p>
-<p>Primary was clean and aligned with <code>origin/master</code> at <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/a544daa8">a544daa8</a> native: add diagnostic operand-list blocker boundary</code> before this <code>PROGRESS.md</code> edit.</p>
+<p>Primary was clean and aligned with <code>origin/master</code> at <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/c8795349">c8795349</a> docs: account diagnostic operand-list blocker boundary</code> before this <code>PROGRESS.md</code> edit.</p>
 <p>Latest primary-integrated source capability baseline: <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/a544daa8">a544daa8</a> native: add diagnostic operand-list blocker boundary</code>.</p>
+<p>This review found no newer primary-integrated source capability after <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/a544daa8">a544daa8</a></code>; <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/c8795349">c8795349</a></code> is progress accounting only. Lane-local reference binding operation-list follow-up, dynamic callable compiler-consumer mapping, request/global direct-handoff, and trait metadata work remain uncounted until they are narrowed, reviewed, integrated, committed, and pushed from current primary.</p>
 <p><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/a544daa8">a544daa8</a></code> adds a generalized diagnostic operation and operand-list requirement blocker boundary in the runtime and compiler. Call-argument and lvalue operand-list blockers now route through the shared runtime-backed requirement list vocabulary instead of source-shape call-result scans, with tests covering multiple operation families, requirement tags, expression surfaces, ownership paths, and call-expression families. This is diagnostic blocker infrastructure only: it does not implement the blocked cleanup, ownership, frame handoff, callable dispatch, reference binding, or executable operand-evaluation semantics. Overall, executable, and workstream estimates remain flat.</p>
 <p>Non-repeat guard: reference-binding and later diagnostic work must layer on the generic operand-list requirement boundary from <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/a544daa8">a544daa8</a></code> instead of adding source-shape blockers.</p>
 <p><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/dae1b44c">dae1b44c</a></code> repairs the runtime callable-value dispatch foundation already counted at <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/5abf8525">5abf8525</a></code>: inherited callable lookup now preserves the requested called scope while invoking the declaring descriptor, protected visibility uses same-hierarchy access, and descriptor-backed closure dispatch shapes value/reference argument slots from descriptor parameter modes. This is a narrow runtime semantics repair over the shared callable table and call-arguments/frame/result ABI, not new compiler dynamic-call consumption, not constructor execution, not broader callable lookup parity, and not a percentage-moving semantic expansion. Overall, executable, and workstream estimates remain flat.</p>
@@ -162,8 +163,8 @@
 <h3 id="current-work-snapshot">Current Work Snapshot</h3>
 <p>Primary-integrated:</p>
 <ul>
-<li>[x] Primary is clean and synced at <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/a544daa8">a544daa8</a></code> before this <code>PROGRESS.md</code> edit;</li>
-<p>latest source capability is <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/a544daa8">a544daa8</a></code>.</p>
+<li>[x] Primary is clean and synced at <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/c8795349">c8795349</a></code> before this <code>PROGRESS.md</code> edit;</li>
+<p>latest source capability remains <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/a544daa8">a544daa8</a></code>.</p>
 <li>[x] Latest primary-integrated source capability head is <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/a544daa8">a544daa8</a></code>.</li>
 <li>[x] Overall and executable estimates remain 95% under current project-local</li>
 <p>accounting.</p>
@@ -195,6 +196,14 @@
 <p><code>needs-architecture</code>; the runtime ABI split, runtime callable-value dispatch, and direct generated-C user-function consumer are now integrated.</p>
 <li>[ ] Next callable work should target compiler consumption of dynamic</li>
 <p>callable-value dispatch and method/static/constructor consumer packets over the integrated ABI, not another direct user-function or ABI-only inventory.</p>
+<li>[ ] Reference-binding operation-list follow-up is ready for current-primary</li>
+<p>review as a diagnostic/blocker extension over <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/a544daa8">a544daa8</a></code>; it is not executable reference binding and should not move percentages if integrated.</p>
+<li>[ ] Dynamic callable compiler-consumer work is mapped after the runtime</li>
+<p>repair, but still needs a narrow implementation patch that consumes the repaired runtime callable-value ABI instead of extending legacy generated-C branch ladders.</p>
+<li>[ ] Request/global direct handoff has a large apply-ready candidate and needs</li>
+<p>strict review/gates before any integration; do not treat apply success as semantic proof.</p>
+<li>[ ] Trait effective-method metadata prep has current-primary reconciliation</li>
+<p>proof, but it is metadata-only and still leaves trait method execution, destructor execution, and object lifetime cleanup open.</p>
 <li>[ ] Call-lane loop/call ordering work is fresh but broad and dirty.</li>
 <li>[ ] Diagnostic-lane callable operand, reference-binding, RMW, report dispatch,</li>
 <p>and control-flow scanner contracts beyond the generic operand-list requirement boundary are broad and dirty; status chronology is not fully reliable.</p>
@@ -206,8 +215,8 @@
 <li><code>/dev/shm</code>: 40G total, 24G used, 17G available, 58% used; <code>du -sh /dev/shm</code></li>
 <p>reported 24G.</p>
 <li><code>/home</code>: 459G total, 216G used, 224G available, 50% used; `du -sh</li>
-<p>/home/claude` reported 134G.</p>
-<li>Memory available is about 39Gi, but swap remains high at 23Gi/29Gi used.</li>
+<p>/home/claude` reported 135G.</p>
+<li>Memory available is about 40Gi, but swap remains high at 23Gi/29Gi used.</li>
 <li>Continue disk-backed <code>/tmp</code> target dirs, <code>umask 0007</code>,</li>
 <p><code>CARGO_BUILD_JOBS=1</code>, <code>CARGO_INCREMENTAL=0</code>, and focused nonzero gates.</p>
 </ul>
@@ -231,6 +240,6 @@
 <li>Extending inline generated-C <code>phpc_NativeReferenceHandle</code> typedef predicates;</li>
 <p>native-link helpers that can emit reference-handle declarations must use <code>uses_native_reference_handle_type()</code>.</p>
 </ul></section></main>
-  <footer><span>Generated 2026-05-26T00:16:01.407Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
+  <footer><span>Generated 2026-05-26T00:24:01.187Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
 </body>
 </html>

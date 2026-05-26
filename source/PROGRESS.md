@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 02:12 CEST
-Evaluation marker: `20260525T233616Z`
+Updated: 2026-05-26 02:20 CEST
+Evaluation marker: `20260526T001830Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, candidate worktrees, lane-local
@@ -15,11 +15,18 @@ Overall estimated progress: **95%** `[###################-]`
 Executable PHP semantics: **95%** `[###################-]`
 
 Primary was clean and aligned with `origin/master` at
-`a544daa8 native: add diagnostic operand-list blocker boundary` before this
+`c8795349 docs: account diagnostic operand-list blocker boundary` before this
 `PROGRESS.md` edit.
 
 Latest primary-integrated source capability baseline:
 `a544daa8 native: add diagnostic operand-list blocker boundary`.
+
+This review found no newer primary-integrated source capability after
+`a544daa8`; `c8795349` is progress accounting only. Lane-local reference
+binding operation-list follow-up, dynamic callable compiler-consumer mapping,
+request/global direct-handoff, and trait metadata work remain uncounted until
+they are narrowed, reviewed, integrated, committed, and pushed from current
+primary.
 
 `a544daa8` adds a generalized diagnostic operation and operand-list
 requirement blocker boundary in the runtime and compiler. Call-argument and
@@ -313,8 +320,8 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary is clean and synced at `a544daa8` before this `PROGRESS.md` edit;
-  latest source capability is `a544daa8`.
+- [x] Primary is clean and synced at `c8795349` before this `PROGRESS.md` edit;
+  latest source capability remains `a544daa8`.
 - [x] Latest primary-integrated source capability head is `a544daa8`.
 - [x] Overall and executable estimates remain 95% under current project-local
   accounting.
@@ -357,6 +364,19 @@ Lane-local:
 - [ ] Next callable work should target compiler consumption of dynamic
   callable-value dispatch and method/static/constructor consumer packets over
   the integrated ABI, not another direct user-function or ABI-only inventory.
+- [ ] Reference-binding operation-list follow-up is ready for current-primary
+  review as a diagnostic/blocker extension over `a544daa8`; it is not
+  executable reference binding and should not move percentages if integrated.
+- [ ] Dynamic callable compiler-consumer work is mapped after the runtime
+  repair, but still needs a narrow implementation patch that consumes the
+  repaired runtime callable-value ABI instead of extending legacy generated-C
+  branch ladders.
+- [ ] Request/global direct handoff has a large apply-ready candidate and needs
+  strict review/gates before any integration; do not treat apply success as
+  semantic proof.
+- [ ] Trait effective-method metadata prep has current-primary reconciliation
+  proof, but it is metadata-only and still leaves trait method execution,
+  destructor execution, and object lifetime cleanup open.
 - [ ] Call-lane loop/call ordering work is fresh but broad and dirty.
 - [ ] Diagnostic-lane callable operand, reference-binding, RMW, report dispatch,
   and control-flow scanner contracts beyond the generic operand-list
@@ -370,8 +390,8 @@ Resource posture:
 - `/dev/shm`: 40G total, 24G used, 17G available, 58% used; `du -sh /dev/shm`
   reported 24G.
 - `/home`: 459G total, 216G used, 224G available, 50% used; `du -sh
-  /home/claude` reported 134G.
-- Memory available is about 39Gi, but swap remains high at 23Gi/29Gi used.
+  /home/claude` reported 135G.
+- Memory available is about 40Gi, but swap remains high at 23Gi/29Gi used.
 - Continue disk-backed `/tmp` target dirs, `umask 0007`,
   `CARGO_BUILD_JOBS=1`, `CARGO_INCREMENTAL=0`, and focused nonzero gates.
 
