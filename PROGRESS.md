@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 02:34 CEST
-Evaluation marker: `20260526T001830Z`
+Updated: 2026-05-26 03:01 CEST
+Evaluation marker: `20260526T010100Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, candidate worktrees, lane-local
@@ -15,11 +15,38 @@ Overall estimated progress: **95%** `[###################-]`
 Executable PHP semantics: **95%** `[###################-]`
 
 Primary was clean and aligned with `origin/master` at
-`b4b21937 native: add reference-binding operand-list blocker requirements` before this
+`b27bbb20 native: add request-state frame environment handoff` before this
 `PROGRESS.md` edit.
 
 Latest primary-integrated source capability baseline:
-`b4b21937 native: add reference-binding operand-list blocker requirements`.
+`b27bbb20 native: add request-state frame environment handoff`.
+
+`b27bbb20` replaces root-symbol-only generated user-function frame metadata
+with `CFrameEnvironmentRequirement { root_symbols, request_state }` and
+propagates that requirement through direct generated-C user-function callable
+handoff. Direct calls now carry root-symbol and request-state frame needs
+through the existing runtime callable table, call arguments, call frame,
+wrapper, and invoke ABI. Detection is AST-semantic across statements,
+expressions, lvalues, reference sources, unset targets, for-actions,
+interpolated strings, direct request superglobals, and conservative `$GLOBALS`
+request-superglobal alias paths. Focused tests cover direct request reads,
+request mutation, `$GLOBALS["_GET"]` alias mutation, mixed ordinary `global`
+plus request-state frame needs, direct-call propagation, and callable ABI
+behavior across representative surfaces. This closes the direct generated-C
+user-function request/global frame handoff gap. Dynamic callable request-state
+handoff, closure frame-environment capture/handoff, `$GLOBALS` self-cells,
+full request/global alias parity, request writeback, includes, variable
+variables, object/method environments, references/COW, and cleanup/unwind
+parity remain open.
+
+Non-repeat guard: future request/global frame work must consume or extend
+`CFrameEnvironmentRequirement` and the shared callable/frame environment
+handoff. Do not reintroduce `CUserFunction.requires_root_symbols`, split
+root-symbol and request-state handoff into unrelated ad hoc paths, add
+request/global support keyed to one function spelling/key/superglobal/local/
+fixture/generated substring/arity/branch/direct-or-dynamic call shape, or
+weaken the dynamic request-state blocker without a semantic-family runtime
+handoff.
 
 `b4b21937` extends the generalized diagnostic operation and operand-list
 requirement blocker ABI to reference-binding surfaces. Reference-assignment
@@ -90,19 +117,30 @@ risks without changing that accounting.
 
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, byte-string, string-array, array, diagnostic operation/operand-list blocker, reference-binding operand-list blocker, reference, symbol, call-frame, object, comparison, conversion, numeric-unary, request-state, closure-result, reference-source, callable table/arguments/result/frame, runtime callable-value dispatch, and declared-class allocation cleanup-risk metadata surfaces. Remaining runtime gaps include broader PHP callable lookup parity, namespace fallback, autoload, magic calls, constructors, request/global frame separation, and cleanup/unwind parity. |
-| Compiler/backend consumers | **99%** | `[####################]` | Generated C has the freshest executable semantics; LLVM and direct assembly still lag several recent semantic packets. Recent compiler-side work routes direct generated-C user-function calls through the runtime callable ABI, improved try/catch/finally body call preflight plus allocatable class cleanup-risk classification, and call-argument/lvalue/reference-binding diagnostics through the shared operand-list requirement blocker boundary without adding dynamic callable dispatch, exception execution, destructor execution, or reference-binding execution. |
+| Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, byte-string, string-array, array, diagnostic operation/operand-list blocker, reference-binding operand-list blocker, reference, symbol, call-frame, object, comparison, conversion, numeric-unary, request-state, closure-result, reference-source, callable table/arguments/result/frame, runtime callable-value dispatch, and declared-class allocation cleanup-risk metadata surfaces. Remaining runtime gaps include broader PHP callable lookup parity, namespace fallback, autoload, magic calls, constructors, dynamic/closure request-state frame handoff, and cleanup/unwind parity. |
+| Compiler/backend consumers | **99%** | `[####################]` | Generated C has the freshest executable semantics; LLVM and direct assembly still lag several recent semantic packets. Recent compiler-side work routes direct generated-C user-function calls through the runtime callable ABI with root/request frame-environment handoff, improved try/catch/finally body call preflight plus allocatable class cleanup-risk classification, and call-argument/lvalue/reference-binding diagnostics through the shared operand-list requirement blocker boundary without adding dynamic callable dispatch, closure frame-environment capture, exception execution, destructor execution, or reference-binding execution. |
 | Executable PHP semantics | **95%** | `[###################-]` | Primary has many selected executable islands, including reference-backed by-value closure capture materialization, closure value/reference returns, and reference-source append/lvalue extraction. |
 | Strings and byte semantics | **62%** | `[############--------]` | Byte-backed values and byte-preserving `explode()` / `str_split()` slots are integrated. Binary source bytes, byte-exact interpreter/session/debug output, `mb_str_split()`, request/global byte keys, and exact diagnostics remain open. |
 | Arrays, lvalues, references, COW | **82%** | `[################----]` | Selected reference-source/lvalue extraction, closure capture from reference-backed slots, and reference-binding diagnostic operand requirements are integrated. Full executable reference binding, COW, arbitrary alias roots, foreach, alias composition, static/magic/non-public properties, ArrayAccess, and broad writeback remain incomplete. |
-| Symbols, globals, request state | **74%** | `[###############-----]` | Selected globals, root-symbol, active symbol-table reference consumers, request-key blockers, and append-shaped symbol reference-source materialization exist. `$GLOBALS` self-cells, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
-| Calls, functions, frames | **91%** | `[##################--]` | Descriptor closures, selected captures, selected by-reference parameters, callable/function-table surfaces, method-frame surfaces, descriptor closure value/reference returns, reference-backed by-value captures, a runtime callable table/arguments/result/frame ABI, runtime callable-value dispatch across string/binary functions, callable arrays, descriptor closures, inherited methods, bound receivers, and object `__invoke`, direct generated-C user-function consumers across zero/fixed/default/variadic calls and by-reference argument transport, shared symbol-environment constructor blockers, and try/catch/finally body call-boundary preflight routing are integrated. Compiler dynamic callable-value consumption, `Class::method` strings, namespace fallback, autoload, magic calls, named/spread argument breadth, by-reference variadic breadth, non-descriptor closures, constructors, request/global frame separation, and cleanup/unwind parity remain open. |
+| Symbols, globals, request state | **75%** | `[###############-----]` | Selected globals, root-symbol, active symbol-table reference consumers, request-key blockers, append-shaped symbol reference-source materialization, and direct generated-C user-function request-state frame handoff exist. `$GLOBALS` self-cells, dynamic callable and closure request-state handoff, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
+| Calls, functions, frames | **92%** | `[##################--]` | Descriptor closures, selected captures, selected by-reference parameters, callable/function-table surfaces, method-frame surfaces, descriptor closure value/reference returns, reference-backed by-value captures, a runtime callable table/arguments/result/frame ABI, runtime callable-value dispatch across string/binary functions, callable arrays, descriptor closures, inherited methods, bound receivers, and object `__invoke`, direct generated-C user-function consumers across zero/fixed/default/variadic calls with by-reference argument transport and root/request frame-environment handoff, shared symbol-environment constructor blockers, and try/catch/finally body call-boundary preflight routing are integrated. Compiler dynamic callable-value consumption, `Class::method` strings, namespace fallback, autoload, magic calls, named/spread argument breadth, by-reference variadic breadth, non-descriptor closures, constructors, closure frame-environment handoff, and cleanup/unwind parity remain open. |
 | Objects, properties, methods | **53%** | `[###########---------]` | Public object-property reference-source extraction, object-property reference-slot mutation, and declared-class allocation cleanup-risk metadata exist for selected paths. Full visibility, magic, dynamic/static/typed properties, destructor execution and ordering, references/COW, and `ArrayAccess` execution remain open. |
 | Control flow, cleanup, diagnostics | **51%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, truthiness, conversion consumers, try/catch/finally body call-boundary preflight diagnostics, generic diagnostic operand-list requirement blockers, and reference-binding operand-list requirement blockers exist. Broad unwind/finally/destructor/shutdown execution, executable reference binding, cleanup ownership, and exact source ordering remain open. Current broad diagnostic-lane work beyond the integrated operand-list boundary is not counted. |
 | Broad integrated verification | **92%** | `[##################--]` | Recent focused gates are strong and nonzero, including runtime callable-value dispatch unit coverage, direct user-function callable ABI consumer execution, try-body call-boundary preflight, allocatable destructor-risk metadata gates, diagnostic operand-list blocker boundary tests, and reference-binding operand-list requirement tests. The full `native_runtime_abi` suite still has known current-primary failures, and broad gates remain constrained by lane extraction cost, stale lane expectations, high swap, and backend parity gaps. |
 
 ## Recent Primary-Integrated Work
 
+- `b27bbb20`: replaced root-symbol-only generated user-function frame metadata
+  with `CFrameEnvironmentRequirement { root_symbols, request_state }`,
+  propagated that requirement through direct generated-C user-function
+  callable/frame handoff, and added native-link/unit coverage for request
+  superglobal reads, request mutation, `$GLOBALS` request-superglobal alias
+  mutation, mixed global/request frame needs, and direct-call propagation.
+  Dynamic callable request-state frame handoff and closure frame-environment
+  capture/handoff remain centralized blockers; future request/global work must
+  extend the shared frame-environment/callable ABI rather than adding
+  source-shape recognizers. Symbols/globals/request state moves to 75% and
+  calls/functions/frames moves to 92%; overall and executable stay flat.
 - `b4b21937`: extended the shared diagnostic operation/operand-list
   requirement ABI with reference-binding operand-list requirements. Runtime
   diagnostics now name reference target, source, and array-item binding
@@ -219,7 +257,7 @@ Primary-integrated capability and lane-local candidate work are separated here.
 | Dynamic constructor symbol-environment blockers | **100%** `[####################]` | **22%** `[####----------------]` | Integrated at `ea0c7675`. Dynamic constructor class-name operands from `$GLOBALS` and request superglobals now route to `NativeCallBlocker::GlobalFrameSeparation` before constructor lookup, destructor-risk classification, argument cleanup, or generated-C object materialization. Request/global frame separation execution remains unimplemented. |
 | Diagnostic operand-list blocker boundary | **100%** `[####################]` | **14%** `[###-----------------]` | Integrated at `a544daa8`. Runtime and compiler diagnostics now share a generic operation/operand-list requirement boundary for call-argument and lvalue blocker families, with runtime ownership/free coverage and compiler boundary tests across representative shapes. This is not cleanup, ownership, frame handoff, reference-binding, callable-dispatch, or exact diagnostic-order execution; later reference-binding and diagnostic work must consume the generic operand-list requirement boundary rather than adding source-shape blockers. |
 | Reference-binding operand-list blocker requirements | **100%** `[####################]` | **15%** `[###-----------------]` | Integrated at `b4b21937`. Reference-assignment target/source blockers and by-reference array item blockers now consume the shared diagnostic operation-list and operand requirement ABI with runtime/compiler coverage across multiple binding requirement tags and representative operand families. This is not executable PHP reference binding, full alias/COW identity, writeback, cleanup/unwind ordering, or source-ordered diagnostics; future reference-binding work must extend or consume this shared ABI rather than adding source-shape or generated-output recognizers. |
-| Runtime callable ABI, callable-value dispatch, and direct user-function consumers | **100%** `[####################]` | **58%** `[############--------]` | Runtime callable table, arguments/result/frame ownership, function/method/constructor invocation callbacks, called-scope propagation, and public/protected/private visibility checks are integrated at `e32f5735`. Direct generated-C user-function registration, lookup, argument transport, frame entry, and value-result consumption are integrated at `f0cc17c1` across zero/fixed/default/variadic calls and by-reference argument transport. Runtime callable-value dispatch is integrated at `5abf8525` for string/binary function names, callable arrays, descriptor-backed closures, inherited table-backed methods, bound object receivers, and object `__invoke` over the shared callable table and call-arguments/frame/result ABI, with `dae1b44c` repairing inherited called-scope carriage, protected same-hierarchy visibility, and descriptor-aware closure argument modes. Compiler dynamic callable-value consumers, `Class::method` strings, namespace fallback, autoload, magic calls, named/spread argument breadth, by-reference variadic breadth, constructor `new` execution, return references, request/global frame separation, and cleanup/unwind parity remain unimplemented. |
+| Runtime callable ABI, callable-value dispatch, and direct user-function consumers | **100%** `[####################]` | **61%** `[############--------]` | Runtime callable table, arguments/result/frame ownership, function/method/constructor invocation callbacks, called-scope propagation, and public/protected/private visibility checks are integrated at `e32f5735`. Direct generated-C user-function registration, lookup, argument transport, frame entry, and value-result consumption are integrated at `f0cc17c1` across zero/fixed/default/variadic calls and by-reference argument transport, with `b27bbb20` adding full root/request frame-environment handoff for that direct generated-C consumer path. Runtime callable-value dispatch is integrated at `5abf8525` for string/binary function names, callable arrays, descriptor-backed closures, inherited table-backed methods, bound object receivers, and object `__invoke` over the shared callable table and call-arguments/frame/result ABI, with `dae1b44c` repairing inherited called-scope carriage, protected same-hierarchy visibility, and descriptor-aware closure argument modes. Compiler dynamic callable-value consumers, `Class::method` strings, namespace fallback, autoload, magic calls, named/spread argument breadth, by-reference variadic breadth, constructor `new` execution, return references, dynamic callable request-state handoff, closure frame-environment handoff, and cleanup/unwind parity remain unimplemented. |
 | Reference-backed by-value closure captures | **100%** `[####################]` | **48%** `[##########----------]` | Integrated at `90e53401`. Covers descriptor closure value captures from ordinary locals, native reference handles, and active symbol-table storage across direct function, static method, receiver method, and closure factory frames. Non-static implicit `$this`, secondary-alias writeback, and broad callable/object semantics remain open. |
 | Reference-source append/lvalue extraction | **100%** `[####################]` | **52%** `[##########----------]` | Integrated at `7aa162ca`. Covers selected symbol, native reference local, public object-property, object-property array-path, append, reference assignment, and by-reference call consumers. Static/magic/non-public properties, ArrayAccess, arbitrary alias roots, and full references/COW remain open. |
 | Closure value/reference return ABI | **100%** `[####################]` | **50%** `[##########----------]` | Integrated at `ae93da8c`. Runtime closure invocation has a shared value/reference/diagnostic/status result contract for descriptor closures. Broader function/method/static/constructor reference returns remain open. |
@@ -276,6 +314,9 @@ Primary-integrated executable or executable-prerequisite capability:
 - [x] Direct generated-C user-function calls consume the runtime callable
   table/arguments/frame/result ABI across zero/fixed/default/variadic calls
   and by-reference argument transport.
+- [x] Direct generated-C user-function calls carry root-symbol and
+  request-state frame-environment requirements through the shared
+  callable/frame ABI.
 - [x] Shared dynamic constructor symbol-environment blocker for `$GLOBALS` and
   request-superglobal class-name operands, routed through
   `NativeCallBlocker::GlobalFrameSeparation` before constructor execution
@@ -297,7 +338,8 @@ In progress but lane-local or not yet executable primary support:
   use the integrated runtime ABI: compiler consumption of callable-value
   dispatch, method/static/constructor consumers, generated-C reference/discard
   consumers, `Class::method` strings, namespace fallback, autoload, magic
-  calls, and named/spread breadth remain unintegrated.
+  calls, request-state frame handoff, and named/spread breadth remain
+  unintegrated.
 - [ ] `impl-native-call-semantics` has broad dirty evidence for call ordering,
   callable-value dispatch, source-call ordering, and object/call blockers.
   The try-body call-routing and allocatable destructor-risk packets now count
@@ -319,8 +361,8 @@ Not done:
 - [ ] Full executable reference binding, references/COW identity, arbitrary
   alias roots, and alias-preserving write-through.
 - [ ] Executable request storage/writeback, `$GLOBALS` self-cells,
-  request/global alias parity, request foreach, and mutation-during-iteration
-  behavior.
+  dynamic callable and closure request-state handoff, request/global alias
+  parity, request foreach, and mutation-during-iteration behavior.
 - [ ] Includes, variable variables, and dynamic symbol behavior.
 - [ ] Full callable lookup and invocation, including compiler consumption of
   dynamic callable values through the repaired runtime boundary,
@@ -346,9 +388,9 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary is clean and synced at `b4b21937` before this `PROGRESS.md` edit;
-  latest source capability is `b4b21937`.
-- [x] Latest primary-integrated source capability head is `b4b21937`.
+- [x] Primary is clean and synced at `b27bbb20` before this `PROGRESS.md` edit;
+  latest source capability is `b27bbb20`.
+- [x] Latest primary-integrated source capability head is `b27bbb20`.
 - [x] Overall and executable estimates remain 95% under current project-local
   accounting.
 - [x] Diagnostic operand-list blocker boundary is now a completed non-repeat
@@ -358,6 +400,10 @@ Primary-integrated:
   non-repeat diagnostic prerequisite: future reference-binding work must extend
   or consume the shared operation-list and operand requirement ABI rather than
   adding source-shape or generated-output recognizers.
+- [x] Direct request-state frame-environment handoff for generated-C
+  user-function calls is now a completed non-repeat item: future request/global
+  work must extend `CFrameEnvironmentRequirement` and the shared callable/frame
+  handoff, not revive `requires_root_symbols` or add source-shape recognizers.
 - [x] Native-link reference-handle typedef emission is now a completed
   non-repeat declaration-order repair: future helpers that can emit
   `phpc_NativeReferenceHandle` declarations must use
@@ -378,6 +424,10 @@ Primary-integrated:
   not source-shape callable branches.
 - [x] Direct user-function callable ABI consumers are now a completed
   non-repeat item.
+- [x] Symbols/globals/request state advances to 75% and calls/functions/frames
+  advances to 92% because direct generated-C user-function calls now propagate
+  root/request frame-environment requirements through the callable ABI; overall
+  and executable estimates remain 95%.
 - [x] Dynamic constructor symbol-environment blocking is now a completed
   non-repeat item.
 - [x] Try/catch/finally body call-boundary preflight is now a completed
@@ -396,13 +446,15 @@ Lane-local:
 - [x] Reference-binding operation-list follow-up is integrated at `b4b21937`
   as a diagnostic/blocker extension over `a544daa8`; it is not executable
   reference binding and does not move percentages.
-- [ ] Dynamic callable compiler-consumer work is mapped after the runtime
-  repair, but still needs a narrow implementation patch that consumes the
-  repaired runtime callable-value ABI instead of extending legacy generated-C
-  branch ladders.
-- [ ] Request/global direct handoff has a large apply-ready candidate and needs
-  strict review/gates before any integration; do not treat apply success as
-  semantic proof.
+- [ ] Dynamic callable compiler-consumer work has a post-request repair marked
+  ready for primary review, but it is still lane-local until integrated and
+  must consume the repaired callable-value ABI plus
+  `CFrameEnvironmentRequirement` instead of extending legacy generated-C branch
+  ladders.
+- [x] Request/global direct handoff is integrated at `b27bbb20`; remaining
+  request/global work is dynamic callable request-state handoff, closure
+  frame-environment handoff, `$GLOBALS` self-cell semantics, request writeback,
+  includes, variable variables, references/COW, and cleanup/unwind parity.
 - [ ] Trait effective-method metadata prep has current-primary reconciliation
   proof, but it is metadata-only and still leaves trait method execution,
   destructor execution, and object lifetime cleanup open.
@@ -418,8 +470,7 @@ Resource posture:
 
 - `/dev/shm`: 40G total, 24G used, 17G available, 58% used; `du -sh /dev/shm`
   reported 24G.
-- `/home`: 459G total, 216G used, 224G available, 50% used; `du -sh
-  /home/claude` reported 135G.
+- `/home`: 459G total, 214G used, 227G available, 49% used.
 - Memory available is about 40Gi, but swap remains high at 23Gi/29Gi used.
 - Continue disk-backed `/tmp` target dirs, `umask 0007`,
   `CARGO_BUILD_JOBS=1`, `CARGO_INCREMENTAL=0`, and focused nonzero gates.
