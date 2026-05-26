@@ -314,6 +314,9 @@ Primary-integrated executable or executable-prerequisite capability:
 - [x] Direct generated-C user-function calls consume the runtime callable
   table/arguments/frame/result ABI across zero/fixed/default/variadic calls
   and by-reference argument transport.
+- [x] Direct generated-C user-function calls carry root-symbol and
+  request-state frame-environment requirements through the shared
+  callable/frame ABI.
 - [x] Shared dynamic constructor symbol-environment blocker for `$GLOBALS` and
   request-superglobal class-name operands, routed through
   `NativeCallBlocker::GlobalFrameSeparation` before constructor execution
@@ -335,7 +338,8 @@ In progress but lane-local or not yet executable primary support:
   use the integrated runtime ABI: compiler consumption of callable-value
   dispatch, method/static/constructor consumers, generated-C reference/discard
   consumers, `Class::method` strings, namespace fallback, autoload, magic
-  calls, and named/spread breadth remain unintegrated.
+  calls, request-state frame handoff, and named/spread breadth remain
+  unintegrated.
 - [ ] `impl-native-call-semantics` has broad dirty evidence for call ordering,
   callable-value dispatch, source-call ordering, and object/call blockers.
   The try-body call-routing and allocatable destructor-risk packets now count
@@ -357,8 +361,8 @@ Not done:
 - [ ] Full executable reference binding, references/COW identity, arbitrary
   alias roots, and alias-preserving write-through.
 - [ ] Executable request storage/writeback, `$GLOBALS` self-cells,
-  request/global alias parity, request foreach, and mutation-during-iteration
-  behavior.
+  dynamic callable and closure request-state handoff, request/global alias
+  parity, request foreach, and mutation-during-iteration behavior.
 - [ ] Includes, variable variables, and dynamic symbol behavior.
 - [ ] Full callable lookup and invocation, including compiler consumption of
   dynamic callable values through the repaired runtime boundary,

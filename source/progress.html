@@ -123,6 +123,8 @@
 <p>names, callable arrays, descriptor-backed closures, inherited table-backed method lookup, bound object receivers, and object <code>__invoke</code> through the callable table and call-arguments/frame/result ABI.</p>
 <li>[x] Direct generated-C user-function calls consume the runtime callable</li>
 <p>table/arguments/frame/result ABI across zero/fixed/default/variadic calls and by-reference argument transport.</p>
+<li>[x] Direct generated-C user-function calls carry root-symbol and</li>
+<p>request-state frame-environment requirements through the shared callable/frame ABI.</p>
 <li>[x] Shared dynamic constructor symbol-environment blocker for <code>$GLOBALS</code> and</li>
 <p>request-superglobal class-name operands, routed through <code>NativeCallBlocker::GlobalFrameSeparation</code> before constructor execution planning.</p>
 <li>[x] Shared try/catch/finally body call-boundary preflight routing through</li>
@@ -137,7 +139,7 @@
 <p>In progress but lane-local or not yet executable primary support:</p>
 <ul>
 <li>[ ] Dynamic callable compiler consumers beyond direct user functions must now</li>
-<p>use the integrated runtime ABI: compiler consumption of callable-value dispatch, method/static/constructor consumers, generated-C reference/discard consumers, <code>Class::method</code> strings, namespace fallback, autoload, magic calls, and named/spread breadth remain unintegrated.</p>
+<p>use the integrated runtime ABI: compiler consumption of callable-value dispatch, method/static/constructor consumers, generated-C reference/discard consumers, <code>Class::method</code> strings, namespace fallback, autoload, magic calls, request-state frame handoff, and named/spread breadth remain unintegrated.</p>
 <li>[ ] <code>impl-native-call-semantics</code> has broad dirty evidence for call ordering,</li>
 <p>callable-value dispatch, source-call ordering, and object/call blockers. The try-body call-routing and allocatable destructor-risk packets now count only through their pushed primary commits; remaining lane-local work still needs fresh current-primary review and integration.</p>
 <li>[ ] <code>impl-native-error-diagnostic-semantics</code> has broad dirty diagnostic</li>
@@ -152,7 +154,7 @@
 <li>[ ] Full executable reference binding, references/COW identity, arbitrary</li>
 <p>alias roots, and alias-preserving write-through.</p>
 <li>[ ] Executable request storage/writeback, <code>$GLOBALS</code> self-cells,</li>
-<p>request/global alias parity, request foreach, and mutation-during-iteration behavior.</p>
+<p>dynamic callable and closure request-state handoff, request/global alias parity, request foreach, and mutation-during-iteration behavior.</p>
 <li>[ ] Includes, variable variables, and dynamic symbol behavior.</li>
 <li>[ ] Full callable lookup and invocation, including compiler consumption of</li>
 <p>dynamic callable values through the repaired runtime boundary, <code>Class::method</code> strings, namespace fallback, autoload, named/unpacked/ by-reference breadth beyond the integrated direct user-function path and runtime callable-value dispatch, magic calls, non-public method breadth, and rebinding rules.</p>
@@ -252,6 +254,6 @@
 <li>Extending inline generated-C <code>phpc_NativeReferenceHandle</code> typedef predicates;</li>
 <p>native-link helpers that can emit reference-handle declarations must use <code>uses_native_reference_handle_type()</code>.</p>
 </ul></section></main>
-  <footer><span>Generated 2026-05-26T01:01:20.958Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
+  <footer><span>Generated 2026-05-26T01:01:30.038Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
 </body>
 </html>
