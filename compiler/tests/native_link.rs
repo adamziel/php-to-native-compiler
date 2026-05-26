@@ -7160,6 +7160,26 @@ const ARRAY_LVALUE_APPEND_INCREMENT_DECREMENT_SOURCE: &str = "<?php\n$outer = \"
 
 const ARRAY_LVALUE_NESTED_RMW_SOURCE: &str = "<?php\n$outer = \"outer\";\n$leaf = \"leaf\";\n$other = \"other\";\n$items = [$outer => [$leaf => 3, $other => 10]];\n$items[$outer][$leaf] += 4;\n$compound = ($items[$outer][$other] *= 2);\necho $items[$outer][$leaf], \"|\", $compound, \"|\";\n$post = $items[$outer][$leaf]++;\necho $post, \"|\", ++$items[$outer][$leaf], \"|\";\n$out = [];\n$out[$items[$outer][$leaf] += 1] = $items[$outer][$other]--;\necho $out[10], \"|\", $items[$outer][$other], \"|\", $items[$outer][$leaf];\n";
 
+const ARRAY_LVALUE_RMW_OWNER_BOUNDARY_SOURCE: &str = concat!(
+    "<?php\n",
+    "$local = [\"n\" => 1, \"maybe\" => null, \"inc\" => 4];\n",
+    "$local[\"n\"] += 5;\n",
+    "echo $local[\"n\"], \"|\";\n",
+    "echo ($local[\"missing\"] ??= \"L\"), \"|\";\n",
+    "echo ++$local[\"inc\"];\n",
+    "$bag = [\"n\" => 2, \"maybe\" => null, \"inc\" => 3];\n",
+    "function mutate_global_bag() {\n",
+    "    global $bag;\n",
+    "    $bag[\"n\"] += 7;\n",
+    "    echo \"|\", $bag[\"n\"];\n",
+    "    echo \":\", ($bag[\"maybe\"] ??= \"G\");\n",
+    "    echo \":\", $bag[\"inc\"]++;\n",
+    "    echo \":\", $bag[\"inc\"];\n",
+    "}\n",
+    "mutate_global_bag();\n",
+    "echo \"|\", $bag[\"n\"], \":\", $bag[\"maybe\"], \":\", $bag[\"inc\"];\n",
+);
+
 const VALUE_OFFSET_MUTATION_ARRAY_APPEND_SOURCE: &str = "<?php\n$items = [\"seed\" => \"A\"];\n$items[] = \"B\";\n$value = \"C\";\n$items[] = $value;\necho $items[\"seed\"], \"|\", $items[0], \"|\", $items[1], \"|\";\necho isset($items[1]) ? 1 : 0;\n";
 
 const VALUE_OFFSET_MUTATION_VALUE_WRITE_SOURCE: &str = "<?php\n$key = \"dyn\";\n$missing[$key] = \"U\";\n$null = null;\n$null[\"n\"] = \"N\";\n$false = false;\n$false[2] = \"F\";\n$int = 3;\n$int[\"x\"] = \"bad\";\necho $missing[$key], \"|\", $null[\"n\"], \"|\", $false[2], \"|\", $int;\n";
@@ -8570,6 +8590,56 @@ fn native_executable_c_source_routes_nested_array_lvalue_rmw_through_owner_paths
     assert!(
         !body.contains("assembly mutation lowering rejects"),
         "nested RMW targets should not fall through the blanket mutation blocker:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_array_lvalue_rmw_owner_families_through_shared_boundary() {
+    let program = parse(ARRAY_LVALUE_RMW_OWNER_BOUNDARY_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_array_lvalue_owner_array"),
+        "local array-handle RMW owners should use the shared array-lvalue owner boundary:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_array_lvalue_owner_reference_slot"),
+        "reference-slot RMW owners should use the same array-lvalue owner boundary:\n{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_array_lvalue_owner_value_operation_result")
+            .count()
+            >= 8,
+        "RMW owner families should share the runtime value-operation ABI:\n{source}"
+    );
+    assert!(
+        source
+            .matches("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ")
+            .count()
+            >= 2
+            && source
+                .matches("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE")
+                .count()
+                >= 4
+            && source
+                .matches("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_ISSET")
+                .count()
+                >= 2
+            && source
+                .matches("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UPDATE")
+                .count()
+                >= 2,
+        "compound, null-coalesce assignment, and increment/decrement should share the owner materialization path:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_binary_result"),
+        "compound assignment should still compute through the native binary value ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly mutation lowering rejects")
+            && !source.contains("assembly global-declaration lowering rejects"),
+        "lowerable RMW owner families should not fall through backend blockers:\n{source}"
     );
 }
 
@@ -13263,6 +13333,34 @@ fn emit_exe_links_and_runs_nested_array_lvalue_rmw_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"7|20|7|9|20|19|10");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_array_lvalue_rmw_owner_boundary_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "array_lvalue_rmw_owner_boundary",
+        ARRAY_LVALUE_RMW_OWNER_BOUNDARY_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native array-lvalue RMW owner-boundary executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"6|L|5|9:G:3:4|9:G:4");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

@@ -13604,6 +13604,12 @@ enum CDirectVariableCompoundAssignmentOwner {
     SymbolTable(String),
 }
 
+enum CNativeArrayLvalueOwnerSource {
+    ArrayHandle(String),
+    ReferenceSlot(String),
+    SymbolTableRoot(String),
+}
+
 #[derive(Debug, Clone, Copy)]
 enum CDynamicCallableBuiltinRuntimeCandidate {
     StringLength,
@@ -13968,6 +13974,16 @@ struct CNativeArrayLvaluePath {
     path: String,
     len: usize,
     cleanup_after_use: Vec<String>,
+}
+
+struct CNativeArrayLvalueOwnerMaterialization {
+    owner: String,
+    cleanup_after_use: Vec<String>,
+}
+
+struct CNativeArrayLvalueTargetMaterialization {
+    owner: CNativeArrayLvalueOwnerMaterialization,
+    path: CNativeArrayLvaluePath,
 }
 
 struct CNativeValueMaterialization {
@@ -21869,6 +21885,45 @@ impl CGenerator {
         Ok(reference)
     }
 
+    fn materialize_native_array_lvalue_owner(
+        &mut self,
+        source: CNativeArrayLvalueOwnerSource,
+        span: Span,
+        result_prefix: &str,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeArrayLvalueOwnerMaterialization> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_array_lvalue_helpers = true;
+
+        let owner = self.next_native_name(result_prefix);
+        let mut cleanup_after_use = Vec::new();
+        let call = match source {
+            CNativeArrayLvalueOwnerSource::ArrayHandle(handle) => {
+                format!("phpc_native_array_lvalue_owner_array({handle})")
+            }
+            CNativeArrayLvalueOwnerSource::ReferenceSlot(reference) => {
+                format!("phpc_native_array_lvalue_owner_reference_slot({reference})")
+            }
+            CNativeArrayLvalueOwnerSource::SymbolTableRoot(name) => {
+                let reference = self.emit_symbol_table_root_reference_for_array_lvalue(
+                    &name,
+                    span,
+                    failure_cleanup,
+                )?;
+                cleanup_after_use.push(format!("phpc_native_reference_free({reference});"));
+                format!("phpc_native_array_lvalue_owner_reference_slot({reference})")
+            }
+        };
+        self.body
+            .push(format!("phpc_NativeArrayLvalueOwner {owner} = {call};"));
+
+        Ok(CNativeArrayLvalueOwnerMaterialization {
+            owner,
+            cleanup_after_use,
+        })
+    }
+
     fn ensure_native_request_state_handle(&mut self) -> String {
         self.uses_native_request_state_helpers = true;
         if let Some(handle) = &self.native_request_state_handle {
@@ -29422,16 +29477,11 @@ impl CGenerator {
         replacement_expr: &Expr,
         span: Span,
     ) -> CompileResult<bool> {
-        let Some((handle, indices, target_span)) =
-            self.native_array_lvalue_key_target_parts(target)
-        else {
+        let Some(target) = self.materialize_native_array_lvalue_key_target(target, "")? else {
             return Ok(false);
         };
-
-        let path = self.materialize_native_array_lvalue_key_path(&indices, target_span, "")?;
-        self.emit_array_lvalue_null_coalesce_assignment_for_handle(
-            &handle,
-            path,
+        self.emit_array_lvalue_null_coalesce_assignment_for_owner(
+            target,
             replacement_expr,
             span,
             None,
@@ -29447,17 +29497,14 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let Some((handle, indices, target_span)) =
-            self.native_array_lvalue_key_target_parts(target)
+        let Some(target) =
+            self.materialize_native_array_lvalue_key_target(target, failure_cleanup)?
         else {
             return Ok(None);
         };
 
-        let path =
-            self.materialize_native_array_lvalue_key_path(&indices, target_span, failure_cleanup)?;
-        self.emit_array_lvalue_null_coalesce_assignment_for_handle(
-            &handle,
-            path,
+        self.emit_array_lvalue_null_coalesce_assignment_for_owner(
+            target,
             replacement_expr,
             span,
             Some("array_lvalue_null_coalesce_assign_result"),
@@ -29466,10 +29513,9 @@ impl CGenerator {
         .map(Some)
     }
 
-    fn emit_array_lvalue_null_coalesce_assignment_for_handle(
+    fn emit_array_lvalue_null_coalesce_assignment_for_owner(
         &mut self,
-        handle: &str,
-        path: CNativeArrayLvaluePath,
+        target: CNativeArrayLvalueTargetMaterialization,
         replacement_expr: &Expr,
         _span: Span,
         result_prefix: Option<&str>,
@@ -29483,14 +29529,16 @@ impl CGenerator {
         self.uses_native_array_helpers = true;
         self.uses_native_array_lvalue_helpers = true;
 
+        let CNativeArrayLvalueTargetMaterialization { owner, path } = target;
+        let owner_cleanup = c_cleanup_sequence(&owner.cleanup_after_use);
         let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let target_cleanup = format!("{owner_cleanup}{path_cleanup}");
         let result = result_prefix.map(|prefix| self.next_native_name(prefix));
         if let Some(result) = &result {
             self.body
                 .push(format!("phpc_NativeValueHandle {result} = {{0}};"));
         }
 
-        let probe_owner = self.next_native_name("array_lvalue_null_coalesce_assign_probe_owner");
         let probe_result = self.next_native_name("array_lvalue_null_coalesce_assign_probe_result");
         let probe_value = self.next_native_name("array_lvalue_null_coalesce_assign_probe_value");
         let bool_diagnostic =
@@ -29498,15 +29546,12 @@ impl CGenerator {
         let present = self.next_native_name("array_lvalue_null_coalesce_assign_present");
 
         self.body.push(format!(
-            "phpc_NativeArrayLvalueOwner {probe_owner} = phpc_native_array_lvalue_owner_array({handle});"
-        ));
-        self.body.push(format!(
-            "phpc_NativeArrayLvalueResult {probe_result} = phpc_native_array_lvalue_owner_value_operation_result({probe_owner}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_ISSET, 0, 0, 0, (phpc_NativeValueHandle){{0}});",
-            path.path, path.len
+            "phpc_NativeArrayLvalueResult {probe_result} = phpc_native_array_lvalue_owner_value_operation_result({}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_ISSET, 0, 0, 0, (phpc_NativeValueHandle){{0}});",
+            owner.owner, path.path, path.len
         ));
         self.emit_native_array_lvalue_result_check(
             &probe_result,
-            &format!("{path_cleanup}{failure_cleanup}"),
+            &format!("{target_cleanup}{failure_cleanup}"),
         );
         self.body.push(format!(
             "phpc_NativeValueHandle {probe_value} = {probe_result}.value;"
@@ -29524,7 +29569,7 @@ impl CGenerator {
             "_Bool {present} = phpc_native_value_bool_with_diagnostic({probe_value}, &{bool_diagnostic});"
         ));
         let bool_error_exit = self.native_error_exit(&format!(
-            "phpc_native_diagnostic_report({bool_diagnostic}); phpc_native_value_free({probe_value}); {path_cleanup}{failure_cleanup}"
+            "phpc_native_diagnostic_report({bool_diagnostic}); phpc_native_value_free({probe_value}); {target_cleanup}{failure_cleanup}"
         ));
         self.body.push(format!(
             "if ({bool_diagnostic}.ptr != NULL) {{ {bool_error_exit} }}"
@@ -29535,21 +29580,17 @@ impl CGenerator {
             .push(format!("phpc_native_value_free({probe_value});"));
 
         if let Some(result) = &result {
-            let read_owner = self.next_native_name("array_lvalue_null_coalesce_assign_read_owner");
             let read_result =
                 self.next_native_name("array_lvalue_null_coalesce_assign_read_result");
             let read_value = self.next_native_name("array_lvalue_null_coalesce_assign_read_value");
             self.body.push(format!("if ({present}) {{"));
             self.body.push(format!(
-                "phpc_NativeArrayLvalueOwner {read_owner} = phpc_native_array_lvalue_owner_array({handle});"
-            ));
-            self.body.push(format!(
-                "phpc_NativeArrayLvalueResult {read_result} = phpc_native_array_lvalue_owner_value_operation_result({read_owner}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ, 0, 0, 0, (phpc_NativeValueHandle){{0}});",
-                path.path, path.len
+                "phpc_NativeArrayLvalueResult {read_result} = phpc_native_array_lvalue_owner_value_operation_result({}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ, 0, 0, 0, (phpc_NativeValueHandle){{0}});",
+                owner.owner, path.path, path.len
             ));
             self.emit_native_array_lvalue_result_check(
                 &read_result,
-                &format!("{path_cleanup}{failure_cleanup}"),
+                &format!("{target_cleanup}{failure_cleanup}"),
             );
             self.body.push(format!(
                 "phpc_NativeValueHandle {read_value} = {read_result}.value;"
@@ -29566,24 +29607,20 @@ impl CGenerator {
             self.body.push(format!("if (!{present}) {{"));
         }
 
-        let replacement_failure_cleanup = format!("{path_cleanup}{failure_cleanup}");
+        let replacement_failure_cleanup = format!("{target_cleanup}{failure_cleanup}");
         let replacement = self.materialize_native_value_result_operand(
             replacement_expr,
             &replacement_failure_cleanup,
         )?;
-        let write_owner = self.next_native_name("array_lvalue_null_coalesce_assign_write_owner");
         let write_result = self.next_native_name("array_lvalue_null_coalesce_assign_write_result");
         self.body.push(format!(
-            "phpc_NativeArrayLvalueOwner {write_owner} = phpc_native_array_lvalue_owner_array({handle});"
-        ));
-        self.body.push(format!(
-            "phpc_NativeArrayLvalueResult {write_result} = phpc_native_array_lvalue_owner_value_operation_result({write_owner}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE, 0, 0, 0, {});",
-            path.path, path.len, replacement.handle
+            "phpc_NativeArrayLvalueResult {write_result} = phpc_native_array_lvalue_owner_value_operation_result({}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE, 0, 0, 0, {});",
+            owner.owner, path.path, path.len, replacement.handle
         ));
         self.emit_native_array_lvalue_result_check(
             &write_result,
             &format!(
-                "{}{path_cleanup}{failure_cleanup}",
+                "{}{target_cleanup}{failure_cleanup}",
                 c_cleanup_sequence(&replacement.cleanup_after_use)
             ),
         );
@@ -29602,6 +29639,7 @@ impl CGenerator {
         }
         self.body.extend(replacement.cleanup_after_use);
         self.body.push("}".to_string());
+        self.body.extend(owner.cleanup_after_use);
         self.body.extend(path.cleanup_after_use);
 
         Ok(match result {
@@ -31479,31 +31517,76 @@ impl CGenerator {
         Ok(Some(replacement_value))
     }
 
+    fn native_array_lvalue_owner_source_for_name(
+        &self,
+        name: &str,
+    ) -> Option<CNativeArrayLvalueOwnerSource> {
+        if let Some(CValue::NativeReferenceHandle(reference)) = self.variables.get(name) {
+            return Some(CNativeArrayLvalueOwnerSource::ReferenceSlot(
+                reference.clone(),
+            ));
+        }
+        if self.variable_array_path_routes_through_global_symbol_table(name)
+            && !is_globals_superglobal_name(name)
+            && !is_request_superglobal_name(name)
+        {
+            return Some(CNativeArrayLvalueOwnerSource::SymbolTableRoot(
+                name.to_string(),
+            ));
+        }
+        match self.variables.get(name) {
+            Some(CValue::ArrayHandle(handle)) => {
+                Some(CNativeArrayLvalueOwnerSource::ArrayHandle(handle.clone()))
+            }
+            _ => None,
+        }
+    }
+
     fn native_array_lvalue_key_target_parts<'a>(
         &self,
         target: &'a AssignTarget,
-    ) -> Option<(String, Vec<&'a Expr>, Span)> {
+    ) -> Option<(CNativeArrayLvalueOwnerSource, Vec<&'a Expr>, Span)> {
         match target {
             AssignTarget::ArrayIndex {
                 name,
                 index: Some(index),
                 span,
-            } => match self.variables.get(name) {
-                Some(CValue::ArrayHandle(handle)) => Some((handle.clone(), vec![index], *span)),
-                _ => None,
-            },
+            } => self
+                .native_array_lvalue_owner_source_for_name(name)
+                .map(|source| (source, vec![index], *span)),
             AssignTarget::NestedArrayIndex {
                 name,
                 indices,
                 span,
-            } => match self.variables.get(name) {
-                Some(CValue::ArrayHandle(handle)) => {
-                    Some((handle.clone(), indices.iter().collect(), *span))
-                }
-                _ => None,
-            },
+            } => self
+                .native_array_lvalue_owner_source_for_name(name)
+                .map(|source| (source, indices.iter().collect(), *span)),
             _ => None,
         }
+    }
+
+    fn materialize_native_array_lvalue_key_target(
+        &mut self,
+        target: &AssignTarget,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeArrayLvalueTargetMaterialization>> {
+        let Some((source, indices, span)) = self.native_array_lvalue_key_target_parts(target)
+        else {
+            return Ok(None);
+        };
+        let path =
+            self.materialize_native_array_lvalue_key_path(&indices, span, failure_cleanup)?;
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let owner = self.materialize_native_array_lvalue_owner(
+            source,
+            span,
+            "array_lvalue_owner",
+            &format!("{path_cleanup}{failure_cleanup}"),
+        )?;
+        Ok(Some(CNativeArrayLvalueTargetMaterialization {
+            owner,
+            path,
+        }))
     }
 
     fn materialize_direct_variable_compound_assignment_result_for_target(
@@ -31629,15 +31712,14 @@ impl CGenerator {
         _span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let Some((handle, indices, span)) = self.native_array_lvalue_key_target_parts(target)
+        let Some(target) =
+            self.materialize_native_array_lvalue_key_target(target, failure_cleanup)?
         else {
             return Ok(None);
         };
 
-        self.materialize_array_lvalue_compound_assignment_result_for_handle(
-            &handle,
-            &indices,
-            span,
+        self.materialize_array_lvalue_compound_assignment_result_for_owner(
+            target,
             op,
             rhs_expr,
             failure_cleanup,
@@ -31645,11 +31727,9 @@ impl CGenerator {
         .map(Some)
     }
 
-    fn materialize_array_lvalue_compound_assignment_result_for_handle(
+    fn materialize_array_lvalue_compound_assignment_result_for_owner(
         &mut self,
-        handle: &str,
-        indices: &[&Expr],
-        span: Span,
+        target: CNativeArrayLvalueTargetMaterialization,
         op: CompoundAssignOp,
         rhs_expr: &Expr,
         failure_cleanup: &str,
@@ -31658,21 +31738,19 @@ impl CGenerator {
         self.uses_native_array_helpers = true;
         self.uses_native_array_lvalue_helpers = true;
 
-        let path = self.materialize_native_array_lvalue_key_path(indices, span, failure_cleanup)?;
+        let CNativeArrayLvalueTargetMaterialization { owner, path } = target;
+        let owner_cleanup = c_cleanup_sequence(&owner.cleanup_after_use);
         let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
-        let read_owner = self.next_native_name("array_lvalue_compound_read_owner");
+        let target_cleanup = format!("{owner_cleanup}{path_cleanup}");
         let read_result = self.next_native_name("array_lvalue_compound_read_result");
         let current = self.next_native_name("array_lvalue_compound_current");
         self.body.push(format!(
-            "phpc_NativeArrayLvalueOwner {read_owner} = phpc_native_array_lvalue_owner_array({handle});"
-        ));
-        self.body.push(format!(
-            "phpc_NativeArrayLvalueResult {read_result} = phpc_native_array_lvalue_owner_value_operation_result({read_owner}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ, 0, 0, 0, (phpc_NativeValueHandle){{0}});",
-            path.path, path.len
+            "phpc_NativeArrayLvalueResult {read_result} = phpc_native_array_lvalue_owner_value_operation_result({}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_READ, 0, 0, 0, (phpc_NativeValueHandle){{0}});",
+            owner.owner, path.path, path.len
         ));
         self.emit_native_array_lvalue_result_check(
             &read_result,
-            &format!("{path_cleanup}{failure_cleanup}"),
+            &format!("{target_cleanup}{failure_cleanup}"),
         );
         self.body.push(format!(
             "phpc_NativeValueHandle {current} = {read_result}.value;"
@@ -31689,7 +31767,7 @@ impl CGenerator {
             cleanup_after_use: vec![format!("phpc_native_value_free({current});")],
         };
         let rhs_failure_cleanup = format!(
-            "{}{path_cleanup}{failure_cleanup}",
+            "{}{target_cleanup}{failure_cleanup}",
             c_cleanup_sequence(&current_value.cleanup_after_use)
         );
         let rhs_value =
@@ -31698,28 +31776,25 @@ impl CGenerator {
             current_value,
             native_array_lvalue_compound_binary_op_tag(op),
             rhs_value,
-            &format!("{path_cleanup}{failure_cleanup}"),
+            &format!("{target_cleanup}{failure_cleanup}"),
         );
 
-        let write_owner = self.next_native_name("array_lvalue_compound_write_owner");
         let write_result = self.next_native_name("array_lvalue_compound_write_result");
         self.body.push(format!(
-            "phpc_NativeArrayLvalueOwner {write_owner} = phpc_native_array_lvalue_owner_array({handle});"
-        ));
-        self.body.push(format!(
-            "phpc_NativeArrayLvalueResult {write_result} = phpc_native_array_lvalue_owner_value_operation_result({write_owner}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE, 0, 0, 0, {});",
-            path.path, path.len, value.handle
+            "phpc_NativeArrayLvalueResult {write_result} = phpc_native_array_lvalue_owner_value_operation_result({}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE, 0, 0, 0, {});",
+            owner.owner, path.path, path.len, value.handle
         ));
         self.emit_native_array_lvalue_result_check(
             &write_result,
             &format!(
-                "{}{path_cleanup}{failure_cleanup}",
+                "{}{target_cleanup}{failure_cleanup}",
                 c_cleanup_sequence(&value.cleanup_after_use)
             ),
         );
         self.body.push(format!(
             "phpc_native_array_lvalue_result_free({write_result});"
         ));
+        self.body.extend(owner.cleanup_after_use);
         self.body.extend(path.cleanup_after_use);
 
         Ok(value)
@@ -31733,15 +31808,14 @@ impl CGenerator {
         _span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let Some((handle, path)) =
-            self.materialize_array_lvalue_increment_decrement_target_path(target, failure_cleanup)?
+        let Some(target) =
+            self.materialize_array_lvalue_increment_decrement_target(target, failure_cleanup)?
         else {
             return Ok(None);
         };
 
-        self.materialize_array_lvalue_increment_decrement_result_for_handle(
-            &handle,
-            path,
+        self.materialize_array_lvalue_increment_decrement_result_for_owner(
+            target,
             op,
             position,
             failure_cleanup,
@@ -31749,14 +31823,14 @@ impl CGenerator {
         .map(Some)
     }
 
-    fn materialize_array_lvalue_increment_decrement_target_path(
+    fn materialize_array_lvalue_increment_decrement_target(
         &mut self,
         target: &AssignTarget,
         failure_cleanup: &str,
-    ) -> CompileResult<Option<(String, CNativeArrayLvaluePath)>> {
-        match target {
+    ) -> CompileResult<Option<CNativeArrayLvalueTargetMaterialization>> {
+        let (source, path, span) = match target {
             AssignTarget::ArrayIndex { name, index, span } => {
-                let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() else {
+                let Some(source) = self.native_array_lvalue_owner_source_for_name(name) else {
                     return Ok(None);
                 };
                 let path = if let Some(index) = index.as_ref() {
@@ -31769,14 +31843,14 @@ impl CGenerator {
                         failure_cleanup,
                     )?
                 };
-                Ok(Some((handle, path)))
+                (source, path, *span)
             }
             AssignTarget::NestedArrayIndex {
                 name,
                 indices,
                 span,
             } => {
-                let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() else {
+                let Some(source) = self.native_array_lvalue_owner_source_for_name(name) else {
                     return Ok(None);
                 };
                 let indices = indices.iter().collect::<Vec<_>>();
@@ -31785,7 +31859,7 @@ impl CGenerator {
                     *span,
                     failure_cleanup,
                 )?;
-                Ok(Some((handle, path)))
+                (source, path, *span)
             }
             AssignTarget::NestedArrayAppend {
                 name,
@@ -31793,7 +31867,7 @@ impl CGenerator {
                 suffix_indices,
                 span,
             } if suffix_indices.is_empty() => {
-                let Some(CValue::ArrayHandle(handle)) = self.variables.get(name).cloned() else {
+                let Some(source) = self.native_array_lvalue_owner_source_for_name(name) else {
                     return Ok(None);
                 };
                 let prefix_indices = indices.iter().collect::<Vec<_>>();
@@ -31803,16 +31877,26 @@ impl CGenerator {
                     *span,
                     failure_cleanup,
                 )?;
-                Ok(Some((handle, path)))
+                (source, path, *span)
             }
-            _ => Ok(None),
-        }
+            _ => return Ok(None),
+        };
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let owner = self.materialize_native_array_lvalue_owner(
+            source,
+            span,
+            "array_lvalue_owner",
+            &format!("{path_cleanup}{failure_cleanup}"),
+        )?;
+        Ok(Some(CNativeArrayLvalueTargetMaterialization {
+            owner,
+            path,
+        }))
     }
 
-    fn materialize_array_lvalue_increment_decrement_result_for_handle(
+    fn materialize_array_lvalue_increment_decrement_result_for_owner(
         &mut self,
-        handle: &str,
-        path: CNativeArrayLvaluePath,
+        target: CNativeArrayLvalueTargetMaterialization,
         op: IncrementDecrementOp,
         position: IncrementDecrementPosition,
         failure_cleanup: &str,
@@ -31821,22 +31905,21 @@ impl CGenerator {
         self.uses_native_array_helpers = true;
         self.uses_native_array_lvalue_helpers = true;
 
+        let CNativeArrayLvalueTargetMaterialization { owner, path } = target;
+        let owner_cleanup = c_cleanup_sequence(&owner.cleanup_after_use);
         let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
-        let owner = self.next_native_name("array_lvalue_increment_owner");
+        let target_cleanup = format!("{owner_cleanup}{path_cleanup}");
         let result = self.next_native_name("array_lvalue_increment_result");
         let value = self.next_native_name("array_lvalue_increment_value");
         let op_tag = native_array_lvalue_increment_decrement_op_tag(op);
         let position_tag = native_array_lvalue_increment_decrement_position_tag(position);
         self.body.push(format!(
-            "phpc_NativeArrayLvalueOwner {owner} = phpc_native_array_lvalue_owner_array({handle});"
-        ));
-        self.body.push(format!(
-            "phpc_NativeArrayLvalueResult {result} = phpc_native_array_lvalue_owner_value_operation_result({owner}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UPDATE, PHPC_NATIVE_ARRAY_LVALUE_VALUE_RESULT_INCREMENT_DECREMENT, {op_tag}, {position_tag}, (phpc_NativeValueHandle){{0}});",
-            path.path, path.len
+            "phpc_NativeArrayLvalueResult {result} = phpc_native_array_lvalue_owner_value_operation_result({}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_UPDATE, PHPC_NATIVE_ARRAY_LVALUE_VALUE_RESULT_INCREMENT_DECREMENT, {op_tag}, {position_tag}, (phpc_NativeValueHandle){{0}});",
+            owner.owner, path.path, path.len
         ));
         self.emit_native_array_lvalue_result_check(
             &result,
-            &format!("{path_cleanup}{failure_cleanup}"),
+            &format!("{target_cleanup}{failure_cleanup}"),
         );
         self.body
             .push(format!("phpc_NativeValueHandle {value} = {result}.value;"));
@@ -31844,6 +31927,7 @@ impl CGenerator {
             .push(format!("{result}.value = (phpc_NativeValueHandle){{0}};"));
         self.body
             .push(format!("phpc_native_array_lvalue_result_free({result});"));
+        self.body.extend(owner.cleanup_after_use);
         self.body.extend(path.cleanup_after_use);
 
         Ok(CNativeValueMaterialization {
