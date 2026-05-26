@@ -14198,6 +14198,9 @@ struct CGenerator {
     by_reference_foreach_linger_variables: HashSet<String>,
     global_import_names: HashSet<String>,
     native_value_variable_facts: HashMap<String, CNativeValueFacts>,
+    native_reference_fact_slots: HashMap<String, usize>,
+    native_reference_slot_facts: HashMap<usize, CNativeValueFacts>,
+    next_native_reference_fact_slot: usize,
     array_cleanup_handles: Vec<String>,
     owned_native_byte_buffers: Vec<String>,
     known_ints: HashMap<String, KnownInt>,
@@ -14337,6 +14340,8 @@ struct CGotoStateSnapshot {
     by_reference_foreach_linger_variables: HashSet<String>,
     global_import_names: HashSet<String>,
     native_value_variable_facts: HashMap<String, CNativeValueFacts>,
+    native_reference_fact_slots: HashMap<String, usize>,
+    native_reference_slot_facts: HashMap<usize, CNativeValueFacts>,
     array_cleanup_handles: Vec<String>,
     owned_native_byte_buffers: Vec<String>,
     native_byte_buffer_string_exprs: HashMap<String, String>,
@@ -14590,12 +14595,20 @@ enum CNativeValueOwnerSource {
         span: Span,
         facts: Option<CNativeValueFacts>,
     },
+    ReferenceSlot {
+        reference: String,
+        facts: Option<CNativeValueFacts>,
+    },
 }
 
 enum CNativeValueOwnerCommit {
     DirectVariable {
         name: String,
         span: Span,
+        facts: Option<CNativeValueFacts>,
+    },
+    ReferenceSlot {
+        reference: String,
         facts: Option<CNativeValueFacts>,
     },
 }
@@ -15685,6 +15698,8 @@ impl CGenerator {
                 == other.by_reference_foreach_linger_variables
             && self.global_import_names == other.global_import_names
             && self.native_value_variable_facts == other.native_value_variable_facts
+            && self.native_reference_fact_slots == other.native_reference_fact_slots
+            && self.native_reference_slot_facts == other.native_reference_slot_facts
             && self.array_cleanup_handles == other.array_cleanup_handles
             && self.owned_native_byte_buffers == other.owned_native_byte_buffers
             && self.native_byte_buffer_string_exprs == other.native_byte_buffer_string_exprs
@@ -15706,6 +15721,8 @@ impl CGenerator {
                 .clone(),
             global_import_names: self.global_import_names.clone(),
             native_value_variable_facts: self.native_value_variable_facts.clone(),
+            native_reference_fact_slots: self.native_reference_fact_slots.clone(),
+            native_reference_slot_facts: self.native_reference_slot_facts.clone(),
             array_cleanup_handles: self.array_cleanup_handles.clone(),
             owned_native_byte_buffers: self.owned_native_byte_buffers.clone(),
             native_byte_buffer_string_exprs: self.native_byte_buffer_string_exprs.clone(),
@@ -15825,6 +15842,9 @@ impl CGenerator {
         self.variable_order = then_branch.variable_order.clone();
         self.native_value_variable_facts =
             Self::join_native_value_variable_facts(then_branch, else_branch, &self.variables);
+        self.native_reference_fact_slots = then_branch.native_reference_fact_slots.clone();
+        self.native_reference_slot_facts =
+            Self::join_native_reference_slot_facts(then_branch, else_branch);
         self.native_value_cleanup_handles = merged_native_value_cleanup_handles;
         self.array_cleanup_handles = base.array_cleanup_handles.clone();
         self.owned_native_byte_buffers = base.owned_native_byte_buffers.clone();
@@ -15850,6 +15870,25 @@ impl CGenerator {
             };
             if !facts.is_empty() {
                 joined.insert(name.clone(), facts);
+            }
+        }
+        joined
+    }
+
+    fn join_native_reference_slot_facts(
+        then_branch: &Self,
+        else_branch: &Self,
+    ) -> HashMap<usize, CNativeValueFacts> {
+        let mut joined = HashMap::new();
+        for (slot, then_facts) in &then_branch.native_reference_slot_facts {
+            let Some(else_facts) = else_branch.native_reference_slot_facts.get(slot) else {
+                continue;
+            };
+            let Some(facts) = then_facts.intersection(else_facts) else {
+                continue;
+            };
+            if !facts.is_empty() {
+                joined.insert(*slot, facts);
             }
         }
         joined
@@ -17498,6 +17537,7 @@ impl CGenerator {
         let Some(captured) = self.variables.get(&capture.name).cloned() else {
             return Err(self.unsupported(capture.span, ASSEMBLY_CLOSURE_REJECTION));
         };
+        let facts = self.native_value_facts_for_variable(&capture.name);
         let value = self.materialize_native_array_c_value_handle(captured, capture.span)?;
         let reference = self.next_native_name("closure_capture_reference");
         self.uses_native_reference_helpers = true;
@@ -17511,6 +17551,7 @@ impl CGenerator {
         self.release_variable_native_value_handle(&capture.name);
         self.mutable_scalar_slots.remove(&capture.name);
         self.retain_native_reference_cleanup_handle(&reference);
+        self.set_native_reference_facts(&reference, facts);
         self.variables.insert(
             capture.name.clone(),
             CValue::NativeReferenceHandle(reference),
@@ -18834,7 +18875,60 @@ impl CGenerator {
         self.body.push(format!(
             "phpc_NativeReferenceHandle {cloned} = phpc_native_reference_clone({reference});"
         ));
+        self.clone_native_reference_fact_slot(reference, &cloned);
         cloned
+    }
+
+    fn native_reference_facts(&self, reference: &str) -> Option<CNativeValueFacts> {
+        let slot = self.native_reference_fact_slots.get(reference)?;
+        self.native_reference_slot_facts.get(slot).cloned()
+    }
+
+    fn set_native_reference_facts(&mut self, reference: &str, facts: Option<CNativeValueFacts>) {
+        let slot = self
+            .native_reference_fact_slots
+            .get(reference)
+            .copied()
+            .unwrap_or_else(|| {
+                let slot = self.next_native_reference_fact_slot;
+                self.next_native_reference_fact_slot += 1;
+                self.native_reference_fact_slots
+                    .insert(reference.to_string(), slot);
+                slot
+            });
+        match facts.filter(|facts| !facts.is_empty()) {
+            Some(facts) => {
+                self.native_reference_slot_facts.insert(slot, facts);
+            }
+            None => {
+                self.native_reference_slot_facts.remove(&slot);
+            }
+        }
+    }
+
+    fn clone_native_reference_fact_slot(&mut self, source: &str, cloned: &str) {
+        match self.native_reference_fact_slots.get(source).copied() {
+            Some(slot) => {
+                self.native_reference_fact_slots
+                    .insert(cloned.to_string(), slot);
+            }
+            None => {
+                self.set_native_reference_facts(cloned, None);
+            }
+        }
+    }
+
+    fn release_native_reference_fact_handle(&mut self, handle: &str) {
+        let Some(slot) = self.native_reference_fact_slots.remove(handle) else {
+            return;
+        };
+        if !self
+            .native_reference_fact_slots
+            .values()
+            .any(|owned| *owned == slot)
+        {
+            self.native_reference_slot_facts.remove(&slot);
+        }
     }
 
     fn release_variable_native_value_handle(&mut self, name: &str) {
@@ -18847,6 +18941,7 @@ impl CGenerator {
             }
             Some(CValue::NativeReferenceHandle(handle)) => {
                 self.release_native_reference_cleanup_handle(&handle);
+                self.release_native_reference_fact_handle(&handle);
                 self.body
                     .push(format!("phpc_native_reference_free({handle});"));
             }
@@ -22909,9 +23004,18 @@ impl CGenerator {
             .flatten()
     }
 
+    fn native_value_facts_for_variable(&self, name: &str) -> Option<CNativeValueFacts> {
+        match self.variables.get(name) {
+            Some(CValue::NativeReferenceHandle(reference)) => {
+                self.native_reference_facts(reference)
+            }
+            _ => self.native_value_variable_facts.get(name).cloned(),
+        }
+    }
+
     fn native_value_facts_for_expr(&self, expr: &Expr) -> Option<CNativeValueFacts> {
         match expr {
-            Expr::Variable(name, _) => self.native_value_variable_facts.get(name).cloned(),
+            Expr::Variable(name, _) => self.native_value_facts_for_variable(name),
             Expr::New { class_name, .. } => self.native_value_facts_for_new_class_name(class_name),
             Expr::Call { name, args, .. } => {
                 self.native_value_facts_for_user_function_call(name, args)
@@ -22965,17 +23069,25 @@ impl CGenerator {
         )
     }
 
-    fn native_arrayaccess_direct_variable_owner_source(
+    fn native_arrayaccess_variable_owner_source(
         &self,
         name: &str,
         span: Span,
     ) -> Option<CNativeValueOwnerSource> {
         let facts = self.native_arrayaccess_subject_facts_for_variable(name, span)?;
-        Some(CNativeValueOwnerSource::DirectVariable {
-            name: name.to_string(),
-            span,
-            facts: Some(facts),
-        })
+        match self.variables.get(name) {
+            Some(CValue::NativeReferenceHandle(reference)) => {
+                Some(CNativeValueOwnerSource::ReferenceSlot {
+                    reference: reference.clone(),
+                    facts: Some(facts),
+                })
+            }
+            _ => Some(CNativeValueOwnerSource::DirectVariable {
+                name: name.to_string(),
+                span,
+                facts: Some(facts),
+            }),
+        }
     }
 
     fn materialize_native_value_owner(
@@ -22991,6 +23103,20 @@ impl CGenerator {
                 Ok(CNativeValueOwnerMaterialization {
                     subject,
                     commit: CNativeValueOwnerCommit::DirectVariable { name, span, facts },
+                })
+            }
+            CNativeValueOwnerSource::ReferenceSlot { reference, facts } => {
+                self.uses_native_reference_helpers = true;
+                let handle = self.clone_native_reference_value_handle(&reference);
+                let error_exit = self.native_error_exit(failure_cleanup);
+                self.body
+                    .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
+                Ok(CNativeValueOwnerMaterialization {
+                    subject: CNativeValueMaterialization {
+                        handle: handle.clone(),
+                        cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
+                    },
+                    commit: CNativeValueOwnerCommit::ReferenceSlot { reference, facts },
                 })
             }
         }
@@ -23020,7 +23146,36 @@ impl CGenerator {
                 );
                 Ok(())
             }
+            CNativeValueOwnerCommit::ReferenceSlot { reference, facts } => {
+                self.emit_native_reference_value_commit(
+                    &reference,
+                    replacement,
+                    facts,
+                    failure_cleanup,
+                )?;
+                self.body
+                    .push(format!("phpc_native_value_free({replacement});"));
+                Ok(())
+            }
         }
+    }
+
+    fn emit_native_reference_value_commit(
+        &mut self,
+        reference: &str,
+        replacement: &str,
+        facts: Option<CNativeValueFacts>,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        self.uses_native_reference_helpers = true;
+        let stored = self.next_native_name("native_reference_set");
+        self.body.push(format!(
+            "bool {stored} = phpc_native_reference_set_value({reference}, {replacement});"
+        ));
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!("if (!{stored}) {{ {error_exit} }}"));
+        self.set_native_reference_facts(reference, facts);
+        Ok(())
     }
 
     fn emit_symbol_table_variable_value_read(
@@ -29879,11 +30034,13 @@ impl CGenerator {
         }
 
         if let Some(CValue::NativeReferenceHandle(reference)) = self.variables.get(name).cloned() {
+            let facts = self.native_value_facts_for_expr(expr);
             let (result_value, replacement) =
                 self.materialize_assignment_expression_replacement_value(expr, failure_cleanup)?;
             self.emit_reference_variable_assignment_from_materialized(
                 &reference,
                 replacement,
+                facts,
                 span,
                 failure_cleanup,
             )?;
@@ -35311,10 +35468,12 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<()> {
+        let facts = self.native_value_facts_for_expr(expr);
         let replacement = self.materialize_native_value_result_operand(expr, failure_cleanup)?;
         self.emit_reference_variable_assignment_from_materialized(
             reference,
             replacement,
+            facts,
             span,
             failure_cleanup,
         )
@@ -35324,6 +35483,7 @@ impl CGenerator {
         &mut self,
         reference: &str,
         replacement: CNativeValueMaterialization,
+        facts: Option<CNativeValueFacts>,
         _span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<()> {
@@ -35331,18 +35491,12 @@ impl CGenerator {
         self.uses_native_array_helpers = true;
         self.uses_native_array_lvalue_helpers = true;
 
-        let stored = self.next_native_name("native_reference_set");
-        self.body.push(format!(
-            "bool {stored} = phpc_native_reference_set_value({reference}, {});",
-            replacement.handle
-        ));
         let cleanup = format!(
             "{}{}",
             c_cleanup_sequence(&replacement.cleanup_after_use),
             failure_cleanup
         );
-        let error_exit = self.native_error_exit(&cleanup);
-        self.body.push(format!("if (!{stored}) {{ {error_exit} }}"));
+        self.emit_native_reference_value_commit(reference, &replacement.handle, facts, &cleanup)?;
         self.body.extend(replacement.cleanup_after_use);
         Ok(())
     }
@@ -39651,7 +39805,7 @@ impl CGenerator {
         else {
             return Ok(None);
         };
-        let Some(source) = self.native_arrayaccess_direct_variable_owner_source(name, *span) else {
+        let Some(source) = self.native_arrayaccess_variable_owner_source(name, *span) else {
             return Ok(None);
         };
 
@@ -39740,7 +39894,7 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<bool> {
-        let Some(source) = self.native_arrayaccess_direct_variable_owner_source(name, span) else {
+        let Some(source) = self.native_arrayaccess_variable_owner_source(name, span) else {
             return Ok(false);
         };
 
@@ -39883,7 +40037,7 @@ impl CGenerator {
         let AssignTarget::ArrayIndex { name, index, .. } = target else {
             return Ok(None);
         };
-        let Some(source) = self.native_arrayaccess_direct_variable_owner_source(name, span) else {
+        let Some(source) = self.native_arrayaccess_variable_owner_source(name, span) else {
             return Ok(None);
         };
 

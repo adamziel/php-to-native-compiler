@@ -13533,6 +13533,87 @@ const ARRAYACCESS_RMW_NULLCOALESCE_ASSIGNMENT_SOURCE: &str = concat!(
     "echo ($value[\"v\"] ??= aa_rhs(\"bad\"));\n",
 );
 
+const ARRAYACCESS_REFERENCE_SLOT_OWNER_SOURCE: &str = concat!(
+    "<?php\n",
+    "class ReferenceSlotOwnerBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"get:\", $offset, \";\"; return 5; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"set:\", $offset, \"=\", $value, \";\"; }\n",
+    "    public function offsetUnset($offset) { echo \"unset:\", $offset, \";\"; }\n",
+    "}\n",
+    "function reference_slot_capture_surface() {\n",
+    "    $bag = new ReferenceSlotOwnerBag();\n",
+    "    $touch = function () use (&$bag) { return 1; };\n",
+    "    $bag[\"capture\"] = \"C\";\n",
+    "    $bag[\"math\"] += 2;\n",
+    "    return $touch();\n",
+    "}\n",
+    "function reference_slot_global_surface() {\n",
+    "    global $globalBag;\n",
+    "    $globalBag = new ReferenceSlotOwnerBag();\n",
+    "    $globalBag[\"global\"] = \"G\";\n",
+    "    $globalBag[\"sum\"] += 3;\n",
+    "    return 2;\n",
+    "}\n",
+    "echo reference_slot_capture_surface(), \"|\", reference_slot_global_surface();\n",
+);
+
+#[test]
+fn native_executable_c_source_routes_arrayaccess_reference_slot_owners_through_value_owner_boundary(
+) {
+    let program = parse(ARRAYACCESS_REFERENCE_SLOT_OWNER_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_reference_value_clone(")
+            && source.contains("phpc_native_reference_set_value(")
+            && source.contains("phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_SET")
+            && source.contains("phpc_native_value_binary_result"),
+        "closure-promoted and global-import reference slots should share native value owner clone/commit and ArrayAccess write/RMW ABIs:\n{source}"
+    );
+    assert!(
+        source.matches("phpc_native_reference_value_clone(").count() >= 2
+            && source.matches("phpc_native_reference_set_value(").count() >= 4,
+        "reference-slot owner source/commit should cover both by-reference closure capture promotion and global-import roots:\n{source}"
+    );
+    assert!(
+        !source.contains("ArrayAccess lowering rejects")
+            && !source.contains("assembly mutation lowering rejects")
+            && !source.contains("assembly global-declaration lowering rejects"),
+        "reference-slot owner facts should not fall through exact-shape ArrayAccess or global blockers:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_arrayaccess_reference_slot_owner_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "arrayaccess_reference_slot_owner",
+        ARRAYACCESS_REFERENCE_SLOT_OWNER_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native ArrayAccess reference-slot owner executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(
+        run.stdout,
+        b"set:capture=C;get:math;set:math=7;1|set:global=G;get:sum;set:sum=8;2"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
 #[test]
 fn native_executable_c_source_routes_arrayaccess_rmw_nullcoalesce_assignment_through_owner_boundary(
 ) {
