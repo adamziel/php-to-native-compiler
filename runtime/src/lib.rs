@@ -43,6 +43,15 @@ pub enum NativeCallableVisibility {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeCallableAccessContextTag {
+    External = 1,
+    Static = 2,
+    ObjectReceiver = 3,
+    ClassContext = 4,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeCallResultStatus {
     Null = 0,
     Value = 1,
@@ -1248,6 +1257,7 @@ pub type NativeCallableFrameCallback =
 #[derive(Debug)]
 struct NativeCallableTable {
     entries: HashMap<NativeCallableKey, NativeCallableDescriptor>,
+    allocatable_classes: HashSet<String>,
     class_parents: HashMap<String, String>,
 }
 
@@ -1261,6 +1271,14 @@ struct NativeCallable {
 struct NativeCallableLookup<'a> {
     descriptor: &'a NativeCallableDescriptor,
     called_scope: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum NativeCallableAccessContext {
+    ExternalLookup,
+    StaticContextLookup,
+    ObjectReceiverLookup,
+    ClassContextLookup { caller_scope: String },
 }
 
 #[derive(Debug)]
@@ -1413,6 +1431,20 @@ impl NativeCallableTable {
         );
     }
 
+    fn register_allocatable_class(&mut self, class_name: String) -> bool {
+        let class_name = normalize_class_lookup_name(&class_name);
+        if class_name.is_empty() {
+            return false;
+        }
+        self.allocatable_classes.insert(class_name);
+        true
+    }
+
+    fn can_allocate_class(&self, class_name: &str) -> bool {
+        self.allocatable_classes
+            .contains(&normalize_class_lookup_name(class_name))
+    }
+
     fn lookup(
         &self,
         kind: NativeCallableKind,
@@ -1420,13 +1452,26 @@ impl NativeCallableTable {
         name: String,
         caller_scope: Option<String>,
     ) -> Result<NativeCallable, String> {
+        let access_context = caller_scope
+            .map(|caller_scope| NativeCallableAccessContext::ClassContextLookup { caller_scope })
+            .unwrap_or(NativeCallableAccessContext::ExternalLookup);
+        self.lookup_with_access_context(kind, scope, name, access_context)
+    }
+
+    fn lookup_with_access_context(
+        &self,
+        kind: NativeCallableKind,
+        scope: Option<String>,
+        name: String,
+        access_context: NativeCallableAccessContext,
+    ) -> Result<NativeCallable, String> {
         let Some(lookup) = self.lookup_descriptor(kind, scope.as_deref(), &name) else {
             return Err(format!(
                 "native callable lookup failed: {kind:?} {name} is not registered"
             ));
         };
         let descriptor = lookup.descriptor;
-        if self.can_access(descriptor, caller_scope.as_deref()) {
+        if access_context.allows(self, descriptor) {
             return Ok(NativeCallable {
                 descriptor: descriptor.clone(),
                 called_scope: lookup.called_scope,
@@ -1438,8 +1483,79 @@ impl NativeCallableTable {
             descriptor.visibility,
             declaring,
             descriptor.name,
-            caller_scope.as_deref().unwrap_or("<global>")
+            access_context.caller_label()
         ))
+    }
+
+    fn lookup_receiver_method(
+        &self,
+        receiver: &Value,
+        method_name: String,
+        access_context: NativeCallableAccessContext,
+    ) -> Result<NativeCallable, String> {
+        let Value::Object(object) = receiver else {
+            return Err(format!(
+                "native method lookup failed: receiver must be an object, got {}",
+                receiver.type_name()
+            ));
+        };
+        self.lookup_with_access_context(
+            NativeCallableKind::Method,
+            Some(object.class_name().to_string()),
+            method_name,
+            access_context,
+        )
+    }
+
+    fn lookup_static_method(
+        &self,
+        scope: String,
+        method_name: String,
+        access_context: NativeCallableAccessContext,
+    ) -> Result<NativeCallable, String> {
+        let callable = self.lookup_with_access_context(
+            NativeCallableKind::Method,
+            Some(scope),
+            method_name,
+            access_context,
+        )?;
+        if !callable.descriptor.is_static {
+            let scope = callable
+                .called_scope
+                .as_deref()
+                .or(callable.descriptor.scope.as_deref())
+                .unwrap_or("<unknown>");
+            return Err(format!(
+                "native static method lookup failed: non-static method {}::{} cannot be used for static dispatch",
+                scope, callable.descriptor.name
+            ));
+        }
+        Ok(callable)
+    }
+
+    fn lookup_constructor_for_scope(
+        &self,
+        scope: String,
+        access_context: NativeCallableAccessContext,
+    ) -> Result<Option<NativeCallable>, String> {
+        if !self.can_allocate_class(&scope) {
+            return Err(format!(
+                "native constructor allocation failed: unknown or non-allocatable class {scope}"
+            ));
+        }
+        match self.lookup_with_access_context(
+            NativeCallableKind::Constructor,
+            Some(scope.clone()),
+            "__construct".to_string(),
+            access_context,
+        ) {
+            Ok(callable) => Ok(Some(callable)),
+            Err(message) if message.contains(" is not registered") => Ok(None),
+            Err(message) => Err(message.replace(
+                "native callable lookup failed:",
+                "native constructor lookup failed:",
+            )),
+        }
     }
 
     fn lookup_descriptor(
@@ -1477,34 +1593,6 @@ impl NativeCallableTable {
         }
     }
 
-    fn can_access(
-        &self,
-        descriptor: &NativeCallableDescriptor,
-        caller_scope: Option<&str>,
-    ) -> bool {
-        match descriptor.visibility {
-            NativeCallableVisibility::Public => true,
-            NativeCallableVisibility::Private => {
-                let (Some(declaring), Some(caller)) = (descriptor.scope.as_deref(), caller_scope)
-                else {
-                    return false;
-                };
-                normalize_class_lookup_name(declaring) == normalize_class_lookup_name(caller)
-            }
-            NativeCallableVisibility::Protected => {
-                let (Some(declaring), Some(caller)) = (descriptor.scope.as_deref(), caller_scope)
-                else {
-                    return false;
-                };
-                let declaring = normalize_class_lookup_name(declaring);
-                let caller = normalize_class_lookup_name(caller);
-                caller == declaring
-                    || self.class_extends(&caller, &declaring)
-                    || self.class_extends(&declaring, &caller)
-            }
-        }
-    }
-
     fn class_extends(&self, child: &str, parent: &str) -> bool {
         let mut current = child;
         let mut seen = HashSet::new();
@@ -1518,6 +1606,70 @@ impl NativeCallableTable {
             current = next;
         }
         false
+    }
+}
+
+impl NativeCallableAccessContext {
+    unsafe fn from_abi(
+        tag: NativeCallableAccessContextTag,
+        caller_scope: NativeStringHandle,
+    ) -> Result<Self, String> {
+        match tag {
+            NativeCallableAccessContextTag::External => Ok(Self::ExternalLookup),
+            NativeCallableAccessContextTag::Static => Ok(Self::StaticContextLookup),
+            NativeCallableAccessContextTag::ObjectReceiver => Ok(Self::ObjectReceiverLookup),
+            NativeCallableAccessContextTag::ClassContext => {
+                let Some(caller_scope) = (unsafe { native_string_handle_to_string(caller_scope) })
+                else {
+                    return Err(
+                        "native callable access context failed: class context requires caller scope"
+                            .to_string(),
+                    );
+                };
+                if caller_scope.is_empty() {
+                    return Err(
+                        "native callable access context failed: caller scope must not be empty"
+                            .to_string(),
+                    );
+                }
+                Ok(Self::ClassContextLookup { caller_scope })
+            }
+        }
+    }
+
+    fn caller_label(&self) -> &str {
+        match self {
+            Self::ClassContextLookup { caller_scope } => caller_scope,
+            Self::ExternalLookup | Self::StaticContextLookup | Self::ObjectReceiverLookup => {
+                "<global>"
+            }
+        }
+    }
+
+    fn allows(&self, table: &NativeCallableTable, descriptor: &NativeCallableDescriptor) -> bool {
+        match descriptor.visibility {
+            NativeCallableVisibility::Public => true,
+            NativeCallableVisibility::Private => {
+                let (Some(declaring), Self::ClassContextLookup { caller_scope }) =
+                    (descriptor.scope.as_deref(), self)
+                else {
+                    return false;
+                };
+                normalize_class_lookup_name(declaring) == normalize_class_lookup_name(caller_scope)
+            }
+            NativeCallableVisibility::Protected => {
+                let (Some(declaring), Self::ClassContextLookup { caller_scope }) =
+                    (descriptor.scope.as_deref(), self)
+                else {
+                    return false;
+                };
+                let declaring = normalize_class_lookup_name(declaring);
+                let caller = normalize_class_lookup_name(caller_scope);
+                caller == declaring
+                    || table.class_extends(&caller, &declaring)
+                    || table.class_extends(&declaring, &caller)
+            }
+        }
     }
 }
 
@@ -3134,6 +3286,7 @@ impl NativeCallableTableHandle {
         Self {
             ptr: Box::into_raw(Box::new(NativeCallableTable {
                 entries: HashMap::new(),
+                allocatable_classes: HashSet::new(),
                 class_parents: HashMap::new(),
             })),
         }
@@ -7172,6 +7325,56 @@ pub unsafe extern "C" fn phpc_native_callable_table_register_class_parent_and_fr
 
 /// # Safety
 ///
+/// `table` must be a callable-table handle. `class_name` must be a UTF-8
+/// native string handle owned by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_table_register_allocatable_class(
+    mut table: NativeCallableTableHandle,
+    class_name: NativeStringHandle,
+) -> bool {
+    let Some(table) = (unsafe { table.as_mut() }) else {
+        return false;
+    };
+    let Some(class_name) = (unsafe { native_string_handle_to_string(class_name) }) else {
+        return false;
+    };
+    table.register_allocatable_class(class_name)
+}
+
+/// # Safety
+///
+/// Same as `phpc_native_callable_table_register_allocatable_class`, and always
+/// consumes `class_name`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_table_register_allocatable_class_and_free(
+    table: NativeCallableTableHandle,
+    class_name: NativeStringHandle,
+) -> bool {
+    let registered =
+        unsafe { phpc_native_callable_table_register_allocatable_class(table, class_name) };
+    unsafe { phpc_native_string_free(class_name) };
+    registered
+}
+
+/// # Safety
+///
+/// `table` must be a callable-table handle. `class_name` may be null only when
+/// callers want a false result.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_table_can_allocate_class(
+    table: NativeCallableTableHandle,
+    class_name: NativeStringHandle,
+) -> bool {
+    let (Some(table), Some(class_name)) = (unsafe { table.as_ref() }, unsafe {
+        native_string_handle_to_string(class_name)
+    }) else {
+        return false;
+    };
+    table.can_allocate_class(&class_name)
+}
+
+/// # Safety
+///
 /// `table` must be a callable-table handle. `scope`, `name`, and `diagnostic`
 /// must be valid for the duration of the call according to the runtime ABI.
 #[no_mangle]
@@ -7208,36 +7411,301 @@ pub unsafe extern "C" fn phpc_native_callable_lookup_with_context_diagnostic(
     caller_scope: NativeStringHandle,
     diagnostic: *mut NativeDiagnosticHandle,
 ) -> NativeCallableHandle {
-    let Some(table) = (unsafe { table.as_ref() }) else {
-        if !diagnostic.is_null() {
-            unsafe {
-                *diagnostic = NativeDiagnosticHandle::from_message(
-                    "native callable lookup failed: table is null",
-                )
-            };
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let access_context = if caller_scope.is_null() {
+        NativeCallableAccessContext::ExternalLookup
+    } else {
+        match unsafe {
+            NativeCallableAccessContext::from_abi(
+                NativeCallableAccessContextTag::ClassContext,
+                caller_scope,
+            )
+        } {
+            Ok(access_context) => access_context,
+            Err(message) => {
+                unsafe { native_store_diagnostic_message(diagnostic, message) };
+                return NativeCallableHandle::null();
+            }
         }
+    };
+    let Some(table) = (unsafe { table.as_ref() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native callable lookup failed: table is null",
+            )
+        };
         return NativeCallableHandle::null();
     };
     let Some(name) = (unsafe { native_string_handle_to_string(name) }) else {
-        if !diagnostic.is_null() {
-            unsafe {
-                *diagnostic = NativeDiagnosticHandle::from_message(
-                    "native callable lookup failed: name is null",
-                )
-            };
-        }
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native callable lookup failed: name is null",
+            )
+        };
         return NativeCallableHandle::null();
     };
     let scope = unsafe { native_string_handle_to_string(scope) };
-    let caller_scope = unsafe { native_string_handle_to_string(caller_scope) };
-    match table.lookup(kind, scope, name, caller_scope) {
+    match table.lookup_with_access_context(kind, scope, name, access_context) {
         Ok(callable) => NativeCallableHandle::from_callable(callable),
         Err(message) => {
-            if !diagnostic.is_null() {
-                unsafe { *diagnostic = NativeDiagnosticHandle::from_message(message) };
-            }
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
             NativeCallableHandle::null()
         }
+    }
+}
+
+/// # Safety
+///
+/// `table` must be a callable-table handle. `scope`, `name`, `caller_scope`,
+/// and `diagnostic` must be valid for the duration of the call according to
+/// the runtime ABI. `caller_scope` is required only when `access_context` is
+/// `ClassContext`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_lookup_with_access_context_diagnostic(
+    table: NativeCallableTableHandle,
+    kind: NativeCallableKind,
+    scope: NativeStringHandle,
+    name: NativeStringHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallableHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let Some(table) = (unsafe { table.as_ref() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native callable lookup failed: table is null",
+            )
+        };
+        return NativeCallableHandle::null();
+    };
+    let Some(name) = (unsafe { native_string_handle_to_string(name) }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native callable lookup failed: name is null",
+            )
+        };
+        return NativeCallableHandle::null();
+    };
+    let scope = unsafe { native_string_handle_to_string(scope) };
+    let access_context =
+        match unsafe { NativeCallableAccessContext::from_abi(access_context, caller_scope) } {
+            Ok(access_context) => access_context,
+            Err(message) => {
+                unsafe { native_store_diagnostic_message(diagnostic, message) };
+                return NativeCallableHandle::null();
+            }
+        };
+    match table.lookup_with_access_context(kind, scope, name, access_context) {
+        Ok(callable) => NativeCallableHandle::from_callable(callable),
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeCallableHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `table`, `receiver`, `method`, `caller_scope`, and `diagnostic` must be
+/// valid according to the runtime ABI. Returns an owned callable handle on
+/// success.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_method_lookup_with_access_context_diagnostic(
+    table: NativeCallableTableHandle,
+    receiver: NativeValueHandle,
+    method: NativeValueHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallableHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let Some(table) = (unsafe { table.as_ref() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native method lookup failed: table is null",
+            )
+        };
+        return NativeCallableHandle::null();
+    };
+    let Some(receiver) = (unsafe { receiver.as_ref() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native method lookup failed: receiver handle is null",
+            )
+        };
+        return NativeCallableHandle::null();
+    };
+    let Some(method) = (unsafe { method.as_ref() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native method lookup failed: method handle is null",
+            )
+        };
+        return NativeCallableHandle::null();
+    };
+    let method_name = match native_callable_value_name(method, "method name") {
+        Ok(method_name) => method_name,
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            return NativeCallableHandle::null();
+        }
+    };
+    let access_context =
+        match unsafe { NativeCallableAccessContext::from_abi(access_context, caller_scope) } {
+            Ok(access_context) => access_context,
+            Err(message) => {
+                unsafe { native_store_diagnostic_message(diagnostic, message) };
+                return NativeCallableHandle::null();
+            }
+        };
+    match table.lookup_receiver_method(receiver, method_name, access_context) {
+        Ok(callable) => NativeCallableHandle::from_callable(callable),
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeCallableHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `table`, `scope`, `method`, `caller_scope`, and `diagnostic` must be valid
+/// according to the runtime ABI. Returns an owned callable handle on success.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_method_lookup_with_access_context_diagnostic(
+    table: NativeCallableTableHandle,
+    scope: NativeStringHandle,
+    method: NativeValueHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallableHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let Some(table) = (unsafe { table.as_ref() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native static method lookup failed: table is null",
+            )
+        };
+        return NativeCallableHandle::null();
+    };
+    let Some(scope) = (unsafe { native_string_handle_to_string(scope) }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native static method lookup failed: scope is null",
+            )
+        };
+        return NativeCallableHandle::null();
+    };
+    let Some(method) = (unsafe { method.as_ref() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native static method lookup failed: method handle is null",
+            )
+        };
+        return NativeCallableHandle::null();
+    };
+    let method_name = match native_callable_value_name(method, "static method name") {
+        Ok(method_name) => method_name,
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            return NativeCallableHandle::null();
+        }
+    };
+    let access_context =
+        match unsafe { NativeCallableAccessContext::from_abi(access_context, caller_scope) } {
+            Ok(access_context) => access_context,
+            Err(message) => {
+                unsafe { native_store_diagnostic_message(diagnostic, message) };
+                return NativeCallableHandle::null();
+            }
+        };
+    match table.lookup_static_method(scope, method_name, access_context) {
+        Ok(callable) => NativeCallableHandle::from_callable(callable),
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeCallableHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `table`, `scope`, `caller_scope`, and `diagnostic` must be valid according
+/// to the runtime ABI. Returns true when the class is allocatable and any
+/// registered constructor is visible in the supplied access context.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_constructor_lookup_scope_with_access_context_diagnostic(
+    table: NativeCallableTableHandle,
+    scope: NativeStringHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let Some(table) = (unsafe { table.as_ref() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native constructor lookup failed: table is null",
+            )
+        };
+        return false;
+    };
+    let Some(scope) = (unsafe { native_string_handle_to_string(scope) }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native constructor lookup failed: scope is null",
+            )
+        };
+        return false;
+    };
+    let access_context =
+        match unsafe { NativeCallableAccessContext::from_abi(access_context, caller_scope) } {
+            Ok(access_context) => access_context,
+            Err(message) => {
+                unsafe { native_store_diagnostic_message(diagnostic, message) };
+                return false;
+            }
+        };
+    match table.lookup_constructor_for_scope(scope, access_context) {
+        Ok(_) => true,
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// Convenience wrapper for external constructor lookup.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_constructor_lookup_scope_with_diagnostic(
+    table: NativeCallableTableHandle,
+    scope: NativeStringHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe {
+        phpc_native_constructor_lookup_scope_with_access_context_diagnostic(
+            table,
+            scope,
+            NativeCallableAccessContextTag::External,
+            NativeStringHandle::null(),
+            diagnostic,
+        )
     }
 }
 
@@ -19346,6 +19814,43 @@ pub unsafe extern "C" fn phpc_native_diagnostic_result_diagnostic_message_clone_
 /// # Safety
 ///
 /// `result` must be null or a diagnostic result returned by the runtime ABI and
+/// not yet freed. This helper only inspects the result; ownership remains with
+/// the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_result_can_continue(
+    result: NativeDiagnosticResult,
+) -> bool {
+    unsafe { native_diagnostic_result_can_continue(result) }
+}
+
+/// # Safety
+///
+/// `results` must point to `result_count` contiguous `NativeDiagnosticResult`
+/// values returned by the runtime ABI, or be null with a zero length. This
+/// helper only inspects the results; ownership remains with the caller. A null
+/// pointer with a nonzero count is treated as terminal because the list cannot
+/// be inspected safely.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_result_list_contains_terminal(
+    results: *const NativeDiagnosticResult,
+    result_count: usize,
+) -> bool {
+    if result_count == 0 {
+        return false;
+    }
+    if results.is_null() {
+        return true;
+    }
+
+    unsafe { std::slice::from_raw_parts(results, result_count) }
+        .iter()
+        .copied()
+        .any(|result| unsafe { native_diagnostic_result_contains_terminal(result) })
+}
+
+/// # Safety
+///
+/// `result` must be null or a diagnostic result returned by the runtime ABI and
 /// not yet freed. Passing any other pointer is undefined behavior.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_diagnostic_result_free(result: NativeDiagnosticResult) {
@@ -19353,6 +19858,48 @@ pub unsafe extern "C" fn phpc_native_diagnostic_result_free(result: NativeDiagno
         return;
     };
     unsafe { phpc_native_value_free(state.value) };
+}
+
+/// # Safety
+///
+/// `results` must point to `result_count` contiguous `NativeDiagnosticResult`
+/// values returned by the runtime ABI, or be null with a zero length. This
+/// helper consumes every available result, reports diagnostics to stderr,
+/// releases owned values, stops after terminal diagnostics, and releases any
+/// remaining unreported results.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_result_report_stderr_list_and_free(
+    results: *const NativeDiagnosticResult,
+    result_count: usize,
+) -> usize {
+    unsafe {
+        native_diagnostic_result_report_list_and_free(
+            results,
+            result_count,
+            NativeDiagnosticResultReportMode::DiagnosticsOnly,
+        )
+    }
+}
+
+/// # Safety
+///
+/// `results` must point to `result_count` contiguous `NativeDiagnosticResult`
+/// values returned by the runtime ABI, or be null with a zero length. This
+/// helper consumes every available result, reports diagnostics to stderr,
+/// echoes non-terminal values to stdout, stops after terminal diagnostics, and
+/// releases any remaining unreported results.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free(
+    results: *const NativeDiagnosticResult,
+    result_count: usize,
+) -> usize {
+    unsafe {
+        native_diagnostic_result_report_list_and_free(
+            results,
+            result_count,
+            NativeDiagnosticResultReportMode::EchoStdout,
+        )
+    }
 }
 
 /// # Safety
@@ -19445,6 +19992,107 @@ pub unsafe extern "C" fn phpc_native_diagnostic_result_deferred_cleanup_blocker_
         NativeDiagnosticResultListBlocker::DeferredCleanup
             .consume_value_required_results_and_free(cleanup_results, cleanup_result_count)
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum NativeDiagnosticResultReportMode {
+    DiagnosticsOnly,
+    EchoStdout,
+}
+
+impl NativeDiagnosticResultReportMode {
+    fn echoes_values(self) -> bool {
+        matches!(self, Self::EchoStdout)
+    }
+}
+
+unsafe fn native_diagnostic_result_report_list_and_free(
+    results: *const NativeDiagnosticResult,
+    result_count: usize,
+    mode: NativeDiagnosticResultReportMode,
+) -> usize {
+    if result_count == 0 {
+        return 0;
+    }
+
+    if results.is_null() {
+        return native_diagnostic_report_blocker_message(
+            "native diagnostic result report list requires result ownership at operand 0",
+        );
+    }
+
+    let results = unsafe { std::slice::from_raw_parts(results, result_count) };
+    let mut written = 0;
+
+    for (index, result) in results.iter().copied().enumerate() {
+        let Some(mut state) = (unsafe { result.into_state() }) else {
+            written += native_diagnostic_report_blocker_message(format!(
+                "native diagnostic result report list requires result ownership at operand {index}"
+            ));
+            native_diagnostic_result_free_remaining(&results[(index + 1)..]);
+            break;
+        };
+
+        let terminal = state
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity.is_terminal());
+        for diagnostic in &state.diagnostics {
+            written += native_diagnostic_report_stderr(diagnostic);
+        }
+        if mode.echoes_values() && !terminal {
+            written += unsafe { phpc_native_value_echo_stdout(state.value) };
+        }
+        unsafe { phpc_native_value_free(state.value) };
+        state.diagnostics.clear();
+
+        if terminal {
+            native_diagnostic_result_free_remaining(&results[(index + 1)..]);
+            break;
+        }
+    }
+
+    written
+}
+
+unsafe fn native_diagnostic_result_can_continue(result: NativeDiagnosticResult) -> bool {
+    unsafe { result.as_ref() }
+        .map(|state| {
+            !state.value.is_null()
+                && !state
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.severity.is_terminal())
+        })
+        .unwrap_or(false)
+}
+
+unsafe fn native_diagnostic_result_contains_terminal(result: NativeDiagnosticResult) -> bool {
+    unsafe { result.as_ref() }
+        .map(|state| {
+            state
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.severity.is_terminal())
+        })
+        .unwrap_or(false)
+}
+
+fn native_diagnostic_report_blocker_message(message: impl Into<String>) -> usize {
+    let diagnostic = NativeDiagnostic {
+        severity: NativeDiagnosticSeverity::Blocker,
+        message: message.into(),
+        source_location: None,
+    };
+    native_diagnostic_report_stderr(&diagnostic)
+}
+
+fn native_diagnostic_report_stderr(diagnostic: &NativeDiagnostic) -> usize {
+    let mut stderr = io::stderr();
+    diagnostic
+        .write_string_bytes_to(&mut stderr)
+        .and_then(Result::ok)
+        .unwrap_or(0)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -29840,6 +30488,230 @@ mod tests {
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
 
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn native_callable_access_context_preflights_receiver_and_static_method_lookup() {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("BaseDispatch"),
+                "guarded",
+                NativeCallableVisibility::Protected,
+                native_scoped_method_callback,
+            );
+            register_static_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("BaseDispatch"),
+                "stat",
+                NativeCallableVisibility::Protected,
+                native_scoped_method_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("BaseDispatch"),
+                "plain",
+                NativeCallableVisibility::Public,
+                native_scoped_method_callback,
+            );
+            assert!(phpc_native_callable_table_register_class_parent_and_free(
+                table,
+                native_string_for_test("ChildDispatch"),
+                native_string_for_test("BaseDispatch"),
+            ));
+        }
+
+        let mut classes = PhpClassTable::new();
+        let child_id = classes.declare_class("ChildDispatch").unwrap();
+        let receiver = NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+            classes.get(child_id).unwrap(),
+        )));
+        let guarded = NativeValueHandle::from_value(Value::String("guarded".to_string()));
+        let plain = NativeValueHandle::from_value(Value::String("plain".to_string()));
+        let stat = NativeValueHandle::from_value(Value::String("stat".to_string()));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let public_receiver = unsafe {
+            phpc_native_method_lookup_with_access_context_diagnostic(
+                table,
+                receiver,
+                plain,
+                NativeCallableAccessContextTag::ObjectReceiver,
+                NativeStringHandle::null(),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!public_receiver.is_null());
+        unsafe { phpc_native_callable_free(public_receiver) };
+
+        let blocked_receiver = unsafe {
+            phpc_native_method_lookup_with_access_context_diagnostic(
+                table,
+                receiver,
+                guarded,
+                NativeCallableAccessContextTag::ObjectReceiver,
+                NativeStringHandle::null(),
+                &mut diagnostic,
+            )
+        };
+        assert!(blocked_receiver.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "native callable lookup failed: Protected method BaseDispatch::guarded is not visible from <global>"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let class_context_receiver = unsafe {
+            phpc_native_method_lookup_with_access_context_diagnostic(
+                table,
+                receiver,
+                guarded,
+                NativeCallableAccessContextTag::ClassContext,
+                native_string_for_test("ChildDispatch"),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!class_context_receiver.is_null());
+        unsafe { phpc_native_callable_free(class_context_receiver) };
+
+        let blocked_static = unsafe {
+            phpc_native_static_method_lookup_with_access_context_diagnostic(
+                table,
+                native_string_for_test("ChildDispatch"),
+                stat,
+                NativeCallableAccessContextTag::Static,
+                NativeStringHandle::null(),
+                &mut diagnostic,
+            )
+        };
+        assert!(blocked_static.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "native callable lookup failed: Protected method BaseDispatch::stat is not visible from <global>"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let class_context_static = unsafe {
+            phpc_native_static_method_lookup_with_access_context_diagnostic(
+                table,
+                native_string_for_test("ChildDispatch"),
+                stat,
+                NativeCallableAccessContextTag::ClassContext,
+                native_string_for_test("ChildDispatch"),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!class_context_static.is_null());
+        unsafe { phpc_native_callable_free(class_context_static) };
+
+        unsafe { phpc_native_value_free(stat) };
+        unsafe { phpc_native_value_free(plain) };
+        unsafe { phpc_native_value_free(guarded) };
+        unsafe { phpc_native_value_free(receiver) };
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn native_constructor_lookup_uses_allocatable_class_metadata_and_visibility_context() {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            assert!(
+                phpc_native_callable_table_register_allocatable_class_and_free(
+                    table,
+                    native_string_for_test("FactoryWidget"),
+                )
+            );
+            assert!(
+                phpc_native_callable_table_register_allocatable_class_and_free(
+                    table,
+                    native_string_for_test("NoConstructorWidget"),
+                )
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Constructor,
+                Some("FactoryWidget"),
+                "__construct",
+                NativeCallableVisibility::Private,
+                native_constructor_callback,
+            );
+        }
+
+        assert!(unsafe {
+            phpc_native_callable_table_can_allocate_class(
+                table,
+                native_string_for_test("factorywidget"),
+            )
+        });
+        assert!(!unsafe {
+            phpc_native_callable_table_can_allocate_class(
+                table,
+                native_string_for_test("MissingWidget"),
+            )
+        });
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        assert!(!unsafe {
+            phpc_native_constructor_lookup_scope_with_diagnostic(
+                table,
+                native_string_for_test("FactoryWidget"),
+                &mut diagnostic,
+            )
+        });
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "native constructor lookup failed: Private method FactoryWidget::__construct is not visible from <global>"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        assert!(unsafe {
+            phpc_native_constructor_lookup_scope_with_access_context_diagnostic(
+                table,
+                native_string_for_test("FactoryWidget"),
+                NativeCallableAccessContextTag::ClassContext,
+                native_string_for_test("FactoryWidget"),
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        assert!(unsafe {
+            phpc_native_constructor_lookup_scope_with_diagnostic(
+                table,
+                native_string_for_test("NoConstructorWidget"),
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        assert!(!unsafe {
+            phpc_native_constructor_lookup_scope_with_diagnostic(
+                table,
+                native_string_for_test("MissingWidget"),
+                &mut diagnostic,
+            )
+        });
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "native constructor allocation failed: unknown or non-allocatable class MissingWidget"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_callable_table_free(table) };
     }
 

@@ -496,6 +496,7 @@ fn llvm_native_diagnostic_result_declarations() -> &'static str {
         "declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_null()\n",
         "declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_from_value(%phpc.NativeValueHandle)\n",
         "declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_from_diagnostic_and_free(%phpc.NativeDiagnosticHandle)\n",
+        "declare i1 @phpc_native_diagnostic_result_can_continue(%phpc.NativeDiagnosticResult)\n",
         "declare void @phpc_native_diagnostic_result_free(%phpc.NativeDiagnosticResult)\n",
     )
 }
@@ -503,7 +504,10 @@ fn llvm_native_diagnostic_result_declarations() -> &'static str {
 fn llvm_native_diagnostic_result_consumer_declarations(usize_type: &str) -> String {
     format!(
         "declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free(i8, ptr, {usize_type})\n\
-         declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free(ptr, {usize_type})\n"
+         declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free(ptr, {usize_type})\n\
+         declare i1 @phpc_native_diagnostic_result_list_contains_terminal(ptr, {usize_type})\n\
+         declare {usize_type} @phpc_native_diagnostic_result_report_stderr_list_and_free(ptr, {usize_type})\n\
+         declare {usize_type} @phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free(ptr, {usize_type})\n"
     )
 }
 
@@ -516,6 +520,10 @@ fn c_native_diagnostic_result_declarations() -> &'static str {
         "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_null(void);\n",
         "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_from_value(phpc_NativeValueHandle value);\n",
         "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_from_diagnostic_and_free(phpc_NativeDiagnosticHandle diagnostic);\n",
+        "extern bool phpc_native_diagnostic_result_can_continue(phpc_NativeDiagnosticResult result);\n",
+        "extern bool phpc_native_diagnostic_result_list_contains_terminal(const phpc_NativeDiagnosticResult *results, size_t result_count);\n",
+        "extern size_t phpc_native_diagnostic_result_report_stderr_list_and_free(const phpc_NativeDiagnosticResult *results, size_t result_count);\n",
+        "extern size_t phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free(const phpc_NativeDiagnosticResult *results, size_t result_count);\n",
         "extern void phpc_native_diagnostic_result_free(phpc_NativeDiagnosticResult result);\n",
     )
 }
@@ -19003,6 +19011,8 @@ impl CGenerator {
                 || self.uses_native_array_helpers
                 || self.uses_native_reference_helpers
                 || self.uses_native_callable_helpers
+                || self.uses_native_diagnostic_result_producers
+                || self.uses_native_diagnostic_result_consumers
             {
                 output.push_str("#include <stdbool.h>\n");
             }
@@ -19038,9 +19048,14 @@ impl CGenerator {
             if self.uses_native_callable_helpers {
                 output.push_str("#define PHPC_NATIVE_CALLABLE_KIND_FUNCTION 1\n");
                 output.push_str("#define PHPC_NATIVE_CALLABLE_KIND_METHOD 2\n");
+                output.push_str("#define PHPC_NATIVE_CALLABLE_KIND_CONSTRUCTOR 3\n");
                 output.push_str("#define PHPC_NATIVE_CALLABLE_VISIBILITY_PUBLIC 1\n");
                 output.push_str("#define PHPC_NATIVE_CALLABLE_VISIBILITY_PROTECTED 2\n");
                 output.push_str("#define PHPC_NATIVE_CALLABLE_VISIBILITY_PRIVATE 3\n");
+                output.push_str("#define PHPC_NATIVE_CALLABLE_ACCESS_EXTERNAL 1\n");
+                output.push_str("#define PHPC_NATIVE_CALLABLE_ACCESS_STATIC 2\n");
+                output.push_str("#define PHPC_NATIVE_CALLABLE_ACCESS_OBJECT_RECEIVER 3\n");
+                output.push_str("#define PHPC_NATIVE_CALLABLE_ACCESS_CLASS_CONTEXT 4\n");
                 if self.uses_native_arrayaccess_offset_read_helpers {
                     output.push_str("#define PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_GET 0\n");
                     output.push_str("#define PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_EXISTS 1\n");
@@ -19335,7 +19350,14 @@ impl CGenerator {
                 output.push_str("extern void phpc_native_callable_table_free(phpc_NativeCallableTableHandle handle);\n");
                 output.push_str("extern bool phpc_native_callable_table_register_visibility_staticness_frame_callback_and_free(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, uint8_t visibility, bool is_static, phpc_NativeCallableFrameCallback callback);\n");
                 output.push_str("extern bool phpc_native_callable_table_register_class_parent_and_free(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle class_name, phpc_NativeStringHandle parent_name);\n");
+                output.push_str("extern bool phpc_native_callable_table_register_allocatable_class_and_free(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle class_name);\n");
+                output.push_str("extern bool phpc_native_callable_table_can_allocate_class(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle class_name);\n");
                 output.push_str("extern phpc_NativeCallableHandle phpc_native_callable_lookup_with_diagnostic(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeCallableHandle phpc_native_callable_lookup_with_access_context_diagnostic(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeCallableHandle phpc_native_method_lookup_with_access_context_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle receiver, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeCallableHandle phpc_native_static_method_lookup_with_access_context_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_constructor_lookup_scope_with_access_context_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_constructor_lookup_scope_with_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str(
                     "extern void phpc_native_callable_free(phpc_NativeCallableHandle handle);\n",
                 );
@@ -45625,10 +45647,14 @@ mod tests {
         );
         assert!(llvm_native_diagnostic_result_declarations()
             .contains("@phpc_native_diagnostic_result_free"));
+        assert!(llvm_native_diagnostic_result_declarations()
+            .contains("@phpc_native_diagnostic_result_can_continue"));
         assert!(c_native_diagnostic_result_type()
             .contains("typedef struct { void *ptr; } phpc_NativeDiagnosticResult"));
         assert!(c_native_diagnostic_result_declarations()
             .contains("phpc_native_diagnostic_result_free"));
+        assert!(c_native_diagnostic_result_declarations()
+            .contains("phpc_native_diagnostic_result_can_continue"));
     }
 
     #[test]
@@ -45743,6 +45769,10 @@ mod tests {
                 "@phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free"
             )
         );
+        assert!(llvm_native_diagnostic_result_consumer_declarations("i64")
+            .contains("@phpc_native_diagnostic_result_report_stderr_list_and_free"));
+        assert!(llvm_native_diagnostic_result_consumer_declarations("i64")
+            .contains("@phpc_native_diagnostic_result_list_contains_terminal"));
 
         let mut c = CGenerator::default();
         let value_result =
@@ -45774,6 +45804,10 @@ mod tests {
             .contains("phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free")));
         assert!(c_native_diagnostic_result_consumer_declarations()
             .contains("phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free"));
+        assert!(c_native_diagnostic_result_declarations()
+            .contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"));
+        assert!(c_native_diagnostic_result_declarations()
+            .contains("phpc_native_diagnostic_result_list_contains_terminal"));
     }
 
     #[test]
@@ -49306,6 +49340,33 @@ echo " 10" < "zeta";
                 NativeCallResultConsumer::DereferencedValue.operation(&dereferenced),
                 Some(callee.dereferenced_value_result_operation(span))
             );
+        }
+    }
+
+    #[test]
+    fn native_callable_runtime_boundary_declares_access_context_and_class_metadata_helpers() {
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            uses_native_callable_helpers: true,
+            ..CGenerator::default()
+        };
+        let output = generator
+            .emit_program(&Program { statements: vec![] })
+            .expect("empty program with native callable helpers should emit");
+
+        for expected in [
+            "#define PHPC_NATIVE_CALLABLE_KIND_CONSTRUCTOR 3",
+            "#define PHPC_NATIVE_CALLABLE_ACCESS_EXTERNAL 1",
+            "#define PHPC_NATIVE_CALLABLE_ACCESS_STATIC 2",
+            "#define PHPC_NATIVE_CALLABLE_ACCESS_OBJECT_RECEIVER 3",
+            "#define PHPC_NATIVE_CALLABLE_ACCESS_CLASS_CONTEXT 4",
+            "extern bool phpc_native_callable_table_register_allocatable_class_and_free(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle class_name);",
+            "extern bool phpc_native_callable_table_can_allocate_class(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle class_name);",
+            "extern phpc_NativeCallableHandle phpc_native_method_lookup_with_access_context_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle receiver, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);",
+            "extern phpc_NativeCallableHandle phpc_native_static_method_lookup_with_access_context_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);",
+            "extern bool phpc_native_constructor_lookup_scope_with_access_context_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);",
+        ] {
+            assert!(output.contains(expected), "missing {expected}\n{output}");
         }
     }
 

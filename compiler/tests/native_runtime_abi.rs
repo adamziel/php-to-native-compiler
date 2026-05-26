@@ -15,17 +15,21 @@ use php_runtime::{
     phpc_native_diagnostic_contains_severity, phpc_native_diagnostic_free,
     phpc_native_diagnostic_message_clone_bytes,
     phpc_native_diagnostic_operand_requirement_list_clone,
+    phpc_native_diagnostic_result_can_continue,
     phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free,
     phpc_native_diagnostic_result_diagnostic_count,
     phpc_native_diagnostic_result_diagnostic_message_clone_bytes_at,
     phpc_native_diagnostic_result_diagnostic_severity_at, phpc_native_diagnostic_result_free,
     phpc_native_diagnostic_result_from_diagnostic_and_free,
     phpc_native_diagnostic_result_from_value, phpc_native_diagnostic_result_has_value,
-    phpc_native_diagnostic_result_null,
+    phpc_native_diagnostic_result_list_contains_terminal, phpc_native_diagnostic_result_null,
     phpc_native_diagnostic_result_operation_blocker_list_and_free,
+    phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free,
+    phpc_native_diagnostic_result_report_stderr_list_and_free,
     phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free,
-    phpc_native_string_free, NativeDiagnosticHandle, NativeDiagnosticOperandRequirement,
-    NativeDiagnosticSeverity, NativeStringHandle, NativeValueHandle, Value,
+    phpc_native_string_free, phpc_native_value_cast_result, NativeDiagnosticHandle,
+    NativeDiagnosticOperandRequirement, NativeDiagnosticResult, NativeDiagnosticSeverity,
+    NativeStringHandle, NativeValueHandle, PhpArray, Value,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_KEY_EVALUATION,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_PROPERTY_EVALUATION,
@@ -77,6 +81,38 @@ fn runtime_result_diagnostic_message(
     };
     unsafe { phpc_native_byte_buffer_free(buffer) };
     String::from_utf8(bytes).expect("runtime diagnostics should be valid UTF-8")
+}
+
+fn native_diagnostic_result_blocker(
+    operation: u8,
+    requirement_tag: u8,
+    operand_index: usize,
+) -> NativeDiagnosticResult {
+    let requirements = [NativeDiagnosticOperandRequirement {
+        tag: requirement_tag,
+        operand_index,
+    }];
+    let list = unsafe {
+        phpc_native_diagnostic_operand_requirement_list_clone(
+            requirements.as_ptr(),
+            requirements.len(),
+        )
+    };
+    unsafe {
+        phpc_native_diagnostic_result_from_diagnostic_and_free(
+            phpc_native_diagnostic_result_operation_blocker_list_and_free(operation, list),
+        )
+    }
+}
+
+fn native_array_string_cast_diagnostic_result_pair(
+) -> (NativeDiagnosticResult, NativeDiagnosticResult) {
+    let array = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
+    let cast = unsafe { phpc_native_value_cast_result(array, 0) };
+    let diagnostic =
+        unsafe { phpc_native_diagnostic_result_from_diagnostic_and_free(cast.diagnostic) };
+    let value = phpc_native_diagnostic_result_from_value(cast.value);
+    (diagnostic, value)
 }
 
 #[test]
@@ -691,6 +727,166 @@ fn native_diagnostic_result_deferred_cleanup_blocker_sequences_result_shapes() {
     let message = runtime_result_diagnostic_message(blocked, 0);
     assert!(message.contains("deferred cleanup diagnostic semantics blocked"));
     unsafe { phpc_native_diagnostic_result_free(blocked) };
+}
+
+#[test]
+fn native_diagnostic_result_continuation_helpers_cover_values_nulls_and_terminal_lists() {
+    let ordinary = phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(
+        Value::String("continue".to_string()),
+    ));
+    assert!(unsafe { phpc_native_diagnostic_result_can_continue(ordinary) });
+
+    let (warning, warning_value) = native_array_string_cast_diagnostic_result_pair();
+    assert!(!unsafe { phpc_native_diagnostic_result_can_continue(warning) });
+    assert!(unsafe { phpc_native_diagnostic_result_can_continue(warning_value) });
+
+    let null_result = phpc_native_diagnostic_result_null();
+    assert!(!unsafe { phpc_native_diagnostic_result_can_continue(null_result) });
+
+    let non_terminal = [ordinary, null_result, warning, warning_value];
+    assert!(!unsafe {
+        phpc_native_diagnostic_result_list_contains_terminal(
+            non_terminal.as_ptr(),
+            non_terminal.len(),
+        )
+    });
+    assert!(!unsafe { phpc_native_diagnostic_result_list_contains_terminal(std::ptr::null(), 0) });
+    assert!(unsafe { phpc_native_diagnostic_result_list_contains_terminal(std::ptr::null(), 2) });
+
+    unsafe { phpc_native_diagnostic_result_free(ordinary) };
+    unsafe { phpc_native_diagnostic_result_free(warning) };
+    unsafe { phpc_native_diagnostic_result_free(warning_value) };
+
+    let before_terminal =
+        phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(Value::Int(7)));
+    let terminal = native_diagnostic_result_blocker(
+        PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST,
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP,
+        1,
+    );
+    let after_terminal =
+        phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(Value::Int(9)));
+    let terminal_list = [before_terminal, terminal, after_terminal];
+    assert!(!unsafe { phpc_native_diagnostic_result_can_continue(terminal) });
+    assert!(unsafe {
+        phpc_native_diagnostic_result_list_contains_terminal(
+            terminal_list.as_ptr(),
+            terminal_list.len(),
+        )
+    });
+
+    unsafe { phpc_native_diagnostic_result_free(before_terminal) };
+    unsafe { phpc_native_diagnostic_result_free(terminal) };
+    unsafe { phpc_native_diagnostic_result_free(after_terminal) };
+}
+
+#[test]
+fn native_diagnostic_result_report_sinks_consume_mixed_lists_until_terminal() {
+    let first_value = phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(
+        Value::String("first".to_string()),
+    ));
+    let (warning, warning_value) = native_array_string_cast_diagnostic_result_pair();
+    let terminal = native_diagnostic_result_blocker(
+        PHPC_NATIVE_DIAGNOSTIC_OPERATION_CALL_ARGUMENT_LIST,
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
+        2,
+    );
+    let skipped_value = phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(
+        Value::String("skipped".to_string()),
+    ));
+
+    let expected_echo_written = 5
+        + runtime_result_diagnostic_message(warning, 0).len()
+        + 5
+        + runtime_result_diagnostic_message(terminal, 0).len();
+    let mixed = [first_value, warning, warning_value, terminal, skipped_value];
+    assert_eq!(
+        unsafe {
+            phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free(
+                mixed.as_ptr(),
+                mixed.len(),
+            )
+        },
+        expected_echo_written
+    );
+
+    let stderr_value = phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(
+        Value::String("discarded".to_string()),
+    ));
+    let (stderr_warning, stderr_warning_value) = native_array_string_cast_diagnostic_result_pair();
+    let stderr_terminal = native_diagnostic_result_blocker(
+        PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST,
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_SOURCE_BINDING,
+        1,
+    );
+    let expected_stderr_written = runtime_result_diagnostic_message(stderr_warning, 0).len()
+        + runtime_result_diagnostic_message(stderr_terminal, 0).len();
+    let stderr_list = [
+        stderr_value,
+        stderr_warning,
+        stderr_warning_value,
+        stderr_terminal,
+    ];
+    assert_eq!(
+        unsafe {
+            phpc_native_diagnostic_result_report_stderr_list_and_free(
+                stderr_list.as_ptr(),
+                stderr_list.len(),
+            )
+        },
+        expected_stderr_written
+    );
+}
+
+#[test]
+fn native_diagnostic_result_report_sinks_handle_null_entries_and_empty_lists() {
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_report_stderr_list_and_free(std::ptr::null(), 0) },
+        0
+    );
+    assert_eq!(
+        unsafe {
+            phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free(
+                std::ptr::null(),
+                0,
+            )
+        },
+        0
+    );
+    assert!(
+        unsafe { phpc_native_diagnostic_result_report_stderr_list_and_free(std::ptr::null(), 2) }
+            > 0
+    );
+
+    let before_null = phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(
+        Value::String("kept".to_string()),
+    ));
+    let null_entry = phpc_native_diagnostic_result_null();
+    let skipped_after_null = phpc_native_diagnostic_result_from_value(
+        NativeValueHandle::from_value(Value::String("freed".to_string())),
+    );
+    let null_entry_list = [before_null, null_entry, skipped_after_null];
+    assert!(
+        unsafe {
+            phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free(
+                null_entry_list.as_ptr(),
+                null_entry_list.len(),
+            )
+        } > 4
+    );
+
+    let value_only = [phpc_native_diagnostic_result_from_value(
+        NativeValueHandle::from_value(Value::String("discarded".to_string())),
+    )];
+    assert_eq!(
+        unsafe {
+            phpc_native_diagnostic_result_report_stderr_list_and_free(
+                value_only.as_ptr(),
+                value_only.len(),
+            )
+        },
+        0
+    );
 }
 
 #[test]
