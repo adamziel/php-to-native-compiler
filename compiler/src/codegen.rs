@@ -14851,6 +14851,21 @@ impl LlvmGenerator {
         reported
     }
 
+    #[allow(dead_code)]
+    fn emit_native_diagnostic_result_control_transfer_cleanup_report(
+        &mut self,
+        cleanup_results: &[String],
+    ) -> Result<String, NativeDiagnosticResultConsumerBlocker> {
+        let cleanup_result = self.emit_native_diagnostic_result_family_consumer(
+            NativeDiagnosticResultConsumerFamily::ControlTransferCleanup,
+            cleanup_results,
+        )?;
+        Ok(self.emit_native_diagnostic_result_report_sink(
+            NativeDiagnosticResultReportSink::DiagnosticsOnly,
+            &[cleanup_result],
+        ))
+    }
+
     fn emit_native_diagnostic_result_value_operand(
         &mut self,
         surface: NativeDiagnosticResultOperandSurface,
@@ -16907,6 +16922,21 @@ impl CGenerator {
         self.body
             .push(sink.c_statement(&reported, &first_operand, results.len()));
         reported
+    }
+
+    #[allow(dead_code)]
+    fn emit_native_diagnostic_result_control_transfer_cleanup_report(
+        &mut self,
+        cleanup_results: &[String],
+    ) -> Result<String, NativeDiagnosticResultConsumerBlocker> {
+        let cleanup_result = self.emit_native_diagnostic_result_family_consumer(
+            NativeDiagnosticResultConsumerFamily::ControlTransferCleanup,
+            cleanup_results,
+        )?;
+        Ok(self.emit_native_diagnostic_result_report_sink(
+            NativeDiagnosticResultReportSink::DiagnosticsOnly,
+            &[cleanup_result],
+        ))
     }
 
     fn emit_native_diagnostic_result_value_operand_for_c_value(
@@ -46604,6 +46634,71 @@ mod tests {
             "{}, NULL, 0",
             PHPC_NATIVE_DIAGNOSTIC_OPERATION_STATEMENT_OPERAND_LIST
         ))));
+    }
+
+    #[test]
+    fn native_diagnostic_result_control_transfer_cleanup_reports_reusable_cleanup_operands() {
+        let mut llvm = LlvmGenerator::default();
+        let llvm_cleanup_results = vec![
+            llvm.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::value(
+                NativeDiagnosticResultOperandSurface::Cleanup,
+                "%first_cleanup_value",
+            )),
+            llvm.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::diagnostic(
+                NativeDiagnosticResultOperandSurface::Cleanup,
+                "%cleanup_diagnostic",
+            )),
+            llvm.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::null(
+                NativeDiagnosticResultOperandSurface::Cleanup,
+            )),
+        ];
+        let llvm_report = llvm
+            .emit_native_diagnostic_result_control_transfer_cleanup_report(&llvm_cleanup_results)
+            .expect("control-transfer cleanup report uses the cleanup result consumer");
+
+        assert!(llvm.uses_native_diagnostic_result_producers);
+        assert!(llvm.uses_native_diagnostic_result_consumers);
+        assert!(llvm.body.iter().any(|line| line
+            .contains("@phpc_native_diagnostic_result_control_transfer_cleanup_and_free")
+            && line.contains("i64 3")));
+        assert!(llvm.body.iter().any(|line| line
+            .contains("@phpc_native_diagnostic_result_report_stderr_list_and_free")
+            && line.contains(&llvm_report)
+            && line.contains("i64 1")));
+
+        let mut c = CGenerator::default();
+        let c_cleanup_results = vec![
+            c.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::value(
+                NativeDiagnosticResultOperandSurface::Cleanup,
+                "first_cleanup_value",
+            )),
+            c.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::diagnostic(
+                NativeDiagnosticResultOperandSurface::Cleanup,
+                "cleanup_diagnostic",
+            )),
+            c.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::null(
+                NativeDiagnosticResultOperandSurface::Cleanup,
+            )),
+        ];
+        let c_report = c
+            .emit_native_diagnostic_result_control_transfer_cleanup_report(&c_cleanup_results)
+            .expect("control-transfer cleanup report uses the cleanup result consumer");
+        c.emit_native_diagnostic_result_control_transfer_cleanup_report(&[])
+            .expect("empty cleanup lists still route through the same bridge");
+
+        assert!(c.uses_native_diagnostic_result_producers);
+        assert!(c.uses_native_diagnostic_result_consumers);
+        assert!(c.body.iter().any(|line| line
+            .contains("phpc_native_diagnostic_result_control_transfer_cleanup_and_free")
+            && line.contains("diagnostic_result_operands_")
+            && line.contains(", 3")));
+        assert!(c.body.iter().any(|line| line
+            .contains("phpc_native_diagnostic_result_control_transfer_cleanup_and_free")
+            && line.contains("NULL, 0")));
+        assert!(c.body.iter().any(|line| line
+            .contains("phpc_native_diagnostic_result_report_stderr_list_and_free")
+            && line.contains(&c_report)
+            && line.contains(", 1")));
     }
 
     #[test]
