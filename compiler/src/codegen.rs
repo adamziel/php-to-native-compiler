@@ -13594,6 +13594,7 @@ struct CDeclaredClassAncestorMetadataArrays {
 struct CDeclaredClassMethod {
     c_name: String,
     decl: FunctionDecl,
+    visibility: ClassVisibility,
     is_static: bool,
 }
 
@@ -15212,7 +15213,17 @@ impl CGenerator {
         format!("{c_name}_native_callable_frame")
     }
 
+    fn c_declared_class_method_callable_wrapper_name(c_name: &str) -> String {
+        format!("{c_name}_native_callable_frame")
+    }
+
     fn c_user_function_callable_wrapper_signature(c_name: &str) -> String {
+        format!(
+            "static phpc_NativeCallResultHandle {c_name}(phpc_NativeCallFrameHandle phpc_call_frame)"
+        )
+    }
+
+    fn c_declared_class_method_callable_wrapper_signature(c_name: &str) -> String {
         format!(
             "static phpc_NativeCallResultHandle {c_name}(phpc_NativeCallFrameHandle phpc_call_frame)"
         )
@@ -15374,6 +15385,7 @@ impl CGenerator {
                         constructor = Some(CDeclaredClassMethod {
                             c_name,
                             decl: method.function.clone(),
+                            visibility: method.visibility,
                             is_static: false,
                         });
                     } else {
@@ -15397,6 +15409,7 @@ impl CGenerator {
                         methods.push(CDeclaredClassMethod {
                             c_name,
                             decl: method.function.clone(),
+                            visibility: method.visibility,
                             is_static: method.is_static,
                         });
                     }
@@ -15590,6 +15603,14 @@ impl CGenerator {
             ClassVisibility::Public => NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
             ClassVisibility::Protected => NATIVE_DECLARED_CLASS_PROPERTY_PROTECTED,
             ClassVisibility::Private => NATIVE_DECLARED_CLASS_PROPERTY_PRIVATE,
+        }
+    }
+
+    fn native_callable_visibility_tag(visibility: ClassVisibility) -> &'static str {
+        match visibility {
+            ClassVisibility::Public => "PHPC_NATIVE_CALLABLE_VISIBILITY_PUBLIC",
+            ClassVisibility::Protected => "PHPC_NATIVE_CALLABLE_VISIBILITY_PROTECTED",
+            ClassVisibility::Private => "PHPC_NATIVE_CALLABLE_VISIBILITY_PRIVATE",
         }
     }
 
@@ -16030,6 +16051,67 @@ impl CGenerator {
         definition.push_str(&format!(
             "  phpc_NativeValueHandle phpc_call_result = {}({});\n",
             function.c_name,
+            call_args.join(", ")
+        ));
+        definition.push_str(&format!("  {}\n", c_cleanup_sequence(&cleanup)));
+        definition.push_str("  phpc_user_callable_call_depth -= 1;\n");
+        definition.push_str("  if (phpc_call_status != 1 || phpc_call_result.ptr == NULL) { return (phpc_NativeCallResultHandle){0}; }\n");
+        definition.push_str("  return phpc_native_call_result_from_value(phpc_call_result);\n");
+        definition.push_str("}\n");
+        definition
+    }
+
+    fn emit_declared_class_method_callable_wrapper_definition(
+        &self,
+        method: &CDeclaredClassMethod,
+    ) -> String {
+        let wrapper_name = Self::c_declared_class_method_callable_wrapper_name(&method.c_name);
+        let mut definition = String::new();
+        definition.push_str(&Self::c_declared_class_method_callable_wrapper_signature(
+            &wrapper_name,
+        ));
+        definition.push_str(" {\n");
+        definition.push_str("  phpc_user_callable_call_depth += 1;\n");
+        definition.push_str("  int phpc_call_status = 0;\n");
+
+        let mut call_args = vec!["phpc_user_callable_call_depth".to_string()];
+        let mut cleanup = Vec::new();
+        if !method.is_static {
+            definition.push_str(
+                "  phpc_NativeValueHandle phpc_this = phpc_native_call_frame_read_receiver(phpc_call_frame);\n",
+            );
+            definition.push_str("  if (phpc_this.ptr == NULL) { phpc_user_callable_call_depth -= 1; return (phpc_NativeCallResultHandle){0}; }\n");
+            cleanup.push("phpc_native_value_free(phpc_this);".to_string());
+            call_args.push("phpc_this".to_string());
+        }
+
+        for (index, param) in method.decl.params.iter().enumerate() {
+            if param.by_reference {
+                definition.push_str(&format!(
+                    "  phpc_NativeReferenceHandle arg_{index} = phpc_native_call_frame_read_reference(phpc_call_frame, {index});\n"
+                ));
+                let cleanup_sequence = c_cleanup_sequence(&cleanup);
+                definition.push_str(&format!(
+                    "  if (arg_{index}.ptr == NULL) {{ {cleanup_sequence} phpc_user_callable_call_depth -= 1; return (phpc_NativeCallResultHandle){{0}}; }}\n"
+                ));
+                cleanup.push(format!("phpc_native_reference_free(arg_{index});"));
+            } else {
+                definition.push_str(&format!(
+                    "  phpc_NativeValueHandle arg_{index} = phpc_native_call_frame_read_value(phpc_call_frame, {index});\n"
+                ));
+                let cleanup_sequence = c_cleanup_sequence(&cleanup);
+                definition.push_str(&format!(
+                    "  if (arg_{index}.ptr == NULL) {{ {cleanup_sequence} phpc_user_callable_call_depth -= 1; return (phpc_NativeCallResultHandle){{0}}; }}\n"
+                ));
+                cleanup.push(format!("phpc_native_value_free(arg_{index});"));
+            }
+            call_args.push(format!("arg_{index}"));
+        }
+        call_args.push("&phpc_call_status".to_string());
+
+        definition.push_str(&format!(
+            "  phpc_NativeValueHandle phpc_call_result = {}({});\n",
+            method.c_name,
             call_args.join(", ")
         ));
         definition.push_str(&format!("  {}\n", c_cleanup_sequence(&cleanup)));
@@ -16824,7 +16906,10 @@ impl CGenerator {
             }
             if self.uses_native_callable_helpers {
                 output.push_str("#define PHPC_NATIVE_CALLABLE_KIND_FUNCTION 1\n");
+                output.push_str("#define PHPC_NATIVE_CALLABLE_KIND_METHOD 2\n");
                 output.push_str("#define PHPC_NATIVE_CALLABLE_VISIBILITY_PUBLIC 1\n");
+                output.push_str("#define PHPC_NATIVE_CALLABLE_VISIBILITY_PROTECTED 2\n");
+                output.push_str("#define PHPC_NATIVE_CALLABLE_VISIBILITY_PRIVATE 3\n");
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallableTableHandle;\n");
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallableHandle;\n");
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallableValueHandle;\n");
@@ -17106,6 +17191,7 @@ impl CGenerator {
                 output.push_str("extern bool phpc_native_callable_table_is_null(phpc_NativeCallableTableHandle handle);\n");
                 output.push_str("extern void phpc_native_callable_table_free(phpc_NativeCallableTableHandle handle);\n");
                 output.push_str("extern bool phpc_native_callable_table_register_visibility_staticness_frame_callback_and_free(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, uint8_t visibility, bool is_static, phpc_NativeCallableFrameCallback callback);\n");
+                output.push_str("extern bool phpc_native_callable_table_register_class_parent_and_free(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle class_name, phpc_NativeStringHandle parent_name);\n");
                 output.push_str("extern phpc_NativeCallableHandle phpc_native_callable_lookup_with_diagnostic(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str(
                     "extern void phpc_native_callable_free(phpc_NativeCallableHandle handle);\n",
@@ -17121,6 +17207,7 @@ impl CGenerator {
                 output.push_str("extern void phpc_native_call_arguments_free(phpc_NativeCallArgumentsHandle handle);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_call_frame_read_value(phpc_NativeCallFrameHandle frame, size_t index);\n");
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_call_frame_read_reference(phpc_NativeCallFrameHandle frame, size_t index);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_call_frame_read_receiver(phpc_NativeCallFrameHandle frame);\n");
                 output.push_str("extern phpc_NativeCallResultHandle phpc_native_call_result_from_value(phpc_NativeValueHandle value);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_callable_invoke_value_with_diagnostic_and_free(phpc_NativeCallableHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_callable_value_invoke_value_with_diagnostic_and_free(phpc_NativeCallableValueHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -17448,6 +17535,14 @@ impl CGenerator {
                     !method.is_static,
                 ));
                 output.push_str(";\n");
+                if self.uses_native_callable_helpers {
+                    let wrapper_name =
+                        Self::c_declared_class_method_callable_wrapper_name(&method.c_name);
+                    output.push_str(&Self::c_declared_class_method_callable_wrapper_signature(
+                        &wrapper_name,
+                    ));
+                    output.push_str(";\n");
+                }
             }
             output.push('\n');
         }
@@ -17462,6 +17557,12 @@ impl CGenerator {
                     .get(key)
                     .expect("registered function key has metadata");
                 output.push_str(&self.emit_user_function_callable_wrapper_definition(function));
+                output.push('\n');
+            }
+            for (_, method) in self.declared_class_methods_in_order() {
+                output.push_str(&self.emit_declared_class_method_callable_wrapper_definition(
+                    &method,
+                ));
                 output.push('\n');
             }
         }
@@ -18750,6 +18851,73 @@ impl CGenerator {
             self.body.push(format!(
                 "  if (!{registered}) {{ {registration_error_exit} }}"
             ));
+        }
+        let classes = self
+            .declared_class_order
+            .iter()
+            .map(|key| {
+                self.declared_classes
+                    .get(key)
+                    .expect("registered class key has metadata")
+                    .clone()
+            })
+            .collect::<Vec<_>>();
+        for class in &classes {
+            if let Some(parent_key) = &class.parent_key {
+                let parent = self
+                    .declared_classes
+                    .get(parent_key)
+                    .expect("registered class parent key has metadata")
+                    .clone();
+                let (class_bytes, class_len) =
+                    self.emit_call_type_static_bytes("callable_class_name_bytes", &class.name);
+                let (parent_bytes, parent_len) =
+                    self.emit_call_type_static_bytes("callable_parent_name_bytes", &parent.name);
+                let class_handle = self.next_native_name("callable_class_name");
+                let parent_handle = self.next_native_name("callable_parent_name");
+                let registered = self.next_native_name("callable_parent_registered");
+                self.body.push(format!(
+                    "  phpc_NativeStringHandle {class_handle} = phpc_native_string_from_bytes({class_bytes}, {class_len});"
+                ));
+                self.body.push(format!(
+                    "  phpc_NativeStringHandle {parent_handle} = phpc_native_string_from_bytes({parent_bytes}, {parent_len});"
+                ));
+                self.body.push(format!(
+                    "  bool {registered} = phpc_native_callable_table_register_class_parent_and_free({table}, {class_handle}, {parent_handle});"
+                ));
+                let registration_error_exit = self.native_error_exit(failure_cleanup);
+                self.body.push(format!(
+                    "  if (!{registered}) {{ {registration_error_exit} }}"
+                ));
+            }
+        }
+        for class in classes {
+            for method in class.methods {
+                let (scope_bytes, scope_len) =
+                    self.emit_call_type_static_bytes("callable_method_scope_bytes", &class.name);
+                let (name_bytes, name_len) = self
+                    .emit_call_type_static_bytes("callable_method_name_bytes", &method.decl.name);
+                let scope_handle = self.next_native_name("callable_method_scope");
+                let name_handle = self.next_native_name("callable_method_name");
+                let registered = self.next_native_name("callable_method_registered");
+                let visibility = Self::native_callable_visibility_tag(method.visibility);
+                let is_static = if method.is_static { "true" } else { "false" };
+                let wrapper_name =
+                    Self::c_declared_class_method_callable_wrapper_name(&method.c_name);
+                self.body.push(format!(
+                    "  phpc_NativeStringHandle {scope_handle} = phpc_native_string_from_bytes({scope_bytes}, {scope_len});"
+                ));
+                self.body.push(format!(
+                    "  phpc_NativeStringHandle {name_handle} = phpc_native_string_from_bytes({name_bytes}, {name_len});"
+                ));
+                self.body.push(format!(
+                    "  bool {registered} = phpc_native_callable_table_register_visibility_staticness_frame_callback_and_free({table}, PHPC_NATIVE_CALLABLE_KIND_METHOD, {scope_handle}, {name_handle}, {visibility}, {is_static}, {wrapper_name});"
+                ));
+                let registration_error_exit = self.native_error_exit(failure_cleanup);
+                self.body.push(format!(
+                    "  if (!{registered}) {{ {registration_error_exit} }}"
+                ));
+            }
         }
         self.body.push("}".to_string());
         table

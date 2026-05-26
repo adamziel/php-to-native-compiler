@@ -17957,6 +17957,7 @@ fn native_executable_c_source_invokes_callable_arrays_through_method_frames() {
         "class CallableArrayTarget {\n",
         "    public static function stat($value) { return \"S\" . $value; }\n",
         "    public function inst($value) { return \"I\" . $value; }\n",
+        "    public function __invoke($value) { return \"V\" . $value; }\n",
         "    public function mutate(&$slot, $value) { $slot = $value; return $slot; }\n",
         "}\n",
         "class CallableArrayChild extends CallableArrayTarget {}\n",
@@ -17972,6 +17973,7 @@ fn native_executable_c_source_invokes_callable_arrays_through_method_frames() {
         "$child = new CallableArrayChild();\n",
         "$childInstance = [$child, \"inst\"];\n",
         "echo $childInstance(\"F\"), \"|\";\n",
+        "echo $object(\"G\"), \"|\", $child(\"H\"), \"|\";\n",
         "$slot = \"old\";\n",
         "$mutator = [$object, \"mutate\"];\n",
         "echo $mutator($slot, \"direct\"), \":\", $slot, \"|\";\n",
@@ -17981,27 +17983,35 @@ fn native_executable_c_source_invokes_callable_arrays_through_method_frames() {
     let source = emit_native_executable_c_source(&program).unwrap();
 
     assert!(
-        source.contains("phpc_native_value_callable_array_parts")
-            && source.contains("phpc_native_callable_array_parts_free")
-            && source.contains("PHPC_NATIVE_CALLABLE_ARRAY_PARTS_OK"),
-        "callable arrays should be decomposed through the shared runtime callable-array ABI:\n{source}"
+        source.contains("PHPC_NATIVE_CALLABLE_KIND_METHOD")
+            && source.contains("phpc_native_callable_table_register_visibility_staticness_frame_callback_and_free")
+            && source.contains("phpc_native_callable_table_register_class_parent_and_free")
+            && source.contains("_native_callable_frame"),
+        "declared public methods should be published as runtime callable-table method descriptors with generated frame wrappers:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_value_dynamic_call_name_matches")
-            && source.contains("phpc_native_value_instanceof_class_with_diagnostic")
-            && source.contains("phpc_declared_method_"),
-        "callable array invocation should reuse runtime name matching, object class checks, and generated method frames:\n{source}"
+        source.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && source
+                .contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
+            && source.contains("phpc_native_call_frame_read_receiver")
+            && source.contains("phpc_native_call_arguments_push_reference_and_free")
+            && source.contains("phpc_native_call_arguments_push_value_and_free"),
+        "callable arrays and callable objects should use the shared callable-value lookup/invoke ABI and generated method frames:\n{source}"
     );
     assert!(
-        source.contains("phpc_user_function_0_apply_callable(")
-            && source.contains("phpc_user_function_1_apply_ref_callable(")
-            && source.contains("phpc_native_reference_set_value"),
-        "callable arrays should flow through direct calls, by-value relay, and by-reference relay consumers:\n{source}"
+        source
+            .matches("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic(")
+            .count()
+            >= 6,
+        "static callable arrays, object callable arrays, inherited method arrays, and object __invoke should share the runtime lookup boundary:\n{source}"
     );
     assert!(
         !source.contains(ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION)
-            && !source.contains("callable must be a string for generated-C runtime dispatch"),
-        "supported callable arrays should not hit the dynamic-call string-only blocker:\n{source}"
+            && !source.contains("callable must be a string for generated-C runtime dispatch")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches")
+            && !source.contains("callable_array_matched")
+            && !source.contains("callable_object_matched"),
+        "supported method callables should not use the legacy generated-C dynamic callable ladder:\n{source}"
     );
 }
 
@@ -18016,6 +18026,7 @@ fn emit_exe_links_and_runs_callable_array_invocation_program() {
         "class CallableArrayTarget {\n",
         "    public static function stat($value) { return \"S\" . $value; }\n",
         "    public function inst($value) { return \"I\" . $value; }\n",
+        "    public function __invoke($value) { return \"V\" . $value; }\n",
         "    public function mutate(&$slot, $value) { $slot = $value; return $slot; }\n",
         "}\n",
         "class CallableArrayChild extends CallableArrayTarget {}\n",
@@ -18031,6 +18042,7 @@ fn emit_exe_links_and_runs_callable_array_invocation_program() {
         "$child = new CallableArrayChild();\n",
         "$childInstance = [$child, \"inst\"];\n",
         "echo $childInstance(\"F\"), \"|\";\n",
+        "echo $object(\"G\"), \"|\", $child(\"H\"), \"|\";\n",
         "$slot = \"old\";\n",
         "$mutator = [$object, \"mutate\"];\n",
         "echo $mutator($slot, \"direct\"), \":\", $slot, \"|\";\n",
@@ -18047,7 +18059,10 @@ fn emit_exe_links_and_runs_callable_array_invocation_program() {
     });
 
     assert!(run.status.success(), "native executable failed");
-    assert_eq!(run.stdout, b"SA|SB|SC|ID|IE|IF|direct:direct|relay:relay");
+    assert_eq!(
+        run.stdout,
+        b"SA|SB|SC|ID|IE|IF|VG|VH|direct:direct|relay:relay"
+    );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);
@@ -18059,9 +18074,7 @@ fn native_executable_c_source_invokes_callable_objects_through_invoke_frames() {
     let source = concat!(
         "<?php\n",
         "class CallableObjectTarget {\n",
-        "    public $prefix;\n",
-        "    public function __construct($prefix) { $this->prefix = $prefix; }\n",
-        "    public function __invoke($value) { return $this->prefix . $value; }\n",
+        "    public function __invoke($value) { return \"O\" . $value; }\n",
         "    public function selfCall($value) { return $this($value); }\n",
         "}\n",
         "class CallableObjectChild extends CallableObjectTarget {}\n",
@@ -18073,10 +18086,10 @@ fn native_executable_c_source_invokes_callable_objects_through_invoke_frames() {
         "}\n",
         "function apply_callable($callback, $value) { return $callback($value); }\n",
         "function apply_ref_callable($callback, &$slot, $value) { return $callback($slot, $value); }\n",
-        "$object = new CallableObjectTarget(\"O\");\n",
+        "$object = new CallableObjectTarget();\n",
         "echo $object(\"A\"), \"|\", apply_callable($object, \"B\"), \"|\";\n",
         "echo CallableObjectRelay::apply($object, \"C\"), \"|\", $object->selfCall(\"D\"), \"|\";\n",
-        "$child = new CallableObjectChild(\"K\");\n",
+        "$child = new CallableObjectChild();\n",
         "echo $child(\"E\"), \"|\";\n",
         "$slot = \"old\";\n",
         "$mutator = new CallableObjectMutator();\n",
@@ -18087,28 +18100,32 @@ fn native_executable_c_source_invokes_callable_objects_through_invoke_frames() {
     let source = emit_native_executable_c_source(&program).unwrap();
 
     assert!(
-        source.contains("phpc_native_value_type_predicate")
-            && source.contains("PHPC_NATIVE_VALUE_TYPE_IS_OBJECT")
-            && source.contains("callable_object_matched"),
-        "callable object dispatch should be gated by runtime object type before __invoke lookup:\n{source}"
+        source.contains("PHPC_NATIVE_CALLABLE_KIND_METHOD")
+            && source.contains("phpc_native_callable_table_register_visibility_staticness_frame_callback_and_free")
+            && source.contains("phpc_native_callable_table_register_class_parent_and_free"),
+        "callable object __invoke methods should be published through the runtime method callable table:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_value_instanceof_class_with_diagnostic")
+        source.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && source
+                .contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
+            && source.contains("phpc_native_call_frame_read_receiver")
             && source.contains("phpc_declared_method_")
             && source.contains("__invoke"),
-        "callable objects should reuse object class checks and generated __invoke method frames:\n{source}"
+        "callable object dispatch should use runtime callable-value lookup with generated __invoke method frame wrappers:\n{source}"
     );
     assert!(
         source.contains("phpc_user_function_0_apply_callable(")
             && source.contains("phpc_user_function_1_apply_ref_callable(")
-            && source.contains("static_method_status")
             && source.contains("phpc_native_reference_set_value"),
         "callable objects should flow through direct calls, user-function relay, static-method relay, method self-calls, and by-reference argument relay:\n{source}"
     );
     assert!(
         !source.contains(ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION)
-            && !source.contains("callable must be a string for generated-C runtime dispatch"),
-        "supported callable objects should not hit the dynamic-call string-only blocker:\n{source}"
+            && !source.contains("callable must be a string for generated-C runtime dispatch")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches")
+            && !source.contains("callable_object_matched"),
+        "supported callable objects should not use the legacy generated-C dynamic callable ladder:\n{source}"
     );
 }
 
@@ -18121,9 +18138,7 @@ fn emit_exe_links_and_runs_callable_object_invocation_program() {
     let source = concat!(
         "<?php\n",
         "class CallableObjectTarget {\n",
-        "    public $prefix;\n",
-        "    public function __construct($prefix) { $this->prefix = $prefix; }\n",
-        "    public function __invoke($value) { return $this->prefix . $value; }\n",
+        "    public function __invoke($value) { return \"O\" . $value; }\n",
         "    public function selfCall($value) { return $this($value); }\n",
         "}\n",
         "class CallableObjectChild extends CallableObjectTarget {}\n",
@@ -18135,10 +18150,10 @@ fn emit_exe_links_and_runs_callable_object_invocation_program() {
         "}\n",
         "function apply_callable($callback, $value) { return $callback($value); }\n",
         "function apply_ref_callable($callback, &$slot, $value) { return $callback($slot, $value); }\n",
-        "$object = new CallableObjectTarget(\"O\");\n",
+        "$object = new CallableObjectTarget();\n",
         "echo $object(\"A\"), \"|\", apply_callable($object, \"B\"), \"|\";\n",
         "echo CallableObjectRelay::apply($object, \"C\"), \"|\", $object->selfCall(\"D\"), \"|\";\n",
-        "$child = new CallableObjectChild(\"K\");\n",
+        "$child = new CallableObjectChild();\n",
         "echo $child(\"E\"), \"|\";\n",
         "$slot = \"old\";\n",
         "$mutator = new CallableObjectMutator();\n",
@@ -18156,7 +18171,7 @@ fn emit_exe_links_and_runs_callable_object_invocation_program() {
     });
 
     assert!(run.status.success(), "native executable failed");
-    assert_eq!(run.stdout, b"OA|OB|OC|OD|KE|direct:direct|relay:relay");
+    assert_eq!(run.stdout, b"OA|OB|OC|OD|OE|direct:direct|relay:relay");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);
