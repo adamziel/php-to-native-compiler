@@ -383,6 +383,13 @@ enum NativeDiagnosticResultListConsumer {
     DeferredCleanup,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+enum NativeDiagnosticResultReportSink {
+    DiagnosticsOnly,
+    EchoStdout,
+}
+
 #[allow(dead_code)]
 impl NativeDiagnosticResultConsumerFamily {
     fn list_consumer(
@@ -484,6 +491,35 @@ impl NativeDiagnosticResultListConsumer {
                 "phpc_NativeDiagnosticResult {result} = {abi_name}({first_operand}, {count});"
             ),
         }
+    }
+}
+
+impl NativeDiagnosticResultReportSink {
+    fn abi_name(self) -> &'static str {
+        match self {
+            Self::DiagnosticsOnly => "phpc_native_diagnostic_result_report_stderr_list_and_free",
+            Self::EchoStdout => {
+                "phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"
+            }
+        }
+    }
+
+    fn llvm_call(
+        self,
+        result: &str,
+        first_operand: &str,
+        count: usize,
+        usize_type: &str,
+    ) -> String {
+        let abi_name = self.abi_name();
+        format!(
+            "{result} = call {usize_type} @{abi_name}(ptr {first_operand}, {usize_type} {count})"
+        )
+    }
+
+    fn c_statement(self, result: &str, first_operand: &str, count: usize) -> String {
+        let abi_name = self.abi_name();
+        format!("size_t {result} = {abi_name}({first_operand}, {count});")
     }
 }
 
@@ -9483,13 +9519,7 @@ impl LlvmGenerator {
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
             Stmt::Expr { expr, .. } => {
-                let value = self.emit_expr(expr)?;
-                if let IrValue::NativeValue(value) = value {
-                    self.body.push(format!(
-                        "call void @phpc_native_value_free(%phpc.NativeValueHandle {value})"
-                    ));
-                }
-                Ok(())
+                self.emit_native_diagnostic_result_discarded_expr_statement(expr)
             }
             Stmt::Function(function) => Err(native_function_declaration_fallback_diagnostic(
                 NativeCallBackend::Llvm,
@@ -14470,6 +14500,64 @@ impl LlvmGenerator {
         ))
     }
 
+    fn emit_native_diagnostic_result_report_sink(
+        &mut self,
+        sink: NativeDiagnosticResultReportSink,
+        results: &[String],
+    ) -> String {
+        self.uses_native_diagnostic_result_consumers = true;
+        let first_operand = if results.is_empty() {
+            "null".to_string()
+        } else {
+            let list_name = self.next_temp();
+            self.emit_native_diagnostic_result_list_storage(&list_name, results);
+            list_name
+        };
+        let reported = self.next_temp();
+        let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+        self.body
+            .push(sink.llvm_call(&reported, &first_operand, results.len(), usize_type));
+        reported
+    }
+
+    fn emit_native_diagnostic_result_value_operand(
+        &mut self,
+        surface: NativeDiagnosticResultOperandSurface,
+        value: IrValue,
+        span: Span,
+    ) -> CompileResult<String> {
+        let handle = self.emit_native_value_for_ir_value(value, span)?;
+        Ok(
+            self.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::value(
+                surface, &handle,
+            )),
+        )
+    }
+
+    fn emit_native_diagnostic_result_expr_operand(
+        &mut self,
+        surface: NativeDiagnosticResultOperandSurface,
+        expr: &Expr,
+    ) -> CompileResult<String> {
+        let value = self.emit_expr(expr)?;
+        self.emit_native_diagnostic_result_value_operand(surface, value, expr.span())
+    }
+
+    fn emit_native_diagnostic_result_discarded_expr_statement(
+        &mut self,
+        expr: &Expr,
+    ) -> CompileResult<()> {
+        let result = self.emit_native_diagnostic_result_expr_operand(
+            NativeDiagnosticResultOperandSurface::Statement,
+            expr,
+        )?;
+        self.emit_native_diagnostic_result_report_sink(
+            NativeDiagnosticResultReportSink::DiagnosticsOnly,
+            &[result],
+        );
+        Ok(())
+    }
+
     fn native_call_diagnostics(&self) -> NativeCallDiagnostics {
         NativeCallDiagnostics::new(NativeCallBackend::Llvm)
     }
@@ -16454,6 +16542,71 @@ impl CGenerator {
             &first_operand,
             results.len(),
         ))
+    }
+
+    fn emit_native_diagnostic_result_report_sink(
+        &mut self,
+        sink: NativeDiagnosticResultReportSink,
+        results: &[String],
+    ) -> String {
+        self.uses_native_diagnostic_result_consumers = true;
+        let first_operand = if results.is_empty() {
+            "NULL".to_string()
+        } else {
+            let list_name = self.next_native_name("diagnostic_result_operands");
+            self.emit_native_diagnostic_result_list_storage(&list_name, results);
+            list_name
+        };
+        let reported = self.next_native_name("diagnostic_result_reported");
+        self.body
+            .push(sink.c_statement(&reported, &first_operand, results.len()));
+        reported
+    }
+
+    fn emit_native_diagnostic_result_value_operand_for_c_value(
+        &mut self,
+        surface: NativeDiagnosticResultOperandSurface,
+        value: CValue,
+        span: Span,
+    ) -> CompileResult<String> {
+        self.uses_native_string_helpers = true;
+        let handle = match value {
+            CValue::NativeValueHandle(handle)
+                if self.release_native_value_cleanup_handle(&handle) =>
+            {
+                handle
+            }
+            value => self.emit_native_value_for_cvalue(value, span)?,
+        };
+        Ok(
+            self.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::value(
+                surface, &handle,
+            )),
+        )
+    }
+
+    fn emit_native_diagnostic_result_expr_operand(
+        &mut self,
+        surface: NativeDiagnosticResultOperandSurface,
+        expr: &Expr,
+    ) -> CompileResult<String> {
+        let value = self.emit_expr(expr)?;
+        self.emit_native_diagnostic_result_value_operand_for_c_value(surface, value, expr.span())
+    }
+
+    fn emit_native_diagnostic_result_discarded_expr_statement(
+        &mut self,
+        expr: &Expr,
+    ) -> CompileResult<()> {
+        let result = self.emit_native_diagnostic_result_expr_operand(
+            NativeDiagnosticResultOperandSurface::Statement,
+            expr,
+        )?;
+        self.emit_native_diagnostic_result_report_sink(
+            NativeDiagnosticResultReportSink::DiagnosticsOnly,
+            &[result],
+        );
+        Ok(())
     }
 
     fn scoped_branch_generator(&self) -> Self {
@@ -27585,17 +27738,24 @@ impl CGenerator {
 
     fn emit_discarded_expr_statement(&mut self, expr: &Expr) -> CompileResult<()> {
         if let Some(value) = self.try_materialize_native_value_result_expr(expr, "")? {
-            self.body.extend(value.cleanup_after_use);
+            let result =
+                self.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::value(
+                    NativeDiagnosticResultOperandSurface::Statement,
+                    &value.handle,
+                ));
+            self.emit_native_diagnostic_result_report_sink(
+                NativeDiagnosticResultReportSink::DiagnosticsOnly,
+                &[result],
+            );
+            for cleanup in value.cleanup_after_use {
+                if cleanup != format!("phpc_native_value_free({});", value.handle) {
+                    self.body.push(cleanup);
+                }
+            }
             return Ok(());
         }
 
-        let value = self.emit_expr(expr)?;
-        if let CValue::NativeValueHandle(handle) = value {
-            if self.release_native_value_cleanup_handle(&handle) {
-                self.body.push(format!("phpc_native_value_free({handle});"));
-            }
-        }
-        Ok(())
+        self.emit_native_diagnostic_result_discarded_expr_statement(expr)
     }
 
     fn emit_top_level_return_statement(&mut self, value: Option<&Expr>) -> CompileResult<()> {
@@ -45773,6 +45933,16 @@ mod tests {
             .contains("@phpc_native_diagnostic_result_report_stderr_list_and_free"));
         assert!(llvm_native_diagnostic_result_consumer_declarations("i64")
             .contains("@phpc_native_diagnostic_result_list_contains_terminal"));
+        let echo_report = llvm.emit_native_diagnostic_result_report_sink(
+            NativeDiagnosticResultReportSink::EchoStdout,
+            &[],
+        );
+        assert!(llvm.body.iter().any(|line| line.contains(&echo_report)
+            && line.contains(
+                "@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"
+            )
+            && line.contains("ptr null")
+            && line.contains("i64 0")));
 
         let mut c = CGenerator::default();
         let value_result =
@@ -45808,6 +45978,15 @@ mod tests {
             .contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"));
         assert!(c_native_diagnostic_result_declarations()
             .contains("phpc_native_diagnostic_result_list_contains_terminal"));
+        let echo_report = c.emit_native_diagnostic_result_report_sink(
+            NativeDiagnosticResultReportSink::EchoStdout,
+            &[],
+        );
+        assert!(c.body.iter().any(|line| line.contains(&echo_report)
+            && line.contains(
+                "phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"
+            )
+            && line.contains("NULL, 0")));
     }
 
     #[test]
@@ -45993,6 +46172,60 @@ mod tests {
             "{}, NULL, 0",
             PHPC_NATIVE_DIAGNOSTIC_OPERATION_STATEMENT_OPERAND_LIST
         ))));
+    }
+
+    #[test]
+    fn native_diagnostic_result_semantic_statement_operands_report_discarded_values() {
+        let program = crate::parse("<?php\n1;\n\"two\";\n$flag = true;\n$flag;\n").unwrap();
+
+        let mut llvm = LlvmGenerator::default();
+        for stmt in &program.statements {
+            llvm.emit_statement(stmt)
+                .expect("LLVM statement diagnostic-result operands should lower");
+        }
+        assert!(llvm.uses_native_diagnostic_result_producers);
+        assert!(llvm.uses_native_diagnostic_result_consumers);
+        assert_eq!(
+            llvm.body
+                .iter()
+                .filter(|line| line
+                    .contains("@phpc_native_diagnostic_result_report_stderr_list_and_free"))
+                .count(),
+            3
+        );
+        assert!(llvm.body.iter().any(|line| line
+            .contains("@phpc_native_diagnostic_result_from_value(%phpc.NativeValueHandle")));
+        assert_eq!(
+            llvm.body
+                .iter()
+                .filter(|line| line.contains("alloca [1 x %phpc.NativeDiagnosticResult]"))
+                .count(),
+            3
+        );
+
+        let mut c = CGenerator::default();
+        for stmt in &program.statements {
+            c.emit_statement(stmt)
+                .expect("C statement diagnostic-result operands should lower");
+        }
+        assert!(c.uses_native_diagnostic_result_producers);
+        assert!(c.uses_native_diagnostic_result_consumers);
+        assert_eq!(
+            c.body
+                .iter()
+                .filter(|line| line
+                    .contains("phpc_native_diagnostic_result_report_stderr_list_and_free"))
+                .count(),
+            3
+        );
+        assert!(c
+            .body
+            .iter()
+            .any(|line| line.contains("phpc_native_diagnostic_result_from_value")));
+        assert!(c.body.iter().any(|line| {
+            line.contains("phpc_NativeDiagnosticResult diagnostic_result_operands_")
+                && line.contains("[1]")
+        }));
     }
 
     #[test]

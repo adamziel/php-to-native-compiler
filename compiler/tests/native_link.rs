@@ -92,6 +92,15 @@ const NATIVE_OUTPUT_BUFFER_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_DIAGNOSTIC_RESULT_DISCARDED_EXPR_SOURCE: &str = concat!(
+    "<?php\n",
+    "1;\n",
+    "\"two\";\n",
+    "$flag = true;\n",
+    "$flag;\n",
+    "echo \"ok\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_OBJECT_SOURCE: &str = concat!(
     "<?php\n",
     "class Box { public $name; private $secret; }\n",
@@ -1287,6 +1296,47 @@ fn emit_exe_links_and_runs_native_output_buffer_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"A0B42:5:hidden|AB|0\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_discarded_expression_diagnostic_result_operands() {
+    if !has_cc() {
+        return;
+    }
+
+    let program = parse(NATIVE_DIAGNOSTIC_RESULT_DISCARDED_EXPR_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    assert!(
+        source.contains("phpc_native_diagnostic_result_report_stderr_list_and_free"),
+        "discarded expression statements should report/free through diagnostic-result sinks:\n{source}"
+    );
+    assert!(
+        source.matches("phpc_native_diagnostic_result_from_value")
+            .count()
+            >= 3,
+        "discarded expression statements should materialize owned diagnostic-result value operands:\n{source}"
+    );
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "diagnostic_result_discarded_expr",
+        NATIVE_DIAGNOSTIC_RESULT_DISCARDED_EXPR_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run diagnostic-result executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ok");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
