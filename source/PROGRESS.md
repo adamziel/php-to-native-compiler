@@ -30,7 +30,10 @@ work until integrated and pushed. Dynamic callable compiler consumption still
 conflicts with the request/global frame-environment change and should be
 rebased after that semantic boundary lands. Focused current-primary smoke after
 accounting is clean: the assigned focused runtime/compiler/direct-call gates
-and `cargo check -p php_runtime -p phpc` passed. Estimates remain flat.
+and `cargo check -p php_runtime -p phpc` passed. Final post-write status showed
+unrelated active source diffs in `compiler/src/codegen.rs` and
+`compiler/tests/native_link.rs`; they are not counted by this dashboard and
+were left untouched. Estimates remain flat.
 
 `b4b21937` extends the generalized diagnostic operation and operand-list
 requirement blocker ABI to reference-binding surfaces. Reference-assignment
