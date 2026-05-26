@@ -140,6 +140,12 @@ pub struct NativeDiagnosticHandle {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeDiagnosticResult {
+    ptr: *mut NativeDiagnosticResultState,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeDiagnosticOperandRequirement {
     pub tag: u8,
     pub operand_index: usize,
@@ -1223,6 +1229,12 @@ struct NativeDiagnostic {
     source_location: Option<NativeDiagnosticSourceLocation>,
 }
 
+#[derive(Debug)]
+struct NativeDiagnosticResultState {
+    value: NativeValueHandle,
+    diagnostics: Vec<NativeDiagnostic>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct NativeDiagnosticSourceLocation {
     file: Option<Vec<u8>>,
@@ -2123,6 +2135,81 @@ impl NativeDiagnosticHandle {
     unsafe fn as_ref(&self) -> Option<&NativeDiagnostic> {
         unsafe { self.ptr.as_ref() }
     }
+
+    unsafe fn into_vec(self) -> Vec<NativeDiagnostic> {
+        if self.ptr.is_null() {
+            return Vec::new();
+        }
+        vec![*unsafe { Box::from_raw(self.ptr) }]
+    }
+}
+
+impl NativeDiagnosticResult {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    fn from_value(value: NativeValueHandle) -> Self {
+        if value.is_null() {
+            return Self::null();
+        }
+        Self::from_state(NativeDiagnosticResultState {
+            value,
+            diagnostics: Vec::new(),
+        })
+    }
+
+    unsafe fn from_diagnostic_handle(diagnostic: NativeDiagnosticHandle) -> Self {
+        let diagnostics = unsafe { diagnostic.into_vec() };
+        if diagnostics.is_empty() {
+            return Self::null();
+        }
+        Self::from_state(NativeDiagnosticResultState {
+            value: NativeValueHandle::null(),
+            diagnostics,
+        })
+    }
+
+    fn from_diagnostic(diagnostic: NativeDiagnostic) -> Self {
+        Self::from_state(NativeDiagnosticResultState {
+            value: NativeValueHandle::null(),
+            diagnostics: vec![diagnostic],
+        })
+    }
+
+    fn from_blocker_message(message: impl Into<String>) -> Self {
+        Self::from_diagnostic(NativeDiagnostic {
+            severity: NativeDiagnosticSeverity::Blocker,
+            message: message.into(),
+            source_location: None,
+        })
+    }
+
+    fn from_state(state: NativeDiagnosticResultState) -> Self {
+        if state.value.is_null() && state.diagnostics.is_empty() {
+            return Self::null();
+        }
+        Self {
+            ptr: Box::into_raw(Box::new(state)),
+        }
+    }
+
+    unsafe fn as_ref(&self) -> Option<&NativeDiagnosticResultState> {
+        unsafe { self.ptr.as_ref() }
+    }
+
+    unsafe fn into_state(self) -> Option<Box<NativeDiagnosticResultState>> {
+        if self.ptr.is_null() {
+            return None;
+        }
+        Some(unsafe { Box::from_raw(self.ptr) })
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
 }
 
 impl NativeStringConversionResult {
@@ -2201,6 +2288,10 @@ impl NativeDiagnosticSeverity {
 
     pub const fn mask(self) -> u32 {
         1_u32 << ((self as u8) - 1)
+    }
+
+    fn is_terminal(self) -> bool {
+        matches!(self, Self::Error | Self::Blocker)
     }
 
     fn from_abi_tag(tag: u8) -> Option<Self> {
@@ -19164,6 +19255,106 @@ pub unsafe extern "C" fn phpc_native_diagnostic_contains_severity(
         .unwrap_or(false)
 }
 
+#[no_mangle]
+pub extern "C" fn phpc_native_diagnostic_result_null() -> NativeDiagnosticResult {
+    NativeDiagnosticResult::null()
+}
+
+/// The returned result takes ownership of `value`. Callers must release it with
+/// `phpc_native_diagnostic_result_free` or an ABI function with an `_and_free`
+/// suffix.
+#[no_mangle]
+pub extern "C" fn phpc_native_diagnostic_result_from_value(
+    value: NativeValueHandle,
+) -> NativeDiagnosticResult {
+    NativeDiagnosticResult::from_value(value)
+}
+
+/// # Safety
+///
+/// `diagnostic` must be null or a diagnostic handle previously returned by the
+/// runtime ABI and not yet freed. The returned result takes ownership of the
+/// diagnostic and must be released with `phpc_native_diagnostic_result_free` or
+/// an ABI function with an `_and_free` suffix.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_result_from_diagnostic_and_free(
+    diagnostic: NativeDiagnosticHandle,
+) -> NativeDiagnosticResult {
+    unsafe { NativeDiagnosticResult::from_diagnostic_handle(diagnostic) }
+}
+
+/// # Safety
+///
+/// `result` must be null or a diagnostic result returned by the runtime ABI and
+/// not yet freed. This helper only inspects the result; ownership remains with
+/// the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_result_has_value(
+    result: NativeDiagnosticResult,
+) -> bool {
+    unsafe { result.as_ref() }
+        .map(|state| !state.value.is_null())
+        .unwrap_or(false)
+}
+
+/// # Safety
+///
+/// `result` must be null or a diagnostic result returned by the runtime ABI and
+/// not yet freed. This helper only inspects the result; ownership remains with
+/// the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_result_diagnostic_count(
+    result: NativeDiagnosticResult,
+) -> usize {
+    unsafe { result.as_ref() }
+        .map(|state| state.diagnostics.len())
+        .unwrap_or(0)
+}
+
+/// # Safety
+///
+/// `result` must be null or a diagnostic result returned by the runtime ABI and
+/// not yet freed. This helper only inspects the result; ownership remains with
+/// the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_result_diagnostic_severity_at(
+    result: NativeDiagnosticResult,
+    index: usize,
+) -> u8 {
+    unsafe { result.as_ref() }
+        .and_then(|state| state.diagnostics.get(index))
+        .map(|diagnostic| diagnostic.severity.tag())
+        .unwrap_or(0)
+}
+
+/// # Safety
+///
+/// `result` must be null or a diagnostic result returned by the runtime ABI and
+/// not yet freed. The returned byte buffer owns a clone of the selected
+/// diagnostic's rendered message and must be freed by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_result_diagnostic_message_clone_bytes_at(
+    result: NativeDiagnosticResult,
+    index: usize,
+) -> NativeByteBuffer {
+    unsafe { result.as_ref() }
+        .and_then(|state| state.diagnostics.get(index))
+        .map(|diagnostic| NativeByteBuffer::from_vec(diagnostic.message.clone().into_bytes()))
+        .unwrap_or_else(NativeByteBuffer::empty)
+}
+
+/// # Safety
+///
+/// `result` must be null or a diagnostic result returned by the runtime ABI and
+/// not yet freed. Passing any other pointer is undefined behavior.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_result_free(result: NativeDiagnosticResult) {
+    let Some(state) = (unsafe { result.into_state() }) else {
+        return;
+    };
+    unsafe { phpc_native_value_free(state.value) };
+}
+
 /// # Safety
 ///
 /// `items` must be valid for `len` contiguous
@@ -19214,6 +19405,145 @@ pub unsafe extern "C" fn phpc_native_diagnostic_result_operation_blocker_list_an
         operation,
         &requirements,
     ))
+}
+
+/// # Safety
+///
+/// `results` must point to `result_count` contiguous `NativeDiagnosticResult`
+/// values returned by the runtime ABI, or be null with a zero length. This
+/// helper consumes every available result, releases unselected values, stops
+/// diagnostic sequencing after a terminal diagnostic, and releases any
+/// remaining unconsumed results. The returned result owns the sequenced
+/// diagnostics and must be freed by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free(
+    operation: u8,
+    results: *const NativeDiagnosticResult,
+    result_count: usize,
+) -> NativeDiagnosticResult {
+    unsafe {
+        native_diagnostic_result_value_required_operation_blocker_list_and_free(
+            operation,
+            results,
+            result_count,
+        )
+    }
+}
+
+unsafe fn native_diagnostic_result_value_required_operation_blocker_list_and_free(
+    operation: u8,
+    results: *const NativeDiagnosticResult,
+    result_count: usize,
+) -> NativeDiagnosticResult {
+    if result_count == 0 {
+        return NativeDiagnosticResult::from_blocker_message(format!(
+            "native diagnostic result operation blocker: {} has no operand results",
+            native_diagnostic_operation_name(operation)
+        ));
+    }
+
+    if results.is_null() {
+        return native_diagnostic_result_value_requirement_blocker(operation, 0);
+    }
+
+    let results = unsafe { std::slice::from_raw_parts(results, result_count) };
+    let mut sequenced = NativeDiagnosticResultState {
+        value: NativeValueHandle::null(),
+        diagnostics: Vec::new(),
+    };
+    let mut terminal = false;
+
+    for (index, result) in results.iter().copied().enumerate() {
+        let Some(mut state) = (unsafe { result.into_state() }) else {
+            sequenced
+                .diagnostics
+                .push(native_diagnostic_operation_list_diagnostic(
+                    NativeDiagnosticSeverity::Blocker,
+                    operation,
+                    &[NativeDiagnosticOperandRequirement {
+                        tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_RESULT_OWNERSHIP,
+                        operand_index: index,
+                    }],
+                ));
+            terminal = true;
+            native_diagnostic_result_free_remaining(&results[(index + 1)..]);
+            break;
+        };
+
+        let result_terminal = state
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity.is_terminal());
+        if state.value.is_null() && !result_terminal {
+            state
+                .diagnostics
+                .push(native_diagnostic_operation_list_diagnostic(
+                    NativeDiagnosticSeverity::Blocker,
+                    operation,
+                    &[NativeDiagnosticOperandRequirement {
+                        tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_RESULT_OWNERSHIP,
+                        operand_index: index,
+                    }],
+                ));
+        }
+        unsafe { phpc_native_value_free(state.value) };
+        sequenced.diagnostics.append(&mut state.diagnostics);
+
+        if result_terminal
+            || sequenced
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.severity.is_terminal())
+        {
+            terminal = true;
+            native_diagnostic_result_free_remaining(&results[(index + 1)..]);
+            break;
+        }
+    }
+
+    if !terminal {
+        sequenced
+            .diagnostics
+            .push(native_diagnostic_operation_list_diagnostic(
+                NativeDiagnosticSeverity::Blocker,
+                operation,
+                &[],
+            ));
+    }
+
+    NativeDiagnosticResult::from_state(sequenced)
+}
+
+fn native_diagnostic_result_free_remaining(results: &[NativeDiagnosticResult]) {
+    for result in results {
+        unsafe { phpc_native_diagnostic_result_free(*result) };
+    }
+}
+
+fn native_diagnostic_result_value_requirement_blocker(
+    operation: u8,
+    operand_index: usize,
+) -> NativeDiagnosticResult {
+    NativeDiagnosticResult::from_diagnostic(native_diagnostic_operation_list_diagnostic(
+        NativeDiagnosticSeverity::Blocker,
+        operation,
+        &[NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_RESULT_OWNERSHIP,
+            operand_index,
+        }],
+    ))
+}
+
+fn native_diagnostic_operation_list_diagnostic(
+    severity: NativeDiagnosticSeverity,
+    operation: u8,
+    requirements: &[NativeDiagnosticOperandRequirement],
+) -> NativeDiagnostic {
+    NativeDiagnostic {
+        severity,
+        message: native_diagnostic_operation_list_message(operation, requirements),
+        source_location: None,
+    }
 }
 
 fn native_diagnostic_operation_list_message(

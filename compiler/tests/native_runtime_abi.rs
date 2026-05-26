@@ -15,9 +15,16 @@ use php_runtime::{
     phpc_native_diagnostic_contains_severity, phpc_native_diagnostic_free,
     phpc_native_diagnostic_message_clone_bytes,
     phpc_native_diagnostic_operand_requirement_list_clone,
-    phpc_native_diagnostic_result_operation_blocker_list_and_free, phpc_native_string_free,
-    NativeDiagnosticHandle, NativeDiagnosticOperandRequirement, NativeDiagnosticSeverity,
-    NativeStringHandle, NativeValueHandle, Value,
+    phpc_native_diagnostic_result_diagnostic_count,
+    phpc_native_diagnostic_result_diagnostic_message_clone_bytes_at,
+    phpc_native_diagnostic_result_diagnostic_severity_at, phpc_native_diagnostic_result_free,
+    phpc_native_diagnostic_result_from_diagnostic_and_free,
+    phpc_native_diagnostic_result_from_value, phpc_native_diagnostic_result_has_value,
+    phpc_native_diagnostic_result_null,
+    phpc_native_diagnostic_result_operation_blocker_list_and_free,
+    phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free,
+    phpc_native_string_free, NativeDiagnosticHandle, NativeDiagnosticOperandRequirement,
+    NativeDiagnosticSeverity, NativeStringHandle, NativeValueHandle, Value,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_KEY_EVALUATION,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_PROPERTY_EVALUATION,
@@ -35,6 +42,7 @@ use php_runtime::{
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_RMW_LVALUE_OPERAND_LIST,
+    PHPC_NATIVE_DIAGNOSTIC_OPERATION_VALUE_OPERAND_LIST,
 };
 
 const STRING_INT_IR_SOURCE: &str = "<?php\n$payload = \"A\\0bA\\0b\";\necho strcasecmp($payload, \"a\\0B\");\necho strcmp($payload, \"A\\0c\");\necho strncmp($payload, \"A\\0bZ\", \"3\");\necho strncasecmp($payload, \"a\\0Bz\", 3);\necho ord(\"A\");\necho crc32($payload);\n";
@@ -46,6 +54,21 @@ const OUTPUT_BUFFER_RUNTIME_SOURCE: &str = "<?php\nob_start(null, strlen(\"aa\")
 
 fn runtime_diagnostic_message(handle: php_runtime::NativeDiagnosticHandle) -> String {
     let buffer = unsafe { phpc_native_diagnostic_message_clone_bytes(handle) };
+    let bytes = if buffer.ptr.is_null() {
+        Vec::new()
+    } else {
+        unsafe { std::slice::from_raw_parts(buffer.ptr, buffer.len) }.to_vec()
+    };
+    unsafe { phpc_native_byte_buffer_free(buffer) };
+    String::from_utf8(bytes).expect("runtime diagnostics should be valid UTF-8")
+}
+
+fn runtime_result_diagnostic_message(
+    result: php_runtime::NativeDiagnosticResult,
+    index: usize,
+) -> String {
+    let buffer =
+        unsafe { phpc_native_diagnostic_result_diagnostic_message_clone_bytes_at(result, index) };
     let bytes = if buffer.ptr.is_null() {
         Vec::new()
     } else {
@@ -410,6 +433,139 @@ fn native_call_argument_list_diagnostics_use_generic_runtime_operand_list_bounda
         assert_eq!(c_error.phase, Phase::Codegen);
         assert!(c_error.message.contains(c_expected), "{}", c_error.message);
     }
+}
+
+#[test]
+fn native_diagnostic_result_value_required_list_consumes_results_across_shapes() {
+    fn blocker_diagnostic(
+        operation: u8,
+        requirement_tag: u8,
+        operand_index: usize,
+    ) -> NativeDiagnosticHandle {
+        let requirements = [NativeDiagnosticOperandRequirement {
+            tag: requirement_tag,
+            operand_index,
+        }];
+        let list = unsafe {
+            phpc_native_diagnostic_operand_requirement_list_clone(
+                requirements.as_ptr(),
+                requirements.len(),
+            )
+        };
+        unsafe { phpc_native_diagnostic_result_operation_blocker_list_and_free(operation, list) }
+    }
+
+    let value_results = [
+        phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(Value::Int(1))),
+        phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(Value::String(
+            "owned".to_string(),
+        ))),
+    ];
+    let blocked = unsafe {
+        phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free(
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_VALUE_OPERAND_LIST,
+            value_results.as_ptr(),
+            value_results.len(),
+        )
+    };
+    assert!(!unsafe { phpc_native_diagnostic_result_has_value(blocked) });
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_diagnostic_count(blocked) },
+        1
+    );
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_diagnostic_severity_at(blocked, 0) },
+        NativeDiagnosticSeverity::Blocker as u8
+    );
+    let message = runtime_result_diagnostic_message(blocked, 0);
+    assert!(message.contains("value operand list"), "{message}");
+    assert!(message.contains("has no operand requirements"), "{message}");
+    unsafe { phpc_native_diagnostic_result_free(blocked) };
+
+    let terminal = unsafe {
+        phpc_native_diagnostic_result_from_diagnostic_and_free(blocker_diagnostic(
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST,
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP,
+            1,
+        ))
+    };
+    let terminal_results = [
+        phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(Value::Int(7))),
+        terminal,
+        phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(Value::Int(9))),
+    ];
+    let blocked = unsafe {
+        phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free(
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST,
+            terminal_results.as_ptr(),
+            terminal_results.len(),
+        )
+    };
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_diagnostic_count(blocked) },
+        1
+    );
+    let message = runtime_result_diagnostic_message(blocked, 0);
+    assert!(message.contains("lvalue operand list"), "{message}");
+    assert!(
+        message.contains("lvalue evaluation cleanup at operand 1"),
+        "{message}"
+    );
+    assert!(
+        !message.contains("has no operand requirements"),
+        "{message}"
+    );
+    unsafe { phpc_native_diagnostic_result_free(blocked) };
+
+    let null_item_results = [
+        phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(Value::Int(3))),
+        phpc_native_diagnostic_result_null(),
+        phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(Value::Int(5))),
+    ];
+    let blocked = unsafe {
+        phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free(
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_RMW_LVALUE_OPERAND_LIST,
+            null_item_results.as_ptr(),
+            null_item_results.len(),
+        )
+    };
+    let message = runtime_result_diagnostic_message(blocked, 0);
+    assert!(
+        message.contains("read-modify-write lvalue operand list"),
+        "{message}"
+    );
+    assert!(
+        message.contains("result ownership at operand 1"),
+        "{message}"
+    );
+    unsafe { phpc_native_diagnostic_result_free(blocked) };
+
+    let blocked = unsafe {
+        phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free(
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_CALL_ARGUMENT_LIST,
+            std::ptr::null(),
+            2,
+        )
+    };
+    let message = runtime_result_diagnostic_message(blocked, 0);
+    assert!(message.contains("call argument list"), "{message}");
+    assert!(
+        message.contains("result ownership at operand 0"),
+        "{message}"
+    );
+    unsafe { phpc_native_diagnostic_result_free(blocked) };
+
+    let blocked = unsafe {
+        phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free(
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_CONTROL_FLOW_OPERAND_LIST,
+            std::ptr::null(),
+            0,
+        )
+    };
+    let message = runtime_result_diagnostic_message(blocked, 0);
+    assert!(message.contains("control-flow operand list"), "{message}");
+    assert!(message.contains("has no operand results"), "{message}");
+    unsafe { phpc_native_diagnostic_result_free(blocked) };
 }
 
 #[test]
