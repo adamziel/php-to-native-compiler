@@ -18344,6 +18344,30 @@ const NATIVE_RUNTIME_DYNAMIC_BY_REFERENCE_USER_FUNCTION_FRAME_SOURCE: &str = con
     "echo $wrap(\"ok\");\n",
 );
 
+const NATIVE_SCOPED_CALLABLE_STRING_SIGNATURE_SOURCE: &str = concat!(
+    "<?php\n",
+    "class ScopedCallableSignature {\n",
+    "    public static function mutate(&$slot, $value) {\n",
+    "        $slot = $value;\n",
+    "        return $slot;\n",
+    "    }\n",
+    "    public static function &borrow(&$slot) {\n",
+    "        return $slot;\n",
+    "    }\n",
+    "}\n",
+    "$slot = \"base\";\n",
+    "$variable = \"ScopedCallableSignature::mutate\";\n",
+    "echo $variable($slot, \"variable\"), \":\", $slot, \"|\";\n",
+    "$concat = \"ScopedCallableSignature\" . \"::\" . \"mutate\";\n",
+    "echo $concat($slot, \"concat\"), \":\", $slot, \"|\";\n",
+    "$branch = true ? \"ScopedCallableSignature::mutate\" : \"ScopedCallableSignature::mutate\";\n",
+    "echo $branch($slot, \"branch\"), \":\", $slot, \"|\";\n",
+    "$borrow = \"ScopedCallableSignature::borrow\";\n",
+    "$alias =& $borrow($slot);\n",
+    "$alias = \"reference\";\n",
+    "echo $slot;\n",
+);
+
 const NATIVE_GLOBAL_IMPORT_USER_FUNCTION_SOURCE: &str = concat!(
     "<?php\n",
     "$slot = \"root\";\n",
@@ -20251,6 +20275,77 @@ fn native_executable_c_source_lowers_runtime_dynamic_by_reference_user_function_
         !body.contains("by-reference parameter binding requires a statically known reference argument set"),
         "runtime string-valued by-reference frames should no longer stop on the old by-reference dynamic-call failure:\n{source}"
     );
+}
+
+#[test]
+fn native_executable_c_source_plans_scoped_callable_string_signature_arguments() {
+    let program = parse(NATIVE_SCOPED_CALLABLE_STRING_SIGNATURE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.matches("phpc_native_call_arguments_push_reference_and_free")
+            .count()
+            >= 4
+            && body.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
+            && body.contains("phpc_native_callable_value_invoke_reference_with_diagnostic_and_free"),
+        "variable-held, concatenated, branch-selected, and reference-return scoped callable strings should share callable-value lookup and reference carriers:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_value_dynamic_call_name_matches"),
+        "scoped callable-string signatures should not use the legacy finite function-string ladder:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_keeps_non_reference_scoped_callable_strings_on_return_ownership_blocker(
+) {
+    let program = parse(concat!(
+        "<?php\n",
+        "class ScopedCallableValueReturn {\n",
+        "    public static function value($slot) { return $slot; }\n",
+        "}\n",
+        "$slot = \"value\";\n",
+        "$call = \"ScopedCallableValueReturn::value\";\n",
+        "$alias =& $call($slot);\n",
+    ))
+    .unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION);
+}
+
+#[test]
+fn emit_exe_links_and_runs_scoped_callable_string_signature_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "scoped_callable_string_signature",
+        NATIVE_SCOPED_CALLABLE_STRING_SIGNATURE_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native scoped callable-string executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"variable:variable|concat:concat|branch:branch|reference"
+    );
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
 }
 
 #[test]
