@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 02:34 CEST
-Evaluation marker: `20260526T001830Z`
+Updated: 2026-05-26 02:41 CEST
+Evaluation marker: `20260526T003949Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, candidate worktrees, lane-local
@@ -15,11 +15,22 @@ Overall estimated progress: **95%** `[###################-]`
 Executable PHP semantics: **95%** `[###################-]`
 
 Primary was clean and aligned with `origin/master` at
-`b4b21937 native: add reference-binding operand-list blocker requirements` before this
-`PROGRESS.md` edit.
+`64f97660 docs: account reference-binding operand-list requirements` before
+this `PROGRESS.md` edit. The latest source capability remains `b4b21937`;
+`64f97660` is docs/accounting only.
 
 Latest primary-integrated source capability baseline:
 `b4b21937 native: add reference-binding operand-list blocker requirements`.
+
+Current evaluator read (`20260526T003949Z`): no primary source capability was
+added after `b4b21937`. Request/global frame direct handoff now has formal and
+shadow go-for-primary-review evidence, and trait effective-method metadata has
+current-primary reconciliation evidence, but both remain lane-local candidate
+work until integrated and pushed. Dynamic callable compiler consumption still
+conflicts with the request/global frame-environment change and should be
+rebased after that semantic boundary lands. Focused current-primary smoke after
+accounting had three gates passed and `cargo check -p php_runtime -p phpc`
+pending at last read. Estimates remain flat.
 
 `b4b21937` extends the generalized diagnostic operation and operand-list
 requirement blocker ABI to reference-binding surfaces. Reference-assignment
@@ -223,6 +234,10 @@ Primary-integrated capability and lane-local candidate work are separated here.
 | Reference-backed by-value closure captures | **100%** `[####################]` | **48%** `[##########----------]` | Integrated at `90e53401`. Covers descriptor closure value captures from ordinary locals, native reference handles, and active symbol-table storage across direct function, static method, receiver method, and closure factory frames. Non-static implicit `$this`, secondary-alias writeback, and broad callable/object semantics remain open. |
 | Reference-source append/lvalue extraction | **100%** `[####################]` | **52%** `[##########----------]` | Integrated at `7aa162ca`. Covers selected symbol, native reference local, public object-property, object-property array-path, append, reference assignment, and by-reference call consumers. Static/magic/non-public properties, ArrayAccess, arbitrary alias roots, and full references/COW remain open. |
 | Closure value/reference return ABI | **100%** `[####################]` | **50%** `[##########----------]` | Integrated at `ae93da8c`. Runtime closure invocation has a shared value/reference/diagnostic/status result contract for descriptor closures. Broader function/method/static/constructor reference returns remain open. |
+| Request/global frame direct handoff (candidate, not counted) | **90%** `[##################--]` | **34%** `[#######-------------]` | Lane-local candidate has formal `go-for-primary-integrator` and shadow `shadow-go-for-primary-review` evidence, applies to current primary, and would replace the root-symbol-only frame flag with `CFrameEnvironmentRequirement { root_symbols, request_state }` for direct user-function frame handoff. It is not primary progress until integrated; dynamic request-state callable handoff, closure environments, `$GLOBALS` parity, request aliasing/writeback, includes, variable variables, and exact unset/global behavior remain open. |
+| Trait effective-method metadata (candidate, not counted) | **85%** `[#################---]` | **18%** `[####----------------]` | Lane-local candidate has current-primary reconciliation and a passing focused `trait_semantics` gate. It adds shared trait composition metadata and destructor-risk classification, but remains metadata-only: trait method execution, trait properties/constants, destructor execution, object lifetime cleanup, shutdown/finally ordering, and broad object semantics are still missing. |
+| Dynamic callable compiler consumer (candidate, not counted) | **55%** `[###########---------]` | **42%** `[########------------]` | Candidate applies to current primary but conflicts with request/global frame-environment work and still depends on the old `requires_root_symbols` model. Rebase after `CFrameEnvironmentRequirement` lands, then either seed request-state for all supported dynamic callable user-function targets through the shared boundary or keep a centralized unsupported blocker. |
+| Assignment/RMW lvalue operand-list requirements (active prep, not counted) | **45%** `[#########-----------]` | **12%** `[##------------------]` | Narrow prep lanes are active for assignment-lvalue and RMW-lvalue diagnostic operand-list requirements over the generic operation-list ABI. They are useful diagnostic prerequisites but not executable semantics; serialize them around ABI tag allocation and do not duplicate broad-lane extraction. |
 | Diagnostic result callable/RMW/control scanner contracts | **0%** `[--------------------]` | **46%** `[#########-----------]` | `impl-native-error-diagnostic-semantics` continues producing broad lane-local contracts and scanner work beyond the integrated `a544daa8` operand-list blocker boundary. It remains dirty evidence, not primary progress; one visible status section is chronologically suspect relative to the evaluator clock. |
 | Broader lvalue/reference-slot materializer | **42%** `[########------------]` | **45%** `[#########-----------]` | Improved by recent reference-source and closure-capture packets. Non-variable expression families, static/magic/non-public properties, ArrayAccess, arbitrary alias roots, and writeback remain open. |
 | Object/resource source materialization | **25%** `[#####---------------]` | **30%** `[######--------------]` | Still a recurring blocker for generic conversion and offset/source consumers. Needs a general value reconstruction/materialization boundary. |
@@ -346,8 +361,8 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary is clean and synced at `b4b21937` before this `PROGRESS.md` edit;
-  latest source capability is `b4b21937`.
+- [x] Primary is clean and synced at `64f97660` before this `PROGRESS.md` edit;
+  latest source capability remains `b4b21937`.
 - [x] Latest primary-integrated source capability head is `b4b21937`.
 - [x] Overall and executable estimates remain 95% under current project-local
   accounting.
@@ -396,16 +411,21 @@ Lane-local:
 - [x] Reference-binding operation-list follow-up is integrated at `b4b21937`
   as a diagnostic/blocker extension over `a544daa8`; it is not executable
   reference binding and does not move percentages.
-- [ ] Dynamic callable compiler-consumer work is mapped after the runtime
-  repair, but still needs a narrow implementation patch that consumes the
-  repaired runtime callable-value ABI instead of extending legacy generated-C
-  branch ladders.
-- [ ] Request/global direct handoff has a large apply-ready candidate and needs
-  strict review/gates before any integration; do not treat apply success as
-  semantic proof.
+- [ ] Dynamic callable compiler-consumer work has an apply-ready candidate, but
+  it conflicts with request/global frame-environment work and must be rebased
+  after `CFrameEnvironmentRequirement`; do not preserve root-symbol-only
+  request handling or extend legacy generated-C branch ladders.
+- [ ] Request/global direct handoff has formal and shadow go-for-primary-review
+  evidence, but it is a large frame/environment packet; integrate only after
+  strict gates confirm callable ABI handoff, request-state ownership, and no
+  source-shape request-key shortcuts.
 - [ ] Trait effective-method metadata prep has current-primary reconciliation
-  proof, but it is metadata-only and still leaves trait method execution,
-  destructor execution, and object lifetime cleanup open.
+  proof and a focused `trait_semantics` gate, but it is metadata-only and still
+  leaves trait method execution, destructor execution, and object lifetime
+  cleanup open.
+- [ ] Assignment/RMW lvalue operand-list diagnostic preps are active and covered;
+  serialize them around generic ABI tag allocation rather than duplicating a
+  broad-lane extraction.
 - [ ] Call-lane loop/call ordering work is fresh but broad and dirty.
 - [ ] Diagnostic-lane callable operand, RMW, report dispatch, control-flow
   scanner contracts, and any reference-binding work beyond the integrated
@@ -418,9 +438,9 @@ Resource posture:
 
 - `/dev/shm`: 40G total, 24G used, 17G available, 58% used; `du -sh /dev/shm`
   reported 24G.
-- `/home`: 459G total, 216G used, 224G available, 50% used; `du -sh
-  /home/claude` reported 135G.
-- Memory available is about 40Gi, but swap remains high at 23Gi/29Gi used.
+- `/home`: 459G total, 234G used, 207G available, 54% used by `df`; bounded
+  `du -sh /home` did not complete within 15 seconds.
+- Memory available is about 39Gi, but swap remains high at 23Gi/29Gi used.
 - Continue disk-backed `/tmp` target dirs, `umask 0007`,
   `CARGO_BUILD_JOBS=1`, `CARGO_INCREMENTAL=0`, and focused nonzero gates.
 
@@ -428,16 +448,17 @@ Resource posture:
 
 Best next action:
 
-- Keep diagnostic reference-binding and scanner work layered on the generic
-  operand-list requirement boundary from `a544daa8` and the reference-binding
-  requirement extension from `b4b21937`; do not add source-shape blockers for
-  one PHP source shape, one operand layout, or one diagnostic fixture. Keep
-  callable compiler consumer work focused on consuming the
-  repaired runtime callable lookup/called-scope/visibility/descriptor-argument
-  boundary beyond direct user functions rather than extending old dynamic-call
-  branch helpers. Future exception/destructor work should first add reusable
-  execution, cleanup-ordering, or metadata boundaries rather than one-shape
-  try, constructor, or destructor recognizers.
+- Consider request/global frame direct handoff before dynamic callable compiler
+  consumption if the running smoke and final integration gates finish cleanly,
+  because dynamic callable work still depends on the old root-symbol-only frame
+  model. If trait metadata lands first, account it as metadata/destructor-risk
+  classification only. Keep diagnostic reference-binding, assignment-lvalue,
+  and RMW-lvalue work layered on the generic operand-list requirement boundary
+  from `a544daa8`/`b4b21937`; do not add source-shape blockers for one PHP
+  source shape, one operand layout, or one diagnostic fixture. Future
+  exception/destructor work should first add reusable execution,
+  cleanup-ordering, or metadata boundaries rather than one-shape try,
+  constructor, or destructor recognizers.
 
 Avoid:
 
