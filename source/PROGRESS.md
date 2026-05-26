@@ -93,12 +93,12 @@ Primary-integrated capability and lane-local work are separated explicitly.
 | Item | Primary Integrated | Candidate Readiness | Toward Full Feature | Status |
 | --- | ---: | ---: | ---: | --- |
 | Object/ArrayAccess write-side blockers | **100%** `[####################]` | **100%** `[####################]` | **25%** `[#####---------------]` | Integrated at `513dbf21`. Useful shared blocker boundary for write/unset families, but still no executable `offsetSet()`/`offsetUnset()` behavior. |
-| Assignment-lvalue operand-list diagnostics | **100%** `[####################]` | **15%** `[###-----------------]` | Integrated at `81c15cd5`. Generalized blocker vocabulary exists; assignment/RMW execution and writeback do not. |
-| Direct request-state frame handoff for generated-C user functions | **100%** `[####################]` | **40%** `[########------------]` | Integrated at `b27bbb20`; extended by `6a73b186` for generated-C dynamic user-function handoff proof. Closure handoff remains open. |
-| Reference-binding operand-list diagnostics | **100%** `[####################]` | **15%** `[###-----------------]` | Integrated at `b4b21937`. Diagnostic ABI progress only; executable reference binding remains open. |
-| Runtime callable ABI, callable-value dispatch, and direct/dynamic generated-C consumers | **100%** `[####################]` | **66%** `[#############-------]` | Integrated through `6a73b186`. Direct and dynamic generated-C callable paths consume the shared runtime lookup/invocation ABI and runtime builtin dispatch. Constructors, object/method callable parity, callable array validation parity, broader lookup parity, return references, named/spread breadth, and cleanup/unwind remain open. |
-| Dynamic callable compiler consumer plus builtin string callable repair | **100%** `[####################]` | **60%** `[############--------]` | Integrated at `6a73b186`. Dynamic callee expression lowering routes through the shared callable-value lookup/invocation ABI instead of a compiler-side finite builtin/name ladder. Full callable semantics remain open. |
-| RMW-lvalue operand-list diagnostics | **0%** `[--------------------]` | **85%** `[#################---]` | **14%** `[###-----------------]` | Lane-local candidate. Current-head review is `ready-for-primary-review`; diagnostic tags are reconciled to operation `8` and operand `21`. Needs fresh check against `513dbf21` before integration. |
+| Assignment-lvalue operand-list diagnostics | **100%** `[####################]` | **100%** `[####################]` | **15%** `[###-----------------]` | Integrated at `81c15cd5`. Generalized blocker vocabulary exists; assignment/RMW execution and writeback do not. |
+| Direct request-state frame handoff for generated-C user functions | **100%** `[####################]` | **100%** `[####################]` | **40%** `[########------------]` | Integrated at `b27bbb20`; extended by `6a73b186` for generated-C dynamic user-function handoff proof. Closure handoff remains open. |
+| Reference-binding operand-list diagnostics | **100%** `[####################]` | **100%** `[####################]` | **15%** `[###-----------------]` | Integrated at `b4b21937`. Diagnostic ABI progress only; executable reference binding remains open. |
+| Runtime callable ABI, callable-value dispatch, and direct/dynamic generated-C consumers | **100%** `[####################]` | **100%** `[####################]` | **66%** `[#############-------]` | Integrated through `6a73b186`. Direct and dynamic generated-C callable paths consume the shared runtime lookup/invocation ABI and runtime builtin dispatch. Constructors, object/method callable parity, callable array validation parity, broader lookup parity, return references, named/spread breadth, and cleanup/unwind remain open. |
+| Dynamic callable compiler consumer plus builtin string callable repair | **100%** `[####################]` | **100%** `[####################]` | **60%** `[############--------]` | Integrated at `6a73b186`. Dynamic callee expression lowering routes through the shared callable-value lookup/invocation ABI instead of a compiler-side finite builtin/name ladder. Full callable semantics remain open. |
+| RMW-lvalue operand-list diagnostics | **0%** `[--------------------]` | **100%** `[####################]` | **14%** `[###-----------------]` | Lane-local candidate. Current-head review after `513dbf21` is `ready-for-primary-review`; diagnostic tags are reconciled to operation `8` and operand `21`. |
 | Cleanup/unwind requirement boundary | **0%** `[--------------------]` | **35%** `[#######-------------]` | **18%** `[####----------------]` | Lane-local and stale after later integrations. Needs current-head reconcile and fresh review before any primary route. |
 | Trait effective-method metadata | **0%** `[--------------------]` | **30%** `[######--------------]` | **20%** `[####----------------]` | Lane-local/stale relative to current primary. Metadata-only until trait-composed method execution and cleanup consumers exist. |
 | Dead dynamic callable compiler ladder cleanup | **0%** `[--------------------]` | **20%** `[####----------------]` | **5%** `[#-------------------]` | Cleanup debt. Useful to remove after `6a73b186`, but not a substitute for new executable semantic coverage. |
@@ -182,16 +182,16 @@ Primary-integrated:
 
 Lane-local:
 
-- [ ] RMW-lvalue diagnostics need a quick current-head check after `513dbf21`
-  before integration.
+- [ ] RMW-lvalue diagnostics are ready for primary review after `513dbf21`;
+  integrate only through a fresh owner-checked gate.
 - [ ] Cleanup/unwind and trait metadata candidates are stale and need reconcile.
 - [ ] Broad dirty lanes remain evidence repositories, not integration units.
 
 Resource posture:
 
 - `/dev/shm`: 40G total, 24G used, 17G available, 58% used.
-- `/home`: 459G total, 261G used, 180G available, 60% used.
-- Memory available is about 39Gi, but swap remains high at 23Gi/29Gi used.
+- `/home`: 459G total, 249G used, 192G available, 57% used.
+- Memory available is about 36Gi, but swap remains high at 23Gi/29Gi used.
 - Largest `/dev/shm` targets: `phpc-target-native-call-semantics` 8.9G,
   `phpc-target-native-object-seed` 5.6G, and
   `phpc-target-native-diagnostics` 3.0G.
@@ -217,8 +217,8 @@ handle/visibility/magic property behavior, or exact diagnostics.
 
 Best next action:
 
-- Recheck RMW-lvalue operand-list diagnostics against current `513dbf21`, then
-  consider it as the next primary integration if it still applies cleanly.
+- Consider RMW-lvalue operand-list diagnostics as the next primary integration
+  candidate; its after-Object review is `ready-for-primary-review`.
 - Push the next object/ArrayAccess work toward executable `offsetSet()` /
   `offsetUnset()` or reference/COW-aware writeback rather than more blocker
   classification.
