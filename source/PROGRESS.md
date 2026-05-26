@@ -313,11 +313,15 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary is clean and synced at `dae1b44c` before this `PROGRESS.md` edit;
-  latest source capability is `dae1b44c`.
-- [x] Latest primary-integrated source capability head is `dae1b44c`.
+- [x] Primary is clean and synced at `a544daa8` before this `PROGRESS.md` edit;
+  latest source capability is `a544daa8`.
+- [x] Latest primary-integrated source capability head is `a544daa8`.
 - [x] Overall and executable estimates remain 95% under current project-local
   accounting.
+- [x] Diagnostic operand-list blocker boundary is now a completed non-repeat
+  diagnostic prerequisite: reference-binding and later diagnostic work must
+  layer on the generic operand-list requirement boundary instead of adding
+  source-shape blockers.
 - [x] Native-link reference-handle typedef emission is now a completed
   non-repeat declaration-order repair: future helpers that can emit
   `phpc_NativeReferenceHandle` declarations must use
@@ -355,8 +359,9 @@ Lane-local:
   the integrated ABI, not another direct user-function or ABI-only inventory.
 - [ ] Call-lane loop/call ordering work is fresh but broad and dirty.
 - [ ] Diagnostic-lane callable operand, reference-binding, RMW, report dispatch,
-  and control-flow scanner contracts are broad and dirty; status chronology is
-  not fully reliable.
+  and control-flow scanner contracts beyond the generic operand-list
+  requirement boundary are broad and dirty; status chronology is not fully
+  reliable.
 - [ ] Multiple broad lanes are evidence repositories. Do not route them to
   primary without a new narrow extraction.
 
@@ -374,10 +379,13 @@ Resource posture:
 
 Best next action:
 
-- Keep callable compiler consumer work focused on consuming the repaired
-  runtime callable lookup/called-scope/visibility/descriptor-argument boundary
-  beyond direct user functions rather than extending old dynamic-call branch
-  helpers. Future exception/destructor work should first add reusable
+- Keep diagnostic reference-binding and scanner work layered on the generic
+  operand-list requirement boundary from `a544daa8`; do not add source-shape
+  blockers for one PHP source shape, one operand layout, or one diagnostic
+  fixture. Keep callable compiler consumer work focused on consuming the
+  repaired runtime callable lookup/called-scope/visibility/descriptor-argument
+  boundary beyond direct user functions rather than extending old dynamic-call
+  branch helpers. Future exception/destructor work should first add reusable
   execution, cleanup-ordering, or metadata boundaries rather than one-shape
   try, constructor, or destructor recognizers.
 
@@ -396,6 +404,8 @@ Avoid:
   work under new names.
 - Extending generated-C dynamic-call shape helpers instead of consuming the
   integrated runtime callable ABI.
+- Adding reference-binding or diagnostic source-shape blockers instead of
+  consuming the generic operand-list requirement boundary.
 - Extending inline generated-C `phpc_NativeReferenceHandle` typedef predicates;
   native-link helpers that can emit reference-handle declarations must use
   `uses_native_reference_handle_type()`.
