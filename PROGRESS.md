@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 01:56 CEST
+Updated: 2026-05-26 02:05 CEST
 Evaluation marker: `20260525T233616Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
@@ -15,20 +15,26 @@ Overall estimated progress: **95%** `[###################-]`
 Executable PHP semantics: **95%** `[###################-]`
 
 Primary was clean and aligned with `origin/master` at
-`501a4fb8 native: centralize reference handle C typedef gating` before this
+`dae1b44c native: repair callable value dispatch semantics` before this
 `PROGRESS.md` edit.
 
 Latest primary-integrated source capability baseline:
-`501a4fb8 native: centralize reference handle C typedef gating`.
+`dae1b44c native: repair callable value dispatch semantics`.
 
-`501a4fb8` centralizes generated-C `phpc_NativeReferenceHandle` typedef
-emission behind `uses_native_reference_handle_type()`, covering native-link
-helpers that can emit reference-handle declarations instead of extending
-inline typedef predicates at the declaration site. This is a native-link ABI
-declaration-order repair across existing reference-handle helper families, not
-new request/global frame execution, not dynamic callable compiler consumption,
-and not a percentage-moving semantic expansion. Overall, executable, and
-workstream estimates remain flat.
+`dae1b44c` repairs the runtime callable-value dispatch foundation already
+counted at `5abf8525`: inherited callable lookup now preserves the requested
+called scope while invoking the declaring descriptor, protected visibility uses
+same-hierarchy access, and descriptor-backed closure dispatch shapes
+value/reference argument slots from descriptor parameter modes. This is a
+narrow runtime semantics repair over the shared callable table and
+call-arguments/frame/result ABI, not new compiler dynamic-call consumption, not
+constructor execution, not broader callable lookup parity, and not a
+percentage-moving semantic expansion. Overall, executable, and workstream
+estimates remain flat.
+
+Non-repeat guard: compiler dynamic callable consumers must consume the repaired
+runtime lookup/called-scope/visibility/descriptor-argument boundary, not
+source-shape callable branches.
 
 `5abf8525` adds runtime callable-value dispatch over the existing callable
 table, call-arguments, call-frame, and call-result ABI. The runtime now looks
@@ -46,15 +52,9 @@ at 95%; calls/functions/frames advances one point because the previous
 dashboard explicitly named callable-value dispatch beyond direct user-function
 lookup/registration as the next missing callable runtime foundation, and this
 commit closes that runtime portion with generalized tests across callable
-value families.
-
-Post-integration shadow-audit risk: the callable-value dispatch shadow audit
-reported `shadow-needs-fix` after `5abf8525`, specifically around inherited
-dispatch carrying declaring scope instead of called scope, protected visibility
-being checked in only one hierarchy direction, and descriptor-closure argument
-bridging preserving reference slots without consulting descriptor parameter
-mode. This does not erase the integrated runtime foundation, but compiler
-dynamic-call consumers should wait for or include a narrow runtime repair.
+value families. `dae1b44c` repairs the inherited-dispatch called-scope,
+protected same-hierarchy visibility, and descriptor-aware closure argument-mode
+risks without changing that accounting.
 
 ## Grand Roadmap Position
 
@@ -73,6 +73,16 @@ dynamic-call consumers should wait for or include a narrow runtime repair.
 
 ## Recent Primary-Integrated Work
 
+- `dae1b44c`: repaired callable-value runtime dispatch semantics over the
+  already integrated callable table and call-arguments/frame/result ABI.
+  Inherited callable lookup now invokes the declaring descriptor while carrying
+  the requested called scope, protected visibility accepts same-hierarchy
+  access, and descriptor-backed closure dispatch consults descriptor parameter
+  modes before shaping value/reference argument slots. Compiler dynamic
+  callable consumers must consume this repaired runtime boundary rather than
+  adding source-shape callable branches. Estimates remain flat because this is
+  a narrow repair to the already-counted runtime callable-value dispatch
+  foundation, not a new compiler consumer.
 - `501a4fb8`: centralized generated-C `phpc_NativeReferenceHandle` typedef
   gating behind `uses_native_reference_handle_type()`. Future native-link
   helpers that can emit `phpc_NativeReferenceHandle` declarations must consume
@@ -151,9 +161,9 @@ Primary-integrated capability and lane-local candidate work are separated here.
 | Item | Toward Primary Integration | Toward Full Feature | Status |
 | --- | ---: | ---: | --- |
 | Allocatable destructor-observable cleanup-risk metadata | **100%** `[####################]` | **24%** `[#####---------------]` | Integrated at `b400a23d`. Declared-class allocation metadata now tracks destructor-observable cleanup risk and is consumed by allocatable registration plus static/dynamic constructor allocation checks. Destructor execution, object lifetime cleanup, shutdown/finally ordering, trait-composed destructor metadata, runtime class lookup, and broad object semantics remain unimplemented. |
-| Try/catch/finally body call-boundary preflight | **100%** `[####################]` | **18%** `[####----------------]` | Integrated at `6f7d550d`. Try body, catch body, and finally body traversal now routes contained call families through the shared call-boundary diagnostic contract before generic unsupported-try rejection. Exception execution, catch matching, unwinding, finally ordering, and callable-value dispatch remain unimplemented. |
+| Try/catch/finally body call-boundary preflight | **100%** `[####################]` | **18%** `[####----------------]` | Integrated at `6f7d550d`. Try body, catch body, and finally body traversal now routes contained call families through the shared call-boundary diagnostic contract before generic unsupported-try rejection. Exception execution, catch matching, unwinding, finally ordering, and compiler dynamic callable-value consumption remain unimplemented. |
 | Dynamic constructor symbol-environment blockers | **100%** `[####################]` | **22%** `[####----------------]` | Integrated at `ea0c7675`. Dynamic constructor class-name operands from `$GLOBALS` and request superglobals now route to `NativeCallBlocker::GlobalFrameSeparation` before constructor lookup, destructor-risk classification, argument cleanup, or generated-C object materialization. Request/global frame separation execution remains unimplemented. |
-| Runtime callable ABI, callable-value dispatch, and direct user-function consumers | **100%** `[####################]` | **58%** `[############--------]` | Runtime callable table, arguments/result/frame ownership, function/method/constructor invocation callbacks, called-scope propagation, and public/protected/private visibility checks are integrated at `e32f5735`. Direct generated-C user-function registration, lookup, argument transport, frame entry, and value-result consumption are integrated at `f0cc17c1` across zero/fixed/default/variadic calls and by-reference argument transport. Runtime callable-value dispatch is integrated at `5abf8525` for string/binary function names, callable arrays, descriptor-backed closures, inherited table-backed methods, bound object receivers, and object `__invoke` over the shared callable table and call-arguments/frame/result ABI. Compiler dynamic callable-value consumers, `Class::method` strings, namespace fallback, autoload, magic calls, named/spread argument breadth, by-reference variadic breadth, constructor `new` execution, return references, request/global frame separation, and cleanup/unwind parity remain unimplemented. |
+| Runtime callable ABI, callable-value dispatch, and direct user-function consumers | **100%** `[####################]` | **58%** `[############--------]` | Runtime callable table, arguments/result/frame ownership, function/method/constructor invocation callbacks, called-scope propagation, and public/protected/private visibility checks are integrated at `e32f5735`. Direct generated-C user-function registration, lookup, argument transport, frame entry, and value-result consumption are integrated at `f0cc17c1` across zero/fixed/default/variadic calls and by-reference argument transport. Runtime callable-value dispatch is integrated at `5abf8525` for string/binary function names, callable arrays, descriptor-backed closures, inherited table-backed methods, bound object receivers, and object `__invoke` over the shared callable table and call-arguments/frame/result ABI, with `dae1b44c` repairing inherited called-scope carriage, protected same-hierarchy visibility, and descriptor-aware closure argument modes. Compiler dynamic callable-value consumers, `Class::method` strings, namespace fallback, autoload, magic calls, named/spread argument breadth, by-reference variadic breadth, constructor `new` execution, return references, request/global frame separation, and cleanup/unwind parity remain unimplemented. |
 | Reference-backed by-value closure captures | **100%** `[####################]` | **48%** `[##########----------]` | Integrated at `90e53401`. Covers descriptor closure value captures from ordinary locals, native reference handles, and active symbol-table storage across direct function, static method, receiver method, and closure factory frames. Non-static implicit `$this`, secondary-alias writeback, and broad callable/object semantics remain open. |
 | Reference-source append/lvalue extraction | **100%** `[####################]` | **52%** `[##########----------]` | Integrated at `7aa162ca`. Covers selected symbol, native reference local, public object-property, object-property array-path, append, reference assignment, and by-reference call consumers. Static/magic/non-public properties, ArrayAccess, arbitrary alias roots, and full references/COW remain open. |
 | Closure value/reference return ABI | **100%** `[####################]` | **50%** `[##########----------]` | Integrated at `ae93da8c`. Runtime closure invocation has a shared value/reference/diagnostic/status result contract for descriptor closures. Broader function/method/static/constructor reference returns remain open. |
@@ -250,11 +260,11 @@ Not done:
   behavior.
 - [ ] Includes, variable variables, and dynamic symbol behavior.
 - [ ] Full callable lookup and invocation, including compiler consumption of
-  dynamic callable values, `Class::method` strings, namespace fallback,
-  autoload, named/unpacked/by-reference breadth beyond the integrated direct
-  user-function path and runtime callable-value dispatch, magic calls,
-  non-public method breadth, called-scope parity, protected-visibility parity,
-  descriptor-aware closure argument binding, and rebinding rules.
+  dynamic callable values through the repaired runtime boundary,
+  `Class::method` strings, namespace fallback, autoload, named/unpacked/
+  by-reference breadth beyond the integrated direct user-function path and
+  runtime callable-value dispatch, magic calls, non-public method breadth, and
+  rebinding rules.
 - [ ] Runtime `ArrayAccess` method dispatch for `offsetGet`, `offsetExists`,
   `offsetSet`, and `offsetUnset`.
 - [ ] Binary literal syntax, invalid-UTF-8 PHP source parsing, byte-exact
@@ -273,9 +283,9 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary is clean and synced at `501a4fb8` before this `PROGRESS.md` edit;
-  latest source capability is `501a4fb8`.
-- [x] Latest primary-integrated source capability head is `501a4fb8`.
+- [x] Primary is clean and synced at `dae1b44c` before this `PROGRESS.md` edit;
+  latest source capability is `dae1b44c`.
+- [x] Latest primary-integrated source capability head is `dae1b44c`.
 - [x] Overall and executable estimates remain 95% under current project-local
   accounting.
 - [x] Native-link reference-handle typedef emission is now a completed
@@ -292,10 +302,10 @@ Primary-integrated:
 - [x] Runtime callable ABI is now a completed non-repeat prerequisite.
 - [x] Runtime callable-value dispatch is now a completed non-repeat runtime
   prerequisite.
-- [ ] Runtime callable-value dispatch needs a narrow repair before compiler
-  consumers rely on it broadly: called-scope versus declaring-scope carriage,
-  protected same-hierarchy visibility, and descriptor-aware closure argument
-  mode.
+- [x] Runtime callable-value dispatch repair is now a completed non-repeat
+  runtime prerequisite: compiler dynamic callable consumers must use the
+  repaired runtime lookup/called-scope/visibility/descriptor-argument boundary,
+  not source-shape callable branches.
 - [x] Direct user-function callable ABI consumers are now a completed
   non-repeat item.
 - [x] Dynamic constructor symbol-environment blocking is now a completed
@@ -334,12 +344,12 @@ Resource posture:
 
 Best next action:
 
-- Repair callable-value runtime dispatch semantics before broad compiler
-  consumption, then keep callable compiler consumer work focused on consuming
-  the integrated runtime callable ABI beyond direct user functions rather than
-  extending old dynamic-call branch helpers. Future exception/destructor work
-  should first add reusable execution, cleanup-ordering, or metadata boundaries
-  rather than one-shape try, constructor, or destructor recognizers.
+- Keep callable compiler consumer work focused on consuming the repaired
+  runtime callable lookup/called-scope/visibility/descriptor-argument boundary
+  beyond direct user functions rather than extending old dynamic-call branch
+  helpers. Future exception/destructor work should first add reusable
+  execution, cleanup-ordering, or metadata boundaries rather than one-shape
+  try, constructor, or destructor recognizers.
 
 Avoid:
 
