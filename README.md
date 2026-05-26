@@ -254,7 +254,10 @@ report `Warning: Array to string conversion` through the same diagnostic path
 as neighboring native value operations. Generated-native object dispatch also
 shares one argument-handle materialization boundary across declared
 constructors, declared methods, static calls, callable-array method branches,
-invokable-object branches, and constructorless argument arrays.
+invokable-object branches, and constructorless argument arrays. Dynamic
+instance method-name matching uses a method-specific runtime helper that
+normalizes supported scalar method-name operands instead of reusing the
+string-only dynamic function-call matcher.
 
 This is not broad native PHP support. Objects, functions, references,
 request/session/stream/header state, exceptions, includes, shutdown callbacks,
