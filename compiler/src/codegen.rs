@@ -14457,6 +14457,22 @@ enum CNativeCallableDeclaredMethodStaticness {
     Static,
 }
 
+impl CNativeCallableDeclaredMethodStaticness {
+    fn matches_method(self, method: &CDeclaredClassMethod) -> bool {
+        match self {
+            Self::Instance => !method.is_static,
+            Self::Static => method.is_static,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CNativeCallableDeclaredMethodExternalContext {
+    ClassString,
+    ObjectReceiverArray,
+    InvokableObject,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CNativeCallableReturnSummary {
     result_kind: CNativeCallableResultKind,
@@ -23101,29 +23117,21 @@ impl CGenerator {
             CNativeCallableIdentity::DeclaredInstanceMethod {
                 class_key,
                 method_key,
-            }
-            | CNativeCallableIdentity::DeclaredStaticMethod {
+            } => self.native_callable_return_summary_for_declared_method_identity(
                 class_key,
                 method_key,
-            } => {
-                let class = self.declared_classes.get(class_key)?;
-                let method = class
-                    .methods
-                    .iter()
-                    .find(|method| Self::declared_method_key(&method.decl.name) == *method_key)?;
-                if !native_user_function_accepts_arg_count(&method.decl, arg_count) {
-                    return None;
-                }
-                let result_kind = if method.decl.returns_by_reference {
-                    CNativeCallableResultKind::Reference
-                } else {
-                    CNativeCallableResultKind::NativeValue
-                };
-                Some(CNativeCallableReturnSummary {
-                    result_kind,
-                    facts: method.return_facts.clone(),
-                })
-            }
+                CNativeCallableDeclaredMethodStaticness::Instance,
+                arg_count,
+            ),
+            CNativeCallableIdentity::DeclaredStaticMethod {
+                class_key,
+                method_key,
+            } => self.native_callable_return_summary_for_declared_method_identity(
+                class_key,
+                method_key,
+                CNativeCallableDeclaredMethodStaticness::Static,
+                arg_count,
+            ),
             CNativeCallableIdentity::RuntimeBuiltin { .. } => Some(CNativeCallableReturnSummary {
                 result_kind: CNativeCallableResultKind::Unknown,
                 facts: None,
@@ -23133,6 +23141,74 @@ impl CGenerator {
                 .get(closure_key)
                 .filter(|summary| summary.accepts_arg_count(arg_count))
                 .map(|summary| summary.return_summary.clone()),
+        }
+    }
+
+    fn native_callable_return_summary_for_declared_method_identity(
+        &self,
+        class_key: &str,
+        method_key: &str,
+        staticness: CNativeCallableDeclaredMethodStaticness,
+        arg_count: usize,
+    ) -> Option<CNativeCallableReturnSummary> {
+        let class = self.declared_classes.get(class_key)?;
+        let method = class
+            .methods
+            .iter()
+            .find(|method| Self::declared_method_key(&method.decl.name) == method_key)?;
+        if !staticness.matches_method(method)
+            || !native_user_function_accepts_arg_count(&method.decl, arg_count)
+        {
+            return None;
+        }
+        let result_kind = if method.decl.returns_by_reference {
+            CNativeCallableResultKind::Reference
+        } else {
+            CNativeCallableResultKind::NativeValue
+        };
+        Some(CNativeCallableReturnSummary {
+            result_kind,
+            facts: method.return_facts.clone(),
+        })
+    }
+
+    fn declared_method_is_callable_from_external_context(
+        &self,
+        method: &CDeclaredClassMethod,
+        context: CNativeCallableDeclaredMethodExternalContext,
+    ) -> bool {
+        match context {
+            CNativeCallableDeclaredMethodExternalContext::ClassString => {
+                method.visibility == ClassVisibility::Public && method.is_static
+            }
+            CNativeCallableDeclaredMethodExternalContext::ObjectReceiverArray => {
+                method.visibility == ClassVisibility::Public
+            }
+            CNativeCallableDeclaredMethodExternalContext::InvokableObject => {
+                !method.is_static
+                    && Self::declared_method_key(&method.decl.name)
+                        == Self::declared_method_key("__invoke")
+            }
+        }
+    }
+
+    fn native_callable_identity_for_declared_method(
+        &self,
+        class: &CDeclaredClass,
+        method: &CDeclaredClassMethod,
+    ) -> CNativeCallableIdentity {
+        let class_key = Self::declared_class_key(&class.name);
+        let method_key = Self::declared_method_key(&method.decl.name);
+        if method.is_static {
+            CNativeCallableIdentity::DeclaredStaticMethod {
+                class_key,
+                method_key,
+            }
+        } else {
+            CNativeCallableIdentity::DeclaredInstanceMethod {
+                class_key,
+                method_key,
+            }
         }
     }
 
@@ -23172,11 +23248,7 @@ impl CGenerator {
         }
 
         if let Some((class_name, method_name)) = value.split_once("::") {
-            let (class, method) = self.declared_class_static_method(class_name, method_name)?;
-            return Some(CNativeCallableIdentity::DeclaredStaticMethod {
-                class_key: Self::declared_class_key(&class.name),
-                method_key: Self::declared_method_key(&method.decl.name),
-            });
+            return self.native_callable_static_method_identity(class_name, method_name);
         }
 
         native_dynamic_callable_builtin_canonical_name(value).map(|name| {
@@ -23343,11 +23415,35 @@ impl CGenerator {
         class_name: &str,
         method_name: &str,
     ) -> Option<CNativeCallableIdentity> {
-        let (class, method) = self.declared_class_static_method(class_name, method_name)?;
-        Some(CNativeCallableIdentity::DeclaredStaticMethod {
-            class_key: Self::declared_class_key(&class.name),
-            method_key: Self::declared_method_key(&method.decl.name),
-        })
+        let (class, method) = self.declared_class_method_for_external_callable_context(
+            class_name,
+            method_name,
+            CNativeCallableDeclaredMethodExternalContext::ClassString,
+        )?;
+        Some(self.native_callable_identity_for_declared_method(&class, &method))
+    }
+
+    fn declared_class_method_for_external_callable_context(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        context: CNativeCallableDeclaredMethodExternalContext,
+    ) -> Option<(CDeclaredClass, CDeclaredClassMethod)> {
+        let class_key = Self::declared_class_key(class_name);
+        let method_key = Self::declared_method_key(method_name);
+        for lookup_key in self.declared_class_lookup_keys(&class_key)? {
+            let class = self
+                .declared_classes
+                .get(&lookup_key)
+                .expect("declared class lookup key has metadata");
+            if let Some(method) = class.methods.iter().find(|method| {
+                Self::declared_method_key(&method.decl.name) == method_key
+                    && self.declared_method_is_callable_from_external_context(method, context)
+            }) {
+                return Some((class.clone(), method.clone()));
+            }
+        }
+        None
     }
 
     fn native_callable_declared_object_method_identities(
@@ -23370,13 +23466,15 @@ impl CGenerator {
                     .declared_classes
                     .get(&lookup_key)
                     .expect("declared class lookup key has metadata");
-                if class.methods.iter().any(|method| {
-                    !method.is_static && Self::declared_method_key(&method.decl.name) == method_key
+                if let Some(method) = class.methods.iter().find(|method| {
+                    Self::declared_method_key(&method.decl.name) == method_key
+                        && self.declared_method_is_callable_from_external_context(
+                            method,
+                            CNativeCallableDeclaredMethodExternalContext::ObjectReceiverArray,
+                        )
                 }) {
-                    receiver_identity = Some(CNativeCallableIdentity::DeclaredInstanceMethod {
-                        class_key: Self::declared_class_key(&class.name),
-                        method_key: method_key.clone(),
-                    });
+                    receiver_identity =
+                        Some(self.native_callable_identity_for_declared_method(class, method));
                     break;
                 }
             }
@@ -23429,12 +23527,14 @@ impl CGenerator {
                     .get(&lookup_key)
                     .expect("declared class lookup key has metadata");
                 if let Some(method) = class.methods.iter().find(|method| {
-                    !method.is_static && Self::declared_method_key(&method.decl.name) == method_key
+                    Self::declared_method_key(&method.decl.name) == method_key
+                        && self.declared_method_is_callable_from_external_context(
+                            method,
+                            CNativeCallableDeclaredMethodExternalContext::InvokableObject,
+                        )
                 }) {
-                    class_identity = Some(CNativeCallableIdentity::DeclaredInstanceMethod {
-                        class_key: Self::declared_class_key(&class.name),
-                        method_key: Self::declared_method_key(&method.decl.name),
-                    });
+                    class_identity =
+                        Some(self.native_callable_identity_for_declared_method(class, method));
                     break;
                 }
             }
@@ -44170,6 +44270,307 @@ mod tests {
                 .native_callable_return_summary_for_identity(&function_identity, 1)
                 .is_none(),
             "arity-incompatible generated callables should not publish return facts"
+        );
+    }
+
+    #[test]
+    fn external_declared_method_callable_identities_follow_visibility_staticness_and_invoke_policy()
+    {
+        fn set_method_visibility(
+            generator: &mut CGenerator,
+            class_name: &str,
+            method_name: &str,
+            visibility: ClassVisibility,
+        ) {
+            let method_key = CGenerator::declared_method_key(method_name);
+            let method = generator
+                .declared_classes
+                .get_mut(&CGenerator::declared_class_key(class_name))
+                .expect("test class metadata")
+                .methods
+                .iter_mut()
+                .find(|method| CGenerator::declared_method_key(&method.decl.name) == method_key)
+                .expect("test method metadata");
+            method.visibility = visibility;
+        }
+
+        fn set_method_staticness(
+            generator: &mut CGenerator,
+            class_name: &str,
+            method_name: &str,
+            is_static: bool,
+        ) {
+            let method_key = CGenerator::declared_method_key(method_name);
+            let method = generator
+                .declared_classes
+                .get_mut(&CGenerator::declared_class_key(class_name))
+                .expect("test class metadata")
+                .methods
+                .iter_mut()
+                .find(|method| CGenerator::declared_method_key(&method.decl.name) == method_key)
+                .expect("test method metadata");
+            method.is_static = is_static;
+        }
+
+        fn bind_object_fact(generator: &mut CGenerator, variable: &str, class_name: &str) {
+            let class_key = CGenerator::declared_class_key(class_name);
+            let class = generator
+                .declared_classes
+                .get(&class_key)
+                .expect("test class metadata");
+            generator.native_value_variable_facts.insert(
+                variable.to_string(),
+                CNativeValueFacts::object(CNativeObjectFacts::for_declared_class(class_key, class))
+                    .expect("object facts"),
+            );
+            generator.variables.insert(
+                variable.to_string(),
+                CValue::NativeValueHandle(format!("{variable}_handle")),
+            );
+        }
+
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "class ExternalCallableProduct {}\n",
+            "class PublicExternalCallableFactory {\n",
+            "    public function make() { return new ExternalCallableProduct(); }\n",
+            "    public static function stat() { return new ExternalCallableProduct(); }\n",
+            "}\n",
+            "class HiddenExternalCallableFactory {\n",
+            "    public function make() { return new ExternalCallableProduct(); }\n",
+            "    public static function stat() { return new ExternalCallableProduct(); }\n",
+            "}\n",
+            "class PublicInvokeExternalCallableFactory {\n",
+            "    public function __invoke() { return new ExternalCallableProduct(); }\n",
+            "}\n",
+            "class HiddenInvokeExternalCallableFactory {\n",
+            "    public function __invoke() { return new ExternalCallableProduct(); }\n",
+            "}\n",
+            "class StaticInvokeExternalCallableFactory {\n",
+            "    public function __invoke() { return new ExternalCallableProduct(); }\n",
+            "}\n",
+        ))
+        .unwrap();
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            uses_native_value_clone: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .unwrap();
+        generator.emit_declared_class_method_definitions().unwrap();
+
+        let span = test_span();
+        let public_static_string_call = Expr::DynamicCall {
+            callee: Box::new(Expr::String(
+                "PublicExternalCallableFactory::stat".to_string(),
+                span,
+            )),
+            args: Vec::new(),
+            span,
+        };
+        assert_native_object_fact_contains_class(
+            generator.native_value_facts_for_expr(&public_static_string_call),
+            "ExternalCallableProduct",
+        );
+
+        let public_static_array_call = Expr::DynamicCall {
+            callee: Box::new(callable_array_expr(
+                Expr::String("PublicExternalCallableFactory".to_string(), span),
+                Expr::String("stat".to_string(), span),
+            )),
+            args: Vec::new(),
+            span,
+        };
+        assert_native_object_fact_contains_class(
+            generator.native_value_facts_for_expr(&public_static_array_call),
+            "ExternalCallableProduct",
+        );
+
+        let class_string_to_instance_call = Expr::DynamicCall {
+            callee: Box::new(callable_array_expr(
+                Expr::String("PublicExternalCallableFactory".to_string(), span),
+                Expr::String("make".to_string(), span),
+            )),
+            args: Vec::new(),
+            span,
+        };
+        assert!(
+            generator
+                .native_value_facts_for_expr(&class_string_to_instance_call)
+                .is_none(),
+            "class-string callable arrays must not publish facts for instance methods"
+        );
+        let method_string_to_instance_call = Expr::DynamicCall {
+            callee: Box::new(Expr::String(
+                "PublicExternalCallableFactory::make".to_string(),
+                span,
+            )),
+            args: Vec::new(),
+            span,
+        };
+        assert!(
+            generator
+                .native_value_facts_for_expr(&method_string_to_instance_call)
+                .is_none(),
+            "class-method strings must not publish facts for instance methods"
+        );
+
+        let public_object_instance_call = Expr::DynamicCall {
+            callee: Box::new(callable_array_expr(
+                Expr::New {
+                    class_name: NewClassName::Named("PublicExternalCallableFactory".to_string()),
+                    args: Vec::new(),
+                    span,
+                },
+                Expr::String("make".to_string(), span),
+            )),
+            args: Vec::new(),
+            span,
+        };
+        assert_native_object_fact_contains_class(
+            generator.native_value_facts_for_expr(&public_object_instance_call),
+            "ExternalCallableProduct",
+        );
+
+        let public_object_static_call = Expr::DynamicCall {
+            callee: Box::new(callable_array_expr(
+                Expr::New {
+                    class_name: NewClassName::Named("PublicExternalCallableFactory".to_string()),
+                    args: Vec::new(),
+                    span,
+                },
+                Expr::String("stat".to_string(), span),
+            )),
+            args: Vec::new(),
+            span,
+        };
+        assert_native_object_fact_contains_class(
+            generator.native_value_facts_for_expr(&public_object_static_call),
+            "ExternalCallableProduct",
+        );
+
+        set_method_visibility(
+            &mut generator,
+            "HiddenExternalCallableFactory",
+            "make",
+            ClassVisibility::Protected,
+        );
+        set_method_visibility(
+            &mut generator,
+            "HiddenExternalCallableFactory",
+            "stat",
+            ClassVisibility::Private,
+        );
+
+        let hidden_class_string_static_call = Expr::DynamicCall {
+            callee: Box::new(Expr::String(
+                "HiddenExternalCallableFactory::stat".to_string(),
+                span,
+            )),
+            args: Vec::new(),
+            span,
+        };
+        assert!(
+            generator
+                .native_value_facts_for_expr(&hidden_class_string_static_call)
+                .is_none(),
+            "class-method strings must not publish facts for non-public static methods"
+        );
+
+        let hidden_object_instance_call = Expr::DynamicCall {
+            callee: Box::new(callable_array_expr(
+                Expr::New {
+                    class_name: NewClassName::Named("HiddenExternalCallableFactory".to_string()),
+                    args: Vec::new(),
+                    span,
+                },
+                Expr::String("make".to_string(), span),
+            )),
+            args: Vec::new(),
+            span,
+        };
+        assert!(
+            generator
+                .native_value_facts_for_expr(&hidden_object_instance_call)
+                .is_none(),
+            "object receiver callable arrays must not publish facts for non-public instance methods"
+        );
+
+        let hidden_object_static_call = Expr::DynamicCall {
+            callee: Box::new(callable_array_expr(
+                Expr::New {
+                    class_name: NewClassName::Named("HiddenExternalCallableFactory".to_string()),
+                    args: Vec::new(),
+                    span,
+                },
+                Expr::String("stat".to_string(), span),
+            )),
+            args: Vec::new(),
+            span,
+        };
+        assert!(
+            generator
+                .native_value_facts_for_expr(&hidden_object_static_call)
+                .is_none(),
+            "object receiver callable arrays must not publish facts for non-public static methods"
+        );
+
+        bind_object_fact(
+            &mut generator,
+            "public_invokable",
+            "PublicInvokeExternalCallableFactory",
+        );
+        assert_native_object_fact_contains_class(
+            generator.native_value_facts_for_expr(&Expr::DynamicCall {
+                callee: Box::new(test_variable_expr("public_invokable")),
+                args: Vec::new(),
+                span,
+            }),
+            "ExternalCallableProduct",
+        );
+
+        set_method_visibility(
+            &mut generator,
+            "HiddenInvokeExternalCallableFactory",
+            "__invoke",
+            ClassVisibility::Private,
+        );
+        bind_object_fact(
+            &mut generator,
+            "hidden_invokable",
+            "HiddenInvokeExternalCallableFactory",
+        );
+        assert_native_object_fact_contains_class(
+            generator.native_value_facts_for_expr(&Expr::DynamicCall {
+                callee: Box::new(test_variable_expr("hidden_invokable")),
+                args: Vec::new(),
+                span,
+            }),
+            "ExternalCallableProduct",
+        );
+
+        set_method_staticness(
+            &mut generator,
+            "StaticInvokeExternalCallableFactory",
+            "__invoke",
+            true,
+        );
+        bind_object_fact(
+            &mut generator,
+            "static_invokable",
+            "StaticInvokeExternalCallableFactory",
+        );
+        assert!(
+            generator
+                .native_value_facts_for_expr(&Expr::DynamicCall {
+                    callee: Box::new(test_variable_expr("static_invokable")),
+                    args: Vec::new(),
+                    span,
+                })
+                .is_none(),
+            "object callable identities must not publish facts for static __invoke metadata"
         );
     }
 
