@@ -7910,6 +7910,95 @@ pub unsafe extern "C" fn phpc_native_call_result_free(handle: NativeCallResultHa
     unsafe { result.slot.discard() };
 }
 
+unsafe fn native_call_result_diagnostic_consumer<'a>(
+    result: &'a mut NativeCallResultHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> Option<&'a mut NativeCallResult> {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    unsafe { result.as_mut() }
+}
+
+unsafe fn native_call_result_take_value_with_diagnostic_and_free(
+    mut result: NativeCallResultHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+    missing_value_message: &'static str,
+) -> NativeValueHandle {
+    let Some(result_ref) =
+        (unsafe { native_call_result_diagnostic_consumer(&mut result, diagnostic) })
+    else {
+        unsafe { phpc_native_call_result_free(result) };
+        return NativeValueHandle::null();
+    };
+
+    if result_ref.slot.status() == NativeCallResultStatus::Failure {
+        if !diagnostic.is_null() {
+            unsafe { *diagnostic = phpc_native_call_result_read_diagnostic(result) };
+        }
+        unsafe { phpc_native_call_result_free(result) };
+        return NativeValueHandle::null();
+    }
+
+    let value = unsafe { phpc_native_call_result_take_value_and_free(result) };
+    if value.is_null() {
+        unsafe { native_store_diagnostic_message(diagnostic, missing_value_message) };
+    }
+    value
+}
+
+unsafe fn native_call_result_take_reference_with_diagnostic_and_free(
+    mut result: NativeCallResultHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+    missing_reference_message: &'static str,
+) -> NativeReferenceHandle {
+    let Some(result_ref) =
+        (unsafe { native_call_result_diagnostic_consumer(&mut result, diagnostic) })
+    else {
+        unsafe { phpc_native_call_result_free(result) };
+        return NativeReferenceHandle::null();
+    };
+
+    if result_ref.slot.status() == NativeCallResultStatus::Failure {
+        if !diagnostic.is_null() {
+            unsafe { *diagnostic = phpc_native_call_result_read_diagnostic(result) };
+        }
+        unsafe { phpc_native_call_result_free(result) };
+        return NativeReferenceHandle::null();
+    }
+
+    let reference = unsafe { phpc_native_call_result_take_reference_and_free(result) };
+    if reference.is_null() {
+        unsafe { native_store_diagnostic_message(diagnostic, missing_reference_message) };
+    }
+    reference
+}
+
+unsafe fn native_call_result_discard_with_diagnostic_and_free(
+    mut result: NativeCallResultHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    let Some(result_ref) =
+        (unsafe { native_call_result_diagnostic_consumer(&mut result, diagnostic) })
+    else {
+        unsafe { phpc_native_call_result_free(result) };
+        return false;
+    };
+
+    if result_ref.slot.status() == NativeCallResultStatus::Failure {
+        if !diagnostic.is_null() {
+            unsafe { *diagnostic = phpc_native_call_result_read_diagnostic(result) };
+        }
+        unsafe { phpc_native_call_result_free(result) };
+        return false;
+    }
+
+    unsafe { phpc_native_call_result_discard_and_free(result) };
+    true
+}
+
+unsafe fn native_diagnostic_slot_is_set(diagnostic: *mut NativeDiagnosticHandle) -> bool {
+    !diagnostic.is_null() && !unsafe { (*diagnostic).is_null() }
+}
+
 /// # Safety
 ///
 /// `callable` and `arguments` must be runtime handles. The returned frame owns
@@ -8026,24 +8115,21 @@ pub unsafe extern "C" fn phpc_native_callable_invoke_value_with_diagnostic_and_f
     arguments: NativeCallArgumentsHandle,
     diagnostic: *mut NativeDiagnosticHandle,
 ) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
     let result = unsafe {
         phpc_native_callable_invoke_result_with_diagnostic_and_free(callable, arguments, diagnostic)
     };
-    if unsafe { phpc_native_call_result_status(result) } == NativeCallResultStatus::Failure
-        && !diagnostic.is_null()
-        && unsafe { (*diagnostic).is_null() }
-    {
-        unsafe { *diagnostic = phpc_native_call_result_read_diagnostic(result) };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return NativeValueHandle::null();
     }
-    let value = unsafe { phpc_native_call_result_take_value_and_free(result) };
-    if value.is_null() && !diagnostic.is_null() && unsafe { (*diagnostic).is_null() } {
-        unsafe {
-            *diagnostic = NativeDiagnosticHandle::from_message(
-                "native callable invocation failed: result did not contain a value",
-            )
-        };
+    unsafe {
+        native_call_result_take_value_with_diagnostic_and_free(
+            result,
+            diagnostic,
+            "native callable invocation failed: result did not contain a value",
+        )
     }
-    value
 }
 
 /// # Safety
@@ -8056,24 +8142,21 @@ pub unsafe extern "C" fn phpc_native_callable_invoke_reference_with_diagnostic_a
     arguments: NativeCallArgumentsHandle,
     diagnostic: *mut NativeDiagnosticHandle,
 ) -> NativeReferenceHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
     let result = unsafe {
         phpc_native_callable_invoke_result_with_diagnostic_and_free(callable, arguments, diagnostic)
     };
-    if unsafe { phpc_native_call_result_status(result) } == NativeCallResultStatus::Failure
-        && !diagnostic.is_null()
-        && unsafe { (*diagnostic).is_null() }
-    {
-        unsafe { *diagnostic = phpc_native_call_result_read_diagnostic(result) };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return NativeReferenceHandle::null();
     }
-    let reference = unsafe { phpc_native_call_result_take_reference_and_free(result) };
-    if reference.is_null() && !diagnostic.is_null() && unsafe { (*diagnostic).is_null() } {
-        unsafe {
-            *diagnostic = NativeDiagnosticHandle::from_message(
-                "native callable invocation failed: result did not contain a reference",
-            )
-        };
+    unsafe {
+        native_call_result_take_reference_with_diagnostic_and_free(
+            result,
+            diagnostic,
+            "native callable invocation failed: result did not contain a reference",
+        )
     }
-    reference
 }
 
 /// # Safety
@@ -8085,10 +8168,15 @@ pub unsafe extern "C" fn phpc_native_callable_invoke_discard_with_diagnostic_and
     arguments: NativeCallArgumentsHandle,
     diagnostic: *mut NativeDiagnosticHandle,
 ) {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
     let result = unsafe {
         phpc_native_callable_invoke_result_with_diagnostic_and_free(callable, arguments, diagnostic)
     };
-    unsafe { phpc_native_call_result_discard_and_free(result) };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return;
+    }
+    unsafe { native_call_result_discard_with_diagnostic_and_free(result, diagnostic) };
 }
 
 unsafe fn native_closure_arguments_from_call_arguments(
@@ -8440,26 +8528,23 @@ pub unsafe extern "C" fn phpc_native_callable_value_invoke_value_with_diagnostic
     arguments: NativeCallArgumentsHandle,
     diagnostic: *mut NativeDiagnosticHandle,
 ) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
     let result = unsafe {
         phpc_native_callable_value_invoke_result_with_diagnostic_and_free(
             callable, arguments, diagnostic,
         )
     };
-    if unsafe { phpc_native_call_result_status(result) } == NativeCallResultStatus::Failure
-        && !diagnostic.is_null()
-        && unsafe { (*diagnostic).is_null() }
-    {
-        unsafe { *diagnostic = phpc_native_call_result_read_diagnostic(result) };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return NativeValueHandle::null();
     }
-    let value = unsafe { phpc_native_call_result_take_value_and_free(result) };
-    if value.is_null() && !diagnostic.is_null() && unsafe { (*diagnostic).is_null() } {
-        unsafe {
-            *diagnostic = NativeDiagnosticHandle::from_message(
-                "native callable-value invocation failed: result did not contain a value",
-            )
-        };
+    unsafe {
+        native_call_result_take_value_with_diagnostic_and_free(
+            result,
+            diagnostic,
+            "native callable-value invocation failed: result did not contain a value",
+        )
     }
-    value
 }
 
 /// # Safety
@@ -8472,26 +8557,23 @@ pub unsafe extern "C" fn phpc_native_callable_value_invoke_reference_with_diagno
     arguments: NativeCallArgumentsHandle,
     diagnostic: *mut NativeDiagnosticHandle,
 ) -> NativeReferenceHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
     let result = unsafe {
         phpc_native_callable_value_invoke_result_with_diagnostic_and_free(
             callable, arguments, diagnostic,
         )
     };
-    if unsafe { phpc_native_call_result_status(result) } == NativeCallResultStatus::Failure
-        && !diagnostic.is_null()
-        && unsafe { (*diagnostic).is_null() }
-    {
-        unsafe { *diagnostic = phpc_native_call_result_read_diagnostic(result) };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return NativeReferenceHandle::null();
     }
-    let reference = unsafe { phpc_native_call_result_take_reference_and_free(result) };
-    if reference.is_null() && !diagnostic.is_null() && unsafe { (*diagnostic).is_null() } {
-        unsafe {
-            *diagnostic = NativeDiagnosticHandle::from_message(
-                "native callable-value invocation failed: result did not contain a reference",
-            )
-        };
+    unsafe {
+        native_call_result_take_reference_with_diagnostic_and_free(
+            result,
+            diagnostic,
+            "native callable-value invocation failed: result did not contain a reference",
+        )
     }
-    reference
 }
 
 /// # Safety
@@ -8503,12 +8585,17 @@ pub unsafe extern "C" fn phpc_native_callable_value_invoke_discard_with_diagnost
     arguments: NativeCallArgumentsHandle,
     diagnostic: *mut NativeDiagnosticHandle,
 ) {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
     let result = unsafe {
         phpc_native_callable_value_invoke_result_with_diagnostic_and_free(
             callable, arguments, diagnostic,
         )
     };
-    unsafe { phpc_native_call_result_discard_and_free(result) };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return;
+    }
+    unsafe { native_call_result_discard_with_diagnostic_and_free(result, diagnostic) };
 }
 
 #[no_mangle]
@@ -28220,6 +28307,45 @@ mod tests {
         unsafe { phpc_native_value_free(original_value) };
         unsafe { phpc_native_reference_free(original_reference) };
         unsafe { phpc_native_call_arguments_free(arguments) };
+    }
+
+    #[test]
+    fn native_call_result_null_consumers_clear_stale_diagnostics_across_result_modes() {
+        let mut value_diagnostic =
+            NativeDiagnosticHandle::from_message("stale value result diagnostic");
+        let value = unsafe {
+            native_call_result_take_value_with_diagnostic_and_free(
+                NativeCallResultHandle::null(),
+                &mut value_diagnostic,
+                "native call result test value missing",
+            )
+        };
+        assert!(value.is_null());
+        assert!(value_diagnostic.is_null());
+        unsafe { phpc_native_value_free(value) };
+
+        let mut reference_diagnostic =
+            NativeDiagnosticHandle::from_message("stale reference result diagnostic");
+        let reference = unsafe {
+            native_call_result_take_reference_with_diagnostic_and_free(
+                NativeCallResultHandle::null(),
+                &mut reference_diagnostic,
+                "native call result test reference missing",
+            )
+        };
+        assert!(reference.is_null());
+        assert!(reference_diagnostic.is_null());
+        unsafe { phpc_native_reference_free(reference) };
+
+        let mut discard_diagnostic =
+            NativeDiagnosticHandle::from_message("stale discard result diagnostic");
+        assert!(!unsafe {
+            native_call_result_discard_with_diagnostic_and_free(
+                NativeCallResultHandle::null(),
+                &mut discard_diagnostic,
+            )
+        });
+        assert!(discard_diagnostic.is_null());
     }
 
     #[test]
