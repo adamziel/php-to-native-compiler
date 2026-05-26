@@ -220,6 +220,7 @@ pub const PHPC_NATIVE_DIAGNOSTIC_OPERATION_STATEMENT_OPERAND_LIST: u8 = 4;
 pub const PHPC_NATIVE_DIAGNOSTIC_OPERATION_CONTROL_FLOW_OPERAND_LIST: u8 = 5;
 pub const PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST: u8 = 6;
 pub const PHPC_NATIVE_DIAGNOSTIC_OPERATION_ASSIGNMENT_LVALUE_OPERAND_LIST: u8 = 7;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERATION_RMW_LVALUE_OPERAND_LIST: u8 = 8;
 
 pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP: u8 = 1;
 pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_VALUE_EVALUATION_CLEANUP: u8 = 2;
@@ -240,6 +241,7 @@ pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_ARRAY_ITEM_BINDING: u8 = 17;
 pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_RECEIVER_EVALUATION: u8 = 18;
 pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_PROPERTY_EVALUATION: u8 = 19;
 pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_KEY_EVALUATION: u8 = 20;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_RMW_LVALUE_EVALUATION_CLEANUP: u8 = 21;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18040,6 +18042,9 @@ fn native_diagnostic_operation_name(operation: u8) -> &'static str {
         PHPC_NATIVE_DIAGNOSTIC_OPERATION_ASSIGNMENT_LVALUE_OPERAND_LIST => {
             "assignment-lvalue operand list"
         }
+        PHPC_NATIVE_DIAGNOSTIC_OPERATION_RMW_LVALUE_OPERAND_LIST => {
+            "read-modify-write lvalue operand list"
+        }
         _ => "unknown operation list",
     }
 }
@@ -18078,6 +18083,9 @@ fn native_diagnostic_operand_requirement_name(requirement: u8) -> &'static str {
         }
         PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_KEY_EVALUATION => {
             "assignment target key evaluation"
+        }
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_RMW_LVALUE_EVALUATION_CLEANUP => {
+            "read-modify-write lvalue evaluation cleanup"
         }
         _ => "unknown operand requirement",
     }

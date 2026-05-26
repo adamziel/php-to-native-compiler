@@ -28,10 +28,12 @@ use php_runtime::{
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_ARRAY_ITEM_BINDING,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_SOURCE_BINDING,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_REFERENCE_TARGET_BINDING,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_RMW_LVALUE_EVALUATION_CLEANUP,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_ASSIGNMENT_LVALUE_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_CALL_ARGUMENT_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST,
+    PHPC_NATIVE_DIAGNOSTIC_OPERATION_RMW_LVALUE_OPERAND_LIST,
 };
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
@@ -328,6 +330,7 @@ enum NativeCallBlocker {
     StatementOperandEvaluationCleanup,
     ValueOperandEvaluationCleanup,
     LvalueOperandEvaluationCleanup,
+    RmwLvalueOperandEvaluationCleanup,
     ReturnValueOwnership,
     ByReferenceArgumentBinding,
     FunctionFrameHandoff,
@@ -705,16 +708,46 @@ fn native_assignment_lvalue_operand_list_is_blocked(
     )
 }
 
+fn native_rmw_lvalue_operand_list_is_blocked(
+    requirements: &[NativeDiagnosticOperandRequirement],
+) -> bool {
+    native_diagnostic_operation_list_is_blocked(
+        PHPC_NATIVE_DIAGNOSTIC_OPERATION_RMW_LVALUE_OPERAND_LIST,
+        requirements,
+    )
+}
+
 fn native_assignment_target_lvalue_operand_requirements(
     target: &AssignTarget,
 ) -> Vec<NativeDiagnosticOperandRequirement> {
+    native_assignment_target_lvalue_operand_requirements_for(target, |tag| tag)
+}
+
+fn native_rmw_assignment_target_lvalue_operand_requirements(
+    target: &AssignTarget,
+) -> Vec<NativeDiagnosticOperandRequirement> {
+    native_assignment_target_lvalue_operand_requirements_for(target, |_| {
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_RMW_LVALUE_EVALUATION_CLEANUP
+    })
+}
+
+fn native_assignment_target_lvalue_operand_requirements_for<F>(
+    target: &AssignTarget,
+    requirement_tag: F,
+) -> Vec<NativeDiagnosticOperandRequirement>
+where
+    F: Fn(u8) -> u8,
+{
     native_assignment_target_lvalue_operands(target)
         .into_iter()
         .enumerate()
         .filter_map(|(operand_index, (expr, tag))| {
             native_lvalue_operand_call_result_operation(expr)
                 .is_some()
-                .then_some(NativeDiagnosticOperandRequirement { tag, operand_index })
+                .then_some(NativeDiagnosticOperandRequirement {
+                    tag: requirement_tag(tag),
+                    operand_index,
+                })
         })
         .collect()
 }
@@ -1149,13 +1182,16 @@ fn native_expr_call_result_operation(
         } => native_expr_call_result_operation(condition, blocker)
             .or_else(|| native_expr_call_result_operation(if_false, blocker)),
         Expr::Assign { target, .. } if is_object_public_property_assign_target(target) => None,
-        Expr::Assign { target, expr, .. }
-        | Expr::CompoundAssign { target, expr, .. }
+        Expr::Assign { target, expr, .. } => native_assignment_target_call_operation(target)
+            .or_else(|| native_expr_call_result_operation(expr, blocker)),
+        Expr::CompoundAssign { target, expr, .. }
         | Expr::NullCoalesceAssign { target, expr, .. } => {
-            native_assignment_target_call_operation(target)
+            native_rmw_assignment_target_call_operation(target)
                 .or_else(|| native_expr_call_result_operation(expr, blocker))
         }
-        Expr::IncrementDecrement { target, .. } => native_assignment_target_call_operation(target),
+        Expr::IncrementDecrement { target, .. } => {
+            native_rmw_assignment_target_call_operation(target)
+        }
         Expr::Null(_)
         | Expr::Bool(_, _)
         | Expr::Int(_, _)
@@ -2085,10 +2121,12 @@ fn native_statement_operand_call_operation(stmt: &Stmt) -> Option<NativeCallOper
             .or_else(|| native_statement_assignment_rhs_call_operation(target, expr)),
         Stmt::CompoundAssign { target, expr, .. }
         | Stmt::NullCoalesceAssign { target, expr, .. } => {
-            native_assignment_target_call_operation(target)
+            native_rmw_assignment_target_call_operation(target)
                 .or_else(|| native_statement_operand_call_result_operation(expr))
         }
-        Stmt::IncrementDecrement { target, .. } => native_assignment_target_call_operation(target),
+        Stmt::IncrementDecrement { target, .. } => {
+            native_rmw_assignment_target_call_operation(target)
+        }
         Stmt::ConstDeclaration { declarations, .. } => {
             declarations.iter().find_map(|declaration| {
                 native_statement_operand_call_result_operation(&declaration.value)
@@ -4086,12 +4124,14 @@ fn native_for_action_list_call_operation(actions: &[ForAction]) -> Option<Native
 
 fn native_for_action_call_operation(action: &ForAction) -> Option<NativeCallOperation> {
     match action {
-        ForAction::Assign { target, expr } | ForAction::CompoundAssign { target, expr, .. } => {
-            native_assignment_target_call_operation(target)
+        ForAction::Assign { target, expr } => native_assignment_target_call_operation(target)
+            .or_else(|| native_statement_operand_call_result_operation(expr)),
+        ForAction::CompoundAssign { target, expr, .. } => {
+            native_rmw_assignment_target_call_operation(target)
                 .or_else(|| native_statement_operand_call_result_operation(expr))
         }
         ForAction::IncrementDecrement { target, .. } => {
-            native_assignment_target_call_operation(target)
+            native_rmw_assignment_target_call_operation(target)
         }
         ForAction::Expr { expr } => native_statement_operand_call_result_operation(expr),
     }
@@ -4513,6 +4553,13 @@ fn native_assignment_target_call_operation(target: &AssignTarget) -> Option<Nati
         .or_else(|| native_assignment_target_lvalue_operand_call_operation(target))
 }
 
+fn native_rmw_assignment_target_call_operation(
+    target: &AssignTarget,
+) -> Option<NativeCallOperation> {
+    native_assignment_target_call_result_operation(target)
+        .or_else(|| native_rmw_assignment_target_lvalue_operand_call_operation(target))
+}
+
 fn native_assignment_target_lvalue_operand_call_operation(
     target: &AssignTarget,
 ) -> Option<NativeCallOperation> {
@@ -4524,6 +4571,26 @@ fn native_assignment_target_lvalue_operand_call_operation(
     native_assignment_target_lvalue_operands(target)
         .into_iter()
         .find_map(|(expr, _)| native_lvalue_operand_call_result_operation(expr))
+}
+
+fn native_rmw_assignment_target_lvalue_operand_call_operation(
+    target: &AssignTarget,
+) -> Option<NativeCallOperation> {
+    let requirements = native_rmw_assignment_target_lvalue_operand_requirements(target);
+    if !native_rmw_lvalue_operand_list_is_blocked(&requirements) {
+        return None;
+    }
+
+    native_assignment_target_lvalue_operands(target)
+        .into_iter()
+        .find_map(|(expr, _)| native_rmw_lvalue_operand_call_result_operation(expr))
+}
+
+fn native_rmw_lvalue_operand_call_result_operation(expr: &Expr) -> Option<NativeCallOperation> {
+    native_lvalue_operand_call_result_operation(expr).map(|operation| NativeCallOperation {
+        blocker: NativeCallBlocker::RmwLvalueOperandEvaluationCleanup,
+        ..operation
+    })
 }
 
 fn native_assignment_target_lvalue_operands(target: &AssignTarget) -> Vec<(&Expr, u8)> {
@@ -4874,6 +4941,7 @@ fn native_direct_call_blocker_message(
             | NativeCallBlocker::StatementOperandEvaluationCleanup
             | NativeCallBlocker::ValueOperandEvaluationCleanup
             | NativeCallBlocker::LvalueOperandEvaluationCleanup
+            | NativeCallBlocker::RmwLvalueOperandEvaluationCleanup
             | NativeCallBlocker::ReturnValueOwnership
             | NativeCallBlocker::ByReferenceArgumentBinding
             | NativeCallBlocker::GlobalFrameSeparation
@@ -4901,6 +4969,7 @@ fn native_dynamic_call_blocker_message(
             | NativeCallBlocker::StatementOperandEvaluationCleanup
             | NativeCallBlocker::ValueOperandEvaluationCleanup
             | NativeCallBlocker::LvalueOperandEvaluationCleanup
+            | NativeCallBlocker::RmwLvalueOperandEvaluationCleanup
             | NativeCallBlocker::ReturnValueOwnership
             | NativeCallBlocker::ByReferenceArgumentBinding
             | NativeCallBlocker::GlobalFrameSeparation
@@ -4928,6 +4997,7 @@ fn native_method_call_blocker_message(
             | NativeCallBlocker::StatementOperandEvaluationCleanup
             | NativeCallBlocker::ValueOperandEvaluationCleanup
             | NativeCallBlocker::LvalueOperandEvaluationCleanup
+            | NativeCallBlocker::RmwLvalueOperandEvaluationCleanup
             | NativeCallBlocker::GlobalFrameSeparation
             | NativeCallBlocker::ReturnValueOwnership,
         ) => backend.method_call_rejection(),
@@ -4954,6 +5024,7 @@ fn native_constructor_call_blocker_message(
             | NativeCallBlocker::StatementOperandEvaluationCleanup
             | NativeCallBlocker::ValueOperandEvaluationCleanup
             | NativeCallBlocker::LvalueOperandEvaluationCleanup
+            | NativeCallBlocker::RmwLvalueOperandEvaluationCleanup
             | NativeCallBlocker::GlobalFrameSeparation
             | NativeCallBlocker::ReturnValueOwnership,
         ) => backend.object_instantiation_rejection(),
@@ -41704,6 +41775,173 @@ echo " 10" < "zeta";
                 span,
             }),
             Vec::new()
+        );
+    }
+
+    #[test]
+    fn native_rmw_assignment_target_call_operation_classifies_lvalue_operand_cleanup_by_operation_family(
+    ) {
+        let span = test_span();
+
+        let array_item_target = AssignTarget::ArrayIndex {
+            name: "items".to_string(),
+            index: Some(Expr::Call {
+                name: "key_name".to_string(),
+                args: vec![Expr::Int(1, span)],
+                span,
+            }),
+            span,
+        };
+        assert_eq!(
+            native_assignment_target_call_operation(&array_item_target),
+            Some(NativeCallOperation::direct_named_value(
+                span,
+                NativeCallBlocker::LvalueOperandEvaluationCleanup,
+            ))
+        );
+        assert_eq!(
+            native_rmw_assignment_target_call_operation(&array_item_target),
+            Some(NativeCallOperation::direct_named_value(
+                span,
+                NativeCallBlocker::RmwLvalueOperandEvaluationCleanup,
+            ))
+        );
+        assert_eq!(
+            native_rmw_assignment_target_lvalue_operand_requirements(&array_item_target),
+            vec![NativeDiagnosticOperandRequirement {
+                tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_RMW_LVALUE_EVALUATION_CLEANUP,
+                operand_index: 0,
+            }]
+        );
+
+        for (target, operation) in [
+            (
+                AssignTarget::NestedArrayIndex {
+                    name: "items".to_string(),
+                    indices: vec![
+                        Expr::String("plain".to_string(), span),
+                        Expr::DynamicCall {
+                            callee: Box::new(test_variable_expr("key_factory")),
+                            args: vec![Expr::String("slot".to_string(), span)],
+                            span,
+                        },
+                    ],
+                    span,
+                },
+                NativeCallOperation::dynamic_value_with_blocker(
+                    span,
+                    NativeCallBlocker::RmwLvalueOperandEvaluationCleanup,
+                ),
+            ),
+            (
+                AssignTarget::NonDirectDynamicProperty {
+                    holder: test_variable_expr("box"),
+                    property: Expr::MethodCall {
+                        target: Box::new(test_variable_expr("namer")),
+                        method: "property".to_string(),
+                        args: vec![Expr::Bool(true, span)],
+                        span,
+                    },
+                    span,
+                },
+                NativeCallOperation::method_value_with_blocker(
+                    span,
+                    NativeCallBlocker::RmwLvalueOperandEvaluationCleanup,
+                ),
+            ),
+            (
+                AssignTarget::DynamicObjectPropertyArrayIndex {
+                    object: "box".to_string(),
+                    property: Expr::New {
+                        class_name: crate::ast::NewClassName::Named("Key".to_string()),
+                        args: vec![Expr::Int(2, span)],
+                        span,
+                    },
+                    indices: vec![Expr::Int(0, span)],
+                    span,
+                },
+                NativeCallOperation::constructor_value(
+                    span,
+                    NativeCallBlocker::RmwLvalueOperandEvaluationCleanup,
+                ),
+            ),
+        ] {
+            assert_eq!(
+                native_rmw_assignment_target_call_operation(&target),
+                Some(operation)
+            );
+        }
+    }
+
+    #[test]
+    fn native_rmw_surfaces_route_target_operands_through_rmw_lvalue_boundary() {
+        let span = test_span();
+        let array_item_target = AssignTarget::ArrayIndex {
+            name: "items".to_string(),
+            index: Some(Expr::Call {
+                name: "key_name".to_string(),
+                args: Vec::new(),
+                span,
+            }),
+            span,
+        };
+        assert_eq!(
+            native_statement_operand_call_operation(&Stmt::CompoundAssign {
+                target: array_item_target,
+                op: CompoundAssignOp::Add,
+                expr: Expr::Int(1, span),
+                span,
+            }),
+            Some(NativeCallOperation::direct_named_value(
+                span,
+                NativeCallBlocker::RmwLvalueOperandEvaluationCleanup,
+            ))
+        );
+
+        let dynamic_property_target = AssignTarget::NonDirectDynamicProperty {
+            holder: test_variable_expr("box"),
+            property: Expr::MethodCall {
+                target: Box::new(test_variable_expr("namer")),
+                method: "property".to_string(),
+                args: Vec::new(),
+                span,
+            },
+            span,
+        };
+        assert_eq!(
+            native_expr_call_result_operation(
+                &Expr::NullCoalesceAssign {
+                    target: Box::new(dynamic_property_target),
+                    expr: Box::new(Expr::String("fallback".to_string(), span)),
+                    span,
+                },
+                NativeCallBlocker::ValueOperandEvaluationCleanup,
+            ),
+            Some(NativeCallOperation::method_value_with_blocker(
+                span,
+                NativeCallBlocker::RmwLvalueOperandEvaluationCleanup,
+            ))
+        );
+
+        let nested_target = AssignTarget::NestedArrayIndex {
+            name: "items".to_string(),
+            indices: vec![Expr::DynamicCall {
+                callee: Box::new(test_variable_expr("key_factory")),
+                args: Vec::new(),
+                span,
+            }],
+            span,
+        };
+        assert_eq!(
+            native_for_action_call_operation(&ForAction::IncrementDecrement {
+                target: nested_target,
+                op: IncrementDecrementOp::Increment,
+                span,
+            }),
+            Some(NativeCallOperation::dynamic_value_with_blocker(
+                span,
+                NativeCallBlocker::RmwLvalueOperandEvaluationCleanup,
+            ))
         );
     }
 
