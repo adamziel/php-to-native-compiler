@@ -364,6 +364,14 @@ pub enum NativeValueOffsetMutationOperation {
     Unset = 2,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeArrayAccessOffsetWriteOperation {
+    Write = 0,
+    Append = 1,
+    Unset = 2,
+}
+
 const NATIVE_ARRAY_PATH_KEY: u8 = 0;
 const NATIVE_ARRAY_PATH_APPEND: u8 = 1;
 const NATIVE_ARRAY_LVALUE_OK: u8 = 0;
@@ -763,6 +771,34 @@ impl NativeStringOffsetOperation {
             _ => Err(RuntimeError::invalid_string_conversion(
                 "native string offset operation failed: unsupported operation tag",
             )),
+        }
+    }
+}
+
+impl NativeArrayAccessOffsetWriteOperation {
+    fn from_tag(tag: u8) -> RuntimeResult<Self> {
+        match tag {
+            tag if tag == Self::Write as u8 => Ok(Self::Write),
+            tag if tag == Self::Append as u8 => Ok(Self::Append),
+            tag if tag == Self::Unset as u8 => Ok(Self::Unset),
+            _ => Err(RuntimeError::invalid_array_access(
+                "native ArrayAccess offset write dispatch failed: unsupported operation tag",
+            )),
+        }
+    }
+
+    fn method_name(self) -> &'static str {
+        match self {
+            Self::Write | Self::Append => "offsetSet",
+            Self::Unset => "offsetUnset",
+        }
+    }
+
+    fn replacement_label(self) -> &'static str {
+        match self {
+            Self::Write => "write",
+            Self::Append => "append",
+            Self::Unset => "unset",
         }
     }
 }
@@ -12718,6 +12754,48 @@ pub unsafe extern "C" fn phpc_native_value_offset_mutation_operation_with_diagno
 
 /// # Safety
 ///
+/// `table` must be a callable table handle containing generated method
+/// callbacks. `subject`, `offset`, and `replacement` must be null or value
+/// handles previously returned by the runtime ABI and not yet freed.
+/// `caller_scope` may be null or a UTF-8 string handle. `diagnostic` may be
+/// null; when non-null, it must point to writable storage for one
+/// `NativeDiagnosticHandle`. Operation `0` dispatches
+/// `ArrayAccess::offsetSet($offset, $replacement)`, operation `1` dispatches
+/// `ArrayAccess::offsetSet(null, $replacement)`, and operation `2` dispatches
+/// `ArrayAccess::offsetUnset($offset)`. Successful dispatch returns an owned
+/// clone of the object subject for later writeback consumers.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic(
+    table: NativeCallableTableHandle,
+    subject: NativeValueHandle,
+    offset: NativeValueHandle,
+    replacement: NativeValueHandle,
+    operation: u8,
+    caller_scope: NativeStringHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe {
+        native_value_arrayaccess_offset_write_operation_value(
+            table,
+            subject,
+            offset,
+            replacement,
+            operation,
+            caller_scope,
+        )
+    } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
 /// `subject`, every value in `offsets`, and `replacement` must be null or value
 /// handles previously returned by the runtime ABI and not yet freed. When
 /// `offsets_len` is nonzero, `offsets` must point to `offsets_len` readable
@@ -13170,6 +13248,156 @@ pub unsafe extern "C" fn phpc_native_object_property_offset_read_source(
         Ok(value) => native_offset_read_source_result_from_values(value, key),
         Err(error) => NativeConversionResult::error(error.message()),
     }
+}
+
+unsafe fn native_value_arrayaccess_offset_write_operation_value(
+    table: NativeCallableTableHandle,
+    subject: NativeValueHandle,
+    offset: NativeValueHandle,
+    replacement: NativeValueHandle,
+    operation: u8,
+    caller_scope: NativeStringHandle,
+) -> RuntimeResult<Value> {
+    let operation = NativeArrayAccessOffsetWriteOperation::from_tag(operation)?;
+    let Some(table) = (unsafe { table.as_ref() }) else {
+        return Err(RuntimeError::invalid_array_access(
+            "native ArrayAccess offset write dispatch failed: callable table is null",
+        ));
+    };
+    let Some(subject_value) = (unsafe { subject.as_ref() }) else {
+        return Err(RuntimeError::invalid_array_access(
+            "native ArrayAccess offset write dispatch failed: subject handle is null",
+        ));
+    };
+    let Value::Object(object) = subject_value else {
+        return Err(RuntimeError::invalid_array_access(format!(
+            "native ArrayAccess offset write dispatch requires an object subject, got {}",
+            subject_value.type_name()
+        )));
+    };
+    if !object.is_instance_of_class_name("ArrayAccess") {
+        return Err(RuntimeError::invalid_array_access(format!(
+            "native ArrayAccess offset write dispatch failed: object of class {} does not implement ArrayAccess",
+            object.class_name()
+        )));
+    }
+
+    let callable = table
+        .lookup(
+            NativeCallableKind::Method,
+            Some(object.class_name().to_string()),
+            operation.method_name().to_string(),
+            unsafe { native_string_handle_to_string(caller_scope) },
+        )
+        .map_err(RuntimeError::invalid_array_access)?;
+    let dispatch = NativeCallableValueHandle::from_dispatch(NativeCallableValueDispatch::Table {
+        callable,
+        bound_receiver: Some(Value::Object(object.clone())),
+    });
+    let arguments = match unsafe {
+        native_arrayaccess_offset_write_arguments(offset, replacement, operation)
+    } {
+        Ok(arguments) => arguments,
+        Err(error) => {
+            unsafe { phpc_native_callable_value_free(dispatch) };
+            return Err(error);
+        }
+    };
+    let mut call_diagnostic = NativeDiagnosticHandle::null();
+    let result = unsafe {
+        phpc_native_callable_value_invoke_result_with_diagnostic_and_free(
+            dispatch,
+            arguments,
+            &mut call_diagnostic,
+        )
+    };
+    unsafe { phpc_native_callable_value_free(dispatch) };
+
+    if !call_diagnostic.is_null() {
+        let message = unsafe { call_diagnostic.as_ref() }
+            .map(|diagnostic| diagnostic.message.clone())
+            .unwrap_or_else(|| {
+                "native ArrayAccess offset write dispatch failed: callable dispatch failed"
+                    .to_string()
+            });
+        unsafe { phpc_native_diagnostic_free(call_diagnostic) };
+        unsafe { phpc_native_call_result_free(result) };
+        return Err(RuntimeError::invalid_array_access(message));
+    }
+
+    if unsafe { phpc_native_call_result_status(result) } == NativeCallResultStatus::Failure {
+        let diagnostic = unsafe { phpc_native_call_result_take_diagnostic_and_free(result) };
+        let message = unsafe { diagnostic.as_ref() }
+            .map(|diagnostic| diagnostic.message.clone())
+            .unwrap_or_else(|| {
+                "native ArrayAccess offset write dispatch failed: callback returned failure"
+                    .to_string()
+            });
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        return Err(RuntimeError::invalid_array_access(message));
+    }
+
+    unsafe { phpc_native_call_result_discard_and_free(result) };
+    Ok(Value::Object(object.clone()))
+}
+
+unsafe fn native_arrayaccess_offset_write_arguments(
+    offset: NativeValueHandle,
+    replacement: NativeValueHandle,
+    operation: NativeArrayAccessOffsetWriteOperation,
+) -> RuntimeResult<NativeCallArgumentsHandle> {
+    let arguments = phpc_native_call_arguments_new();
+    let offset_value = match operation {
+        NativeArrayAccessOffsetWriteOperation::Append => Value::Null,
+        NativeArrayAccessOffsetWriteOperation::Write
+        | NativeArrayAccessOffsetWriteOperation::Unset => {
+            match unsafe { offset.as_ref() }.cloned() {
+                Some(offset) => offset,
+                None => {
+                    unsafe { phpc_native_call_arguments_free(arguments) };
+                    return Err(RuntimeError::invalid_array_access(format!(
+                        "native ArrayAccess offset write dispatch failed: {} offset handle is null",
+                        operation.replacement_label()
+                    )));
+                }
+            }
+        }
+    };
+
+    if !unsafe {
+        phpc_native_call_arguments_push_value_and_free(
+            arguments,
+            NativeValueHandle::from_value(offset_value),
+        )
+    } {
+        unsafe { phpc_native_call_arguments_free(arguments) };
+        return Err(RuntimeError::invalid_array_access(
+            "native ArrayAccess offset write dispatch failed: offset argument could not be materialized",
+        ));
+    }
+
+    if !matches!(operation, NativeArrayAccessOffsetWriteOperation::Unset) {
+        let Some(replacement) = (unsafe { replacement.as_ref() }) else {
+            unsafe { phpc_native_call_arguments_free(arguments) };
+            return Err(RuntimeError::invalid_array_access(format!(
+                "native ArrayAccess offset write dispatch failed: {} value handle is null",
+                operation.replacement_label()
+            )));
+        };
+        if !unsafe {
+            phpc_native_call_arguments_push_value_and_free(
+                arguments,
+                NativeValueHandle::from_value(replacement.clone()),
+            )
+        } {
+            unsafe { phpc_native_call_arguments_free(arguments) };
+            return Err(RuntimeError::invalid_array_access(
+                "native ArrayAccess offset write dispatch failed: replacement argument could not be materialized",
+            ));
+        }
+    }
+
+    Ok(arguments)
 }
 
 unsafe fn native_value_offset_mutation_operation_value(
@@ -27264,6 +27492,140 @@ mod tests {
             )
         };
         (value, diagnostic)
+    }
+
+    unsafe fn arrayaccess_record_event_for_test(
+        frame: NativeCallFrameHandle,
+        method: &str,
+        include_value: bool,
+    ) -> NativeCallResultHandle {
+        let receiver = unsafe { phpc_native_call_frame_read_receiver(frame) };
+        let offset = unsafe { phpc_native_call_frame_read_value(frame, 0) };
+        let value = include_value.then(|| unsafe { phpc_native_call_frame_read_value(frame, 1) });
+
+        let result = (|| -> RuntimeResult<()> {
+            let Some(Value::Object(object)) = (unsafe { receiver.as_ref() }) else {
+                return Err(RuntimeError::invalid_array_access(
+                    "test ArrayAccess callback requires a bound object receiver",
+                ));
+            };
+            let offset = unsafe { offset.as_ref() }.cloned().ok_or_else(|| {
+                RuntimeError::invalid_array_access(
+                    "test ArrayAccess callback requires an offset argument",
+                )
+            })?;
+            let value = match value {
+                Some(value) => Some(unsafe { value.as_ref() }.cloned().ok_or_else(|| {
+                    RuntimeError::invalid_array_access(
+                        "test ArrayAccess callback requires a value argument",
+                    )
+                })?),
+                None => None,
+            };
+
+            let mut events = match object.read_public_property("events")? {
+                Value::Array(array) => array,
+                Value::Null => PhpArray::new(),
+                other => {
+                    return Err(RuntimeError::invalid_array_access(format!(
+                        "test ArrayAccess callback event log must be array or null, got {}",
+                        other.type_name()
+                    )))
+                }
+            };
+            let mut event = PhpArray::new();
+            event.insert("method", Value::String(method.to_string()));
+            event.insert("offset", offset);
+            if let Some(value) = value {
+                event.insert("value", value);
+            }
+            events.append(Value::Array(event))?;
+            object.write_public_property("events", Value::Array(events))?;
+            Ok(())
+        })();
+
+        unsafe { phpc_native_value_free(receiver) };
+        unsafe { phpc_native_value_free(offset) };
+        if let Some(value) = value {
+            unsafe { phpc_native_value_free(value) };
+        }
+
+        match result {
+            Ok(()) => {
+                phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Null))
+            }
+            Err(error) => NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+                NativeDiagnosticHandle::from_message(error.message()),
+            )),
+        }
+    }
+
+    unsafe extern "C" fn arrayaccess_offset_set_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        unsafe { arrayaccess_record_event_for_test(frame, "offsetSet", true) }
+    }
+
+    unsafe extern "C" fn arrayaccess_offset_unset_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        unsafe { arrayaccess_record_event_for_test(frame, "offsetUnset", false) }
+    }
+
+    fn arrayaccess_object_for_test(class_name: &str, id: i64) -> PhpObject {
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class(class_name).unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("events", Visibility::Public))
+            .unwrap();
+        PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &[],
+            Vec::new(),
+            vec!["ArrayAccess".to_string()],
+            id,
+        )
+    }
+
+    unsafe fn arrayaccess_offset_write_for_test(
+        table: NativeCallableTableHandle,
+        subject: NativeValueHandle,
+        offset: Option<Value>,
+        replacement: Option<Value>,
+        operation: NativeArrayAccessOffsetWriteOperation,
+    ) -> (NativeValueHandle, NativeDiagnosticHandle) {
+        let offset = offset
+            .map(NativeValueHandle::from_value)
+            .unwrap_or_else(NativeValueHandle::null);
+        let replacement = replacement
+            .map(NativeValueHandle::from_value)
+            .unwrap_or_else(NativeValueHandle::null);
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let result = unsafe {
+            phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic(
+                table,
+                subject,
+                offset,
+                replacement,
+                operation as u8,
+                NativeStringHandle::null(),
+                &mut diagnostic,
+            )
+        };
+        unsafe { phpc_native_value_free(offset) };
+        unsafe { phpc_native_value_free(replacement) };
+        (result, diagnostic)
+    }
+
+    fn arrayaccess_event_for_test(object: &PhpObject, index: i64) -> PhpArray {
+        let Value::Array(events) = object.read_public_property("events").unwrap() else {
+            panic!("expected ArrayAccess event log");
+        };
+        let Some(Value::Array(event)) = events.get_cloned(ArrayKey::Int(index)) else {
+            panic!("expected ArrayAccess event at {index}");
+        };
+        event
     }
 
     #[test]
@@ -42413,6 +42775,254 @@ mod tests {
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(offset) };
         unsafe { phpc_native_value_free(subject) };
+    }
+
+    #[test]
+    fn arrayaccess_offset_write_dispatches_set_append_and_unset_through_callable_abi() {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            for class_name in ["FirstBag", "SecondBag"] {
+                register_callable_for_test(
+                    table,
+                    NativeCallableKind::Method,
+                    Some(class_name),
+                    "offsetSet",
+                    NativeCallableVisibility::Public,
+                    arrayaccess_offset_set_callback,
+                );
+                register_callable_for_test(
+                    table,
+                    NativeCallableKind::Method,
+                    Some(class_name),
+                    "offsetUnset",
+                    NativeCallableVisibility::Public,
+                    arrayaccess_offset_unset_callback,
+                );
+            }
+        }
+
+        let first = arrayaccess_object_for_test("FirstBag", 9101);
+        let first_subject = NativeValueHandle::from_value(Value::Object(first.clone()));
+        for (offset, replacement, operation) in [
+            (
+                Some(Value::String("name".to_string())),
+                Some(Value::Int(7)),
+                NativeArrayAccessOffsetWriteOperation::Write,
+            ),
+            (
+                None,
+                Some(Value::String("tail".to_string())),
+                NativeArrayAccessOffsetWriteOperation::Append,
+            ),
+            (
+                Some(Value::Int(3)),
+                None,
+                NativeArrayAccessOffsetWriteOperation::Unset,
+            ),
+        ] {
+            let (result, diagnostic) = unsafe {
+                arrayaccess_offset_write_for_test(
+                    table,
+                    first_subject,
+                    offset,
+                    replacement,
+                    operation,
+                )
+            };
+            assert!(
+                diagnostic.is_null(),
+                "unexpected ArrayAccess diagnostic: {:?}",
+                unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str())
+            );
+            assert!(
+                matches!(unsafe { result.as_ref() }, Some(Value::Object(object)) if object.id() == first.id())
+            );
+            unsafe { phpc_native_value_free(result) };
+        }
+
+        let event = arrayaccess_event_for_test(&first, 0);
+        assert_eq!(
+            event.get_cloned("method"),
+            Some(Value::String("offsetSet".to_string()))
+        );
+        assert_eq!(
+            event.get_cloned("offset"),
+            Some(Value::String("name".to_string()))
+        );
+        assert_eq!(event.get_cloned("value"), Some(Value::Int(7)));
+
+        let event = arrayaccess_event_for_test(&first, 1);
+        assert_eq!(
+            event.get_cloned("method"),
+            Some(Value::String("offsetSet".to_string()))
+        );
+        assert_eq!(event.get_cloned("offset"), Some(Value::Null));
+        assert_eq!(
+            event.get_cloned("value"),
+            Some(Value::String("tail".to_string()))
+        );
+
+        let event = arrayaccess_event_for_test(&first, 2);
+        assert_eq!(
+            event.get_cloned("method"),
+            Some(Value::String("offsetUnset".to_string()))
+        );
+        assert_eq!(event.get_cloned("offset"), Some(Value::Int(3)));
+        assert_eq!(event.get_cloned("value"), None);
+
+        let second = arrayaccess_object_for_test("SecondBag", 9102);
+        let second_subject = NativeValueHandle::from_value(Value::Object(second.clone()));
+        let (result, diagnostic) = unsafe {
+            arrayaccess_offset_write_for_test(
+                table,
+                second_subject,
+                Some(Value::BinaryString(b"bytes".to_vec())),
+                Some(Value::Bool(true)),
+                NativeArrayAccessOffsetWriteOperation::Write,
+            )
+        };
+        assert!(diagnostic.is_null());
+        unsafe { phpc_native_value_free(result) };
+        let event = arrayaccess_event_for_test(&second, 0);
+        assert_eq!(
+            event.get_cloned("offset"),
+            Some(Value::BinaryString(b"bytes".to_vec()))
+        );
+        assert_eq!(event.get_cloned("value"), Some(Value::Bool(true)));
+
+        unsafe { phpc_native_value_free(second_subject) };
+        unsafe { phpc_native_value_free(first_subject) };
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn arrayaccess_offset_write_reports_shared_dispatch_failures() {
+        let table = phpc_native_callable_table_new();
+        let object = arrayaccess_object_for_test("MissingMethods", 9201);
+        let subject = NativeValueHandle::from_value(Value::Object(object));
+        let (result, diagnostic) = unsafe {
+            arrayaccess_offset_write_for_test(
+                table,
+                subject,
+                Some(Value::String("slot".to_string())),
+                Some(Value::Int(1)),
+                NativeArrayAccessOffsetWriteOperation::Write,
+            )
+        };
+        assert!(result.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some("invalid array access: native callable lookup failed: Method offsetSet is not registered")
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let mut classes = PhpClassTable::new();
+        let plain_id = classes.declare_class("PlainObject").unwrap();
+        let plain = PhpObject::from_class(classes.get(plain_id).unwrap());
+        let plain_subject = NativeValueHandle::from_value(Value::Object(plain));
+        let (result, diagnostic) = unsafe {
+            arrayaccess_offset_write_for_test(
+                table,
+                plain_subject,
+                Some(Value::String("slot".to_string())),
+                Some(Value::Int(1)),
+                NativeArrayAccessOffsetWriteOperation::Write,
+            )
+        };
+        assert!(result.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some("invalid array access: native ArrayAccess offset write dispatch failed: object of class PlainObject does not implement ArrayAccess")
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let scalar_subject = NativeValueHandle::from_value(Value::Int(4));
+        let (result, diagnostic) = unsafe {
+            arrayaccess_offset_write_for_test(
+                table,
+                scalar_subject,
+                Some(Value::String("slot".to_string())),
+                Some(Value::Int(1)),
+                NativeArrayAccessOffsetWriteOperation::Write,
+            )
+        };
+        assert!(result.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some("invalid array access: native ArrayAccess offset write dispatch requires an object subject, got int")
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        unsafe { phpc_native_value_free(scalar_subject) };
+        unsafe { phpc_native_value_free(plain_subject) };
+        unsafe { phpc_native_value_free(subject) };
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn arrayaccess_offset_write_reports_argument_validation_failures_after_lookup() {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("ArgumentValidationBag"),
+                "offsetSet",
+                NativeCallableVisibility::Public,
+                arrayaccess_offset_set_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("ArgumentValidationBag"),
+                "offsetUnset",
+                NativeCallableVisibility::Public,
+                arrayaccess_offset_unset_callback,
+            );
+        }
+
+        let object = arrayaccess_object_for_test("ArgumentValidationBag", 9301);
+        let subject = NativeValueHandle::from_value(Value::Object(object));
+
+        for (offset, replacement, operation, expected) in [
+            (
+                None,
+                Some(Value::Int(1)),
+                NativeArrayAccessOffsetWriteOperation::Write,
+                "invalid array access: native ArrayAccess offset write dispatch failed: write offset handle is null",
+            ),
+            (
+                Some(Value::String("slot".to_string())),
+                None,
+                NativeArrayAccessOffsetWriteOperation::Write,
+                "invalid array access: native ArrayAccess offset write dispatch failed: write value handle is null",
+            ),
+            (
+                None,
+                None,
+                NativeArrayAccessOffsetWriteOperation::Append,
+                "invalid array access: native ArrayAccess offset write dispatch failed: append value handle is null",
+            ),
+            (
+                None,
+                None,
+                NativeArrayAccessOffsetWriteOperation::Unset,
+                "invalid array access: native ArrayAccess offset write dispatch failed: unset offset handle is null",
+            ),
+        ] {
+            let (result, diagnostic) = unsafe {
+                arrayaccess_offset_write_for_test(table, subject, offset, replacement, operation)
+            };
+            assert!(result.is_null());
+            assert_eq!(
+                unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+                Some(expected)
+            );
+            unsafe { phpc_native_diagnostic_free(diagnostic) };
+        }
+
+        unsafe { phpc_native_value_free(subject) };
+        unsafe { phpc_native_callable_table_free(table) };
     }
 
     #[test]
