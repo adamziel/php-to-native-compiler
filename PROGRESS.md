@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 08:55 CEST
+Updated: 2026-05-26 09:30 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,15 +19,16 @@ Primary `HEAD` is clean and aligned with `origin/master` after accounting for
 the latest source capability.
 
 Latest primary-integrated source capability baseline:
-`67efa804 native: add descriptor closure return summaries`.
+`d2b60ba7 native: add dynamic callable return facts`.
 
-`67efa804` extends the generated-C callable identity and return-summary
-boundary to descriptor-backed closures. Compiler-owned descriptor closures now
-record arity/result summaries, preserve callable identities across native value
-handles, variables, copied variables, and branch joins, and feed dynamic-call
-return facts through the same conservative callable-summary intersection path
-used for generated functions and declared methods. By-reference descriptor
-closure returns remain blocked from publishing native value facts.
+`d2b60ba7` extends dynamic-call return-fact consumption through the shared
+callable identity and return-summary boundary. Known string callable values now
+resolve to generated functions, declared static method strings, and supported
+builtin identity placeholders; definite generated object facts can resolve
+callable objects through declared `__invoke` methods, including inherited
+methods; descriptor-closure variables/copies keep using the same identity
+producer. Dynamic calls still publish facts only when all candidate identities
+produce native values through the shared summary intersection path.
 
 This composes with `4ddbfc47` generated-C ArrayAccess read/`isset`,
 `9aa933a8` generated-C ArrayAccess write/append/unset, `4311df7e`
@@ -36,18 +37,18 @@ generated-C ArrayAccess `empty()`/null-coalesce consumers, receiver-free static
 facts for known generated declared ArrayAccess producers, `1a9f0a1c`
 ArrayAccess owner writeback, `653a5918` ArrayAccess RMW/`??=`, `369099d7`
 callable return producer facts, `6caaa387` callable identity return summaries,
-`2ee642ff` ReferenceSlot owner facts, cleanup/unwind requirement preflight,
-selected generated-C RMW array-lvalue owner/writeback, runtime ArrayAccess
-read/write dispatch ABIs, and generated declared-method callable-table
-publication.
+`67efa804` descriptor-closure return summaries, `2ee642ff` ReferenceSlot owner
+facts, cleanup/unwind requirement preflight, selected generated-C RMW
+array-lvalue owner/writeback, runtime ArrayAccess read/write dispatch ABIs, and
+generated declared-method callable-table publication.
 
-Lane-local momentum is active but not counted. The fresh property/reference
-owner audit found the stale patch overlapped by the integrated ReferenceSlot
-owner/fact boundary and did not import it. Owner-scoped fact candidates from
-previous heads still require fresh-head audit. Broader producer fact work,
-property/nested owner design, dynamic runtime callable consumers, and callable
-receiver fallback remain advisory until routed, audited, integrated, committed,
-and pushed.
+Lane-local momentum is active but not counted. The fresh property/reference and
+owner-scoped audits found stale/property-held paths blocked or overlapped by
+the integrated ReferenceSlot owner/fact boundary and did not import them.
+Callable-array identity work is now under a separate fresh-head audit. Broader
+producer fact work, property/nested owner design, unknown runtime callable
+consumers, and callable receiver fallback remain advisory until routed,
+audited, integrated, committed, and pushed.
 
 The project continues moving through reusable runtime/compiler boundaries, but
 this is not full PHP parity. Broader object/interface facts for properties,
@@ -63,18 +64,30 @@ gaps.
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, byte-string, array, reference, symbol, callable table, callable-value dispatch, call-frame/result, request-state, diagnostics, lvalue, and ArrayAccess read/write dispatch surfaces. Remaining gaps include broader callable lookup parity, namespace fallback, autoload, magic calls, constructors, closure frame handoff, reference-return ArrayAccess, and cleanup/unwind parity. |
-| Compiler/backend consumers | **99%** | `[####################]` | Generated C has the freshest executable consumers for direct/dynamic callables, declared methods, selected RMW array-lvalue owner/writeback, and compiler-known generated declared ArrayAccess read/isset/write/append/unset/empty/null-coalesce/RMW/`??=`, including known dynamic generated-declared class-name producers. LLVM and direct assembly still lag recent object offset and lvalue/runtime ABIs. |
+| Compiler/backend consumers | **99%** | `[####################]` | Generated C has the freshest executable consumers for direct/dynamic callables, declared methods, selected known string/invokable callable return facts, selected RMW array-lvalue owner/writeback, and compiler-known generated declared ArrayAccess read/isset/write/append/unset/empty/null-coalesce/RMW/`??=`, including known dynamic generated-declared class-name producers. LLVM and direct assembly still lag recent object offset and lvalue/runtime ABIs. |
 | Executable PHP semantics | **95%** | `[###################-]` | Many selected executable islands exist, but major semantics remain open: full assignment/RMW/writeback, references/COW, executable object/ArrayAccess operations, cleanup/unwind/finally/destructors, exact diagnostics, and backend parity. |
 | Strings and byte semantics | **62%** | `[############--------]` | Byte-backed values and byte-preserving selected string-array slots are integrated. Binary source bytes, byte-exact interpreter/session/debug output, `mb_str_split()`, request/global byte keys, and exact diagnostics remain open. |
 | Arrays, lvalues, references, COW | **85%** | `[#################---]` | Selected reference-source/lvalue extraction, closure capture from reference-backed slots, ReferenceSlot value-owner facts/commit, reference-binding diagnostics, assignment/RMW-lvalue diagnostics, generated-C RMW array-lvalue owner/writeback, direct-variable and selected reference-slot ArrayAccess RMW/`??=`, and Object/ArrayAccess blocker/runtime dispatch pieces are integrated. Object/static property storage, property-held/nested ArrayAccess RMW, arbitrary alias roots, foreach, broader writeback, and full COW remain incomplete. |
 | Symbols, globals, request state | **75%** | `[###############-----]` | Selected globals, root-symbol consumers, active symbol-table consumers, request-key blockers, append-shaped symbol reference-source materialization, direct generated-C request-state frame handoff, and generated-C dynamic user-function handoff proof exist. `$GLOBALS` self-cells, closure request-state handoff, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
-| Calls, functions, frames | **95%** | `[###################-]` | Runtime callable table/value dispatch, call arguments/frame/result ABI, direct and dynamic generated-C callable consumers, generated declared-method callable registration/wrapper frames, receiver-free static `Class::method` strings, generated-callable return-result facts, callable identity return-summary resolution, descriptor-closure return summaries, by-reference argument transport, descriptor closures, closure returns, and generated-C request-state frame handoff are integrated. Dynamic runtime callable return summaries, full object/method callable parity, callable array validation parity, namespace fallback, autoload, magic calls, named/spread breadth, return references, constructors, cleanup/unwind execution, and backend parity remain open. |
-| Objects, properties, methods | **64%** | `[#############-------]` | Public object-property reference-source extraction, object-property reference-slot mutation, declared-class allocation cleanup-risk metadata, Object/ArrayAccess write blockers, runtime ArrayAccess write/read/exists dispatch, generated-C ArrayAccess read/isset/write/append/unset/empty/null-coalesce/RMW/`??=` consumers for compiler-known generated objects and selected reference slots, known dynamic generated-declared class-name producers, generated-callable and descriptor-closure return producers through callable identities, and generated declared-method callable-table publication exist for selected paths. Property/magic/runtime-dynamic-call/clone/static-property producers, property-held/nested ArrayAccess owners, visibility parity, magic, dynamic/static/typed properties, destructors, interfaces/traits execution, references/COW, constructors, and backend parity remain open. |
+| Calls, functions, frames | **95%** | `[###################-]` | Runtime callable table/value dispatch, call arguments/frame/result ABI, direct and dynamic generated-C callable consumers, generated declared-method callable registration/wrapper frames, receiver-free static `Class::method` strings, generated-callable return-result facts, callable identity return-summary resolution, descriptor-closure return summaries, known string callable and definite `__invoke` object return facts, by-reference argument transport, descriptor closures, closure returns, and generated-C request-state frame handoff are integrated. Unknown runtime callable strings/objects, callable-array identity/validation parity, builtin return summaries, full object/method callable parity, namespace fallback, autoload, magic calls, named/spread breadth, return references, constructors, cleanup/unwind execution, and backend parity remain open. |
+| Objects, properties, methods | **64%** | `[#############-------]` | Public object-property reference-source extraction, object-property reference-slot mutation, declared-class allocation cleanup-risk metadata, Object/ArrayAccess write blockers, runtime ArrayAccess write/read/exists dispatch, generated-C ArrayAccess read/isset/write/append/unset/empty/null-coalesce/RMW/`??=` consumers for compiler-known generated objects and selected reference slots, known dynamic generated-declared class-name producers, generated-callable, descriptor-closure, known string callable, and definite `__invoke` object return producers through callable identities, and generated declared-method callable-table publication exist for selected paths. Property/magic/unknown-runtime-dynamic-call/clone/static-property producers, property-held/nested ArrayAccess owners, visibility parity, magic, dynamic/static/typed properties, destructors, interfaces/traits execution, references/COW, constructors, and backend parity remain open. |
 | Control flow, cleanup, diagnostics | **54%** | `[###########---------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, try-body call-boundary preflight, generic operand-list blockers, reference/assignment/RMW blockers, Object/ArrayAccess write blockers, and cleanup/unwind requirement preflight exist. Broad unwind/finally/destructor/shutdown execution, cleanup ownership, executable reference binding, and source-ordered diagnostics remain open. |
 | Broad integrated verification | **92%** | `[##################--]` | Focused gates around recent source work are strong. Broad verification is still constrained by lane extraction cost, stale candidate expectations, heavy swap usage, and backend parity gaps. |
 
 ## Recent Primary-Integrated Work
 
+- `d2b60ba7`: dynamic callable return facts now consume more callable
+  identities through the shared generated-C callable summary boundary. Known
+  string callable values resolve to generated functions and declared static
+  method strings; definite generated object facts resolve callable objects
+  through declared `__invoke`, including inherited methods; supported builtin
+  names are represented as identities but still publish unknown return
+  summaries. Focused proof covers generated-function strings, branched known
+  string sets, declared static-method strings, inherited invokable objects,
+  descriptor-closure copies, generated-C ArrayAccess fact routing, and a linked
+  executable using all four callable producer surfaces. Callable arrays,
+  unknown runtime strings/objects, builtin return facts, reference returns,
+  cleanup/unwind, LLVM consumers, and backend parity remain open.
 - `67efa804`: descriptor-backed closures now participate in the shared
   generated-C callable identity and return-summary boundary. Closure callback
   bodies record descriptor summaries with arity, variadic shape, result kind,
