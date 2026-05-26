@@ -17092,6 +17092,33 @@ const NATIVE_RUNTIME_DYNAMIC_USER_FUNCTION_CALL_SOURCE: &str = concat!(
     "echo invoke(\"pick\", \"go\"), \"|\", invoke(\"relay\", \"MIX\"), \"|\", invoke(\"with_default\", \"D\");\n",
 );
 
+const NATIVE_DYNAMIC_STRING_CALLABLE_VALUE_SOURCE: &str = concat!(
+    "<?php\n",
+    "function upper($value) {\n",
+    "    return strtoupper($value);\n",
+    "}\n",
+    "function lower($value) {\n",
+    "    return strtolower($value);\n",
+    "}\n",
+    "function choose_upper() {\n",
+    "    return \"upper\";\n",
+    "}\n",
+    "function choose_lower() {\n",
+    "    return \"lower\";\n",
+    "}\n",
+    "function call_it($call, $value) {\n",
+    "    return $call($value);\n",
+    "}\n",
+    "$direct = \"upper\";\n",
+    "echo $direct(\"go\"), \"|\";\n",
+    "$from_return = choose_lower();\n",
+    "echo $from_return(\"MIX\"), \"|\";\n",
+    "echo call_it(choose_upper(), \"ok\"), \"|\";\n",
+    "$builtin = \"strtoupper\";\n",
+    "echo $builtin(\"bi\"), \"|\";\n",
+    "echo call_it(\"strtolower\", \"CAPS\");\n",
+);
+
 const NATIVE_RUNTIME_DYNAMIC_BUILTIN_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "$len = isset($_GET[\"len\"]) ? $_GET[\"len\"] : \"strlen\";\n",
@@ -17658,26 +17685,69 @@ fn native_executable_c_source_lowers_runtime_string_dynamic_user_function_calls(
     let source = emit_native_executable_c_source(&program).unwrap();
 
     assert!(
-        source.contains("phpc_native_value_dynamic_call_name_matches")
-            && source.contains("phpc_native_value_dynamic_call_failure_with_diagnostic"),
-        "runtime string-valued dynamic calls should use the shared lookup ABI:\n{source}"
+        source.contains("phpc_NativeCallableValueHandle")
+            && source.contains(
+                "phpc_native_callable_lookup_value_or_closure_with_context_diagnostic"
+            )
+            && source
+                .contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
+            && source.contains("phpc_native_call_arguments_push_value_and_free"),
+        "runtime string-valued dynamic user-function calls should use the shared callable-value lookup/invoke ABI:\n{source}"
     );
     assert!(
-        source.matches("phpc_native_value_dynamic_call_name_matches(").count() >= 3
-            && source.contains("dynamic_user_function_matched_")
-            && source.contains("dynamic_call_reason_bytes_"),
-        "runtime dynamic calls should dispatch over multiple registered frame entries with a failure path:\n{source}"
+        source
+            .matches("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic(")
+            .count()
+            >= 1,
+        "runtime dynamic calls should consume a runtime callable value at each dynamic call boundary:\n{source}"
     );
     assert!(
-        source.contains("phpc_user_function_0_pick(")
-            && source.contains("phpc_user_function_1_relay(")
-            && source.contains("phpc_user_function_2_with_default("),
-        "runtime dynamic dispatch should route to all registered by-value frames:\n{source}"
+        source.contains("phpc_user_function_0_pick_native_callable_frame")
+            && source.contains("phpc_user_function_1_relay_native_callable_frame")
+            && source.contains("phpc_user_function_2_with_default_native_callable_frame"),
+        "runtime dynamic dispatch should expose registered user functions through reusable callable frame callbacks:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_value_dynamic_call_name_matches")
+            && !source.contains("dynamic_user_function_matched_")
+            && !source.contains("dynamic_call_reason_bytes_"),
+        "runtime string-valued dynamic calls should not use the legacy generated-C name-match ladder:\n{source}"
     );
     assert!(
         !source.contains("assembly dynamic function-call lowering rejects")
             && !source.contains("bounded generated-C finite known-string or runtime string-valued dispatch"),
         "runtime string-valued dynamic calls should no longer hit the finite-known-string blocker:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_dynamic_callable_values_through_runtime_abi() {
+    let program = parse(NATIVE_DYNAMIC_STRING_CALLABLE_VALUE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_NativeCallableValueHandle")
+            && source.contains(
+                "phpc_native_callable_lookup_value_or_closure_with_context_diagnostic"
+            )
+            && source
+                .contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
+            && source.contains("phpc_native_call_arguments_push_reference_and_free")
+            && source.contains("phpc_native_call_arguments_push_value_and_free"),
+        "dynamic callable values should route through the callable-value lookup/invoke and shared call-argument ABI:\n{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic(")
+            .count()
+            >= 3,
+        "each dynamic callable value call site should consume the runtime lookup boundary:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_value_dynamic_call_name_matches")
+            && !source.contains("dynamic_user_function_matched_")
+            && !source.contains("dynamic_call_reason_bytes_"),
+        "dynamic callable values should not use the legacy generated-C name-match ladder:\n{source}"
     );
 }
 
@@ -18620,6 +18690,34 @@ fn emit_exe_links_and_runs_runtime_dynamic_user_function_call_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"GO|mix|D!");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_dynamic_string_callable_value_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "dynamic_string_callable_value",
+        NATIVE_DYNAMIC_STRING_CALLABLE_VALUE_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native dynamic string callable-value executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"GO|mix|OK|BI|caps");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

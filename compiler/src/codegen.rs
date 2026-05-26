@@ -13389,18 +13389,6 @@ struct CDeclaredClassMethod {
     is_static: bool,
 }
 
-#[derive(Debug, Clone)]
-struct CDynamicUserFunctionCandidate {
-    function: CUserFunction,
-    spellings: Vec<String>,
-}
-
-#[derive(Debug, Clone)]
-struct CDynamicCallableBuiltinCandidate {
-    canonical_name: &'static str,
-    spellings: Vec<String>,
-}
-
 enum CDirectVariableCompoundAssignmentOwner {
     Local(String),
     Reference(String),
@@ -13830,14 +13818,6 @@ struct CNativeReferenceMaterialization {
     cleanup_after_use: Vec<String>,
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-enum CFunctionReturnMode {
-    #[default]
-    NativeValue,
-    ClosureValue,
-    ClosureReference,
-}
-
 fn borrowed_native_arg(
     values: &[CNativeValueMaterialization],
     index: usize,
@@ -13846,6 +13826,14 @@ fn borrowed_native_arg(
         handle: values[index].handle.clone(),
         cleanup_after_use: Vec::new(),
     }
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+enum CFunctionReturnMode {
+    #[default]
+    NativeValue,
+    ClosureValue,
+    ClosureReference,
 }
 
 struct CNativeForeachCursorStorage {
@@ -16631,6 +16619,7 @@ impl CGenerator {
                 output.push_str("#define PHPC_NATIVE_CALLABLE_VISIBILITY_PUBLIC 1\n");
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallableTableHandle;\n");
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallableHandle;\n");
+                output.push_str("typedef struct { void *ptr; } phpc_NativeCallableValueHandle;\n");
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallArgumentsHandle;\n");
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallFrameHandle;\n");
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallResultHandle;\n");
@@ -16913,6 +16902,8 @@ impl CGenerator {
                 output.push_str(
                     "extern void phpc_native_callable_free(phpc_NativeCallableHandle handle);\n",
                 );
+                output.push_str("extern phpc_NativeCallableValueHandle phpc_native_callable_lookup_value_or_closure_with_context_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle callable_value, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern void phpc_native_callable_value_free(phpc_NativeCallableValueHandle handle);\n");
                 output.push_str(
                     "extern phpc_NativeCallArgumentsHandle phpc_native_call_arguments_new(void);\n",
                 );
@@ -16924,6 +16915,7 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_call_frame_read_reference(phpc_NativeCallFrameHandle frame, size_t index);\n");
                 output.push_str("extern phpc_NativeCallResultHandle phpc_native_call_result_from_value(phpc_NativeValueHandle value);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_callable_invoke_value_with_diagnostic_and_free(phpc_NativeCallableHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_callable_value_invoke_value_with_diagnostic_and_free(phpc_NativeCallableValueHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_conversion_source_helpers {
                 output.push_str("extern phpc_NativeConversionSource phpc_native_conversion_source_value(phpc_NativeValueHandle handle);\n");
@@ -17232,6 +17224,14 @@ impl CGenerator {
                     function.frame_environment,
                 ));
                 output.push_str(";\n");
+                if self.uses_native_callable_helpers {
+                    let wrapper_name =
+                        Self::c_user_function_callable_wrapper_name(&function.c_name);
+                    output.push_str(&Self::c_user_function_callable_wrapper_signature(
+                        &wrapper_name,
+                    ));
+                    output.push_str(";\n");
+                }
             }
             for (_, method) in self.declared_class_methods_in_order() {
                 output.push_str(&Self::c_declared_class_method_signature(
@@ -25307,132 +25307,124 @@ impl CGenerator {
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
         let callee_value = self.emit_expr(callee)?;
-        let Some(candidate) = self.dynamic_user_function_candidate_for_value(&callee_value) else {
-            if let Some(candidate) =
-                self.dynamic_callable_builtin_candidate_for_value(&callee_value)
-            {
-                debug_assert!(!candidate.spellings.is_empty());
-                return self
-                    .materialize_dynamic_callable_builtin_call(
-                        &candidate,
-                        args,
-                        span,
-                        failure_cleanup,
-                    )
-                    .map(Some);
-            }
-            if let Some(values) = self.known_string_values_for_value(&callee_value) {
-                if self.finite_dynamic_call_can_use_runtime_dispatch(&values) {
-                    return self.materialize_runtime_dynamic_user_function_call(
-                        callee_value,
-                        args,
-                        span,
-                        failure_cleanup,
-                    );
-                }
-                return Ok(None);
-            }
-            return self.materialize_runtime_dynamic_user_function_call(
-                callee_value,
-                args,
-                span,
-                failure_cleanup,
-            );
-        };
-        debug_assert!(!candidate.spellings.is_empty());
-
-        self.materialize_user_function_call(
-            &candidate.function,
-            args,
-            span,
-            failure_cleanup,
-            NativeCallCallee::DynamicExpression,
-        )
-        .map(Some)
+        self.materialize_runtime_callable_value_call(callee_value, args, span, failure_cleanup)
     }
 
-    fn dynamic_user_function_candidate_for_value(
-        &self,
-        value: &CValue,
-    ) -> Option<CDynamicUserFunctionCandidate> {
-        let values = self.known_string_values_for_value(value)?;
-        let mut candidate: Option<(String, CDynamicUserFunctionCandidate)> = None;
-        for spelling in values.values() {
-            let key = Self::user_function_key(spelling);
-            let function = self.user_functions.get(&key)?.clone();
-            if let Some((candidate_key, candidate)) = &mut candidate {
-                if candidate_key != &key {
-                    return None;
-                }
-                candidate.spellings.push(spelling.clone());
-            } else {
-                candidate = Some((
-                    key,
-                    CDynamicUserFunctionCandidate {
-                        function,
-                        spellings: vec![spelling.clone()],
-                    },
-                ));
-            }
-        }
-        candidate.map(|(_, candidate)| candidate)
-    }
-
-    fn finite_dynamic_call_can_use_runtime_dispatch(&self, values: &KnownString) -> bool {
-        values.values().iter().all(|spelling| {
-            self.user_functions
-                .get(&Self::user_function_key(spelling))
-                .is_some()
-                || native_dynamic_callable_builtin_runtime_candidate_for_name(spelling).is_some()
-        })
-    }
-
-    fn dynamic_callable_builtin_candidate_for_value(
-        &self,
-        value: &CValue,
-    ) -> Option<CDynamicCallableBuiltinCandidate> {
-        let values = self.known_string_values_for_value(value)?;
-        let mut candidate: Option<(&'static str, CDynamicCallableBuiltinCandidate)> = None;
-        for spelling in values.values() {
-            let canonical_name = native_dynamic_callable_builtin_canonical_name(spelling)?;
-            if let Some((candidate_name, candidate)) = &mut candidate {
-                if *candidate_name != canonical_name {
-                    return None;
-                }
-                candidate.spellings.push(spelling.clone());
-            } else {
-                candidate = Some((
-                    canonical_name,
-                    CDynamicCallableBuiltinCandidate {
-                        canonical_name,
-                        spellings: vec![spelling.clone()],
-                    },
-                ));
-            }
-        }
-        candidate.map(|(_, candidate)| candidate)
-    }
-
-    fn materialize_dynamic_callable_builtin_call(
+    fn materialize_runtime_callable_value_call(
         &mut self,
-        candidate: &CDynamicCallableBuiltinCandidate,
+        callee_value: CValue,
         args: &[Expr],
         span: Span,
         failure_cleanup: &str,
-    ) -> CompileResult<CNativeValueMaterialization> {
-        let call = Expr::Call {
-            name: candidate.canonical_name.to_string(),
-            args: args.to_vec(),
-            span,
-        };
-        if let Some(value) =
-            self.try_materialize_native_value_result_expr(&call, failure_cleanup)?
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_callable_helpers = true;
+
+        let table = self.ensure_native_callable_table(failure_cleanup);
+        let callee = self.materialize_native_array_c_value_handle(callee_value, span)?;
+        let callee_cleanup = c_cleanup_sequence(&callee.cleanup_after_use);
+
+        if self
+            .user_functions
+            .values()
+            .any(|function| function.frame_environment.root_symbols)
         {
-            return Ok(value);
+            let symbol_table_failure_cleanup = format!("{callee_cleanup}{failure_cleanup}");
+            let root_symbols =
+                self.ensure_globals_symbol_table(&symbol_table_failure_cleanup, span)?;
+            self.body
+                .push(format!("phpc_user_callable_root_symbols = {root_symbols};"));
+        }
+        if self
+            .user_functions
+            .values()
+            .any(|function| function.frame_environment.request_state)
+        {
+            let request_state = self.ensure_native_request_state_handle();
+            self.body.push(format!(
+                "phpc_user_callable_request_state = {request_state};"
+            ));
         }
 
-        let value = self.emit_expr(&call)?;
-        self.materialize_native_array_c_value_handle(value, span)
+        let lookup_diagnostic = self.next_native_name("dynamic_callable_lookup_diagnostic");
+        let callable = self.next_native_name("dynamic_callable_value");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {lookup_diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "phpc_NativeCallableValueHandle {callable} = phpc_native_callable_lookup_value_or_closure_with_context_diagnostic({table}, {}, (phpc_NativeStringHandle){{0}}, &{lookup_diagnostic});",
+            callee.handle
+        ));
+        self.emit_report_native_diagnostic(&lookup_diagnostic);
+        let lookup_error_exit =
+            self.native_error_exit(&format!("{callee_cleanup}{failure_cleanup}"));
+        self.body.push(format!(
+            "if ({callable}.ptr == NULL) {{ {lookup_error_exit} }}"
+        ));
+
+        let call_arguments = self.next_native_name("dynamic_callable_args");
+        self.body.push(format!(
+            "phpc_NativeCallArgumentsHandle {call_arguments} = phpc_native_call_arguments_new();"
+        ));
+        let arguments_error_exit = self.native_error_exit(&format!(
+            "phpc_native_callable_value_free({callable}); {callee_cleanup}{failure_cleanup}"
+        ));
+        self.body.push(format!(
+            "if (phpc_native_call_arguments_is_null({call_arguments})) {{ {arguments_error_exit} }}"
+        ));
+
+        let call_cleanup = format!(
+            "phpc_native_call_arguments_free({call_arguments}); phpc_native_callable_value_free({callable}); {callee_cleanup}{failure_cleanup}"
+        );
+        for arg in args {
+            if self.runtime_dynamic_call_reference_argument_is_supported(arg) {
+                let reference = self.materialize_call_reference_argument(
+                    arg,
+                    span,
+                    &call_cleanup,
+                    NativeCallCallee::DynamicExpression,
+                )?;
+                self.body.push(format!(
+                    "if (!phpc_native_call_arguments_push_reference_and_free({call_arguments}, {})) {{ {} }}",
+                    reference.handle,
+                    self.native_error_exit(&call_cleanup)
+                ));
+            } else {
+                let value = self.materialize_native_value_result_operand(arg, &call_cleanup)?;
+                let value_aux_cleanup = native_value_aux_cleanup_after_consuming_handle(&value);
+                let push_failure_cleanup =
+                    format!("{}{}", c_cleanup_sequence(&value_aux_cleanup), call_cleanup);
+                self.body.push(format!(
+                    "if (!phpc_native_call_arguments_push_value_and_free({call_arguments}, {})) {{ {} }}",
+                    value.handle,
+                    self.native_error_exit(&push_failure_cleanup)
+                ));
+                self.body.extend(value_aux_cleanup);
+            }
+        }
+
+        let result = self.next_native_name("dynamic_callable_result");
+        let invoke_diagnostic = self.next_native_name("dynamic_callable_invoke_diagnostic");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {invoke_diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_callable_value_invoke_value_with_diagnostic_and_free({callable}, {call_arguments}, &{invoke_diagnostic});"
+        ));
+        self.body
+            .push(format!("phpc_native_callable_value_free({callable});"));
+        self.emit_report_native_diagnostic(&invoke_diagnostic);
+        let invoke_error_exit =
+            self.native_error_exit(&format!("{callee_cleanup}{failure_cleanup}"));
+        self.body.push(format!(
+            "if ({result}.ptr == NULL) {{ {invoke_error_exit} }}"
+        ));
+        self.body.extend(callee.cleanup_after_use);
+
+        Ok(Some(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }))
     }
 
     fn materialize_variadic_argument_array_from_exprs(

@@ -1148,7 +1148,68 @@ enum NativeCallableValueDispatch {
         callable: NativeCallable,
         bound_receiver: Option<Value>,
     },
+    Builtin(NativeCallableBuiltin),
     DescriptorClosure(PhpClosure),
+}
+
+#[derive(Debug, Clone, Copy)]
+enum NativeCallableBuiltin {
+    StringLength,
+    StringPredicate(NativeStringPredicate),
+    StringResult(NativeStringResultOperation),
+    Cast(u8),
+    TypeName(u8),
+    TypePredicate(u8),
+}
+
+impl NativeCallableBuiltin {
+    fn name(self) -> &'static str {
+        match self {
+            Self::StringLength => "strlen",
+            Self::StringPredicate(NativeStringPredicate::Contains) => "str_contains",
+            Self::StringPredicate(NativeStringPredicate::StartsWith) => "str_starts_with",
+            Self::StringPredicate(NativeStringPredicate::EndsWith) => "str_ends_with",
+            Self::StringResult(NativeStringResultOperation::Reverse) => "strrev",
+            Self::StringResult(NativeStringResultOperation::BinToHex) => "bin2hex",
+            Self::StringResult(NativeStringResultOperation::Rot13) => "str_rot13",
+            Self::StringResult(NativeStringResultOperation::AsciiLower) => "strtolower",
+            Self::StringResult(NativeStringResultOperation::AsciiUpper) => "strtoupper",
+            Self::StringResult(NativeStringResultOperation::AsciiFirstUpper) => "ucfirst",
+            Self::StringResult(NativeStringResultOperation::AsciiFirstLower) => "lcfirst",
+            Self::StringResult(NativeStringResultOperation::ShellArgEscape) => "escapeshellarg",
+            Self::StringResult(NativeStringResultOperation::ShellCommandEscape) => "escapeshellcmd",
+            Self::Cast(NATIVE_VALUE_CAST_STRING) => "strval",
+            Self::Cast(NATIVE_VALUE_CAST_BOOL) => "boolval",
+            Self::Cast(NATIVE_VALUE_CAST_FLOAT) => "floatval",
+            Self::Cast(_) => "cast",
+            Self::TypeName(NATIVE_VALUE_TYPE_NAME_GETTYPE) => "gettype",
+            Self::TypeName(NATIVE_VALUE_TYPE_NAME_DEBUG) => "get_debug_type",
+            Self::TypeName(_) => "type-name",
+            Self::TypePredicate(NATIVE_VALUE_TYPE_IS_NULL) => "is_null",
+            Self::TypePredicate(NATIVE_VALUE_TYPE_IS_BOOL) => "is_bool",
+            Self::TypePredicate(NATIVE_VALUE_TYPE_IS_INT) => "is_int",
+            Self::TypePredicate(NATIVE_VALUE_TYPE_IS_FLOAT) => "is_float",
+            Self::TypePredicate(NATIVE_VALUE_TYPE_IS_STRING) => "is_string",
+            Self::TypePredicate(NATIVE_VALUE_TYPE_IS_ARRAY) => "is_array",
+            Self::TypePredicate(NATIVE_VALUE_TYPE_IS_SCALAR) => "is_scalar",
+            Self::TypePredicate(NATIVE_VALUE_TYPE_IS_NUMERIC) => "is_numeric",
+            Self::TypePredicate(NATIVE_VALUE_TYPE_IS_COUNTABLE) => "is_countable",
+            Self::TypePredicate(NATIVE_VALUE_TYPE_IS_ITERABLE) => "is_iterable",
+            Self::TypePredicate(NATIVE_VALUE_TYPE_IS_OBJECT) => "is_object",
+            Self::TypePredicate(_) => "type-predicate",
+        }
+    }
+
+    fn expected_arg_count(self) -> usize {
+        match self {
+            Self::StringPredicate(_) => 2,
+            Self::StringLength
+            | Self::StringResult(_)
+            | Self::Cast(_)
+            | Self::TypeName(_)
+            | Self::TypePredicate(_) => 1,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -6914,6 +6975,91 @@ fn native_callable_value_name(value: &Value, context: &str) -> Result<String, St
     }
 }
 
+fn native_callable_builtin_for_function_name(name: &str) -> Option<NativeCallableBuiltin> {
+    match name.to_ascii_lowercase().as_str() {
+        "strlen" => Some(NativeCallableBuiltin::StringLength),
+        "str_contains" => Some(NativeCallableBuiltin::StringPredicate(
+            NativeStringPredicate::Contains,
+        )),
+        "str_starts_with" => Some(NativeCallableBuiltin::StringPredicate(
+            NativeStringPredicate::StartsWith,
+        )),
+        "str_ends_with" => Some(NativeCallableBuiltin::StringPredicate(
+            NativeStringPredicate::EndsWith,
+        )),
+        "strrev" => Some(NativeCallableBuiltin::StringResult(
+            NativeStringResultOperation::Reverse,
+        )),
+        "bin2hex" => Some(NativeCallableBuiltin::StringResult(
+            NativeStringResultOperation::BinToHex,
+        )),
+        "str_rot13" => Some(NativeCallableBuiltin::StringResult(
+            NativeStringResultOperation::Rot13,
+        )),
+        "strtolower" => Some(NativeCallableBuiltin::StringResult(
+            NativeStringResultOperation::AsciiLower,
+        )),
+        "strtoupper" => Some(NativeCallableBuiltin::StringResult(
+            NativeStringResultOperation::AsciiUpper,
+        )),
+        "ucfirst" => Some(NativeCallableBuiltin::StringResult(
+            NativeStringResultOperation::AsciiFirstUpper,
+        )),
+        "lcfirst" => Some(NativeCallableBuiltin::StringResult(
+            NativeStringResultOperation::AsciiFirstLower,
+        )),
+        "escapeshellarg" => Some(NativeCallableBuiltin::StringResult(
+            NativeStringResultOperation::ShellArgEscape,
+        )),
+        "escapeshellcmd" => Some(NativeCallableBuiltin::StringResult(
+            NativeStringResultOperation::ShellCommandEscape,
+        )),
+        "strval" => Some(NativeCallableBuiltin::Cast(NATIVE_VALUE_CAST_STRING)),
+        "boolval" => Some(NativeCallableBuiltin::Cast(NATIVE_VALUE_CAST_BOOL)),
+        "floatval" | "doubleval" => Some(NativeCallableBuiltin::Cast(NATIVE_VALUE_CAST_FLOAT)),
+        "gettype" => Some(NativeCallableBuiltin::TypeName(
+            NATIVE_VALUE_TYPE_NAME_GETTYPE,
+        )),
+        "get_debug_type" => Some(NativeCallableBuiltin::TypeName(
+            NATIVE_VALUE_TYPE_NAME_DEBUG,
+        )),
+        "is_null" => Some(NativeCallableBuiltin::TypePredicate(
+            NATIVE_VALUE_TYPE_IS_NULL,
+        )),
+        "is_bool" => Some(NativeCallableBuiltin::TypePredicate(
+            NATIVE_VALUE_TYPE_IS_BOOL,
+        )),
+        "is_int" | "is_integer" | "is_long" => Some(NativeCallableBuiltin::TypePredicate(
+            NATIVE_VALUE_TYPE_IS_INT,
+        )),
+        "is_float" | "is_double" => Some(NativeCallableBuiltin::TypePredicate(
+            NATIVE_VALUE_TYPE_IS_FLOAT,
+        )),
+        "is_string" => Some(NativeCallableBuiltin::TypePredicate(
+            NATIVE_VALUE_TYPE_IS_STRING,
+        )),
+        "is_array" => Some(NativeCallableBuiltin::TypePredicate(
+            NATIVE_VALUE_TYPE_IS_ARRAY,
+        )),
+        "is_scalar" => Some(NativeCallableBuiltin::TypePredicate(
+            NATIVE_VALUE_TYPE_IS_SCALAR,
+        )),
+        "is_numeric" => Some(NativeCallableBuiltin::TypePredicate(
+            NATIVE_VALUE_TYPE_IS_NUMERIC,
+        )),
+        "is_countable" => Some(NativeCallableBuiltin::TypePredicate(
+            NATIVE_VALUE_TYPE_IS_COUNTABLE,
+        )),
+        "is_iterable" => Some(NativeCallableBuiltin::TypePredicate(
+            NATIVE_VALUE_TYPE_IS_ITERABLE,
+        )),
+        "is_object" => Some(NativeCallableBuiltin::TypePredicate(
+            NATIVE_VALUE_TYPE_IS_OBJECT,
+        )),
+        _ => None,
+    }
+}
+
 fn native_callable_value_lookup(
     table: Option<&NativeCallableTable>,
     callable_value: &Value,
@@ -6921,15 +7067,32 @@ fn native_callable_value_lookup(
 ) -> Result<NativeCallableValueDispatch, String> {
     match callable_value {
         Value::String(_) | Value::BinaryString(_) => {
-            let table = table.ok_or_else(|| {
-                "native callable lookup failed: table is null for string callable".to_string()
-            })?;
             let name = native_callable_value_name(callable_value, "function callable name")?;
-            let callable = table.lookup(NativeCallableKind::Function, None, name, caller_scope)?;
-            Ok(NativeCallableValueDispatch::Table {
-                callable,
-                bound_receiver: None,
-            })
+            if let Some(table) = table {
+                match table.lookup(
+                    NativeCallableKind::Function,
+                    None,
+                    name.clone(),
+                    caller_scope,
+                ) {
+                    Ok(callable) => {
+                        return Ok(NativeCallableValueDispatch::Table {
+                            callable,
+                            bound_receiver: None,
+                        })
+                    }
+                    Err(error) => {
+                        if let Some(builtin) = native_callable_builtin_for_function_name(&name) {
+                            return Ok(NativeCallableValueDispatch::Builtin(builtin));
+                        }
+                        return Err(error);
+                    }
+                }
+            }
+            if let Some(builtin) = native_callable_builtin_for_function_name(&name) {
+                return Ok(NativeCallableValueDispatch::Builtin(builtin));
+            }
+            Err("native callable lookup failed: table is null for string callable".to_string())
         }
         Value::Array(array) => {
             let table = table.ok_or_else(|| {
@@ -7052,8 +7215,9 @@ pub unsafe extern "C" fn phpc_native_callable_value_free(handle: NativeCallableV
 
 /// # Safety
 ///
-/// `table` must be a callable-table handle for string, array, and object
-/// callable values. Descriptor-backed closures do not require a table.
+/// `table` must be a callable-table handle for user string, array, and object
+/// callable values. Runtime-registered builtin strings and descriptor-backed
+/// closures do not require a table.
 /// `callable_value` must be a runtime value handle, and `diagnostic` may be
 /// null or point to a diagnostic slot owned by the caller.
 #[no_mangle]
@@ -7074,8 +7238,9 @@ pub unsafe extern "C" fn phpc_native_callable_lookup_value_or_closure_with_diagn
 
 /// # Safety
 ///
-/// `table` must be a callable-table handle for string, array, and object
-/// callable values. Descriptor-backed closures do not require a table.
+/// `table` must be a callable-table handle for user string, array, and object
+/// callable values. Runtime-registered builtin strings and descriptor-backed
+/// closures do not require a table.
 /// `callable_value` and `caller_scope` must be valid for the duration of the
 /// call according to the runtime ABI. `diagnostic` may be null or point to a
 /// diagnostic slot owned by the caller.
@@ -7886,6 +8051,109 @@ unsafe fn native_closure_arguments_free(arguments: Vec<NativeClosureArgument>) {
     }
 }
 
+unsafe fn native_callable_builtin_argument_values(
+    builtin: NativeCallableBuiltin,
+    arguments: NativeCallArgumentsHandle,
+) -> Result<Vec<NativeValueHandle>, String> {
+    let Some(arguments_ref) = (unsafe { arguments.as_ref() }) else {
+        return Err(format!(
+            "native callable builtin invocation failed: {} arguments handle is null",
+            builtin.name()
+        ));
+    };
+    let expected = builtin.expected_arg_count();
+    let actual = arguments_ref.slots.len();
+    if actual != expected {
+        return Err(format!(
+            "native callable builtin invocation failed: {} expected {expected} argument(s), got {actual}",
+            builtin.name()
+        ));
+    }
+
+    let mut values = Vec::with_capacity(expected);
+    for index in 0..expected {
+        let value = unsafe { phpc_native_call_arguments_read_value(arguments, index) };
+        if value.is_null() {
+            for value in values {
+                unsafe { phpc_native_value_free(value) };
+            }
+            return Err(format!(
+                "native callable builtin invocation failed: {} argument {index} could not be read as a value",
+                builtin.name()
+            ));
+        }
+        values.push(value);
+    }
+    Ok(values)
+}
+
+unsafe fn native_callable_builtin_invoke_value(
+    builtin: NativeCallableBuiltin,
+    arguments: NativeCallArgumentsHandle,
+) -> Result<Value, String> {
+    let values = unsafe { native_callable_builtin_argument_values(builtin, arguments) }?;
+    let result = match builtin {
+        NativeCallableBuiltin::StringLength => {
+            unsafe { native_value_to_string_bytes(values[0]) }.and_then(|bytes| {
+                i64::try_from(bytes.len()).map(Value::Int).map_err(|_| {
+                    RuntimeError::invalid_string_conversion(
+                        "native callable builtin invocation failed: strlen() result exceeds int range",
+                    )
+                })
+            })
+        }
+        NativeCallableBuiltin::StringPredicate(predicate) => unsafe {
+            native_value_string_predicate(values[0], values[1], predicate as u8).map(Value::Bool)
+        },
+        NativeCallableBuiltin::StringResult(operation) => unsafe {
+            native_value_string_result_operation_value(values[0], 0, operation as u8)
+        },
+        NativeCallableBuiltin::Cast(operation) => unsafe {
+            native_value_cast_operation_value(values[0], operation)
+        },
+        NativeCallableBuiltin::TypeName(kind) => {
+            match unsafe { values[0].as_ref() } {
+                Some(value) => native_value_type_name(value, kind)
+                    .map(Value::String)
+                    .map_err(RuntimeError::invalid_string_conversion),
+                None => Err(RuntimeError::invalid_string_conversion(
+                    "native callable builtin invocation failed: type-name value handle is null",
+                )),
+            }
+        }
+        NativeCallableBuiltin::TypePredicate(predicate) => {
+            match unsafe { values[0].as_ref() } {
+                Some(value) => native_value_type_predicate(value, predicate)
+                    .map(Value::Bool)
+                    .ok_or_else(|| {
+                        RuntimeError::invalid_string_conversion(format!(
+                            "native callable builtin invocation failed: unsupported type-predicate tag {predicate}"
+                        ))
+                    }),
+                None => Err(RuntimeError::invalid_string_conversion(
+                    "native callable builtin invocation failed: type-predicate value handle is null",
+                )),
+            }
+        }
+    };
+    for value in values {
+        unsafe { phpc_native_value_free(value) };
+    }
+    result.map_err(|error| error.message().to_string())
+}
+
+unsafe fn native_callable_builtin_invoke_result(
+    builtin: NativeCallableBuiltin,
+    arguments: NativeCallArgumentsHandle,
+) -> NativeCallResultHandle {
+    match unsafe { native_callable_builtin_invoke_value(builtin, arguments) } {
+        Ok(value) => phpc_native_call_result_from_value(NativeValueHandle::from_value(value)),
+        Err(message) => NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+            NativeDiagnosticHandle::from_message(message),
+        )),
+    }
+}
+
 unsafe fn native_callable_value_invoke_table_result(
     callable: &NativeCallable,
     bound_receiver: Option<&Value>,
@@ -8020,6 +8288,9 @@ pub unsafe extern "C" fn phpc_native_callable_value_invoke_result_with_diagnosti
                 arguments,
                 diagnostic,
             )
+        },
+        NativeCallableValueDispatch::Builtin(builtin) => unsafe {
+            native_callable_builtin_invoke_result(*builtin, arguments)
         },
         NativeCallableValueDispatch::DescriptorClosure(closure) => unsafe {
             native_callable_value_invoke_closure_result(closure, arguments)
@@ -26963,6 +27234,30 @@ mod tests {
         (value, diagnostic)
     }
 
+    unsafe fn invoke_callable_value_values_for_test(
+        callable: NativeCallableValueHandle,
+        values: Vec<Value>,
+    ) -> (NativeValueHandle, NativeDiagnosticHandle) {
+        let arguments = phpc_native_call_arguments_new();
+        for value in values {
+            assert!(unsafe {
+                phpc_native_call_arguments_push_value_and_free(
+                    arguments,
+                    NativeValueHandle::from_value(value),
+                )
+            });
+        }
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let value = unsafe {
+            phpc_native_callable_value_invoke_value_with_diagnostic_and_free(
+                callable,
+                arguments,
+                &mut diagnostic,
+            )
+        };
+        (value, diagnostic)
+    }
+
     #[test]
     fn native_call_arguments_and_results_preserve_value_reference_failure_and_ownership() {
         let arguments = phpc_native_call_arguments_new();
@@ -27481,6 +27776,70 @@ mod tests {
         }
 
         unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn native_callable_value_dispatch_invokes_runtime_builtin_function_families() {
+        let cases = [
+            (
+                Value::String("STRTOUPPER".to_string()),
+                vec![Value::String("go".to_string())],
+                Value::String("GO".to_string()),
+            ),
+            (
+                Value::BinaryString(b"strtolower".to_vec()),
+                vec![Value::BinaryString(b"MIX".to_vec())],
+                Value::String("mix".to_string()),
+            ),
+            (
+                Value::String("strlen".to_string()),
+                vec![Value::BinaryString(b"A\0B".to_vec())],
+                Value::Int(3),
+            ),
+            (
+                Value::String("str_contains".to_string()),
+                vec![
+                    Value::String("abc".to_string()),
+                    Value::String("b".to_string()),
+                ],
+                Value::Bool(true),
+            ),
+            (
+                Value::String("strval".to_string()),
+                vec![Value::Int(42)],
+                Value::String("42".to_string()),
+            ),
+            (
+                Value::String("gettype".to_string()),
+                vec![Value::Float(1.5)],
+                Value::String("double".to_string()),
+            ),
+            (
+                Value::String("is_numeric".to_string()),
+                vec![Value::String("42".to_string())],
+                Value::Bool(true),
+            ),
+        ];
+
+        for (callable_name, args, expected) in cases {
+            let callable_value = NativeValueHandle::from_value(callable_name);
+            let (callable, diagnostic) = unsafe {
+                lookup_callable_value_for_test(
+                    phpc_native_callable_table_null(),
+                    callable_value,
+                    None,
+                )
+            };
+            assert!(diagnostic.is_null());
+            assert!(!callable.is_null());
+            let (value, diagnostic) =
+                unsafe { invoke_callable_value_values_for_test(callable, args) };
+            assert!(diagnostic.is_null());
+            assert_eq!(unsafe { value.as_ref() }, Some(&expected));
+            unsafe { phpc_native_value_free(value) };
+            unsafe { phpc_native_callable_value_free(callable) };
+            unsafe { phpc_native_value_free(callable_value) };
+        }
     }
 
     #[test]
