@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 04:10 CEST
+Updated: 2026-05-26 04:15 CEST
 Evaluation marker: `20260526T020844Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
@@ -18,7 +18,7 @@ Full generalized PHP semantics reality check: **61%** `[############--------]`
 
 Primary `HEAD` is aligned with `origin/master` at:
 
-`b918d3b1 native: add RMW lvalue operand-list diagnostics`.
+`90a9204a docs: account RMW lvalue diagnostics`.
 
 Latest primary-integrated source capability baseline:
 
@@ -62,6 +62,8 @@ surfaces, not full PHP language parity.
   `NativeDiagnosticOperandRequirement` operation-list ABI. This is diagnostic
   boundary progress only; no executable RMW writeback or COW/reference
   semantics were added.
+- `90a9204a`: accounted `b918d3b1` in `PROGRESS.md` only. It made no
+  compiler/runtime/test source change.
 - `513dbf21`: added generalized object/property ArrayAccess write-operation
   blocker classification over shared `AssignTarget` and `UnsetTarget`
   operation results. It covers write, append, compound update,
@@ -135,7 +137,8 @@ Primary-integrated capability:
 
 In progress but not counted as primary capability:
 
-- [ ] RMW post-integration shadow audit and pages/dashboard follow-through.
+- [ ] RMW post-integration shadow audit and dashboard refresh after accounting
+  and pages consistency.
 - [ ] Cleanup/unwind requirement boundary refresh after `b918d3b1`.
 - [ ] Trait effective-method metadata refresh, stale and metadata-only.
 - [ ] Dead dynamic callable ladder cleanup.
@@ -173,7 +176,8 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary source is clean and synced at `b918d3b1`.
+- [x] Primary is clean and synced at `90a9204a`; latest source capability is
+  `b918d3b1`.
 - [x] Latest source capability is `b918d3b1`.
 - [x] `b918d3b1` is accounted as generalized RMW lvalue operand-list
   diagnostic progress only.
@@ -184,8 +188,12 @@ Primary-integrated:
 
 Lane-local and follow-up state:
 
-- [ ] RMW post-integration shadow audit, pages consistency, and dashboard
-  refresh were not yet observed at live verification.
+- [ ] RMW progress accounting is committed at `90a9204a`, and pages
+  consistency is clean.
+- [ ] RMW post-integration shadow audit was not yet observed at live
+  verification.
+- [ ] Supervisor dashboard refresh after the completed RMW accounting/pages
+  state was not yet observed at live verification.
 - [ ] Cleanup/unwind has useful candidate evidence, but it must refresh after
   RMW because the conflict map reports diagnostic import/constant conflicts.
 - [ ] Broad worker lanes are active evidence pools, not primary capability.
@@ -224,8 +232,8 @@ cleanup of dead compiler code.
 
 Best next action:
 
-- Complete RMW follow-through: shadow audit, pages consistency, and dashboard
-  refresh around `b918d3b1`.
+- Complete RMW follow-through: shadow audit and dashboard refresh after
+  `90a9204a`.
 - If cleanup/unwind is next, refresh it after `b918d3b1`, union the diagnostic
   imports/constants, and rerun focused cleanup/RMW-adjacent gates before any
   primary route.

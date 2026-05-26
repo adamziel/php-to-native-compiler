@@ -24,14 +24,14 @@
 <article class="card"><h3>Executable RMW/writeback</h3><div class="mini"><span>Primary</span><progress max="100" value="0">0%</progress><strong>0%</strong></div><span class="tag early">Not implemented. Needs ordered read/write evaluation, owner/writeback contracts, COW/reference identity, object/property/ArrayAccess storage, cleanup, and exact diagnostics.</span></article>
 <article class="card"><h3>Runtime ArrayAccess execution</h3><div class="mini"><span>Primary</span><progress max="100" value="0">0%</progress><strong>0%</strong></div><span class="tag early">Not integrated. Current primary blocks/classifies Object/ArrayAccess write operations; execution of `offsetGet`, `offsetExists`, `offsetSet`, and `offsetUnset` remains open.</span></article>
 <article class="card"><h3>Broad dirty lane extraction backlog</h3><div class="mini"><span>Primary</span><progress max="100" value="0">0%</progress><strong>0%</strong></div><span class="tag early">Dirty call, diagnostic, object, control-flow, symbol, byte/string, and array lanes remain evidence pools only.</span></article></div><h2 id="php-native-compiler-progress">PHP Native Compiler Progress</h2>
-<p>Updated: 2026-05-26 04:10 CEST Evaluation marker: <code>20260526T020844Z</code></p>
+<p>Updated: 2026-05-26 04:15 CEST Evaluation marker: <code>20260526T020844Z</code></p>
 <p>Accounting rule: only generalized, tested, committed, and pushed primary work counts as integrated capability. Dirty WIP, candidate worktrees, lane-local claims, review-only work, failed prep proofs, probe-only commits, architecture notes, and dashboard-only commits are excluded.</p>
 <h3 id="executive-read">Executive Read</h3>
 <p>Overall supervised-roadmap progress: <strong>95%</strong> <code>[###################-]</code></p>
 <p>Selected executable native-compiler islands: <strong>95%</strong> <code>[###################-]</code></p>
 <p>Full generalized PHP semantics reality check: <strong>61%</strong> <code>[############--------]</code></p>
 <p>Primary <code>HEAD</code> is aligned with <code>origin/master</code> at:</p>
-<p><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b918d3b1">b918d3b1</a> native: add RMW lvalue operand-list diagnostics</code>.</p>
+<p><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/90a9204a">90a9204a</a> docs: account RMW lvalue diagnostics</code>.</p>
 <p>Latest primary-integrated source capability baseline:</p>
 <p><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b918d3b1">b918d3b1</a> native: add RMW lvalue operand-list diagnostics</code>.</p>
 <p>Recent primary progress is real and well scoped. <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b918d3b1">b918d3b1</a></code> integrates an RMW lvalue operand-list diagnostic boundary with runtime operation tag <code>8</code>, operand tag <code>21</code>, shared <code>AssignTarget</code> operand enumeration, runtime ABI coverage, and compiler classifier tests. It is not executable RMW semantics: owner/writeback, references/COW, object/static property storage, ArrayAccess dispatch, missing-key recovery, cleanup ownership, and exact PHP diagnostic ordering remain open.</p>
@@ -42,6 +42,8 @@
 <ul>
 <li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b918d3b1">b918d3b1</a></code>: added generalized RMW lvalue operand-list diagnostics for</li>
 <p>compound assignment, null-coalesce assignment, increment/decrement, and <code>for</code> RMW target operands. The packet uses operation tag <code>8</code>, operand tag <code>21</code>, shared <code>AssignTarget</code> operand enumeration, and the generic <code>NativeDiagnosticOperandRequirement</code> operation-list ABI. This is diagnostic boundary progress only; no executable RMW writeback or COW/reference semantics were added.</p>
+<li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/90a9204a">90a9204a</a></code>: accounted <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b918d3b1">b918d3b1</a></code> in <code>PROGRESS.md</code> only. It made no</li>
+<p>compiler/runtime/test source change.</p>
 <li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/513dbf21">513dbf21</a></code>: added generalized object/property ArrayAccess write-operation</li>
 <p>blocker classification over shared <code>AssignTarget</code> and <code>UnsetTarget</code> operation results. It covers write, append, compound update, null-coalesce write, and unset operation families through shared LLVM and generated-C blocker boundaries. No executable <code>offsetSet()</code> or <code>offsetUnset()</code> dispatch was added.</p>
 <li><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/6a73b186">6a73b186</a></code>: routed generated-C dynamic callee expression lowering through</li>
@@ -86,7 +88,8 @@
 </ul>
 <p>In progress but not counted as primary capability:</p>
 <ul>
-<li>[ ] RMW post-integration shadow audit and pages/dashboard follow-through.</li>
+<li>[ ] RMW post-integration shadow audit and dashboard refresh after accounting</li>
+<p>and pages consistency.</p>
 <li>[ ] Cleanup/unwind requirement boundary refresh after <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b918d3b1">b918d3b1</a></code>.</li>
 <li>[ ] Trait effective-method metadata refresh, stale and metadata-only.</li>
 <li>[ ] Dead dynamic callable ladder cleanup.</li>
@@ -118,7 +121,8 @@
 <h3 id="current-work-snapshot">Current Work Snapshot</h3>
 <p>Primary-integrated:</p>
 <ul>
-<li>[x] Primary source is clean and synced at <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b918d3b1">b918d3b1</a></code>.</li>
+<li>[x] Primary is clean and synced at <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/90a9204a">90a9204a</a></code>; latest source capability is</li>
+<p><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b918d3b1">b918d3b1</a></code>.</p>
 <li>[x] Latest source capability is <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b918d3b1">b918d3b1</a></code>.</li>
 <li>[x] <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b918d3b1">b918d3b1</a></code> is accounted as generalized RMW lvalue operand-list</li>
 <p>diagnostic progress only.</p>
@@ -129,8 +133,12 @@
 </ul>
 <p>Lane-local and follow-up state:</p>
 <ul>
-<li>[ ] RMW post-integration shadow audit, pages consistency, and dashboard</li>
-<p>refresh were not yet observed at live verification.</p>
+<li>[ ] RMW progress accounting is committed at <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/90a9204a">90a9204a</a></code>, and pages</li>
+<p>consistency is clean.</p>
+<li>[ ] RMW post-integration shadow audit was not yet observed at live</li>
+<p>verification.</p>
+<li>[ ] Supervisor dashboard refresh after the completed RMW accounting/pages</li>
+<p>state was not yet observed at live verification.</p>
 <li>[ ] Cleanup/unwind has useful candidate evidence, but it must refresh after</li>
 <p>RMW because the conflict map reports diagnostic import/constant conflicts.</p>
 <li>[ ] Broad worker lanes are active evidence pools, not primary capability.</li>
@@ -152,8 +160,8 @@
 <h3 id="next-steering-read">Next Steering Read</h3>
 <p>Best next action:</p>
 <ul>
-<li>Complete RMW follow-through: shadow audit, pages consistency, and dashboard</li>
-<p>refresh around <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b918d3b1">b918d3b1</a></code>.</p>
+<li>Complete RMW follow-through: shadow audit and dashboard refresh after</li>
+<p><code><a href="https://github.com/adamziel/php-to-native-compiler/commit/90a9204a">90a9204a</a></code>.</p>
 <li>If cleanup/unwind is next, refresh it after <code><a href="https://github.com/adamziel/php-to-native-compiler/commit/b918d3b1">b918d3b1</a></code>, union the diagnostic</li>
 <p>imports/constants, and rerun focused cleanup/RMW-adjacent gates before any primary route.</p>
 <li>Prefer the next source integration that removes an executable semantic cliff:</li>
@@ -171,6 +179,6 @@
 <p>and feed an imminent executable consumer.</p>
 <li>Directly importing broad dirty lanes.</li>
 </ul></section></main>
-  <footer><span>Generated 2026-05-26T02:14:23.391Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
+  <footer><span>Generated 2026-05-26T02:16:50.736Z</span><span>Source branch: <a href="https://github.com/adamziel/php-to-native-compiler/tree/master">master</a></span></footer>
 </body>
 </html>
