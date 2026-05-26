@@ -12,12 +12,18 @@ use crate::ast::{
 use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
     classify_php_numeric_string, is_php_truthy_string, php_primitive_arithmetic_result,
-    php_strings_use_numeric_comparison, NativeComparisonOp, NativeFilesystemPathOperation,
+    php_strings_use_numeric_comparison, phpc_native_diagnostic_contains_severity,
+    phpc_native_diagnostic_free, phpc_native_diagnostic_operand_requirement_list_clone,
+    phpc_native_diagnostic_result_operation_blocker_list_and_free, NativeComparisonOp,
+    NativeDiagnosticOperandRequirement, NativeDiagnosticSeverity, NativeFilesystemPathOperation,
     NativeIntConversionOperation, NativeOutputBufferOperation, NativeStringArrayOperation,
     NativeStringDistanceOperation, NativeStringIntOperation, NativeStringOffsetOperation,
     NativeStringPredicate, NativeStringResultOperation, NativeStringSearchOperation,
     PhpPrimitiveArithmeticError, PhpPrimitiveArithmeticOperation, PhpPrimitiveArithmeticValue,
-    PhpPrimitiveValue,
+    PhpPrimitiveValue, PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP,
+    PHPC_NATIVE_DIAGNOSTIC_OPERATION_CALL_ARGUMENT_LIST,
+    PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST,
 };
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
@@ -598,10 +604,79 @@ fn native_user_function_param_has_unsupported_by_reference_shape(param: &Functio
         && (param.is_variadic || param.default.is_some() || param.type_decl.is_some())
 }
 
+fn native_diagnostic_operation_list_is_blocked(
+    operation: u8,
+    requirements: &[NativeDiagnosticOperandRequirement],
+) -> bool {
+    if requirements.is_empty() {
+        return false;
+    }
+
+    let list = unsafe {
+        phpc_native_diagnostic_operand_requirement_list_clone(
+            requirements.as_ptr(),
+            requirements.len(),
+        )
+    };
+    let diagnostic =
+        unsafe { phpc_native_diagnostic_result_operation_blocker_list_and_free(operation, list) };
+    let is_blocker = unsafe {
+        phpc_native_diagnostic_contains_severity(
+            diagnostic,
+            NativeDiagnosticSeverity::Blocker as u8,
+        )
+    };
+    unsafe { phpc_native_diagnostic_free(diagnostic) };
+    is_blocker
+}
+
+fn native_call_argument_list_requirements(
+    args: &[Expr],
+) -> Vec<NativeDiagnosticOperandRequirement> {
+    native_operand_list_requirements(
+        args,
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
+        native_expr_contains_call_result,
+    )
+}
+
+fn native_lvalue_operand_list_requirements(
+    exprs: &[Expr],
+) -> Vec<NativeDiagnosticOperandRequirement> {
+    native_operand_list_requirements(
+        exprs,
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP,
+        |expr| native_lvalue_operand_call_result_operation(expr).is_some(),
+    )
+}
+
+fn native_operand_list_requirements<F>(
+    exprs: &[Expr],
+    requirement_tag: u8,
+    contains_requirement: F,
+) -> Vec<NativeDiagnosticOperandRequirement>
+where
+    F: Fn(&Expr) -> bool,
+{
+    exprs
+        .iter()
+        .enumerate()
+        .filter_map(|(operand_index, arg)| {
+            contains_requirement(arg).then_some(NativeDiagnosticOperandRequirement {
+                tag: requirement_tag,
+                operand_index,
+            })
+        })
+        .collect()
+}
+
 fn native_call_argument_list_blocker(args: &[Expr]) -> Option<NativeCallBlocker> {
-    args.iter()
-        .any(native_expr_contains_call_result)
-        .then_some(NativeCallBlocker::ArgumentEvaluationCleanup)
+    let requirements = native_call_argument_list_requirements(args);
+    native_diagnostic_operation_list_is_blocked(
+        PHPC_NATIVE_DIAGNOSTIC_OPERATION_CALL_ARGUMENT_LIST,
+        &requirements,
+    )
+    .then_some(NativeCallBlocker::ArgumentEvaluationCleanup)
 }
 
 fn native_direct_call_argument_result_operation(
@@ -4328,6 +4403,14 @@ fn native_unset_target_call_operation(target: &UnsetTarget) -> Option<NativeCall
 }
 
 fn native_expr_list_call_result_operation(exprs: &[Expr]) -> Option<NativeCallOperation> {
+    let requirements = native_lvalue_operand_list_requirements(exprs);
+    if !native_diagnostic_operation_list_is_blocked(
+        PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST,
+        &requirements,
+    ) {
+        return None;
+    }
+
     exprs
         .iter()
         .find_map(native_lvalue_operand_call_result_operation)
@@ -40378,6 +40461,104 @@ echo " 10" < "zeta";
         assert_eq!(
             native_call_argument_list_blocker(&[test_closure_expr(Vec::new(), false)]),
             Some(NativeCallBlocker::ArgumentEvaluationCleanup)
+        );
+    }
+
+    #[test]
+    fn native_call_argument_list_blocker_uses_generic_operand_requirement_boundary() {
+        let span = test_span();
+        let args = [
+            Expr::Int(1, span),
+            Expr::Call {
+                name: "produce".to_string(),
+                args: Vec::new(),
+                span,
+            },
+            Expr::Array {
+                items: vec![ArrayItem {
+                    key: Some(Expr::String("key".to_string(), span)),
+                    value: Expr::DynamicCall {
+                        callee: Box::new(test_variable_expr("producer")),
+                        args: vec![Expr::Bool(true, span)],
+                        span,
+                    },
+                    by_reference: false,
+                }],
+                span,
+            },
+            Expr::New {
+                class_name: crate::ast::NewClassName::Named("Box".to_string()),
+                args: vec![Expr::MethodCall {
+                    target: Box::new(test_variable_expr("source")),
+                    method: "value".to_string(),
+                    args: Vec::new(),
+                    span,
+                }],
+                span,
+            },
+        ];
+
+        let requirements = native_call_argument_list_requirements(&args);
+        assert_eq!(
+            requirements,
+            vec![
+                NativeDiagnosticOperandRequirement {
+                    tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
+                    operand_index: 1,
+                },
+                NativeDiagnosticOperandRequirement {
+                    tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
+                    operand_index: 2,
+                },
+                NativeDiagnosticOperandRequirement {
+                    tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
+                    operand_index: 3,
+                },
+            ]
+        );
+        assert_eq!(
+            native_call_argument_list_blocker(&args),
+            Some(NativeCallBlocker::ArgumentEvaluationCleanup)
+        );
+        assert_eq!(
+            native_call_argument_list_requirements(&args[..1]),
+            Vec::new()
+        );
+        assert_eq!(native_call_argument_list_blocker(&args[..1]), None);
+
+        let lvalue_operands = [
+            Expr::String("plain".to_string(), span),
+            Expr::DynamicCall {
+                callee: Box::new(test_variable_expr("key_factory")),
+                args: Vec::new(),
+                span,
+            },
+            Expr::MethodCall {
+                target: Box::new(test_variable_expr("keys")),
+                method: "next".to_string(),
+                args: Vec::new(),
+                span,
+            },
+        ];
+        assert_eq!(
+            native_lvalue_operand_list_requirements(&lvalue_operands),
+            vec![
+                NativeDiagnosticOperandRequirement {
+                    tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP,
+                    operand_index: 1,
+                },
+                NativeDiagnosticOperandRequirement {
+                    tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP,
+                    operand_index: 2,
+                },
+            ]
+        );
+        assert_eq!(
+            native_expr_list_call_result_operation(&lvalue_operands),
+            Some(NativeCallOperation::dynamic_value_with_blocker(
+                span,
+                NativeCallBlocker::LvalueOperandEvaluationCleanup,
+            ))
         );
     }
 

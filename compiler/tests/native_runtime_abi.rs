@@ -7,6 +7,17 @@ use php_compiler::{
     native_runtime_scalar_echo_probe_ir, native_runtime_scalar_echo_probe_ir_for_target, parse,
     NativeRuntimeIrTarget,
 };
+use php_runtime::{
+    phpc_native_byte_buffer_free, phpc_native_diagnostic_contains_severity,
+    phpc_native_diagnostic_free, phpc_native_diagnostic_message_clone_bytes,
+    phpc_native_diagnostic_operand_requirement_list_clone,
+    phpc_native_diagnostic_result_operation_blocker_list_and_free,
+    NativeDiagnosticOperandRequirement, NativeDiagnosticSeverity,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
+    PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP,
+    PHPC_NATIVE_DIAGNOSTIC_OPERATION_CALL_ARGUMENT_LIST,
+    PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST,
+};
 
 const STRING_INT_IR_SOURCE: &str = "<?php\n$payload = \"A\\0bA\\0b\";\necho strcasecmp($payload, \"a\\0B\");\necho strcmp($payload, \"A\\0c\");\necho strncmp($payload, \"A\\0bZ\", \"3\");\necho strncasecmp($payload, \"a\\0Bz\", 3);\necho ord(\"A\");\necho crc32($payload);\n";
 const STRING_PREDICATE_IR_SOURCE: &str = "<?php\n$payload = \"A\\0B\";\necho str_starts_with($payload, \"A\\0\");\necho str_ends_with($payload, \"\\0B\");\necho str_contains(42, \"2\");\necho str_contains($payload, \"C\");\n";
@@ -14,6 +25,17 @@ const STRING_SEARCH_IR_SOURCE: &str = "<?php\n$payload = \"A\\0bA\\0b\";\necho s
 const STRING_RESULT_IR_SOURCE: &str = "<?php\n$payload = \"A\\0B\";\necho strrev($payload), \"|\";\nprint str_rot13(\"Az-09\");\necho \"|\";\necho bin2hex($payload), \"|\";\necho strtolower(\"MiXeD\"), \"|\";\necho strtoupper(\"MiXeD\"), \"|\";\necho ucfirst(\"word\"), \"|\";\necho lcfirst(\"Word\"), \"|\";\necho escapeshellarg(\"X ;\\$'Q\\\"\"), \"|\";\necho escapeshellcmd(\"X ;\\$'Q\\\"\"), \"|\";\necho strrev(42042);\n";
 const VALUE_OFFSET_IR_SOURCE: &str = "<?php\n$payload = \"A\\0B\\xff\";\necho $payload[1];\necho isset($payload[2]);\necho empty($payload[3]);\necho strlen($payload[0]);\necho strcmp($payload[0], \"A\");\n";
 const OUTPUT_BUFFER_RUNTIME_SOURCE: &str = "<?php\nob_start(null, strlen(\"aa\"), strlen(\"flags\"));\necho \"A\\0B\";\necho 42;\nob_get_contents();\nob_get_length();\nob_list_handlers();\nob_get_status(true);\nob_clean();\necho strtolower(\"HIDDEN\");\nob_get_clean();\nob_start();\necho \"A\";\nob_start();\necho \"B\";\nob_end_flush();\nob_get_clean();\nob_get_level();\n";
+
+fn runtime_diagnostic_message(handle: php_runtime::NativeDiagnosticHandle) -> String {
+    let buffer = unsafe { phpc_native_diagnostic_message_clone_bytes(handle) };
+    let bytes = if buffer.ptr.is_null() {
+        Vec::new()
+    } else {
+        unsafe { std::slice::from_raw_parts(buffer.ptr, buffer.len) }.to_vec()
+    };
+    unsafe { phpc_native_byte_buffer_free(buffer) };
+    String::from_utf8(bytes).expect("runtime diagnostics should be valid UTF-8")
+}
 
 fn assert_llvm_conversion_result_consumers_are_guarded(ir: &str, minimum_consumers: usize) {
     assert!(
@@ -62,6 +84,117 @@ fn assert_c_conversion_result_consumers_are_guarded(c_source: &str, minimum_cons
         c_source.matches("phpc_native_diagnostic_report").count() >= minimum_consumers,
         "{c_source}"
     );
+}
+
+#[test]
+fn native_call_argument_list_diagnostics_use_generic_runtime_operand_list_boundary() {
+    let requirements = [
+        NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
+            operand_index: 0,
+        },
+        NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
+            operand_index: 2,
+        },
+    ];
+    let list = unsafe {
+        phpc_native_diagnostic_operand_requirement_list_clone(
+            requirements.as_ptr(),
+            requirements.len(),
+        )
+    };
+    let diagnostic = unsafe {
+        phpc_native_diagnostic_result_operation_blocker_list_and_free(
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_CALL_ARGUMENT_LIST,
+            list,
+        )
+    };
+    assert!(unsafe {
+        phpc_native_diagnostic_contains_severity(
+            diagnostic,
+            NativeDiagnosticSeverity::Blocker as u8,
+        )
+    });
+    let message = runtime_diagnostic_message(diagnostic);
+    assert!(message.contains("call argument list"), "{message}");
+    assert!(
+        message.contains("argument evaluation cleanup at operand 0"),
+        "{message}"
+    );
+    assert!(
+        message.contains("argument evaluation cleanup at operand 2"),
+        "{message}"
+    );
+    unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+    let lvalue_requirements = [
+        NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP,
+            operand_index: 1,
+        },
+        NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP,
+            operand_index: 3,
+        },
+    ];
+    let lvalue_list = unsafe {
+        phpc_native_diagnostic_operand_requirement_list_clone(
+            lvalue_requirements.as_ptr(),
+            lvalue_requirements.len(),
+        )
+    };
+    let lvalue_diagnostic = unsafe {
+        phpc_native_diagnostic_result_operation_blocker_list_and_free(
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST,
+            lvalue_list,
+        )
+    };
+    let lvalue_message = runtime_diagnostic_message(lvalue_diagnostic);
+    assert!(
+        lvalue_message.contains("lvalue operand list"),
+        "{lvalue_message}"
+    );
+    assert!(
+        lvalue_message.contains("lvalue evaluation cleanup at operand 1"),
+        "{lvalue_message}"
+    );
+    assert!(
+        lvalue_message.contains("lvalue evaluation cleanup at operand 3"),
+        "{lvalue_message}"
+    );
+    unsafe { phpc_native_diagnostic_free(lvalue_diagnostic) };
+
+    for (source, llvm_expected, c_expected) in [
+        (
+            "<?php\necho missing(strlen(\"abc\"));\n",
+            "LLVM function-call lowering rejects",
+            "assembly function-call lowering rejects",
+        ),
+        (
+            "<?php\n$call = \"missing\";\necho $call(strlen(\"abc\"), strtolower(\"ABC\"));\n",
+            "LLVM dynamic function-call lowering rejects",
+            "assembly dynamic function-call lowering rejects",
+        ),
+        (
+            "<?php\n$call = \"value\";\n$box->work($call(), strlen(\"abc\"));\n",
+            "LLVM method-call lowering rejects",
+            "assembly method-call lowering rejects",
+        ),
+    ] {
+        let llvm_error = emit_ir_source(source).unwrap_err();
+        assert_eq!(llvm_error.phase, Phase::Codegen);
+        assert!(
+            llvm_error.message.contains(llvm_expected),
+            "{}",
+            llvm_error.message
+        );
+
+        let program = parse(source).unwrap();
+        let c_error = emit_native_executable_c_source(&program).unwrap_err();
+        assert_eq!(c_error.phase, Phase::Codegen);
+        assert!(c_error.message.contains(c_expected), "{}", c_error.message);
+    }
 }
 
 fn request_superglobal_array_key_consumer_rejection(backend: &str, subject: &str) -> String {

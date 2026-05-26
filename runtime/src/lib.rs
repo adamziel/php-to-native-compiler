@@ -133,6 +133,21 @@ pub struct NativeDiagnosticHandle {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeDiagnosticOperandRequirement {
+    pub tag: u8,
+    pub operand_index: usize,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeDiagnosticOperandRequirementList {
+    ptr: *mut NativeDiagnosticOperandRequirement,
+    len: usize,
+    cap: usize,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeCallableTableHandle {
     ptr: *mut NativeCallableTable,
 }
@@ -197,6 +212,26 @@ pub enum NativeDiagnosticSeverity {
     Error = 3,
     Blocker = 4,
 }
+
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERATION_CALL_ARGUMENT_LIST: u8 = 1;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERATION_VALUE_OPERAND_LIST: u8 = 2;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST: u8 = 3;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERATION_STATEMENT_OPERAND_LIST: u8 = 4;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERATION_CONTROL_FLOW_OPERAND_LIST: u8 = 5;
+
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP: u8 = 1;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_VALUE_EVALUATION_CLEANUP: u8 = 2;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP: u8 = 3;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP: u8 = 4;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_RESULT_OWNERSHIP: u8 = 5;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_FRAME_HANDOFF: u8 = 7;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_GLOBAL_FRAME_SEPARATION: u8 = 8;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_UNKNOWN_CALLEE_DIAGNOSTICS: u8 = 9;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_DESTRUCTOR_OBSERVABLE_CLEANUP: u8 = 10;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_DYNAMIC_CALLABLE_EVALUATION: u8 = 11;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_METHOD_DISPATCH: u8 = 12;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_CONSTRUCTOR_DISPATCH: u8 = 13;
+pub const PHPC_NATIVE_DIAGNOSTIC_OPERAND_BY_REFERENCE_ARGUMENT_BINDING: u8 = 14;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1898,6 +1933,37 @@ impl NativeStringConversionResult {
 
     pub fn is_success(&self) -> bool {
         self.diagnostic.is_null()
+    }
+}
+
+impl NativeDiagnosticOperandRequirementList {
+    pub const fn empty() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+            len: 0,
+            cap: 0,
+        }
+    }
+
+    fn from_vec(mut requirements: Vec<NativeDiagnosticOperandRequirement>) -> Self {
+        if requirements.is_empty() {
+            return Self::empty();
+        }
+
+        let list = Self {
+            ptr: requirements.as_mut_ptr(),
+            len: requirements.len(),
+            cap: requirements.capacity(),
+        };
+        std::mem::forget(requirements);
+        list
+    }
+
+    unsafe fn into_vec(self) -> Vec<NativeDiagnosticOperandRequirement> {
+        if self.ptr.is_null() {
+            return Vec::new();
+        }
+        unsafe { Vec::from_raw_parts(self.ptr, self.len, self.cap) }
     }
 }
 
@@ -17605,6 +17671,119 @@ pub unsafe extern "C" fn phpc_native_diagnostic_contains_severity(
         .unwrap_or(false)
 }
 
+/// # Safety
+///
+/// `items` must be valid for `len` contiguous
+/// `NativeDiagnosticOperandRequirement` values, or null with a zero length.
+/// The returned list owns a runtime clone of the items and must be passed to
+/// `phpc_native_diagnostic_operand_requirement_list_free` or an ABI function
+/// with an `_and_free` suffix.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_operand_requirement_list_clone(
+    items: *const NativeDiagnosticOperandRequirement,
+    len: usize,
+) -> NativeDiagnosticOperandRequirementList {
+    if len == 0 {
+        return NativeDiagnosticOperandRequirementList::empty();
+    }
+    if items.is_null() {
+        return NativeDiagnosticOperandRequirementList::empty();
+    }
+
+    let requirements = unsafe { std::slice::from_raw_parts(items, len) }.to_vec();
+    NativeDiagnosticOperandRequirementList::from_vec(requirements)
+}
+
+/// # Safety
+///
+/// `list` must be a list returned by the runtime ABI and not yet freed. Passing
+/// any other pointer is undefined behavior.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_operand_requirement_list_free(
+    list: NativeDiagnosticOperandRequirementList,
+) {
+    drop(unsafe { list.into_vec() });
+}
+
+/// # Safety
+///
+/// `requirements` must be a list returned by the runtime ABI and not yet freed.
+/// This function consumes and releases the list, then returns a diagnostic
+/// handle owned by the caller. The caller must release the returned handle with
+/// `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_result_operation_blocker_list_and_free(
+    operation: u8,
+    requirements: NativeDiagnosticOperandRequirementList,
+) -> NativeDiagnosticHandle {
+    let requirements = unsafe { requirements.into_vec() };
+    NativeDiagnosticHandle::from_blocker_message(native_diagnostic_operation_list_message(
+        operation,
+        &requirements,
+    ))
+}
+
+fn native_diagnostic_operation_list_message(
+    operation: u8,
+    requirements: &[NativeDiagnosticOperandRequirement],
+) -> String {
+    let operation = native_diagnostic_operation_name(operation);
+    if requirements.is_empty() {
+        return format!(
+            "native diagnostic operation blocker: {operation} has no operand requirements"
+        );
+    }
+
+    let items = requirements
+        .iter()
+        .map(|requirement| {
+            format!(
+                "{} at operand {}",
+                native_diagnostic_operand_requirement_name(requirement.tag),
+                requirement.operand_index
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("native diagnostic operation blocker: {operation} requires {items}")
+}
+
+fn native_diagnostic_operation_name(operation: u8) -> &'static str {
+    match operation {
+        PHPC_NATIVE_DIAGNOSTIC_OPERATION_CALL_ARGUMENT_LIST => "call argument list",
+        PHPC_NATIVE_DIAGNOSTIC_OPERATION_VALUE_OPERAND_LIST => "value operand list",
+        PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST => "lvalue operand list",
+        PHPC_NATIVE_DIAGNOSTIC_OPERATION_STATEMENT_OPERAND_LIST => "statement operand list",
+        PHPC_NATIVE_DIAGNOSTIC_OPERATION_CONTROL_FLOW_OPERAND_LIST => "control-flow operand list",
+        _ => "unknown operation list",
+    }
+}
+
+fn native_diagnostic_operand_requirement_name(requirement: u8) -> &'static str {
+    match requirement {
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP => "argument evaluation cleanup",
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_VALUE_EVALUATION_CLEANUP => "value evaluation cleanup",
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_LVALUE_EVALUATION_CLEANUP => "lvalue evaluation cleanup",
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP => {
+            "statement evaluation cleanup"
+        }
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_RESULT_OWNERSHIP => "result ownership",
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_FRAME_HANDOFF => "frame handoff",
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_GLOBAL_FRAME_SEPARATION => "global-frame separation",
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_UNKNOWN_CALLEE_DIAGNOSTICS => "unknown-callee diagnostics",
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_DESTRUCTOR_OBSERVABLE_CLEANUP => {
+            "destructor-observable cleanup"
+        }
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_DYNAMIC_CALLABLE_EVALUATION => "dynamic callable evaluation",
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_METHOD_DISPATCH => "method dispatch",
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_CONSTRUCTOR_DISPATCH => "constructor dispatch",
+        PHPC_NATIVE_DIAGNOSTIC_OPERAND_BY_REFERENCE_ARGUMENT_BINDING => {
+            "by-reference argument binding"
+        }
+        _ => "unknown operand requirement",
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn phpc_native_diagnostic_severity_is_known(severity_tag: u8) -> bool {
     NativeDiagnosticSeverity::from_abi_tag(severity_tag).is_some()
@@ -17634,6 +17813,94 @@ pub unsafe extern "C" fn phpc_native_diagnostic_free(handle: NativeDiagnosticHan
     }
 
     drop(unsafe { Box::from_raw(handle.ptr) });
+}
+
+#[test]
+fn native_diagnostic_operation_blocker_list_models_operation_requirements_and_ownership() {
+    fn diagnostic_message(handle: NativeDiagnosticHandle) -> String {
+        let buffer = unsafe { phpc_native_diagnostic_message_clone_bytes(handle) };
+        let bytes = if buffer.ptr().is_null() {
+            Vec::new()
+        } else {
+            unsafe { std::slice::from_raw_parts(buffer.ptr(), buffer.len()) }.to_vec()
+        };
+        unsafe { phpc_native_byte_buffer_free(buffer) };
+        String::from_utf8(bytes).expect("runtime diagnostics should be valid UTF-8")
+    }
+
+    let call_requirements = [
+        NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
+            operand_index: 0,
+        },
+        NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_VALUE_EVALUATION_CLEANUP,
+            operand_index: 2,
+        },
+    ];
+    let call_list = unsafe {
+        phpc_native_diagnostic_operand_requirement_list_clone(
+            call_requirements.as_ptr(),
+            call_requirements.len(),
+        )
+    };
+    let call_diagnostic = unsafe {
+        phpc_native_diagnostic_result_operation_blocker_list_and_free(
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_CALL_ARGUMENT_LIST,
+            call_list,
+        )
+    };
+    assert!(unsafe {
+        phpc_native_diagnostic_contains_severity(
+            call_diagnostic,
+            NativeDiagnosticSeverity::Blocker as u8,
+        )
+    });
+    let call_message = diagnostic_message(call_diagnostic);
+    assert!(call_message.contains("call argument list"));
+    assert!(call_message.contains("argument evaluation cleanup at operand 0"));
+    assert!(call_message.contains("value evaluation cleanup at operand 2"));
+    unsafe { phpc_native_diagnostic_free(call_diagnostic) };
+
+    let control_requirements = [
+        NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+            operand_index: 1,
+        },
+        NativeDiagnosticOperandRequirement {
+            tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_UNKNOWN_CALLEE_DIAGNOSTICS,
+            operand_index: 3,
+        },
+    ];
+    let control_list = unsafe {
+        phpc_native_diagnostic_operand_requirement_list_clone(
+            control_requirements.as_ptr(),
+            control_requirements.len(),
+        )
+    };
+    let control_diagnostic = unsafe {
+        phpc_native_diagnostic_result_operation_blocker_list_and_free(
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_CONTROL_FLOW_OPERAND_LIST,
+            control_list,
+        )
+    };
+    let control_message = diagnostic_message(control_diagnostic);
+    assert!(control_message.contains("control-flow operand list"));
+    assert!(control_message.contains("statement evaluation cleanup at operand 1"));
+    assert!(control_message.contains("unknown-callee diagnostics at operand 3"));
+    unsafe { phpc_native_diagnostic_free(control_diagnostic) };
+
+    let unknown_list = unsafe {
+        phpc_native_diagnostic_operand_requirement_list_clone(call_requirements.as_ptr(), 1)
+    };
+    let unknown_diagnostic =
+        unsafe { phpc_native_diagnostic_result_operation_blocker_list_and_free(255, unknown_list) };
+    assert!(diagnostic_message(unknown_diagnostic).contains("unknown operation list"));
+    unsafe { phpc_native_diagnostic_free(unknown_diagnostic) };
+
+    let clone_from_null =
+        unsafe { phpc_native_diagnostic_operand_requirement_list_clone(ptr::null(), 3) };
+    unsafe { phpc_native_diagnostic_operand_requirement_list_free(clone_from_null) };
 }
 
 /// # Safety
