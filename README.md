@@ -248,14 +248,23 @@ stdout, integer operands become the process status, and owned native runtime
 handles are cleaned before returning from `main`. Bounded `if`/`else`
 statements can also lower when conditions use the existing native truthiness or
 value-comparison boundaries and both branches leave persistent variable/cleanup
-state unchanged.
+state unchanged. Generated-native casts route through the shared native
+value-result carrier, so selected array-to-string casts produce `"Array"` and
+report `Warning: Array to string conversion` through the same diagnostic path
+as neighboring native value operations. Generated-native object dispatch also
+shares one argument-handle materialization boundary across declared
+constructors, declared methods, static calls, callable-array method branches,
+invokable-object branches, and constructorless argument arrays.
 
 This is not broad native PHP support. Objects, functions, references,
 request/session/stream/header state, exceptions, includes, shutdown callbacks,
 destructors/finally ordering, output buffers, SAPI interaction, branch
 environment merging, loops/switch/goto/break/continue, dynamic string-pointer
-helper lowering, and broad PHP coercions remain unsupported or limited to the
-existing native diagnostics.
+helper lowering, object `__toString()`/resource cast parity, and broad PHP
+coercions remain unsupported or limited to the existing native diagnostics.
+LLVM object/class dispatch parity, broader method-frame execution,
+visibility/magic/typed-property policy, and constructor/destructor lifecycle
+parity remain open.
 
 ## Current Status
 
