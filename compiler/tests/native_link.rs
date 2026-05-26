@@ -13138,6 +13138,27 @@ const ARRAYACCESS_DYNAMIC_CALLABLE_RETURN_PRODUCER_FACT_SOURCE: &str = concat!(
     "echo $copied()[\"slot\"];\n",
 );
 
+const ARRAYACCESS_CALLABLE_ARRAY_RETURN_PRODUCER_FACT_SOURCE: &str = concat!(
+    "<?php\n",
+    "class CallableArrayReturnBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { return \"C\"; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class CallableArrayReturnFactory {\n",
+    "    public static function make() { return new CallableArrayReturnBag(); }\n",
+    "    public function makeObject() { return new CallableArrayReturnBag(); }\n",
+    "}\n",
+    "$static = [\"CallableArrayReturnFactory\", \"make\"];\n",
+    "echo $static()[\"slot\"], \"|\";\n",
+    "$object = new CallableArrayReturnFactory();\n",
+    "$method = [$object, \"makeObject\"];\n",
+    "echo $method()[\"slot\"], \"|\";\n",
+    "$keyed = [1 => \"makeObject\", 0 => $object];\n",
+    "echo $keyed()[\"slot\"];\n",
+);
+
 #[test]
 fn native_executable_c_source_routes_arrayaccess_read_isset_through_runtime_abi() {
     let program = parse(ARRAYACCESS_READ_ISSET_SOURCE).unwrap();
@@ -13214,6 +13235,27 @@ fn native_executable_c_source_routes_arrayaccess_dynamic_callable_return_produce
 }
 
 #[test]
+fn native_executable_c_source_routes_arrayaccess_callable_array_return_producer_facts() {
+    let program = parse(ARRAYACCESS_CALLABLE_ARRAY_RETURN_PRODUCER_FACT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source
+            .matches("phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic")
+            .count()
+            >= 3
+            && source.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && source.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "callable-array return facts should feed ArrayAccess consumers through the shared callable identity and runtime invocation boundaries:\n{source}"
+    );
+    assert!(
+        !source.contains("ArrayAccess lowering rejects")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches"),
+        "callable-array return facts must not use ArrayAccess-specific lowering or the legacy dynamic-call name ladder:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_does_not_route_arrayaccess_callable_return_default_fallthrough_fact()
 {
     let program = parse(concat!(
@@ -13283,6 +13325,32 @@ fn emit_exe_links_and_runs_arrayaccess_dynamic_callable_return_producer_fact_pro
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"D|D|D|D");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_arrayaccess_callable_array_return_producer_fact_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "arrayaccess_callable_array_return_producer_fact",
+        ARRAYACCESS_CALLABLE_ARRAY_RETURN_PRODUCER_FACT_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native callable-array-return ArrayAccess producer executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"C|C|C");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);

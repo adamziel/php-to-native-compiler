@@ -23286,6 +23286,129 @@ impl CGenerator {
         self.native_value_facts_for_callable_identities(vec![identity], args.len())
     }
 
+    fn native_callable_array_target_and_method<'a>(
+        &self,
+        items: &'a [ArrayItem],
+    ) -> Option<(&'a Expr, &'a Expr)> {
+        let mut next_index = 0_i64;
+        let mut target = None;
+        let mut method = None;
+
+        for item in items {
+            if item.by_reference {
+                return None;
+            }
+            let index = match &item.key {
+                Some(Expr::Int(index, _)) if *index >= 0 => *index,
+                Some(_) => return None,
+                None => {
+                    let index = next_index;
+                    next_index = next_index.checked_add(1)?;
+                    index
+                }
+            };
+            if item.key.is_some() && index >= next_index {
+                next_index = index.checked_add(1)?;
+            }
+
+            match index {
+                0 if target.is_none() => target = Some(&item.value),
+                1 if method.is_none() => method = Some(&item.value),
+                _ => return None,
+            }
+        }
+
+        Some((target?, method?))
+    }
+
+    fn native_callable_literal_class_name(&self, expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::String(class_name, _) | Expr::ClassNameConstant { class_name, .. } => {
+                Some(class_name.clone())
+            }
+            _ => None,
+        }
+    }
+
+    fn native_callable_literal_method_name(&self, expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::String(method_name, _) => Some(method_name.clone()),
+            _ => None,
+        }
+    }
+
+    fn native_callable_static_method_identity(
+        &self,
+        class_name: &str,
+        method_name: &str,
+    ) -> Option<CNativeCallableIdentity> {
+        let (class, method) = self.declared_class_static_method(class_name, method_name)?;
+        Some(CNativeCallableIdentity::DeclaredStaticMethod {
+            class_key: Self::declared_class_key(&class.name),
+            method_key: Self::declared_method_key(&method.decl.name),
+        })
+    }
+
+    fn native_callable_declared_object_method_identities(
+        &self,
+        target: &Expr,
+        method_name: &str,
+    ) -> Option<HashSet<CNativeCallableIdentity>> {
+        let facts = self.native_value_facts_for_expr(target)?;
+        let object = facts.object.as_ref()?;
+        if object.declared_class_keys.is_empty() {
+            return None;
+        }
+
+        let method_key = Self::declared_method_key(method_name);
+        let mut identities = HashSet::new();
+        for receiver_class_key in &object.declared_class_keys {
+            let mut receiver_identity = None;
+            for lookup_key in self.declared_class_lookup_keys(receiver_class_key)? {
+                let class = self
+                    .declared_classes
+                    .get(&lookup_key)
+                    .expect("declared class lookup key has metadata");
+                if class.methods.iter().any(|method| {
+                    !method.is_static && Self::declared_method_key(&method.decl.name) == method_key
+                }) {
+                    receiver_identity = Some(CNativeCallableIdentity::DeclaredInstanceMethod {
+                        class_key: Self::declared_class_key(&class.name),
+                        method_key: method_key.clone(),
+                    });
+                    break;
+                }
+            }
+            identities.insert(receiver_identity?);
+        }
+
+        (!identities.is_empty()).then_some(identities)
+    }
+
+    fn native_callable_identities_for_callable_array_items(
+        &self,
+        items: &[ArrayItem],
+    ) -> Option<HashSet<CNativeCallableIdentity>> {
+        let (target, method) = self.native_callable_array_target_and_method(items)?;
+        let method_name = self.native_callable_literal_method_name(method)?;
+        let mut identities = HashSet::new();
+
+        if let Some(class_name) = self.native_callable_literal_class_name(target) {
+            if let Some(identity) =
+                self.native_callable_static_method_identity(&class_name, &method_name)
+            {
+                identities.insert(identity);
+            }
+        }
+        if let Some(object_identities) =
+            self.native_callable_declared_object_method_identities(target, &method_name)
+        {
+            identities.extend(object_identities);
+        }
+
+        (!identities.is_empty()).then_some(identities)
+    }
+
     fn native_callable_identities_for_invokable_object_facts(
         &self,
         facts: CNativeValueFacts,
@@ -23328,6 +23451,10 @@ impl CGenerator {
             if let Some(identities) = self.native_callable_variable_identities.get(name).cloned() {
                 return Some(identities);
             }
+        }
+
+        if let Expr::Array { items, .. } = expr {
+            return self.native_callable_identities_for_callable_array_items(items);
         }
 
         let string_values = match expr {
@@ -35966,6 +36093,7 @@ impl CGenerator {
                     );
                 }
                 let native_value_facts = self.native_value_facts_for_expr(expr);
+                let native_callable_identities = self.native_callable_identities_for_expr(expr);
                 if (self.uses_native_string_helpers || native_string_search_result_expr(expr))
                     && !self.mutable_scalar_slots.contains_key(name)
                 {
@@ -35985,6 +36113,9 @@ impl CGenerator {
                             value,
                             native_value_facts,
                         );
+                        if let Some(identities) = native_callable_identities.clone() {
+                            self.store_native_callable_variable_identities(name, Some(identities));
+                        }
                         return Ok(());
                     }
                 }
@@ -36001,6 +36132,9 @@ impl CGenerator {
                     );
                 }
                 self.store_variable_value_with_native_value_facts(name, value, native_value_facts);
+                if let Some(identities) = native_callable_identities {
+                    self.store_native_callable_variable_identities(name, Some(identities));
+                }
                 Ok(())
             }
             AssignTarget::List { span, .. } => {
@@ -44254,6 +44388,176 @@ mod tests {
             .has_definite_native_object_interface("arrayaccess"));
     }
 
+    #[test]
+    fn callable_array_identities_drive_dynamic_call_facts_for_static_and_object_methods() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "class CallableArrayProduct {}\n",
+            "class CallableArrayStaticFactory {\n",
+            "    public static function make() { return new CallableArrayProduct(); }\n",
+            "    public static function needs($value) { return new CallableArrayProduct(); }\n",
+            "}\n",
+            "class CallableArrayBaseFactory {\n",
+            "    public function make() { return new CallableArrayProduct(); }\n",
+            "}\n",
+            "class CallableArrayChildFactory extends CallableArrayBaseFactory {}\n",
+            "class CallableArrayMissingFactory {}\n",
+        ))
+        .unwrap();
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            uses_native_value_clone: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .unwrap();
+        generator.emit_declared_class_method_definitions().unwrap();
+
+        let span = test_span();
+        let static_call = Expr::DynamicCall {
+            callee: Box::new(callable_array_expr(
+                Expr::String("CallableArrayStaticFactory".to_string(), span),
+                Expr::String("make".to_string(), span),
+            )),
+            args: Vec::new(),
+            span,
+        };
+        assert_native_object_fact_contains_class(
+            generator.native_value_facts_for_expr(&static_call),
+            "CallableArrayProduct",
+        );
+
+        let inherited_object_call = Expr::DynamicCall {
+            callee: Box::new(keyed_callable_array_expr(
+                Expr::New {
+                    class_name: NewClassName::Named("CallableArrayChildFactory".to_string()),
+                    args: Vec::new(),
+                    span,
+                },
+                Expr::String("make".to_string(), span),
+            )),
+            args: Vec::new(),
+            span,
+        };
+        assert_native_object_fact_contains_class(
+            generator.native_value_facts_for_expr(&inherited_object_call),
+            "CallableArrayProduct",
+        );
+
+        let arity_mismatch = Expr::DynamicCall {
+            callee: Box::new(callable_array_expr(
+                Expr::String("CallableArrayStaticFactory".to_string(), span),
+                Expr::String("needs".to_string(), span),
+            )),
+            args: Vec::new(),
+            span,
+        };
+        assert!(
+            generator
+                .native_value_facts_for_expr(&arity_mismatch)
+                .is_none(),
+            "callable-array identities should still respect frame arity"
+        );
+
+        let mut mixed_object_facts = CNativeObjectFacts::for_declared_class(
+            CGenerator::declared_class_key("CallableArrayChildFactory"),
+            generator
+                .declared_classes
+                .get(&CGenerator::declared_class_key("CallableArrayChildFactory"))
+                .expect("child class"),
+        );
+        mixed_object_facts
+            .declared_class_keys
+            .insert(CGenerator::declared_class_key(
+                "CallableArrayMissingFactory",
+            ));
+        generator.native_value_variable_facts.insert(
+            "maybe_factory".to_string(),
+            CNativeValueFacts::object(mixed_object_facts).expect("mixed object facts"),
+        );
+        generator.variables.insert(
+            "maybe_factory".to_string(),
+            CValue::NativeValueHandle("maybe_factory_handle".to_string()),
+        );
+        let mixed_receiver_call = Expr::DynamicCall {
+            callee: Box::new(callable_array_expr(
+                test_variable_expr("maybe_factory"),
+                Expr::String("make".to_string(), span),
+            )),
+            args: Vec::new(),
+            span,
+        };
+        assert!(
+            generator
+                .native_value_facts_for_expr(&mixed_receiver_call)
+                .is_none(),
+            "callable-array object receiver facts should be withheld if any possible receiver lacks the method"
+        );
+    }
+
+    #[test]
+    fn callable_array_assignment_stores_identities_for_variable_dynamic_calls() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "class CallableArrayAssignedProduct {}\n",
+            "class CallableArrayAssignedFactory {\n",
+            "    public static function make() { return new CallableArrayAssignedProduct(); }\n",
+            "}\n",
+        ))
+        .unwrap();
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            uses_native_value_clone: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .unwrap();
+        generator.emit_declared_class_method_definitions().unwrap();
+
+        let span = test_span();
+        let callable = callable_array_expr(
+            Expr::String("CallableArrayAssignedFactory".to_string(), span),
+            Expr::String("make".to_string(), span),
+        );
+        generator
+            .emit_assignment(
+                &AssignTarget::Variable {
+                    name: "callback".to_string(),
+                    span,
+                },
+                &callable,
+            )
+            .unwrap();
+
+        let dynamic_call = Expr::DynamicCall {
+            callee: Box::new(test_variable_expr("callback")),
+            args: Vec::new(),
+            span,
+        };
+        assert_native_object_fact_contains_class(
+            generator.native_value_facts_for_expr(&dynamic_call),
+            "CallableArrayAssignedProduct",
+        );
+
+        generator
+            .emit_assignment(
+                &AssignTarget::Variable {
+                    name: "callback".to_string(),
+                    span,
+                },
+                &Expr::Int(1, span),
+            )
+            .unwrap();
+        assert!(
+            generator
+                .native_value_facts_for_expr(&dynamic_call)
+                .is_none(),
+            "non-callable reassignment should clear stored callable-array identities"
+        );
+    }
+
     fn property_offset_with_error_control_receiver() -> Expr {
         Expr::Index {
             target: Box::new(Expr::ErrorControl {
@@ -44795,6 +45099,42 @@ echo " 10" < "zeta";
 
     fn test_variable_expr(name: &str) -> Expr {
         Expr::Variable(name.to_string(), test_span())
+    }
+
+    fn callable_array_expr(target: Expr, method: Expr) -> Expr {
+        Expr::Array {
+            items: vec![
+                ArrayItem {
+                    key: None,
+                    value: target,
+                    by_reference: false,
+                },
+                ArrayItem {
+                    key: None,
+                    value: method,
+                    by_reference: false,
+                },
+            ],
+            span: test_span(),
+        }
+    }
+
+    fn keyed_callable_array_expr(target: Expr, method: Expr) -> Expr {
+        Expr::Array {
+            items: vec![
+                ArrayItem {
+                    key: Some(Expr::Int(1, test_span())),
+                    value: method,
+                    by_reference: false,
+                },
+                ArrayItem {
+                    key: Some(Expr::Int(0, test_span())),
+                    value: target,
+                    by_reference: false,
+                },
+            ],
+            span: test_span(),
+        }
     }
 
     fn test_closure_expr(params: Vec<FunctionParam>, returns_by_reference: bool) -> Expr {
