@@ -12,6 +12,7 @@ const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering r
 const LLVM_METHOD_CALL_REJECTION: &str = "LLVM method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
 const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
+const LLVM_ARRAY_ACCESS_REJECTION: &str = "LLVM ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, unsupported by-reference argument binding, and unsupported dynamic string-valued calls, until full callable lookup, full arity/type diagnostics, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value fixed/default/variadic direct, supported direct and compiler-known single-target by-reference frames, finite known-string dynamic, and runtime string-valued dynamic user-function frames";
 const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic function-call lowering rejects variable-call expressions outside the bounded generated-C finite known-string dispatch to registered user-function frames, supported native builtin families, or supported mixed callable target sets, runtime string-valued dispatch to registered user-function frames or supported native builtin families, and descriptor-backed closure values, including unknown callables, unsupported runtime callable builtin families, unsupported finite target sets, unsupported by-reference argument carriers, callbacks, methods, non-descriptor closures, and exact native callable errors; phpc run handles broader dynamic function calls";
 const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including by-reference closure captures that cannot be materialized through root symbol/reference handles or promoted frame locals, by-reference variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, supported static arrow closures, by-value captures, supported by-reference captures, implicit by-value arrow captures, non-static $this closure binding, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
@@ -20,6 +21,7 @@ const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering reje
 const ASSEMBLY_METHOD_CALL_REJECTION: &str = "assembly method-call lowering rejects method calls outside the bounded generated-C public declared instance/static method frame subset, including unsupported dynamic method-name dispatch, self::, parent::, static::, unsupported method declarations, unsupported receiver classes, visibility contexts, references/copy-on-write, and exact native method-call errors; generated-native C lowers supported public declared instance methods with $this frame binding, runtime string-valued dynamic public instance methods through declared-frame dispatch, supported named public static methods without $this, and supported object static-receiver calls through static frames";
 const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions outside the bounded generated-C declared-object constructor subset, including unsupported constructor declarations, non-public constructors, constructor returns, destructor-observable cleanup, visibility contexts, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors; generated-native C lowers supported named and runtime string-valued declared object allocation for destructor-free declared classes, constructorless argument evaluation, and public constructors with $this frame binding";
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
+const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 
 #[test]
 fn phpc_run_still_handles_current_function_call_subset() {
@@ -407,6 +409,73 @@ fn native_executable_c_source_routes_assignment_and_unset_lvalue_operand_calls_t
 
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
+fn emit_ir_routes_object_arrayaccess_write_operations_through_shared_boundary() {
+    for source in [
+        "<?php\n$box->items[0] = 1;\n",
+        "<?php\n$name = \"items\";\n$box->$name[0] = 1;\n",
+        "<?php\n$box->items[] = 1;\n",
+        "<?php\n$box->items[0] += 2;\n",
+        "<?php\n++$box->items[0];\n",
+        "<?php\nunset($box->items[0]);\n",
+        "<?php\nunset($local, $box->items[0]);\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, LLVM_ARRAY_ACCESS_REJECTION);
+    }
+}
+
+#[test]
+fn native_executable_c_source_routes_object_arrayaccess_write_operations_through_shared_boundary() {
+    for source in [
+        "<?php\n$box->items[0] = 1;\n",
+        "<?php\n$name = \"items\";\n$box->$name[0] = 1;\n",
+        "<?php\n$box->items[] = 1;\n",
+        "<?php\n$box->items[0] += 2;\n",
+        "<?php\n++$box->items[0];\n",
+        "<?php\nunset($box->items[0]);\n",
+        "<?php\nunset($local, $box->items[0]);\n",
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, ASSEMBLY_ARRAY_ACCESS_REJECTION);
+    }
+}
+
+#[test]
+fn object_arrayaccess_write_lvalue_operands_still_route_before_shared_boundary() {
+    for (source, llvm_expected, assembly_expected) in [
+        (
+            "<?php\n$box->items[key_name()] = 1;\n",
+            LLVM_FUNCTION_CALL_REJECTION,
+            ASSEMBLY_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$call = \"key_name\";\nunset($box->items[$call()]);\n",
+            LLVM_DYNAMIC_FUNCTION_CALL_REJECTION,
+            ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION,
+        ),
+        (
+            "<?php\n$box->items[$receiver->key()] += 1;\n",
+            LLVM_METHOD_CALL_REJECTION,
+            ASSEMBLY_METHOD_CALL_REJECTION,
+        ),
+    ] {
+        let llvm_error = emit_ir_source(source).unwrap_err();
+        assert_eq!(llvm_error.phase, Phase::Codegen);
+        assert_eq!(llvm_error.message, llvm_expected);
+
+        let program = parse(source).unwrap();
+        let assembly_error = emit_native_executable_c_source(&program).unwrap_err();
+        assert_eq!(assembly_error.phase, Phase::Codegen);
+        assert_eq!(assembly_error.message, assembly_expected);
     }
 }
 

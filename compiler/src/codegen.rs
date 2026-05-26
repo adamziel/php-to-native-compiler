@@ -5026,20 +5026,6 @@ pub fn emit_assembly(program: &Program) -> CompileResult<String> {
     ))
 }
 
-fn is_object_property_array_access_target(target: &AssignTarget) -> bool {
-    matches!(
-        target,
-        AssignTarget::ObjectPropertyArrayIndex { .. }
-            | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
-            | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
-            | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
-            | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
-            | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. }
-            | AssignTarget::ObjectPropertyArrayAppend { .. }
-            | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
-    )
-}
-
 fn is_request_superglobal_name(name: &str) -> bool {
     matches!(
         name,
@@ -6463,6 +6449,11 @@ enum NativeObjectArrayAccessOperation {
     NullCoalesceRead,
     Isset,
     Empty,
+    Write,
+    AppendWrite,
+    CompoundUpdate,
+    NullCoalesceWrite,
+    Unset,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -6491,7 +6482,11 @@ impl NativeObjectArrayAccessOperation {
         match self {
             Self::Read => NativeObjectPropertyOperationResultKind::Value,
             Self::NullCoalesceRead => NativeObjectPropertyOperationResultKind::Value,
+            Self::Write | Self::AppendWrite | Self::CompoundUpdate | Self::NullCoalesceWrite => {
+                NativeObjectPropertyOperationResultKind::Value
+            }
             Self::Isset | Self::Empty => NativeObjectPropertyOperationResultKind::Bool,
+            Self::Unset => NativeObjectPropertyOperationResultKind::Bool,
         }
     }
 }
@@ -6641,6 +6636,109 @@ fn native_object_array_access_operation_result_from_expr(
     NativeObjectArrayAccessOperationResult::from_expr_at(expr, operation)
 }
 
+fn native_object_array_access_receiver_from_property_holder(
+    holder: &Expr,
+    fallback_span: Span,
+) -> (NativeObjectArrayAccessReceiverKind, Span) {
+    NativeObjectArrayAccessReceiverKind::from_object_offset_receiver(holder).unwrap_or((
+        NativeObjectArrayAccessReceiverKind::PropertyValue,
+        fallback_span,
+    ))
+}
+
+fn native_object_array_access_operation_result_from_assign_target(
+    target: &AssignTarget,
+    operation: NativeObjectArrayAccessOperation,
+) -> Option<NativeObjectArrayAccessOperationResult> {
+    let (receiver_kind, span) = match target {
+        AssignTarget::ObjectPropertyArrayIndex { span, .. }
+        | AssignTarget::DynamicObjectPropertyArrayIndex { span, .. }
+        | AssignTarget::ObjectPropertyArrayAppend { span, .. }
+        | AssignTarget::DynamicObjectPropertyArrayAppend { span, .. } => {
+            (NativeObjectArrayAccessReceiverKind::PropertyValue, *span)
+        }
+        AssignTarget::NonDirectObjectPropertyArrayIndex { holder, span, .. }
+        | AssignTarget::NonDirectObjectPropertyArrayAppend { holder, span, .. }
+        | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { holder, span, .. }
+        | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { holder, span, .. } => {
+            native_object_array_access_receiver_from_property_holder(holder, *span)
+        }
+        _ => return None,
+    };
+
+    Some(NativeObjectArrayAccessOperationResult {
+        operation,
+        receiver_kind,
+        span,
+    })
+}
+
+fn native_object_array_access_assignment_operation_result(
+    target: &AssignTarget,
+) -> Option<NativeObjectArrayAccessOperationResult> {
+    let operation = match target {
+        AssignTarget::ObjectPropertyArrayAppend { .. }
+        | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
+        | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
+        | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. } => {
+            NativeObjectArrayAccessOperation::AppendWrite
+        }
+        _ => NativeObjectArrayAccessOperation::Write,
+    };
+    native_object_array_access_operation_result_from_assign_target(target, operation)
+}
+
+fn native_object_array_access_compound_operation_result(
+    target: &AssignTarget,
+) -> Option<NativeObjectArrayAccessOperationResult> {
+    native_object_array_access_operation_result_from_assign_target(
+        target,
+        NativeObjectArrayAccessOperation::CompoundUpdate,
+    )
+}
+
+fn native_object_array_access_null_coalesce_write_operation_result(
+    target: &AssignTarget,
+) -> Option<NativeObjectArrayAccessOperationResult> {
+    native_object_array_access_operation_result_from_assign_target(
+        target,
+        NativeObjectArrayAccessOperation::NullCoalesceWrite,
+    )
+}
+
+fn native_object_array_access_unset_operation_result_from_target(
+    target: &UnsetTarget,
+) -> Option<NativeObjectArrayAccessOperationResult> {
+    let (receiver_kind, span) = match target {
+        UnsetTarget::ObjectPropertyArrayIndex { span, .. }
+        | UnsetTarget::DynamicObjectPropertyArrayIndex { span, .. } => {
+            (NativeObjectArrayAccessReceiverKind::PropertyValue, *span)
+        }
+        UnsetTarget::NonDirectObjectPropertyArrayIndex { holder, span, .. }
+        | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex { holder, span, .. } => {
+            native_object_array_access_receiver_from_property_holder(holder, *span)
+        }
+        _ => return None,
+    };
+
+    Some(NativeObjectArrayAccessOperationResult {
+        operation: NativeObjectArrayAccessOperation::Unset,
+        receiver_kind,
+        span,
+    })
+}
+
+fn native_object_array_access_unset_operation_result_from_stmt(
+    stmt: &Stmt,
+) -> Option<NativeObjectArrayAccessOperationResult> {
+    let Stmt::UnsetMany { targets, .. } = stmt else {
+        return None;
+    };
+    targets
+        .iter()
+        .find_map(native_object_array_access_unset_operation_result_from_target)
+}
+
 fn is_object_public_property_assign_target(target: &AssignTarget) -> bool {
     matches!(
         target,
@@ -6755,16 +6853,6 @@ fn native_non_local_unset_statement_owner_boundary(
             .find_map(native_non_local_unset_target_owner_boundary),
         _ => None,
     }
-}
-
-fn is_object_property_array_access_unset_target(target: &UnsetTarget) -> bool {
-    matches!(
-        target,
-        UnsetTarget::ObjectPropertyArrayIndex { .. }
-            | UnsetTarget::DynamicObjectPropertyArrayIndex { .. }
-            | UnsetTarget::NonDirectObjectPropertyArrayIndex { .. }
-            | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
-    )
 }
 
 fn is_object_offset_expr(expr: &Expr) -> bool {
@@ -7940,8 +8028,10 @@ impl LlvmGenerator {
                         request_array_key_consumer_rejection("LLVM", &access.label),
                     ));
                 }
-                if is_object_property_array_access_target(target) {
-                    return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
+                if let Some(boundary) = native_object_array_access_compound_operation_result(target)
+                {
+                    return Err(self
+                        .unsupported(boundary.span, boundary.rejection(NativeCallBackend::Llvm)));
                 }
                 if self
                     .emit_direct_variable_compound_assignment(target, *op, expr, *span)?
@@ -7951,8 +8041,7 @@ impl LlvmGenerator {
                 }
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
-            Stmt::IncrementDecrement { target, span, .. }
-            | Stmt::NullCoalesceAssign { target, span, .. } => {
+            Stmt::IncrementDecrement { target, span, .. } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
@@ -7962,8 +8051,28 @@ impl LlvmGenerator {
                         request_array_key_consumer_rejection("LLVM", &access.label),
                     ));
                 }
-                if is_object_property_array_access_target(target) {
-                    return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
+                if let Some(boundary) = native_object_array_access_compound_operation_result(target)
+                {
+                    return Err(self
+                        .unsupported(boundary.span, boundary.rejection(NativeCallBackend::Llvm)));
+                }
+                Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
+            }
+            Stmt::NullCoalesceAssign { target, span, .. } => {
+                if let Some(operation) = native_assignment_target_call_operation(target) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                if let Some(access) = request_assign_target_array_key_consumer_access(target) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("LLVM", &access.label),
+                    ));
+                }
+                if let Some(boundary) =
+                    native_object_array_access_null_coalesce_write_operation_result(target)
+                {
+                    return Err(self
+                        .unsupported(boundary.span, boundary.rejection(NativeCallBackend::Llvm)));
                 }
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
@@ -8051,18 +8160,18 @@ impl LlvmGenerator {
                 }
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
-            Stmt::UnsetMany { targets, span } => {
+            Stmt::UnsetMany { targets: _, span } => {
                 if let Some(access) = request_stmt_array_key_consumer_access(stmt) {
                     return Err(self.unsupported(
                         access.span,
                         request_array_key_consumer_rejection("LLVM", &access.label),
                     ));
                 }
-                if targets
-                    .iter()
-                    .any(is_object_property_array_access_unset_target)
+                if let Some(boundary) =
+                    native_object_array_access_unset_operation_result_from_stmt(stmt)
                 {
-                    return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
+                    return Err(self
+                        .unsupported(boundary.span, boundary.rejection(NativeCallBackend::Llvm)));
                 }
                 if let Some(boundary) = native_non_local_unset_statement_owner_boundary(stmt) {
                     return Err(self
@@ -8397,14 +8506,17 @@ impl LlvmGenerator {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
-                if is_object_property_array_access_target(target) {
-                    return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
-                }
                 if let Some(access) = request_assign_target_array_key_consumer_access(target) {
                     return Err(self.unsupported(
                         access.span,
                         request_array_key_consumer_rejection("LLVM", &access.label),
                     ));
+                }
+                if let Some(boundary) =
+                    native_object_array_access_assignment_operation_result(target)
+                {
+                    return Err(self
+                        .unsupported(boundary.span, boundary.rejection(NativeCallBackend::Llvm)));
                 }
                 if let Some(boundary) = native_non_local_assignment_owner_boundary(target) {
                     return Err(self
@@ -8433,8 +8545,10 @@ impl LlvmGenerator {
                         request_array_key_consumer_rejection("LLVM", &access.label),
                     ));
                 }
-                if is_object_property_array_access_target(target) {
-                    return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
+                if let Some(boundary) = native_object_array_access_compound_operation_result(target)
+                {
+                    return Err(self
+                        .unsupported(boundary.span, boundary.rejection(NativeCallBackend::Llvm)));
                 }
                 if let Some(value) =
                     self.emit_direct_variable_compound_assignment(target, *op, expr, *span)?
@@ -8443,8 +8557,7 @@ impl LlvmGenerator {
                 }
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
-            Expr::NullCoalesceAssign { target, span, .. }
-            | Expr::IncrementDecrement { target, span, .. } => {
+            Expr::NullCoalesceAssign { target, span, .. } => {
                 if let Some(operation) = native_assignment_target_call_operation(target) {
                     return Err(self.unsupported_call_operation(operation));
                 }
@@ -8454,8 +8567,28 @@ impl LlvmGenerator {
                         request_array_key_consumer_rejection("LLVM", &access.label),
                     ));
                 }
-                if is_object_property_array_access_target(target) {
-                    return Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION));
+                if let Some(boundary) =
+                    native_object_array_access_null_coalesce_write_operation_result(target)
+                {
+                    return Err(self
+                        .unsupported(boundary.span, boundary.rejection(NativeCallBackend::Llvm)));
+                }
+                Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
+            }
+            Expr::IncrementDecrement { target, span, .. } => {
+                if let Some(operation) = native_assignment_target_call_operation(target) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                if let Some(access) = request_assign_target_array_key_consumer_access(target) {
+                    return Err(self.unsupported(
+                        access.span,
+                        request_array_key_consumer_rejection("LLVM", &access.label),
+                    ));
+                }
+                if let Some(boundary) = native_object_array_access_compound_operation_result(target)
+                {
+                    return Err(self
+                        .unsupported(boundary.span, boundary.rejection(NativeCallBackend::Llvm)));
                 }
                 Err(self.unsupported(*span, LLVM_MUTATION_REJECTION))
             }
@@ -9796,8 +9929,10 @@ impl LlvmGenerator {
                 request_array_key_consumer_rejection("LLVM", &access.label),
             ));
         }
-        if is_object_property_array_access_target(target) {
-            return Err(self.unsupported(target.span(), LLVM_ARRAY_ACCESS_REJECTION));
+        if let Some(boundary) = native_object_array_access_assignment_operation_result(target) {
+            return Err(
+                self.unsupported(boundary.span, boundary.rejection(NativeCallBackend::Llvm))
+            );
         }
         if let Some(boundary) = native_non_local_assignment_owner_boundary(target) {
             return Err(
@@ -9832,15 +9967,17 @@ impl LlvmGenerator {
             | AssignTarget::NestedArrayAppend { span, .. } => {
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
-            AssignTarget::ObjectPropertyArrayIndex { span, .. }
-            | AssignTarget::DynamicObjectPropertyArrayIndex { span, .. }
-            | AssignTarget::NonDirectObjectPropertyArrayIndex { span, .. }
-            | AssignTarget::NonDirectObjectPropertyArrayAppend { span, .. }
-            | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { span, .. }
-            | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { span, .. }
-            | AssignTarget::ObjectPropertyArrayAppend { span, .. }
-            | AssignTarget::DynamicObjectPropertyArrayAppend { span, .. } => {
-                Err(self.unsupported(*span, LLVM_ARRAY_ACCESS_REJECTION))
+            AssignTarget::ObjectPropertyArrayIndex { .. }
+            | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
+            | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
+            | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
+            | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
+            | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. }
+            | AssignTarget::ObjectPropertyArrayAppend { .. }
+            | AssignTarget::DynamicObjectPropertyArrayAppend { .. } => {
+                let boundary = native_object_array_access_assignment_operation_result(target)
+                    .expect("object property array targets classify before lowering");
+                Err(self.unsupported(boundary.span, boundary.rejection(NativeCallBackend::Llvm)))
             }
             AssignTarget::Property { span, .. }
             | AssignTarget::NonDirectProperty { span, .. }
@@ -23706,8 +23843,12 @@ impl CGenerator {
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
                 }
-                if is_object_property_array_access_target(target) {
-                    return Err(self.unsupported(span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                if let Some(boundary) = native_object_array_access_compound_operation_result(target)
+                {
+                    return Err(self.unsupported(
+                        boundary.span,
+                        boundary.rejection(NativeCallBackend::Assembly),
+                    ));
                 }
                 if let Some(value) = self
                     .materialize_direct_variable_compound_assignment_result_for_target(
@@ -23737,8 +23878,12 @@ impl CGenerator {
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
                 }
-                if is_object_property_array_access_target(target) {
-                    return Err(self.unsupported(span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                if let Some(boundary) = native_object_array_access_compound_operation_result(target)
+                {
+                    return Err(self.unsupported(
+                        boundary.span,
+                        boundary.rejection(NativeCallBackend::Assembly),
+                    ));
                 }
                 if let Some(value) = self
                     .materialize_array_lvalue_increment_decrement_result_for_target(
@@ -24258,8 +24403,13 @@ impl CGenerator {
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
                 }
-                if is_object_property_array_access_target(target) {
-                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                if let Some(boundary) =
+                    native_object_array_access_null_coalesce_write_operation_result(target)
+                {
+                    return Err(self.unsupported(
+                        boundary.span,
+                        boundary.rejection(NativeCallBackend::Assembly),
+                    ));
                 }
                 if self.emit_array_offset_null_coalesce_assignment(target, expr, *span)? {
                     return Ok(());
@@ -24284,8 +24434,12 @@ impl CGenerator {
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
                 }
-                if is_object_property_array_access_target(target) {
-                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                if let Some(boundary) = native_object_array_access_compound_operation_result(target)
+                {
+                    return Err(self.unsupported(
+                        boundary.span,
+                        boundary.rejection(NativeCallBackend::Assembly),
+                    ));
                 }
                 if let Some(value) = self
                     .materialize_direct_variable_compound_assignment_result_for_target(
@@ -24315,8 +24469,12 @@ impl CGenerator {
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
                 }
-                if is_object_property_array_access_target(target) {
-                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                if let Some(boundary) = native_object_array_access_compound_operation_result(target)
+                {
+                    return Err(self.unsupported(
+                        boundary.span,
+                        boundary.rejection(NativeCallBackend::Assembly),
+                    ));
                 }
                 if let Some(value) = self
                     .materialize_array_lvalue_increment_decrement_result_for_target(
@@ -24490,11 +24648,13 @@ impl CGenerator {
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
                 }
-                if targets
-                    .iter()
-                    .any(is_object_property_array_access_unset_target)
+                if let Some(boundary) =
+                    native_object_array_access_unset_operation_result_from_stmt(stmt)
                 {
-                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                    return Err(self.unsupported(
+                        boundary.span,
+                        boundary.rejection(NativeCallBackend::Assembly),
+                    ));
                 }
                 if let Some(boundary) = native_non_local_unset_statement_owner_boundary(stmt) {
                     return Err(self.unsupported(
@@ -25030,8 +25190,13 @@ impl CGenerator {
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
                 }
-                if is_object_property_array_access_target(target) {
-                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                if let Some(boundary) =
+                    native_object_array_access_assignment_operation_result(target)
+                {
+                    return Err(self.unsupported(
+                        boundary.span,
+                        boundary.rejection(NativeCallBackend::Assembly),
+                    ));
                 }
                 if let Some(boundary) = native_non_local_assignment_owner_boundary(target) {
                     return Err(self.unsupported(
@@ -25085,8 +25250,13 @@ impl CGenerator {
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
                 }
-                if is_object_property_array_access_target(target) {
-                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                if let Some(boundary) =
+                    native_object_array_access_null_coalesce_write_operation_result(target)
+                {
+                    return Err(self.unsupported(
+                        boundary.span,
+                        boundary.rejection(NativeCallBackend::Assembly),
+                    ));
                 }
                 if let Some(value) = self.materialize_array_offset_null_coalesce_assignment_expr(
                     target, expr, *span, "",
@@ -25117,8 +25287,12 @@ impl CGenerator {
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
                 }
-                if is_object_property_array_access_target(target) {
-                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                if let Some(boundary) = native_object_array_access_compound_operation_result(target)
+                {
+                    return Err(self.unsupported(
+                        boundary.span,
+                        boundary.rejection(NativeCallBackend::Assembly),
+                    ));
                 }
                 if let Some(value) = self
                     .materialize_direct_variable_compound_assignment_result_for_target(
@@ -25153,8 +25327,12 @@ impl CGenerator {
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
                 }
-                if is_object_property_array_access_target(target) {
-                    return Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                if let Some(boundary) = native_object_array_access_compound_operation_result(target)
+                {
+                    return Err(self.unsupported(
+                        boundary.span,
+                        boundary.rejection(NativeCallBackend::Assembly),
+                    ));
                 }
                 if let Some(value) = self
                     .materialize_array_lvalue_increment_decrement_result_for_target(
@@ -32849,17 +33027,20 @@ impl CGenerator {
     }
 
     fn emit_assignment(&mut self, target: &AssignTarget, expr: &Expr) -> CompileResult<()> {
+        if let Some(operation) = native_assignment_target_call_operation(target) {
+            return Err(self.unsupported_call_operation(operation));
+        }
         if let Some(access) = request_assign_target_array_key_consumer_access(target) {
             return Err(self.unsupported(
                 access.span,
                 request_array_key_consumer_rejection("assembly", &access.label),
             ));
         }
-        if is_object_property_array_access_target(target) {
-            return Err(self.unsupported(target.span(), ASSEMBLY_ARRAY_ACCESS_REJECTION));
-        }
-        if let Some(operation) = native_assignment_target_call_operation(target) {
-            return Err(self.unsupported_call_operation(operation));
+        if let Some(boundary) = native_object_array_access_assignment_operation_result(target) {
+            return Err(self.unsupported(
+                boundary.span,
+                boundary.rejection(NativeCallBackend::Assembly),
+            ));
         }
         if let Some(boundary) = native_non_local_assignment_owner_boundary(target) {
             return Err(self.unsupported(
@@ -33154,15 +33335,20 @@ impl CGenerator {
                 }
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
             }
-            AssignTarget::ObjectPropertyArrayIndex { span, .. }
-            | AssignTarget::DynamicObjectPropertyArrayIndex { span, .. }
-            | AssignTarget::NonDirectObjectPropertyArrayIndex { span, .. }
-            | AssignTarget::NonDirectObjectPropertyArrayAppend { span, .. }
-            | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { span, .. }
-            | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { span, .. }
-            | AssignTarget::ObjectPropertyArrayAppend { span, .. }
-            | AssignTarget::DynamicObjectPropertyArrayAppend { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION))
+            AssignTarget::ObjectPropertyArrayIndex { .. }
+            | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
+            | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
+            | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
+            | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
+            | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. }
+            | AssignTarget::ObjectPropertyArrayAppend { .. }
+            | AssignTarget::DynamicObjectPropertyArrayAppend { .. } => {
+                let boundary = native_object_array_access_assignment_operation_result(target)
+                    .expect("object property array targets classify before lowering");
+                Err(self.unsupported(
+                    boundary.span,
+                    boundary.rejection(NativeCallBackend::Assembly),
+                ))
             }
             AssignTarget::Property { span, .. }
             | AssignTarget::NonDirectProperty { span, .. }
@@ -40148,6 +40334,171 @@ mod tests {
         );
         assert_eq!(result.llvm_rejection(), LLVM_ARRAY_ACCESS_REJECTION);
         assert_eq!(result.assembly_rejection(), ASSEMBLY_ARRAY_ACCESS_REJECTION);
+    }
+
+    #[test]
+    fn native_object_arrayaccess_write_operation_classification_covers_write_families() {
+        let direct_property_write = AssignTarget::ObjectPropertyArrayIndex {
+            object: "box".to_string(),
+            property: "items".to_string(),
+            indices: vec![Expr::Int(0, span(18))],
+            span: span(10),
+        };
+        let direct_property_append = AssignTarget::ObjectPropertyArrayAppend {
+            object: "box".to_string(),
+            property: "items".to_string(),
+            indices: vec![],
+            suffix_indices: vec![],
+            span: span(11),
+        };
+        let dynamic_property_write = AssignTarget::DynamicObjectPropertyArrayIndex {
+            object: "box".to_string(),
+            property: variable("slot", 12),
+            indices: vec![Expr::String("key".to_string(), span(20))],
+            span: span(13),
+        };
+        let non_direct_property_write = AssignTarget::NonDirectObjectPropertyArrayIndex {
+            holder: Expr::Property {
+                target: Box::new(variable("box", 6)),
+                property: "child".to_string(),
+                span: span(10),
+            },
+            property: "items".to_string(),
+            indices: vec![Expr::Int(1, span(24))],
+            span: span(17),
+        };
+        let call_result_property_write = AssignTarget::NonDirectObjectPropertyArrayIndex {
+            holder: Expr::Call {
+                name: "make_box".to_string(),
+                args: vec![],
+                span: span(4),
+            },
+            property: "items".to_string(),
+            indices: vec![Expr::Int(2, span(24))],
+            span: span(17),
+        };
+        let new_result_property_append = AssignTarget::NonDirectObjectPropertyArrayAppend {
+            holder: Expr::New {
+                class_name: crate::ast::NewClassName::Named("Box".to_string()),
+                args: vec![],
+                span: span(4),
+            },
+            property: "items".to_string(),
+            indices: vec![],
+            suffix_indices: vec![],
+            span: span(18),
+        };
+
+        for (target, operation, receiver_kind, expected_span) in [
+            (
+                &direct_property_write,
+                NativeObjectArrayAccessOperation::Write,
+                NativeObjectArrayAccessReceiverKind::PropertyValue,
+                span(10),
+            ),
+            (
+                &direct_property_append,
+                NativeObjectArrayAccessOperation::AppendWrite,
+                NativeObjectArrayAccessReceiverKind::PropertyValue,
+                span(11),
+            ),
+            (
+                &dynamic_property_write,
+                NativeObjectArrayAccessOperation::Write,
+                NativeObjectArrayAccessReceiverKind::PropertyValue,
+                span(13),
+            ),
+            (
+                &non_direct_property_write,
+                NativeObjectArrayAccessOperation::Write,
+                NativeObjectArrayAccessReceiverKind::PropertyValue,
+                span(10),
+            ),
+            (
+                &call_result_property_write,
+                NativeObjectArrayAccessOperation::Write,
+                NativeObjectArrayAccessReceiverKind::CallResult,
+                span(4),
+            ),
+            (
+                &new_result_property_append,
+                NativeObjectArrayAccessOperation::AppendWrite,
+                NativeObjectArrayAccessReceiverKind::NewObjectResult,
+                span(4),
+            ),
+        ] {
+            let result = if operation == NativeObjectArrayAccessOperation::AppendWrite {
+                native_object_array_access_assignment_operation_result(target)
+            } else {
+                native_object_array_access_operation_result_from_assign_target(target, operation)
+            }
+            .expect("object/property ArrayAccess write target should classify");
+
+            assert_eq!(result.operation, operation);
+            assert_eq!(result.receiver_kind, receiver_kind);
+            assert_eq!(result.span, expected_span);
+        }
+
+        let compound = native_object_array_access_compound_operation_result(&direct_property_write)
+            .expect("compound object/property ArrayAccess write should classify");
+        assert_eq!(
+            compound.operation,
+            NativeObjectArrayAccessOperation::CompoundUpdate
+        );
+        assert_eq!(compound.llvm_rejection(), LLVM_ARRAY_ACCESS_REJECTION);
+
+        let null_coalesce =
+            native_object_array_access_null_coalesce_write_operation_result(&direct_property_write)
+                .expect("null-coalesce object/property ArrayAccess write should classify");
+        assert_eq!(
+            null_coalesce.operation,
+            NativeObjectArrayAccessOperation::NullCoalesceWrite
+        );
+        assert_eq!(
+            null_coalesce.result_kind(),
+            NativeObjectPropertyOperationResultKind::Value
+        );
+
+        let direct_unset = UnsetTarget::ObjectPropertyArrayIndex {
+            object: "box".to_string(),
+            property: "items".to_string(),
+            indices: vec![Expr::Int(0, span(18))],
+            span: span(10),
+        };
+        let static_receiver_unset = UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder: Expr::StaticProperty {
+                class_name: "Registry".to_string(),
+                property: "box".to_string(),
+                span: span(5),
+            },
+            property: variable("slot", 16),
+            indices: vec![Expr::String("key".to_string(), span(24))],
+            span: span(18),
+        };
+
+        for (target, receiver_kind, expected_span) in [
+            (
+                &direct_unset,
+                NativeObjectArrayAccessReceiverKind::PropertyValue,
+                span(10),
+            ),
+            (
+                &static_receiver_unset,
+                NativeObjectArrayAccessReceiverKind::StaticPropertyValue,
+                span(5),
+            ),
+        ] {
+            let result = native_object_array_access_unset_operation_result_from_target(target)
+                .expect("object/property ArrayAccess unset target should classify");
+
+            assert_eq!(result.operation, NativeObjectArrayAccessOperation::Unset);
+            assert_eq!(result.receiver_kind, receiver_kind);
+            assert_eq!(result.span, expected_span);
+            assert_eq!(
+                result.result_kind(),
+                NativeObjectPropertyOperationResultKind::Bool
+            );
+        }
     }
 
     #[test]
