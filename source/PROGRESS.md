@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 04:42 CEST
-Evaluation marker: `20260526T024221Z`
+Updated: 2026-05-26 04:51 CEST
+Evaluation marker: `20260526T025120Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, candidate worktrees, lane-local
@@ -14,11 +14,11 @@ Overall supervised-roadmap progress: **95%** `[###################-]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Primary `HEAD` is aligned with `origin/master` after the docs/accounting
-update for `682f3aef`.
+Primary `HEAD` is aligned with `origin/master` at
+`d2adc130 native: register declared method callables`.
 
 Latest primary-integrated source capability baseline:
-`682f3aef runtime: add ArrayAccess offset write dispatch ABI`.
+`d2adc130 native: register declared method callables`.
 
 Recent source progress is real but still selected-path rather than full PHP
 parity. `6a73b186` routed generated-C dynamic callable expressions through the
@@ -41,33 +41,47 @@ storage, ArrayAccess dispatch, cleanup ownership, or exact diagnostic ordering.
 does not add compiler lowering, assignment/RMW owner writeback, cleanup/unwind
 parity, `offsetGet`, `offsetExists`, reference/COW, magic, constructor,
 visibility, exact diagnostic, or backend parity behavior.
+`d2adc130` registers generated declared methods as runtime callable-table
+method descriptors and publishes generated method wrapper frames through the
+shared runtime callable table/call-frame/result ABI. It does not add full
+callable/object parity: constructors, magic calls beyond declared `__invoke`,
+autoload, namespace fallback, `Class::method` strings, named/spread breadth,
+return references, cleanup/unwind, exact diagnostics, non-public visibility
+parity, and backend parity remain open.
 
 Full PHP callable, object, lvalue, cleanup, diagnostic, and backend parity
 remain incomplete. Overall and selected-executable percentages remain flat.
 
 Current lane-local signals are explicitly not counted. RMW executable writeback
 has a scout plan, not an implementation. Cleanup/unwind refresh remains in
-progress, generated declared-method callable-table registration is a scout
-plan, and dead dynamic-callable ladder cleanup is approved-but-deferred cleanup
-debt.
+progress, and dead dynamic-callable ladder cleanup is approved-but-deferred
+cleanup debt.
 
 ## Grand Roadmap Position
 
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, byte-string, array, reference, symbol, callable table, callable-value dispatch, call-frame/result, request-state, diagnostic operation/operand-list, reference-binding, assignment-lvalue, RMW-lvalue, and object allocation-risk surfaces. Remaining gaps include broader callable lookup parity, namespace fallback, autoload, magic calls, constructors, closure frame handoff, and cleanup/unwind parity. |
-| Compiler/backend consumers | **99%** | `[####################]` | Generated C has the freshest executable consumers. Direct and dynamic generated-C callable paths consume shared runtime callable ABI surfaces. Object/ArrayAccess write-operation blockers now route through shared backend rejection boundaries. LLVM and direct assembly still lag some recent semantics. |
+| Compiler/backend consumers | **99%** | `[####################]` | Generated C has the freshest executable consumers. Direct and dynamic generated-C callable paths consume shared runtime callable ABI surfaces, and generated declared methods are now published into the runtime callable table through method wrapper frames. Object/ArrayAccess write-operation blockers route through shared backend rejection boundaries. LLVM and direct assembly still lag some recent semantics. |
 | Executable PHP semantics | **95%** | `[###################-]` | Many selected executable islands exist, but major PHP semantics remain open: full assignment/RMW/writeback, references/COW, executable object/ArrayAccess writes, cleanup/unwind/finally/destructors, exact diagnostics, and backend parity. |
 | Strings and byte semantics | **62%** | `[############--------]` | Byte-backed values and byte-preserving selected string-array slots are integrated. Binary source bytes, byte-exact interpreter/session/debug output, `mb_str_split()`, request/global byte keys, and exact diagnostics remain open. |
 | Arrays, lvalues, references, COW | **82%** | `[################----]` | Selected reference-source/lvalue extraction, closure capture from reference-backed slots, reference-binding operand diagnostics, assignment-lvalue operand diagnostics, RMW-lvalue operand diagnostics, and Object/ArrayAccess write blockers are integrated. Executable assignment, RMW, broad writeback, arbitrary alias roots, foreach, static/magic/non-public properties, ArrayAccess execution, and full COW remain incomplete. |
 | Symbols, globals, request state | **75%** | `[###############-----]` | Selected globals, root-symbol consumers, active symbol-table consumers, request-key blockers, append-shaped symbol reference-source materialization, direct generated-C request-state frame handoff, and generated-C dynamic user-function handoff proof exist. `$GLOBALS` self-cells, closure request-state handoff, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
-| Calls, functions, frames | **92%** | `[##################--]` | Runtime callable table/value dispatch, call arguments/frame/result ABI, direct generated-C user-function consumers, generated-C dynamic callable-value consumers, by-reference argument transport, descriptor closures, closure returns, and direct/dynamic generated-C request-state frame handoff are integrated. Object/method callable parity, callable array validation parity, `Class::method` strings, namespace fallback, autoload, magic calls, named/spread breadth, return references, constructors, closure frame-environment handoff, and cleanup/unwind parity remain open. |
-| Objects, properties, methods | **55%** | `[###########---------]` | Public object-property reference-source extraction, object-property reference-slot mutation, declared-class allocation cleanup-risk metadata, Object/ArrayAccess write-operation blocker classification, and runtime-only ArrayAccess offset write dispatch exist for selected paths. Full compiler-consumed ArrayAccess lowering, visibility, magic, dynamic/static/typed properties, destructor execution, interfaces/traits execution, references/COW, constructors, and backend parity remain open. |
+| Calls, functions, frames | **93%** | `[###################-]` | Runtime callable table/value dispatch, call arguments/frame/result ABI, direct generated-C user-function consumers, generated-C dynamic callable-value consumers, generated declared-method callable registration/wrapper frames, by-reference argument transport, descriptor closures, closure returns, and direct/dynamic generated-C request-state frame handoff are integrated. Full object/method callable parity, callable array validation parity, `Class::method` strings, namespace fallback, autoload, magic calls beyond declared `__invoke`, named/spread breadth, return references, constructors, closure frame-environment handoff, cleanup/unwind parity, and backend parity remain open. |
+| Objects, properties, methods | **56%** | `[###########---------]` | Public object-property reference-source extraction, object-property reference-slot mutation, declared-class allocation cleanup-risk metadata, Object/ArrayAccess write-operation blocker classification, runtime-only ArrayAccess offset write dispatch, and generated-C declared-method callable-table publication exist for selected paths. Full compiler-consumed ArrayAccess lowering, non-public visibility parity, magic, dynamic/static/typed properties, destructor execution, interfaces/traits execution, references/COW, constructors, and backend parity remain open. |
 | Control flow, cleanup, diagnostics | **52%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, try-body call-boundary preflight, generic operand-list blockers, reference-binding blockers, assignment-lvalue blockers, RMW-lvalue blockers, and Object/ArrayAccess write blockers exist. Broad unwind/finally/destructor/shutdown execution, cleanup ownership, executable writeback/reference binding, and source-ordered diagnostics remain open. |
 | Broad integrated verification | **92%** | `[##################--]` | Recent focused gates are strong and nonzero. The full `native_runtime_abi` baseline still has known current-primary failures, and broad verification remains constrained by lane extraction cost, stale candidate expectations, swap pressure, and backend parity gaps. |
 
 ## Recent Primary-Integrated Work
 
+- `d2adc130`: registered generated declared methods into the runtime callable
+  table and generated method wrapper frames that bridge `NativeCallFrame`
+  receiver/value/reference arguments into declared method frames, returning
+  through the shared native call-result ABI. This is generated-C declared-method
+  callable-table publication progress only; constructors, magic calls beyond
+  declared `__invoke`, autoload, namespace fallback, `Class::method` strings,
+  named/spread breadth, return references, cleanup/unwind, exact diagnostics,
+  non-public visibility parity, and backend parity remain open.
 - `682f3aef`: added runtime ABI
   `phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic` for
   `ArrayAccess::offsetSet($offset, $value)`,
@@ -132,13 +146,13 @@ Primary-integrated capability and lane-local work are separated explicitly.
 | Assignment-lvalue operand-list diagnostics | **100%** `[####################]` | **100%** `[####################]` | **15%** `[###-----------------]` | Integrated at `81c15cd5`. Generalized blocker vocabulary exists; assignment/RMW execution and writeback do not. |
 | Direct request-state frame handoff for generated-C user functions | **100%** `[####################]` | **100%** `[####################]` | **40%** `[########------------]` | Integrated at `b27bbb20`; extended by `6a73b186` for generated-C dynamic user-function handoff proof. Closure handoff remains open. |
 | Reference-binding operand-list diagnostics | **100%** `[####################]` | **100%** `[####################]` | **15%** `[###-----------------]` | Integrated at `b4b21937`. Diagnostic ABI progress only; executable reference binding remains open. |
-| Runtime callable ABI, callable-value dispatch, and direct/dynamic generated-C consumers | **100%** `[####################]` | **100%** `[####################]` | **66%** `[#############-------]` | Integrated through `6a73b186`. Direct and dynamic generated-C callable paths consume the shared runtime lookup/invocation ABI and runtime builtin dispatch. Constructors, object/method callable parity, callable array validation parity, broader lookup parity, return references, named/spread breadth, and cleanup/unwind remain open. |
+| Runtime callable ABI, callable-value dispatch, and direct/dynamic generated-C consumers | **100%** `[####################]` | **100%** `[####################]` | **68%** `[##############------]` | Integrated through `6a73b186` and `d2adc130`. Direct/dynamic generated-C callable paths consume the shared runtime lookup/invocation ABI, and generated declared methods are published through callable-table method descriptors and wrapper frames. Constructors, full object/method callable parity, callable array validation parity, broader lookup parity, return references, named/spread breadth, and cleanup/unwind remain open. |
 | Dynamic callable compiler consumer plus builtin string callable repair | **100%** `[####################]` | **100%** `[####################]` | **60%** `[############--------]` | Integrated at `6a73b186`. Dynamic callee expression lowering routes through the shared callable-value lookup/invocation ABI instead of a compiler-side finite builtin/name ladder. Full callable semantics remain open. |
 | RMW-lvalue operand-list diagnostics | **100%** `[####################]` | **100%** `[####################]` | **14%** `[###-----------------]` | Integrated at `b918d3b1`. Generalized diagnostic boundary uses operation tag `8`, operand tag `21`, shared `AssignTarget` operand enumeration, and `NativeDiagnosticOperandRequirement` operation-list diagnostics. Executable RMW writeback/reference/COW behavior remains open. |
 | Object/ArrayAccess runtime write dispatch ABI | **100%** `[####################]` | **100%** `[####################]` | **35%** `[#######-------------]` | Integrated at `682f3aef`. Runtime dispatch exists for keyed `offsetSet`, append `offsetSet(null, value)`, and `offsetUnset`; no compiler lowering or owner/writeback consumer yet. |
 | RMW executable array-lvalue owner/writeback | **0%** `[--------------------]` | **20%** `[####----------------]` | **28%** `[######--------------]` | Scout plan only. Proposed generated-C packet would materialize array-lvalue owners for local arrays and active symbol/global-import reference slots across multiple RMW families. |
 | Cleanup/unwind requirement boundary | **0%** `[--------------------]` | **45%** `[#########-----------]` | **18%** `[####----------------]` | Lane-local refresh in progress after RMW. It found a real RMW diagnostic composition gap, but final audit and gates remain pending. |
-| Generated declared-method callable-table registration | **0%** `[--------------------]` | **20%** `[####----------------]` | **45%** `[#########-----------]` | Scout plan only. Would publish generated methods into the runtime callable table and bridge method wrappers to `NativeCallFrame`; not implemented. |
+| Generated declared-method callable-table registration | **100%** `[####################]` | **100%** `[####################]` | **45%** `[#########-----------]` | Integrated at `d2adc130`. Generated declared methods are registered in the runtime callable table and wrapper frames bridge `NativeCallFrame` receiver/value/reference arguments into declared method frames. Full callable/object parity remains open. |
 | Trait effective-method metadata | **0%** `[--------------------]` | **30%** `[######--------------]` | **20%** `[####----------------]` | Lane-local/stale relative to current primary. Metadata-only until trait-composed method execution and cleanup consumers exist. |
 | Dead dynamic callable compiler ladder cleanup | **0%** `[--------------------]` | **80%** `[################----]` | **5%** `[#-------------------]` | Approved-but-deferred cleanup. Useful to remove after `6a73b186`, but not a substitute for new executable semantic coverage. |
 | Broad dirty lane extraction backlog | **0%** `[--------------------]` | **35%** `[#######-------------]` | **36%** `[#######-------------]` | Dirty call, diagnostic, object, control-flow, symbol, byte/string, and array lanes remain evidence pools only. |
@@ -159,6 +173,9 @@ Primary-integrated capability:
   `phpc_native_callable_value_invoke_value_with_diagnostic_and_free`.
 - [x] Dynamic string callable generated-C proof and request/global dynamic
   user-function handoff proof through the shared callable-value ABI.
+- [x] Generated-C declared-method callable-table registration and method
+  wrapper frames through the shared runtime callable table/call-frame/result
+  ABI.
 - [x] Shared diagnostic operation/operand-list blocker boundary.
 - [x] Reference-binding operand-list requirement blockers.
 - [x] Assignment-lvalue operand-list requirement blockers.
@@ -180,7 +197,6 @@ In progress but not counted:
   write dispatch.
 - [ ] RMW executable array-lvalue owner/writeback packet.
 - [ ] Cleanup/unwind requirement boundary refresh after RMW.
-- [ ] Generated declared-method callable-table registration and wrapper frames.
 - [ ] Trait effective-method metadata refresh, stale and metadata-only.
 - [ ] Dead dynamic callable ladder cleanup.
 - [ ] Broad dirty call, diagnostic, object, symbol, byte/string, control-flow,
@@ -193,7 +209,8 @@ Not done:
 - [ ] Full PHP reference binding, references/COW identity, arbitrary alias
   roots, and alias-preserving write-through.
 - [ ] Full callable parity beyond the integrated generated-C dynamic callable
-  consumer: object/method callable parity, callable array validation parity,
+  consumer and declared-method wrapper publication: object/method callable
+  parity, callable array validation parity,
   `Class::method` strings, namespace fallback, autoload, magic calls,
   named/spread arguments, by-reference/default/variadic edge cases, return
   references, constructors, source-ordered diagnostics, closure frame handoff,
@@ -217,8 +234,11 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary is clean and synced after docs/accounting for `682f3aef`.
-- [x] Latest source capability is `682f3aef`.
+- [x] Primary source is clean and synced at `d2adc130`.
+- [x] Latest source capability is `d2adc130`.
+- [x] `d2adc130` is accounted as generated-C declared-method callable-table
+  registration and method wrapper-frame publication through the shared runtime
+  callable table/call-frame ABI, not full callable/object parity.
 - [x] `682f3aef` is accounted as runtime-only Object/ArrayAccess offset write
   dispatch ABI progress, not compiler lowering or full ArrayAccess parity.
 - [x] `6a73b186` is accounted as executable generated-C dynamic callable
@@ -260,6 +280,13 @@ as standalone progress. Distinct next progress should remove the remaining
 dead compiler callable ladder or broaden a new callable semantic family with
 focused proof.
 
+Future object/method callable work must not recount generated declared-method
+callable-table registration or wrapper-frame publication from `d2adc130` as
+standalone progress. Distinct next progress should broaden a new callable
+semantic family such as constructors, `Class::method` strings, namespace
+fallback, autoload, named/spread arguments, return references, cleanup/unwind,
+visibility parity, or backend parity.
+
 Future Object/ArrayAccess work must not repeat the same write-operation blocker
 classification proof as standalone progress. Distinct next progress should
 implement a new runtime/compiler semantic boundary such as `offsetSet()` /
@@ -278,6 +305,9 @@ ownership, or exact diagnostic ordering.
 
 Best next action:
 
+- Treat `d2adc130` as integrated generated-C declared-method callable-table
+  registration progress and steer follow-up method-callable work toward a new
+  callable semantic family rather than republishing the same descriptors.
 - Treat `682f3aef` as integrated runtime ABI progress and steer immediately
   toward a compiler assignment/RMW/unset consumer for owner/writeback.
 - Consider the RMW executable owner/writeback packet only if it stays narrowly
@@ -298,6 +328,8 @@ Avoid:
 - Recounting RMW-lvalue operand-list diagnostics; they are already in primary
   at `b918d3b1`.
 - Treating runtime-only ArrayAccess dispatch as full compiler/execution parity.
+- Recounting generated declared-method callable-table registration or wrapper
+  frames; they are already in primary at `d2adc130`.
 - Routing cleanup/unwind or trait metadata without current-head reconcile and
   fresh review.
 - Re-integrating the dynamic callable compiler consumer; it is already in
