@@ -58173,7 +58173,7 @@ impl Interpreter {
                     )),
                 }
             }
-            "array_key_exists" => {
+            "array_key_exists" | "key_exists" => {
                 expect_arity(name, &args, 2, span)?;
                 let key = ArrayKey::from_array_key_exists_value(&args[0])
                     .map_err(|error| runtime_error(span, error))?;
@@ -66067,7 +66067,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_int_param("mode", 0),
             ],
         ),
-        "array_key_exists" => (
+        "array_key_exists" | "key_exists" => (
             "bool",
             vec![
                 reflection_internal_untyped_param("key"),
@@ -67277,6 +67277,7 @@ fn is_builtin(name: &str) -> bool {
             | "constant"
             | "defined"
             | "array_key_exists"
+            | "key_exists"
             | "array_values"
             | "array_key_first"
             | "array_key_last"

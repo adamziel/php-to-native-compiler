@@ -1684,6 +1684,13 @@ fn native_value_array_query_builtin(
     }
 }
 
+fn native_array_key_exists_builtin(name: &str, args: &[Expr]) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "array_key_exists" | "key_exists"
+    ) && args.len() == 2
+}
+
 fn native_value_comparison_op_tag(op: BinaryOp) -> Option<&'static str> {
     match op {
         BinaryOp::Eq => Some("PHPC_NATIVE_VALUE_COMPARISON_EQ"),
@@ -8803,12 +8810,15 @@ impl LlvmGenerator {
             output.push_str("declare %phpc.NativeReferenceHandle @phpc_native_reference_clone(%phpc.NativeReferenceHandle)\n");
             output.push_str("declare %phpc.NativeReferenceHandle @phpc_native_reference_from_value_and_free(%phpc.NativeValueHandle)\n");
             output.push_str("declare %phpc.NativeValueHandle @phpc_native_reference_value_clone(%phpc.NativeReferenceHandle)\n");
+            output.push_str("declare i1 @phpc_native_reference_predicate(%phpc.NativeReferenceHandle, i8, ptr)\n");
             output.push_str(
                 "declare void @phpc_native_reference_free(%phpc.NativeReferenceHandle)\n",
             );
             output.push_str("declare i64 @phpc_native_value_to_int_with_reference_slot_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeReferenceHandle, ptr)\n");
             output.push_str("declare %phpc.NativeValueHandle @phpc_native_value_type_name_with_reference_slot_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeReferenceHandle, i1, ptr)\n");
             output.push_str("declare i1 @phpc_native_value_type_predicate_with_reference_slot_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeReferenceHandle, i8, ptr)\n");
+            output.push_str("declare i1 @phpc_native_value_array_key_exists_value_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, ptr)\n");
+            output.push_str("declare i1 @phpc_native_reference_array_key_exists_value_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeReferenceHandle, ptr)\n");
             output.push_str("declare %phpc.NativeValueHandle @phpc_native_value_type_name_with_diagnostic(%phpc.NativeValueHandle, i1, ptr)\n");
             output.push_str("declare i1 @phpc_native_value_type_predicate_with_diagnostic(%phpc.NativeValueHandle, i8, ptr)\n");
             if !self.uses_native_string_int_operation && !self.uses_native_value_echo_stdout {
@@ -9388,6 +9398,9 @@ impl LlvmGenerator {
             Expr::Call { name, args, span } if is_object_metadata_builtin(name) => {
                 Err(self.unsupported_direct_named_call(args, *span, LLVM_OBJECT_METADATA_REJECTION))
             }
+            Expr::Call { name, args, span } if native_array_key_exists_builtin(name, args) => {
+                self.emit_llvm_array_key_exists_call(args, *span)
+            }
             Expr::Call { name, args, span } if is_array_builtin(name) => {
                 Err(self.unsupported_direct_named_call(args, *span, LLVM_ARRAY_REJECTION))
             }
@@ -9647,7 +9660,10 @@ impl LlvmGenerator {
 
         match value {
             IrValue::Null => Ok(IrValue::Bool(false)),
-            IrValue::NativeValue(_) | IrValue::NativeReference(_) => {
+            IrValue::NativeReference(reference) => Ok(IrValue::BoolExpr(
+                self.emit_native_reference_predicate_ir(reference, 0),
+            )),
+            IrValue::NativeValue(_) => {
                 let null = self.emit_native_value_type_predicate_slot_for_ir_value(
                     value,
                     "PHPC_NATIVE_VALUE_TYPE_IS_NULL",
@@ -9717,14 +9733,9 @@ impl LlvmGenerator {
                 );
                 self.emit_bool_not(IrValue::BoolExpr(truthy), arg.span())
             }
-            IrValue::NativeReference(reference) => {
-                let truthy = self.emit_native_value_reference_slot_truthiness(
-                    "zeroinitializer".to_string(),
-                    reference,
-                    None,
-                );
-                self.emit_bool_not(IrValue::BoolExpr(truthy), arg.span())
-            }
+            IrValue::NativeReference(reference) => Ok(IrValue::BoolExpr(
+                self.emit_native_reference_predicate_ir(reference, 1),
+            )),
             value if self.known_truthiness_for_value(&value).is_some() => {
                 let handle = self
                     .emit_native_value_for_ir_value(value, arg.span())
@@ -10263,6 +10274,59 @@ impl LlvmGenerator {
             ));
         }
         Ok(IrValue::NativeValue(result))
+    }
+
+    fn emit_llvm_array_key_exists_call(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        let [key_expr, subject_expr] = args else {
+            return Err(self.unsupported_direct_named_call(args, span, LLVM_ARRAY_REJECTION));
+        };
+
+        let key = self.emit_value_operand_expr(key_expr)?;
+        let key = self
+            .emit_native_value_for_ir_value(key, span)
+            .map_err(|_| self.unsupported(span, LLVM_ARRAY_REJECTION))?;
+        let subject = self.emit_value_operand_expr(subject_expr)?;
+        let (subject_value, subject_reference, subject_cleanup, is_reference) = self
+            .emit_native_value_reference_slot_for_ir_value(subject, span, LLVM_ARRAY_REJECTION)?;
+        let diagnostic_slot = self.next_temp();
+        let result = self.next_temp();
+        let (helper, subject_type, subject_argument) = if is_reference {
+            (
+                "phpc_native_reference_array_key_exists_value_with_diagnostic",
+                "%phpc.NativeReferenceHandle",
+                subject_reference,
+            )
+        } else {
+            (
+                "phpc_native_value_array_key_exists_value_with_diagnostic",
+                "%phpc.NativeValueHandle",
+                subject_value,
+            )
+        };
+        self.uses_native_reference_helpers = true;
+        self.body.push(format!(
+            "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
+        ));
+        self.body.push(format!(
+            "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
+        ));
+        self.body.push(format!(
+            "{result} = call i1 @{helper}(%phpc.NativeValueHandle {key}, {subject_type} {subject_argument}, ptr {diagnostic_slot})"
+        ));
+        self.emit_report_native_diagnostic_slot(&diagnostic_slot);
+        if let Some(handle) = subject_cleanup {
+            self.body.push(format!(
+                "call void @phpc_native_value_free(%phpc.NativeValueHandle {handle})"
+            ));
+        }
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {key})"
+        ));
+        Ok(IrValue::BoolExpr(result))
     }
 
     fn emit_llvm_output_buffer_operation_call(
@@ -12466,11 +12530,7 @@ impl LlvmGenerator {
                 Ok(IrValue::BoolExpr(truthy))
             }
             IrValue::NativeReference(reference) => {
-                let truthy = self.emit_native_value_reference_slot_truthiness(
-                    "zeroinitializer".to_string(),
-                    reference,
-                    None,
-                );
+                let truthy = self.emit_native_reference_predicate_ir(reference, 2);
                 Ok(IrValue::BoolExpr(truthy))
             }
             _ => Err(self.unsupported(span, llvm_logical_rejection())),
@@ -13039,11 +13099,7 @@ impl LlvmGenerator {
                 Ok(IrValue::BoolExpr(inverted))
             }
             IrValue::NativeReference(reference) => {
-                let truthy = self.emit_native_value_reference_slot_truthiness(
-                    "zeroinitializer".to_string(),
-                    reference,
-                    None,
-                );
+                let truthy = self.emit_native_reference_predicate_ir(reference, 2);
                 let inverted = self.next_temp();
                 self.body
                     .push(format!("{inverted} = xor i1 {truthy}, true"));
@@ -13085,6 +13141,23 @@ impl LlvmGenerator {
             ));
         }
         truthy
+    }
+
+    fn emit_native_reference_predicate_ir(&mut self, reference: String, predicate: u8) -> String {
+        let diagnostic_slot = self.next_temp();
+        let result = self.next_temp();
+        self.uses_native_reference_helpers = true;
+        self.body.push(format!(
+            "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
+        ));
+        self.body.push(format!(
+            "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
+        ));
+        self.body.push(format!(
+            "{result} = call i1 @phpc_native_reference_predicate(%phpc.NativeReferenceHandle {reference}, i8 {predicate}, ptr {diagnostic_slot})"
+        ));
+        self.emit_report_native_diagnostic_slot(&diagnostic_slot);
+        result
     }
 
     fn static_bool_not(&self, value: &str) -> Option<KnownBool> {
@@ -18524,6 +18597,9 @@ impl CGenerator {
                 output.push_str("#define PHPC_NATIVE_VALUE_TYPE_IS_OBJECT 10\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_TYPE_NAME_GETTYPE 0\n");
                 output.push_str("#define PHPC_NATIVE_VALUE_TYPE_NAME_DEBUG 1\n");
+                output.push_str("#define PHPC_NATIVE_REFERENCE_PREDICATE_ISSET 0\n");
+                output.push_str("#define PHPC_NATIVE_REFERENCE_PREDICATE_EMPTY 1\n");
+                output.push_str("#define PHPC_NATIVE_REFERENCE_PREDICATE_TRUTHY 2\n");
             }
             if self.uses_native_object_property_helpers {
                 output.push_str("#define PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_READ 1\n");
@@ -18787,6 +18863,11 @@ impl CGenerator {
                 if self.uses_native_reference_helpers || self.uses_native_symbol_table_helpers {
                     output.push_str("extern phpc_NativeValueHandle phpc_native_value_type_name_with_reference_slot_with_diagnostic(phpc_NativeValueHandle value, phpc_NativeReferenceHandle reference, bool debug, phpc_NativeDiagnosticHandle *diagnostic);\n");
                     output.push_str("extern bool phpc_native_value_type_predicate_with_reference_slot_with_diagnostic(phpc_NativeValueHandle value, phpc_NativeReferenceHandle reference, uint8_t predicate, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                    output.push_str("extern bool phpc_native_reference_predicate(phpc_NativeReferenceHandle reference, uint8_t predicate, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                }
+                output.push_str("extern bool phpc_native_value_array_key_exists_value_with_diagnostic(phpc_NativeValueHandle key, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                if self.uses_native_reference_helpers || self.uses_native_symbol_table_helpers {
+                    output.push_str("extern bool phpc_native_reference_array_key_exists_value_with_diagnostic(phpc_NativeValueHandle key, phpc_NativeReferenceHandle reference, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 }
                 output.push_str("extern bool phpc_native_array_insert_key_value_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeArrayKeyMaterializationResult key, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_array_read_key_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeArrayKeyMaterializationResult key, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -27710,6 +27791,9 @@ impl CGenerator {
             Expr::Call { name, args, span } if is_object_metadata_builtin(name) => Err(
                 self.unsupported_direct_named_call(args, *span, ASSEMBLY_OBJECT_METADATA_REJECTION)
             ),
+            Expr::Call { name, args, span } if native_array_key_exists_builtin(name, args) => {
+                self.emit_native_array_key_exists_call(args, *span, "")
+            }
             Expr::Call { name, args, span } if native_array_sort_builtin(name, args).is_some() => {
                 let builtin = native_array_sort_builtin(name, args)
                     .expect("array sort guard should provide operation");
@@ -30875,7 +30959,19 @@ impl CGenerator {
 
             match self.variables.get(name).cloned() {
                 None | Some(CValue::Null) => return Ok(CValue::Bool(false)),
-                Some(value @ (CValue::NativeValueHandle(_) | CValue::NativeReferenceHandle(_))) => {
+                Some(CValue::NativeReferenceHandle(reference)) => {
+                    let is_set = self.emit_native_reference_predicate(
+                        &reference,
+                        "PHPC_NATIVE_REFERENCE_PREDICATE_ISSET",
+                        "native_reference_isset",
+                    );
+                    match CValue::BoolExpr(is_set) {
+                        CValue::BoolExpr(value) => dynamic_checks.push(value),
+                        _ => unreachable!("native reference isset returns a bool C value"),
+                    }
+                    continue;
+                }
+                Some(value @ CValue::NativeValueHandle(_)) => {
                     let value = self.materialize_native_array_c_value_handle(value, arg.span())?;
                     let is_null = self
                         .emit_native_value_type_predicate(value, "PHPC_NATIVE_VALUE_TYPE_IS_NULL");
@@ -30984,7 +31080,7 @@ impl CGenerator {
             return self.emit_globals_symbol_path_empty_from_path(path, arg.span(), "");
         }
 
-        let Some(value) = self.variables.get(name) else {
+        let Some(value) = self.variables.get(name).cloned() else {
             return Ok(CValue::Bool(true));
         };
 
@@ -30994,14 +31090,22 @@ impl CGenerator {
                 | CValue::NativeValueHandle(_)
                 | CValue::NativeReferenceHandle(_)
         ) {
-            let value = self.materialize_native_array_c_value_handle(value.clone(), arg.span())?;
+            if let CValue::NativeReferenceHandle(reference) = &value {
+                let empty = self.emit_native_reference_predicate(
+                    reference,
+                    "PHPC_NATIVE_REFERENCE_PREDICATE_EMPTY",
+                    "native_reference_empty",
+                );
+                return Ok(CValue::BoolExpr(empty));
+            }
+            let value = self.materialize_native_array_c_value_handle(value, arg.span())?;
             let truthy = self.emit_native_value_handle_truthiness(&value.handle);
             self.body.extend(value.cleanup_after_use);
             return Ok(CValue::BoolExpr(format!("!({truthy})")));
         }
 
-        if self.known_truthiness_for_value(value).is_some() {
-            let value = self.materialize_native_array_c_value_handle(value.clone(), arg.span())?;
+        if self.known_truthiness_for_value(&value).is_some() {
+            let value = self.materialize_native_array_c_value_handle(value, arg.span())?;
             let truthy = self.emit_native_value_reference_slot_truthiness(
                 CNativeValueReferenceSlot::value(value),
                 "native_value_truthy",
@@ -33307,6 +33411,83 @@ impl CGenerator {
             )),
             _ => Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION)),
         }
+    }
+
+    fn emit_native_array_key_exists_call(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        let [key_expr, subject_expr] = args else {
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
+        };
+
+        let key = self.materialize_native_value_result_operand(key_expr, failure_cleanup)?;
+        let subject_failure_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&key.cleanup_after_use),
+            failure_cleanup
+        );
+        let subject = self.materialize_native_value_reference_slot_operand(
+            subject_expr,
+            &subject_failure_cleanup,
+        )?;
+        let mut cleanup_after_use = subject.cleanup_after_use.clone();
+        cleanup_after_use.extend(key.cleanup_after_use.clone());
+
+        Ok(CValue::BoolExpr(
+            self.emit_native_array_key_exists_value_slot(
+                key,
+                subject,
+                cleanup_after_use,
+                failure_cleanup,
+            ),
+        ))
+    }
+
+    fn emit_native_array_key_exists_value_slot(
+        &mut self,
+        key: CNativeValueMaterialization,
+        subject: CNativeValueReferenceSlot,
+        cleanup_after_use: Vec<String>,
+        failure_cleanup: &str,
+    ) -> String {
+        self.uses_native_array_helpers = true;
+        self.uses_native_reference_helpers |= subject.is_reference;
+
+        let result = self.next_native_name("native_array_key_exists");
+        let diagnostic = self.next_native_name("array_key_exists_diagnostic");
+        let helper = if subject.is_reference {
+            "phpc_native_reference_array_key_exists_value_with_diagnostic"
+        } else {
+            "phpc_native_value_array_key_exists_value_with_diagnostic"
+        };
+        let subject_arg = if subject.is_reference {
+            subject.reference_handle.clone()
+        } else {
+            subject.value_handle.clone()
+        };
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "_Bool {result} = {helper}({}, {subject_arg}, &{diagnostic});",
+            key.handle
+        ));
+        let report_call = c_diagnostic_report_call(&diagnostic);
+        let cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&cleanup_after_use),
+            failure_cleanup
+        );
+        let error_exit = self.native_error_exit(&cleanup);
+        self.body.push(format!(
+            "if ({diagnostic}.ptr != NULL) {{ {report_call} {diagnostic}.ptr = NULL; {error_exit} }}"
+        ));
+        self.body.extend(cleanup_after_use);
+        result
     }
 
     fn emit_native_value_array_query_operation_handle(
@@ -38405,6 +38586,10 @@ impl CGenerator {
     }
 
     fn emit_logical_truthiness_expr(&mut self, expr: &Expr, span: Span) -> CompileResult<CValue> {
+        if self.expression_can_reach_native_reference_slot(expr) {
+            let value = self.emit_expr(expr)?;
+            return self.emit_logical_truthiness_operand(value, span);
+        }
         if let Some(value) = self.try_materialize_native_value_result_expr(expr, "")? {
             let truthy = self.emit_native_value_handle_truthiness(&value.handle);
             self.body.extend(value.cleanup_after_use);
@@ -38431,8 +38616,9 @@ impl CGenerator {
                 Ok(CValue::BoolExpr(truthy))
             }
             CValue::NativeReferenceHandle(reference) => {
-                let truthy = self.emit_native_value_reference_slot_truthiness(
-                    CNativeValueReferenceSlot::reference(reference),
+                let truthy = self.emit_native_reference_predicate(
+                    &reference,
+                    "PHPC_NATIVE_REFERENCE_PREDICATE_TRUTHY",
                     "native_reference_truthy",
                 );
                 Ok(CValue::BoolExpr(truthy))
@@ -39073,8 +39259,9 @@ impl CGenerator {
                 Ok(CValue::BoolExpr(format!("!({truthy})")))
             }
             CValue::NativeReferenceHandle(reference) => {
-                let truthy = self.emit_native_value_reference_slot_truthiness(
-                    CNativeValueReferenceSlot::reference(reference),
+                let truthy = self.emit_native_reference_predicate(
+                    &reference,
+                    "PHPC_NATIVE_REFERENCE_PREDICATE_TRUTHY",
                     "native_reference_truthy",
                 );
                 Ok(CValue::BoolExpr(format!("!({truthy})")))
@@ -39118,6 +39305,25 @@ impl CGenerator {
         self.emit_report_native_diagnostic(&diagnostic);
         self.body.extend(value.cleanup_after_use);
         truthy
+    }
+
+    fn emit_native_reference_predicate(
+        &mut self,
+        reference: &str,
+        predicate_tag: &str,
+        result_prefix: &str,
+    ) -> String {
+        let result = self.next_native_name(result_prefix);
+        let diagnostic = self.next_native_name("native_reference_predicate_diagnostic");
+        self.uses_native_array_helpers = true;
+        self.uses_native_reference_helpers = true;
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "_Bool {result} = phpc_native_reference_predicate({reference}, {predicate_tag}, &{diagnostic});"
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        result
     }
 
     fn static_bool_not(&self, value: &str) -> Option<KnownBool> {
@@ -39634,6 +39840,13 @@ impl CGenerator {
                             *span,
                             failure_cleanup,
                         )
+                        .map(Some);
+                }
+                if native_array_key_exists_builtin(name, args) {
+                    let value =
+                        self.emit_native_array_key_exists_call(args, *span, failure_cleanup)?;
+                    return self
+                        .materialize_native_array_c_value_handle(value, *span)
                         .map(Some);
                 }
                 if let Some(builtin) = native_array_sort_builtin(name, args) {
@@ -42897,6 +43110,7 @@ fn is_array_builtin(name: &str) -> bool {
         name.to_ascii_lowercase().as_str(),
         "count"
             | "array_key_exists"
+            | "key_exists"
             | "array_values"
             | "array_key_first"
             | "array_key_last"
@@ -43079,6 +43293,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "constant",
     "defined",
     "array_key_exists",
+    "key_exists",
     "array_values",
     "array_key_first",
     "array_key_last",

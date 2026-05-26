@@ -433,6 +433,9 @@ const NATIVE_VALUE_ARRAY_QUERY_COMBINE: u8 = 8;
 const NATIVE_VALUE_ARRAY_QUERY_CHANGE_KEY_CASE: u8 = 9;
 const NATIVE_VALUE_ARRAY_QUERY_COLUMN: u8 = 10;
 const NATIVE_ARRAY_QUERY_STRICT: u8 = 1;
+const NATIVE_REFERENCE_PREDICATE_ISSET: u8 = 0;
+const NATIVE_REFERENCE_PREDICATE_EMPTY: u8 = 1;
+const NATIVE_REFERENCE_PREDICATE_TRUTHY: u8 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum NativeArrayLvaluePathElement {
@@ -493,6 +496,13 @@ enum NativeValueArrayQueryOperation {
     Combine,
     ChangeKeyCase,
     Column,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeReferencePredicate {
+    Isset,
+    Empty,
+    Truthy,
 }
 
 impl NativeArrayPointerOperation {
@@ -761,6 +771,27 @@ impl NativeValueArrayQueryOperation {
 
     fn accepts_flags(self) -> bool {
         matches!(self, Self::KeysMatching | Self::Contains | Self::Search)
+    }
+}
+
+impl NativeReferencePredicate {
+    fn from_tag(predicate: u8) -> RuntimeResult<Self> {
+        match predicate {
+            NATIVE_REFERENCE_PREDICATE_ISSET => Ok(Self::Isset),
+            NATIVE_REFERENCE_PREDICATE_EMPTY => Ok(Self::Empty),
+            NATIVE_REFERENCE_PREDICATE_TRUTHY => Ok(Self::Truthy),
+            _ => Err(RuntimeError::invalid_string_conversion(format!(
+                "native reference predicate tag {predicate} is not supported"
+            ))),
+        }
+    }
+
+    fn evaluate(self, value: &Value) -> bool {
+        match self {
+            Self::Isset => !matches!(value, Value::Null),
+            Self::Empty => !value.is_truthy(),
+            Self::Truthy => value.is_truthy(),
+        }
     }
 }
 
@@ -6732,6 +6763,41 @@ pub unsafe extern "C" fn phpc_native_reference_value_clone(
     unsafe { handle.as_ref() }
         .map(|reference| NativeValueHandle::from_value(reference.cell.value_cloned()))
         .unwrap_or_else(NativeValueHandle::null)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a reference handle previously returned by the
+/// runtime ABI and not yet freed. `predicate` is one of the native reference
+/// predicate tags. On failure the helper stores a diagnostic handle that the
+/// caller owns and must release with `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_reference_predicate(
+    handle: NativeReferenceHandle,
+    predicate: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let predicate = match NativeReferencePredicate::from_tag(predicate) {
+        Ok(predicate) => predicate,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            return false;
+        }
+    };
+
+    let Some(reference) = (unsafe { handle.as_ref() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native reference predicate failed: reference handle is null",
+            )
+        };
+        return false;
+    };
+
+    predicate.evaluate(&reference.cell.value_cloned())
 }
 
 /// # Safety
@@ -14696,6 +14762,55 @@ pub unsafe extern "C" fn phpc_native_value_array_query_operation_with_operands_a
 
 /// # Safety
 ///
+/// `key` and `handle` must be null or value handles previously returned by the
+/// runtime ABI and not yet freed. On failure the helper stores a diagnostic
+/// handle that the caller owns and must release with
+/// `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_array_key_exists_value_with_diagnostic(
+    key: NativeValueHandle,
+    handle: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let result = unsafe { native_value_array_key_exists_value_with_diagnostic(key, handle) };
+    match result {
+        Ok(value) => value,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// `key` must be null or a value handle previously returned by the runtime ABI
+/// and not yet freed. `reference` must be null or a reference handle
+/// previously returned by the runtime ABI and not yet freed. On failure the
+/// helper stores a diagnostic handle that the caller owns and must release with
+/// `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_reference_array_key_exists_value_with_diagnostic(
+    key: NativeValueHandle,
+    reference: NativeReferenceHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let result = unsafe { native_reference_array_key_exists_value_with_diagnostic(key, reference) };
+    match result {
+        Ok(value) => value,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
 /// `values` must be null when `value_count` is zero, or point to
 /// `value_count` initialized handles previously returned by the runtime ABI
 /// and not yet freed. Operand handles are borrowed; the returned result owns
@@ -14759,6 +14874,56 @@ unsafe fn native_value_array_query_operation_value(
                 operation,
             )
         }
+    }
+}
+
+unsafe fn native_value_array_key_exists_value_with_diagnostic(
+    key: NativeValueHandle,
+    handle: NativeValueHandle,
+) -> RuntimeResult<bool> {
+    let key = unsafe { key.as_ref() }.ok_or_else(|| {
+        RuntimeError::invalid_array_access(
+            "native array_key_exists() failed: key value handle is null",
+        )
+    })?;
+    let key = ArrayKey::from_array_key_exists_value(key)?;
+    let owner = unsafe { handle.as_ref() }.ok_or_else(|| {
+        RuntimeError::invalid_array_access(
+            "native array_key_exists() failed: array value handle is null",
+        )
+    })?;
+    native_value_array_key_exists_value_ref_with_diagnostic(&key, owner)
+}
+
+unsafe fn native_reference_array_key_exists_value_with_diagnostic(
+    key: NativeValueHandle,
+    reference: NativeReferenceHandle,
+) -> RuntimeResult<bool> {
+    let key = unsafe { key.as_ref() }.ok_or_else(|| {
+        RuntimeError::invalid_array_access(
+            "native array_key_exists() failed: key value handle is null",
+        )
+    })?;
+    let key = ArrayKey::from_array_key_exists_value(key)?;
+    let reference = unsafe { reference.as_ref() }.ok_or_else(|| {
+        RuntimeError::invalid_array_access(
+            "native array_key_exists() failed: array reference handle is null",
+        )
+    })?;
+    let owner = reference.cell.value_cloned();
+    native_value_array_key_exists_value_ref_with_diagnostic(&key, &owner)
+}
+
+fn native_value_array_key_exists_value_ref_with_diagnostic(
+    key: &ArrayKey,
+    owner: &Value,
+) -> RuntimeResult<bool> {
+    match owner {
+        Value::Array(array) => Ok(array.contains_key(key.clone())),
+        other => Err(RuntimeError::unsupported_call(
+            "array_key_exists()",
+            format!("second argument must be array, got {}", other.type_name()),
+        )),
     }
 }
 
@@ -52986,6 +53151,182 @@ mod tests {
             error.message(),
             "invalid array key: array keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented"
         );
+    }
+
+    #[test]
+    fn native_reference_predicates_share_reference_cell_lvalue_boundary() {
+        let reference = native_reference_from_value(Value::Null);
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        assert!(!unsafe {
+            phpc_native_reference_predicate(
+                reference,
+                NATIVE_REFERENCE_PREDICATE_ISSET,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert!(unsafe {
+            phpc_native_reference_predicate(
+                reference,
+                NATIVE_REFERENCE_PREDICATE_EMPTY,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let zero_string = NativeValueHandle::from_value(Value::String("0".to_string()));
+        assert!(unsafe { phpc_native_reference_set_value(reference, zero_string) });
+        assert!(unsafe {
+            phpc_native_reference_predicate(
+                reference,
+                NATIVE_REFERENCE_PREDICATE_ISSET,
+                &mut diagnostic,
+            )
+        });
+        assert!(unsafe {
+            phpc_native_reference_predicate(
+                reference,
+                NATIVE_REFERENCE_PREDICATE_EMPTY,
+                &mut diagnostic,
+            )
+        });
+        assert!(!unsafe {
+            phpc_native_reference_predicate(
+                reference,
+                NATIVE_REFERENCE_PREDICATE_TRUTHY,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let non_empty = NativeValueHandle::from_value(Value::String("value".to_string()));
+        assert!(unsafe { phpc_native_reference_set_value(reference, non_empty) });
+        assert!(unsafe {
+            phpc_native_reference_predicate(
+                reference,
+                NATIVE_REFERENCE_PREDICATE_TRUTHY,
+                &mut diagnostic,
+            )
+        });
+        assert!(!unsafe {
+            phpc_native_reference_predicate(
+                reference,
+                NATIVE_REFERENCE_PREDICATE_EMPTY,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        assert!(!unsafe {
+            phpc_native_reference_predicate(
+                NativeReferenceHandle::null(),
+                NATIVE_REFERENCE_PREDICATE_ISSET,
+                &mut diagnostic,
+            )
+        });
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "native reference predicate failed: reference handle is null"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        diagnostic = NativeDiagnosticHandle::null();
+
+        assert!(!unsafe { phpc_native_reference_predicate(reference, u8::MAX, &mut diagnostic) });
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid string conversion: native reference predicate tag 255 is not supported"
+        );
+
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(non_empty) };
+        unsafe { phpc_native_value_free(zero_string) };
+        unsafe { phpc_native_reference_free(reference) };
+    }
+
+    #[test]
+    fn array_key_exists_value_consumers_share_diagnostic_key_boundary() {
+        let mut array = PhpArray::new();
+        array.insert("", Value::String("null-key".to_string()));
+        array.insert(0, Value::String("false-key".to_string()));
+        array.insert(1, Value::String("true-key".to_string()));
+        array.insert("name", Value::String("Ada".to_string()));
+
+        let array_handle = NativeValueHandle::from_value(Value::Array(array.clone()));
+        let reference = native_reference_from_value(Value::Array(array));
+        let null_key = NativeValueHandle::from_value(Value::Null);
+        let false_key = NativeValueHandle::from_value(Value::Bool(false));
+        let true_key = NativeValueHandle::from_value(Value::Bool(true));
+        let name_key = NativeValueHandle::from_value(Value::String("name".to_string()));
+        let missing_key = NativeValueHandle::from_value(Value::String("missing".to_string()));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        for key in [null_key, false_key, true_key, name_key] {
+            assert!(unsafe {
+                phpc_native_value_array_key_exists_value_with_diagnostic(
+                    key,
+                    array_handle,
+                    &mut diagnostic,
+                )
+            });
+            assert!(diagnostic.is_null());
+            assert!(unsafe {
+                phpc_native_reference_array_key_exists_value_with_diagnostic(
+                    key,
+                    reference,
+                    &mut diagnostic,
+                )
+            });
+            assert!(diagnostic.is_null());
+        }
+
+        assert!(!unsafe {
+            phpc_native_reference_array_key_exists_value_with_diagnostic(
+                missing_key,
+                reference,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let fractional_key = NativeValueHandle::from_value(Value::Float(1.5));
+        assert!(!unsafe {
+            phpc_native_value_array_key_exists_value_with_diagnostic(
+                fractional_key,
+                array_handle,
+                &mut diagnostic,
+            )
+        });
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid array key: lossy or non-finite float keys are not supported for array_key_exists(); only null, bool, int, string, and integral finite float keys are implemented"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        diagnostic = NativeDiagnosticHandle::null();
+
+        let scalar_owner = NativeValueHandle::from_value(Value::Int(42));
+        assert!(!unsafe {
+            phpc_native_value_array_key_exists_value_with_diagnostic(
+                name_key,
+                scalar_owner,
+                &mut diagnostic,
+            )
+        });
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "unsupported call array_key_exists(): second argument must be array, got int"
+        );
+
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(scalar_owner) };
+        unsafe { phpc_native_value_free(fractional_key) };
+        unsafe { phpc_native_value_free(missing_key) };
+        unsafe { phpc_native_value_free(name_key) };
+        unsafe { phpc_native_value_free(true_key) };
+        unsafe { phpc_native_value_free(false_key) };
+        unsafe { phpc_native_value_free(null_key) };
+        unsafe { phpc_native_reference_free(reference) };
+        unsafe { phpc_native_value_free(array_handle) };
     }
 
     #[test]

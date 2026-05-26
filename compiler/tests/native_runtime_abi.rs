@@ -1317,26 +1317,18 @@ fn generated_ir_routes_native_value_variable_isset_empty_through_null_and_truthi
     let ir = emit_ir_source(source).unwrap();
 
     assert!(
-        ir.contains("declare i1 @phpc_native_value_truthy_with_reference_slot_with_diagnostic")
-            && ir.contains(
-                "declare i1 @phpc_native_value_type_predicate_with_reference_slot_with_diagnostic"
-            ),
+        ir.contains("declare i1 @phpc_native_reference_predicate"),
         "{ir}"
     );
     assert!(
-        ir.matches("call i1 @phpc_native_value_truthy_with_reference_slot_with_diagnostic")
+        ir.matches("call i1 @phpc_native_reference_predicate")
             .count()
-            >= 2
-            && ir
-                .matches(
-                    "call i1 @phpc_native_value_type_predicate_with_reference_slot_with_diagnostic"
-                )
-                .count()
-                >= 2,
+            >= 4,
         "{ir}"
     );
     assert!(
-        !ir.contains("call i1 @phpc_native_value_is_truthy")
+        !ir.contains("call %phpc.NativeValueHandle @phpc_native_reference_value_clone")
+            && !ir.contains("call i1 @phpc_native_value_is_truthy")
             && !ir.contains("call i1 @phpc_native_value_truthy_with_diagnostic"),
         "{ir}"
     );
@@ -1394,7 +1386,8 @@ fn generated_ir_routes_native_value_unary_not_through_truthiness_boundary() {
     assert!(
         ir.matches("call i1 @phpc_native_value_truthy_with_reference_slot_with_diagnostic")
             .count()
-            >= 4
+            >= 3
+            && ir.contains("call i1 @phpc_native_reference_predicate")
             && ir.matches(" = xor i1 ").count() >= 4
             && !ir.contains("call i1 @phpc_native_value_is_truthy")
             && !ir.contains("call i1 @phpc_native_value_truthy_with_diagnostic"),
@@ -1418,18 +1411,131 @@ fn generated_ir_routes_reference_truthiness_operands_without_value_clone_detour(
     let ir = emit_ir_source(source).unwrap();
 
     assert!(
-        ir.contains("declare i1 @phpc_native_value_truthy_with_reference_slot_with_diagnostic")
+        ir.contains("declare i1 @phpc_native_reference_predicate")
             && ir.contains("declare %phpc.NativeReferenceHandle"),
         "{ir}"
     );
     assert!(
-        ir.matches("call i1 @phpc_native_value_truthy_with_reference_slot_with_diagnostic")
+        ir.matches("call i1 @phpc_native_reference_predicate")
             .count()
             >= 4
+            && ir.contains("i8 1, ptr")
+            && ir.contains("i8 2, ptr")
             && !ir.contains("call %phpc.NativeValueHandle @phpc_native_reference_value_clone")
             && !ir.contains("call i1 @phpc_native_value_is_truthy")
             && !ir.contains("call i1 @phpc_native_value_truthy_with_diagnostic"),
         "{ir}"
+    );
+
+    let foreach_source = concat!(
+        "<?php\n",
+        "$items = [\"0\", \"value\"];\n",
+        "foreach ($items as &$cell) {\n",
+        "    echo isset($cell);\n",
+        "    echo empty($cell);\n",
+        "    echo !$cell;\n",
+        "}\n",
+    );
+    let program = parse(foreach_source).unwrap();
+    let c_source = emit_native_executable_c_source(&program).unwrap();
+    assert!(
+        c_source.contains("extern bool phpc_native_reference_predicate")
+            && c_source.matches("phpc_native_reference_predicate(").count() >= 4,
+        "{c_source}"
+    );
+    assert!(
+        !c_source.contains("= phpc_native_reference_value_clone(")
+            && !c_source.contains("assembly array lowering rejects"),
+        "{c_source}"
+    );
+}
+
+#[test]
+fn reference_array_key_exists_uses_reference_cell_runtime_abi() {
+    let alias_source = concat!(
+        "<?php\n",
+        "$items = [\"name\" => \"Ada\", 0 => null, 1 => \"one\"];\n",
+        "$alias =& $items;\n",
+        "echo array_key_exists(\"name\", $alias);\n",
+        "echo key_exists(false, $alias);\n",
+        "echo array_key_exists(1, $alias);\n",
+        "echo key_exists(\"missing\", $alias);\n",
+    );
+    let program = parse(alias_source).unwrap();
+    let c_source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        c_source
+            .contains("extern bool phpc_native_reference_array_key_exists_value_with_diagnostic")
+            && c_source
+                .contains("extern bool phpc_native_value_array_key_exists_value_with_diagnostic"),
+        "{c_source}"
+    );
+    assert!(
+        c_source
+            .matches("phpc_native_reference_array_key_exists_value_with_diagnostic(")
+            .count()
+            >= 4,
+        "{c_source}"
+    );
+    assert!(
+        !c_source.contains("= phpc_native_reference_value_clone(")
+            && !c_source.contains("assembly array lowering rejects"),
+        "{c_source}"
+    );
+
+    let direct_value_source = concat!(
+        "<?php\n",
+        "$items = [\"name\" => \"Ada\", 0 => null];\n",
+        "echo array_key_exists(\"name\", $items);\n",
+        "echo key_exists(false, $items);\n",
+    );
+    let program = parse(direct_value_source).unwrap();
+    let direct_c_source = emit_native_executable_c_source(&program).unwrap();
+    assert!(
+        direct_c_source
+            .contains("extern bool phpc_native_value_array_key_exists_value_with_diagnostic"),
+        "{direct_c_source}"
+    );
+    assert!(
+        direct_c_source
+            .matches("phpc_native_value_array_key_exists_value_with_diagnostic(")
+            .count()
+            >= 2,
+        "{direct_c_source}"
+    );
+    assert!(
+        !direct_c_source.contains("phpc_native_reference_array_key_exists_value_with_diagnostic(")
+            && !direct_c_source.contains("assembly array lowering rejects"),
+        "{direct_c_source}"
+    );
+
+    let foreach_source = concat!(
+        "<?php\n",
+        "$rows = [[\"id\" => 1], [\"id\" => 2]];\n",
+        "foreach ($rows as &$cell) {\n",
+        "    echo array_key_exists(\"id\", $cell);\n",
+        "    echo key_exists(\"missing\", $cell);\n",
+        "}\n",
+    );
+    let program = parse(foreach_source).unwrap();
+    let foreach_c_source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        foreach_c_source
+            .contains("extern bool phpc_native_reference_array_key_exists_value_with_diagnostic"),
+        "{foreach_c_source}"
+    );
+    assert!(
+        foreach_c_source
+            .matches("phpc_native_reference_array_key_exists_value_with_diagnostic(")
+            .count()
+            >= 2,
+        "{foreach_c_source}"
+    );
+    assert!(
+        !foreach_c_source.contains("assembly array lowering rejects"),
+        "{foreach_c_source}"
     );
 }
 
