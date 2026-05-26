@@ -130,6 +130,17 @@ risks without changing that accounting.
 
 ## Recent Primary-Integrated Work
 
+- `b27bbb20`: replaced root-symbol-only generated user-function frame metadata
+  with `CFrameEnvironmentRequirement { root_symbols, request_state }`,
+  propagated that requirement through direct generated-C user-function
+  callable/frame handoff, and added native-link/unit coverage for request
+  superglobal reads, request mutation, `$GLOBALS` request-superglobal alias
+  mutation, mixed global/request frame needs, and direct-call propagation.
+  Dynamic callable request-state frame handoff and closure frame-environment
+  capture/handoff remain centralized blockers; future request/global work must
+  extend the shared frame-environment/callable ABI rather than adding
+  source-shape recognizers. Symbols/globals/request state moves to 75% and
+  calls/functions/frames moves to 92%; overall and executable stay flat.
 - `b4b21937`: extended the shared diagnostic operation/operand-list
   requirement ABI with reference-binding operand-list requirements. Runtime
   diagnostics now name reference target, source, and array-item binding
