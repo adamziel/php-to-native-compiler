@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 04:34 CEST
-Evaluation marker: `20260526T023213Z`
+Updated: 2026-05-26 04:42 CEST
+Evaluation marker: `20260526T024221Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, candidate worktrees, lane-local
@@ -176,8 +176,8 @@ Primary-integrated capability:
 
 In progress but not counted:
 
-- [ ] Post-integration shadow/accounting follow-through for Object/ArrayAccess
-  runtime write dispatch.
+- [ ] Post-integration shadow follow-through for Object/ArrayAccess runtime
+  write dispatch.
 - [ ] RMW executable array-lvalue owner/writeback packet.
 - [ ] Cleanup/unwind requirement boundary refresh after RMW.
 - [ ] Generated declared-method callable-table registration and wrapper frames.
@@ -286,8 +286,9 @@ Best next action:
 - Push the next RMW work toward executable owner/writeback, references/COW,
   object/static property storage, ArrayAccess dispatch, cleanup ownership, or
   exact diagnostic ordering rather than repeating operand-list diagnostics.
-- Push the next object/ArrayAccess work toward executable `offsetSet()` /
-  `offsetUnset()` or reference/COW-aware writeback rather than more blocker
+- Push the next object/ArrayAccess work toward compiler-consumed
+  `offsetSet()` / `offsetUnset()` owner writeback, `offsetGet()` /
+  `offsetExists()`, or reference/COW-aware writeback rather than more blocker
   classification.
 
 Avoid:
