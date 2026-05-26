@@ -937,6 +937,13 @@ struct NativeSourceCallStringHandleOperand {
 struct NativeSourceCallBindingOperands {
     target: NativeSourceCallTargetOperands,
     arguments: String,
+    signature_selection: NativeSourceCallSignatureSelection,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeSourceCallSignatureSelection {
+    RuntimeDynamic,
+    ScopedCallableString,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16519,6 +16526,125 @@ impl CScopedCallableStringSignature {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeMethodStaticSignatureFamily {
+    ReceiverMethod,
+    StaticMethod,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeMethodStaticSignatureFallbackReason {
+    NoDeclaredMethodMetadata,
+    NoArityCompatibleDeclaredMethodMetadata,
+    HeterogeneousDeclaredMethodMetadata,
+    RuntimeDynamicMethodName,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum NativeMethodStaticSignatureAvailability {
+    Known(CScopedCallableStringSignature),
+    RuntimeFallback(NativeMethodStaticSignatureFallbackReason),
+}
+
+impl NativeMethodStaticSignatureAvailability {
+    fn signature(&self) -> Option<&CScopedCallableStringSignature> {
+        match self {
+            Self::Known(signature) => Some(signature),
+            Self::RuntimeFallback(_) => None,
+        }
+    }
+
+    fn source_selection(&self) -> NativeSourceCallSignatureSelection {
+        match self {
+            Self::Known(_) => NativeSourceCallSignatureSelection::ScopedCallableString,
+            Self::RuntimeFallback(_) => NativeSourceCallSignatureSelection::RuntimeDynamic,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeMethodStaticSignatureFallbackContract {
+    family: NativeMethodStaticSignatureFamily,
+    candidate_count: usize,
+    arity_compatible_count: usize,
+    availability: NativeMethodStaticSignatureAvailability,
+}
+
+impl NativeMethodStaticSignatureFallbackContract {
+    fn signature(&self) -> Option<&CScopedCallableStringSignature> {
+        self.availability.signature()
+    }
+
+    fn source_selection(&self) -> NativeSourceCallSignatureSelection {
+        self.availability.source_selection()
+    }
+}
+
+fn native_method_static_signature_fallback_contract_from_methods<'a>(
+    family: NativeMethodStaticSignatureFamily,
+    methods: impl IntoIterator<Item = &'a CDeclaredClassMethod>,
+    arg_count: usize,
+) -> NativeMethodStaticSignatureFallbackContract {
+    let mut candidate_count = 0;
+    let mut arity_compatible_count = 0;
+    let mut signature = None;
+
+    for method in methods {
+        candidate_count += 1;
+        if !native_user_function_accepts_arg_count(&method.decl, arg_count) {
+            continue;
+        }
+        arity_compatible_count += 1;
+        let method_signature = CScopedCallableStringSignature::from_method(method);
+        match &signature {
+            Some(previous) if previous != &method_signature => {
+                return NativeMethodStaticSignatureFallbackContract {
+                    family,
+                    candidate_count,
+                    arity_compatible_count,
+                    availability: NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                        NativeMethodStaticSignatureFallbackReason::HeterogeneousDeclaredMethodMetadata,
+                    ),
+                };
+            }
+            Some(_) => {}
+            None => signature = Some(method_signature),
+        }
+    }
+
+    let availability = if let Some(signature) = signature {
+        NativeMethodStaticSignatureAvailability::Known(signature)
+    } else if candidate_count == 0 {
+        NativeMethodStaticSignatureAvailability::RuntimeFallback(
+            NativeMethodStaticSignatureFallbackReason::NoDeclaredMethodMetadata,
+        )
+    } else {
+        NativeMethodStaticSignatureAvailability::RuntimeFallback(
+            NativeMethodStaticSignatureFallbackReason::NoArityCompatibleDeclaredMethodMetadata,
+        )
+    };
+
+    NativeMethodStaticSignatureFallbackContract {
+        family,
+        candidate_count,
+        arity_compatible_count,
+        availability,
+    }
+}
+
+fn native_method_static_runtime_signature_fallback_contract(
+    family: NativeMethodStaticSignatureFamily,
+) -> NativeMethodStaticSignatureFallbackContract {
+    NativeMethodStaticSignatureFallbackContract {
+        family,
+        candidate_count: 0,
+        arity_compatible_count: 0,
+        availability: NativeMethodStaticSignatureAvailability::RuntimeFallback(
+            NativeMethodStaticSignatureFallbackReason::RuntimeDynamicMethodName,
+        ),
+    }
+}
+
 fn borrowed_native_arg(
     values: &[CNativeValueMaterialization],
     index: usize,
@@ -25254,6 +25380,32 @@ impl CGenerator {
         self.scoped_callable_string_signature_for_values(&values)
     }
 
+    fn receiver_method_signature_fallback_contract(
+        &self,
+        method_name: &str,
+        arg_count: usize,
+    ) -> NativeMethodStaticSignatureFallbackContract {
+        let candidates = self.declared_class_method_candidates(method_name);
+        native_method_static_signature_fallback_contract_from_methods(
+            NativeMethodStaticSignatureFamily::ReceiverMethod,
+            candidates.iter().map(|(_, method)| method),
+            arg_count,
+        )
+    }
+
+    fn static_method_signature_fallback_contract(
+        &self,
+        method_name: &str,
+        arg_count: usize,
+    ) -> NativeMethodStaticSignatureFallbackContract {
+        let candidates = self.declared_class_static_method_candidates(method_name);
+        native_method_static_signature_fallback_contract_from_methods(
+            NativeMethodStaticSignatureFamily::StaticMethod,
+            candidates.iter().map(|(_, method)| method),
+            arg_count,
+        )
+    }
+
     fn static_known_string_values_for_expr(&self, expr: &Expr) -> Option<KnownString> {
         match expr {
             Expr::String(value, _) => Some(KnownString::one(value.clone())),
@@ -30317,7 +30469,38 @@ impl CGenerator {
             callee,
             signature,
         )?;
-        Ok(NativeSourceCallBindingOperands { target, arguments })
+        let signature_selection = if signature.is_some() {
+            NativeSourceCallSignatureSelection::ScopedCallableString
+        } else {
+            NativeSourceCallSignatureSelection::RuntimeDynamic
+        };
+        Ok(NativeSourceCallBindingOperands {
+            target,
+            arguments,
+            signature_selection,
+        })
+    }
+
+    fn emit_native_method_static_source_call_binding_operands(
+        &mut self,
+        argument_prefix: &str,
+        target: NativeSourceCallTargetOperands,
+        args: &[Expr],
+        span: Span,
+        owner_failure_cleanup: &str,
+        signature_contract: &NativeMethodStaticSignatureFallbackContract,
+    ) -> CompileResult<NativeSourceCallBindingOperands> {
+        let mut binding = self.emit_native_source_call_binding_operands(
+            argument_prefix,
+            target,
+            args,
+            span,
+            owner_failure_cleanup,
+            NativeCallCallee::MethodDispatch,
+            signature_contract.signature(),
+        )?;
+        binding.signature_selection = signature_contract.source_selection();
+        Ok(binding)
     }
 
     fn emit_native_source_call_carrier_invocation(
@@ -51085,6 +51268,306 @@ echo " 10" < "zeta";
         assert!(body.contains("release_static_method_aux();"));
         assert!(generator.uses_native_callable_helpers);
         assert!(generator.uses_native_diagnostic_result_producers);
+    }
+
+    #[test]
+    fn native_method_static_signature_fallback_contract_classifies_declared_and_runtime_metadata() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "class SignatureBox {\n",
+            "    public function inst(&$slot, $value) { return $value; }\n",
+            "    public static function stat(&$slot, $value) { return $value; }\n",
+            "    public function arity($only) { return $only; }\n",
+            "}\n",
+            "class SignatureLeft {\n",
+            "    public function mixed(&$slot, $value) { return $value; }\n",
+            "    public static function mixedStatic(&$slot, $value) { return $value; }\n",
+            "}\n",
+            "class SignatureRight {\n",
+            "    public function mixed($slot, $value) { return $value; }\n",
+            "    public static function mixedStatic($slot, $value) { return $value; }\n",
+            "}\n",
+        ))
+        .expect("signature fallback fixture should parse");
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .expect("signature fallback declared classes should register");
+
+        let expected_signature = CScopedCallableStringSignature {
+            fixed_param_by_reference: vec![true, false],
+            returns_by_reference: false,
+        };
+
+        let receiver = generator.receiver_method_signature_fallback_contract("inst", 2);
+        assert_eq!(
+            receiver.family,
+            NativeMethodStaticSignatureFamily::ReceiverMethod
+        );
+        assert_eq!(receiver.candidate_count, 1);
+        assert_eq!(receiver.arity_compatible_count, 1);
+        assert_eq!(
+            receiver.availability,
+            NativeMethodStaticSignatureAvailability::Known(expected_signature.clone())
+        );
+
+        let static_method = generator.static_method_signature_fallback_contract("stat", 2);
+        assert_eq!(
+            static_method.family,
+            NativeMethodStaticSignatureFamily::StaticMethod
+        );
+        assert_eq!(static_method.candidate_count, 1);
+        assert_eq!(static_method.arity_compatible_count, 1);
+        assert_eq!(
+            static_method.availability,
+            NativeMethodStaticSignatureAvailability::Known(expected_signature)
+        );
+
+        let missing = generator.receiver_method_signature_fallback_contract("missing", 1);
+        assert_eq!(
+            missing.availability,
+            NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                NativeMethodStaticSignatureFallbackReason::NoDeclaredMethodMetadata,
+            )
+        );
+
+        let arity_mismatch = generator.static_method_signature_fallback_contract("stat", 4);
+        assert_eq!(arity_mismatch.candidate_count, 1);
+        assert_eq!(arity_mismatch.arity_compatible_count, 0);
+        assert_eq!(
+            arity_mismatch.availability,
+            NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                NativeMethodStaticSignatureFallbackReason::NoArityCompatibleDeclaredMethodMetadata,
+            )
+        );
+
+        let heterogeneous_receiver =
+            generator.receiver_method_signature_fallback_contract("mixed", 2);
+        assert_eq!(heterogeneous_receiver.candidate_count, 2);
+        assert_eq!(heterogeneous_receiver.arity_compatible_count, 2);
+        assert_eq!(
+            heterogeneous_receiver.availability,
+            NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                NativeMethodStaticSignatureFallbackReason::HeterogeneousDeclaredMethodMetadata,
+            )
+        );
+
+        let heterogeneous_static =
+            generator.static_method_signature_fallback_contract("mixedStatic", 2);
+        assert_eq!(heterogeneous_static.candidate_count, 2);
+        assert_eq!(heterogeneous_static.arity_compatible_count, 2);
+        assert_eq!(
+            heterogeneous_static.availability,
+            NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                NativeMethodStaticSignatureFallbackReason::HeterogeneousDeclaredMethodMetadata,
+            )
+        );
+
+        let runtime_dynamic = native_method_static_runtime_signature_fallback_contract(
+            NativeMethodStaticSignatureFamily::StaticMethod,
+        );
+        assert_eq!(
+            runtime_dynamic.availability,
+            NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                NativeMethodStaticSignatureFallbackReason::RuntimeDynamicMethodName,
+            )
+        );
+        assert_eq!(runtime_dynamic.signature(), None);
+    }
+
+    #[test]
+    fn native_method_static_signature_fallback_contract_feeds_shared_binding_and_carriers() {
+        let span = test_span();
+        let mut generator = CGenerator::default();
+        let known_signature = CScopedCallableStringSignature {
+            fixed_param_by_reference: vec![true, false],
+            returns_by_reference: false,
+        };
+        let receiver_contract = NativeMethodStaticSignatureFallbackContract {
+            family: NativeMethodStaticSignatureFamily::ReceiverMethod,
+            candidate_count: 2,
+            arity_compatible_count: 2,
+            availability: NativeMethodStaticSignatureAvailability::Known(known_signature.clone()),
+        };
+        let static_contract = NativeMethodStaticSignatureFallbackContract {
+            family: NativeMethodStaticSignatureFamily::StaticMethod,
+            candidate_count: 1,
+            arity_compatible_count: 1,
+            availability: NativeMethodStaticSignatureAvailability::Known(known_signature),
+        };
+        let unknown_contract = native_method_static_runtime_signature_fallback_contract(
+            NativeMethodStaticSignatureFamily::ReceiverMethod,
+        );
+        let method_args = vec![
+            test_variable_expr("ref_arg"),
+            Expr::String("method-argument".to_string(), span),
+        ];
+
+        let receiver_target = generator.emit_native_receiver_method_source_call_target_operands(
+            CNativeValueMaterialization {
+                handle: "receiver_value".to_string(),
+                cleanup_after_use: vec!["phpc_native_value_free(receiver_value);".to_string()],
+            },
+            CNativeValueMaterialization {
+                handle: "method_value".to_string(),
+                cleanup_after_use: vec!["phpc_native_value_free(method_value);".to_string()],
+            },
+            NativeSourceCallAccessContext::ObjectReceiver,
+            "cleanup_receiver_owner();",
+        );
+        let receiver_binding = generator
+            .emit_native_method_static_source_call_binding_operands(
+                "signature_receiver_args",
+                receiver_target,
+                &method_args,
+                span,
+                "cleanup_receiver_owner();",
+                &receiver_contract,
+            )
+            .expect("known receiver-method signature should bind through shared arguments");
+        assert_eq!(
+            receiver_binding.signature_selection,
+            NativeSourceCallSignatureSelection::ScopedCallableString
+        );
+        let receiver_carrier = generator
+            .native_source_call_carrier(
+                NativeInvokeResultTarget::ReceiverMethodLookupWithAccessContext,
+                NativeSourceCallResultConsumer::Value,
+                span,
+            )
+            .expect("receiver method carrier should select");
+        generator
+            .emit_native_source_call_carrier_invocation(
+                receiver_carrier,
+                &receiver_binding.target.args,
+                &receiver_binding.arguments,
+                "signature_receiver_diagnostic",
+                "signature_receiver_result",
+            )
+            .expect("receiver method carrier should return a value handle");
+        generator
+            .body
+            .extend(receiver_binding.target.cleanup_after_invocation);
+
+        let static_scope =
+            generator.emit_native_static_text_source_call_string_operand("signature_scope", "Box");
+        let static_target = generator.emit_native_static_method_source_call_target_operands(
+            static_scope,
+            CNativeValueMaterialization {
+                handle: "static_method_value".to_string(),
+                cleanup_after_use: vec!["phpc_native_value_free(static_method_value);".to_string()],
+            },
+            NativeSourceCallAccessContext::ClassContext {
+                caller_scope: "Caller",
+            },
+            "cleanup_static_owner();",
+        );
+        let static_binding = generator
+            .emit_native_method_static_source_call_binding_operands(
+                "signature_static_args",
+                static_target,
+                &method_args,
+                span,
+                "cleanup_static_owner();",
+                &static_contract,
+            )
+            .expect("known static-method signature should bind through shared arguments");
+        assert_eq!(
+            static_binding.signature_selection,
+            NativeSourceCallSignatureSelection::ScopedCallableString
+        );
+        let static_carrier = generator
+            .native_source_call_carrier(
+                NativeInvokeResultTarget::StaticMethodLookupWithAccessContext,
+                NativeSourceCallResultConsumer::Discard,
+                span,
+            )
+            .expect("static method carrier should select");
+        generator
+            .emit_native_source_call_carrier_invocation(
+                static_carrier,
+                &static_binding.target.args,
+                &static_binding.arguments,
+                "signature_static_diagnostic",
+                "signature_static_result",
+            )
+            .expect("static method carrier should return a bool");
+        generator
+            .body
+            .extend(static_binding.target.cleanup_after_invocation);
+
+        let unknown_target =
+            generator.emit_native_receiver_method_source_call_target_operands(
+                CNativeValueMaterialization {
+                    handle: "unknown_receiver_value".to_string(),
+                    cleanup_after_use: vec![
+                        "phpc_native_value_free(unknown_receiver_value);".to_string()
+                    ],
+                },
+                CNativeValueMaterialization {
+                    handle: "unknown_method_value".to_string(),
+                    cleanup_after_use: vec![
+                        "phpc_native_value_free(unknown_method_value);".to_string()
+                    ],
+                },
+                NativeSourceCallAccessContext::ObjectReceiver,
+                "cleanup_unknown_owner();",
+            );
+        let unknown_binding = generator
+            .emit_native_method_static_source_call_binding_operands(
+                "signature_unknown_args",
+                unknown_target,
+                &[Expr::String("runtime-only".to_string(), span)],
+                span,
+                "cleanup_unknown_owner();",
+                &unknown_contract,
+            )
+            .expect("runtime fallback signature should still bind through shared arguments");
+        assert_eq!(
+            unknown_binding.signature_selection,
+            NativeSourceCallSignatureSelection::RuntimeDynamic
+        );
+        let unknown_carrier = generator
+            .native_source_call_carrier(
+                NativeInvokeResultTarget::ReceiverMethodLookupWithAccessContext,
+                NativeSourceCallResultConsumer::Reference,
+                span,
+            )
+            .expect("runtime fallback receiver carrier should select");
+        generator
+            .emit_native_source_call_carrier_invocation(
+                unknown_carrier,
+                &unknown_binding.target.args,
+                &unknown_binding.arguments,
+                "signature_unknown_diagnostic",
+                "signature_unknown_result",
+            )
+            .expect("runtime fallback receiver carrier should return a reference handle");
+
+        let body = generator.body.join("\n");
+        assert_eq!(body.matches("phpc_native_call_arguments_new()").count(), 3);
+        assert_eq!(
+            body.matches("phpc_native_call_arguments_push_reference_and_free")
+                .count(),
+            2
+        );
+        assert_eq!(
+            body.matches("phpc_native_call_arguments_push_value_and_free")
+                .count(),
+            3
+        );
+        assert!(body.contains(
+            "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+        ));
+        assert!(body.contains(
+            "phpc_native_static_method_invoke_discard_with_access_context_diagnostic_and_free_scope_method_arguments"
+        ));
+        assert!(body.contains(
+            "phpc_native_method_invoke_reference_with_access_context_diagnostic_and_free_receiver_method_arguments"
+        ));
     }
 
     #[test]
