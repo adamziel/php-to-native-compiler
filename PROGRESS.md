@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 17:59 CEST
+Updated: 2026-05-26 18:15 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -20,12 +20,35 @@ latest source capability. The worktree still has preserved foreign scratch
 state: untracked `examples/class.php`.
 
 Latest primary-integrated source capability baseline:
-`a3c8b315 native: add call and diagnostic result carriers`.
+`81c60f38 native: add diagnostic result consumer contracts`.
 
-`a3c8b315` adds two compiler/backend prerequisites for the next generalized
-result-consumer migrations. Call-result diagnostics now share a compact
-`NativeCallResultConsumer` taxonomy across existing statement, value, lvalue,
-RMW-lvalue, failed-value, reference-result, and dereferenced-value consumers,
+`81c60f38` adds the compiler/backend consumer-selector counterpart to the
+diagnostic-result producer/list-storage contract. Generated LLVM and native C
+now share a semantic-family-driven `NativeDiagnosticResultConsumerFamily` /
+`NativeDiagnosticResultListConsumer` boundary for runtime-supported
+value-required operation result lists and deferred-cleanup result lists.
+Expression/value, statement, terminal/control-flow, cleanup/control-flow,
+assignment-lvalue, lvalue, RMW-lvalue, reference-binding, and call-argument
+families route through the existing value-required operation-list ABI;
+deferred cleanup routes through the existing cleanup-result ABI; and
+termination, declaration-initializer, static-local-initializer, and
+global-declaration families centralize as missing-runtime-ABI blockers instead
+of exact-shape backend lowering. Focused proof covers selector family routing,
+LLVM/native-C consumer emission and declarations, adjacent diagnostic-result
+producer/list tests, value-required and deferred-cleanup runtime ABI consumers,
+fmt, and diff checks. Still open: wiring real expression/statement/terminal/
+cleanup/lvalue/reference/call-argument lowering into these consumers,
+runtime/compiler consumers for the blocked declaration/termination families,
+cleanup-result operands, expression-owned `NativeCallResultHandle` carriers,
+invoke-result helper ABIs and argument ownership/cleanup, branch-aware
+conditional handoff cleanup, actual unwind/finally/destructor execution,
+references/COW, object/property/ArrayAccess breadth, and backend parity.
+
+This follows `a3c8b315`, which adds two compiler/backend prerequisites for the
+next generalized result-consumer migrations. Call-result diagnostics now share
+a compact `NativeCallResultConsumer` taxonomy across existing statement,
+value, lvalue, RMW-lvalue, failed-value, reference-result, and dereferenced-
+value consumers,
 with `NativeCallCallee` producing value/reference/dereferenced operation
 records for direct named, dynamic callable, method, constructor, and adjacent
 call families without importing broad source-call lowering. Emitted LLVM and
