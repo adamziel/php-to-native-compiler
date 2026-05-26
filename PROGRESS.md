@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-26 03:38 CEST
-Evaluation marker: `20260526T012306Z`
+Updated: 2026-05-26 03:54 CEST
+Evaluation marker: `20260526T015400Z`
 
 Accounting rule: only generalized, tested, committed, and pushed primary work
 counts as integrated capability. Dirty WIP, candidate worktrees, lane-local
@@ -10,43 +10,52 @@ notes, and dashboard-only commits are excluded.
 
 ## Executive Read
 
-Overall estimated progress: **95%** `[###################-]`
+Overall supervised-roadmap progress: **95%** `[###################-]`
 
-Executable PHP semantics: **95%** `[###################-]`
+Selected executable PHP semantics: **95%** `[###################-]`
 
-Primary is clean and aligned with `origin/master` at
-`6a73b186 native: route dynamic callables through callable-value ABI`.
+Primary `HEAD` is aligned with `origin/master` at
+`513dbf21 native: add object ArrayAccess write-operation blockers`.
 
 Latest primary-integrated source capability baseline:
-`6a73b186 native: route dynamic callables through callable-value ABI`.
+`513dbf21 native: add object ArrayAccess write-operation blockers`.
 
-Current momentum is still positive, but the recent primary source progress is
-still bounded. The latest source packet adds real executable generated-C
-dynamic callable progress by routing dynamic callee expression lowering through
-the shared runtime callable-value ABI and runtime builtin dispatch. Full PHP
-callable semantics remain incomplete: object/method callable parity, callable
-array validation parity, by-reference/default/variadic edge cases,
-source-ordered diagnostics, namespace fallback, autoload, magic calls,
-constructors, closure frame handoff, and backend parity remain open. Overall
-and executable percentages remain flat.
+Recent source progress is real but still selected-path rather than full PHP
+parity. `6a73b186` routed generated-C dynamic callable expressions through the
+shared runtime callable-value ABI. `513dbf21` adds a generalized
+object/property ArrayAccess write-operation blocker boundary across write,
+append, compound update, null-coalesce write, and unset operation families. The
+classification is driven by shared `AssignTarget` / `UnsetTarget` operation
+results and backend blocker boundaries. It does not execute
+`ArrayAccess::offsetSet()` or `ArrayAccess::offsetUnset()`.
+
+Full PHP callable, object, lvalue, cleanup, diagnostic, and backend parity
+remain incomplete. Overall and selected-executable percentages remain flat.
 
 ## Grand Roadmap Position
 
 | Workstream | Estimate | Bar | Current read |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, byte-string, array, reference, symbol, callable table, callable-value dispatch, call-frame/result, request-state, diagnostic operation/operand-list, reference-binding operand-list, assignment-lvalue operand-list, and object allocation-risk metadata surfaces. Remaining gaps include broader callable lookup parity, namespace fallback, autoload, magic calls, constructors, closure frame handoff, and cleanup/unwind parity. |
-| Compiler/backend consumers | **99%** | `[####################]` | Generated C has the freshest executable consumers. LLVM and direct assembly lag recent semantics. Direct generated-C user-function calls consume the runtime callable ABI and direct root/request frame handoff; generated-C dynamic callable expressions now consume the callable-value lookup/invocation ABI. |
-| Executable PHP semantics | **95%** | `[###################-]` | Many selected executable islands exist, but major PHP semantics remain open: full assignment/RMW/writeback, references/COW, dynamic callables, objects/properties/ArrayAccess, cleanup/unwind/finally/destructors, exact diagnostics, and backend parity. |
-| Strings and byte semantics | **62%** | `[############--------]` | Byte-backed values and byte-preserving `explode()` / `str_split()` slots are integrated. Binary source bytes, byte-exact interpreter/session/debug output, `mb_str_split()`, request/global byte keys, and exact diagnostics remain open. |
-| Arrays, lvalues, references, COW | **82%** | `[################----]` | Selected reference-source/lvalue extraction, closure capture from reference-backed slots, reference-binding operand diagnostics, and assignment-lvalue operand diagnostics are integrated. Executable assignment, RMW, broad writeback, arbitrary alias roots, foreach, static/magic/non-public properties, ArrayAccess, and full COW remain incomplete. |
+| Runtime and ABI foundations | **99%** | `[####################]` | Strong selected-path value, byte-string, array, reference, symbol, callable table, callable-value dispatch, call-frame/result, request-state, diagnostic operation/operand-list, reference-binding, assignment-lvalue, and object allocation-risk surfaces. Remaining gaps include broader callable lookup parity, namespace fallback, autoload, magic calls, constructors, closure frame handoff, and cleanup/unwind parity. |
+| Compiler/backend consumers | **99%** | `[####################]` | Generated C has the freshest executable consumers. Direct and dynamic generated-C callable paths consume shared runtime callable ABI surfaces. Object/ArrayAccess write-operation blockers now route through shared backend rejection boundaries. LLVM and direct assembly still lag some recent semantics. |
+| Executable PHP semantics | **95%** | `[###################-]` | Many selected executable islands exist, but major PHP semantics remain open: full assignment/RMW/writeback, references/COW, executable object/ArrayAccess writes, cleanup/unwind/finally/destructors, exact diagnostics, and backend parity. |
+| Strings and byte semantics | **62%** | `[############--------]` | Byte-backed values and byte-preserving selected string-array slots are integrated. Binary source bytes, byte-exact interpreter/session/debug output, `mb_str_split()`, request/global byte keys, and exact diagnostics remain open. |
+| Arrays, lvalues, references, COW | **82%** | `[################----]` | Selected reference-source/lvalue extraction, closure capture from reference-backed slots, reference-binding operand diagnostics, assignment-lvalue operand diagnostics, and Object/ArrayAccess write blockers are integrated. Executable assignment, RMW, broad writeback, arbitrary alias roots, foreach, static/magic/non-public properties, ArrayAccess execution, and full COW remain incomplete. |
 | Symbols, globals, request state | **75%** | `[###############-----]` | Selected globals, root-symbol consumers, active symbol-table consumers, request-key blockers, append-shaped symbol reference-source materialization, direct generated-C request-state frame handoff, and generated-C dynamic user-function handoff proof exist. `$GLOBALS` self-cells, closure request-state handoff, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
 | Calls, functions, frames | **92%** | `[##################--]` | Runtime callable table/value dispatch, call arguments/frame/result ABI, direct generated-C user-function consumers, generated-C dynamic callable-value consumers, by-reference argument transport, descriptor closures, closure returns, and direct/dynamic generated-C request-state frame handoff are integrated. Object/method callable parity, callable array validation parity, `Class::method` strings, namespace fallback, autoload, magic calls, named/spread breadth, return references, constructors, closure frame-environment handoff, and cleanup/unwind parity remain open. |
-| Objects, properties, methods | **53%** | `[###########---------]` | Public object-property reference-source extraction, object-property reference-slot mutation, and declared-class allocation cleanup-risk metadata exist for selected paths. Full visibility, magic, dynamic/static/typed properties, destructor execution, interfaces/traits execution, references/COW, constructors, and `ArrayAccess` execution remain open. |
-| Control flow, cleanup, diagnostics | **51%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, try-body call-boundary preflight, generic operand-list blockers, reference-binding operand blockers, and assignment-lvalue operand blockers exist. Broad unwind/finally/destructor/shutdown execution, cleanup ownership, executable writeback/reference binding, and source-ordered diagnostics remain open. |
+| Objects, properties, methods | **54%** | `[###########---------]` | Public object-property reference-source extraction, object-property reference-slot mutation, declared-class allocation cleanup-risk metadata, and Object/ArrayAccess write-operation blocker classification exist for selected paths. Full visibility, magic, dynamic/static/typed properties, destructor execution, interfaces/traits execution, references/COW, constructors, and actual `ArrayAccess` execution remain open. |
+| Control flow, cleanup, diagnostics | **52%** | `[##########----------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostics, try-body call-boundary preflight, generic operand-list blockers, reference-binding blockers, assignment-lvalue blockers, and Object/ArrayAccess write blockers exist. Broad unwind/finally/destructor/shutdown execution, cleanup ownership, executable writeback/reference binding, and source-ordered diagnostics remain open. |
 | Broad integrated verification | **92%** | `[##################--]` | Recent focused gates are strong and nonzero. The full `native_runtime_abi` baseline still has known current-primary failures, and broad verification remains constrained by lane extraction cost, stale candidate expectations, swap pressure, and backend parity gaps. |
 
 ## Recent Primary-Integrated Work
 
+- `513dbf21`: added generalized object/property ArrayAccess write-operation
+  blocker classification over shared `AssignTarget` and `UnsetTarget`
+  operation results. The integrated packet classifies object/property
+  ArrayAccess write, append, compound update, null-coalesce write, and unset
+  operation families through shared LLVM/generated-C backend blocker
+  boundaries. No executable `offsetSet()` or `offsetUnset()` dispatch was
+  added.
 - `6a73b186`: routed generated-C dynamic callee expression lowering through
   the shared runtime callable-value ABI and runtime builtin dispatch. Dynamic
   callable lookup now uses
@@ -79,21 +88,21 @@ and executable percentages remain flat.
 
 ## Active Roadmap Items
 
-Primary-integrated capability and lane-local candidate work are separated
-explicitly.
+Primary-integrated capability and lane-local work are separated explicitly.
 
-| Item | Toward Primary Integration | Toward Full Feature | Status |
-| --- | ---: | ---: | --- |
-| Assignment-lvalue operand-list diagnostics | **100%** `[####################]` | **15%** `[###-----------------]` | Integrated at `81c15cd5`. Generalized blocker vocabulary exists; assignment/RMW execution and writeback do not. |
-| Direct request-state frame handoff for generated-C user functions | **100%** `[####################]` | **40%** `[########------------]` | Integrated at `b27bbb20`; extended by `6a73b186` for generated-C dynamic user-function handoff proof. Closure handoff remains open. |
-| Reference-binding operand-list diagnostics | **100%** `[####################]` | **15%** `[###-----------------]` | Integrated at `b4b21937`. Diagnostic ABI progress only; executable reference binding remains open. |
-| Runtime callable ABI, callable-value dispatch, and direct/dynamic generated-C consumers | **100%** `[####################]` | **66%** `[#############-------]` | Integrated through `6a73b186`. Direct and dynamic generated-C callable paths consume the shared runtime lookup/invocation ABI and runtime builtin dispatch. Constructors, object/method callable parity, callable array validation parity, broader lookup parity, return references, named/spread breadth, and cleanup/unwind remain open. |
-| Dynamic callable compiler consumer plus builtin string callable repair | **100%** `[####################]` | **60%** `[############--------]` | Integrated at `6a73b186`. Dynamic callee expression lowering routes through the shared callable-value lookup/invocation ABI instead of a compiler-side finite builtin/name ladder. Full callable semantics remain open. |
-| RMW-lvalue operand-list diagnostics | **0%** `[--------------------]` | **14%** `[###-----------------]` | Lane-local. Must rebase and renumber after `81c15cd5` because assignment claimed operation tag `7` and operand tags `18..20`. |
-| Object/ArrayAccess write-side blockers | **0%** `[--------------------]` | **24%** `[#####---------------]` | Lane-local. Useful classifier evidence, but no executable `ArrayAccess` write/unset behavior yet. |
-| Cleanup/unwind requirement boundary | **0%** `[--------------------]` | **18%** `[####----------------]` | Lane-local. Diagnostic/blocker candidate only; no finally/destructor/unwind execution. |
-| Trait effective-method metadata | **0%** `[--------------------]` | **20%** `[####----------------]` | Lane-local/stale relative to current primary. Needs refresh before any integration; trait method execution remains open. |
-| Broad lane extraction backlog | **35%** `[#######-------------]` | **36%** `[#######-------------]` | Broad dirty lanes remain useful evidence repositories, not integration units. |
+| Item | Primary Integrated | Candidate Readiness | Toward Full Feature | Status |
+| --- | ---: | ---: | ---: | --- |
+| Object/ArrayAccess write-side blockers | **100%** `[####################]` | **100%** `[####################]` | **25%** `[#####---------------]` | Integrated at `513dbf21`. Useful shared blocker boundary for write/unset families, but still no executable `offsetSet()`/`offsetUnset()` behavior. |
+| Assignment-lvalue operand-list diagnostics | **100%** `[####################]` | **100%** `[####################]` | **15%** `[###-----------------]` | Integrated at `81c15cd5`. Generalized blocker vocabulary exists; assignment/RMW execution and writeback do not. |
+| Direct request-state frame handoff for generated-C user functions | **100%** `[####################]` | **100%** `[####################]` | **40%** `[########------------]` | Integrated at `b27bbb20`; extended by `6a73b186` for generated-C dynamic user-function handoff proof. Closure handoff remains open. |
+| Reference-binding operand-list diagnostics | **100%** `[####################]` | **100%** `[####################]` | **15%** `[###-----------------]` | Integrated at `b4b21937`. Diagnostic ABI progress only; executable reference binding remains open. |
+| Runtime callable ABI, callable-value dispatch, and direct/dynamic generated-C consumers | **100%** `[####################]` | **100%** `[####################]` | **66%** `[#############-------]` | Integrated through `6a73b186`. Direct and dynamic generated-C callable paths consume the shared runtime lookup/invocation ABI and runtime builtin dispatch. Constructors, object/method callable parity, callable array validation parity, broader lookup parity, return references, named/spread breadth, and cleanup/unwind remain open. |
+| Dynamic callable compiler consumer plus builtin string callable repair | **100%** `[####################]` | **100%** `[####################]` | **60%** `[############--------]` | Integrated at `6a73b186`. Dynamic callee expression lowering routes through the shared callable-value lookup/invocation ABI instead of a compiler-side finite builtin/name ladder. Full callable semantics remain open. |
+| RMW-lvalue operand-list diagnostics | **0%** `[--------------------]` | **100%** `[####################]` | **14%** `[###-----------------]` | Lane-local candidate. Current-head review after `513dbf21` is `ready-for-primary-review`; diagnostic tags are reconciled to operation `8` and operand `21`. |
+| Cleanup/unwind requirement boundary | **0%** `[--------------------]` | **35%** `[#######-------------]` | **18%** `[####----------------]` | Lane-local and stale after later integrations. Needs current-head reconcile and fresh review before any primary route. |
+| Trait effective-method metadata | **0%** `[--------------------]` | **30%** `[######--------------]` | **20%** `[####----------------]` | Lane-local/stale relative to current primary. Metadata-only until trait-composed method execution and cleanup consumers exist. |
+| Dead dynamic callable compiler ladder cleanup | **0%** `[--------------------]` | **20%** `[####----------------]` | **5%** `[#-------------------]` | Cleanup debt. Useful to remove after `6a73b186`, but not a substitute for new executable semantic coverage. |
+| Broad dirty lane extraction backlog | **0%** `[--------------------]` | **35%** `[#######-------------]` | **36%** `[#######-------------]` | Dirty call, diagnostic, object, control-flow, symbol, byte/string, and array lanes remain evidence pools only. |
 
 ## Done / In Progress / Not Done
 
@@ -114,6 +123,7 @@ Primary-integrated capability:
 - [x] Shared diagnostic operation/operand-list blocker boundary.
 - [x] Reference-binding operand-list requirement blockers.
 - [x] Assignment-lvalue operand-list requirement blockers.
+- [x] Object/ArrayAccess write-operation blocker classification.
 - [x] Declared-class allocation cleanup-risk metadata.
 - [x] Try/catch/finally body call-boundary preflight diagnostics.
 - [x] Selected reference-source/lvalue extraction and reference-backed closure
@@ -122,14 +132,14 @@ Primary-integrated capability:
 - [x] Byte-backed PHP string values and byte-preserving selected string-array
   slots.
 
-In progress but lane-local:
+In progress but not counted:
 
 - [ ] RMW-lvalue diagnostic packet after assignment tag reconciliation.
-- [ ] Object/ArrayAccess write-side blocker boundary.
-- [ ] Cleanup/unwind requirement boundary.
-- [ ] Trait effective-method metadata refresh.
-- [ ] Broad dirty call, diagnostic, object, symbol, byte/string, and array lanes
-  as evidence pools only.
+- [ ] Cleanup/unwind requirement boundary, stale and needing reconcile.
+- [ ] Trait effective-method metadata refresh, stale and metadata-only.
+- [ ] Dead dynamic callable ladder cleanup.
+- [ ] Broad dirty call, diagnostic, object, symbol, byte/string, control-flow,
+  and array lanes as evidence pools only.
 
 Not done:
 
@@ -162,23 +172,26 @@ Not done:
 
 Primary-integrated:
 
-- [x] Primary is clean and synced at `6a73b186`.
-- [x] Latest source capability is `6a73b186`.
+- [x] Primary source is clean and synced at `513dbf21`.
+- [x] Latest source capability is `513dbf21`.
 - [x] `6a73b186` is accounted as executable generated-C dynamic callable
   progress through the shared runtime callable-value ABI.
-- [x] Percentages remain flat for this review.
+- [x] `513dbf21` is accounted as generalized Object/ArrayAccess write-operation
+  blocker progress only, not executable `offsetSet()`/`offsetUnset()` behavior.
+- [x] Overall and selected-executable percentages remain flat for this review.
 
 Lane-local:
 
-- [ ] RMW-lvalue work must rebase and renumber after assignment integration.
-- [ ] Object/ArrayAccess, cleanup/unwind, trait metadata, and symbol/global
-  proof candidates need fresh current-primary routing before integration.
+- [ ] RMW-lvalue diagnostics are ready for primary review after `513dbf21`;
+  integrate only through a fresh owner-checked gate.
+- [ ] Cleanup/unwind and trait metadata candidates are stale and need reconcile.
+- [ ] Broad dirty lanes remain evidence repositories, not integration units.
 
 Resource posture:
 
 - `/dev/shm`: 40G total, 24G used, 17G available, 58% used.
-- `/home`: 459G total, 261G used, 180G available, 60% used.
-- Memory available is about 39Gi, but swap remains high at 23Gi/29Gi used.
+- `/home`: 459G total, 249G used, 192G available, 57% used.
+- Memory available is about 36Gi, but swap remains high at 23Gi/29Gi used.
 - Largest `/dev/shm` targets: `phpc-target-native-call-semantics` 8.9G,
   `phpc-target-native-object-seed` 5.6G, and
   `phpc-target-native-diagnostics` 3.0G.
@@ -194,24 +207,32 @@ as standalone progress. Distinct next progress should remove the remaining
 dead compiler callable ladder or broaden a new callable semantic family with
 focused proof.
 
+Future Object/ArrayAccess work must not repeat the same write-operation blocker
+classification proof as standalone progress. Distinct next progress should
+implement a new runtime/compiler semantic boundary such as `offsetSet()` /
+`offsetUnset()` dispatch, writeback/reference/COW handling, object
+handle/visibility/magic property behavior, or exact diagnostics.
+
 ## Next Steering Read
 
 Best next action:
 
-- Remove the remaining dead compiler callable ladder helpers, or target a
-  distinct callable semantic family such as object/method callable parity,
-  callable array validation parity, namespace fallback, autoload, magic calls,
-  constructors, closure frame handoff, or backend parity.
+- Consider RMW-lvalue operand-list diagnostics as the next primary integration
+  candidate; its after-Object review is `ready-for-primary-review`.
+- Push the next object/ArrayAccess work toward executable `offsetSet()` /
+  `offsetUnset()` or reference/COW-aware writeback rather than more blocker
+  classification.
 
 Avoid:
 
-- Counting lane-local candidate work before primary integration.
-- More diagnostic/metadata-only packets unless they remove a concrete
-  exact-shape gate and feed an imminent executable consumer.
-- Integrating RMW-lvalue unchanged after assignment; reconcile diagnostic tags
-  first.
+- Recounting Object/ArrayAccess write-operation blockers; they are already in
+  primary at `513dbf21`.
+- Routing cleanup/unwind or trait metadata without current-head reconcile and
+  fresh review.
+- Re-integrating the dynamic callable compiler consumer; it is already in
+  primary at `6a73b186`.
+- More diagnostic/metadata-only packets unless they remove a concrete blocker
+  and feed an imminent executable consumer.
 - Directly importing broad dirty lanes.
-- Repeating the `6a73b186` callable-value ABI consumption and focused proof set
-  as standalone progress.
 - Reintroducing or extending compiler-side finite dynamic-call or builtin-name
   ladders instead of consuming shared runtime callable-value semantics.
