@@ -1094,6 +1094,12 @@ struct NativeCallable {
 }
 
 #[derive(Debug)]
+struct NativeCallableLookup<'a> {
+    descriptor: &'a NativeCallableDescriptor,
+    called_scope: Option<String>,
+}
+
+#[derive(Debug)]
 enum NativeCallableValueDispatch {
     Table {
         callable: NativeCallable,
@@ -1189,15 +1195,16 @@ impl NativeCallableTable {
         name: String,
         caller_scope: Option<String>,
     ) -> Result<NativeCallable, String> {
-        let Some(descriptor) = self.lookup_descriptor(kind, scope.as_deref(), &name) else {
+        let Some(lookup) = self.lookup_descriptor(kind, scope.as_deref(), &name) else {
             return Err(format!(
                 "native callable lookup failed: {kind:?} {name} is not registered"
             ));
         };
+        let descriptor = lookup.descriptor;
         if self.can_access(descriptor, caller_scope.as_deref()) {
             return Ok(NativeCallable {
                 descriptor: descriptor.clone(),
-                called_scope: descriptor.scope.clone(),
+                called_scope: lookup.called_scope,
             });
         }
         let declaring = descriptor.scope.as_deref().unwrap_or("");
@@ -1215,18 +1222,28 @@ impl NativeCallableTable {
         kind: NativeCallableKind,
         scope: Option<&str>,
         name: &str,
-    ) -> Option<&NativeCallableDescriptor> {
+    ) -> Option<NativeCallableLookup<'_>> {
         if matches!(kind, NativeCallableKind::Function) {
             let key = NativeCallableKey::new(kind, None, name.to_string());
-            return self.entries.get(&key);
+            return self
+                .entries
+                .get(&key)
+                .map(|descriptor| NativeCallableLookup {
+                    descriptor,
+                    called_scope: None,
+                });
         }
 
-        let mut current = normalize_class_lookup_name(scope?);
+        let called_scope = scope?.to_string();
+        let mut current = normalize_class_lookup_name(&called_scope);
         let mut seen = HashSet::new();
         loop {
             let key = NativeCallableKey::new(kind, Some(current.clone()), name.to_string());
             if let Some(descriptor) = self.entries.get(&key) {
-                return Some(descriptor);
+                return Some(NativeCallableLookup {
+                    descriptor,
+                    called_scope: Some(called_scope),
+                });
             }
             if !seen.insert(current.clone()) {
                 return None;
@@ -1256,7 +1273,9 @@ impl NativeCallableTable {
                 };
                 let declaring = normalize_class_lookup_name(declaring);
                 let caller = normalize_class_lookup_name(caller);
-                caller == declaring || self.class_extends(&caller, &declaring)
+                caller == declaring
+                    || self.class_extends(&caller, &declaring)
+                    || self.class_extends(&declaring, &caller)
             }
         }
     }
@@ -7719,6 +7738,7 @@ pub unsafe extern "C" fn phpc_native_callable_invoke_discard_with_diagnostic_and
 }
 
 unsafe fn native_closure_arguments_from_call_arguments(
+    descriptor: NativeClosureDescriptor,
     arguments: NativeCallArgumentsHandle,
 ) -> Result<Vec<NativeClosureArgument>, String> {
     let Some(arguments) = (unsafe { arguments.as_ref() }) else {
@@ -7728,9 +7748,22 @@ unsafe fn native_closure_arguments_from_call_arguments(
     };
 
     let mut closure_args = Vec::with_capacity(arguments.slots.len());
-    for slot in &arguments.slots {
+    for (index, slot) in arguments.slots.iter().enumerate() {
         let argument = match *slot {
             NativeCallArgumentSlot::Value(value) => {
+                if descriptor.param_is_by_reference(index) {
+                    unsafe { native_closure_arguments_free(closure_args) };
+                    return Err(
+                        RuntimeError::unsupported_call(
+                            "Closure::__invoke()",
+                            format!(
+                                "by-reference parameter ${index} requires a supported lvalue argument for descriptor-backed closure invocation"
+                            ),
+                        )
+                        .message()
+                        .to_string(),
+                    );
+                }
                 let value = unsafe { phpc_native_value_clone(value) };
                 if value.is_null() {
                     unsafe { native_closure_arguments_free(closure_args) };
@@ -7743,17 +7776,28 @@ unsafe fn native_closure_arguments_from_call_arguments(
             }
             NativeCallArgumentSlot::Reference(reference) => {
                 let value = unsafe { phpc_native_reference_value_clone(reference) };
-                let reference = unsafe { phpc_native_reference_clone(reference) };
-                if value.is_null() || reference.is_null() {
+                if value.is_null() {
                     unsafe { phpc_native_value_free(value) };
-                    unsafe { phpc_native_reference_free(reference) };
                     unsafe { native_closure_arguments_free(closure_args) };
                     return Err(
-                        "native callable-value invocation failed: reference argument clone is null"
+                        "native callable-value invocation failed: reference value clone is null"
                             .to_string(),
                     );
                 }
-                NativeClosureArgument::from_reference(value, reference)
+                if descriptor.param_is_by_reference(index) {
+                    let reference = unsafe { phpc_native_reference_clone(reference) };
+                    if reference.is_null() {
+                        unsafe { phpc_native_value_free(value) };
+                        unsafe { native_closure_arguments_free(closure_args) };
+                        return Err(
+                            "native callable-value invocation failed: reference argument clone is null"
+                                .to_string(),
+                        );
+                    }
+                    NativeClosureArgument::from_reference(value, reference)
+                } else {
+                    NativeClosureArgument::from_value(value)
+                }
             }
         };
         closure_args.push(argument);
@@ -7810,14 +7854,22 @@ unsafe fn native_callable_value_invoke_closure_result(
     closure: &PhpClosure,
     arguments: NativeCallArgumentsHandle,
 ) -> NativeCallResultHandle {
-    let closure_args = match unsafe { native_closure_arguments_from_call_arguments(arguments) } {
-        Ok(arguments) => arguments,
-        Err(message) => {
-            return NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
-                NativeDiagnosticHandle::from_message(message),
-            ));
-        }
+    let Some(descriptor) = closure.descriptor() else {
+        return NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+            NativeDiagnosticHandle::from_message(
+                "native callable-value invocation failed: closure value has no native descriptor/frame callback",
+            ),
+        ));
     };
+    let closure_args =
+        match unsafe { native_closure_arguments_from_call_arguments(descriptor, arguments) } {
+            Ok(arguments) => arguments,
+            Err(message) => {
+                return NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+                    NativeDiagnosticHandle::from_message(message),
+                ));
+            }
+        };
     let closure_handle = NativeValueHandle::from_value(Value::Closure(closure.clone()));
     let mut result = unsafe {
         phpc_native_closure_invoke_result(
@@ -26366,6 +26418,28 @@ mod tests {
         )))
     }
 
+    unsafe extern "C" fn native_descriptor_argument_kind_callback(
+        _call_depth: c_int,
+        args: *const NativeClosureArgument,
+        arg_count: usize,
+        status: *mut c_int,
+    ) -> NativeClosureInvocationResult {
+        if arg_count < 1 || args.is_null() {
+            return NativeClosureInvocationResult::null();
+        }
+        let argument = unsafe { &*args };
+        let value = unsafe { int_from_value_for_test(phpc_native_value_clone(argument.value)) };
+        let kind = if argument.is_reference() {
+            "reference"
+        } else {
+            "value"
+        };
+        unsafe { *status = 1 };
+        phpc_native_closure_result_from_value(NativeValueHandle::from_value(Value::String(
+            format!("{kind}:{value}"),
+        )))
+    }
+
     unsafe fn register_callable_for_test(
         table: NativeCallableTableHandle,
         kind: NativeCallableKind,
@@ -26679,6 +26753,22 @@ mod tests {
             register_callable_for_test(
                 table,
                 NativeCallableKind::Method,
+                Some("Child"),
+                "child_guarded",
+                NativeCallableVisibility::Protected,
+                native_scoped_method_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("Child"),
+                "child_secret",
+                NativeCallableVisibility::Private,
+                native_scoped_method_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
                 Some("Base"),
                 "secret",
                 NativeCallableVisibility::Private,
@@ -26748,6 +26838,19 @@ mod tests {
         assert!(!protected_child.is_null());
         unsafe { phpc_native_callable_free(protected_child) };
 
+        let (protected_parent_to_child, diagnostic) = unsafe {
+            lookup_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("Child"),
+                "child_guarded",
+                Some("Base"),
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!protected_parent_to_child.is_null());
+        unsafe { phpc_native_callable_free(protected_parent_to_child) };
+
         let (private_same_class, diagnostic) = unsafe {
             lookup_callable_for_test(
                 table,
@@ -26776,6 +26879,22 @@ mod tests {
             Some(
                 "native callable lookup failed: Private method Base::secret is not visible from Child"
             )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let (private_parent_to_child, diagnostic) = unsafe {
+            lookup_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("Child"),
+                "child_secret",
+                Some("Base"),
+            )
+        };
+        assert!(private_parent_to_child.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some("native callable lookup failed: Private method Child::child_secret is not visible from Base")
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
 
@@ -26962,6 +27081,202 @@ mod tests {
     }
 
     #[test]
+    fn native_callable_value_dispatch_preserves_called_scope_for_inherited_methods() {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("BaseScope"),
+                "inherited",
+                NativeCallableVisibility::Public,
+                native_scoped_method_callback,
+            );
+            assert!(phpc_native_callable_table_register_class_parent_and_free(
+                table,
+                native_string_for_test("ChildScope"),
+                native_string_for_test("BaseScope"),
+            ));
+        }
+
+        let (direct, diagnostic) = unsafe {
+            lookup_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("ChildScope"),
+                "inherited",
+                None,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let direct_result = unsafe { invoke_ints_for_test(direct, &[7]) };
+        let direct_value = unsafe { phpc_native_call_result_take_value_and_free(direct_result) };
+        assert_eq!(
+            unsafe { direct_value.as_ref() },
+            Some(&Value::String("ChildScope:7".to_string()))
+        );
+        unsafe { phpc_native_value_free(direct_value) };
+        unsafe { phpc_native_callable_free(direct) };
+
+        let inherited_array = NativeValueHandle::from_value(Value::Array(callable_pair(
+            Value::String("ChildScope".to_string()),
+            Value::String("inherited".to_string()),
+        )));
+        let (callable, diagnostic) =
+            unsafe { lookup_callable_value_for_test(table, inherited_array, None) };
+        assert!(diagnostic.is_null());
+        let (value, diagnostic) = unsafe { invoke_callable_value_ints_for_test(callable, &[11]) };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { value.as_ref() },
+            Some(&Value::String("ChildScope:11".to_string()))
+        );
+        unsafe { phpc_native_value_free(value) };
+        unsafe { phpc_native_callable_value_free(callable) };
+        unsafe { phpc_native_value_free(inherited_array) };
+
+        let mut classes = PhpClassTable::new();
+        let child_id = classes.declare_class("ChildScope").unwrap();
+        let object = Value::Object(PhpObject::from_class(classes.get(child_id).unwrap()));
+        let inherited_object = NativeValueHandle::from_value(Value::Array(callable_pair(
+            object,
+            Value::String("inherited".to_string()),
+        )));
+        let (callable, diagnostic) =
+            unsafe { lookup_callable_value_for_test(table, inherited_object, None) };
+        assert!(diagnostic.is_null());
+        let (value, diagnostic) = unsafe { invoke_callable_value_ints_for_test(callable, &[13]) };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { value.as_ref() },
+            Some(&Value::String("ChildScope:13".to_string()))
+        );
+        unsafe { phpc_native_value_free(value) };
+        unsafe { phpc_native_callable_value_free(callable) };
+        unsafe { phpc_native_value_free(inherited_object) };
+
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn native_callable_value_descriptor_closure_bridge_shapes_arguments_from_descriptor() {
+        static BY_VALUE_PARAM_FLAGS: [u8; 1] = [0];
+        static BY_REFERENCE_PARAM_FLAGS: [u8; 1] = [NATIVE_CLOSURE_ARGUMENT_BY_REFERENCE];
+
+        let by_value_descriptor = NativeClosureDescriptor::new_with_param_flags(
+            native_descriptor_argument_kind_callback,
+            1,
+            1,
+            BY_VALUE_PARAM_FLAGS.as_ptr(),
+        );
+        let by_value_closure = phpc_native_value_from_closure_descriptor(by_value_descriptor);
+        let (callable, diagnostic) = unsafe {
+            lookup_callable_value_for_test(
+                phpc_native_callable_table_null(),
+                by_value_closure,
+                None,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let arguments = phpc_native_call_arguments_new();
+        let cell = PhpReferenceCell::new(Value::Int(41));
+        assert!(unsafe {
+            phpc_native_call_arguments_push_reference_and_free(
+                arguments,
+                NativeReferenceHandle::from_cell(cell),
+            )
+        });
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let value = unsafe {
+            phpc_native_callable_value_invoke_value_with_diagnostic_and_free(
+                callable,
+                arguments,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { value.as_ref() },
+            Some(&Value::String("value:41".to_string()))
+        );
+        unsafe { phpc_native_value_free(value) };
+        unsafe { phpc_native_callable_value_free(callable) };
+        unsafe { phpc_native_value_free(by_value_closure) };
+
+        let by_reference_descriptor = NativeClosureDescriptor::new_with_param_flags(
+            native_descriptor_argument_kind_callback,
+            1,
+            1,
+            BY_REFERENCE_PARAM_FLAGS.as_ptr(),
+        );
+        let by_reference_closure =
+            phpc_native_value_from_closure_descriptor(by_reference_descriptor);
+        let (callable, diagnostic) = unsafe {
+            lookup_callable_value_for_test(
+                phpc_native_callable_table_null(),
+                by_reference_closure,
+                None,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let arguments = phpc_native_call_arguments_new();
+        assert!(unsafe {
+            phpc_native_call_arguments_push_value_and_free(
+                arguments,
+                NativeValueHandle::from_value(Value::Int(43)),
+            )
+        });
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let value = unsafe {
+            phpc_native_callable_value_invoke_value_with_diagnostic_and_free(
+                callable,
+                arguments,
+                &mut diagnostic,
+            )
+        };
+        assert!(value.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some("unsupported call Closure::__invoke(): by-reference parameter $0 requires a supported lvalue argument for descriptor-backed closure invocation")
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_callable_value_free(callable) };
+
+        let (callable, diagnostic) = unsafe {
+            lookup_callable_value_for_test(
+                phpc_native_callable_table_null(),
+                by_reference_closure,
+                None,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let arguments = phpc_native_call_arguments_new();
+        let cell = PhpReferenceCell::new(Value::Int(47));
+        assert!(unsafe {
+            phpc_native_call_arguments_push_reference_and_free(
+                arguments,
+                NativeReferenceHandle::from_cell(cell),
+            )
+        });
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let value = unsafe {
+            phpc_native_callable_value_invoke_value_with_diagnostic_and_free(
+                callable,
+                arguments,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { value.as_ref() },
+            Some(&Value::String("reference:47".to_string()))
+        );
+        unsafe { phpc_native_value_free(value) };
+        unsafe { phpc_native_callable_value_free(callable) };
+        unsafe { phpc_native_value_free(by_reference_closure) };
+    }
+
+    #[test]
     fn native_callable_value_dispatch_honors_caller_scope_for_array_and_object_methods() {
         let table = phpc_native_callable_table_new();
         unsafe {
@@ -27076,7 +27391,7 @@ mod tests {
         assert!(diagnostic.is_null());
         assert_eq!(
             unsafe { value.as_ref() },
-            Some(&Value::String("BaseScope:33".to_string()))
+            Some(&Value::String("ChildScope:33".to_string()))
         );
         unsafe { phpc_native_value_free(value) };
         unsafe { phpc_native_callable_value_free(callable) };
