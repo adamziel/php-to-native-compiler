@@ -12975,6 +12975,86 @@ fn emit_exe_links_and_runs_array_offset_read_value_boundary_program() {
     let _ = fs::remove_file(&source_path);
 }
 
+const ARRAYACCESS_READ_ISSET_SOURCE: &str = concat!(
+    "<?php\n",
+    "class TruthBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { if ($offset) { return \"T\"; } return \"F\"; }\n",
+    "    public function offsetExists($offset) { return $offset; }\n",
+    "    public function offsetSet($offset, $value) { return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class BaseBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { if ($offset) { return \"CT\"; } return \"CF\"; }\n",
+    "    public function offsetExists($offset) { return $offset; }\n",
+    "    public function offsetSet($offset, $value) { return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class ChildBag extends BaseBag {}\n",
+    "$bag = new TruthBag();\n",
+    "echo $bag[\"slot\"], \"|\", $bag[0], \"|\";\n",
+    "echo isset($bag[\"slot\"]) ? \"Y\" : \"N\", \"|\", isset($bag[0]) ? \"Y\" : \"N\", \"|\";\n",
+    "$alias = $bag;\n",
+    "echo $alias[true], \"|\";\n",
+    "$child = new ChildBag();\n",
+    "echo $child[true], \"|\", isset($child[null]) ? \"Y\" : \"N\", \"|\";\n",
+    "echo isset($child[1]) ? \"Y\" : \"N\";\n",
+);
+
+#[test]
+fn native_executable_c_source_routes_arrayaccess_read_isset_through_runtime_abi() {
+    let program = parse(ARRAYACCESS_READ_ISSET_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_GET")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_EXISTS")
+            && source.contains(
+                "phpc_native_value_new_declared_class_with_relationships_and_diagnostic"
+            ),
+        "ArrayAccess direct reads and isset should consume the runtime read/exists ABI and declared interface metadata:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_callable_table_register_visibility_staticness_frame_callback_and_free")
+            && source.contains("phpc_native_callable_table_register_class_parent_and_free")
+            && source.contains("_native_callable_frame"),
+        "ArrayAccess methods, including inherited public methods, should resolve through callable-table method wrappers:\n{source}"
+    );
+    assert!(
+        !source.contains("ArrayAccess lowering rejects")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches")
+            && !source.contains("callable_array_matched")
+            && !source.contains("callable_object_matched"),
+        "ArrayAccess read/isset lowering should not revive the finite dynamic-callable ladder or rejection path:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_arrayaccess_read_isset_runtime_consumer_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "arrayaccess_read_isset_runtime_consumer",
+        ARRAYACCESS_READ_ISSET_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native ArrayAccess read/isset executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"T|F|Y|N|T|CT|N|Y");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
 #[test]
 fn emit_exe_links_and_runs_array_lvalue_compound_assignment_program() {
     if !has_cc() {

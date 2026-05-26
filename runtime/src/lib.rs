@@ -25610,6 +25610,66 @@ pub unsafe extern "C" fn phpc_native_value_new_declared_class_with_ancestors_and
             ancestor_class_names,
             ancestor_class_name_lens,
             ancestor_class_count,
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+        )
+    } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `class_name` must be null only when `class_name_len` is zero. Property,
+/// declaring-class, ancestor, and interface arrays must either all be null
+/// with a zero count or point to their corresponding count. Returned object
+/// values are owned by the caller and must be freed with
+/// `phpc_native_value_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_new_declared_class_with_relationships_and_diagnostic(
+    class_id: usize,
+    class_name: *const u8,
+    class_name_len: usize,
+    property_declaring_class_ids: *const usize,
+    property_declaring_class_names: *const *const u8,
+    property_declaring_class_name_lens: *const usize,
+    property_names: *const *const u8,
+    property_name_lens: *const usize,
+    property_visibilities: *const u8,
+    property_count: usize,
+    ancestor_class_names: *const *const u8,
+    ancestor_class_name_lens: *const usize,
+    ancestor_class_count: usize,
+    interface_names: *const *const u8,
+    interface_name_lens: *const usize,
+    interface_count: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe {
+        native_value_new_declared_class_with_ancestors(
+            class_id,
+            class_name,
+            class_name_len,
+            property_declaring_class_ids,
+            property_declaring_class_names,
+            property_declaring_class_name_lens,
+            property_names,
+            property_name_lens,
+            property_visibilities,
+            property_count,
+            ancestor_class_names,
+            ancestor_class_name_lens,
+            ancestor_class_count,
+            interface_names,
+            interface_name_lens,
+            interface_count,
         )
     } {
         Ok(value) => NativeValueHandle::from_value(value),
@@ -25702,6 +25762,9 @@ unsafe fn native_value_new_declared_class_with_ancestors(
     ancestor_class_names: *const *const u8,
     ancestor_class_name_lens: *const usize,
     ancestor_class_count: usize,
+    interface_names: *const *const u8,
+    interface_name_lens: *const usize,
+    interface_count: usize,
 ) -> Result<Value, String> {
     let class_name = unsafe {
         native_declared_class_utf8_name(
@@ -25767,6 +25830,16 @@ unsafe fn native_value_new_declared_class_with_ancestors(
         "native declared class inheritance allocation received invalid ancestor-name length ABI"
             .to_string()
     })?;
+    let interface_names = unsafe { native_abi_slice(interface_names, interface_count) }
+        .ok_or_else(|| {
+            "native declared class inheritance allocation received invalid interface-name ABI"
+                .to_string()
+        })?;
+    let interface_name_lens = unsafe { native_abi_slice(interface_name_lens, interface_count) }
+        .ok_or_else(|| {
+            "native declared class inheritance allocation received invalid interface-name length ABI"
+                .to_string()
+        })?;
 
     let mut class = PhpClassMetadata::new(ClassId(class_id), class_name.clone());
     let mut inherited_properties = Vec::new();
@@ -25843,11 +25916,31 @@ unsafe fn native_value_new_declared_class_with_ancestors(
         ancestors.push(ancestor);
     }
 
+    let mut interfaces = Vec::with_capacity(interface_count);
+    for index in 0..interface_count {
+        let interface = unsafe {
+            native_declared_class_utf8_name(
+                interface_names[index],
+                interface_name_lens[index],
+                "interface name",
+                "native declared class inheritance allocation",
+            )
+        }?;
+        if interface.is_empty() {
+            return Err(
+                "native declared class inheritance allocation requires non-empty interface names"
+                    .to_string(),
+            );
+        }
+        interfaces.push(interface);
+    }
+
     Ok(Value::Object(
-        PhpObject::from_class_with_inherited_metadata_with_id(
+        PhpObject::from_class_with_relationship_metadata_with_id(
             &class,
             &inherited_properties,
             ancestors,
+            interfaces,
             NEXT_OBJECT_ID.fetch_add(1, AtomicOrdering::Relaxed),
         ),
     ))

@@ -7336,6 +7336,28 @@ enum NativeObjectArrayAccessOperation {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CNativeArrayAccessOffsetReadOperation {
+    Get,
+    Exists,
+}
+
+impl CNativeArrayAccessOffsetReadOperation {
+    fn c_tag(self) -> &'static str {
+        match self {
+            Self::Get => "PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_GET",
+            Self::Exists => "PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_EXISTS",
+        }
+    }
+
+    fn result_prefix(self) -> &'static str {
+        match self {
+            Self::Get => "arrayaccess_offset_get",
+            Self::Exists => "arrayaccess_offset_exists",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeObjectArrayAccessReceiverKind {
     ErrorControlReceiver,
     PropertyValue,
@@ -14126,6 +14148,7 @@ struct CGenerator {
     mutable_scalar_slots: HashMap<String, CMutableScalarSlot>,
     by_reference_foreach_linger_variables: HashSet<String>,
     global_import_names: HashSet<String>,
+    native_arrayaccess_value_variables: HashSet<String>,
     array_cleanup_handles: Vec<String>,
     owned_native_byte_buffers: Vec<String>,
     known_ints: HashMap<String, KnownInt>,
@@ -14156,6 +14179,7 @@ struct CGenerator {
     uses_native_exit_helpers: bool,
     uses_native_call_type_helpers: bool,
     uses_native_callable_helpers: bool,
+    uses_native_arrayaccess_offset_read_helpers: bool,
     uses_native_dynamic_call_helpers: bool,
     uses_native_closure_helpers: bool,
     uses_native_output_buffer_operation: bool,
@@ -14260,6 +14284,7 @@ struct CGotoStateSnapshot {
     mutable_scalar_slots: HashMap<String, CMutableScalarSlot>,
     by_reference_foreach_linger_variables: HashSet<String>,
     global_import_names: HashSet<String>,
+    native_arrayaccess_value_variables: HashSet<String>,
     array_cleanup_handles: Vec<String>,
     owned_native_byte_buffers: Vec<String>,
     native_byte_buffer_string_exprs: HashMap<String, String>,
@@ -14318,6 +14343,7 @@ struct CDeclaredClass {
     span: Span,
     parent_key: Option<String>,
     ancestor_names: Vec<String>,
+    interface_names: Vec<String>,
     is_final: bool,
     allocation_metadata: CDeclaredClassAllocationMetadata,
     own_properties: Vec<CDeclaredClassProperty>,
@@ -14393,6 +14419,13 @@ struct CDeclaredClassPropertyMetadataArrays {
 
 #[derive(Debug, Clone)]
 struct CDeclaredClassAncestorMetadataArrays {
+    names: String,
+    name_lens: String,
+    count: usize,
+}
+
+#[derive(Debug, Clone)]
+struct CDeclaredClassInterfaceMetadataArrays {
     names: String,
     name_lens: String,
     count: usize,
@@ -15463,6 +15496,7 @@ impl CGenerator {
             && self.by_reference_foreach_linger_variables
                 == other.by_reference_foreach_linger_variables
             && self.global_import_names == other.global_import_names
+            && self.native_arrayaccess_value_variables == other.native_arrayaccess_value_variables
             && self.array_cleanup_handles == other.array_cleanup_handles
             && self.owned_native_byte_buffers == other.owned_native_byte_buffers
             && self.native_byte_buffer_string_exprs == other.native_byte_buffer_string_exprs
@@ -15483,6 +15517,7 @@ impl CGenerator {
                 .by_reference_foreach_linger_variables
                 .clone(),
             global_import_names: self.global_import_names.clone(),
+            native_arrayaccess_value_variables: self.native_arrayaccess_value_variables.clone(),
             array_cleanup_handles: self.array_cleanup_handles.clone(),
             owned_native_byte_buffers: self.owned_native_byte_buffers.clone(),
             native_byte_buffer_string_exprs: self.native_byte_buffer_string_exprs.clone(),
@@ -15600,6 +15635,12 @@ impl CGenerator {
 
         self.variables = merged_variables;
         self.variable_order = then_branch.variable_order.clone();
+        self.native_arrayaccess_value_variables = then_branch
+            .native_arrayaccess_value_variables
+            .intersection(&else_branch.native_arrayaccess_value_variables)
+            .filter(|name| self.variables.contains_key(*name))
+            .cloned()
+            .collect();
         self.native_value_cleanup_handles = merged_native_value_cleanup_handles;
         self.array_cleanup_handles = base.array_cleanup_handles.clone();
         self.owned_native_byte_buffers = base.owned_native_byte_buffers.clone();
@@ -15934,6 +15975,8 @@ impl CGenerator {
         self.uses_native_exit_helpers |= branch.uses_native_exit_helpers;
         self.uses_native_call_type_helpers |= branch.uses_native_call_type_helpers;
         self.uses_native_callable_helpers |= branch.uses_native_callable_helpers;
+        self.uses_native_arrayaccess_offset_read_helpers |=
+            branch.uses_native_arrayaccess_offset_read_helpers;
         self.uses_native_dynamic_call_helpers |= branch.uses_native_dynamic_call_helpers;
         self.uses_native_closure_helpers |= branch.uses_native_closure_helpers;
         self.uses_native_output_buffer_operation |= branch.uses_native_output_buffer_operation;
@@ -15969,6 +16012,7 @@ impl CGenerator {
             || self.uses_native_text_membership_operation
             || self.uses_native_call_type_helpers
             || self.uses_native_callable_helpers
+            || self.uses_native_arrayaccess_offset_read_helpers
             || self.uses_native_dynamic_call_helpers
             || self.uses_native_closure_helpers
             || self.uses_native_output_buffer_operation
@@ -16152,11 +16196,8 @@ impl CGenerator {
         class: &ClassDecl,
         class_index: usize,
     ) -> CompileResult<CDeclaredClass> {
-        if class.is_nested
-            || !class.interfaces.is_empty()
-            || !class.trait_uses.is_empty()
-            || class.is_abstract
-            || class.is_readonly
+        let interface_names = self.validate_declared_class_interface_names(class)?;
+        if class.is_nested || !class.trait_uses.is_empty() || class.is_abstract || class.is_readonly
         {
             return Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
         }
@@ -16253,6 +16294,7 @@ impl CGenerator {
                 .as_ref()
                 .map(|parent| Self::declared_class_key(parent)),
             ancestor_names: Vec::new(),
+            interface_names,
             is_final: class.is_final,
             allocation_metadata,
             properties: own_properties.clone(),
@@ -16262,11 +16304,31 @@ impl CGenerator {
         })
     }
 
+    fn validate_declared_class_interface_names(
+        &self,
+        class: &ClassDecl,
+    ) -> CompileResult<Vec<String>> {
+        let mut seen = HashSet::new();
+        let mut interfaces = Vec::new();
+        for interface in &class.interfaces {
+            if !interface.eq_ignore_ascii_case("ArrayAccess") {
+                return Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+            }
+            let key = interface.to_ascii_lowercase();
+            if seen.insert(key) {
+                interfaces.push(interface.clone());
+            }
+        }
+        Ok(interfaces)
+    }
+
     fn resolve_declared_class_inheritance_metadata(&mut self) -> CompileResult<()> {
         let class_keys = self.declared_class_order.clone();
         for class_key in class_keys {
             let ancestor_keys = self.declared_class_ancestor_keys(&class_key)?;
             let mut ancestor_names = Vec::new();
+            let mut interface_names = Vec::new();
+            let mut interface_keys = HashSet::new();
             let mut inherited_properties = Vec::new();
             let mut inherited_property_slots = HashSet::new();
             let mut inherited_method_keys = HashSet::new();
@@ -16279,6 +16341,11 @@ impl CGenerator {
                     .expect("ancestor class key resolved during traversal");
                 inherited_cleanup_risk.include(ancestor.allocation_metadata.cleanup_risk);
                 ancestor_names.push(ancestor.name.clone());
+                for interface in &ancestor.interface_names {
+                    if interface_keys.insert(interface.to_ascii_lowercase()) {
+                        interface_names.push(interface.clone());
+                    }
+                }
                 for property in &ancestor.own_properties {
                     let slot_key = Self::declared_class_property_inheritance_key(property);
                     if !inherited_property_slots.insert(slot_key) {
@@ -16310,6 +16377,7 @@ impl CGenerator {
             }
 
             let own_properties = class.own_properties.clone();
+            let own_interface_names = class.interface_names.clone();
             let class = self
                 .declared_classes
                 .get_mut(&class_key)
@@ -16319,6 +16387,12 @@ impl CGenerator {
                 .cleanup_risk
                 .include(inherited_cleanup_risk);
             class.ancestor_names = ancestor_names;
+            for interface in own_interface_names {
+                if interface_keys.insert(interface.to_ascii_lowercase()) {
+                    interface_names.push(interface);
+                }
+            }
+            class.interface_names = interface_names;
             class.properties = inherited_properties;
             class.properties.extend(own_properties);
         }
@@ -17734,6 +17808,10 @@ impl CGenerator {
                 output.push_str("#define PHPC_NATIVE_CALLABLE_VISIBILITY_PUBLIC 1\n");
                 output.push_str("#define PHPC_NATIVE_CALLABLE_VISIBILITY_PROTECTED 2\n");
                 output.push_str("#define PHPC_NATIVE_CALLABLE_VISIBILITY_PRIVATE 3\n");
+                if self.uses_native_arrayaccess_offset_read_helpers {
+                    output.push_str("#define PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_GET 0\n");
+                    output.push_str("#define PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_EXISTS 1\n");
+                }
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallableTableHandle;\n");
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallableHandle;\n");
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallableValueHandle;\n");
@@ -18035,6 +18113,9 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeCallResultHandle phpc_native_call_result_from_value(phpc_NativeValueHandle value);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_callable_invoke_value_with_diagnostic_and_free(phpc_NativeCallableHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_callable_value_invoke_value_with_diagnostic_and_free(phpc_NativeCallableValueHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                if self.uses_native_arrayaccess_offset_read_helpers {
+                    output.push_str("extern phpc_NativeValueHandle phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle subject, phpc_NativeValueHandle offset, uint8_t operation, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                }
             }
             if self.uses_native_conversion_source_helpers {
                 output.push_str("extern phpc_NativeConversionSource phpc_native_conversion_source_value(phpc_NativeValueHandle handle);\n");
@@ -18193,6 +18274,7 @@ impl CGenerator {
             if self.uses_native_object_instantiation_helpers {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_new_declared_class_with_diagnostic(size_t class_id, const uint8_t *class_name, size_t class_name_len, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, size_t property_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_new_declared_class_with_ancestors_and_diagnostic(size_t class_id, const uint8_t *class_name, size_t class_name_len, const size_t *property_declaring_class_ids, const uint8_t *const *property_declaring_class_names, const size_t *property_declaring_class_name_lens, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, size_t property_count, const uint8_t *const *ancestor_class_names, const size_t *ancestor_class_name_lens, size_t ancestor_class_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_new_declared_class_with_relationships_and_diagnostic(size_t class_id, const uint8_t *class_name, size_t class_name_len, const size_t *property_declaring_class_ids, const uint8_t *const *property_declaring_class_names, const size_t *property_declaring_class_name_lens, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, size_t property_count, const uint8_t *const *ancestor_class_names, const size_t *ancestor_class_name_lens, size_t ancestor_class_count, const uint8_t *const *interface_names, const size_t *interface_name_lens, size_t interface_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_object_property_helpers {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_public_property_operation_with_diagnostic(phpc_NativeValueHandle object, const uint8_t *property_name, size_t property_name_len, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -18484,6 +18566,7 @@ impl CGenerator {
     }
 
     fn release_variable_native_value_handle(&mut self, name: &str) {
+        self.native_arrayaccess_value_variables.remove(name);
         let value = self.variables.get(name).cloned();
         match value {
             Some(CValue::NativeValueHandle(handle)) => {
@@ -18691,12 +18774,58 @@ impl CGenerator {
         }
     }
 
+    fn emit_declared_class_interface_metadata_arrays(
+        &mut self,
+        class: &CDeclaredClass,
+    ) -> CDeclaredClassInterfaceMetadataArrays {
+        if class.interface_names.is_empty() {
+            return CDeclaredClassInterfaceMetadataArrays {
+                names: "NULL".to_string(),
+                name_lens: "NULL".to_string(),
+                count: 0,
+            };
+        }
+
+        let mut name_ptrs = Vec::new();
+        let mut name_lens = Vec::new();
+        for interface_name in &class.interface_names {
+            let (bytes, len) = self
+                .emit_call_type_static_bytes("declared_class_interface_name_bytes", interface_name);
+            name_ptrs.push(bytes);
+            name_lens.push(len);
+        }
+
+        let index = self.next_static_data;
+        self.next_static_data += 1;
+        let ptrs_name = format!("declared_class_interface_name_ptrs_{index}");
+        let lens_name = format!("declared_class_interface_name_lens_{index}");
+        self.static_data.push(format!(
+            "static const uint8_t *{ptrs_name}[] = {{{}}};",
+            name_ptrs.join(", ")
+        ));
+        self.static_data.push(format!(
+            "static const size_t {lens_name}[] = {{{}}};",
+            name_lens.join(", ")
+        ));
+
+        CDeclaredClassInterfaceMetadataArrays {
+            names: ptrs_name,
+            name_lens: lens_name,
+            count: class.interface_names.len(),
+        }
+    }
+
     fn declared_class_requires_ancestor_allocation(class: &CDeclaredClass) -> bool {
         !class.ancestor_names.is_empty()
             || class
                 .properties
                 .iter()
                 .any(|property| property.declaring_class_id != class.class_id)
+    }
+
+    fn declared_class_requires_relationship_allocation(class: &CDeclaredClass) -> bool {
+        Self::declared_class_requires_ancestor_allocation(class)
+            || !class.interface_names.is_empty()
     }
 
     fn emit_declared_class_instantiation_assignment(
@@ -18715,10 +18844,11 @@ impl CGenerator {
         let diagnostic = self.next_native_name("declared_class_diagnostic");
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
-        if Self::declared_class_requires_ancestor_allocation(class) {
+        if Self::declared_class_requires_relationship_allocation(class) {
             let ancestor_metadata = self.emit_declared_class_ancestor_metadata_arrays(class);
+            let interface_metadata = self.emit_declared_class_interface_metadata_arrays(class);
             self.body.push(format!(
-                "{result} = phpc_native_value_new_declared_class_with_ancestors_and_diagnostic({}, {class_name}, {class_name_len}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, &{diagnostic});",
+                "{result} = phpc_native_value_new_declared_class_with_relationships_and_diagnostic({}, {class_name}, {class_name_len}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, &{diagnostic});",
                 class.class_id,
                 property_metadata.declaring_class_ids,
                 property_metadata.declaring_class_names,
@@ -18729,7 +18859,10 @@ impl CGenerator {
                 property_metadata.count,
                 ancestor_metadata.names,
                 ancestor_metadata.name_lens,
-                ancestor_metadata.count
+                ancestor_metadata.count,
+                interface_metadata.names,
+                interface_metadata.name_lens,
+                interface_metadata.count
             ));
         } else {
             self.body.push(format!(
@@ -22383,6 +22516,37 @@ impl CGenerator {
             || self.global_import_names.contains(name)
     }
 
+    fn declared_class_implements_arrayaccess(&self, class_name: &str) -> bool {
+        let key = Self::declared_class_key(class_name);
+        self.declared_classes
+            .get(&key)
+            .map(|class| {
+                class
+                    .interface_names
+                    .iter()
+                    .any(|interface| interface.eq_ignore_ascii_case("ArrayAccess"))
+            })
+            .unwrap_or(false)
+    }
+
+    fn new_expr_implements_arrayaccess(&self, class_name: &NewClassName) -> bool {
+        match class_name {
+            NewClassName::Named(name) => self.declared_class_implements_arrayaccess(name),
+            NewClassName::DynamicVariable(_)
+            | NewClassName::SelfClass
+            | NewClassName::ParentClass
+            | NewClassName::StaticClass => false,
+        }
+    }
+
+    fn expr_is_native_arrayaccess_subject(&self, expr: &Expr) -> bool {
+        match expr {
+            Expr::Variable(name, _) => self.native_arrayaccess_value_variables.contains(name),
+            Expr::New { class_name, .. } => self.new_expr_implements_arrayaccess(class_name),
+            _ => false,
+        }
+    }
+
     fn emit_symbol_table_variable_value_read(
         &mut self,
         name: &str,
@@ -22564,13 +22728,29 @@ impl CGenerator {
     }
 
     fn store_variable_value(&mut self, name: &str, value: CValue) {
+        self.store_variable_value_with_arrayaccess_subject(name, value, false);
+    }
+
+    fn store_variable_value_with_arrayaccess_subject(
+        &mut self,
+        name: &str,
+        value: CValue,
+        is_arrayaccess_subject: bool,
+    ) {
         self.remember_variable_order(name);
         if self.try_store_mutable_scalar_slot_value(name, &value) {
+            self.native_arrayaccess_value_variables.remove(name);
             return;
         }
         let stored = self.value_for_variable_storage(value);
         self.release_variable_native_value_handle(name);
         self.variables.insert(name.to_string(), stored);
+        if is_arrayaccess_subject {
+            self.native_arrayaccess_value_variables
+                .insert(name.to_string());
+        } else {
+            self.native_arrayaccess_value_variables.remove(name);
+        }
     }
 
     fn store_native_value_result_variable(
@@ -22578,10 +22758,25 @@ impl CGenerator {
         name: &str,
         value: CNativeValueMaterialization,
     ) {
+        self.store_native_value_result_variable_with_arrayaccess_subject(name, value, false);
+    }
+
+    fn store_native_value_result_variable_with_arrayaccess_subject(
+        &mut self,
+        name: &str,
+        value: CNativeValueMaterialization,
+        is_arrayaccess_subject: bool,
+    ) {
         self.release_variable_native_value_handle(name);
         self.retain_native_value_cleanup_handle(&value.handle);
         self.variables
             .insert(name.to_string(), CValue::NativeValueHandle(value.handle));
+        if is_arrayaccess_subject {
+            self.native_arrayaccess_value_variables
+                .insert(name.to_string());
+        } else {
+            self.native_arrayaccess_value_variables.remove(name);
+        }
     }
 
     fn checked_clone_native_value_handle(&mut self, handle: &str, failure_cleanup: &str) -> String {
@@ -25897,12 +26092,6 @@ impl CGenerator {
                         return Ok(CValue::NativeValueHandle(value.handle));
                     }
                 }
-                if let Some(operation) = native_dereferenced_call_result_operation(expr) {
-                    return Err(self.unsupported_call_operation(operation));
-                }
-                if let Some(operation) = native_value_operand_call_result_operation(expr) {
-                    return Err(self.unsupported_call_operation(operation));
-                }
                 if let Some(superglobal_span) = request_superglobal_expr_span(target) {
                     return Err(
                         self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
@@ -25915,6 +26104,22 @@ impl CGenerator {
                         access.span,
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
+                }
+                if let Some(value) = self
+                    .materialize_native_arrayaccess_offset_read_operation_expr(
+                        expr,
+                        CNativeArrayAccessOffsetReadOperation::Get,
+                        "",
+                    )?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
+                if let Some(operation) = native_dereferenced_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
                 }
                 if let Some(value) =
                     self.materialize_native_value_offset_read_expr(target, index, *span, "")?
@@ -29231,6 +29436,16 @@ impl CGenerator {
                 return Err(
                     self.unsupported(superglobal_span, ASSEMBLY_REQUEST_SUPERGLOBAL_REJECTION)
                 );
+            }
+
+            if let Some(value) = self.emit_native_arrayaccess_offset_isset_expr(arg)? {
+                match value {
+                    CValue::Bool(false) => return Ok(CValue::Bool(false)),
+                    CValue::Bool(true) => continue,
+                    CValue::BoolExpr(value) => dynamic_checks.push(value),
+                    _ => unreachable!("ArrayAccess offset isset returns a bool C value"),
+                }
+                continue;
             }
 
             if let Some(result) = native_object_array_access_operation_result_from_expr(
@@ -34406,6 +34621,7 @@ impl CGenerator {
                         "",
                     );
                 }
+                let is_arrayaccess_subject = self.expr_is_native_arrayaccess_subject(expr);
                 if (self.uses_native_string_helpers || native_string_search_result_expr(expr))
                     && !self.mutable_scalar_slots.contains_key(name)
                 {
@@ -34420,7 +34636,11 @@ impl CGenerator {
                                 "",
                             );
                         }
-                        self.store_native_value_result_variable(name, value);
+                        self.store_native_value_result_variable_with_arrayaccess_subject(
+                            name,
+                            value,
+                            is_arrayaccess_subject,
+                        );
                         return Ok(());
                     }
                 }
@@ -34436,7 +34656,11 @@ impl CGenerator {
                         "",
                     );
                 }
-                self.store_variable_value(name, value);
+                self.store_variable_value_with_arrayaccess_subject(
+                    name,
+                    value,
+                    is_arrayaccess_subject,
+                );
                 Ok(())
             }
             AssignTarget::List { span, .. } => {
@@ -37940,11 +38164,21 @@ impl CGenerator {
                 target,
                 index,
                 span,
+                ..
             } => {
                 if let Some(name) = request_superglobal_root_name(target) {
                     return self
                         .emit_request_superglobal_keyed_value_read(name, index, failure_cleanup)
                         .map(Some);
+                }
+                if let Some(value) = self
+                    .materialize_native_arrayaccess_offset_read_operation_expr(
+                        expr,
+                        CNativeArrayAccessOffsetReadOperation::Get,
+                        failure_cleanup,
+                    )?
+                {
+                    return Ok(Some(value));
                 }
                 self.materialize_native_value_offset_read_expr(
                     target,
@@ -38495,6 +38729,96 @@ impl CGenerator {
             offset,
             failure_cleanup,
         )))
+    }
+
+    fn materialize_native_arrayaccess_offset_read_operation_expr(
+        &mut self,
+        expr: &Expr,
+        operation: CNativeArrayAccessOffsetReadOperation,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Expr::Index { target, index, .. } = expr else {
+            return Ok(None);
+        };
+        if !self.expr_is_native_arrayaccess_subject(target) {
+            return Ok(None);
+        }
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_callable_helpers = true;
+        self.uses_native_arrayaccess_offset_read_helpers = true;
+
+        let subject = self.materialize_native_value_result_operand(target, failure_cleanup)?;
+        let offset_failure_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&subject.cleanup_after_use),
+            failure_cleanup
+        );
+        let offset =
+            self.materialize_native_value_result_operand(index, &offset_failure_cleanup)?;
+        let mut operand_cleanup = offset.cleanup_after_use;
+        operand_cleanup.extend(subject.cleanup_after_use);
+        let operand_cleanup_sequence = c_cleanup_sequence(&operand_cleanup);
+        let table = self
+            .ensure_native_callable_table(&format!("{operand_cleanup_sequence}{failure_cleanup}"));
+
+        let result = self.next_native_name(operation.result_prefix());
+        let diagnostic = self.next_native_name("arrayaccess_offset_read_diagnostic");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic({table}, {}, {}, {}, (phpc_NativeStringHandle){{0}}, &{diagnostic});",
+            subject.handle,
+            offset.handle,
+            operation.c_tag()
+        ));
+        let error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_report({diagnostic}); {operand_cleanup_sequence}{failure_cleanup}"
+        ));
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.body.extend(operand_cleanup);
+
+        Ok(Some(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }))
+    }
+
+    fn emit_native_arrayaccess_offset_isset_expr(
+        &mut self,
+        expr: &Expr,
+    ) -> CompileResult<Option<CValue>> {
+        let Some(value) = self.materialize_native_arrayaccess_offset_read_operation_expr(
+            expr,
+            CNativeArrayAccessOffsetReadOperation::Exists,
+            "",
+        )?
+        else {
+            return Ok(None);
+        };
+
+        let diagnostic = self.next_native_name("arrayaccess_offset_exists_bool_diagnostic");
+        let bool_result = self.next_native_name("arrayaccess_offset_exists_bool");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "_Bool {bool_result} = phpc_native_value_bool_with_diagnostic({}, &{diagnostic});",
+            value.handle
+        ));
+        let value_cleanup = c_cleanup_sequence(&value.cleanup_after_use);
+        let error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_report({diagnostic}); {value_cleanup}"
+        ));
+        self.body
+            .push(format!("if ({diagnostic}.ptr != NULL) {{ {error_exit} }}"));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.body.extend(value.cleanup_after_use);
+
+        Ok(Some(CValue::BoolExpr(bool_result)))
     }
 
     fn emit_native_conversion_source_from_value(
