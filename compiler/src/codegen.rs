@@ -685,6 +685,25 @@ enum NativeInvokeResultConsumer {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeSourceCallResultConsumer {
+    OwnedResult,
+    Value,
+    Reference,
+    Discard,
+    DiagnosticResult(NativeDiagnosticResultOperandSurface),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeSourceCallResultReturn {
+    CallResultHandle,
+    ValueHandle,
+    ReferenceHandle,
+    Void,
+    Bool,
+    DiagnosticResult(NativeDiagnosticResultOperandSurface),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeInvokeResultTarget {
     MaterializedCallableHandle,
     CallableValueHandle,
@@ -720,6 +739,21 @@ enum NativeInvokeResultHelperBlocker {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeInvokeResultHelperSelection {
     Helper(NativeInvokeResultHelper),
+    Blocked(NativeInvokeResultHelperBlocker),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NativeSourceCallResultCarrier {
+    target: NativeInvokeResultTarget,
+    consumer: NativeSourceCallResultConsumer,
+    invoke_helper: NativeInvokeResultHelper,
+    result: NativeSourceCallResultReturn,
+    diagnostic_result_converter: Option<&'static str>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeSourceCallResultCarrierSelection {
+    Carrier(NativeSourceCallResultCarrier),
     Blocked(NativeInvokeResultHelperBlocker),
 }
 
@@ -833,6 +867,46 @@ impl NativeInvokeResultHelper {
             name,
             result: consumer.lookup_plus_invoke_return(),
             consumes_arguments: true,
+        }
+    }
+}
+
+impl NativeSourceCallResultConsumer {
+    fn invoke_consumer(self) -> NativeInvokeResultConsumer {
+        match self {
+            Self::OwnedResult | Self::DiagnosticResult(_) => {
+                NativeInvokeResultConsumer::OwnedResult
+            }
+            Self::Value => NativeInvokeResultConsumer::Value,
+            Self::Reference => NativeInvokeResultConsumer::Reference,
+            Self::Discard => NativeInvokeResultConsumer::Discard,
+        }
+    }
+
+    fn carrier_return(
+        self,
+        helper_return: NativeInvokeResultReturn,
+    ) -> NativeSourceCallResultReturn {
+        match self {
+            Self::OwnedResult => NativeSourceCallResultReturn::CallResultHandle,
+            Self::Value => NativeSourceCallResultReturn::ValueHandle,
+            Self::Reference => NativeSourceCallResultReturn::ReferenceHandle,
+            Self::Discard => match helper_return {
+                NativeInvokeResultReturn::Bool => NativeSourceCallResultReturn::Bool,
+                _ => NativeSourceCallResultReturn::Void,
+            },
+            Self::DiagnosticResult(surface) => {
+                NativeSourceCallResultReturn::DiagnosticResult(surface)
+            }
+        }
+    }
+
+    fn diagnostic_result_converter(self) -> Option<&'static str> {
+        match self {
+            Self::DiagnosticResult(_) => {
+                Some("phpc_native_diagnostic_result_from_call_result_and_free")
+            }
+            _ => None,
         }
     }
 }
@@ -979,6 +1053,26 @@ impl NativeInvokeResultTarget {
             }
         };
         NativeInvokeResultHelperSelection::Helper(helper)
+    }
+
+    fn source_call_result_carrier_for_consumer(
+        self,
+        consumer: NativeSourceCallResultConsumer,
+    ) -> NativeSourceCallResultCarrierSelection {
+        match self.helper_for_consumer(consumer.invoke_consumer()) {
+            NativeInvokeResultHelperSelection::Helper(invoke_helper) => {
+                NativeSourceCallResultCarrierSelection::Carrier(NativeSourceCallResultCarrier {
+                    target: self,
+                    consumer,
+                    result: consumer.carrier_return(invoke_helper.result),
+                    diagnostic_result_converter: consumer.diagnostic_result_converter(),
+                    invoke_helper,
+                })
+            }
+            NativeInvokeResultHelperSelection::Blocked(blocker) => {
+                NativeSourceCallResultCarrierSelection::Blocked(blocker)
+            }
+        }
     }
 }
 
@@ -19815,6 +19909,11 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeCallResultHandle phpc_native_call_result_from_reference(phpc_NativeReferenceHandle reference);\n");
                 output.push_str("extern void phpc_native_call_result_free(phpc_NativeCallResultHandle result);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_call_result_take_value_with_diagnostic_and_free(phpc_NativeCallResultHandle result, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                if self.uses_native_diagnostic_result_producers
+                    || self.uses_native_diagnostic_result_consumers
+                {
+                    output.push_str("extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_from_call_result_and_free(phpc_NativeCallResultHandle result);\n");
+                }
                 output.push_str("extern phpc_NativeCallResultHandle phpc_native_call_frame_reference_parameter_alias_transfer_result_from_results_with_diagnostic(phpc_NativeStringHandle callable, phpc_NativeCallResultHandle *argument_results, size_t argument_count, const phpc_NativeStringHandle *parameter_names, const size_t *parameter_indices, const phpc_NativeStringHandle *argument_targets, size_t count, phpc_NativeStringHandle missing_semantics);\n");
                 output.push_str("extern phpc_NativeCallResultHandle phpc_native_callable_invoke_result_with_diagnostic_and_free(phpc_NativeCallableHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_callable_invoke_value_with_diagnostic_and_free(phpc_NativeCallableHandle callable, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -49680,6 +49779,76 @@ echo " 10" < "zeta";
     }
 
     #[test]
+    fn native_source_call_result_carrier_routes_targets_and_consumers_through_owned_results() {
+        let diagnostic_surface = NativeDiagnosticResultOperandSurface::Statement;
+        let expected = [
+            (
+                NativeInvokeResultTarget::DirectNamedLookup,
+                NativeSourceCallResultConsumer::DiagnosticResult(diagnostic_surface),
+                NativeSourceCallResultReturn::DiagnosticResult(diagnostic_surface),
+                "phpc_native_callable_lookup_invoke_result_with_diagnostic_and_free_arguments",
+                Some("phpc_native_diagnostic_result_from_call_result_and_free"),
+            ),
+            (
+                NativeInvokeResultTarget::ReceiverMethodLookupWithAccessContext,
+                NativeSourceCallResultConsumer::Value,
+                NativeSourceCallResultReturn::ValueHandle,
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments",
+                None,
+            ),
+            (
+                NativeInvokeResultTarget::StaticMethodLookupWithAccessContext,
+                NativeSourceCallResultConsumer::Discard,
+                NativeSourceCallResultReturn::Bool,
+                "phpc_native_static_method_invoke_discard_with_access_context_diagnostic_and_free_scope_method_arguments",
+                None,
+            ),
+            (
+                NativeInvokeResultTarget::CallableValueHandle,
+                NativeSourceCallResultConsumer::Reference,
+                NativeSourceCallResultReturn::ReferenceHandle,
+                "phpc_native_callable_value_invoke_reference_with_diagnostic_and_free",
+                None,
+            ),
+            (
+                NativeInvokeResultTarget::MaterializedCallableHandle,
+                NativeSourceCallResultConsumer::OwnedResult,
+                NativeSourceCallResultReturn::CallResultHandle,
+                "phpc_native_callable_invoke_result_with_diagnostic_and_free",
+                None,
+            ),
+        ];
+
+        for (target, consumer, result, helper_name, converter) in expected {
+            let NativeSourceCallResultCarrierSelection::Carrier(carrier) =
+                target.source_call_result_carrier_for_consumer(consumer)
+            else {
+                panic!("{target:?} {consumer:?} should select a carrier");
+            };
+            assert_eq!(carrier.target, target);
+            assert_eq!(carrier.consumer, consumer);
+            assert_eq!(carrier.result, result);
+            assert_eq!(carrier.invoke_helper.name, helper_name);
+            assert_eq!(carrier.invoke_helper.consumes_arguments, true);
+            assert_eq!(carrier.diagnostic_result_converter, converter);
+        }
+
+        for target in [
+            NativeInvokeResultTarget::ConstructorAllocation,
+            NativeInvokeResultTarget::ClosureArgumentHandle,
+        ] {
+            assert!(matches!(
+                target.source_call_result_carrier_for_consumer(
+                    NativeSourceCallResultConsumer::DiagnosticResult(
+                        NativeDiagnosticResultOperandSurface::Output,
+                    ),
+                ),
+                NativeSourceCallResultCarrierSelection::Blocked(_)
+            ));
+        }
+    }
+
+    #[test]
     fn native_callable_runtime_boundary_declares_lookup_plus_invoke_helpers() {
         let mut generator = CGenerator {
             uses_native_callable_helpers: true,
@@ -49701,6 +49870,22 @@ echo " 10" < "zeta";
         ] {
             assert!(output.contains(expected), "missing {expected}\n{output}");
         }
+    }
+
+    #[test]
+    fn native_callable_runtime_boundary_declares_call_result_diagnostic_converter() {
+        let mut generator = CGenerator {
+            uses_native_callable_helpers: true,
+            uses_native_diagnostic_result_producers: true,
+            ..CGenerator::default()
+        };
+        let output = generator
+            .emit_program(&Program { statements: vec![] })
+            .expect("empty program with native callable and diagnostic helpers should emit");
+
+        assert!(output.contains(
+            "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_from_call_result_and_free(phpc_NativeCallResultHandle result);"
+        ));
     }
 
     #[test]

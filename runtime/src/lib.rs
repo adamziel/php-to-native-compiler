@@ -20305,6 +20305,29 @@ pub unsafe extern "C" fn phpc_native_diagnostic_result_from_diagnostic_and_free(
 
 /// # Safety
 ///
+/// `result` must be null or a call-result handle returned by the runtime ABI
+/// and not yet freed. This helper consumes the call result. Value and reference
+/// results become value-bearing diagnostic results; failure results become
+/// diagnostic-only diagnostic results.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_result_from_call_result_and_free(
+    result: NativeCallResultHandle,
+) -> NativeDiagnosticResult {
+    match unsafe { phpc_native_call_result_status(result) } {
+        NativeCallResultStatus::Value | NativeCallResultStatus::Reference => {
+            let value = unsafe { phpc_native_call_result_take_value_and_free(result) };
+            NativeDiagnosticResult::from_value(value)
+        }
+        NativeCallResultStatus::Failure => {
+            let diagnostic = unsafe { phpc_native_call_result_take_diagnostic_and_free(result) };
+            unsafe { NativeDiagnosticResult::from_diagnostic_handle(diagnostic) }
+        }
+        NativeCallResultStatus::Null => NativeDiagnosticResult::null(),
+    }
+}
+
+/// # Safety
+///
 /// `result` must be null or a diagnostic result returned by the runtime ABI and
 /// not yet freed. This helper only inspects the result; ownership remains with
 /// the caller.
@@ -30704,6 +30727,54 @@ mod tests {
             )
         });
         assert!(discard_diagnostic.is_null());
+    }
+
+    #[test]
+    fn native_diagnostic_result_from_call_result_consumes_value_reference_failure_and_null() {
+        let value_result =
+            phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Int(41)));
+        let value_diagnostic =
+            unsafe { phpc_native_diagnostic_result_from_call_result_and_free(value_result) };
+        assert!(unsafe { phpc_native_diagnostic_result_has_value(value_diagnostic) });
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_result_diagnostic_count(value_diagnostic) },
+            0
+        );
+        unsafe { phpc_native_diagnostic_result_free(value_diagnostic) };
+
+        let cell = PhpReferenceCell::new(Value::String("reference value".to_string()));
+        let reference_result =
+            phpc_native_call_result_from_reference(NativeReferenceHandle::from_cell(cell.clone()));
+        let reference_diagnostic =
+            unsafe { phpc_native_diagnostic_result_from_call_result_and_free(reference_result) };
+        assert!(unsafe { phpc_native_diagnostic_result_has_value(reference_diagnostic) });
+        assert_eq!(
+            cell.value_cloned(),
+            Value::String("reference value".to_string())
+        );
+        unsafe { phpc_native_diagnostic_result_free(reference_diagnostic) };
+
+        let failure_result = phpc_native_call_result_from_diagnostic_and_free(
+            NativeDiagnosticHandle::from_message("call source failed"),
+        );
+        let failure_diagnostic =
+            unsafe { phpc_native_diagnostic_result_from_call_result_and_free(failure_result) };
+        assert!(!unsafe { phpc_native_diagnostic_result_has_value(failure_diagnostic) });
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_result_diagnostic_count(failure_diagnostic) },
+            1
+        );
+        let message = unsafe {
+            phpc_native_diagnostic_result_diagnostic_message_clone_bytes_at(failure_diagnostic, 0)
+        };
+        let message = String::from_utf8(native_byte_buffer_to_vec_for_test(message)).unwrap();
+        assert_eq!(message, "call source failed");
+        unsafe { phpc_native_diagnostic_result_free(failure_diagnostic) };
+
+        let null_diagnostic = unsafe {
+            phpc_native_diagnostic_result_from_call_result_and_free(NativeCallResultHandle::null())
+        };
+        assert!(null_diagnostic.is_null());
     }
 
     #[test]
