@@ -13353,6 +13353,245 @@ fn emit_exe_links_and_runs_arrayaccess_write_unset_runtime_consumer_program() {
     let _ = fs::remove_file(&output_path);
 }
 
+const ARRAYACCESS_RMW_NULLCOALESCE_ASSIGNMENT_SOURCE: &str = concat!(
+    "<?php\n",
+    "class NumberRmwBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"N:get:\", $offset, \";\"; return 4; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"N:set:\", $offset, \"=\", $value, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class ChildNumberRmwBag extends NumberRmwBag {}\n",
+    "class TextRmwBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"T:get:\", $offset, \";\"; return \"Hi\"; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"T:set:\", $offset, \"=\", $value, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class MissingAssignBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"M:get;\"; return \"bad\"; }\n",
+    "    public function offsetExists($offset) { return false; }\n",
+    "    public function offsetSet($offset, $value) { echo \"M:set:\", $offset, \"=\", $value, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class NullAssignBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"U:get:\", $offset, \";\"; return null; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"U:set:\", $offset, \"=\", $value, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class ZeroAssignBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"Z:get:\", $offset, \";\"; return 0; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"Z:set-bad;\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class StringZeroAssignBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"S:get:\", $offset, \";\"; return \"0\"; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"S:set-bad;\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class FalseAssignBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"F:get:\", $offset, \";\"; return false; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"F:set-bad;\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class ValueAssignBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"V:get:\", $offset, \";\"; return \"keep\"; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"V:set-bad;\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "function aa_rhs($value) { echo \"R:\", $value, \";\"; return $value; }\n",
+    "$number = new NumberRmwBag();\n",
+    "$slot = strtolower(\"SLOT\");\n",
+    "$number[$slot] += 2 + 1;\n",
+    "$mul = ($number[\"expr\"] *= 2);\n",
+    "$text = new TextRmwBag();\n",
+    "$text[\"name\"] .= \"there\";\n",
+    "$cat = ($text[\"bang\"] .= \"!\");\n",
+    "echo \"rmw=\", $mul, \":\", $cat, \";\";\n",
+    "$flag = 2 + \"1\";\n",
+    "if ($flag) { $joined = new NumberRmwBag(); } else { $joined = new ChildNumberRmwBag(); }\n",
+    "$joined[\"branch\"] += 6;\n",
+    "$missing = new MissingAssignBag();\n",
+    "$nulls = new NullAssignBag();\n",
+    "$zero = new ZeroAssignBag();\n",
+    "$stringZero = new StringZeroAssignBag();\n",
+    "$false = new FalseAssignBag();\n",
+    "$value = new ValueAssignBag();\n",
+    "echo \"coalesce=\";\n",
+    "echo ($missing[\"m\"] ??= aa_rhs(\"miss\")), \"|\";\n",
+    "echo ($nulls[\"n\"] ??= aa_rhs(\"null\")), \"|\";\n",
+    "echo ($zero[\"z\"] ??= aa_rhs(\"bad\")), \"|\";\n",
+    "echo ($stringZero[\"s\"] ??= aa_rhs(\"bad\")), \"|\";\n",
+    "echo ($false[\"f\"] ??= aa_rhs(\"bad\")), \"|\";\n",
+    "echo ($value[\"v\"] ??= aa_rhs(\"bad\"));\n",
+);
+
+#[test]
+fn native_executable_c_source_routes_arrayaccess_rmw_nullcoalesce_assignment_through_owner_boundary(
+) {
+    let program = parse(ARRAYACCESS_RMW_NULLCOALESCE_ASSIGNMENT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic")
+            && source.contains("phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_GET")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_EXISTS")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_SET")
+            && source.contains("phpc_native_value_binary_result")
+            && source.contains("arrayaccess_offset_null_coalesce_assign")
+            && source.contains("arrayaccess_offset_assign_subject"),
+        "ArrayAccess compound assignment and ??= should share read/write runtime ABIs, native value binary computation, and post-branch subject selection:\n{source}"
+    );
+    assert!(
+        !source.contains("ArrayAccess lowering rejects")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches")
+            && !source.contains("callable_array_matched")
+            && !source.contains("callable_object_matched"),
+        "ArrayAccess RMW/??= lowering should stay on declared-interface facts and callable-table dispatch:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_rejects_arrayaccess_rmw_unsupported_owner_shapes() {
+    let sources = [
+        (
+            "property-held ArrayAccess RMW owner",
+            concat!(
+                "<?php\n",
+                "class Bag implements ArrayAccess {\n",
+                "    public function offsetGet($offset) { return 4; }\n",
+                "    public function offsetExists($offset) { return true; }\n",
+                "    public function offsetSet($offset, $value) { return null; }\n",
+                "    public function offsetUnset($offset) { return null; }\n",
+                "}\n",
+                "class Box { public $bag; public function __construct() { $this->bag = new Bag(); } }\n",
+                "$box = new Box();\n",
+                "$box->bag[\"k\"] += 1;\n",
+            ),
+        ),
+        (
+            "nested ArrayAccess RMW owner",
+            concat!(
+                "<?php\n",
+                "class Bag implements ArrayAccess {\n",
+                "    public function offsetGet($offset) { return new Bag(); }\n",
+                "    public function offsetExists($offset) { return true; }\n",
+                "    public function offsetSet($offset, $value) { return null; }\n",
+                "    public function offsetUnset($offset) { return null; }\n",
+                "}\n",
+                "$bag = new Bag();\n",
+                "$bag[\"outer\"][\"leaf\"] += 1;\n",
+            ),
+        ),
+        (
+            "append ArrayAccess RMW owner",
+            concat!(
+                "<?php\n",
+                "class Bag implements ArrayAccess {\n",
+                "    public function offsetGet($offset) { return 4; }\n",
+                "    public function offsetExists($offset) { return true; }\n",
+                "    public function offsetSet($offset, $value) { return null; }\n",
+                "    public function offsetUnset($offset) { return null; }\n",
+                "}\n",
+                "$bag = new Bag();\n",
+                "$bag[] += 1;\n",
+            ),
+        ),
+        (
+            "increment ArrayAccess RMW owner",
+            concat!(
+                "<?php\n",
+                "class Bag implements ArrayAccess {\n",
+                "    public function offsetGet($offset) { return 4; }\n",
+                "    public function offsetExists($offset) { return true; }\n",
+                "    public function offsetSet($offset, $value) { return null; }\n",
+                "    public function offsetUnset($offset) { return null; }\n",
+                "}\n",
+                "$bag = new Bag();\n",
+                "$bag[\"k\"]++;\n",
+            ),
+        ),
+        (
+            "unknown dynamic class-name ArrayAccess RMW owner",
+            concat!(
+                "<?php\n",
+                "class Bag implements ArrayAccess {\n",
+                "    public function offsetGet($offset) { return 4; }\n",
+                "    public function offsetExists($offset) { return true; }\n",
+                "    public function offsetSet($offset, $value) { return null; }\n",
+                "    public function offsetUnset($offset) { return null; }\n",
+                "}\n",
+                "$class = strtoupper(\"bag\");\n",
+                "$bag = new $class();\n",
+                "$bag[\"k\"] += 1;\n",
+            ),
+        ),
+    ];
+
+    for (label, source) in sources {
+        let program = match parse(source) {
+            Ok(program) => program,
+            Err(error) if label == "append ArrayAccess RMW owner" => {
+                assert_eq!(error.phase, Phase::Parse, "{label}: {error:?}");
+                assert!(
+                    error.message.contains("append offsets")
+                        && error.message.contains("unsupported compound assignment target"),
+                    "{label} should remain parser-blocked before any exact-shape append RMW lowering, got {error:?}"
+                );
+                continue;
+            }
+            Err(error) => panic!("{label} should parse: {error:?}"),
+        };
+        let error = match emit_native_executable_c_source(&program) {
+            Ok(source) => panic!("{label} unexpectedly emitted generated C:\n{source}"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.phase, Phase::Codegen, "{label}: {error:?}");
+        assert!(
+            error.message.contains("ArrayAccess lowering rejects")
+                || error.message.contains("mutation lowering rejects")
+                || error.message.contains("non-local assignment lowering rejects"),
+            "{label} should remain behind a centralized ArrayAccess/mutation/non-local-owner blocker, got {error:?}"
+        );
+    }
+}
+
+#[test]
+fn emit_exe_links_and_runs_arrayaccess_rmw_nullcoalesce_assignment_runtime_consumer_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "arrayaccess_rmw_nullcoalesce_assignment_runtime_consumer",
+        ARRAYACCESS_RMW_NULLCOALESCE_ASSIGNMENT_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native ArrayAccess RMW/??= executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(
+        run.stdout,
+        b"N:get:slot;N:set:slot=7;N:get:expr;N:set:expr=8;T:get:name;T:set:name=Hithere;T:get:bang;T:set:bang=Hi!;rmw=8:Hi!;N:get:branch;N:set:branch=10;coalesce=R:miss;M:set:m=miss;miss|U:get:n;R:null;U:set:n=null;null|Z:get:z;0|S:get:s;0|F:get:f;|V:get:v;keep"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
 #[test]
 fn emit_exe_links_and_runs_array_lvalue_compound_assignment_program() {
     if !has_cc() {
