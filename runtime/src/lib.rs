@@ -9709,6 +9709,43 @@ pub unsafe extern "C" fn phpc_native_materialized_call_arguments_push_named_valu
 
 /// # Safety
 ///
+/// `arguments` must be a materialized call-arguments handle. `reference` is
+/// consumed exactly once.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_materialized_call_arguments_push_reference_and_free(
+    arguments: NativeMaterializedCallArgumentsHandle,
+    reference: NativeReferenceHandle,
+) -> bool {
+    let Some(slot) = (unsafe { native_call_argument_slot_from_reference(reference, true) }) else {
+        unsafe { phpc_native_reference_free(reference) };
+        return false;
+    };
+    unsafe { native_materialized_call_arguments_push_slot(arguments, slot, None) }
+}
+
+/// # Safety
+///
+/// `arguments` must be a materialized call-arguments handle. `name` is borrowed
+/// and `reference` is consumed exactly once.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_materialized_call_arguments_push_named_reference_and_free(
+    arguments: NativeMaterializedCallArgumentsHandle,
+    name: NativeStringHandle,
+    reference: NativeReferenceHandle,
+) -> bool {
+    let Some(name) = (unsafe { native_string_handle_to_string(name) }) else {
+        unsafe { phpc_native_reference_free(reference) };
+        return false;
+    };
+    let Some(slot) = (unsafe { native_call_argument_slot_from_reference(reference, true) }) else {
+        unsafe { phpc_native_reference_free(reference) };
+        return false;
+    };
+    unsafe { native_materialized_call_arguments_push_slot(arguments, slot, Some(name)) }
+}
+
+/// # Safety
+///
 /// `arguments` must be a materialized call-arguments handle. `value` is
 /// consumed exactly once. Array integer keys become positional materialized
 /// entries and array string keys become named materialized entries.

@@ -23272,6 +23272,8 @@ impl CGenerator {
                     output.push_str("extern bool phpc_native_materialized_call_arguments_is_null(phpc_NativeMaterializedCallArgumentsHandle handle);\n");
                     output.push_str("extern bool phpc_native_materialized_call_arguments_push_value_and_free(phpc_NativeMaterializedCallArgumentsHandle arguments, phpc_NativeValueHandle value);\n");
                     output.push_str("extern bool phpc_native_materialized_call_arguments_push_named_value_and_free(phpc_NativeMaterializedCallArgumentsHandle arguments, phpc_NativeStringHandle name, phpc_NativeValueHandle value);\n");
+                    output.push_str("extern bool phpc_native_materialized_call_arguments_push_reference_and_free(phpc_NativeMaterializedCallArgumentsHandle arguments, phpc_NativeReferenceHandle reference);\n");
+                    output.push_str("extern bool phpc_native_materialized_call_arguments_push_named_reference_and_free(phpc_NativeMaterializedCallArgumentsHandle arguments, phpc_NativeStringHandle name, phpc_NativeReferenceHandle reference);\n");
                     output.push_str("extern bool phpc_native_materialized_call_arguments_unpack_array_value_and_free(phpc_NativeMaterializedCallArgumentsHandle arguments, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                     output.push_str("extern phpc_NativeCallArgumentsHandle phpc_native_materialized_call_arguments_finalize_with_diagnostic(phpc_NativeMaterializedCallArgumentsHandle entries, const phpc_NativeStringHandle *parameter_names, const uint8_t *parameter_required, const uint8_t *parameter_by_reference, const phpc_NativeValueHandle *parameter_defaults, size_t fixed_count, phpc_NativeStringHandle variadic_parameter_name, bool has_variadic, bool variadic_by_reference, phpc_NativeDiagnosticHandle *diagnostic);\n");
                     output.push_str("extern bool phpc_native_materialized_call_arguments_forward_source_to_call_arguments_with_diagnostic(phpc_NativeMaterializedCallArgumentsHandle entries, phpc_NativeCallArgumentsHandle target, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -39361,14 +39363,24 @@ impl CGenerator {
     ) -> CompileResult<CNativeValueMaterialization> {
         let signature = exact_imported_runtime_builtin_signature(name)
             .expect("exact imported runtime builtin signature guard should hold");
-        let source_call_signature = signature.source_call_signature(args.len());
+        let source_call_contract = self.callable_value_source_call_contract_from_identities(
+            std::iter::once(CNativeCallableIdentity::RuntimeBuiltin {
+                name: signature.canonical_name.to_string(),
+            }),
+            native_source_call_arg_count_for_args(args),
+            call_arguments_have_named(args) || call_arguments_have_spread(args),
+        );
+        let source_call_signature = source_call_contract
+            .as_ref()
+            .and_then(|contract| contract.signature().cloned())
+            .or_else(|| signature.source_call_signature(args.len()));
         let Some(value) = self.materialize_runtime_callable_value_call(
             CValue::String(signature.canonical_name.to_string()),
             args,
             span,
             failure_cleanup,
             source_call_signature,
-            None,
+            source_call_contract,
         )?
         else {
             return Err(
@@ -39809,6 +39821,7 @@ impl CGenerator {
                     args,
                     span,
                     &callable_failure_cleanup,
+                    NativeCallCallee::DynamicExpression,
                 )?
             } else {
                 self.emit_native_source_call_arguments_handle(
@@ -39889,6 +39902,7 @@ impl CGenerator {
                     args,
                     span,
                     &callable_failure_cleanup,
+                    NativeCallCallee::DynamicExpression,
                 )?
             } else {
                 self.emit_native_source_call_arguments_handle(
@@ -40402,6 +40416,43 @@ impl CGenerator {
         }
     }
 
+    fn emit_materialized_call_argument_reference_push(
+        &mut self,
+        materialized: &str,
+        reference: CNativeReferenceMaterialization,
+        source_name: Option<&str>,
+        failure_cleanup: &str,
+    ) {
+        let name = source_name.map(|source_name| {
+            self.emit_native_static_text_source_call_string_operand(
+                "materialized_call_argument_name",
+                source_name,
+            )
+        });
+        let name_cleanup = name
+            .as_ref()
+            .map(|name| c_cleanup_sequence(&name.cleanup_after_use))
+            .unwrap_or_default();
+        let push_failure_cleanup = format!("{name_cleanup}{failure_cleanup}");
+        if let Some(name) = &name {
+            self.body.push(format!(
+                "if (!phpc_native_materialized_call_arguments_push_named_reference_and_free({materialized}, {}, {})) {{ {} }}",
+                name.handle,
+                reference.handle,
+                self.native_error_exit(&push_failure_cleanup)
+            ));
+        } else {
+            self.body.push(format!(
+                "if (!phpc_native_materialized_call_arguments_push_reference_and_free({materialized}, {})) {{ {} }}",
+                reference.handle,
+                self.native_error_exit(&push_failure_cleanup)
+            ));
+        }
+        if let Some(name) = name {
+            self.body.extend(name.cleanup_after_use);
+        }
+    }
+
     fn emit_materialized_call_argument_spread_unpack(
         &mut self,
         materialized: &str,
@@ -40427,8 +40478,10 @@ impl CGenerator {
 
     fn emit_materialized_call_argument_entries_handle(
         &mut self,
+        params: Option<&[FunctionParam]>,
         args: &[Expr],
         owner_failure_cleanup: &str,
+        callee: NativeCallCallee,
     ) -> CompileResult<(String, String)> {
         self.uses_native_callable_helpers = true;
         self.uses_native_materialized_call_argument_helpers = true;
@@ -40445,10 +40498,14 @@ impl CGenerator {
             "phpc_native_materialized_call_arguments_free({materialized}); {owner_failure_cleanup}"
         );
 
+        let fixed_param_count = params.map(native_function_fixed_param_count).unwrap_or(0);
+        let mut next_positional_index = 0usize;
+        let mut positional_param_mapping_is_stable = true;
         for arg in args {
             let source_failure_cleanup = materialized_failure_cleanup.clone();
             match arg {
                 Expr::SpreadArgument { expr, .. } => {
+                    positional_param_mapping_is_stable = false;
                     let value = self
                         .materialize_native_value_result_operand(expr, &source_failure_cleanup)?;
                     self.emit_materialized_call_argument_spread_unpack(
@@ -40458,24 +40515,74 @@ impl CGenerator {
                     );
                 }
                 Expr::NamedArgument { name, expr, .. } => {
-                    let value = self
-                        .materialize_native_value_result_operand(expr, &source_failure_cleanup)?;
-                    self.emit_materialized_call_argument_value_push(
-                        &materialized,
-                        value,
-                        Some(name.as_str()),
-                        &source_failure_cleanup,
-                    );
+                    positional_param_mapping_is_stable = false;
+                    let push_reference = params.is_some_and(|params| {
+                        params
+                            .iter()
+                            .take(fixed_param_count)
+                            .find(|param| param.name == *name)
+                            .is_some_and(|param| param.by_reference)
+                    });
+                    if push_reference {
+                        let reference = self.materialize_call_reference_argument(
+                            expr,
+                            expr.span(),
+                            &source_failure_cleanup,
+                            callee,
+                        )?;
+                        self.emit_materialized_call_argument_reference_push(
+                            &materialized,
+                            reference,
+                            Some(name.as_str()),
+                            &source_failure_cleanup,
+                        );
+                    } else {
+                        let value = self.materialize_native_value_result_operand(
+                            expr,
+                            &source_failure_cleanup,
+                        )?;
+                        self.emit_materialized_call_argument_value_push(
+                            &materialized,
+                            value,
+                            Some(name.as_str()),
+                            &source_failure_cleanup,
+                        );
+                    }
                 }
                 _ => {
-                    let value =
-                        self.materialize_native_value_result_operand(arg, &source_failure_cleanup)?;
-                    self.emit_materialized_call_argument_value_push(
-                        &materialized,
-                        value,
-                        None,
-                        &source_failure_cleanup,
-                    );
+                    let push_reference = params.is_some_and(|params| {
+                        positional_param_mapping_is_stable
+                            && next_positional_index < fixed_param_count
+                            && params[next_positional_index].by_reference
+                    });
+                    if positional_param_mapping_is_stable {
+                        next_positional_index += 1;
+                    }
+                    if push_reference {
+                        let reference = self.materialize_call_reference_argument(
+                            arg,
+                            arg.span(),
+                            &source_failure_cleanup,
+                            callee,
+                        )?;
+                        self.emit_materialized_call_argument_reference_push(
+                            &materialized,
+                            reference,
+                            None,
+                            &source_failure_cleanup,
+                        );
+                    } else {
+                        let value = self.materialize_native_value_result_operand(
+                            arg,
+                            &source_failure_cleanup,
+                        )?;
+                        self.emit_materialized_call_argument_value_push(
+                            &materialized,
+                            value,
+                            None,
+                            &source_failure_cleanup,
+                        );
+                    }
                 }
             }
         }
@@ -40490,9 +40597,15 @@ impl CGenerator {
         args: &[Expr],
         span: Span,
         owner_failure_cleanup: &str,
+        callee: NativeCallCallee,
     ) -> CompileResult<String> {
-        let (materialized, materialized_failure_cleanup) =
-            self.emit_materialized_call_argument_entries_handle(args, owner_failure_cleanup)?;
+        let (materialized, materialized_failure_cleanup) = self
+            .emit_materialized_call_argument_entries_handle(
+                Some(params),
+                args,
+                owner_failure_cleanup,
+                callee,
+            )?;
 
         let fixed_count = native_function_fixed_param_count(params);
         let fixed_params = params.iter().take(fixed_count).collect::<Vec<_>>();
@@ -40617,8 +40730,13 @@ impl CGenerator {
         args: &[Expr],
         owner_failure_cleanup: &str,
     ) -> CompileResult<()> {
-        let (materialized, materialized_failure_cleanup) =
-            self.emit_materialized_call_argument_entries_handle(args, owner_failure_cleanup)?;
+        let (materialized, materialized_failure_cleanup) = self
+            .emit_materialized_call_argument_entries_handle(
+                None,
+                args,
+                owner_failure_cleanup,
+                NativeCallCallee::DynamicExpression,
+            )?;
         let diagnostic = self.next_native_name("materialized_forward_diagnostic");
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
@@ -41288,6 +41406,7 @@ impl CGenerator {
                         args,
                         span,
                         owner_failure_cleanup,
+                        NativeCallCallee::MethodDispatch,
                     );
                 }
 
@@ -43479,6 +43598,7 @@ impl CGenerator {
                 args,
                 span,
                 failure_cleanup,
+                callee,
             );
         }
 

@@ -24490,6 +24490,24 @@ const NATIVE_RUNTIME_BUILTIN_VARIADIC_WRITEBACK_SOURCE: &str = concat!(
     "echo $unshift(...$args), \":\", count($items), \":\", $items[0], \":\", $items[1], \":\", $items[2], \":\", $items[3], \":\", $items[4][0];\n",
 );
 
+const NATIVE_IMPORTED_BUILTIN_VARIADIC_WRITEBACK_SOURCE: &str = concat!(
+    "<?php\n",
+    "namespace App\\Demo;\n",
+    "use function array_push as push_items, array_unshift as prepend_items;\n",
+    "function marker($label, $value) { echo $label; return $value; }\n",
+    "$items = [\"left\"];\n",
+    "$count = push_items($items, marker(\"A\", \"middle\"), [\"nested\"]);\n",
+    "echo $count, \":\", $items[0], \":\", $items[1], \":\", $items[2][0], \"|\";\n",
+    "$args = [];\n",
+    "$args[] =& $items;\n",
+    "$args[] = \"zero\";\n",
+    "$args[] = \"start\";\n",
+    "$count = prepend_items(...$args);\n",
+    "echo $count, \":\", $items[0], \":\", $items[1], \":\", $items[2], \":\", $items[3], \":\", $items[4][0], \"|\";\n",
+    "$count = push_items($items, ...[\"right\", \"tail\"]);\n",
+    "echo $count, \":\", $items[5], \":\", $items[6];\n",
+);
+
 const NATIVE_DYNAMIC_BUILTIN_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "$len = \"strlen\";\n",
@@ -25822,6 +25840,33 @@ fn native_executable_c_source_lowers_runtime_builtin_variadic_writeback_through_
             && !source.contains("ByReferenceArgumentWriteback")
             && !source.contains("phpc_native_value_dynamic_call_name_matches"),
         "runtime variadic by-reference builtin callables should avoid exact-name dynamic ladders and old blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_imported_builtin_variadic_writeback_through_callable_arguments(
+) {
+    let program = parse(NATIVE_IMPORTED_BUILTIN_VARIADIC_WRITEBACK_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_call_arguments_push_reference_and_free")
+            && body.contains("phpc_native_call_arguments_mark_finalized_variadic")
+            && body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && body.contains("materialized_variadic_parameter_name")
+            && body.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "imported direct variadic by-reference builtins should share runtime builtin source-call metadata, reference owner slots, and materialized spread finalization:\n{source}"
+    );
+    assert!(
+        !source.contains("spread operands need a materialized-entry producer")
+            && !source.contains("unsupported runtime callable builtin families")
+            && !source.contains("ByReferenceArgumentWriteback")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches"),
+        "imported direct variadic by-reference builtins should not use old exact imported split blockers or generated name ladders:\n{source}"
     );
 }
 
@@ -29624,6 +29669,37 @@ fn emit_exe_links_and_runs_runtime_builtin_variadic_writeback_program() {
     assert_eq!(
         run.stdout,
         b"3:3:left:middle:nested|5:5:zero:start:left:middle:nested"
+    );
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_imported_builtin_variadic_writeback_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "imported_builtin_variadic_writeback_arguments",
+        NATIVE_IMPORTED_BUILTIN_VARIADIC_WRITEBACK_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native imported builtin variadic writeback executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"A3:left:middle:nested|5:zero:start:left:middle:nested|7:right:tail"
     );
     assert_eq!(run.stderr, b"");
 
