@@ -31045,7 +31045,16 @@ impl CGenerator {
         &self,
         items: &[ArrayItem],
         arg_count: Option<usize>,
+        require_param_names: bool,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        if let Some(identities) = self.native_callable_identities_for_callable_array_items(items) {
+            return self.callable_value_source_call_contract_from_identities(
+                identities,
+                arg_count,
+                require_param_names,
+            );
+        }
+
         let (target, method) = self.native_callable_array_target_and_method(items)?;
         let method_name = self.native_callable_literal_method_name(method)?;
         let access_context = Self::current_declared_class_access_context(
@@ -31107,7 +31116,11 @@ impl CGenerator {
         require_param_names: bool,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
         if let Expr::Array { items, .. } = expr {
-            return self.callable_array_source_call_signature_contract_for_items(items, arg_count);
+            return self.callable_array_source_call_signature_contract_for_items(
+                items,
+                arg_count,
+                require_param_names,
+            );
         }
 
         self.callable_value_source_call_contract_from_identities(
@@ -40782,9 +40795,10 @@ impl CGenerator {
         callee: &Expr,
         args: &[Expr],
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
-        self.callable_object_source_call_signature_contract_for_arg_count(
+        self.callable_object_source_call_signature_contract_for_arg_count_with_options(
             callee,
             native_source_call_arg_count_for_args(args),
+            call_arguments_have_named(args) || call_arguments_have_spread(args),
         )
     }
 
@@ -40792,6 +40806,17 @@ impl CGenerator {
         &self,
         callee: &Expr,
         arg_count: Option<usize>,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        self.callable_object_source_call_signature_contract_for_arg_count_with_options(
+            callee, arg_count, false,
+        )
+    }
+
+    fn callable_object_source_call_signature_contract_for_arg_count_with_options(
+        &self,
+        callee: &Expr,
+        arg_count: Option<usize>,
+        require_param_names: bool,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
         let facts = self.native_value_facts_for_expr(callee)?;
         let object = facts.object.as_ref()?;
@@ -40801,6 +40826,16 @@ impl CGenerator {
                 "__invoke",
                 arg_count,
                 NativeSourceCallAccessContext::ObjectReceiver,
+            );
+        }
+
+        if let Some(identities) =
+            self.native_callable_identities_for_invokable_object_facts(facts.clone())
+        {
+            return self.callable_value_source_call_contract_from_identities(
+                identities,
+                arg_count,
+                require_param_names,
             );
         }
 
@@ -63730,10 +63765,7 @@ mod tests {
             "}\n",
         ))
         .unwrap();
-        let mut generator = CGenerator {
-            uses_native_string_helpers: true,
-            ..CGenerator::default()
-        };
+        let mut generator = CGenerator::default();
         generator
             .register_top_level_declared_traits(&program.statements)
             .unwrap();
@@ -65280,7 +65312,10 @@ mod tests {
             "<?php\nfunction read_request() { return $_GET[\"id\"]; }\nfunction direct_relay() { return read_request(); }\n",
         )
         .unwrap();
-        let mut generator = CGenerator::default();
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            ..CGenerator::default()
+        };
         generator
             .register_top_level_user_functions(&program.statements)
             .unwrap();
@@ -70870,6 +70905,105 @@ echo $call("Ada");
         };
         assert_eq!(plan.params.len(), 1);
         assert_eq!(plan.params[0].name, "string");
+    }
+
+    #[test]
+    fn callable_array_and_object_identities_feed_finite_source_call_contract() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "function callable_contract_fn($string) { return $string; }\n",
+            "class CallableContractBox {\n",
+            "    public static function stat($string) { return $string; }\n",
+            "    public function inst($string) { return $string; }\n",
+            "    public function __invoke($string) { return $string; }\n",
+            "}\n",
+        ))
+        .expect("callable array/object contract fixture parses");
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_user_functions(&program.statements)
+            .expect("callable contract function registers");
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .expect("callable contract class registers");
+
+        let class_key = CGenerator::declared_class_key("CallableContractBox");
+        let class = generator
+            .declared_classes
+            .get(&class_key)
+            .expect("callable contract class metadata")
+            .clone();
+        let object_facts =
+            CNativeValueFacts::object(CNativeObjectFacts::for_declared_class(class_key, &class))
+                .expect("callable object facts");
+        generator
+            .native_value_variable_facts
+            .insert("object".to_string(), object_facts.clone());
+        generator
+            .native_value_variable_facts
+            .insert("invokable".to_string(), object_facts);
+
+        let span = test_span();
+        let static_array = callable_array_expr(
+            Expr::ClassNameConstant {
+                class_name: "CallableContractBox".to_string(),
+                span,
+            },
+            Expr::String("stat".to_string(), span),
+        );
+        let object_array = callable_array_expr(
+            test_variable_expr("object"),
+            Expr::String("inst".to_string(), span),
+        );
+        let callee = Expr::Ternary {
+            condition: Box::new(Expr::Bool(true, span)),
+            if_true: Box::new(Expr::String("callable_contract_fn".to_string(), span)),
+            if_false: Box::new(Expr::Ternary {
+                condition: Box::new(Expr::Bool(false, span)),
+                if_true: Box::new(static_array),
+                if_false: Box::new(Expr::Ternary {
+                    condition: Box::new(Expr::Bool(false, span)),
+                    if_true: Box::new(object_array),
+                    if_false: Box::new(test_variable_expr("invokable")),
+                    span,
+                }),
+                span,
+            }),
+            span,
+        };
+        let args = vec![Expr::NamedArgument {
+            name: "string".to_string(),
+            expr: Box::new(Expr::String("value".to_string(), span)),
+            span,
+        }];
+
+        let contract = generator
+            .callable_value_source_call_signature_contract_for_args(&callee, &args)
+            .expect("compatible function/array/object family should normalize centrally");
+
+        assert_eq!(contract.candidate_count, 4);
+        assert_eq!(contract.arity_compatible_count, 4);
+        assert_eq!(
+            contract.availability,
+            NativeMethodStaticSignatureAvailability::Known(CScopedCallableStringSignature {
+                fixed_param_by_reference: vec![false],
+                returns_by_reference: false,
+            })
+        );
+        let NativeMethodStaticSourceCallArgumentStrategy::Frame(plan) = contract.argument_strategy
+        else {
+            panic!("callable array/object contract should publish a shared frame plan");
+        };
+        assert_eq!(
+            plan.params
+                .iter()
+                .map(|param| param.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["string"]
+        );
     }
 
     #[test]

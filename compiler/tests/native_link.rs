@@ -25939,10 +25939,20 @@ const NATIVE_RUNTIME_CALLABLE_VARIABLE_MIXED_FAMILY_SIGNATURE_SOURCE: &str = con
     "    return \"F\" . $first . $second . ($tail[\"extra\"] ?? \"\") . ($tail[0] ?? \"\");\n",
     "}\n",
     "function mixed_family_signature_string($string) { return \"f\" . $string; }\n",
+    "class MixedFamilySignatureCallableBox {\n",
+    "    public static function stat($string) { return \"s\" . $string; }\n",
+    "    public function inst($string) { return \"i\" . $string; }\n",
+    "    public function __invoke($string) { return \"o\" . $string; }\n",
+    "}\n",
     "$call = \"mixed_family_signature_fn\";\n",
     "echo $call(...[\"second\" => mixed_family_signature_marker(\"A\", \"2\"), \"first\" => mixed_family_signature_marker(\"B\", \"1\"), \"extra\" => mixed_family_signature_marker(\"C\", \"E\")]), \"|\";\n",
     "$stringCall = isset($_GET[\"upper\"]) ? \"strtoupper\" : \"mixed_family_signature_string\";\n",
-    "echo $stringCall(...[\"string\" => mixed_family_signature_marker(\"D\", \"go\")]);\n",
+    "echo $stringCall(...[\"string\" => mixed_family_signature_marker(\"D\", \"go\")]), \"|\";\n",
+    "$box = new MixedFamilySignatureCallableBox();\n",
+    "$mixedCall = isset($_GET[\"fn\"]) ? \"mixed_family_signature_string\" : (isset($_GET[\"stat\"]) ? [MixedFamilySignatureCallableBox::class, \"stat\"] : $box);\n",
+    "echo $mixedCall(...[\"string\" => mixed_family_signature_marker(\"E\", \"hi\")]), \"|\";\n",
+    "$arrayCall = isset($_GET[\"static\"]) ? [MixedFamilySignatureCallableBox::class, \"stat\"] : [$box, \"inst\"];\n",
+    "echo $arrayCall(...[\"string\" => mixed_family_signature_marker(\"G\", \"lo\")]);\n",
 );
 
 const NATIVE_SPREAD_VARIADIC_DESCRIPTOR_CLOSURE_ARGUMENT_SOURCE: &str = concat!(
@@ -27349,7 +27359,7 @@ fn native_executable_c_source_lowers_runtime_callable_variable_mixed_family_same
             && body.contains("phpc_NativeCallArgumentsHandle dynamic_callable_args_")
             && body.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
             && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
-        "same-signature mixed generated/builtin callable families should use the central finite identity source-call contract:\n{source}"
+        "same-signature mixed generated/builtin/callable-array/callable-object families should use the central finite identity source-call contract:\n{source}"
     );
     assert!(
         !source.contains("spread operands need a materialized-entry producer")
@@ -30084,7 +30094,7 @@ fn emit_exe_links_and_runs_runtime_callable_variable_mixed_family_same_signature
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(run.stdout, b"ABCF12E|Dfgo");
+    assert_eq!(run.stdout, b"ABCF12E|Dfgo|Eohi|Gilo");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
