@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 21:10 CEST
+Updated: 2026-05-27 21:12 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,14 +19,31 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `ba0dcfad` lowers generated-C unqualified
-namespaced calls through PHP's local-function-before-global-builtin fallback.
-The compiler now preserves namespace-local user functions as direct calls while
-allowing supported runtime-callable builtins such as `strlen()` and
-`strtolower()` to fall back through the shared callable lookup/invoke boundary
-when no namespaced declaration shadows them. Qualified imports, unsupported
-builtin aliases, dynamic callables, broader namespace edge cases, and LLVM/ASM
-namespace-call parity remain blocked.
+Latest accounted source capability: `0b6cafd2` exposes the resolved
+filesystem source path when runtime include/require registry misses hit an
+existing PHP source. The runtime now returns `SOURCE_LOAD_REQUIRED` with an
+owned `resolved_path` byte buffer, generated C frees that buffer on no-match
+paths, and generated user-function frames receive include registry/source
+context so SPL autoload callbacks that perform include/require reach the shared
+source-loader boundary. Arbitrary runtime PHP parsing/execution, caller include
+scope, declaration activation, once identity, return/exit propagation, and
+full autoload/source diagnostics remain blocked.
+
+Recent source commit `0b6cafd2` advances the runtime source-loader ABI without
+adding a parser, Composer/PSR adapter, class-prefix map, generated source
+table, exact path recognizer, or fake declaration activation. Runtime no-match
+diagnostics now distinguish missing files from existing filesystem sources and
+carry the concrete resolved path from include-path or source-relative search.
+Generated C defines and frees the new no-match `resolved_path` field, and
+autoload callback include tests prove existing source files reach the shared
+loader-required diagnostic before the current callable-frame fatal boundary.
+Focused gates covered runtime no-match diagnostics, runtime include-unit
+registry lookup, generated-C source proof, autoload callback source proof,
+existing include/require linked executable regressions, the full native
+include/require boundary suite, compile checking, formatting, and diff checks.
+Primary gate log:
+`state/logs/phpc-primary-runtime-source-loader-2047aaab-20260527.gates.log`
+sha256 `f0648d252ba70436709d4885778c255c9b0ad83949fc847d14933a86c4f2b718`.
 
 Recent source commit `ba0dcfad` advances generated-C function namespace
 fallback without adding exact source recognizers, one-namespace ladders,
