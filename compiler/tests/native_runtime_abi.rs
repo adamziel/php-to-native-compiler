@@ -27,6 +27,8 @@ use php_runtime::{
     phpc_native_diagnostic_result_operation_blocker_list_and_free,
     phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free,
     phpc_native_diagnostic_result_report_stderr_list_and_free,
+    phpc_native_diagnostic_result_terminal_kind,
+    phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free,
     phpc_native_diagnostic_result_terminal_value_transfer_cleanup_and_free,
     phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free,
     phpc_native_string_free, phpc_native_value_cast_result, NativeDiagnosticHandle,
@@ -49,7 +51,8 @@ use php_runtime::{
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_LVALUE_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_RMW_LVALUE_OPERAND_LIST,
-    PHPC_NATIVE_DIAGNOSTIC_OPERATION_VALUE_OPERAND_LIST,
+    PHPC_NATIVE_DIAGNOSTIC_OPERATION_VALUE_OPERAND_LIST, PHPC_NATIVE_TERMINAL_KIND_EXIT,
+    PHPC_NATIVE_TERMINAL_KIND_RETURN, PHPC_NATIVE_TERMINAL_KIND_THROW,
 };
 
 const STRING_INT_IR_SOURCE: &str = "<?php\n$payload = \"A\\0bA\\0b\";\necho strcasecmp($payload, \"a\\0B\");\necho strcmp($payload, \"A\\0c\");\necho strncmp($payload, \"A\\0bZ\", \"3\");\necho strncasecmp($payload, \"a\\0Bz\", 3);\necho ord(\"A\");\necho crc32($payload);\n";
@@ -115,6 +118,14 @@ fn native_array_string_cast_diagnostic_result_pair(
         unsafe { phpc_native_diagnostic_result_from_diagnostic_and_free(cast.diagnostic) };
     let value = phpc_native_diagnostic_result_from_value(cast.value);
     (diagnostic, value)
+}
+
+fn native_terminal_kind_cases() -> [(u8, &'static str); 3] {
+    [
+        (PHPC_NATIVE_TERMINAL_KIND_RETURN, "return"),
+        (PHPC_NATIVE_TERMINAL_KIND_THROW, "throw"),
+        (PHPC_NATIVE_TERMINAL_KIND_EXIT, "exit"),
+    ]
 }
 
 #[test]
@@ -950,6 +961,215 @@ fn native_diagnostic_result_terminal_value_transfer_blocks_missing_terminal_or_c
     assert!(message.contains("control-transfer cleanup list"));
     assert!(message.contains("result ownership at operand 0"));
     unsafe { phpc_native_diagnostic_result_free(missing_cleanup) };
+}
+
+#[test]
+fn native_diagnostic_result_terminal_kind_transfer_sequences_cleanup_for_all_kinds() {
+    for (terminal_kind, label) in native_terminal_kind_cases() {
+        let terminal_result = phpc_native_diagnostic_result_from_value(
+            NativeValueHandle::from_value(Value::String(format!("{label}-terminal"))),
+        );
+        let (cleanup_warning, cleanup_value) = native_array_string_cast_diagnostic_result_pair();
+        let cleanup = [
+            cleanup_value,
+            phpc_native_diagnostic_result_null(),
+            cleanup_warning,
+        ];
+        let transferred = unsafe {
+            phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free(
+                terminal_kind,
+                terminal_result,
+                cleanup.as_ptr(),
+                cleanup.len(),
+            )
+        };
+
+        assert!(unsafe { phpc_native_diagnostic_result_has_value(transferred) });
+        assert!(!unsafe { phpc_native_diagnostic_result_can_continue(transferred) });
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_result_terminal_kind(transferred) },
+            terminal_kind
+        );
+        assert!(unsafe { phpc_native_diagnostic_result_list_contains_terminal(&transferred, 1) });
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_result_diagnostic_count(transferred) },
+            1
+        );
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_result_diagnostic_severity_at(transferred, 0) },
+            NativeDiagnosticSeverity::Warning.tag()
+        );
+        unsafe { phpc_native_diagnostic_result_free(transferred) };
+    }
+}
+
+#[test]
+fn native_diagnostic_result_terminal_kind_transfer_releases_value_after_terminal_cleanup() {
+    for (terminal_kind, label) in native_terminal_kind_cases() {
+        let terminal_result = phpc_native_diagnostic_result_from_value(
+            NativeValueHandle::from_value(Value::String(format!("{label}-masked"))),
+        );
+        let (before_terminal_warning, before_terminal_value) =
+            native_array_string_cast_diagnostic_result_pair();
+        let terminal_cleanup = native_diagnostic_result_blocker(
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_CONTROL_FLOW_OPERAND_LIST,
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+            21,
+        );
+        let skipped_after_terminal = phpc_native_diagnostic_result_from_value(
+            NativeValueHandle::from_value(Value::String("skipped".to_string())),
+        );
+        let cleanup = [
+            before_terminal_value,
+            before_terminal_warning,
+            terminal_cleanup,
+            skipped_after_terminal,
+        ];
+        let transferred = unsafe {
+            phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free(
+                terminal_kind,
+                terminal_result,
+                cleanup.as_ptr(),
+                cleanup.len(),
+            )
+        };
+
+        assert!(!unsafe { phpc_native_diagnostic_result_has_value(transferred) });
+        assert!(!unsafe { phpc_native_diagnostic_result_can_continue(transferred) });
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_result_terminal_kind(transferred) },
+            0
+        );
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_result_diagnostic_count(transferred) },
+            2
+        );
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_result_diagnostic_severity_at(transferred, 1) },
+            NativeDiagnosticSeverity::Blocker.tag()
+        );
+        let terminal_message = runtime_result_diagnostic_message(transferred, 1);
+        assert!(terminal_message.contains("control-flow operand list"));
+        assert!(terminal_message.contains("statement evaluation cleanup at operand 21"));
+        unsafe { phpc_native_diagnostic_result_free(transferred) };
+    }
+}
+
+#[test]
+fn native_diagnostic_result_terminal_kind_transfer_blocks_missing_terminal_or_kind_ownership() {
+    for (terminal_kind, label) in native_terminal_kind_cases() {
+        let missing_terminal = unsafe {
+            phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free(
+                terminal_kind,
+                phpc_native_diagnostic_result_null(),
+                std::ptr::null(),
+                0,
+            )
+        };
+        assert!(!unsafe { phpc_native_diagnostic_result_has_value(missing_terminal) });
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_result_terminal_kind(missing_terminal) },
+            0
+        );
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_result_diagnostic_severity_at(missing_terminal, 0) },
+            NativeDiagnosticSeverity::Blocker.tag()
+        );
+        let message = runtime_result_diagnostic_message(missing_terminal, 0);
+        assert!(message.contains(&format!("{label} terminal value transfer")));
+        assert!(message.contains(&format!("{label} terminal value ownership at operand 0")));
+        unsafe { phpc_native_diagnostic_result_free(missing_terminal) };
+    }
+
+    let terminal_result = phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(
+        Value::String("invalid-kind".to_string()),
+    ));
+    let cleanup = [phpc_native_diagnostic_result_from_value(
+        NativeValueHandle::from_value(Value::String("cleanup".to_string())),
+    )];
+    let invalid_kind = unsafe {
+        phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free(
+            99,
+            terminal_result,
+            cleanup.as_ptr(),
+            cleanup.len(),
+        )
+    };
+    assert!(!unsafe { phpc_native_diagnostic_result_has_value(invalid_kind) });
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_terminal_kind(invalid_kind) },
+        0
+    );
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_diagnostic_severity_at(invalid_kind, 0) },
+        NativeDiagnosticSeverity::Blocker.tag()
+    );
+    let message = runtime_result_diagnostic_message(invalid_kind, 0);
+    assert!(message.contains("terminal kind transfer"));
+    assert!(message.contains("return, throw, or exit terminal kind tag at operand 0"));
+    unsafe { phpc_native_diagnostic_result_free(invalid_kind) };
+}
+
+#[test]
+fn native_diagnostic_result_terminal_kind_report_sinks_stop_without_echoing_terminal_values() {
+    for (terminal_kind, label) in native_terminal_kind_cases() {
+        let before_terminal = phpc_native_diagnostic_result_from_value(
+            NativeValueHandle::from_value(Value::String(format!("{label}-before"))),
+        );
+        let terminal_result = phpc_native_diagnostic_result_from_value(
+            NativeValueHandle::from_value(Value::String(format!("{label}-terminal"))),
+        );
+        let terminal_result = unsafe {
+            phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free(
+                terminal_kind,
+                terminal_result,
+                std::ptr::null(),
+                0,
+            )
+        };
+        let skipped_after_terminal = phpc_native_diagnostic_result_from_value(
+            NativeValueHandle::from_value(Value::String(format!("{label}-skipped"))),
+        );
+        let results = [before_terminal, terminal_result, skipped_after_terminal];
+        assert_eq!(
+            unsafe {
+                phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free(
+                    results.as_ptr(),
+                    results.len(),
+                )
+            },
+            format!("{label}-before").len()
+        );
+
+        let (warning, warning_value) = native_array_string_cast_diagnostic_result_pair();
+        let terminal_result = phpc_native_diagnostic_result_from_value(
+            NativeValueHandle::from_value(Value::String(format!("{label}-stderr-terminal"))),
+        );
+        let terminal_result = unsafe {
+            phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free(
+                terminal_kind,
+                terminal_result,
+                std::ptr::null(),
+                0,
+            )
+        };
+        let skipped_warning = native_diagnostic_result_blocker(
+            PHPC_NATIVE_DIAGNOSTIC_OPERATION_CALL_ARGUMENT_LIST,
+            PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
+            9,
+        );
+        let expected_stderr_written = runtime_result_diagnostic_message(warning, 0).len();
+        let results = [warning_value, warning, terminal_result, skipped_warning];
+        assert_eq!(
+            unsafe {
+                phpc_native_diagnostic_result_report_stderr_list_and_free(
+                    results.as_ptr(),
+                    results.len(),
+                )
+            },
+            expected_stderr_written
+        );
+    }
 }
 
 #[test]

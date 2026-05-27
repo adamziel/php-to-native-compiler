@@ -47,7 +47,8 @@ use php_runtime::{
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_REFERENCE_BINDING_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_RMW_LVALUE_OPERAND_LIST,
     PHPC_NATIVE_DIAGNOSTIC_OPERATION_STATEMENT_OPERAND_LIST,
-    PHPC_NATIVE_DIAGNOSTIC_OPERATION_VALUE_OPERAND_LIST,
+    PHPC_NATIVE_DIAGNOSTIC_OPERATION_VALUE_OPERAND_LIST, PHPC_NATIVE_TERMINAL_KIND_EXIT,
+    PHPC_NATIVE_TERMINAL_KIND_RETURN, PHPC_NATIVE_TERMINAL_KIND_THROW,
 };
 
 const MAX_KNOWN_INT_VALUES: usize = 4;
@@ -253,6 +254,25 @@ const NATIVE_ARRAY_LVALUE_SORT_UKSORT_TAG: u8 = 10;
 enum NativeCallBackend {
     Llvm,
     Assembly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+enum NativeTerminalKind {
+    Return,
+    Throw,
+    Exit,
+}
+
+#[allow(dead_code)]
+impl NativeTerminalKind {
+    fn abi_tag(self) -> u8 {
+        match self {
+            Self::Return => PHPC_NATIVE_TERMINAL_KIND_RETURN,
+            Self::Throw => PHPC_NATIVE_TERMINAL_KIND_THROW,
+            Self::Exit => PHPC_NATIVE_TERMINAL_KIND_EXIT,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -670,6 +690,7 @@ fn llvm_native_diagnostic_result_declarations() -> &'static str {
         "declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_from_value(%phpc.NativeValueHandle)\n",
         "declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_from_diagnostic_and_free(%phpc.NativeDiagnosticHandle)\n",
         "declare i1 @phpc_native_diagnostic_result_can_continue(%phpc.NativeDiagnosticResult)\n",
+        "declare i8 @phpc_native_diagnostic_result_terminal_kind(%phpc.NativeDiagnosticResult)\n",
         "declare void @phpc_native_diagnostic_result_free(%phpc.NativeDiagnosticResult)\n",
     )
 }
@@ -680,6 +701,7 @@ fn llvm_native_diagnostic_result_consumer_declarations(usize_type: &str) -> Stri
          declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free(ptr, {usize_type})\n\
          declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_control_transfer_cleanup_and_free(ptr, {usize_type})\n\
          declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_terminal_value_transfer_cleanup_and_free(%phpc.NativeDiagnosticResult, ptr, {usize_type})\n\
+         declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free(i8, %phpc.NativeDiagnosticResult, ptr, {usize_type})\n\
          declare i1 @phpc_native_diagnostic_result_list_contains_terminal(ptr, {usize_type})\n\
          declare {usize_type} @phpc_native_diagnostic_result_report_stderr_list_and_free(ptr, {usize_type})\n\
          declare {usize_type} @phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free(ptr, {usize_type})\n"
@@ -696,6 +718,7 @@ fn c_native_diagnostic_result_declarations() -> &'static str {
         "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_from_value(phpc_NativeValueHandle value);\n",
         "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_from_diagnostic_and_free(phpc_NativeDiagnosticHandle diagnostic);\n",
         "extern bool phpc_native_diagnostic_result_can_continue(phpc_NativeDiagnosticResult result);\n",
+        "extern uint8_t phpc_native_diagnostic_result_terminal_kind(phpc_NativeDiagnosticResult result);\n",
         "extern bool phpc_native_diagnostic_result_list_contains_terminal(const phpc_NativeDiagnosticResult *results, size_t result_count);\n",
         "extern size_t phpc_native_diagnostic_result_report_stderr_list_and_free(const phpc_NativeDiagnosticResult *results, size_t result_count);\n",
         "extern size_t phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free(const phpc_NativeDiagnosticResult *results, size_t result_count);\n",
@@ -709,6 +732,7 @@ fn c_native_diagnostic_result_consumer_declarations() -> &'static str {
         "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_deferred_cleanup_blocker_list_and_free(const phpc_NativeDiagnosticResult *cleanup_results, size_t cleanup_result_count);\n",
         "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_control_transfer_cleanup_and_free(const phpc_NativeDiagnosticResult *cleanup_results, size_t cleanup_result_count);\n",
         "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_terminal_value_transfer_cleanup_and_free(phpc_NativeDiagnosticResult terminal_result, const phpc_NativeDiagnosticResult *cleanup_results, size_t cleanup_result_count);\n",
+        "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free(uint8_t terminal_kind, phpc_NativeDiagnosticResult terminal_result, const phpc_NativeDiagnosticResult *cleanup_results, size_t cleanup_result_count);\n",
     )
 }
 
@@ -15064,6 +15088,41 @@ impl LlvmGenerator {
         ))
     }
 
+    #[allow(dead_code)]
+    fn emit_native_diagnostic_result_terminal_kind_transfer(
+        &mut self,
+        terminal_kind: NativeTerminalKind,
+        terminal_result: &str,
+        cleanup_results: &[String],
+    ) -> String {
+        self.uses_native_diagnostic_result_consumers = true;
+        let first_operand = if cleanup_results.is_empty() {
+            "null".to_string()
+        } else {
+            let list_name = self.next_temp();
+            self.emit_native_diagnostic_result_list_storage(&list_name, cleanup_results);
+            list_name
+        };
+        let result = self.next_temp();
+        let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+        self.body.push(format!(
+            "{result} = call %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free(i8 {}, %phpc.NativeDiagnosticResult {terminal_result}, ptr {first_operand}, {usize_type} {})",
+            terminal_kind.abi_tag(),
+            cleanup_results.len()
+        ));
+        result
+    }
+
+    #[allow(dead_code)]
+    fn emit_native_diagnostic_result_terminal_kind_probe(&mut self, result: &str) -> String {
+        self.uses_native_diagnostic_result_consumers = true;
+        let terminal_kind = self.next_temp();
+        self.body.push(format!(
+            "{terminal_kind} = call i8 @phpc_native_diagnostic_result_terminal_kind(%phpc.NativeDiagnosticResult {result})"
+        ));
+        terminal_kind
+    }
+
     fn emit_native_diagnostic_result_report_sink(
         &mut self,
         sink: NativeDiagnosticResultReportSink,
@@ -17281,6 +17340,40 @@ impl CGenerator {
             &first_operand,
             results.len(),
         ))
+    }
+
+    #[allow(dead_code)]
+    fn emit_native_diagnostic_result_terminal_kind_transfer(
+        &mut self,
+        terminal_kind: NativeTerminalKind,
+        terminal_result: &str,
+        cleanup_results: &[String],
+    ) -> String {
+        self.uses_native_diagnostic_result_consumers = true;
+        let first_operand = if cleanup_results.is_empty() {
+            "NULL".to_string()
+        } else {
+            let list_name = self.next_native_name("diagnostic_result_operands");
+            self.emit_native_diagnostic_result_list_storage(&list_name, cleanup_results);
+            list_name
+        };
+        let result = self.next_native_name("terminal_kind_diagnostic_result");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticResult {result} = phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free({}, {terminal_result}, {first_operand}, {});",
+            terminal_kind.abi_tag(),
+            cleanup_results.len()
+        ));
+        result
+    }
+
+    #[allow(dead_code)]
+    fn emit_native_diagnostic_result_terminal_kind_probe(&mut self, result: &str) -> String {
+        self.uses_native_diagnostic_result_consumers = true;
+        let terminal_kind = self.next_native_name("terminal_kind");
+        self.body.push(format!(
+            "uint8_t {terminal_kind} = phpc_native_diagnostic_result_terminal_kind({result});"
+        ));
+        terminal_kind
     }
 
     fn emit_native_diagnostic_result_report_sink(
@@ -47717,12 +47810,16 @@ mod tests {
             .contains("@phpc_native_diagnostic_result_free"));
         assert!(llvm_native_diagnostic_result_declarations()
             .contains("@phpc_native_diagnostic_result_can_continue"));
+        assert!(llvm_native_diagnostic_result_declarations()
+            .contains("@phpc_native_diagnostic_result_terminal_kind"));
         assert!(c_native_diagnostic_result_type()
             .contains("typedef struct { void *ptr; } phpc_NativeDiagnosticResult"));
         assert!(c_native_diagnostic_result_declarations()
             .contains("phpc_native_diagnostic_result_free"));
         assert!(c_native_diagnostic_result_declarations()
             .contains("phpc_native_diagnostic_result_can_continue"));
+        assert!(c_native_diagnostic_result_declarations()
+            .contains("phpc_native_diagnostic_result_terminal_kind"));
     }
 
     #[test]
@@ -47861,6 +47958,8 @@ mod tests {
         assert!(llvm_native_diagnostic_result_consumer_declarations("i64")
             .contains("@phpc_native_diagnostic_result_terminal_value_transfer_cleanup_and_free"));
         assert!(llvm_native_diagnostic_result_consumer_declarations("i64")
+            .contains("@phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free"));
+        assert!(llvm_native_diagnostic_result_consumer_declarations("i64")
             .contains("@phpc_native_diagnostic_result_list_contains_terminal"));
         let echo_report = llvm.emit_native_diagnostic_result_report_sink(
             NativeDiagnosticResultReportSink::EchoStdout,
@@ -47917,6 +48016,8 @@ mod tests {
             .contains("phpc_native_diagnostic_result_control_transfer_cleanup_and_free"));
         assert!(c_native_diagnostic_result_consumer_declarations()
             .contains("phpc_native_diagnostic_result_terminal_value_transfer_cleanup_and_free"));
+        assert!(c_native_diagnostic_result_consumer_declarations()
+            .contains("phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free"));
         assert!(c_native_diagnostic_result_declarations()
             .contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"));
         assert!(c_native_diagnostic_result_declarations()
@@ -47930,6 +48031,91 @@ mod tests {
                 "phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"
             )
             && line.contains("NULL, 0")));
+    }
+
+    #[test]
+    fn native_diagnostic_result_terminal_kind_backend_surface_covers_return_throw_exit() {
+        let mut llvm = LlvmGenerator::default();
+        let cleanup_results = vec![
+            llvm.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::diagnostic(
+                NativeDiagnosticResultOperandSurface::Cleanup,
+                "%cleanup_diagnostic",
+            )),
+            llvm.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::null(
+                NativeDiagnosticResultOperandSurface::Cleanup,
+            )),
+        ];
+        for terminal_kind in [
+            NativeTerminalKind::Return,
+            NativeTerminalKind::Throw,
+            NativeTerminalKind::Exit,
+        ] {
+            let terminal_result =
+                llvm.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::value(
+                    NativeDiagnosticResultOperandSurface::Terminal,
+                    "%terminal_value",
+                ));
+            let transferred = llvm.emit_native_diagnostic_result_terminal_kind_transfer(
+                terminal_kind,
+                &terminal_result,
+                &cleanup_results,
+            );
+            let probed = llvm.emit_native_diagnostic_result_terminal_kind_probe(&transferred);
+            assert!(llvm.body.iter().any(|line| line.contains(&transferred)
+                && line.contains(
+                    "@phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free"
+                )
+                && line.contains(&format!("i8 {}", terminal_kind.abi_tag()))));
+            assert!(llvm.body.iter().any(|line| line.contains(&probed)
+                && line.contains("@phpc_native_diagnostic_result_terminal_kind")));
+        }
+        assert!(llvm.uses_native_diagnostic_result_producers);
+        assert!(llvm.uses_native_diagnostic_result_consumers);
+        assert!(llvm_native_diagnostic_result_declarations()
+            .contains("@phpc_native_diagnostic_result_terminal_kind"));
+        assert!(llvm_native_diagnostic_result_consumer_declarations("i64")
+            .contains("@phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free"));
+
+        let mut c = CGenerator::default();
+        let cleanup_results = vec![
+            c.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::diagnostic(
+                NativeDiagnosticResultOperandSurface::Cleanup,
+                "cleanup_diagnostic",
+            )),
+            c.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::null(
+                NativeDiagnosticResultOperandSurface::Cleanup,
+            )),
+        ];
+        for terminal_kind in [
+            NativeTerminalKind::Return,
+            NativeTerminalKind::Throw,
+            NativeTerminalKind::Exit,
+        ] {
+            let terminal_result =
+                c.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::value(
+                    NativeDiagnosticResultOperandSurface::Terminal,
+                    "terminal_value",
+                ));
+            let transferred = c.emit_native_diagnostic_result_terminal_kind_transfer(
+                terminal_kind,
+                &terminal_result,
+                &cleanup_results,
+            );
+            let probed = c.emit_native_diagnostic_result_terminal_kind_probe(&transferred);
+            assert!(c.body.iter().any(|line| line.contains(&transferred)
+                && line.contains(
+                    "phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free"
+                )
+                && line.contains(&format!("{},", terminal_kind.abi_tag()))));
+            assert!(c.body.iter().any(|line| line.contains(&probed)
+                && line.contains("phpc_native_diagnostic_result_terminal_kind")));
+        }
+        assert!(c.uses_native_diagnostic_result_producers);
+        assert!(c.uses_native_diagnostic_result_consumers);
+        assert!(c_native_diagnostic_result_declarations()
+            .contains("phpc_native_diagnostic_result_terminal_kind"));
+        assert!(c_native_diagnostic_result_consumer_declarations()
+            .contains("phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free"));
     }
 
     #[test]

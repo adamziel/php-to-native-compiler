@@ -64,6 +64,18 @@ pub enum NativeCallResultStatus {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeTerminalKind {
+    Return = 1,
+    Throw = 2,
+    Exit = 3,
+}
+
+pub const PHPC_NATIVE_TERMINAL_KIND_RETURN: u8 = NativeTerminalKind::Return as u8;
+pub const PHPC_NATIVE_TERMINAL_KIND_THROW: u8 = NativeTerminalKind::Throw as u8;
+pub const PHPC_NATIVE_TERMINAL_KIND_EXIT: u8 = NativeTerminalKind::Exit as u8;
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeCallFrameConditionalHandoffFeature {
     ShortTernaryCondition = 0,
     NullCoalesceLeftOperand = 1,
@@ -1263,6 +1275,7 @@ struct NativeDiagnostic {
 struct NativeDiagnosticResultState {
     value: NativeValueHandle,
     diagnostics: Vec<NativeDiagnostic>,
+    terminal_kind: Option<NativeTerminalKind>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2331,6 +2344,7 @@ impl NativeDiagnosticResult {
         Self::from_state(NativeDiagnosticResultState {
             value,
             diagnostics: Vec::new(),
+            terminal_kind: None,
         })
     }
 
@@ -2342,6 +2356,7 @@ impl NativeDiagnosticResult {
         Self::from_state(NativeDiagnosticResultState {
             value: NativeValueHandle::null(),
             diagnostics,
+            terminal_kind: None,
         })
     }
 
@@ -2349,6 +2364,7 @@ impl NativeDiagnosticResult {
         Self::from_state(NativeDiagnosticResultState {
             value: NativeValueHandle::null(),
             diagnostics: vec![diagnostic],
+            terminal_kind: None,
         })
     }
 
@@ -2361,7 +2377,7 @@ impl NativeDiagnosticResult {
     }
 
     fn from_state(state: NativeDiagnosticResultState) -> Self {
-        if state.value.is_null() && state.diagnostics.is_empty() {
+        if state.value.is_null() && state.diagnostics.is_empty() && state.terminal_kind.is_none() {
             return Self::null();
         }
         Self {
@@ -2474,6 +2490,29 @@ impl NativeDiagnosticSeverity {
             3 => Some(Self::Error),
             4 => Some(Self::Blocker),
             _ => None,
+        }
+    }
+}
+
+impl NativeTerminalKind {
+    pub const fn tag(self) -> u8 {
+        self as u8
+    }
+
+    fn from_abi_tag(tag: u8) -> Option<Self> {
+        match tag {
+            PHPC_NATIVE_TERMINAL_KIND_RETURN => Some(Self::Return),
+            PHPC_NATIVE_TERMINAL_KIND_THROW => Some(Self::Throw),
+            PHPC_NATIVE_TERMINAL_KIND_EXIT => Some(Self::Exit),
+            _ => None,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Return => "return",
+            Self::Throw => "throw",
+            Self::Exit => "exit",
         }
     }
 }
@@ -20418,6 +20457,21 @@ pub unsafe extern "C" fn phpc_native_diagnostic_result_can_continue(
 
 /// # Safety
 ///
+/// `result` must be null or a diagnostic result returned by the runtime ABI and
+/// not yet freed. This helper only inspects the result; ownership remains with
+/// the caller. It returns zero when no terminal kind is attached.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_result_terminal_kind(
+    result: NativeDiagnosticResult,
+) -> u8 {
+    unsafe { result.as_ref() }
+        .and_then(|state| state.terminal_kind)
+        .map(NativeTerminalKind::tag)
+        .unwrap_or(0)
+}
+
+/// # Safety
+///
 /// `results` must point to `result_count` contiguous `NativeDiagnosticResult`
 /// values returned by the runtime ABI, or be null with a zero length. This
 /// helper only inspects the results; ownership remains with the caller. A null
@@ -20633,6 +20687,42 @@ pub unsafe extern "C" fn phpc_native_diagnostic_result_terminal_value_transfer_c
     }
 }
 
+/// # Safety
+///
+/// `terminal_kind` must be one of `PHPC_NATIVE_TERMINAL_KIND_RETURN`,
+/// `PHPC_NATIVE_TERMINAL_KIND_THROW`, or `PHPC_NATIVE_TERMINAL_KIND_EXIT`.
+/// `terminal_result` must be a `NativeDiagnosticResult` returned by the runtime
+/// ABI and not yet freed. `cleanup_results` must point to
+/// `cleanup_result_count` contiguous `NativeDiagnosticResult` values returned by
+/// the runtime ABI, or be null with a zero length. This helper consumes the
+/// pending terminal result and every available cleanup result, attaches the
+/// terminal kind when cleanup sequencing stays non-terminal, and releases or
+/// replaces the terminal value when cleanup itself becomes terminal.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free(
+    terminal_kind: u8,
+    terminal_result: NativeDiagnosticResult,
+    cleanup_results: *const NativeDiagnosticResult,
+    cleanup_result_count: usize,
+) -> NativeDiagnosticResult {
+    let Some(terminal_kind) = NativeTerminalKind::from_abi_tag(terminal_kind) else {
+        unsafe { phpc_native_diagnostic_result_free(terminal_result) };
+        unsafe { native_diagnostic_result_free_result_list(cleanup_results, cleanup_result_count) };
+        return NativeDiagnosticResult::from_diagnostic(
+            native_diagnostic_result_terminal_kind_requirement_diagnostic(),
+        );
+    };
+
+    unsafe {
+        native_diagnostic_result_terminal_kind_transfer_cleanup_and_free(
+            terminal_kind,
+            terminal_result,
+            cleanup_results,
+            cleanup_result_count,
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum NativeDiagnosticResultReportMode {
     DiagnosticsOnly,
@@ -20672,10 +20762,11 @@ unsafe fn native_diagnostic_result_report_list_and_free(
             break;
         };
 
-        let terminal = state
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.severity.is_terminal());
+        let terminal = state.terminal_kind.is_some()
+            || state
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.severity.is_terminal());
         for diagnostic in &state.diagnostics {
             written += native_diagnostic_report_stderr(diagnostic);
         }
@@ -20734,23 +20825,14 @@ unsafe fn native_diagnostic_result_echo_value_stdout(handle: NativeValueHandle) 
 unsafe fn native_diagnostic_result_can_continue(result: NativeDiagnosticResult) -> bool {
     unsafe { result.as_ref() }
         .map(|state| {
-            !state.value.is_null()
-                && !state
-                    .diagnostics
-                    .iter()
-                    .any(|diagnostic| diagnostic.severity.is_terminal())
+            !state.value.is_null() && !native_diagnostic_result_state_contains_terminal(state)
         })
         .unwrap_or(false)
 }
 
 unsafe fn native_diagnostic_result_contains_terminal(result: NativeDiagnosticResult) -> bool {
     unsafe { result.as_ref() }
-        .map(|state| {
-            state
-                .diagnostics
-                .iter()
-                .any(|diagnostic| diagnostic.severity.is_terminal())
-        })
+        .map(native_diagnostic_result_state_contains_terminal)
         .unwrap_or(false)
 }
 
@@ -20857,6 +20939,7 @@ unsafe fn native_diagnostic_result_value_required_list_blocker_and_free(
     let mut sequenced = NativeDiagnosticResultState {
         value: NativeValueHandle::null(),
         diagnostics: Vec::new(),
+        terminal_kind: None,
     };
     let mut terminal = false;
 
@@ -20870,24 +20953,31 @@ unsafe fn native_diagnostic_result_value_required_list_blocker_and_free(
             break;
         };
 
-        let result_terminal = state
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.severity.is_terminal());
+        let result_has_terminal_diagnostic =
+            native_diagnostic_result_state_has_terminal_diagnostic(&state);
+        let result_terminal = native_diagnostic_result_state_contains_terminal(&state);
         if state.value.is_null() && !result_terminal {
             state
                 .diagnostics
                 .push(blocker.value_requirement_diagnostic(index));
         }
-        unsafe { phpc_native_value_free(state.value) };
+        if state.terminal_kind.is_some()
+            && !result_has_terminal_diagnostic
+            && !state.value.is_null()
+        {
+            unsafe { phpc_native_value_free(sequenced.value) };
+            sequenced.value = state.value;
+            sequenced.terminal_kind = state.terminal_kind;
+            state.value = NativeValueHandle::null();
+            state.terminal_kind = None;
+        } else {
+            unsafe { phpc_native_value_free(state.value) };
+            state.value = NativeValueHandle::null();
+            state.terminal_kind = None;
+        }
         sequenced.diagnostics.append(&mut state.diagnostics);
 
-        if result_terminal
-            || sequenced
-                .diagnostics
-                .iter()
-                .any(|diagnostic| diagnostic.severity.is_terminal())
-        {
+        if result_terminal || native_diagnostic_result_state_contains_terminal(&sequenced) {
             terminal = true;
             native_diagnostic_result_free_remaining(&results[(index + 1)..]);
             break;
@@ -20911,6 +21001,7 @@ unsafe fn native_diagnostic_result_control_transfer_cleanup_list_and_free(
     let mut sequenced = NativeDiagnosticResultState {
         value: NativeValueHandle::null(),
         diagnostics: Vec::new(),
+        terminal_kind: None,
     };
     unsafe {
         native_diagnostic_result_append_control_transfer_cleanup_and_free(
@@ -20927,10 +21018,45 @@ unsafe fn native_diagnostic_result_terminal_value_transfer_cleanup_and_free(
     cleanup_results: *const NativeDiagnosticResult,
     cleanup_result_count: usize,
 ) -> NativeDiagnosticResult {
+    unsafe {
+        native_diagnostic_result_terminal_transfer_cleanup_and_free(
+            None,
+            terminal_result,
+            cleanup_results,
+            cleanup_result_count,
+        )
+    }
+}
+
+unsafe fn native_diagnostic_result_terminal_kind_transfer_cleanup_and_free(
+    terminal_kind: NativeTerminalKind,
+    terminal_result: NativeDiagnosticResult,
+    cleanup_results: *const NativeDiagnosticResult,
+    cleanup_result_count: usize,
+) -> NativeDiagnosticResult {
+    unsafe {
+        native_diagnostic_result_terminal_transfer_cleanup_and_free(
+            Some(terminal_kind),
+            terminal_result,
+            cleanup_results,
+            cleanup_result_count,
+        )
+    }
+}
+
+unsafe fn native_diagnostic_result_terminal_transfer_cleanup_and_free(
+    terminal_kind: Option<NativeTerminalKind>,
+    terminal_result: NativeDiagnosticResult,
+    cleanup_results: *const NativeDiagnosticResult,
+    cleanup_result_count: usize,
+) -> NativeDiagnosticResult {
     let Some(mut terminal_state) = (unsafe { terminal_result.into_state() }) else {
         let sequenced = NativeDiagnosticResultState {
             value: NativeValueHandle::null(),
-            diagnostics: vec![native_diagnostic_result_terminal_value_requirement_diagnostic(0)],
+            diagnostics: vec![
+                native_diagnostic_result_terminal_value_requirement_diagnostic(terminal_kind, 0),
+            ],
+            terminal_kind: None,
         };
         unsafe {
             native_diagnostic_result_free_result_list(cleanup_results, cleanup_result_count);
@@ -20938,19 +21064,25 @@ unsafe fn native_diagnostic_result_terminal_value_transfer_cleanup_and_free(
         return NativeDiagnosticResult::from_state(sequenced);
     };
 
-    if native_diagnostic_result_state_contains_terminal(&terminal_state) {
+    if native_diagnostic_result_state_has_terminal_diagnostic(&terminal_state) {
         unsafe { native_diagnostic_result_free_result_list(cleanup_results, cleanup_result_count) };
         unsafe { phpc_native_value_free(terminal_state.value) };
         terminal_state.value = NativeValueHandle::null();
+        terminal_state.terminal_kind = None;
         return NativeDiagnosticResult::from_state(*terminal_state);
     }
 
     if terminal_state.value.is_null() {
         terminal_state
             .diagnostics
-            .push(native_diagnostic_result_terminal_value_requirement_diagnostic(0));
+            .push(native_diagnostic_result_terminal_value_requirement_diagnostic(terminal_kind, 0));
+        terminal_state.terminal_kind = None;
         unsafe { native_diagnostic_result_free_result_list(cleanup_results, cleanup_result_count) };
         return NativeDiagnosticResult::from_state(*terminal_state);
+    }
+
+    if let Some(terminal_kind) = terminal_kind {
+        terminal_state.terminal_kind = Some(terminal_kind);
     }
 
     let cleanup_terminal = unsafe {
@@ -20960,9 +21092,10 @@ unsafe fn native_diagnostic_result_terminal_value_transfer_cleanup_and_free(
             cleanup_result_count,
         )
     };
-    if cleanup_terminal {
+    if cleanup_terminal && native_diagnostic_result_state_has_terminal_diagnostic(&terminal_state) {
         unsafe { phpc_native_value_free(terminal_state.value) };
         terminal_state.value = NativeValueHandle::null();
+        terminal_state.terminal_kind = None;
     }
 
     NativeDiagnosticResult::from_state(*terminal_state)
@@ -20996,8 +21129,23 @@ unsafe fn native_diagnostic_result_append_control_transfer_cleanup_and_free(
             continue;
         };
 
+        let result_has_terminal_diagnostic =
+            native_diagnostic_result_state_has_terminal_diagnostic(&state);
         let result_terminal = native_diagnostic_result_state_contains_terminal(&state);
-        unsafe { phpc_native_value_free(state.value) };
+        if state.terminal_kind.is_some()
+            && !result_has_terminal_diagnostic
+            && !state.value.is_null()
+        {
+            unsafe { phpc_native_value_free(sequenced.value) };
+            sequenced.value = state.value;
+            sequenced.terminal_kind = state.terminal_kind;
+            state.value = NativeValueHandle::null();
+            state.terminal_kind = None;
+        } else {
+            unsafe { phpc_native_value_free(state.value) };
+            state.value = NativeValueHandle::null();
+            state.terminal_kind = None;
+        }
         sequenced.diagnostics.append(&mut state.diagnostics);
 
         if result_terminal {
@@ -21011,6 +21159,12 @@ unsafe fn native_diagnostic_result_append_control_transfer_cleanup_and_free(
 }
 
 fn native_diagnostic_result_state_contains_terminal(state: &NativeDiagnosticResultState) -> bool {
+    state.terminal_kind.is_some() || native_diagnostic_result_state_has_terminal_diagnostic(state)
+}
+
+fn native_diagnostic_result_state_has_terminal_diagnostic(
+    state: &NativeDiagnosticResultState,
+) -> bool {
     state
         .diagnostics
         .iter()
@@ -21053,13 +21207,27 @@ fn native_deferred_cleanup_blocker_result() -> NativeDiagnosticResult {
 }
 
 fn native_diagnostic_result_terminal_value_requirement_diagnostic(
+    terminal_kind: Option<NativeTerminalKind>,
     operand_index: usize,
 ) -> NativeDiagnostic {
+    let kind_prefix = terminal_kind
+        .map(|kind| format!("{} ", kind.label()))
+        .unwrap_or_default();
     NativeDiagnostic {
         severity: NativeDiagnosticSeverity::Blocker,
         message: format!(
-            "native diagnostic result terminal value transfer requires terminal value ownership at operand {operand_index}"
+            "native diagnostic result {kind_prefix}terminal value transfer requires {kind_prefix}terminal value ownership at operand {operand_index}"
         ),
+        source_location: None,
+    }
+}
+
+fn native_diagnostic_result_terminal_kind_requirement_diagnostic() -> NativeDiagnostic {
+    NativeDiagnostic {
+        severity: NativeDiagnosticSeverity::Blocker,
+        message:
+            "native diagnostic result terminal kind transfer requires return, throw, or exit terminal kind tag at operand 0"
+                .to_string(),
         source_location: None,
     }
 }
