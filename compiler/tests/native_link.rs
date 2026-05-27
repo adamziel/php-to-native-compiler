@@ -655,6 +655,18 @@ const NATIVE_DECLARED_CLASS_CONSTRUCTOR_SOURCE: &str = concat!(
     "echo $run->name, \":\", $run->tag, \"\\n\";\n",
 );
 
+const NATIVE_DECLARED_CLASS_NAMED_CONSTRUCTOR_ARGUMENT_SOURCE: &str = concat!(
+    "<?php\n",
+    "class NamedCtor {\n",
+    "    public $label;\n",
+    "    public function __construct($first, $second = \"B\", ...$rest) {\n",
+    "        $this->label = $first . \":\" . $second . \":\" . $rest[\"tail\"];\n",
+    "    }\n",
+    "}\n",
+    "$box = new NamedCtor(second: \"S\", first: \"F\", tail: \"T\");\n",
+    "echo $box->label, \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_DYNAMIC_CONSTRUCTOR_NEW_SOURCE: &str = concat!(
     "<?php\n",
     "class DefaultBox {\n",
@@ -2627,6 +2639,34 @@ fn emit_exe_links_and_runs_declared_class_constructor_program() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_declared_class_named_constructor_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "declared_class_named_constructor_argument",
+        NATIVE_DECLARED_CLASS_NAMED_CONSTRUCTOR_ARGUMENT_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run declared-class named-constructor-argument executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"F:S:T\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn emit_exe_links_and_runs_declared_class_dynamic_constructor_new_program() {
     if !has_cc() {
         return;
@@ -2886,8 +2926,7 @@ fn emit_exe_declared_class_constructor_value_return_reports_diagnostic() {
     assert_eq!(run.stdout, b"");
     let stderr = String::from_utf8_lossy(&run.stderr);
     assert!(
-        stderr.contains("native method dispatch for Box::__construct is not supported")
-            && stderr.contains("constructor value returns are not implemented"),
+        stderr.contains("constructor value returns are not implemented"),
         "stderr:\n{stderr}"
     );
 
@@ -5632,8 +5671,10 @@ fn native_executable_c_source_routes_declared_constructors_through_frame_dispatc
         "constructors should still allocate through the shared object ABI:\n{source}"
     );
     assert!(
-        body.contains("constructor_status") && body.contains("__construct"),
-        "new expressions should dispatch supported constructors through generated frames:\n{source}"
+        body.contains("phpc_native_constructor_allocation_invoke_value_with_access_context_diagnostic_and_free_scope_receiver_arguments")
+            && body.contains("constructor_args")
+            && source.contains("PHPC_NATIVE_CALLABLE_KIND_CONSTRUCTOR"),
+        "new expressions should dispatch supported constructors through the shared allocation-plus-invoke source-call carrier:\n{source}"
     );
     assert!(
         source.contains("phpc_native_value_object_property_mutation_operation_with_diagnostic")
@@ -5658,9 +5699,9 @@ fn native_executable_c_source_routes_dynamic_declared_constructors_through_frame
         "dynamic class-name new should match generated declared-class candidates through the shared class-name helper:\n{source}"
     );
     assert!(
-        body.matches("constructor_status").count() >= 4
+        body.matches("phpc_native_constructor_allocation_invoke_value_with_access_context_diagnostic_and_free_scope_receiver_arguments").count() >= 4
             && source.contains("phpc_NativeValueHandle phpc_this"),
-        "dynamic constructor new should dispatch matched public constructors through generated frames with $this:\n{source}"
+        "dynamic constructor new should dispatch matched public constructors through the shared allocation-plus-invoke source-call carrier with $this:\n{source}"
     );
     assert!(
         body.contains("phpc_native_value_new_declared_class_with_diagnostic")
@@ -5696,16 +5737,20 @@ fn native_executable_c_source_reports_constructor_value_returns_without_dropping
         "constructor value-return statements should leave a distinct frame status:\n{source}"
     );
     assert!(
-        body.contains("constructor_status")
-            && body.contains("== 2")
-            && body.contains("method_dispatch_reason_bytes"),
-        "constructor callers should diagnose value returns explicitly:\n{source}"
+        source.contains("phpc_call_status == 2")
+            && source.contains("phpc_native_call_result_from_diagnostic_and_free")
+            && source.contains("constructor value returns are not implemented"),
+        "constructor callable wrappers should carry value-return diagnostics explicitly:\n{source}"
     );
     assert!(
-        body.contains("phpc_native_value_free(constructor_result")
-            && body.contains("phpc_native_value_object_method_failure_with_diagnostic")
-            && body.contains("phpc_native_value_free(declared_class_object"),
-        "constructor value-return diagnostics must free the returned value and receiver instead of dropping through:\n{source}"
+        body.contains("phpc_native_constructor_allocation_invoke_value_with_access_context_diagnostic_and_free_scope_receiver_arguments")
+            && body.contains("constructor_invoke_diagnostic"),
+        "constructor callers should route value-return diagnostics through the shared allocation-plus-invoke carrier:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_free(phpc_call_result)")
+            && !body.contains("method_dispatch_reason_bytes"),
+        "constructor value-return diagnostics must free returned values without reviving direct method-dispatch diagnostics:\n{source}"
     );
     assert!(
         !source.contains("object-instantiation lowering rejects")

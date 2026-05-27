@@ -83,7 +83,7 @@ const LLVM_CONDITIONAL_REJECTION: &str = "LLVM conditional lowering rejects unsu
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, unsupported by-reference argument binding, and unsupported dynamic string-valued calls, until full callable lookup, full arity/type diagnostics, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value fixed/default/variadic direct, supported direct and compiler-known single-target by-reference frames, finite known-string dynamic, and runtime string-valued dynamic user-function frames";
-const NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION: &str = "named argument lowering is only implemented for compiler-known generated-C user-function and selected method/static source-call carriers; builtins, dynamic callables, constructors, and unsupported call families remain blocked until each consumer binds through shared source-order/parameter-order call-argument normalization";
+const NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION: &str = "named argument lowering is only implemented for compiler-known generated-C user-function, constructor, and selected method/static source-call carriers; builtins, dynamic callables, and unsupported call families remain blocked until each consumer binds through shared source-order/parameter-order call-argument normalization";
 const LLVM_STRING_PREDICATE_REJECTION: &str = "LLVM string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; lowerable LLVM and generated-native C str_starts_with(), str_ends_with(), and str_contains() operands route through the shared runtime contract";
 const ASSEMBLY_STRING_PREDICATE_REJECTION: &str = "assembly string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; generated-native C routes lowerable str_starts_with(), str_ends_with(), and str_contains() operands through the shared runtime contract";
 const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int/search builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), strpos(), substr_count(), ord(), and crc32() forms outside the reusable native string operation contracts, including unsupported arity, non-lowerable operands, nested call cleanup, references/copy-on-write, and exact native builtin diagnostics; lowerable LLVM and generated-native C string operands route through shared runtime contracts";
@@ -1273,10 +1273,28 @@ impl NativeInvokeResultTarget {
                     consumer,
                 )
             }
-            (Self::ConstructorAllocation, _) => {
+            (Self::ConstructorAllocation, NativeInvokeResultConsumer::OwnedResult) => {
+                NativeInvokeResultHelper::lookup_plus_invoke(
+                    "phpc_native_constructor_allocation_invoke_result_with_access_context_diagnostic_and_free_scope_receiver_arguments",
+                    consumer,
+                )
+            }
+            (Self::ConstructorAllocation, NativeInvokeResultConsumer::Value) => {
+                NativeInvokeResultHelper::lookup_plus_invoke(
+                    "phpc_native_constructor_allocation_invoke_value_with_access_context_diagnostic_and_free_scope_receiver_arguments",
+                    consumer,
+                )
+            }
+            (Self::ConstructorAllocation, NativeInvokeResultConsumer::Reference) => {
                 return NativeInvokeResultHelperSelection::Blocked(
                     NativeInvokeResultHelperBlocker::MissingConstructorAllocationAbi,
                 );
+            }
+            (Self::ConstructorAllocation, NativeInvokeResultConsumer::Discard) => {
+                NativeInvokeResultHelper::lookup_plus_invoke(
+                    "phpc_native_constructor_allocation_invoke_discard_with_access_context_diagnostic_and_free_scope_receiver_arguments",
+                    consumer,
+                )
             }
             (Self::ClosureArgumentHandle, NativeInvokeResultConsumer::OwnedResult) => {
                 NativeInvokeResultHelper::materialized(
@@ -20410,6 +20428,14 @@ impl CGenerator {
         ));
         definition.push_str(&format!("  {}\n", c_cleanup_sequence(&cleanup)));
         definition.push_str("  phpc_user_callable_call_depth -= 1;\n");
+        if method.decl.name.eq_ignore_ascii_case("__construct") {
+            definition.push_str("  if (phpc_call_status == 2) {\n");
+            definition.push_str("    if (phpc_call_result.ptr != NULL) { phpc_native_value_free(phpc_call_result); }\n");
+            definition.push_str("    static const uint8_t phpc_constructor_value_return_message[] = \"constructor value returns are not implemented\";\n");
+            definition.push_str("    phpc_NativeDiagnosticHandle phpc_constructor_value_return_diagnostic = phpc_native_diagnostic_from_message_bytes(phpc_constructor_value_return_message, sizeof(phpc_constructor_value_return_message) - 1);\n");
+            definition.push_str("    return phpc_native_call_result_from_diagnostic_and_free(phpc_constructor_value_return_diagnostic);\n");
+            definition.push_str("  }\n");
+        }
         definition.push_str("  if (phpc_call_status != 1 || phpc_call_result.ptr == NULL) { return (phpc_NativeCallResultHandle){0}; }\n");
         if method.decl.returns_by_reference {
             definition
@@ -21610,6 +21636,9 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeStringHandle phpc_native_static_method_scope_from_receiver_with_diagnostic_and_free(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle receiver, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_constructor_lookup_scope_with_access_context_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_constructor_lookup_scope_with_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeCallResultHandle phpc_native_constructor_allocation_invoke_result_with_access_context_diagnostic_and_free_scope_receiver_arguments(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeValueHandle receiver, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_constructor_allocation_invoke_value_with_access_context_diagnostic_and_free_scope_receiver_arguments(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeValueHandle receiver, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_constructor_allocation_invoke_discard_with_access_context_diagnostic_and_free_scope_receiver_arguments(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeValueHandle receiver, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str(
                     "extern void phpc_native_callable_free(phpc_NativeCallableHandle handle);\n",
                 );
@@ -21628,9 +21657,11 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_call_frame_read_receiver(phpc_NativeCallFrameHandle frame);\n");
                 output.push_str("extern phpc_NativeCallResultHandle phpc_native_call_result_from_value(phpc_NativeValueHandle value);\n");
                 output.push_str("extern phpc_NativeCallResultHandle phpc_native_call_result_from_reference(phpc_NativeReferenceHandle reference);\n");
+                output.push_str("extern phpc_NativeCallResultHandle phpc_native_call_result_from_diagnostic_and_free(phpc_NativeDiagnosticHandle diagnostic);\n");
                 output.push_str("extern void phpc_native_call_result_free(phpc_NativeCallResultHandle result);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_call_result_take_value_with_diagnostic_and_free(phpc_NativeCallResultHandle result, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_call_result_take_reference_with_diagnostic_and_free(phpc_NativeCallResultHandle result, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeDiagnosticHandle phpc_native_diagnostic_from_message_bytes(const uint8_t *ptr, size_t len);\n");
                 if self.uses_native_diagnostic_result_producers
                     || self.uses_native_diagnostic_result_consumers
                 {
@@ -22801,20 +22832,15 @@ impl CGenerator {
         let value = if let Some((constructor_class, constructor)) = constructor {
             let value =
                 self.materialize_declared_class_instantiation(class.clone(), failure_cleanup)?;
-            let constructor_failure_cleanup = format!(
-                "{}{}",
-                c_cleanup_sequence(&value.cleanup_after_use),
-                failure_cleanup
-            );
-            self.emit_declared_class_constructor_call(
-                &constructor_class.name,
+            let _ = constructor_class;
+            self.materialize_declared_class_constructor_source_call(
+                &class.name,
                 &constructor,
-                &value.handle,
+                value,
                 args,
                 span,
-                &constructor_failure_cleanup,
-            )?;
-            value
+                failure_cleanup,
+            )?
         } else {
             let constructor_args =
                 self.materialize_constructor_argument_value_array(args, failure_cleanup)?;
@@ -22875,17 +22901,21 @@ impl CGenerator {
                     &result,
                     &allocation_failure_cleanup,
                 )?;
-                let constructor_failure_cleanup = format!(
-                    "phpc_native_value_free({result}); {class_name_cleanup}{failure_cleanup}"
-                );
-                self.emit_declared_class_constructor_call(
-                    &constructor_class.name,
+                let constructor_failure_cleanup = format!("{class_name_cleanup}{failure_cleanup}");
+                let _ = constructor_class;
+                let constructor_result = self.materialize_declared_class_constructor_source_call(
+                    &class.name,
                     &constructor,
-                    &result,
+                    CNativeValueMaterialization {
+                        handle: result.clone(),
+                        cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+                    },
                     args,
                     span,
                     &constructor_failure_cleanup,
                 )?;
+                self.body
+                    .push(format!("{result} = {};", constructor_result.handle));
             } else {
                 let branch_failure_cleanup = format!("{class_name_cleanup}{failure_cleanup}");
                 let constructor_args = self
@@ -22987,72 +23017,93 @@ impl CGenerator {
         Ok(arguments)
     }
 
-    fn emit_declared_class_constructor_call(
+    fn materialize_declared_class_constructor_source_call(
         &mut self,
-        class_name: &str,
+        allocation_class_name: &str,
         constructor: &CDeclaredClassMethod,
-        receiver_handle: &str,
+        receiver: CNativeValueMaterialization,
         args: &[Expr],
         span: Span,
         failure_cleanup: &str,
-    ) -> CompileResult<()> {
-        self.uses_native_object_method_helpers = true;
-
+    ) -> CompileResult<CNativeValueMaterialization> {
         if !native_user_function_accepts_arg_count(&constructor.decl, args.len()) {
             self.emit_method_dispatch_failure(
-                receiver_handle,
+                &receiver.handle,
                 "__construct",
                 "argument count is outside the generated public constructor frame arity/default/variadic subset",
-                failure_cleanup,
+                &format!(
+                    "{}{}",
+                    c_cleanup_sequence(&receiver.cleanup_after_use),
+                    failure_cleanup
+                ),
                 "",
             );
-            return Ok(());
+            return Ok(receiver);
         }
 
-        let frame_arguments = self.materialize_declared_method_frame_arguments(
-            class_name,
-            constructor,
-            Some(receiver_handle),
-            args,
-            span,
+        let scope = self.emit_native_static_text_source_call_string_operand(
+            "constructor_called_scope",
+            allocation_class_name,
+        );
+        let target = self.emit_native_constructor_source_call_target_operands(
+            scope,
+            receiver,
+            NativeSourceCallAccessContext::External,
             failure_cleanup,
-            NativeCallCallee::ConstructorDispatch,
-        )?;
-        let (mut call_args, argument_cleanup) = frame_arguments.into_call_args_and_cleanup();
-        let status = self.next_native_name("constructor_status");
-        let result = self.next_native_name("constructor_result");
-        self.body.push(format!("int {status} = 0;"));
-        call_args.push(format!("&{status}"));
-        self.body.push(format!(
-            "phpc_NativeValueHandle {result} = {}({});",
-            constructor.c_name,
-            call_args.join(", ")
-        ));
-        let call_failure_cleanup = format!(
+        );
+        let binding_failure_cleanup = format!(
             "{}{}",
-            c_cleanup_sequence(&argument_cleanup),
+            c_cleanup_sequence(&target.cleanup_on_preinvoke_failure),
             failure_cleanup
         );
-        let error_exit = self.native_error_exit(&call_failure_cleanup);
-        self.body.push(format!("if ({status} == 2) {{"));
-        self.body.push(format!(
-            "  if ({result}.ptr != NULL) {{ phpc_native_value_free({result}); }}"
-        ));
-        self.emit_method_dispatch_failure(
-            receiver_handle,
-            "__construct",
-            "constructor value returns are not implemented",
-            &call_failure_cleanup,
-            "  ",
+        let arguments = self.emit_empty_native_source_call_arguments_handle(
+            "constructor_args",
+            &binding_failure_cleanup,
         );
-        self.body.push("}".to_string());
+        let call_cleanup =
+            format!("phpc_native_call_arguments_free({arguments}); {binding_failure_cleanup}");
+        self.emit_normalized_native_source_call_arguments(
+            &arguments,
+            &constructor.decl.params,
+            args,
+            span,
+            &call_cleanup,
+            NativeCallCallee::ConstructorDispatch,
+            "constructor source-call",
+        )?;
+        let binding = NativeSourceCallBindingOperands {
+            target,
+            arguments,
+            signature_selection: NativeSourceCallSignatureSelection::ScopedCallableString,
+        };
+        let invoke_diagnostic = self.next_native_name("constructor_invoke_diagnostic");
         self.body.push(format!(
-            "if ({status} != 1 || {result}.ptr == NULL) {{ {error_exit} }}"
+            "phpc_NativeDiagnosticHandle {invoke_diagnostic} = {{0}};"
         ));
-        self.body.push(format!("phpc_native_value_free({result});"));
-        self.body.extend(argument_cleanup);
+        let carrier = self.native_source_call_carrier(
+            NativeInvokeResultTarget::ConstructorAllocation,
+            NativeSourceCallResultConsumer::Value,
+            span,
+        )?;
+        let result = self
+            .emit_native_source_call_carrier_invocation(
+                carrier,
+                &binding.target.args,
+                &binding.arguments,
+                &invoke_diagnostic,
+                "constructor_object",
+            )
+            .expect("constructor value source-call carrier must produce a value handle");
+        self.body.extend(binding.target.cleanup_after_invocation);
+        self.emit_report_native_diagnostic(&invoke_diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
 
-        Ok(())
+        Ok(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        })
     }
 
     fn materialize_object_public_property_operation_expr(
@@ -23880,6 +23931,21 @@ impl CGenerator {
             })
             .collect::<Vec<_>>();
         for class in &classes {
+            let (class_bytes, class_len) = self
+                .emit_call_type_static_bytes("callable_allocatable_class_name_bytes", &class.name);
+            let class_handle = self.next_native_name("callable_allocatable_class_name");
+            let registered = self.next_native_name("callable_allocatable_class_registered");
+            self.body.push(format!(
+                "  phpc_NativeStringHandle {class_handle} = phpc_native_string_from_bytes({class_bytes}, {class_len});"
+            ));
+            self.body.push(format!(
+                "  bool {registered} = phpc_native_callable_table_register_allocatable_class_and_free({table}, {class_handle});"
+            ));
+            let registration_error_exit = self.native_error_exit(failure_cleanup);
+            self.body.push(format!(
+                "  if (!{registered}) {{ {registration_error_exit} }}"
+            ));
+
             if let Some(parent_key) = &class.parent_key {
                 let parent = self
                     .declared_classes
@@ -23909,7 +23975,11 @@ impl CGenerator {
             }
         }
         for class in classes {
-            for method in class.methods {
+            for method in class
+                .constructor
+                .into_iter()
+                .chain(class.methods.into_iter())
+            {
                 let (scope_bytes, scope_len) =
                     self.emit_call_type_static_bytes("callable_method_scope_bytes", &class.name);
                 let (name_bytes, name_len) = self
@@ -23928,7 +23998,12 @@ impl CGenerator {
                     "  phpc_NativeStringHandle {name_handle} = phpc_native_string_from_bytes({name_bytes}, {name_len});"
                 ));
                 self.body.push(format!(
-                    "  bool {registered} = phpc_native_callable_table_register_visibility_staticness_frame_callback_and_free({table}, PHPC_NATIVE_CALLABLE_KIND_METHOD, {scope_handle}, {name_handle}, {visibility}, {is_static}, {wrapper_name});"
+                    "  bool {registered} = phpc_native_callable_table_register_visibility_staticness_frame_callback_and_free({table}, {}, {scope_handle}, {name_handle}, {visibility}, {is_static}, {wrapper_name});",
+                    if method.decl.name.eq_ignore_ascii_case("__construct") {
+                        "PHPC_NATIVE_CALLABLE_KIND_CONSTRUCTOR"
+                    } else {
+                        "PHPC_NATIVE_CALLABLE_KIND_METHOD"
+                    }
                 ));
                 let registration_error_exit = self.native_error_exit(failure_cleanup);
                 self.body.push(format!(
@@ -34649,11 +34724,6 @@ impl CGenerator {
                 args,
                 span,
             } => {
-                if call_arguments_have_named(args) {
-                    return Err(
-                        self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
-                    );
-                }
                 if let Some(value) =
                     self.try_materialize_declared_class_new_expr(class_name, args, *span, "")?
                 {
@@ -35666,6 +35736,36 @@ impl CGenerator {
                 table,
                 scope.handle,
                 method.handle,
+                access_context.access_context.to_string(),
+                access_context.caller_scope,
+            ],
+            cleanup_on_preinvoke_failure,
+            cleanup_after_invocation,
+        }
+    }
+
+    fn emit_native_constructor_source_call_target_operands(
+        &mut self,
+        scope: NativeSourceCallStringHandleOperand,
+        receiver: CNativeValueMaterialization,
+        access_context: NativeSourceCallAccessContext<'_>,
+        failure_cleanup: &str,
+    ) -> NativeSourceCallTargetOperands {
+        let table = self.ensure_native_callable_table(failure_cleanup);
+        let access_context = self.emit_native_source_call_access_context_operands(access_context);
+
+        let mut cleanup_on_preinvoke_failure = receiver.cleanup_after_use.clone();
+        cleanup_on_preinvoke_failure.extend(scope.cleanup_after_use.clone());
+        cleanup_on_preinvoke_failure.extend(access_context.cleanup_after_use.clone());
+
+        let mut cleanup_after_invocation = scope.cleanup_after_use;
+        cleanup_after_invocation.extend(access_context.cleanup_after_use);
+
+        NativeSourceCallTargetOperands {
+            args: vec![
+                table,
+                scope.handle,
+                receiver.handle,
                 access_context.access_context.to_string(),
                 access_context.caller_scope,
             ],
@@ -50226,19 +50326,12 @@ impl CGenerator {
                 class_name,
                 args,
                 span,
-            } => {
-                if call_arguments_have_named(args) {
-                    return Err(
-                        self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
-                    );
-                }
-                self.try_materialize_declared_class_new_expr(
-                    class_name,
-                    args,
-                    *span,
-                    failure_cleanup,
-                )
-            }
+            } => self.try_materialize_declared_class_new_expr(
+                class_name,
+                args,
+                *span,
+                failure_cleanup,
+            ),
             Expr::Property {
                 target, property, ..
             } => self
@@ -60281,6 +60374,24 @@ echo " 10" < "zeta";
                 "phpc_native_static_method_invoke_discard_with_access_context_diagnostic_and_free_scope_method_arguments",
             ),
             (
+                NativeInvokeResultTarget::ConstructorAllocation,
+                NativeInvokeResultConsumer::OwnedResult,
+                NativeInvokeResultReturn::CallResultHandle,
+                "phpc_native_constructor_allocation_invoke_result_with_access_context_diagnostic_and_free_scope_receiver_arguments",
+            ),
+            (
+                NativeInvokeResultTarget::ConstructorAllocation,
+                NativeInvokeResultConsumer::Value,
+                NativeInvokeResultReturn::ValueHandle,
+                "phpc_native_constructor_allocation_invoke_value_with_access_context_diagnostic_and_free_scope_receiver_arguments",
+            ),
+            (
+                NativeInvokeResultTarget::ConstructorAllocation,
+                NativeInvokeResultConsumer::Discard,
+                NativeInvokeResultReturn::Bool,
+                "phpc_native_constructor_allocation_invoke_discard_with_access_context_diagnostic_and_free_scope_receiver_arguments",
+            ),
+            (
                 NativeInvokeResultTarget::ClosureArgumentHandle,
                 NativeInvokeResultConsumer::OwnedResult,
                 NativeInvokeResultReturn::CallResultHandle,
@@ -60317,23 +60428,13 @@ echo " 10" < "zeta";
             );
         }
 
-        for (target, blocker) in [(
-            NativeInvokeResultTarget::ConstructorAllocation,
-            NativeInvokeResultHelperBlocker::MissingConstructorAllocationAbi,
-        )] {
-            for consumer in [
-                NativeInvokeResultConsumer::OwnedResult,
-                NativeInvokeResultConsumer::Value,
-                NativeInvokeResultConsumer::Reference,
-                NativeInvokeResultConsumer::Discard,
-            ] {
-                assert_eq!(
-                    target.helper_for_consumer(consumer),
-                    NativeInvokeResultHelperSelection::Blocked(blocker),
-                    "{target:?} {consumer:?} must stay blocked until the shared ABI exists",
-                );
-            }
-        }
+        assert_eq!(
+            NativeInvokeResultTarget::ConstructorAllocation
+                .helper_for_consumer(NativeInvokeResultConsumer::Reference),
+            NativeInvokeResultHelperSelection::Blocked(
+                NativeInvokeResultHelperBlocker::MissingConstructorAllocationAbi,
+            ),
+        );
     }
 
     #[test]
@@ -60382,6 +60483,20 @@ echo " 10" < "zeta";
                 "phpc_native_closure_invoke_value_with_diagnostic_and_free_arguments",
                 None,
             ),
+            (
+                NativeInvokeResultTarget::ClosureArgumentHandle,
+                NativeSourceCallResultConsumer::DiagnosticResult(diagnostic_surface),
+                NativeSourceCallResultReturn::DiagnosticResult(diagnostic_surface),
+                "phpc_native_closure_invoke_result_with_diagnostic_and_free_arguments",
+                Some("phpc_native_diagnostic_result_from_call_result_and_free"),
+            ),
+            (
+                NativeInvokeResultTarget::ConstructorAllocation,
+                NativeSourceCallResultConsumer::DiagnosticResult(diagnostic_surface),
+                NativeSourceCallResultReturn::DiagnosticResult(diagnostic_surface),
+                "phpc_native_constructor_allocation_invoke_result_with_access_context_diagnostic_and_free_scope_receiver_arguments",
+                Some("phpc_native_diagnostic_result_from_call_result_and_free"),
+            ),
         ];
 
         for (target, consumer, result, helper_name, converter) in expected {
@@ -60398,16 +60513,12 @@ echo " 10" < "zeta";
             assert_eq!(carrier.diagnostic_result_converter, converter);
         }
 
-        for target in [NativeInvokeResultTarget::ConstructorAllocation] {
-            assert!(matches!(
-                target.source_call_result_carrier_for_consumer(
-                    NativeSourceCallResultConsumer::DiagnosticResult(
-                        NativeDiagnosticResultOperandSurface::Output,
-                    ),
-                ),
-                NativeSourceCallResultCarrierSelection::Blocked(_)
-            ));
-        }
+        assert!(matches!(
+            NativeInvokeResultTarget::ConstructorAllocation.source_call_result_carrier_for_consumer(
+                NativeSourceCallResultConsumer::Reference,
+            ),
+            NativeSourceCallResultCarrierSelection::Blocked(_)
+        ));
     }
 
     #[test]

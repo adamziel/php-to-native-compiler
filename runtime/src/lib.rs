@@ -8878,6 +8878,28 @@ pub extern "C" fn phpc_native_call_result_from_diagnostic_and_free(
 
 /// # Safety
 ///
+/// `ptr` must reference `len` bytes of UTF-8 diagnostic text for the duration
+/// of this call.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_from_message_bytes(
+    ptr: *const u8,
+    len: usize,
+) -> NativeDiagnosticHandle {
+    let Some(bytes) = (unsafe { native_abi_bytes(ptr, len) }) else {
+        return NativeDiagnosticHandle::from_message(
+            "native diagnostic creation failed: message bytes are null",
+        );
+    };
+    match std::str::from_utf8(bytes) {
+        Ok(message) => NativeDiagnosticHandle::from_message(message.to_string()),
+        Err(_) => NativeDiagnosticHandle::from_message(
+            "native diagnostic creation failed: message bytes are not valid UTF-8",
+        ),
+    }
+}
+
+/// # Safety
+///
 /// `handle` must be null or a call-result handle. The returned value is owned.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_call_result_read_value(
@@ -10804,6 +10826,199 @@ unsafe fn native_static_method_lookup_invoke_result_with_access_context_and_free
             NativeCallResultHandle::null()
         }
     }
+}
+
+unsafe fn native_constructor_allocation_invoke_result_with_access_context_and_free_scope_receiver_arguments(
+    table: NativeCallableTableHandle,
+    scope: NativeStringHandle,
+    mut receiver: NativeValueHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallResultHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| -> Result<NativeCallResultHandle, String> {
+        let Some(table) = (unsafe { table.as_ref() }) else {
+            return Err("native constructor invocation failed: table is null".to_string());
+        };
+        let Some(scope) = (unsafe { native_string_handle_to_string(scope) }) else {
+            return Err("native constructor invocation failed: scope is null".to_string());
+        };
+        let Some(receiver_value) = (unsafe { receiver.as_ref() }) else {
+            return Err(
+                "native constructor invocation failed: receiver handle is null".to_string(),
+            );
+        };
+        if !matches!(receiver_value, Value::Object(_)) {
+            return Err(format!(
+                "native constructor invocation failed: receiver must be an object, got {}",
+                receiver_value.type_name()
+            ));
+        }
+        let access_context =
+            unsafe { NativeCallableAccessContext::from_abi(access_context, caller_scope) }
+                .map_err(|message| {
+                    message.replace(
+                        "native callable access context failed",
+                        "native constructor invocation failed",
+                    )
+                })?;
+        if let Some(callable) = table
+            .lookup_constructor_for_scope(scope, access_context)
+            .map_err(|message| {
+                message
+                    .replace(
+                        "native constructor lookup failed",
+                        "native constructor invocation failed",
+                    )
+                    .replace(
+                        "native constructor allocation failed",
+                        "native constructor invocation failed",
+                    )
+            })?
+        {
+            let constructor_result = unsafe {
+                native_callable_value_invoke_table_result(
+                    &callable,
+                    Some(receiver_value),
+                    arguments,
+                    diagnostic,
+                )
+            };
+            if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+                unsafe { phpc_native_call_result_free(constructor_result) };
+                return Ok(NativeCallResultHandle::null());
+            }
+            if constructor_result.is_null() {
+                return Err(
+                    "native constructor invocation failed: frame callback returned a null result"
+                        .to_string(),
+                );
+            }
+            let constructor_diagnostic =
+                unsafe { phpc_native_call_result_take_diagnostic(constructor_result) };
+            unsafe { phpc_native_call_result_free(constructor_result) };
+            if !constructor_diagnostic.is_null() {
+                unsafe { phpc_native_value_free(receiver) };
+                receiver = NativeValueHandle::null();
+                return Ok(phpc_native_call_result_from_diagnostic_and_free(
+                    constructor_diagnostic,
+                ));
+            }
+        }
+        let object = receiver;
+        receiver = NativeValueHandle::null();
+        Ok(phpc_native_call_result_from_value(object))
+    })();
+    unsafe { phpc_native_call_arguments_free(arguments) };
+
+    match result {
+        Ok(result) => result,
+        Err(message) => {
+            unsafe { phpc_native_value_free(receiver) };
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeCallResultHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `receiver` and `arguments` are owned by this call. On lookup, invoke,
+/// diagnostic, and handoff failures the allocated receiver is freed; on
+/// success it is returned as the owned value inside the call result.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_constructor_allocation_invoke_result_with_access_context_diagnostic_and_free_scope_receiver_arguments(
+    table: NativeCallableTableHandle,
+    scope: NativeStringHandle,
+    receiver: NativeValueHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallResultHandle {
+    unsafe {
+        native_constructor_allocation_invoke_result_with_access_context_and_free_scope_receiver_arguments(
+            table,
+            scope,
+            receiver,
+            access_context,
+            caller_scope,
+            arguments,
+            diagnostic,
+        )
+    }
+}
+
+/// # Safety
+///
+/// Constructor allocation-plus-invoke value consumer over the shared owned
+/// result helper.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_constructor_allocation_invoke_value_with_access_context_diagnostic_and_free_scope_receiver_arguments(
+    table: NativeCallableTableHandle,
+    scope: NativeStringHandle,
+    receiver: NativeValueHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    let result = unsafe {
+        phpc_native_constructor_allocation_invoke_result_with_access_context_diagnostic_and_free_scope_receiver_arguments(
+            table,
+            scope,
+            receiver,
+            access_context,
+            caller_scope,
+            arguments,
+            diagnostic,
+        )
+    };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return NativeValueHandle::null();
+    }
+    unsafe {
+        native_call_result_take_value_with_diagnostic_and_free(
+            result,
+            diagnostic,
+            "native constructor invocation failed: result did not contain an object value",
+        )
+    }
+}
+
+/// # Safety
+///
+/// Constructor allocation-plus-invoke discard consumer over the shared owned
+/// result helper.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_constructor_allocation_invoke_discard_with_access_context_diagnostic_and_free_scope_receiver_arguments(
+    table: NativeCallableTableHandle,
+    scope: NativeStringHandle,
+    receiver: NativeValueHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    let result = unsafe {
+        phpc_native_constructor_allocation_invoke_result_with_access_context_diagnostic_and_free_scope_receiver_arguments(
+            table,
+            scope,
+            receiver,
+            access_context,
+            caller_scope,
+            arguments,
+            diagnostic,
+        )
+    };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return false;
+    }
+    unsafe { native_call_result_discard_with_diagnostic_and_free(result, diagnostic) }
 }
 
 /// # Safety
@@ -33915,6 +34130,31 @@ mod tests {
         ))))
     }
 
+    unsafe extern "C" fn native_constructor_receiver_scope_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        let scope =
+            unsafe { string_from_native_for_test(phpc_native_call_frame_called_scope(frame)) };
+        let receiver = unsafe { phpc_native_call_frame_read_receiver(frame) };
+        let class_name = match unsafe { receiver.as_ref() } {
+            Some(Value::Object(object)) => object.class_name().to_string(),
+            other => panic!("expected bound constructor receiver, got {other:?}"),
+        };
+        unsafe { phpc_native_value_free(receiver) };
+        let value = unsafe { int_from_frame_for_test(frame, 0) };
+        phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::String(format!(
+            "ignored {scope}:{class_name}:{value}"
+        ))))
+    }
+
+    unsafe extern "C" fn native_constructor_value_return_failure_callback(
+        _frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        phpc_native_call_result_from_diagnostic_and_free(NativeDiagnosticHandle::from_message(
+            "constructor value returns are not implemented",
+        ))
+    }
+
     unsafe extern "C" fn native_receiver_method_callback(
         frame: NativeCallFrameHandle,
     ) -> NativeCallResultHandle {
@@ -36163,6 +36403,187 @@ mod tests {
             )
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn native_constructor_allocation_invoke_carrier_owns_receiver_arguments_and_diagnostics() {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            assert!(
+                phpc_native_callable_table_register_allocatable_class_and_free(
+                    table,
+                    native_string_for_test("BaseCtor"),
+                )
+            );
+            assert!(
+                phpc_native_callable_table_register_allocatable_class_and_free(
+                    table,
+                    native_string_for_test("ChildCtor"),
+                )
+            );
+            assert!(
+                phpc_native_callable_table_register_allocatable_class_and_free(
+                    table,
+                    native_string_for_test("NoCtor"),
+                )
+            );
+            assert!(phpc_native_callable_table_register_class_parent_and_free(
+                table,
+                native_string_for_test("ChildCtor"),
+                native_string_for_test("BaseCtor"),
+            ));
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Constructor,
+                Some("BaseCtor"),
+                "__construct",
+                NativeCallableVisibility::Public,
+                native_constructor_receiver_scope_callback,
+            );
+        }
+
+        let mut classes = PhpClassTable::new();
+        let base_id = classes.declare_class("BaseCtor").unwrap();
+        let child_id = classes.declare_class("ChildCtor").unwrap();
+        let no_ctor_id = classes.declare_class("NoCtor").unwrap();
+        classes.set_parent(child_id, base_id).unwrap();
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        reset_call_arguments_free_count_for_test();
+        let receiver = NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+            classes.get(child_id).unwrap(),
+        )));
+        let result = unsafe {
+            phpc_native_constructor_allocation_invoke_result_with_access_context_diagnostic_and_free_scope_receiver_arguments(
+                table,
+                native_string_for_test("ChildCtor"),
+                receiver,
+                NativeCallableAccessContextTag::External,
+                NativeStringHandle::null(),
+                call_arguments_from_ints_for_test(&[42]),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        let value = unsafe { phpc_native_call_result_take_value_and_free(result) };
+        match unsafe { value.as_ref() } {
+            Some(Value::Object(object)) => assert_eq!(object.class_name(), "ChildCtor"),
+            other => panic!("expected constructed ChildCtor object, got {other:?}"),
+        }
+        unsafe { phpc_native_value_free(value) };
+
+        reset_call_arguments_free_count_for_test();
+        let constructorless = unsafe {
+            phpc_native_constructor_allocation_invoke_value_with_access_context_diagnostic_and_free_scope_receiver_arguments(
+                table,
+                native_string_for_test("NoCtor"),
+                NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+                    classes.get(no_ctor_id).unwrap(),
+                ))),
+                NativeCallableAccessContextTag::External,
+                NativeStringHandle::null(),
+                call_arguments_from_ints_for_test(&[]),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        match unsafe { constructorless.as_ref() } {
+            Some(Value::Object(object)) => assert_eq!(object.class_name(), "NoCtor"),
+            other => panic!("expected constructed NoCtor object, got {other:?}"),
+        }
+        unsafe { phpc_native_value_free(constructorless) };
+
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn native_constructor_allocation_invoke_carrier_cleans_up_failure_paths() {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            assert!(
+                phpc_native_callable_table_register_allocatable_class_and_free(
+                    table,
+                    native_string_for_test("PrivateCtor"),
+                )
+            );
+            assert!(
+                phpc_native_callable_table_register_allocatable_class_and_free(
+                    table,
+                    native_string_for_test("ReturningCtor"),
+                )
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Constructor,
+                Some("PrivateCtor"),
+                "__construct",
+                NativeCallableVisibility::Private,
+                native_constructor_receiver_scope_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Constructor,
+                Some("ReturningCtor"),
+                "__construct",
+                NativeCallableVisibility::Public,
+                native_constructor_value_return_failure_callback,
+            );
+        }
+
+        let mut classes = PhpClassTable::new();
+        let private_id = classes.declare_class("PrivateCtor").unwrap();
+        let returning_id = classes.declare_class("ReturningCtor").unwrap();
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        reset_call_arguments_free_count_for_test();
+        let private_result = unsafe {
+            phpc_native_constructor_allocation_invoke_result_with_access_context_diagnostic_and_free_scope_receiver_arguments(
+                table,
+                native_string_for_test("PrivateCtor"),
+                NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+                    classes.get(private_id).unwrap(),
+                ))),
+                NativeCallableAccessContextTag::External,
+                NativeStringHandle::null(),
+                call_arguments_from_ints_for_test(&[1]),
+                &mut diagnostic,
+            )
+        };
+        assert!(private_result.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "native constructor invocation failed: Private method PrivateCtor::__construct is not visible from <global>"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        reset_call_arguments_free_count_for_test();
+        let returning_value = unsafe {
+            phpc_native_constructor_allocation_invoke_value_with_access_context_diagnostic_and_free_scope_receiver_arguments(
+                table,
+                native_string_for_test("ReturningCtor"),
+                NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+                    classes.get(returning_id).unwrap(),
+                ))),
+                NativeCallableAccessContextTag::External,
+                NativeStringHandle::null(),
+                call_arguments_from_ints_for_test(&[]),
+                &mut diagnostic,
+            )
+        };
+        assert!(returning_value.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some("constructor value returns are not implemented")
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
         unsafe { phpc_native_callable_table_free(table) };
     }
 
