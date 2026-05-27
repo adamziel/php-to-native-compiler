@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 17:03 CEST
+Updated: 2026-05-27 17:13 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,15 +19,26 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `eb66ad39` preserves selected callable
-object identity facts after root-symbol-table writes, so runtime-held
-callable objects can still use the shared callable-object source-call plan.
-Generated-C programs that assign an invokable object to a global-backed
-variable can now call `$object(...$args)` through the materialized
-by-reference variadic finalizer and mutate the original reference-backed
-unpacked slots. Non-spread by-reference variadic collectors, runtime
-builtins, magic fallback, unknown signatures, broad COW parity, and LLVM/ASM
-parity remain blocked.
+Latest accounted source capability: `c64a0e21` routes selected runtime
+callable `trim`/`ltrim`/`rtrim` strings through builtin signature metadata,
+defaulted `characters` parameters, the shared materialized spread bridge, and
+runtime callable builtin invocation. Generated-C programs can now execute
+`$fn(...$args)` for trim-family builtin strings, including defaulted
+`trim($string)` and named spread `characters` arguments, without generated
+name ladders or per-fixture trimming. Custom mask ranges, empty ltrim/rtrim
+masks, by-reference/writeback builtins, unknown or heterogeneous runtime
+callables, magic fallback, broad COW parity, and LLVM/ASM parity remain
+blocked.
+
+Recent source commit `c64a0e21` routes selected trim-family runtime builtin
+callables through the shared source-call and materialized-argument contracts.
+Compiler signature metadata now marks `trim`, `ltrim`, and `rtrim` as
+runtime-callable value builtins with defaulted `characters`, and the runtime
+callable builtin table can look up and invoke those families over materialized
+spread arguments. The accepted subset covers default `trim()` masks and simple
+explicit ltrim/rtrim masks while preserving blockers for unsupported mask
+ranges, by-reference/writeback builtin semantics, unknown callable families,
+magic fallback, and LLVM/ASM parity.
 
 Recent source commit `8a02fbbf` prints selected generated runtime metadata
 arrays through the shared native value formatter. Discarded generated-C
