@@ -21111,6 +21111,13 @@ impl CGenerator {
         }
     }
 
+    fn merge_terminal_arm_codegen_artifacts(&mut self, branch: &Self) {
+        self.static_data.extend(branch.static_data.iter().cloned());
+        self.merge_branch_feature_flags(branch);
+        self.next_native_temp = branch.next_native_temp;
+        self.next_static_data = branch.next_static_data;
+    }
+
     fn uses_native_runtime_helpers(&self) -> bool {
         self.uses_native_string_helpers
             || self.uses_native_comparison_helpers
@@ -38661,6 +38668,30 @@ impl CGenerator {
         Ok(array)
     }
 
+    fn emit_runtime_registry_missing_required_terminal_arm(
+        &mut self,
+        no_match: &str,
+        operand: &CIncludePathRuntimeOperand,
+    ) -> CompileResult<Vec<String>> {
+        let mut branch = self.scoped_branch_generator();
+        branch.emit_active_finally_bodies_before_terminal_transfer()?;
+        branch
+            .body
+            .push(format!("phpc_native_diagnostic_report({no_match}.fatal);"));
+        let exit = branch.native_error_exit_with_code(
+            &format!(
+                "phpc_native_byte_buffer_free({no_match}.resolved_path); {}",
+                c_cleanup_sequence(&operand.cleanup_after_use)
+            ),
+            "255",
+        );
+        branch.body.push(exit);
+
+        let body = branch.body.clone();
+        self.merge_terminal_arm_codegen_artifacts(&branch);
+        Ok(body)
+    }
+
     fn emit_runtime_registry_include_unit_call(
         &mut self,
         path: &Expr,
@@ -38741,6 +38772,17 @@ impl CGenerator {
         self.body.push(format!(
             "  if ({no_match}.warning.ptr != NULL) {{ phpc_native_diagnostic_report({no_match}.warning); }}"
         ));
+        if required {
+            self.body.push(format!(
+                "  if ({no_match}.status == PHPC_NATIVE_INCLUDE_RUNTIME_NO_MATCH_MISSING && {no_match}.fatal.ptr != NULL) {{"
+            ));
+            for line in
+                self.emit_runtime_registry_missing_required_terminal_arm(&no_match, &operand)?
+            {
+                self.body.push(format!("    {line}"));
+            }
+            self.body.push("  }".to_string());
+        }
         self.body.push(format!(
             "  if ({no_match}.fatal.ptr != NULL) {{ phpc_native_diagnostic_report({no_match}.fatal);"
         ));

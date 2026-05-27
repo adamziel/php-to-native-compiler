@@ -1414,6 +1414,71 @@ fn native_executable_c_source_uses_runtime_include_no_match_diagnostic_boundary(
 }
 
 #[test]
+fn native_executable_c_source_runs_active_finally_before_runtime_registry_missing_required_fatal() {
+    let dir = include_discovery_fixture_dir("runtime-no-match-require-finally-c-source");
+    fs::write(dir.join("declared.php"), "<?php\necho 'declared|';\n")
+        .expect("write runtime no-match require finally c-source declared include");
+    let root = dir.join("root.php");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "function runtime_path() { return 'missing-required.php'; }\n",
+            "echo 'before|';\n",
+            "require_once 'declared.php';\n",
+            "try {\n",
+            "    $path = runtime_path();\n",
+            "    require $path;\n",
+            "    echo 'unreachable';\n",
+            "} finally {\n",
+            "    echo 'finally|';\n",
+            "}\n",
+            "echo 'after';\n",
+        ),
+    )
+    .expect("write runtime no-match require finally c-source root");
+
+    let unit = executable_compilation_unit_with_literal_include_units(
+        &fs::read_to_string(&root).expect("read runtime no-match require finally c-source root"),
+        &root,
+        workspace_root(),
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source_for_include_units(&unit).unwrap();
+    let body = main_body(&source);
+
+    let warning = body
+        .find(".warning.ptr != NULL")
+        .unwrap_or_else(|| panic!("missing runtime include warning report:\n{source}"));
+    let missing_arm = body
+        .find("PHPC_NATIVE_INCLUDE_RUNTIME_NO_MATCH_MISSING &&")
+        .unwrap_or_else(|| panic!("missing required runtime no-match status arm:\n{source}"));
+    let finally_output = missing_arm
+        + body[missing_arm..]
+            .find("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free")
+            .unwrap_or_else(|| panic!("missing active finally output in status arm:\n{source}"));
+    let fatal = missing_arm
+        + body[missing_arm..]
+            .find(".fatal);")
+            .unwrap_or_else(|| panic!("missing fatal report in status arm:\n{source}"));
+    let exit = fatal
+        + body[fatal..]
+            .find("return 255;")
+            .unwrap_or_else(|| panic!("missing terminal 255 exit in status arm:\n{source}"));
+
+    assert!(
+        warning < missing_arm && missing_arm < finally_output && finally_output < fatal && fatal < exit,
+        "runtime required no-match must warn, run active finally, report fatal, then exit:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_source_loader")
+            && !source.contains("phpc_runtime_source_loader")
+            && !source.contains("generated_source_table"),
+        "required runtime no-match finally path must stay within the registry no-match lane:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_autoload_callback_include_to_runtime_boundary() {
     let dir = include_discovery_fixture_dir("autoload-callback-include-runtime-c-source");
     fs::write(dir.join("declared.php"), "<?php\necho 'declared|';\n")
@@ -1497,6 +1562,60 @@ fn emit_exe_runtime_registry_no_match_include_warns_returns_false_and_continues(
 }
 
 #[test]
+fn emit_exe_runtime_registry_no_match_include_under_finally_returns_false_and_continues() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("runtime-no-match-include-finally-exe");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(dir.join("declared.php"), "<?php\necho 'declared|';\n")
+        .expect("write runtime no-match include finally declared fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "function runtime_path() { return 'missing.php'; }\n",
+            "require_once 'declared.php';\n",
+            "try {\n",
+            "    $path = runtime_path();\n",
+            "    $value = include $path;\n",
+            "    echo $value === false ? 'false|' : 'bad|';\n",
+            "} finally {\n",
+            "    echo 'finally|';\n",
+            "}\n",
+            "echo 'continued', \"\\n\";\n",
+        ),
+    )
+    .expect("write runtime no-match include finally root");
+
+    let output = compile_exe(
+        &root,
+        &output,
+        "runtime no-match include finally executable",
+    );
+    let run = Command::new(&output)
+        .output()
+        .expect("run runtime no-match include finally executable");
+
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "declared|false|finally|continued\n"
+    );
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains("PHP Warning"), "{stderr}");
+    assert!(stderr.contains("include(missing.php)"), "{stderr}");
+    assert!(!stderr.contains("PHP Fatal error"), "{stderr}");
+}
+
+#[test]
 fn emit_exe_runtime_registry_no_match_require_warns_fatals() {
     if !has_cc() {
         return;
@@ -1535,6 +1654,119 @@ fn emit_exe_runtime_registry_no_match_require_warns_fatals() {
     assert!(stderr.contains("PHP Fatal error"), "{stderr}");
     assert!(
         stderr.contains("Failed opening required 'missing-required.php'"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn emit_exe_runtime_registry_no_match_require_runs_active_finally_before_fatal() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("runtime-no-match-require-finally-exe");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(dir.join("declared.php"), "<?php\necho 'declared|';\n")
+        .expect("write runtime no-match require finally declared fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "function runtime_path() { return 'missing-required.php'; }\n",
+            "echo 'before|';\n",
+            "require_once 'declared.php';\n",
+            "try {\n",
+            "    $path = runtime_path();\n",
+            "    require $path;\n",
+            "    echo 'unreachable';\n",
+            "} finally {\n",
+            "    echo 'finally|';\n",
+            "}\n",
+            "echo 'after';\n",
+        ),
+    )
+    .expect("write runtime no-match require finally root");
+
+    let output = compile_exe(
+        &root,
+        &output,
+        "runtime no-match require finally executable",
+    );
+    let run = Command::new(&output)
+        .output()
+        .expect("run runtime no-match require finally executable");
+
+    assert!(!run.status.success());
+    assert_eq!(run.status.code(), Some(255));
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "before|declared|finally|"
+    );
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains("PHP Warning"), "{stderr}");
+    assert!(stderr.contains("require(missing-required.php)"), "{stderr}");
+    assert!(stderr.contains("PHP Fatal error"), "{stderr}");
+    assert!(
+        stderr.contains("Failed opening required 'missing-required.php'"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn emit_exe_runtime_registry_no_match_require_expression_runs_active_finally_before_fatal() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("runtime-no-match-require-expression-finally-exe");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(dir.join("declared.php"), "<?php\necho 'declared|';\n")
+        .expect("write runtime no-match require expression finally declared fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "function runtime_path() { return 'missing-required-expression.php'; }\n",
+            "require_once 'declared.php';\n",
+            "try {\n",
+            "    echo 'before|';\n",
+            "    $path = runtime_path();\n",
+            "    $value = require $path;\n",
+            "    echo 'unreachable';\n",
+            "} finally {\n",
+            "    echo 'finally|';\n",
+            "}\n",
+            "echo 'after';\n",
+        ),
+    )
+    .expect("write runtime no-match require expression finally root");
+
+    let output = compile_exe(
+        &root,
+        &output,
+        "runtime no-match require expression finally executable",
+    );
+    let run = Command::new(&output)
+        .output()
+        .expect("run runtime no-match require expression finally executable");
+
+    assert!(!run.status.success());
+    assert_eq!(run.status.code(), Some(255));
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "declared|before|finally|"
+    );
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains("PHP Warning"), "{stderr}");
+    assert!(
+        stderr.contains("require(missing-required-expression.php)"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("PHP Fatal error"), "{stderr}");
+    assert!(
+        stderr.contains("Failed opening required 'missing-required-expression.php'"),
         "{stderr}"
     );
 }
