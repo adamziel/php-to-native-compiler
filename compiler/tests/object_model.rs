@@ -3444,7 +3444,7 @@ print_r($methods);
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "hooks:direct:Plugin\nhooks:alias:Plugin\nalias-method\nArray\n(\n    [0] => hooks\n    [1] => register_hooks\n)\n"
+        "hooks:direct:Plugin\nhooks:alias:Plugin\nalias-method\nArray\n(\n    [0] => register_hooks\n    [1] => hooks\n)\n"
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -3492,7 +3492,7 @@ print_r($methods);
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "hooks:direct:Plugin\nhooks:alias:Plugin\nlabel:Plugin\nalias-method\nArray\n(\n    [0] => hooks\n    [1] => register_hooks\n    [2] => label\n)\n"
+        "hooks:direct:Plugin\nhooks:alias:Plugin\nlabel:Plugin\nalias-method\nArray\n(\n    [0] => register_hooks\n    [1] => hooks\n    [2] => label\n)\n"
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -3893,7 +3893,7 @@ print_r($methods);
     let execution = run_source(source).unwrap();
     assert_eq!(
         execution.stdout,
-        "primary:Plugin\nprimary:Plugin\nhooks:Plugin\nalias-method\nArray\n(\n    [0] => label\n    [1] => label_alias\n    [2] => hooks\n)\n"
+        "primary:Plugin\nprimary:Plugin\nhooks:Plugin\nalias-method\nArray\n(\n    [0] => label_alias\n    [1] => label\n    [2] => hooks\n)\n"
     );
     assert_eq!(execution.exit_code, 0);
 

@@ -81,22 +81,21 @@ fn compose_trait_methods_for_trait(
         ));
     }
 
-    let mut methods = compose_effective_trait_methods_from_uses(
+    let mut methods = trait_decl
+        .methods
+        .iter()
+        .cloned()
+        .map(|method| EffectiveTraitMethod {
+            declaring_trait_name: trait_decl.name.clone(),
+            method,
+        })
+        .collect::<Vec<_>>();
+    methods.extend(compose_effective_trait_methods_from_uses(
         &trait_decl.trait_uses,
         trait_lookup,
         path,
         &declared_trait_method_names(trait_decl),
-    )?;
-    methods.extend(
-        trait_decl
-            .methods
-            .iter()
-            .cloned()
-            .map(|method| EffectiveTraitMethod {
-                declaring_trait_name: trait_decl.name.clone(),
-                method,
-            }),
-    );
+    )?);
 
     path.remove(&key);
     Ok(methods)
@@ -118,9 +117,59 @@ fn compose_effective_trait_methods_from_uses(
         let trait_decl = resolve_trait_use_decl(trait_use, trait_lookup)?;
         let trait_methods = compose_trait_methods_for_trait(trait_decl, trait_lookup, path)?;
         let visibility_adaptations = trait_visibility_adaptations(trait_use, &trait_methods)?;
+        let mut aliases_by_method: HashMap<String, Vec<_>> = HashMap::new();
+        for alias in &trait_use.aliases {
+            let Some(candidate) = trait_methods.iter().find(|candidate| {
+                candidate
+                    .method
+                    .function
+                    .name
+                    .eq_ignore_ascii_case(&alias.method_name)
+            }) else {
+                return Err(TraitSemanticError::new(
+                    alias.span,
+                    format!(
+                        "unsupported trait use: trait alias {}::{} targets a missing method",
+                        trait_decl.name, alias.method_name
+                    ),
+                ));
+            };
+            aliases_by_method
+                .entry(method_key(&candidate.method.function.name))
+                .or_default()
+                .push(alias);
+        }
 
         for candidate in &trait_methods {
             let method_name_key = method_key(&candidate.method.function.name);
+            if let Some(aliases) = aliases_by_method.remove(&method_name_key) {
+                for alias in aliases {
+                    let alias_key = method_key(&alias.alias);
+                    if direct_method_names.contains(&alias_key) {
+                        continue;
+                    }
+                    if let Some(existing_trait) = composed_names.get(&alias_key) {
+                        return Err(TraitSemanticError::new(
+                            alias.span,
+                            format!(
+                                "unsupported trait use: trait alias {}::{} as {} conflicts with {}::{}",
+                                trait_decl.name,
+                                alias.method_name,
+                                alias.alias,
+                                existing_trait,
+                                alias.alias
+                            ),
+                        ));
+                    }
+
+                    let mut aliased = candidate.clone();
+                    aliased.method.function.name = alias.alias.clone();
+                    aliased.method.visibility = alias.visibility;
+                    aliased.method.span = alias.span;
+                    composed_names.insert(alias_key, aliased.declaring_trait_name.clone());
+                    methods.push(aliased);
+                }
+            }
             if precedence_exclusions.contains(&(used_trait_key.clone(), method_name_key.clone())) {
                 continue;
             }
@@ -149,49 +198,6 @@ fn compose_effective_trait_methods_from_uses(
             }
             composed_names.insert(method_name_key, composed.declaring_trait_name.clone());
             methods.push(composed);
-        }
-
-        for alias in &trait_use.aliases {
-            let Some(candidate) = trait_methods.iter().find(|candidate| {
-                candidate
-                    .method
-                    .function
-                    .name
-                    .eq_ignore_ascii_case(&alias.method_name)
-            }) else {
-                return Err(TraitSemanticError::new(
-                    alias.span,
-                    format!(
-                        "unsupported trait use: trait alias {}::{} targets a missing method",
-                        trait_decl.name, alias.method_name
-                    ),
-                ));
-            };
-
-            let alias_key = method_key(&alias.alias);
-            if direct_method_names.contains(&alias_key) {
-                continue;
-            }
-            if let Some(existing_trait) = composed_names.get(&alias_key) {
-                return Err(TraitSemanticError::new(
-                    alias.span,
-                    format!(
-                        "unsupported trait use: trait alias {}::{} as {} conflicts with {}::{}",
-                        trait_decl.name,
-                        alias.method_name,
-                        alias.alias,
-                        existing_trait,
-                        alias.alias
-                    ),
-                ));
-            }
-
-            let mut aliased = candidate.clone();
-            aliased.method.function.name = alias.alias.clone();
-            aliased.method.visibility = alias.visibility;
-            aliased.method.span = alias.span;
-            composed_names.insert(alias_key, aliased.declaring_trait_name.clone());
-            methods.push(aliased);
         }
     }
 
@@ -395,16 +401,6 @@ class UsesTraits {
             methods,
             vec![
                 (
-                    "keep".to_string(),
-                    ClassVisibility::Public,
-                    "Nested".to_string()
-                ),
-                (
-                    "collide".to_string(),
-                    ClassVisibility::Public,
-                    "Nested".to_string()
-                ),
-                (
                     "leftOnly".to_string(),
                     ClassVisibility::Public,
                     "Left".to_string()
@@ -415,13 +411,23 @@ class UsesTraits {
                     "Nested".to_string()
                 ),
                 (
-                    "rightOnly".to_string(),
+                    "keep".to_string(),
                     ClassVisibility::Public,
-                    "Right".to_string()
+                    "Nested".to_string()
+                ),
+                (
+                    "collide".to_string(),
+                    ClassVisibility::Public,
+                    "Nested".to_string()
                 ),
                 (
                     "renamedRight".to_string(),
                     ClassVisibility::Private,
+                    "Right".to_string()
+                ),
+                (
+                    "rightOnly".to_string(),
+                    ClassVisibility::Public,
                     "Right".to_string()
                 ),
             ]
