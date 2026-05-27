@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 08:57 CEST
+Updated: 2026-05-27 09:14 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,8 +19,18 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest accounted source capability: `f65be9b1` routes selected generated-C
-static method source calls through the shared runtime `__callStatic` fallback
+Latest accounted source capability: `5feb8cfe` routes selected generated-C
+nested ArrayAccess append assignments through the generalized owner-stack path
+for direct-variable and visible property-held roots. Supported paths
+materialize the root owner, descend through by-value `offsetGet()`
+intermediates, append at the leaf with `offsetSet(null, value)`, reverse-write
+parents with `offsetSet()`, commit the original owner, and preserve the
+assignment expression result. Append-with-keyed-suffix, nested `??=`, nested
+unset, reference-returning `offsetGet()`, arbitrary alias roots,
+non-direct/unknown property holders, static-property roots, broad
+references/COW, cleanup/unwind breadth, spread/unpack, and LLVM/backend parity
+remain blocked. Recent source commits also route selected generated-C static
+method source calls through the shared runtime `__callStatic` fallback
 boundary. Normal declared static method hits still win, missing or inaccessible
 static methods fall back to public static `__callStatic($name, $args)`, and
 non-static methods called statically remain hard failures rather than falling
@@ -69,9 +79,11 @@ owner-stack write context for direct-variable and property-held roots.
 Supported paths descend through by-value `offsetGet()`, read the leaf, compute
 the native increment/decrement replacement, preserve pre/post expression-result
 semantics, write the leaf with `offsetSet()`, perform reverse parent writeback,
-and commit the root owner. Nested `??=`, append, unset, reference-returning
-`offsetGet()`, arbitrary alias roots, broad references/COW, cleanup/unwind
-breadth, spread/unpack, and LLVM/backend parity remain blocked. Recent source
+and commit the root owner; newer append paths reuse the same owner stack for
+direct and property-held roots without suffix writes. Nested `??=`, nested
+unset, append-with-keyed-suffix, reference-returning `offsetGet()`, arbitrary
+alias roots, broad references/COW, cleanup/unwind breadth, spread/unpack, and
+LLVM/backend parity remain blocked. Recent source
 commits also add parser/AST source-ordered named call-argument nodes plus shared
 call-argument normalization that binds source-order positional/named arguments
 to parameter-order slots across required, optional/default, by-reference, and
@@ -455,7 +467,7 @@ Primary-integrated capability and candidate/lane-local work are separated.
 | --- | ---: | ---: | ---: | --- |
 | Diagnostic-result carrier stack | **100%** `[####################]` | **100%** `[####################]` | **60%** `[############--------]` | Runtime/result contracts, family consumers, continuation helpers, report sinks, discarded statement-expression operands, echo/print output operands, source-call result conversion, control-transfer cleanup result consumers/report bridges, and cleanup-frame producers are integrated. Terminal producers, semantic cleanup result production from real control flow, lvalue, reference, RMW, and call-argument operands still need exact ownership and ordering migrations. |
 | Callable access context and class metadata | **100%** `[####################]` | **100%** `[####################]` | **65%** `[#############-------]` | Shared runtime access-context policy, lookup-plus-invoke argument ownership, source-call result carrier selectors, selected production source-call carrier emission, direct generated user-function lookup-plus-invoke production, direct user-function reference-return frame consumers, bounded generated-C method/static source-call production including default, variadic, and selected named-argument frame-compatible arities, method/static source-call target and binding operands, method/static signature fallback selection, allocatable-class metadata, generated-C user-class metadata-exists consumers, and value-returning class metadata consumers are integrated for selected function/method/static/constructor/class lookup preflights. Constructor execution, dynamic method names, spread and unsupported named call families, runtime/builtin/inherited/trait/interface signature metadata, non-descriptor closure argument-handle ownership, namespace/function/const fallback, autoload, magic, and full visibility parity remain open. |
-| ArrayAccess compiler consumers | **100%** `[####################]` | **100%** `[####################]` | **65%** `[#############-------]` | Generated-C direct-object/direct-variable read, `isset`, `empty`, `??`, write, append, unset, compound assignment, `??=`, selected property-held literal/single-known dynamic object-property read/write/RMW/`??=`/unset owners, and selected nested assignment/RMW/increment/decrement owner stacks are integrated for compiler-known generated declared `ArrayAccess` objects. Nested `??=`, append, unset, reference-returning `offsetGet`, arbitrary alias roots, references/COW, cleanup/unwind, and backend parity remain open. |
+| ArrayAccess compiler consumers | **100%** `[####################]` | **100%** `[####################]` | **70%** `[##############------]` | Generated-C direct-object/direct-variable read, `isset`, `empty`, `??`, write, append, unset, compound assignment, `??=`, selected property-held literal/single-known dynamic object-property read/write/RMW/`??=`/unset owners, and selected nested assignment/RMW/increment/decrement/append owner stacks are integrated for compiler-known generated declared `ArrayAccess` objects. Nested `??=`, nested unset, append-with-keyed-suffix, reference-returning `offsetGet`, arbitrary alias roots, references/COW, cleanup/unwind, and backend parity remain open. |
 | ReferenceSlot owner facts | **100%** `[####################]` | **100%** `[####################]` | **50%** `[##########----------]` | Compiler-visible native reference handles can recover facts, source owners, and commit writeback for selected variable, non-local object-property assignment, and property-held ArrayAccess paths. Arbitrary alias roots, request/superglobal path facts, broader property-held reference binding, closure callback fact transport, references/COW, and backend parity remain open. |
 | Callable identity return summaries | **100%** `[####################]` | **100%** `[####################]` | **60%** `[############--------]` | Generated functions, declared methods/static methods, descriptor closures, known strings, definite `__invoke` objects, compiler-known callable arrays, and selected direct user-function reference-return frames can publish or consume selected return facts. Unknown runtime callables, builtins, non-descriptor closures, recursive summaries, descriptor/method/closure reference returns, property/magic producers, references/COW, and backend parity remain open. |
 | Dynamic object/interface fact carrier | **100%** `[####################]` | **100%** `[####################]` | **65%** `[#############-------]` | Generated declared objects, known dynamic class-name `new`, copies, gotos, branches, generated-callable returns, descriptor closures, known string/invokable/callable-array summaries, compiler-visible reference slots, and selected declared static-property producers feed existing object/interface consumers. Broader properties, clones, dynamic/static property shapes, arbitrary symbols, unknown runtime callables/arrays, and non-descriptor closures remain open. |
