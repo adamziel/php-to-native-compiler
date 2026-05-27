@@ -18245,6 +18245,7 @@ impl NativeMethodStaticSourceCallArgumentStrategy {
 enum NativeMethodStaticSignatureFamily {
     GeneratedFunction,
     RuntimeBuiltin,
+    DescriptorClosure,
     ReceiverMethod,
     StaticMethod,
 }
@@ -29924,7 +29925,30 @@ impl CGenerator {
                     ),
                 ))
             }
-            CNativeCallableIdentity::DescriptorClosure { .. } => None,
+            CNativeCallableIdentity::DescriptorClosure { closure_key } => {
+                let summary = self
+                    .native_descriptor_closure_return_summaries
+                    .get(closure_key)?;
+                if arg_count.is_some_and(|arg_count| !summary.accepts_arg_count(arg_count)) {
+                    return None;
+                }
+                let argument_plan = summary.source_call_argument_plan();
+                let signature = CScopedCallableStringSignature {
+                    fixed_param_by_reference: argument_plan
+                        .params
+                        .iter()
+                        .take(argument_plan.fixed_count())
+                        .map(|param| param.by_reference)
+                        .collect(),
+                    returns_by_reference: summary.return_summary.result_kind
+                        == CNativeCallableResultKind::Reference,
+                };
+                Some((
+                    NativeMethodStaticSignatureFamily::DescriptorClosure,
+                    signature,
+                    NativeMethodStaticSourceCallArgumentStrategy::Frame(argument_plan),
+                ))
+            }
         }
     }
 
@@ -70658,6 +70682,67 @@ echo $call("Ada");
             push_summary.result_kind,
             CNativeCallableResultKind::NativeValue
         );
+    }
+
+    #[test]
+    fn mixed_callable_family_source_call_contract_includes_descriptor_closure_signatures() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "function mixed_family_signature_string($string) { return $string; }\n",
+        ))
+        .expect("mixed callable source-signature fixture parses");
+        let mut generator = CGenerator::default();
+        generator
+            .register_top_level_user_functions(&program.statements)
+            .expect("mixed callable source-signature function registers");
+
+        let string_param = FunctionParam {
+            name: "string".to_string(),
+            type_decl: None,
+            by_reference: false,
+            is_variadic: false,
+            default: None,
+            span: test_span(),
+        };
+        generator.native_descriptor_closure_return_summaries.insert(
+            "phpc_closure_frame_string".to_string(),
+            test_descriptor_closure_summary(
+                vec![string_param],
+                CNativeCallableResultKind::NativeValue,
+                None,
+            ),
+        );
+
+        let identities = HashSet::from([
+            CNativeCallableIdentity::GeneratedFunction {
+                function_key: CGenerator::user_function_key("mixed_family_signature_string"),
+            },
+            CNativeCallableIdentity::RuntimeBuiltin {
+                name: "strtoupper".to_string(),
+            },
+            CNativeCallableIdentity::DescriptorClosure {
+                closure_key: "phpc_closure_frame_string".to_string(),
+            },
+        ]);
+        let contract = generator
+            .callable_value_source_call_contract_from_identities(identities, Some(1), true)
+            .expect("compatible generated/builtin/descriptor callable family should normalize");
+
+        assert_eq!(contract.candidate_count, 3);
+        assert_eq!(contract.arity_compatible_count, 3);
+        assert_eq!(
+            contract.availability,
+            NativeMethodStaticSignatureAvailability::Known(CScopedCallableStringSignature {
+                fixed_param_by_reference: vec![false],
+                returns_by_reference: false,
+            })
+        );
+        let NativeMethodStaticSourceCallArgumentStrategy::Frame(plan) = contract.argument_strategy
+        else {
+            panic!("mixed callable source-signature contract should publish a shared frame plan");
+        };
+        assert_eq!(plan.params.len(), 1);
+        assert_eq!(plan.params[0].name, "string");
     }
 
     #[test]

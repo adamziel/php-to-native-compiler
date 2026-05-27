@@ -25718,6 +25718,19 @@ const NATIVE_RUNTIME_CALLABLE_VARIABLE_BYREF_SPREAD_SOURCE: &str = concat!(
     "echo $cb(...$args), \":\", $value;\n",
 );
 
+const NATIVE_RUNTIME_CALLABLE_VARIABLE_MIXED_FAMILY_SIGNATURE_SOURCE: &str = concat!(
+    "<?php\n",
+    "function mixed_family_signature_marker($label, $value) { echo $label; return $value; }\n",
+    "function mixed_family_signature_fn($first, $second = \"D\", ...$tail) {\n",
+    "    return \"F\" . $first . $second . ($tail[\"extra\"] ?? \"\") . ($tail[0] ?? \"\");\n",
+    "}\n",
+    "function mixed_family_signature_string($string) { return \"f\" . $string; }\n",
+    "$call = \"mixed_family_signature_fn\";\n",
+    "echo $call(...[\"second\" => mixed_family_signature_marker(\"A\", \"2\"), \"first\" => mixed_family_signature_marker(\"B\", \"1\"), \"extra\" => mixed_family_signature_marker(\"C\", \"E\")]), \"|\";\n",
+    "$stringCall = isset($_GET[\"upper\"]) ? \"strtoupper\" : \"mixed_family_signature_string\";\n",
+    "echo $stringCall(...[\"string\" => mixed_family_signature_marker(\"D\", \"go\")]);\n",
+);
+
 const NATIVE_SPREAD_VARIADIC_DESCRIPTOR_CLOSURE_ARGUMENT_SOURCE: &str = concat!(
     "<?php\n",
     "function spread_variadic_descriptor_closure_marker($label) { echo $label; return $label; }\n",
@@ -27106,6 +27119,30 @@ fn native_executable_c_source_blocks_runtime_callable_variable_spread_with_heter
             .contains("spread operands need a materialized-entry producer"),
         "{}",
         error.message
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_runtime_callable_variable_mixed_family_same_signature_policy()
+{
+    let program = parse(NATIVE_RUNTIME_CALLABLE_VARIABLE_MIXED_FAMILY_SIGNATURE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && body.contains("phpc_NativeCallArgumentsHandle dynamic_callable_args_")
+            && body.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "same-signature mixed generated/builtin callable families should use the central finite identity source-call contract:\n{source}"
+    );
+    assert!(
+        !source.contains("spread operands need a materialized-entry producer")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches")
+            && !source.contains("callable_array_matched")
+            && !source.contains("callable_object_matched"),
+        "mixed callable-family compatibility should not fall back to exact-name ladders or legacy blockers:\n{source}"
     );
 }
 
@@ -29806,6 +29843,34 @@ fn emit_exe_links_and_runs_runtime_callable_variable_byref_spread_argument_progr
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"stat:aS:aS|inst:bI:bI|invoke:cO:cO");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_runtime_callable_variable_mixed_family_same_signature_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "runtime_callable_variable_mixed_family_same_signature",
+        NATIVE_RUNTIME_CALLABLE_VARIABLE_MIXED_FAMILY_SIGNATURE_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native runtime callable variable mixed-family executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ABCF12E|Dfgo");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
