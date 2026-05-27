@@ -4736,6 +4736,7 @@ fn stmt_reference_return_sources_are_supported(
 
 fn reference_return_expr_is_supported(expr: &Expr, by_reference_symbols: &HashSet<&str>) -> bool {
     matches!(expr, Expr::Variable(name, _) if by_reference_symbols.contains(name.as_str()))
+        || matches!(expr, Expr::Property { .. } | Expr::DynamicProperty { .. })
 }
 
 fn stmt_list_always_returns(statements: &[Stmt]) -> bool {
@@ -17170,6 +17171,14 @@ struct CNativeNestedArrayAccessIntermediateValuePlan {
     frame_index: usize,
     produced_by_offset_index: usize,
     facts: CNativeValueFacts,
+    source: CNativeNestedArrayAccessIntermediateSource,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CNativeNestedArrayAccessIntermediateSource {
+    ByValueOffsetGet,
+    ReferenceOffsetGet,
 }
 
 #[allow(dead_code)]
@@ -17265,9 +17274,16 @@ enum CNativeNestedArrayAccessOwnerStackBlocker {
 }
 
 enum CNativeNestedArrayAccessIntermediateBoundary {
-    ByValueArrayAccessObject { facts: CNativeValueFacts },
-    ReferenceReturningOffsetGet { class_key: String },
-    UnknownReferenceOrCow { reason: &'static str },
+    ByValueArrayAccessObject {
+        facts: CNativeValueFacts,
+    },
+    ReferenceReturningOffsetGet {
+        class_key: String,
+        facts: CNativeValueFacts,
+    },
+    UnknownReferenceOrCow {
+        reason: &'static str,
+    },
 }
 
 struct CNativeNestedArrayAccessAssignmentTarget<'a> {
@@ -17298,6 +17314,7 @@ struct CNativeNestedArrayAccessWriteContext {
     root_owner: CNativeValueOwnerMaterialization,
     offsets: Vec<CNativeValueMaterialization>,
     intermediates: Vec<CNativeValueMaterialization>,
+    intermediate_references: Vec<Option<CNativeReferenceMaterialization>>,
     plan: CNativeNestedArrayAccessOwnerStackPlan,
     callable_table: String,
     cleanup_after_use: Vec<String>,
@@ -17308,6 +17325,7 @@ struct CNativeNestedArrayAccessAppendContext {
     offsets: Vec<CNativeValueMaterialization>,
     suffix_offsets: Vec<Expr>,
     intermediates: Vec<CNativeValueMaterialization>,
+    intermediate_references: Vec<Option<CNativeReferenceMaterialization>>,
     plan: CNativeNestedArrayAccessAppendPlan,
     callable_table: String,
     cleanup_after_use: Vec<String>,
@@ -17326,6 +17344,13 @@ impl CNativeNestedArrayAccessWriteContext {
             }
         }
     }
+
+    fn reference_handle(&self, frame_index: usize) -> Option<&str> {
+        self.intermediate_references
+            .get(frame_index)
+            .and_then(|reference| reference.as_ref())
+            .map(|reference| reference.handle.as_str())
+    }
 }
 
 impl CNativeNestedArrayAccessAppendContext {
@@ -17340,6 +17365,13 @@ impl CNativeNestedArrayAccessAppendContext {
                 &self.intermediates[frame_index].handle
             }
         }
+    }
+
+    fn reference_handle(&self, frame_index: usize) -> Option<&str> {
+        self.intermediate_references
+            .get(frame_index)
+            .and_then(|reference| reference.as_ref())
+            .map(|reference| reference.handle.as_str())
     }
 
     fn append_subject_owner(&self) -> CNativeNestedArrayAccessSubjectOwner {
@@ -21171,6 +21203,22 @@ impl CGenerator {
         ));
         if !method.is_static {
             generator.bind_method_this_handle();
+            let class_key = Self::declared_class_key(class_name);
+            if let Some(class) = generator.declared_classes.get(&class_key) {
+                if let Some((_, constructor)) =
+                    generator.declared_class_constructor_for_instantiation(class)
+                {
+                    for (property, facts) in constructor.this_property_value_facts {
+                        generator.native_object_property_value_facts.insert(
+                            CNativeObjectPropertyFactKey {
+                                object: "this".to_string(),
+                                property,
+                            },
+                            facts,
+                        );
+                    }
+                }
+            }
         }
         generator.bind_function_frame_parameters(&method.decl);
 
@@ -21983,6 +22031,7 @@ impl CGenerator {
                 output.push_str("extern bool phpc_native_static_method_invoke_discard_with_access_context_diagnostic_and_free_scope_method_arguments(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 if self.uses_native_arrayaccess_offset_read_helpers {
                     output.push_str("extern phpc_NativeValueHandle phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle subject, phpc_NativeValueHandle offset, uint8_t operation, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                    output.push_str("extern phpc_NativeReferenceHandle phpc_native_value_arrayaccess_offset_get_reference_with_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle subject, phpc_NativeValueHandle offset, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 }
                 if self.uses_native_arrayaccess_offset_write_helpers {
                     output.push_str("extern phpc_NativeValueHandle phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle subject, phpc_NativeValueHandle offset, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -29146,12 +29195,9 @@ impl CGenerator {
                     reason: "nested ArrayAccess descent cannot prove the offsetGet method",
                 };
             };
-            if method.decl.returns_by_reference {
-                return CNativeNestedArrayAccessIntermediateBoundary::ReferenceReturningOffsetGet {
-                    class_key: class_key.clone(),
-                };
-            }
-            let Some(return_facts) = method.return_facts.clone() else {
+            let Some(return_facts) = method.return_facts.clone().or_else(|| {
+                self.declared_method_reference_this_property_return_facts(class_key, &method)
+            }) else {
                 return CNativeNestedArrayAccessIntermediateBoundary::UnknownReferenceOrCow {
                     reason: "nested ArrayAccess descent cannot prove offsetGet return facts",
                 };
@@ -29159,6 +29205,12 @@ impl CGenerator {
             if !return_facts.has_definite_native_object_interface("ArrayAccess") {
                 return CNativeNestedArrayAccessIntermediateBoundary::UnknownReferenceOrCow {
                     reason: "nested ArrayAccess descent cannot prove offsetGet returns an ArrayAccess object",
+                };
+            }
+            if method.decl.returns_by_reference {
+                return CNativeNestedArrayAccessIntermediateBoundary::ReferenceReturningOffsetGet {
+                    class_key: class_key.clone(),
+                    facts: return_facts,
                 };
             }
             merged_facts = Some(match merged_facts {
@@ -29184,6 +29236,41 @@ impl CGenerator {
                 reason: "nested ArrayAccess descent has no inspectable offsetGet candidates",
             },
         }
+    }
+
+    fn declared_method_reference_this_property_return_facts(
+        &self,
+        class_key: &str,
+        method: &CDeclaredClassMethod,
+    ) -> Option<CNativeValueFacts> {
+        if !method.decl.returns_by_reference {
+            return None;
+        }
+        let mut returns = method.decl.body.iter().filter_map(|stmt| match stmt {
+            Stmt::Return {
+                value: Some(expr), ..
+            } => Some(expr),
+            _ => None,
+        });
+        let expr = returns.next()?;
+        if returns.next().is_some() {
+            return None;
+        }
+        let Expr::Property {
+            target, property, ..
+        } = expr
+        else {
+            return None;
+        };
+        let Expr::Variable(name, _) = target.as_ref() else {
+            return None;
+        };
+        if name != "this" {
+            return None;
+        }
+        let class = self.declared_classes.get(class_key)?;
+        let (_, constructor) = self.declared_class_constructor_for_instantiation(class)?;
+        constructor.this_property_value_facts.get(property).cloned()
     }
 
     #[allow(dead_code)]
@@ -29232,20 +29319,32 @@ impl CGenerator {
                             frame_index,
                             produced_by_offset_index: frame_index,
                             facts: facts.clone(),
+                            source: CNativeNestedArrayAccessIntermediateSource::ByValueOffsetGet,
                         },
                     });
                     subject_facts = facts;
                 }
                 CNativeNestedArrayAccessIntermediateBoundary::ReferenceReturningOffsetGet {
-                    class_key,
+                    facts,
+                    ..
                 } => {
-                    return Err(
-                        CNativeNestedArrayAccessOwnerStackBlocker::ReferenceReturningOffsetGet {
-                            frame_index,
+                    frames.push(CNativeNestedArrayAccessOwnerFramePlan {
+                        frame_index,
+                        subject_owner,
+                        offset: CNativeNestedArrayAccessOffsetPlan {
+                            index: frame_index,
                             span: offset.span(),
-                            class_key,
+                            owner: subject_owner,
+                            role: CNativeNestedArrayAccessOffsetRole::Descend,
                         },
-                    );
+                        intermediate: CNativeNestedArrayAccessIntermediateValuePlan {
+                            frame_index,
+                            produced_by_offset_index: frame_index,
+                            facts: facts.clone(),
+                            source: CNativeNestedArrayAccessIntermediateSource::ReferenceOffsetGet,
+                        },
+                    });
+                    subject_facts = facts;
                 }
                 CNativeNestedArrayAccessIntermediateBoundary::UnknownReferenceOrCow { reason } => {
                     return Err(
@@ -29445,20 +29544,32 @@ impl CGenerator {
                             frame_index,
                             produced_by_offset_index: frame_index,
                             facts: facts.clone(),
+                            source: CNativeNestedArrayAccessIntermediateSource::ByValueOffsetGet,
                         },
                     });
                     subject_facts = facts;
                 }
                 CNativeNestedArrayAccessIntermediateBoundary::ReferenceReturningOffsetGet {
-                    class_key,
+                    facts,
+                    ..
                 } => {
-                    return Err(
-                        CNativeNestedArrayAccessOwnerStackBlocker::ReferenceReturningOffsetGet {
-                            frame_index,
+                    frames.push(CNativeNestedArrayAccessOwnerFramePlan {
+                        frame_index,
+                        subject_owner,
+                        offset: CNativeNestedArrayAccessOffsetPlan {
+                            index: frame_index,
                             span: offset.span(),
-                            class_key,
+                            owner: subject_owner,
+                            role: CNativeNestedArrayAccessOffsetRole::Descend,
                         },
-                    );
+                        intermediate: CNativeNestedArrayAccessIntermediateValuePlan {
+                            frame_index,
+                            produced_by_offset_index: frame_index,
+                            facts: facts.clone(),
+                            source: CNativeNestedArrayAccessIntermediateSource::ReferenceOffsetGet,
+                        },
+                    });
+                    subject_facts = facts;
                 }
                 CNativeNestedArrayAccessIntermediateBoundary::UnknownReferenceOrCow { reason } => {
                     return Err(
@@ -29895,6 +30006,7 @@ impl CGenerator {
             root_owner,
             offsets,
             intermediates: Vec::with_capacity(target.plan.frames.len()),
+            intermediate_references: Vec::with_capacity(target.plan.frames.len()),
             plan: target.plan,
             callable_table,
             cleanup_after_use,
@@ -29908,15 +30020,21 @@ impl CGenerator {
                 callable_table: context.callable_table.clone(),
                 cleanup_after_use: context.cleanup_after_use.clone(),
             };
-            let intermediate = self.emit_native_arrayaccess_offset_read_operation(
+            let (intermediate, reference) = self.emit_native_nested_arrayaccess_intermediate(
+                &frame,
                 &operands,
-                CNativeArrayAccessOffsetReadOperation::Get,
                 failure_cleanup,
             );
             context
                 .cleanup_after_use
                 .extend(intermediate.cleanup_after_use.clone());
+            if let Some(reference) = &reference {
+                context
+                    .cleanup_after_use
+                    .extend(reference.cleanup_after_use.clone());
+            }
             context.intermediates.push(intermediate);
+            context.intermediate_references.push(reference);
         }
 
         Ok(Some(context))
@@ -29963,6 +30081,7 @@ impl CGenerator {
             offsets,
             suffix_offsets: target.suffix_offsets.to_vec(),
             intermediates: Vec::with_capacity(target.plan.frames.len()),
+            intermediate_references: Vec::with_capacity(target.plan.frames.len()),
             plan: target.plan,
             callable_table,
             cleanup_after_use,
@@ -29976,15 +30095,21 @@ impl CGenerator {
                 callable_table: context.callable_table.clone(),
                 cleanup_after_use: context.cleanup_after_use.clone(),
             };
-            let intermediate = self.emit_native_arrayaccess_offset_read_operation(
+            let (intermediate, reference) = self.emit_native_nested_arrayaccess_intermediate(
+                &frame,
                 &operands,
-                CNativeArrayAccessOffsetReadOperation::Get,
                 failure_cleanup,
             );
             context
                 .cleanup_after_use
                 .extend(intermediate.cleanup_after_use.clone());
+            if let Some(reference) = &reference {
+                context
+                    .cleanup_after_use
+                    .extend(reference.cleanup_after_use.clone());
+            }
             context.intermediates.push(intermediate);
+            context.intermediate_references.push(reference);
         }
 
         Ok(Some(context))
@@ -30029,6 +30154,7 @@ impl CGenerator {
             root_owner,
             offsets,
             intermediates: Vec::with_capacity(target.plan.frames.len()),
+            intermediate_references: Vec::with_capacity(target.plan.frames.len()),
             plan: target.plan,
             callable_table,
             cleanup_after_use,
@@ -30042,15 +30168,21 @@ impl CGenerator {
                 callable_table: context.callable_table.clone(),
                 cleanup_after_use: context.cleanup_after_use.clone(),
             };
-            let intermediate = self.emit_native_arrayaccess_offset_read_operation(
+            let (intermediate, reference) = self.emit_native_nested_arrayaccess_intermediate(
+                &frame,
                 &operands,
-                CNativeArrayAccessOffsetReadOperation::Get,
                 failure_cleanup,
             );
             context
                 .cleanup_after_use
                 .extend(intermediate.cleanup_after_use.clone());
+            if let Some(reference) = &reference {
+                context
+                    .cleanup_after_use
+                    .extend(reference.cleanup_after_use.clone());
+            }
             context.intermediates.push(intermediate);
+            context.intermediate_references.push(reference);
         }
 
         Ok(Some(context))
@@ -33126,12 +33258,7 @@ impl CGenerator {
     }
 
     fn record_function_return_facts(&mut self, facts: Option<CNativeValueFacts>) {
-        if self.function_return_status.is_none()
-            || matches!(
-                self.function_return_mode,
-                CFunctionReturnMode::NativeReference | CFunctionReturnMode::ClosureReference
-            )
-        {
+        if self.function_return_status.is_none() {
             return;
         }
 
@@ -33326,6 +33453,7 @@ impl CGenerator {
             ));
             return Ok(());
         };
+        self.record_function_return_facts_for_value(Some(value));
         let reference = self.materialize_call_reference_argument(
             value,
             value.span(),
@@ -46433,13 +46561,10 @@ impl CGenerator {
         );
 
         for frame in context.plan.frames.iter().rev() {
-            current = self.emit_native_arrayaccess_offset_write_operation_for_handles(
-                context.subject_handle(frame.subject_owner),
-                &context.offsets[frame.offset.index].handle,
+            current = self.emit_native_nested_arrayaccess_write_context_parent_writeback(
+                context,
+                frame,
                 current,
-                CNativeArrayAccessOffsetWriteOperation::Write,
-                &context.callable_table,
-                &context.cleanup_after_use,
                 "nested_arrayaccess_null_coalesce_parent_writeback",
                 &format!(
                     "phpc_native_value_free({}); phpc_native_value_free({selected_subject}); {failure_cleanup}",
@@ -52946,6 +53071,82 @@ impl CGenerator {
         }
     }
 
+    fn emit_native_arrayaccess_offset_get_reference_operation(
+        &mut self,
+        operands: &CNativeArrayAccessOffsetReadOperands,
+        failure_cleanup: &str,
+    ) -> CNativeReferenceMaterialization {
+        self.uses_native_reference_helpers = true;
+        let operand_cleanup_sequence = c_cleanup_sequence(&operands.cleanup_after_use);
+
+        let result = self.next_native_name("arrayaccess_offset_get_reference");
+        let diagnostic = self.next_native_name("arrayaccess_offset_get_reference_diagnostic");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeReferenceHandle {result} = phpc_native_value_arrayaccess_offset_get_reference_with_diagnostic({table}, {}, {}, (phpc_NativeStringHandle){{0}}, &{diagnostic});",
+            operands.subject_handle,
+            operands.offset_handle,
+            table = operands.callable_table
+        ));
+        let error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_report({diagnostic}); {operand_cleanup_sequence}{failure_cleanup}"
+        ));
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+
+        CNativeReferenceMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_reference_free({result});")],
+        }
+    }
+
+    fn emit_native_nested_arrayaccess_intermediate(
+        &mut self,
+        frame: &CNativeNestedArrayAccessOwnerFramePlan,
+        operands: &CNativeArrayAccessOffsetReadOperands,
+        failure_cleanup: &str,
+    ) -> (
+        CNativeValueMaterialization,
+        Option<CNativeReferenceMaterialization>,
+    ) {
+        match frame.intermediate.source {
+            CNativeNestedArrayAccessIntermediateSource::ByValueOffsetGet => (
+                self.emit_native_arrayaccess_offset_read_operation(
+                    operands,
+                    CNativeArrayAccessOffsetReadOperation::Get,
+                    failure_cleanup,
+                ),
+                None,
+            ),
+            CNativeNestedArrayAccessIntermediateSource::ReferenceOffsetGet => {
+                let reference = self.emit_native_arrayaccess_offset_get_reference_operation(
+                    operands,
+                    failure_cleanup,
+                );
+                let reference_cleanup = c_cleanup_sequence(&reference.cleanup_after_use);
+                let value = self.next_native_name("arrayaccess_offset_get_reference_value");
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {value} = phpc_native_reference_value_clone({});",
+                    reference.handle
+                ));
+                let error_exit =
+                    self.native_error_exit(&format!("{reference_cleanup}{failure_cleanup}"));
+                self.body
+                    .push(format!("if ({value}.ptr == NULL) {{ {error_exit} }}"));
+                (
+                    CNativeValueMaterialization {
+                        handle: value.clone(),
+                        cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
+                    },
+                    Some(reference),
+                )
+            }
+        }
+    }
+
     fn materialize_native_arrayaccess_offset_read_operation_expr(
         &mut self,
         expr: &Expr,
@@ -53196,15 +53397,10 @@ impl CGenerator {
         );
 
         for frame in context.plan.frames.iter().rev() {
-            let parent_subject_handle = context.subject_handle(frame.subject_owner).to_string();
-            let parent_offset_handle = context.offsets[frame.offset.index].handle.clone();
-            current = self.emit_native_arrayaccess_offset_write_operation_for_handles(
-                &parent_subject_handle,
-                &parent_offset_handle,
+            current = self.emit_native_nested_arrayaccess_write_context_parent_writeback(
+                &context,
+                frame,
                 current,
-                CNativeArrayAccessOffsetWriteOperation::Write,
-                &context.callable_table,
-                &context.cleanup_after_use,
                 "nested_arrayaccess_parent_writeback",
                 failure_cleanup,
             );
@@ -53253,15 +53449,10 @@ impl CGenerator {
         );
 
         for frame in context.plan.frames.iter().rev() {
-            let parent_subject_handle = context.subject_handle(frame.subject_owner).to_string();
-            let parent_offset_handle = context.offsets[frame.offset.index].handle.clone();
-            current = self.emit_native_arrayaccess_offset_write_operation_for_handles(
-                &parent_subject_handle,
-                &parent_offset_handle,
+            current = self.emit_native_nested_arrayaccess_append_context_parent_writeback(
+                &context,
+                frame,
                 current,
-                CNativeArrayAccessOffsetWriteOperation::Write,
-                &context.callable_table,
-                &context.cleanup_after_use,
                 "nested_arrayaccess_parent_writeback",
                 failure_cleanup,
             );
@@ -53283,6 +53474,102 @@ impl CGenerator {
         self.body.extend(context.cleanup_after_use);
 
         Ok(())
+    }
+
+    fn emit_native_nested_arrayaccess_write_context_parent_writeback(
+        &mut self,
+        context: &CNativeNestedArrayAccessWriteContext,
+        frame: &CNativeNestedArrayAccessOwnerFramePlan,
+        current: CNativeValueMaterialization,
+        result_prefix: &str,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        match frame.intermediate.source {
+            CNativeNestedArrayAccessIntermediateSource::ByValueOffsetGet => self
+                .emit_native_arrayaccess_offset_write_operation_for_handles(
+                    context.subject_handle(frame.subject_owner),
+                    &context.offsets[frame.offset.index].handle,
+                    current,
+                    CNativeArrayAccessOffsetWriteOperation::Write,
+                    &context.callable_table,
+                    &context.cleanup_after_use,
+                    result_prefix,
+                    failure_cleanup,
+                ),
+            CNativeNestedArrayAccessIntermediateSource::ReferenceOffsetGet => self
+                .emit_native_nested_arrayaccess_reference_parent_writeback(
+                    context.reference_handle(frame.frame_index),
+                    context.subject_handle(frame.subject_owner),
+                    &frame.intermediate.facts,
+                    current,
+                    failure_cleanup,
+                ),
+        }
+    }
+
+    fn emit_native_nested_arrayaccess_append_context_parent_writeback(
+        &mut self,
+        context: &CNativeNestedArrayAccessAppendContext,
+        frame: &CNativeNestedArrayAccessOwnerFramePlan,
+        current: CNativeValueMaterialization,
+        result_prefix: &str,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        match frame.intermediate.source {
+            CNativeNestedArrayAccessIntermediateSource::ByValueOffsetGet => self
+                .emit_native_arrayaccess_offset_write_operation_for_handles(
+                    context.subject_handle(frame.subject_owner),
+                    &context.offsets[frame.offset.index].handle,
+                    current,
+                    CNativeArrayAccessOffsetWriteOperation::Write,
+                    &context.callable_table,
+                    &context.cleanup_after_use,
+                    result_prefix,
+                    failure_cleanup,
+                ),
+            CNativeNestedArrayAccessIntermediateSource::ReferenceOffsetGet => self
+                .emit_native_nested_arrayaccess_reference_parent_writeback(
+                    context.reference_handle(frame.frame_index),
+                    context.subject_handle(frame.subject_owner),
+                    &frame.intermediate.facts,
+                    current,
+                    failure_cleanup,
+                ),
+        }
+    }
+
+    fn emit_native_nested_arrayaccess_reference_parent_writeback(
+        &mut self,
+        reference: Option<&str>,
+        subject_handle: &str,
+        facts: &CNativeValueFacts,
+        current: CNativeValueMaterialization,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        let reference = reference.expect("reference offsetGet frame should own a reference handle");
+        let current_cleanup = c_cleanup_sequence(&current.cleanup_after_use);
+        self.body
+            .push("/* nested_arrayaccess_reference_writeback */".to_string());
+        self.emit_native_reference_value_commit_with_diagnostic(
+            reference,
+            &current.handle,
+            Some(facts.clone()),
+            &format!("{current_cleanup}{failure_cleanup}"),
+        )
+        .expect("reference writeback codegen should not reject a planned reference frame");
+        self.body.extend(current.cleanup_after_use);
+        let owner_value = self.next_native_name("nested_arrayaccess_reference_owner_value");
+        self.uses_native_value_clone = true;
+        self.body.push(format!(
+            "phpc_NativeValueHandle {owner_value} = phpc_native_value_clone({subject_handle});"
+        ));
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({owner_value}.ptr == NULL) {{ {error_exit} }}"));
+        CNativeValueMaterialization {
+            handle: owner_value.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({owner_value});")],
+        }
     }
 
     fn emit_native_nested_arrayaccess_leaf_read_operation(
@@ -59534,7 +59821,8 @@ mod tests {
     }
 
     #[test]
-    fn native_nested_arrayaccess_owner_stack_blocks_reference_returning_offsetget() {
+    fn native_nested_arrayaccess_owner_stack_blocks_reference_returning_offsetget_without_return_facts(
+    ) {
         let program = crate::parse(concat!(
             "<?php\n",
             "class RefNestedRootBag implements ArrayAccess {\n",
@@ -59569,16 +59857,77 @@ mod tests {
                 ],
                 span(10),
             )
-            .expect_err("reference-returning offsetGet must block nested owner planning");
+            .expect_err(
+                "reference-returning offsetGet without facts must block nested owner planning",
+            );
 
         assert_eq!(
             blocker,
-            CNativeNestedArrayAccessOwnerStackBlocker::ReferenceReturningOffsetGet {
+            CNativeNestedArrayAccessOwnerStackBlocker::UnknownReferenceOrCowBoundary {
                 frame_index: 0,
                 span: span(11),
-                class_key: CGenerator::declared_class_key("RefNestedRootBag"),
+                reason: "nested ArrayAccess descent cannot prove offsetGet return facts",
             }
         );
+    }
+
+    #[test]
+    fn native_nested_arrayaccess_owner_stack_plans_reference_returning_offsetget_contract() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "class RefLeafBag implements ArrayAccess {\n",
+            "    public function offsetGet($offset) { return 0; }\n",
+            "    public function offsetExists($offset) { return true; }\n",
+            "    public function offsetSet($offset, $value) { return null; }\n",
+            "    public function offsetUnset($offset) { return null; }\n",
+            "}\n",
+            "class RefRootBag implements ArrayAccess {\n",
+            "    public $slot;\n",
+            "    public function __construct() { $this->slot = new RefLeafBag(); }\n",
+            "    public function &offsetGet($offset) { return $this->slot; }\n",
+            "    public function offsetExists($offset) { return true; }\n",
+            "    public function offsetSet($offset, $value) { return null; }\n",
+            "    public function offsetUnset($offset) { return null; }\n",
+            "}\n",
+        ))
+        .unwrap();
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            uses_native_value_clone: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .unwrap();
+        generator
+            .emit_declared_class_method_definitions()
+            .expect("constructor summary should be available to offsetGet planning");
+        let root_facts = test_declared_class_facts(&generator, "RefRootBag");
+        let source = CNativeValueOwnerSource::DirectVariable {
+            name: "root".to_string(),
+            span: span(10),
+            facts: Some(root_facts),
+        };
+
+        let plan = generator
+            .plan_native_nested_arrayaccess_owner_stack_from_source(
+                &source,
+                &[
+                    Expr::String("outer".to_string(), span(11)),
+                    Expr::String("leaf".to_string(), span(12)),
+                ],
+                span(10),
+            )
+            .expect("reference-returning offsetGet with facts should plan");
+
+        assert_eq!(
+            plan.frames[0].intermediate.source,
+            CNativeNestedArrayAccessIntermediateSource::ReferenceOffsetGet
+        );
+        assert!(plan.frames[0]
+            .intermediate
+            .facts
+            .has_definite_native_object_interface("ArrayAccess"));
     }
 
     #[test]

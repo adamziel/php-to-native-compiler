@@ -15983,6 +15983,35 @@ pub unsafe extern "C" fn phpc_native_value_arrayaccess_offset_read_operation_wit
 
 /// # Safety
 ///
+/// `table` must be a callable table handle containing generated method
+/// callbacks. `subject` and `offset` must be null or value handles previously
+/// returned by the runtime ABI and not yet freed. `caller_scope` may be null
+/// or a UTF-8 string handle. `diagnostic` may be null; when non-null, it must
+/// point to writable storage for one `NativeDiagnosticHandle`. Dispatches
+/// `ArrayAccess::offsetGet($offset)` and returns the callback reference.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_arrayaccess_offset_get_reference_with_diagnostic(
+    table: NativeCallableTableHandle,
+    subject: NativeValueHandle,
+    offset: NativeValueHandle,
+    caller_scope: NativeStringHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeReferenceHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe {
+        native_value_arrayaccess_offset_get_reference(table, subject, offset, caller_scope)
+    } {
+        Ok(reference) => NativeReferenceHandle::from_cell(reference),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeReferenceHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
 /// `subject`, every value in `offsets`, and `replacement` must be null or value
 /// handles previously returned by the runtime ABI and not yet freed. When
 /// `offsets_len` is nonzero, `offsets` must point to `offsets_len` readable
@@ -16633,6 +16662,119 @@ unsafe fn native_value_arrayaccess_offset_read_operation_value(
             unsafe { phpc_native_call_result_free(result) };
             Err(RuntimeError::invalid_array_access(
                 "native ArrayAccess offset read dispatch failed: callback returned a null result",
+            ))
+        }
+    }
+}
+
+unsafe fn native_value_arrayaccess_offset_get_reference(
+    table: NativeCallableTableHandle,
+    subject: NativeValueHandle,
+    offset: NativeValueHandle,
+    caller_scope: NativeStringHandle,
+) -> RuntimeResult<PhpReferenceCell> {
+    let Some(table) = (unsafe { table.as_ref() }) else {
+        return Err(RuntimeError::invalid_array_access(
+            "native ArrayAccess offsetGet reference dispatch failed: callable table is null",
+        ));
+    };
+    let Some(subject_value) = (unsafe { subject.as_ref() }) else {
+        return Err(RuntimeError::invalid_array_access(
+            "native ArrayAccess offsetGet reference dispatch failed: subject handle is null",
+        ));
+    };
+    let Value::Object(object) = subject_value else {
+        return Err(RuntimeError::invalid_array_access(format!(
+            "native ArrayAccess offsetGet reference dispatch requires an object subject, got {}",
+            subject_value.type_name()
+        )));
+    };
+    if !object.is_instance_of_class_name("ArrayAccess") {
+        return Err(RuntimeError::invalid_array_access(format!(
+            "native ArrayAccess offsetGet reference dispatch failed: object of class {} does not implement ArrayAccess",
+            object.class_name()
+        )));
+    }
+
+    let callable = table
+        .lookup(
+            NativeCallableKind::Method,
+            Some(object.class_name().to_string()),
+            NativeArrayAccessOffsetReadOperation::Get
+                .method_name()
+                .to_string(),
+            unsafe { native_string_handle_to_string(caller_scope) },
+        )
+        .map_err(RuntimeError::invalid_array_access)?;
+    let dispatch = NativeCallableValueHandle::from_dispatch(NativeCallableValueDispatch::Table {
+        callable,
+        bound_receiver: Some(Value::Object(object.clone())),
+    });
+    let arguments = match unsafe {
+        native_arrayaccess_offset_read_arguments(offset, NativeArrayAccessOffsetReadOperation::Get)
+    } {
+        Ok(arguments) => arguments,
+        Err(error) => {
+            unsafe { phpc_native_callable_value_free(dispatch) };
+            return Err(error);
+        }
+    };
+    let mut call_diagnostic = NativeDiagnosticHandle::null();
+    let result = unsafe {
+        phpc_native_callable_value_invoke_result_with_diagnostic_and_free(
+            dispatch,
+            arguments,
+            &mut call_diagnostic,
+        )
+    };
+    unsafe { phpc_native_callable_value_free(dispatch) };
+
+    if !call_diagnostic.is_null() {
+        let message = unsafe { call_diagnostic.as_ref() }
+            .map(|diagnostic| diagnostic.message.clone())
+            .unwrap_or_else(|| {
+                "native ArrayAccess offsetGet reference dispatch failed: callable dispatch failed"
+                    .to_string()
+            });
+        unsafe { phpc_native_diagnostic_free(call_diagnostic) };
+        unsafe { phpc_native_call_result_free(result) };
+        return Err(RuntimeError::invalid_array_access(message));
+    }
+
+    match unsafe { phpc_native_call_result_status(result) } {
+        NativeCallResultStatus::Reference => {
+            let reference = unsafe { phpc_native_call_result_take_reference_and_free(result) };
+            let Some(reference_ref) = (unsafe { reference.as_ref() }) else {
+                return Err(RuntimeError::invalid_array_access(
+                    "native ArrayAccess offsetGet reference dispatch failed: callback returned no reference",
+                ));
+            };
+            let cell = reference_ref.cell.clone();
+            unsafe { phpc_native_reference_free(reference) };
+            Ok(cell)
+        }
+        NativeCallResultStatus::Failure => {
+            let diagnostic = unsafe { phpc_native_call_result_take_diagnostic_and_free(result) };
+            let message = unsafe { diagnostic.as_ref() }
+                .map(|diagnostic| diagnostic.message.clone())
+                .unwrap_or_else(|| {
+                    "native ArrayAccess offsetGet reference dispatch failed: callback returned failure"
+                        .to_string()
+                });
+            unsafe { phpc_native_diagnostic_free(diagnostic) };
+            Err(RuntimeError::invalid_array_access(message))
+        }
+        NativeCallResultStatus::Value => {
+            let value = unsafe { phpc_native_call_result_take_value_and_free(result) };
+            unsafe { phpc_native_value_free(value) };
+            Err(RuntimeError::invalid_array_access(
+                "native ArrayAccess offsetGet reference dispatch failed: callback returned a value",
+            ))
+        }
+        NativeCallResultStatus::Null => {
+            unsafe { phpc_native_call_result_free(result) };
+            Err(RuntimeError::invalid_array_access(
+                "native ArrayAccess offsetGet reference dispatch failed: callback returned a null result",
             ))
         }
     }

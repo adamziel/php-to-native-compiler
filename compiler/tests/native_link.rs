@@ -17843,6 +17843,34 @@ const ARRAYACCESS_ROOT_KEYED_APPEND_SUFFIX_SOURCE: &str = concat!(
     "echo ($bag[][$leaf] = root_keyed_append_rhs(\"D\"));\n",
 );
 
+const ARRAYACCESS_REFERENCE_OFFSETGET_OWNER_STACK_SOURCE: &str = concat!(
+    "<?php\n",
+    "class RefGetLeafBag implements ArrayAccess {\n",
+    "    public $last = \"\";\n",
+    "    public function offsetGet($offset) { echo \"leaf-get:\", $offset, \";\"; return 0; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"leaf-set:\", $offset, \"=\", $value, \";\"; $this->last = $value; return null; }\n",
+    "    public function offsetUnset($offset) { echo \"leaf-unset:\", $offset, \";\"; $this->last = \"unset\"; return null; }\n",
+    "}\n",
+    "class RefGetRootBag implements ArrayAccess {\n",
+    "    public $slot;\n",
+    "    public function __construct() { $this->slot = new RefGetLeafBag(); }\n",
+    "    public function &offsetGet($offset) { echo \"root-ref-get:\", $offset, \";\"; return $this->slot; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"bad-root-set;\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class RefGetHolder { public $bag; public function __construct() { $this->bag = new RefGetRootBag(); } }\n",
+    "$direct = new RefGetRootBag();\n",
+    "$direct_alias = $direct->slot;\n",
+    "$direct[\"outer\"][\"leaf\"] = \"D\";\n",
+    "echo \"alias=\", $direct_alias->last, \"|\";\n",
+    "$holder = new RefGetHolder();\n",
+    "$holder_alias = $holder->bag->slot;\n",
+    "$holder->bag[\"pouter\"][] = \"P\";\n",
+    "echo \"aliasP=\", $holder_alias->last;\n",
+);
+
 #[test]
 fn native_executable_c_source_routes_arrayaccess_reference_slot_owners_through_value_owner_boundary(
 ) {
@@ -18591,7 +18619,59 @@ fn emit_exe_links_and_runs_arrayaccess_root_keyed_append_suffix_program() {
 }
 
 #[test]
-fn native_executable_c_source_rejects_nested_arrayaccess_reference_returning_offsetget() {
+fn native_executable_c_source_routes_reference_returning_offsetget_owner_stack_for_assignment_and_append(
+) {
+    let program = parse(ARRAYACCESS_REFERENCE_OFFSETGET_OWNER_STACK_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_arrayaccess_offset_get_reference_with_diagnostic")
+            && source.contains("phpc_native_reference_value_clone(")
+            && source.contains("nested_arrayaccess_reference_writeback")
+            && source.matches("nested_arrayaccess_leaf_write").count() >= 1
+            && source.matches("nested_arrayaccess_leaf_append").count() >= 1
+            && source.matches("nested_arrayaccess_root_commit").count() >= 2
+            && !source.contains("ArrayAccess lowering rejects"),
+        "reference-returning offsetGet should use the reference owner frame for both assignment and append without falling back to by-value parent offsetSet:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_reference_returning_offsetget_owner_stack_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "arrayaccess_reference_offsetget_owner_stack",
+        ARRAYACCESS_REFERENCE_OFFSETGET_OWNER_STACK_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native reference-returning offsetGet owner-stack executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(
+        run.stdout,
+        b"root-ref-get:outer;leaf-set:leaf=D;alias=D|root-ref-get:pouter;leaf-set:=P;aliasP=P"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+    assert!(
+        !String::from_utf8_lossy(&run.stdout).contains("bad-root-set"),
+        "reference frames must write through the returned reference instead of parent offsetSet"
+    );
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_executable_c_source_rejects_nested_arrayaccess_reference_returning_offsetget_without_reference_facts(
+) {
     let program = parse(concat!(
         "<?php\n",
         "class RefNestedProductionBag implements ArrayAccess {\n",
@@ -18605,12 +18685,12 @@ fn native_executable_c_source_rejects_nested_arrayaccess_reference_returning_off
     ))
     .unwrap();
     let error = emit_native_executable_c_source(&program)
-        .expect_err("reference-returning offsetGet must not be lowered by value");
+        .expect_err("reference-returning offsetGet without facts must not be lowered by value");
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
         error.message.contains("ArrayAccess lowering rejects"),
-        "reference-returning offsetGet should stay blocked at the nested owner boundary: {error:?}"
+        "reference-returning offsetGet without referenced ArrayAccess facts should stay blocked at the nested owner boundary: {error:?}"
     );
 }
 
