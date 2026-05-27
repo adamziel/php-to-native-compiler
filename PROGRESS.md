@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 21:54 CEST
+Updated: 2026-05-27 22:01 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -15,17 +15,40 @@ changes the roadmap position.
 
 ## Executive Read
 
-Overall integrated-roadmap progress: **91%** `[##################--]`
+Overall integrated-roadmap progress: **92%** `[##################--]`
 
-Selected executable PHP semantics: **97%** `[###################-]`
+Selected executable PHP semantics: **98%** `[###################-]`
 
-Latest accounted source capability: `b13c97cf` unwinds native output buffers at
-generated-C shutdown and early-exit boundaries. Nested output-buffer handlers
-now drain in final order through the runtime stack ABI, exit string operands
-write through active buffers, and generated C calls the shared unwind helper
-before normal or exit returns. Shutdown functions, destructor/fatal-exception
-parity, callback-mutated buffer-stack edge cases, broader binary strings, and
-non-C backend output-buffer parity remain blocked.
+Latest accounted source capability: `78a03ae7` publishes trait-composed class
+members through the generated-C runtime metadata registry. Method/property
+introspection, callable-spread contracts, declared method frames, constructor
+frames, `instanceof` regressions, destructor-risk regressions, and class
+metadata consumers now share the validated declared-class metadata boundary
+instead of raw class member scans. Full trait conflict/precedence parity,
+visibility edge cases, aliases beyond the selected metadata surface, and
+non-C backend parity remain blocked.
+
+Recent source commit `78a03ae7` advances trait-composed class metadata without
+adding one-trait fixture lowering, method-name production ladders, or
+generated-C substring gates as production logic. Generated-C class declaration
+registration now consumes `CDeclaredClass` metadata for direct trait names,
+effective method metadata, and composed property metadata, so shared runtime
+metadata surfaces see trait-provided members consistently. Focused gates covered
+trait-composed source proof, linked metadata/introspection execution,
+trait-composed callable-spread execution, object-model trait composition,
+declared callable frame metadata, adjacent declared-class metadata and source
+call regressions, compile checking, formatting, and diff checks. Primary gate
+log:
+`state/logs/phpc-primary-trait-composition-ea6e7e87-20260527.gates.log`
+sha256 `52895b767bdf76eb89ecbcb126694fc37f0d97eba26b93dfc53c9e01390e76ec`.
+
+Recent source commit `b13c97cf` unwinds native output buffers at generated-C
+shutdown and early-exit boundaries. Nested output-buffer handlers now drain in
+final order through the runtime stack ABI, exit string operands write through
+active buffers, and generated C calls the shared unwind helper before normal or
+exit returns. Shutdown functions, destructor/fatal-exception parity,
+callback-mutated buffer-stack edge cases, broader binary strings, and non-C
+backend output-buffer parity remain blocked.
 
 Recent source commit `b13c97cf` advances output-buffer shutdown/unwind without
 adding exact output snapshots, one-handler constant lowering, or source-shape
