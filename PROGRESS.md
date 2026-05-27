@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 22:36 CEST
+Updated: 2026-05-27 22:42 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,13 +19,25 @@ Overall integrated-roadmap progress: **93%** `[##################--]`
 
 Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `6dc005ac` preserves staticness for
-trait-composed method aliases in runtime class metadata. Static methods imported
-from traits and re-exported through aliases now remain static for metadata
-consumers, `is_callable()` checks, generated-C source-call contracts, and
-linked native execution. Full trait conflict/precedence parity, broader
-visibility context rules, destructor-risk cleanup, and non-C backend parity
-remain blocked.
+Latest accounted source capability: `2f6cbc0d` filters private ancestor
+properties from generated-native `property_exists()` metadata surfaces without
+changing `method_exists()` private ancestor behavior. Public and protected
+ancestor properties remain visible on child classes, private properties remain
+visible on their declaring class, and inherited private methods still report as
+existing. Broader visibility-context rules, trait conflict/precedence parity,
+destructor-risk cleanup, and non-C backend parity remain blocked.
+
+Recent source commit `2f6cbc0d` advances declared-class metadata visibility
+without adding class/member-name ladders, source-shape recognizers, or
+`method_exists()` behavior changes. Runtime user-class metadata lookup now
+tracks the root class during hierarchy walks and suppresses private ancestor
+properties only for `property_exists()` checks; generated C keeps using the
+shared metadata ABI. Focused gates covered runtime metadata filtering, linked
+native `property_exists()` proof with a `method_exists()` private-method
+regression, adjacent user-class metadata registry execution, compile checking,
+formatting, and diff checks. Primary gate log:
+`state/logs/phpc-primary-property-visibility-c42deeb9-20260527.gates.log`
+sha256 `c6586cd9ac64b5f8fba2ad2d26203ed139150681c3e212e48c3af36ec2745ffb`.
 
 Recent source commit `6dc005ac` advances trait alias metadata without adding
 method-name production ladders, raw generated-C member scans, one-trait fixture
