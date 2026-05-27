@@ -43801,6 +43801,18 @@ impl CGenerator {
         replacement_expr: &Expr,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        if let Some(context) =
+            self.materialize_native_nested_arrayaccess_write_context(target, failure_cleanup)?
+        {
+            let value = self
+                .materialize_native_nested_arrayaccess_null_coalesce_assignment_result(
+                    context,
+                    replacement_expr,
+                    failure_cleanup,
+                )?;
+            return Ok(Some(value));
+        }
+
         let Some(target) = self
             .materialize_native_arrayaccess_offset_mutation_target_for_assign_target(
                 target,
@@ -43915,6 +43927,190 @@ impl CGenerator {
             handle: result.clone(),
             cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
         }))
+    }
+
+    fn materialize_native_nested_arrayaccess_null_coalesce_assignment_result(
+        &mut self,
+        context: CNativeNestedArrayAccessWriteContext,
+        replacement_expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        self.uses_native_array_helpers = true;
+        let context_cleanup = context.cleanup_sequence();
+        self.prepare_lazy_native_value_rhs_branch(
+            replacement_expr,
+            &format!("{context_cleanup}{failure_cleanup}"),
+        )?;
+
+        let result = self.next_native_name("nested_arrayaccess_null_coalesce_assign");
+        let selected_subject =
+            self.next_native_name("nested_arrayaccess_null_coalesce_assign_subject");
+        let mutated = self.next_native_name("nested_arrayaccess_null_coalesce_assign_mutated");
+        self.body
+            .push(format!("phpc_NativeValueHandle {result} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {selected_subject} = {{0}};"
+        ));
+        self.body.push(format!("bool {mutated} = false;"));
+        self.uses_native_value_clone = true;
+        self.body.push(format!(
+            "{selected_subject} = phpc_native_value_clone({});",
+            context.root_owner.subject.handle
+        ));
+        let selected_subject_error_exit =
+            self.native_error_exit(&format!("{context_cleanup}{failure_cleanup}"));
+        self.body.push(format!(
+            "if ({selected_subject}.ptr == NULL) {{ {selected_subject_error_exit} }}"
+        ));
+        let branch_failure_cleanup =
+            format!("phpc_native_value_free({selected_subject}); {failure_cleanup}");
+
+        let exists = self.emit_native_nested_arrayaccess_leaf_read_operation(
+            &context,
+            CNativeArrayAccessOffsetReadOperation::Exists,
+            &branch_failure_cleanup,
+        );
+        let exists_bool_diagnostic =
+            self.next_native_name("nested_arrayaccess_null_coalesce_assign_bool_diagnostic");
+        let present = self.next_native_name("nested_arrayaccess_null_coalesce_assign_present");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {exists_bool_diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "_Bool {present} = phpc_native_value_bool_with_diagnostic({}, &{exists_bool_diagnostic});",
+            exists.handle
+        ));
+        let exists_cleanup = c_cleanup_sequence(&exists.cleanup_after_use);
+        let exists_bool_error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_report({exists_bool_diagnostic}); {exists_cleanup}{context_cleanup}{failure_cleanup}"
+        ));
+        self.body.push(format!(
+            "if ({exists_bool_diagnostic}.ptr != NULL) {{ {exists_bool_error_exit} }}"
+        ));
+        self.body.push(format!(
+            "phpc_native_diagnostic_free({exists_bool_diagnostic});"
+        ));
+        self.body.extend(exists.cleanup_after_use);
+
+        self.body.push(format!("if ({present}) {{"));
+        let read = self.emit_native_nested_arrayaccess_leaf_read_operation(
+            &context,
+            CNativeArrayAccessOffsetReadOperation::Get,
+            &branch_failure_cleanup,
+        );
+        let read_is_null =
+            self.next_native_name("nested_arrayaccess_null_coalesce_assign_read_is_null");
+        self.body.push(format!(
+            "bool {read_is_null} = phpc_native_value_type_predicate({}, PHPC_NATIVE_VALUE_TYPE_IS_NULL);",
+            read.handle
+        ));
+        self.body.push(format!("if ({read_is_null}) {{"));
+        self.body.extend(read.cleanup_after_use.clone());
+        let null_rhs = self.materialize_native_value_result_operand(
+            replacement_expr,
+            &format!("{context_cleanup}{branch_failure_cleanup}"),
+        )?;
+        self.emit_native_nested_arrayaccess_null_coalesce_assignment_write_branch(
+            &context,
+            &result,
+            &selected_subject,
+            &mutated,
+            null_rhs,
+            failure_cleanup,
+        )?;
+        self.body.push("} else {".to_string());
+        self.body.push(format!("{result} = {};", read.handle));
+        self.body.push("}".to_string());
+        self.body.push("} else {".to_string());
+        let missing_rhs = self.materialize_native_value_result_operand(
+            replacement_expr,
+            &format!("{context_cleanup}{branch_failure_cleanup}"),
+        )?;
+        self.emit_native_nested_arrayaccess_null_coalesce_assignment_write_branch(
+            &context,
+            &result,
+            &selected_subject,
+            &mutated,
+            missing_rhs,
+            failure_cleanup,
+        )?;
+        self.body.push("}".to_string());
+
+        self.body
+            .push("/* nested_arrayaccess_null_coalesce_root_commit */".to_string());
+        self.emit_native_value_owner_commit(
+            context.root_owner.commit,
+            &selected_subject,
+            &format!(
+                "phpc_native_value_free({result}); phpc_native_value_free({selected_subject}); {context_cleanup}{failure_cleanup}"
+            ),
+        )?;
+        self.body.extend(context.cleanup_after_use);
+
+        Ok(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        })
+    }
+
+    fn emit_native_nested_arrayaccess_null_coalesce_assignment_write_branch(
+        &mut self,
+        context: &CNativeNestedArrayAccessWriteContext,
+        result: &str,
+        selected_subject: &str,
+        mutated: &str,
+        rhs_value: CNativeValueMaterialization,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let context_cleanup = context.cleanup_sequence();
+        let rhs_cleanup = c_cleanup_sequence(&rhs_value.cleanup_after_use);
+        let replacement_handle = self.checked_clone_native_value_handle(
+            &rhs_value.handle,
+            &format!(
+                "{rhs_cleanup}phpc_native_value_free({selected_subject}); {context_cleanup}{failure_cleanup}"
+            ),
+        );
+        let replacement = CNativeValueMaterialization {
+            handle: replacement_handle.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({replacement_handle});")],
+        };
+        let mut current = self.emit_native_arrayaccess_offset_write_operation_for_handles(
+            context.subject_handle(context.plan.leaf_offset.owner),
+            &context.offsets[context.plan.leaf_offset.index].handle,
+            replacement,
+            CNativeArrayAccessOffsetWriteOperation::Write,
+            &context.callable_table,
+            &context.cleanup_after_use,
+            "nested_arrayaccess_null_coalesce_leaf_write",
+            &format!(
+                "phpc_native_value_free({}); phpc_native_value_free({selected_subject}); {failure_cleanup}",
+                rhs_value.handle
+            ),
+        );
+
+        for frame in context.plan.frames.iter().rev() {
+            current = self.emit_native_arrayaccess_offset_write_operation_for_handles(
+                context.subject_handle(frame.subject_owner),
+                &context.offsets[frame.offset.index].handle,
+                current,
+                CNativeArrayAccessOffsetWriteOperation::Write,
+                &context.callable_table,
+                &context.cleanup_after_use,
+                "nested_arrayaccess_null_coalesce_parent_writeback",
+                &format!(
+                    "phpc_native_value_free({}); phpc_native_value_free({selected_subject}); {failure_cleanup}",
+                    rhs_value.handle
+                ),
+            );
+        }
+
+        self.body
+            .push(format!("phpc_native_value_free({selected_subject});"));
+        self.body
+            .push(format!("{selected_subject} = {};", current.handle));
+        self.body.push(format!("{result} = {};", rhs_value.handle));
+        self.body.push(format!("{mutated} = true;"));
+        Ok(())
     }
 
     fn emit_native_arrayaccess_null_coalesce_assignment_write_branch(

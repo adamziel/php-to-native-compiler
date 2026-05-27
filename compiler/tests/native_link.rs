@@ -16401,6 +16401,37 @@ const ARRAYACCESS_NESTED_RMW_OWNER_STACK_SOURCE: &str = concat!(
     "echo ($holder->bag[\"pouter\"][\"pmiddle\"][\"pleaf\"] *= 1 + 1);\n",
 );
 
+const ARRAYACCESS_NESTED_NULL_COALESCE_OWNER_STACK_SOURCE: &str = concat!(
+    "<?php\n",
+    "class NestedCoalesceLeafBag implements ArrayAccess {\n",
+    "    public function offsetExists($offset) { echo \"leaf-exists:\", $offset, \";\"; return $offset !== \"missing\"; }\n",
+    "    public function offsetGet($offset) { echo \"leaf-get:\", $offset, \";\"; if ($offset === \"null\") { return null; } if ($offset === \"zero\") { return 0; } return \"K\"; }\n",
+    "    public function offsetSet($offset, $value) { echo \"leaf-set:\", $offset, \"=\", $value, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class NestedCoalesceMiddleBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"middle-get:\", $offset, \";\"; return new NestedCoalesceLeafBag(); }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"middle-set:\", $offset, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class NestedCoalesceRootBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"root-get:\", $offset, \";\"; return new NestedCoalesceMiddleBag(); }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"root-set:\", $offset, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class NestedCoalesceHolder { public $bag; }\n",
+    "function nested_coalesce_rhs($value) { echo \"rhs:\", $value, \";\"; return $value; }\n",
+    "$direct = new NestedCoalesceRootBag();\n",
+    "echo ($direct[\"outer\"][\"middle\"][\"keep\"] ??= nested_coalesce_rhs(\"bad\")), \"|\";\n",
+    "echo ($direct[\"outer\"][\"middle\"][\"missing\"] ??= nested_coalesce_rhs(\"M\")), \"|\";\n",
+    "$holder = new NestedCoalesceHolder();\n",
+    "$holder->bag = new NestedCoalesceRootBag();\n",
+    "echo ($holder->bag[\"pouter\"][\"pmiddle\"][\"null\"] ??= nested_coalesce_rhs(\"N\")), \"|\";\n",
+    "echo ($holder->bag[\"zouter\"][\"zmiddle\"][\"zero\"] ??= nested_coalesce_rhs(\"bad\"));\n",
+);
+
 const ARRAYACCESS_NESTED_INCREMENT_DECREMENT_OWNER_STACK_SOURCE: &str = concat!(
     "<?php\n",
     "class NestedIncrementLeafBag implements ArrayAccess {\n",
@@ -16751,6 +16782,85 @@ fn emit_exe_links_and_runs_nested_arrayaccess_rmw_owner_stack_program() {
 }
 
 #[test]
+fn native_executable_c_source_routes_nested_arrayaccess_null_coalesce_owner_stack_for_direct_and_property_roots(
+) {
+    let program = parse(ARRAYACCESS_NESTED_NULL_COALESCE_OWNER_STACK_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_EXISTS")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_GET")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_SET")
+            && source.contains("phpc_native_value_type_predicate")
+            && source
+                .matches("phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic")
+                .count()
+                >= 12
+            && source
+                .matches("phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic")
+                .count()
+                >= 6
+            && source
+                .matches("nested_arrayaccess_null_coalesce_leaf_write")
+                .count()
+                >= 2
+            && source
+                .matches("nested_arrayaccess_null_coalesce_parent_writeback")
+                .count()
+                >= 4
+            && source
+                .matches("nested_arrayaccess_null_coalesce_root_commit")
+                .count()
+                >= 2
+            && source.contains("nested_arrayaccess_null_coalesce_assign_mutated")
+            && source.contains("phpc_native_value_public_property_reference_with_diagnostic_and_free")
+            && source.contains("phpc_native_reference_set_value_with_diagnostic("),
+        "nested ArrayAccess ??= should emit owner-stack descent, leaf exists/get probes, conditional leaf writes, reverse parent writebacks, and direct/property root commits:\n{source}"
+    );
+    assert!(
+        !source.contains("ArrayAccess lowering rejects")
+            && !source.contains("assembly mutation lowering rejects")
+            && !source.contains("non-local assignment lowering rejects"),
+        "nested ArrayAccess ??= production must not fall back to rejection paths:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_nested_arrayaccess_null_coalesce_owner_stack_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "nested_arrayaccess_null_coalesce_owner_stack_production",
+        ARRAYACCESS_NESTED_NULL_COALESCE_OWNER_STACK_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native nested ArrayAccess ??= executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(
+        run.stdout,
+        b"root-get:outer;middle-get:middle;leaf-exists:keep;leaf-get:keep;K|root-get:outer;middle-get:middle;leaf-exists:missing;rhs:M;leaf-set:missing=M;middle-set:middle;root-set:outer;M|root-get:pouter;middle-get:pmiddle;leaf-exists:null;leaf-get:null;rhs:N;leaf-set:null=N;middle-set:pmiddle;root-set:pouter;N|root-get:zouter;middle-get:zmiddle;leaf-exists:zero;leaf-get:zero;0"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+    assert!(
+        !String::from_utf8_lossy(&run.stdout).contains("rhs:bad")
+            && !String::from_utf8_lossy(&run.stdout).contains("leaf-set:keep")
+            && !String::from_utf8_lossy(&run.stdout).contains("leaf-set:zero"),
+        "present non-null leaves must not evaluate RHS or call offsetSet"
+    );
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn native_executable_c_source_routes_nested_arrayaccess_increment_decrement_owner_stack_for_direct_and_property_roots(
 ) {
     let program = parse(ARRAYACCESS_NESTED_INCREMENT_DECREMENT_OWNER_STACK_SOURCE).unwrap();
@@ -16902,36 +17012,20 @@ fn native_executable_c_source_rejects_nested_arrayaccess_reference_returning_off
 
 #[test]
 fn native_executable_c_source_rejects_nested_arrayaccess_non_assignment_mutations() {
-    let sources = [
-        (
-            "nested ArrayAccess null coalesce assignment",
-            concat!(
-                "<?php\n",
-                "class Bag implements ArrayAccess {\n",
-                "    public function offsetGet($offset) { return new Bag(); }\n",
-                "    public function offsetExists($offset) { return true; }\n",
-                "    public function offsetSet($offset, $value) { return null; }\n",
-                "    public function offsetUnset($offset) { return null; }\n",
-                "}\n",
-                "$bag = new Bag();\n",
-                "$bag[\"outer\"][\"leaf\"] ??= 1;\n",
-            ),
+    let sources = [(
+        "nested ArrayAccess append assignment with suffix",
+        concat!(
+            "<?php\n",
+            "class Bag implements ArrayAccess {\n",
+            "    public function offsetGet($offset) { return new Bag(); }\n",
+            "    public function offsetExists($offset) { return true; }\n",
+            "    public function offsetSet($offset, $value) { return null; }\n",
+            "    public function offsetUnset($offset) { return null; }\n",
+            "}\n",
+            "$bag = new Bag();\n",
+            "$bag[\"outer\"][][\"leaf\"] = 1;\n",
         ),
-        (
-            "nested ArrayAccess append assignment with suffix",
-            concat!(
-                "<?php\n",
-                "class Bag implements ArrayAccess {\n",
-                "    public function offsetGet($offset) { return new Bag(); }\n",
-                "    public function offsetExists($offset) { return true; }\n",
-                "    public function offsetSet($offset, $value) { return null; }\n",
-                "    public function offsetUnset($offset) { return null; }\n",
-                "}\n",
-                "$bag = new Bag();\n",
-                "$bag[\"outer\"][][\"leaf\"] = 1;\n",
-            ),
-        ),
-    ];
+    )];
 
     for (label, source) in sources {
         let program = parse(source).unwrap_or_else(|error| {
