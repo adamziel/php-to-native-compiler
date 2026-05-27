@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 14:20 CEST
+Updated: 2026-05-27 14:32 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -18,6 +18,14 @@ changes the roadmap position.
 Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
+
+Latest source correction: `416f007a` aligns the shared trait composition
+ordering boundary with PHP reflection behavior. Direct trait methods now
+precede recursively imported trait methods, aliases are emitted at the target
+method slot before the original method, and the corrected order is covered by
+focused reflection, full `trait`, callable-object, and named-argument gates.
+This corrects previously accounted trait metadata semantics and does not move
+the coarse progress bars.
 
 Latest accounted source capability: `77cde10f` routes selected generated-C
 callable-array invocation through the shared callable/source-call machinery.
