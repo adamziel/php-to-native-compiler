@@ -599,6 +599,41 @@ mod tests {
     }
 
     #[test]
+    fn call_argument_normalization_models_magic_args_as_source_order_variadic_entries() {
+        let signature = signature(vec![CallArgumentParameter::optional("args").with_variadic()]);
+        let plan = normalize_call_arguments(
+            &signature,
+            &[
+                CallArgument::positional(),
+                CallArgument::named("first"),
+                CallArgument::named("second"),
+            ],
+        )
+        .expect("magic arguments should normalize as source-order variadics");
+
+        let variadic = plan
+            .variadic_slot
+            .expect("magic args signature should produce variadic slot");
+        assert_eq!(
+            variadic.entries,
+            vec![
+                CallArgumentVariadicEntry {
+                    source_index: 0,
+                    key: CallArgumentVariadicKey::NextInteger,
+                },
+                CallArgumentVariadicEntry {
+                    source_index: 1,
+                    key: CallArgumentVariadicKey::Named("first".to_string()),
+                },
+                CallArgumentVariadicEntry {
+                    source_index: 2,
+                    key: CallArgumentVariadicKey::Named("second".to_string()),
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn call_argument_normalization_blocks_spread_until_unpack_can_feed_handle_slots() {
         let signature = signature(vec![CallArgumentParameter::required("value")]);
         let error = normalize_call_arguments(

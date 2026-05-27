@@ -643,6 +643,31 @@ const NATIVE_DECLARED_STATIC_MAGIC_SOURCE_CALL_SOURCE: &str = concat!(
     "echo StaticSourceCallMagicBox::reveal(\"E\"), \"\\n\";\n",
 );
 
+const NATIVE_NAMED_STATIC_MAGIC_SOURCE_CALL_SOURCE: &str = concat!(
+    "<?php\n",
+    "class NamedStaticMagicBase {\n",
+    "    public static function known($first, $second = \"D\") { return \"known:\" . $first . \":\" . $second; }\n",
+    "    private static function hidden($first) { return \"hidden:\" . $first; }\n",
+    "    public static function relay() { return self::missing(inner: \"S\", extra: \"E\") . \"|\" . static::late(inner: \"L\"); }\n",
+    "    public static function __callStatic($name, $args) {\n",
+    "        $zero = array_key_exists(0, $args) ? $args[0] : \"-\";\n",
+    "        $first = array_key_exists(\"first\", $args) ? $args[\"first\"] : \"-\";\n",
+    "        $second = array_key_exists(\"second\", $args) ? $args[\"second\"] : \"-\";\n",
+    "        $tail = array_key_exists(\"tail\", $args) ? $args[\"tail\"] : \"-\";\n",
+    "        $inner = array_key_exists(\"inner\", $args) ? $args[\"inner\"] : \"-\";\n",
+    "        $extra = array_key_exists(\"extra\", $args) ? $args[\"extra\"] : \"-\";\n",
+    "        return \"magic:\" . $name . \":\" . $zero . \":\" . $first . \":\" . $second . \":\" . $tail . \":\" . $inner . \":\" . $extra;\n",
+    "    }\n",
+    "}\n",
+    "class NamedStaticMagicChild extends NamedStaticMagicBase {}\n",
+    "$box = new NamedStaticMagicBase();\n",
+    "echo NamedStaticMagicBase::known(second: \"B\", first: \"A\"), \"|\";\n",
+    "echo NamedStaticMagicBase::missing(\"P\", tail: \"T\"), \"|\";\n",
+    "echo NamedStaticMagicBase::hidden(first: \"H\"), \"|\";\n",
+    "echo $box::missing(first: \"O\", second: \"Q\"), \"|\";\n",
+    "echo NamedStaticMagicChild::relay(), \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_STATIC_METHOD_SOURCE: &str = concat!(
     "<?php\n",
     "class Label {\n",
@@ -3052,6 +3077,37 @@ fn emit_exe_links_and_runs_magic_static_method_source_call_program() {
     assert_eq!(
         run.stdout,
         b"known:A|magic:secret:B|magic:missing:C|magic:missing:D|secret:E:magic:later:E\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_named_magic_static_method_source_call_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "named_magic_static_method_source_call",
+        NATIVE_NAMED_STATIC_MAGIC_SOURCE_CALL_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run named magic static method source-call executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"known:A:B|magic:missing:P:-:-:T:-:-|magic:hidden:-:H:-:-:-:-|magic:missing:-:O:Q:-:-:-|magic:missing:-:-:-:-:S:E|magic:late:-:-:-:-:L:-\n"
     );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
@@ -5750,6 +5806,41 @@ fn native_executable_c_source_routes_magic_static_methods_through_runtime_dispat
             && !body.contains("object_static_method_status")
             && !source.contains("method-call lowering rejects"),
         "static magic source calls should not fall back to generated static frame ladders or exact-shape blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_preserves_named_magic_static_fallback_args_through_source_order_metadata(
+) {
+    let program = parse(NATIVE_NAMED_STATIC_MAGIC_SOURCE_CALL_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains(
+            "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments"
+        ) && body.contains("static_method_source_call_args_")
+            && body.contains("object_static_method_source_call_args_")
+            && source.contains("late_static_method_source_call_args_"),
+        "named static magic fallback should keep literal, object-static, self::, and static:: receiver families on shared static source-call carriers:\n{source}"
+    );
+    assert!(
+        source.matches("phpc_native_call_arguments_push_named_value_and_free")
+            .count()
+            >= 6
+            && source.contains("named_call_argument_"),
+        "named magic fallback args should preserve source-order string keys through NativeCallArguments metadata:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_call_arguments_push_value_and_free"),
+        "mixed positional/named magic fallback calls should still append positional source slots:\n{source}"
+    );
+    assert!(
+        !body.contains("static_method_status")
+            && !body.contains("object_static_method_status")
+            && !source.contains("named argument lowering is only implemented")
+            && !source.contains("method-call lowering rejects"),
+        "named static magic fallback must avoid generated frame ladders and exact-shape blockers:\n{source}"
     );
 }
 
@@ -23139,28 +23230,6 @@ fn native_executable_c_source_blocks_named_dynamic_method_fallback_without_share
         "$box = new NamedDynamicMethodMagicBox();\n",
         "$method = \"known\";\n",
         "echo $box->{$method}(value: \"x\");\n",
-    ))
-    .unwrap();
-    let error = emit_native_executable_c_source(&program).unwrap_err();
-
-    assert_eq!(error.phase, Phase::Codegen);
-    assert!(
-        error
-            .message
-            .contains("named argument lowering is only implemented"),
-        "{}",
-        error.message
-    );
-}
-
-#[test]
-fn native_executable_c_source_blocks_named_static_magic_fallback_without_shared_contract() {
-    let program = parse(concat!(
-        "<?php\n",
-        "class NamedStaticMethodMagicBox {\n",
-        "    public static function __callStatic($name, $args) { return \"magic\"; }\n",
-        "}\n",
-        "echo NamedStaticMethodMagicBox::missing(value: \"x\");\n",
     ))
     .unwrap();
     let error = emit_native_executable_c_source(&program).unwrap_err();

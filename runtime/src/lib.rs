@@ -1484,6 +1484,7 @@ struct NativeCallableKey {
 #[derive(Debug)]
 struct NativeCallArguments {
     slots: Vec<NativeCallArgumentSlot>,
+    names: Vec<Option<String>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2016,6 +2017,20 @@ unsafe fn native_call_argument_slot_from_reference(
             phpc_native_reference_clone(reference)
         }))
     }
+}
+
+unsafe fn native_call_arguments_push_slot(
+    mut arguments: NativeCallArgumentsHandle,
+    slot: NativeCallArgumentSlot,
+    name: Option<String>,
+) -> bool {
+    let Some(arguments) = (unsafe { arguments.as_mut() }) else {
+        unsafe { slot.free() };
+        return false;
+    };
+    arguments.slots.push(slot);
+    arguments.names.push(name);
+    true
 }
 
 unsafe fn native_string_handle_to_string(handle: NativeStringHandle) -> Option<String> {
@@ -3626,7 +3641,10 @@ impl NativeCallArgumentsHandle {
 
     fn new() -> Self {
         Self {
-            ptr: Box::into_raw(Box::new(NativeCallArguments { slots: Vec::new() })),
+            ptr: Box::into_raw(Box::new(NativeCallArguments {
+                slots: Vec::new(),
+                names: Vec::new(),
+            })),
         }
     }
 
@@ -8583,17 +8601,13 @@ pub unsafe extern "C" fn phpc_native_call_arguments_len(
 /// the argument list stores an owned clone and leaves `value` with the caller.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_call_arguments_push_value(
-    mut arguments: NativeCallArgumentsHandle,
+    arguments: NativeCallArgumentsHandle,
     value: NativeValueHandle,
 ) -> bool {
-    let Some(arguments) = (unsafe { arguments.as_mut() }) else {
-        return false;
-    };
     let Some(slot) = (unsafe { native_call_argument_slot_from_value(value, false) }) else {
         return false;
     };
-    arguments.slots.push(slot);
-    true
+    unsafe { native_call_arguments_push_slot(arguments, slot, None) }
 }
 
 /// # Safety
@@ -8601,10 +8615,28 @@ pub unsafe extern "C" fn phpc_native_call_arguments_push_value(
 /// Same as `phpc_native_call_arguments_push_value`, and always consumes `value`.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_call_arguments_push_value_and_free(
-    mut arguments: NativeCallArgumentsHandle,
+    arguments: NativeCallArgumentsHandle,
     value: NativeValueHandle,
 ) -> bool {
-    let Some(arguments) = (unsafe { arguments.as_mut() }) else {
+    let Some(slot) = (unsafe { native_call_argument_slot_from_value(value, true) }) else {
+        unsafe { phpc_native_value_free(value) };
+        return false;
+    };
+    unsafe { native_call_arguments_push_slot(arguments, slot, None) }
+}
+
+/// # Safety
+///
+/// Same as `phpc_native_call_arguments_push_value_and_free`, but records a
+/// source named-argument key for later magic `$args` packing. The `name` handle
+/// is borrowed by this function and remains owned by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_arguments_push_named_value_and_free(
+    arguments: NativeCallArgumentsHandle,
+    name: NativeStringHandle,
+    value: NativeValueHandle,
+) -> bool {
+    let Some(name) = (unsafe { native_string_handle_to_string(name) }) else {
         unsafe { phpc_native_value_free(value) };
         return false;
     };
@@ -8612,8 +8644,7 @@ pub unsafe extern "C" fn phpc_native_call_arguments_push_value_and_free(
         unsafe { phpc_native_value_free(value) };
         return false;
     };
-    arguments.slots.push(slot);
-    true
+    unsafe { native_call_arguments_push_slot(arguments, slot, Some(name)) }
 }
 
 /// # Safety
@@ -8623,17 +8654,13 @@ pub unsafe extern "C" fn phpc_native_call_arguments_push_value_and_free(
 /// the caller.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_call_arguments_push_reference(
-    mut arguments: NativeCallArgumentsHandle,
+    arguments: NativeCallArgumentsHandle,
     reference: NativeReferenceHandle,
 ) -> bool {
-    let Some(arguments) = (unsafe { arguments.as_mut() }) else {
-        return false;
-    };
     let Some(slot) = (unsafe { native_call_argument_slot_from_reference(reference, false) }) else {
         return false;
     };
-    arguments.slots.push(slot);
-    true
+    unsafe { native_call_arguments_push_slot(arguments, slot, None) }
 }
 
 /// # Safety
@@ -8642,10 +8669,28 @@ pub unsafe extern "C" fn phpc_native_call_arguments_push_reference(
 /// `reference`.
 #[no_mangle]
 pub unsafe extern "C" fn phpc_native_call_arguments_push_reference_and_free(
-    mut arguments: NativeCallArgumentsHandle,
+    arguments: NativeCallArgumentsHandle,
     reference: NativeReferenceHandle,
 ) -> bool {
-    let Some(arguments) = (unsafe { arguments.as_mut() }) else {
+    let Some(slot) = (unsafe { native_call_argument_slot_from_reference(reference, true) }) else {
+        unsafe { phpc_native_reference_free(reference) };
+        return false;
+    };
+    unsafe { native_call_arguments_push_slot(arguments, slot, None) }
+}
+
+/// # Safety
+///
+/// Same as `phpc_native_call_arguments_push_reference_and_free`, but records a
+/// source named-argument key for later magic `$args` packing. The `name` handle
+/// is borrowed by this function and remains owned by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_arguments_push_named_reference_and_free(
+    arguments: NativeCallArgumentsHandle,
+    name: NativeStringHandle,
+    reference: NativeReferenceHandle,
+) -> bool {
+    let Some(name) = (unsafe { native_string_handle_to_string(name) }) else {
         unsafe { phpc_native_reference_free(reference) };
         return false;
     };
@@ -8653,8 +8698,7 @@ pub unsafe extern "C" fn phpc_native_call_arguments_push_reference_and_free(
         unsafe { phpc_native_reference_free(reference) };
         return false;
     };
-    arguments.slots.push(slot);
-    true
+    unsafe { native_call_arguments_push_slot(arguments, slot, Some(name)) }
 }
 
 /// # Safety
@@ -10272,15 +10316,19 @@ fn native_magic_call_arguments_from_method_and_arguments(
     arguments: &NativeCallArguments,
 ) -> Result<NativeCallArgumentsHandle, String> {
     let mut argument_array = PhpArray::new();
-    for slot in &arguments.slots {
-        argument_array
-            .append(native_call_argument_slot_value_cloned(slot)?)
-            .map_err(|error| {
-                format!(
-                    "native magic __call argument packing failed: {}",
-                    error.message()
-                )
-            })?;
+    for (index, slot) in arguments.slots.iter().enumerate() {
+        let value = native_call_argument_slot_value_cloned(slot)?;
+        if let Some(name) = arguments.names.get(index).and_then(|name| name.as_ref()) {
+            argument_array.insert_checked(ArrayKey::string(name.clone()), value)
+        } else {
+            argument_array.append(value)
+        }
+        .map_err(|error| {
+            format!(
+                "native magic __call argument packing failed: {}",
+                error.message()
+            )
+        })?;
     }
 
     Ok(NativeCallArgumentsHandle {
@@ -10293,6 +10341,7 @@ fn native_magic_call_arguments_from_method_and_arguments(
                     argument_array,
                 ))),
             ],
+            names: vec![None, None],
         })),
     })
 }

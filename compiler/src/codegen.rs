@@ -17589,6 +17589,16 @@ impl NativeMethodStaticSignatureFallbackContract {
     fn argument_strategy(&self) -> &NativeMethodStaticSourceCallArgumentStrategy {
         &self.argument_strategy
     }
+
+    fn preserves_named_source_keys_for_magic_args(&self) -> bool {
+        self.family == NativeMethodStaticSignatureFamily::StaticMethod
+            && matches!(
+                self.availability,
+                NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                    NativeMethodStaticSignatureFallbackReason::MagicStaticFallback
+                )
+            )
+    }
 }
 
 fn native_method_static_signature_fallback_contract_from_methods<'a>(
@@ -21704,7 +21714,9 @@ impl CGenerator {
                 );
                 output.push_str("extern bool phpc_native_call_arguments_is_null(phpc_NativeCallArgumentsHandle handle);\n");
                 output.push_str("extern bool phpc_native_call_arguments_push_value_and_free(phpc_NativeCallArgumentsHandle arguments, phpc_NativeValueHandle value);\n");
+                output.push_str("extern bool phpc_native_call_arguments_push_named_value_and_free(phpc_NativeCallArgumentsHandle arguments, phpc_NativeStringHandle name, phpc_NativeValueHandle value);\n");
                 output.push_str("extern bool phpc_native_call_arguments_push_reference_and_free(phpc_NativeCallArgumentsHandle arguments, phpc_NativeReferenceHandle reference);\n");
+                output.push_str("extern bool phpc_native_call_arguments_push_named_reference_and_free(phpc_NativeCallArgumentsHandle arguments, phpc_NativeStringHandle name, phpc_NativeReferenceHandle reference);\n");
                 output.push_str("extern void phpc_native_call_arguments_free(phpc_NativeCallArgumentsHandle handle);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_call_frame_read_value(phpc_NativeCallFrameHandle frame, size_t index);\n");
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_call_frame_read_reference(phpc_NativeCallFrameHandle frame, size_t index);\n");
@@ -25828,6 +25840,7 @@ impl CGenerator {
             &callable_failure_cleanup,
             NativeCallCallee::DynamicExpression,
             Some(&signature),
+            false,
         )?;
 
         let reference = self.next_native_name("dynamic_callable_reference_result");
@@ -27523,6 +27536,14 @@ impl CGenerator {
         for class_key in &object.declared_class_keys {
             match self.declared_class_static_method_for_key(class_key, method_name) {
                 Some((_, method)) => {
+                    if method.visibility != ClassVisibility::Public
+                        && self
+                            .declared_class_public_static_magic_call_method_for_key(class_key)
+                            .is_some()
+                    {
+                        saw_magic_call_static = true;
+                        continue;
+                    }
                     if !native_method_static_source_call_arity_compatible(&method, arg_count) {
                         return None;
                     }
@@ -27567,9 +27588,11 @@ impl CGenerator {
         class_name: &str,
         method_name: &str,
         arg_count: usize,
+        access_context: NativeSourceCallAccessContext<'_>,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
         let class_key = Self::declared_class_key(class_name);
-        let Some((_, method)) = self.declared_class_static_method(class_name, method_name) else {
+        let Some((class, method)) = self.declared_class_static_method(class_name, method_name)
+        else {
             return self
                 .declared_class_public_static_magic_call_method_for_key(&class_key)
                 .map(|_| NativeMethodStaticSignatureFallbackContract {
@@ -27582,6 +27605,24 @@ impl CGenerator {
                     argument_strategy: NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic,
                 });
         };
+        if !self.declared_class_member_visible_from_source_access(
+            &class.name,
+            method.visibility,
+            access_context,
+        ) && self
+            .declared_class_public_static_magic_call_method_for_key(&class_key)
+            .is_some()
+        {
+            return Some(NativeMethodStaticSignatureFallbackContract {
+                family: NativeMethodStaticSignatureFamily::StaticMethod,
+                candidate_count: 1,
+                arity_compatible_count: 0,
+                availability: NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                    NativeMethodStaticSignatureFallbackReason::MagicStaticFallback,
+                ),
+                argument_strategy: NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic,
+            });
+        }
         if !native_method_static_source_call_arity_compatible(&method, arg_count) {
             return None;
         }
@@ -27597,6 +27638,47 @@ impl CGenerator {
             NativeMethodStaticSignatureAvailability::Known(_)
         )
         .then_some(contract)
+    }
+
+    fn declared_class_member_visible_from_source_access(
+        &self,
+        declaring_class_name: &str,
+        visibility: ClassVisibility,
+        access_context: NativeSourceCallAccessContext<'_>,
+    ) -> bool {
+        match visibility {
+            ClassVisibility::Public => true,
+            ClassVisibility::Private => match access_context {
+                NativeSourceCallAccessContext::ClassContext { caller_scope } => {
+                    Self::declared_class_key(caller_scope)
+                        == Self::declared_class_key(declaring_class_name)
+                }
+                NativeSourceCallAccessContext::External
+                | NativeSourceCallAccessContext::Static
+                | NativeSourceCallAccessContext::ObjectReceiver => false,
+            },
+            ClassVisibility::Protected => match access_context {
+                NativeSourceCallAccessContext::ClassContext { caller_scope } => {
+                    self.declared_classes_are_related(caller_scope, declaring_class_name)
+                }
+                NativeSourceCallAccessContext::External
+                | NativeSourceCallAccessContext::Static
+                | NativeSourceCallAccessContext::ObjectReceiver => false,
+            },
+        }
+    }
+
+    fn declared_classes_are_related(&self, left: &str, right: &str) -> bool {
+        let left_key = Self::declared_class_key(left);
+        let right_key = Self::declared_class_key(right);
+        if left_key == right_key {
+            return true;
+        }
+        self.declared_class_ancestor_keys(&left_key)
+            .is_ok_and(|ancestors| ancestors.iter().any(|key| key == &right_key))
+            || self
+                .declared_class_ancestor_keys(&right_key)
+                .is_ok_and(|ancestors| ancestors.iter().any(|key| key == &left_key))
     }
 
     fn late_static_method_source_call_signature_contract(
@@ -35745,6 +35827,7 @@ impl CGenerator {
             &callable_failure_cleanup,
             NativeCallCallee::DynamicExpression,
             scoped_signature.as_ref(),
+            false,
         )?;
 
         let invoke_diagnostic = self.next_native_name("dynamic_callable_invoke_diagnostic");
@@ -35850,6 +35933,7 @@ impl CGenerator {
             &callable_failure_cleanup,
             NativeCallCallee::DynamicExpression,
             scoped_signature,
+            false,
         )?;
 
         let invoke_diagnostic = self.next_native_name("closure_source_call_diagnostic");
@@ -35906,6 +35990,7 @@ impl CGenerator {
             &callable_failure_cleanup,
             NativeCallCallee::DynamicExpression,
             scoped_signature,
+            false,
         )?;
 
         let invoke_diagnostic = self.next_native_name("closure_source_reference_diagnostic");
@@ -36008,6 +36093,7 @@ impl CGenerator {
         owner_failure_cleanup: &str,
         callee: NativeCallCallee,
         signature: Option<&CScopedCallableStringSignature>,
+        preserve_named_source_keys_for_magic_args: bool,
     ) -> CompileResult<String> {
         let call_arguments =
             self.emit_empty_native_source_call_arguments_handle(prefix, owner_failure_cleanup);
@@ -36020,6 +36106,7 @@ impl CGenerator {
             &call_cleanup,
             callee,
             signature,
+            preserve_named_source_keys_for_magic_args,
         )?;
         Ok(call_arguments)
     }
@@ -36046,6 +36133,7 @@ impl CGenerator {
             &binding_failure_cleanup,
             callee,
             signature,
+            false,
         )?;
         let signature_selection = if signature.is_some() {
             NativeSourceCallSignatureSelection::ScopedCallableString
@@ -36344,41 +36432,86 @@ impl CGenerator {
         &mut self,
         call_arguments: &str,
         value: CNativeValueMaterialization,
+        source_name: Option<&str>,
         call_cleanup: &str,
     ) {
         let value_aux_cleanup = native_value_aux_cleanup_after_consuming_handle(&value);
-        let push_failure_cleanup =
-            format!("{}{}", c_cleanup_sequence(&value_aux_cleanup), call_cleanup);
-        self.body.push(format!(
-            "if (!phpc_native_call_arguments_push_value_and_free({call_arguments}, {})) {{ {} }}",
-            value.handle,
-            self.native_error_exit(&push_failure_cleanup)
-        ));
+        let name = source_name.map(|source_name| {
+            self.emit_native_static_text_source_call_string_operand(
+                "named_call_argument",
+                source_name,
+            )
+        });
+        let name_cleanup = name
+            .as_ref()
+            .map(|name| c_cleanup_sequence(&name.cleanup_after_use))
+            .unwrap_or_default();
+        let push_failure_cleanup = format!(
+            "{name_cleanup}{}{}",
+            c_cleanup_sequence(&value_aux_cleanup),
+            call_cleanup
+        );
+        if let Some(name) = &name {
+            self.body.push(format!(
+                "if (!phpc_native_call_arguments_push_named_value_and_free({call_arguments}, {}, {})) {{ {} }}",
+                name.handle,
+                value.handle,
+                self.native_error_exit(&push_failure_cleanup)
+            ));
+        } else {
+            self.body.push(format!(
+                "if (!phpc_native_call_arguments_push_value_and_free({call_arguments}, {})) {{ {} }}",
+                value.handle,
+                self.native_error_exit(&push_failure_cleanup)
+            ));
+        }
         self.body.extend(value_aux_cleanup);
+        if let Some(name) = name {
+            self.body.extend(name.cleanup_after_use);
+        }
     }
 
     fn emit_native_source_call_argument(
         &mut self,
         call_arguments: &str,
         arg: &Expr,
+        source_name: Option<&str>,
         span: Span,
         call_cleanup: &str,
         callee: NativeCallCallee,
         push_reference: bool,
     ) -> CompileResult<()> {
+        let arg = call_argument_expr(arg);
         if push_reference {
             let reference =
                 self.materialize_call_reference_argument(arg, span, call_cleanup, callee)?;
-            self.body.push(format!(
-                "if (!phpc_native_call_arguments_push_reference_and_free({call_arguments}, {})) {{ {} }}",
-                reference.handle,
-                self.native_error_exit(call_cleanup)
-            ));
+            if let Some(source_name) = source_name {
+                let name = self.emit_native_static_text_source_call_string_operand(
+                    "named_call_argument",
+                    source_name,
+                );
+                let name_cleanup = c_cleanup_sequence(&name.cleanup_after_use);
+                let push_failure_cleanup = format!("{name_cleanup}{call_cleanup}");
+                self.body.push(format!(
+                    "if (!phpc_native_call_arguments_push_named_reference_and_free({call_arguments}, {}, {})) {{ {} }}",
+                    name.handle,
+                    reference.handle,
+                    self.native_error_exit(&push_failure_cleanup)
+                ));
+                self.body.extend(name.cleanup_after_use);
+            } else {
+                self.body.push(format!(
+                    "if (!phpc_native_call_arguments_push_reference_and_free({call_arguments}, {})) {{ {} }}",
+                    reference.handle,
+                    self.native_error_exit(call_cleanup)
+                ));
+            }
         } else {
             let value = self.materialize_native_value_result_operand(arg, call_cleanup)?;
             self.emit_native_source_call_materialized_value_argument_push(
                 call_arguments,
                 value,
+                source_name,
                 call_cleanup,
             );
         }
@@ -36401,6 +36534,32 @@ impl CGenerator {
             self.unsupported(
                 span,
                 format!("unsupported named argument binding for native call lowering: {error}"),
+            )
+        })
+    }
+
+    fn normalize_native_magic_source_call_arguments(
+        &self,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<NormalizedCallArguments> {
+        let signature = CallArgumentSignature::new(vec![
+            CallArgumentParameter::optional("args").with_variadic()
+        ])
+        .map_err(|error| {
+            self.unsupported(
+                span,
+                format!(
+                    "unsupported named magic argument metadata for native call lowering: {error}"
+                ),
+            )
+        })?;
+        normalize_call_arguments(&signature, &call_argument_contract_kinds(args)).map_err(|error| {
+            self.unsupported(
+                span,
+                format!(
+                    "unsupported named magic argument binding for native call lowering: {error}"
+                ),
             )
         })
     }
@@ -36497,6 +36656,7 @@ impl CGenerator {
         evaluated: &mut [Option<CNativeEvaluatedCallArgument>],
         consumed: &mut [bool],
         source_index: usize,
+        source_name: Option<&str>,
         call_cleanup: &str,
         span: Span,
     ) -> CompileResult<()> {
@@ -36512,20 +36672,50 @@ impl CGenerator {
 
         match argument {
             CNativeEvaluatedCallArgument::Reference { handle, .. } => {
-                self.body.push(format!(
-                    "if (!phpc_native_call_arguments_push_reference_and_free({call_arguments}, {handle})) {{ {} }}",
-                    self.native_error_exit(&failure_cleanup)
-                ));
+                if let Some(source_name) = source_name {
+                    let name = self.emit_native_static_text_source_call_string_operand(
+                        "named_call_argument",
+                        source_name,
+                    );
+                    let name_cleanup = c_cleanup_sequence(&name.cleanup_after_use);
+                    let failure_cleanup = format!("{name_cleanup}{failure_cleanup}");
+                    self.body.push(format!(
+                        "if (!phpc_native_call_arguments_push_named_reference_and_free({call_arguments}, {}, {handle})) {{ {} }}",
+                        name.handle,
+                        self.native_error_exit(&failure_cleanup)
+                    ));
+                    self.body.extend(name.cleanup_after_use);
+                } else {
+                    self.body.push(format!(
+                        "if (!phpc_native_call_arguments_push_reference_and_free({call_arguments}, {handle})) {{ {} }}",
+                        self.native_error_exit(&failure_cleanup)
+                    ));
+                }
             }
             CNativeEvaluatedCallArgument::Value {
                 handle,
                 cleanup_after_consuming_handle,
                 ..
             } => {
-                self.body.push(format!(
-                    "if (!phpc_native_call_arguments_push_value_and_free({call_arguments}, {handle})) {{ {} }}",
-                    self.native_error_exit(&failure_cleanup)
-                ));
+                if let Some(source_name) = source_name {
+                    let name = self.emit_native_static_text_source_call_string_operand(
+                        "named_call_argument",
+                        source_name,
+                    );
+                    let name_cleanup = c_cleanup_sequence(&name.cleanup_after_use);
+                    let failure_cleanup = format!("{name_cleanup}{failure_cleanup}");
+                    self.body.push(format!(
+                        "if (!phpc_native_call_arguments_push_named_value_and_free({call_arguments}, {}, {handle})) {{ {} }}",
+                        name.handle,
+                        self.native_error_exit(&failure_cleanup)
+                    ));
+                    self.body.extend(name.cleanup_after_use);
+                } else {
+                    self.body.push(format!(
+                        "if (!phpc_native_call_arguments_push_value_and_free({call_arguments}, {handle})) {{ {} }}",
+                        self.native_error_exit(&failure_cleanup)
+                    ));
+                }
                 self.body.extend(cleanup_after_consuming_handle.clone());
             }
         }
@@ -36686,6 +36876,7 @@ impl CGenerator {
                         &mut evaluated,
                         &mut consumed,
                         source_index,
+                        None,
                         call_cleanup,
                         span,
                     )?;
@@ -36700,6 +36891,7 @@ impl CGenerator {
                     self.emit_native_source_call_argument(
                         call_arguments,
                         default,
+                        None,
                         span,
                         call_cleanup,
                         callee,
@@ -36726,6 +36918,7 @@ impl CGenerator {
             self.emit_native_source_call_materialized_value_argument_push(
                 call_arguments,
                 variadic_value,
+                None,
                 call_cleanup,
             );
         }
@@ -36741,7 +36934,47 @@ impl CGenerator {
         call_cleanup: &str,
         callee: NativeCallCallee,
         signature: Option<&CScopedCallableStringSignature>,
+        preserve_named_source_keys_for_magic_args: bool,
     ) -> CompileResult<()> {
+        if preserve_named_source_keys_for_magic_args
+            && signature.is_none()
+            && call_arguments_have_named(args)
+        {
+            let plan = self.normalize_native_magic_source_call_arguments(args, span)?;
+            let (mut evaluated, mut consumed) = self.materialize_normalized_call_argument_sources(
+                args,
+                &plan,
+                span,
+                call_cleanup,
+                callee,
+            )?;
+            let Some(variadic) = &plan.variadic_slot else {
+                return Err(self.unsupported(
+                    span,
+                    "internal named magic argument lowering error: source-order variadic slot was not produced",
+                ));
+            };
+            for entry in &variadic.entries {
+                let source_name = match &entry.key {
+                    CallArgumentVariadicKey::NextInteger => None,
+                    CallArgumentVariadicKey::Named(name) => Some(name.as_str()),
+                };
+                self.emit_evaluated_call_argument_push(
+                    call_arguments,
+                    &mut evaluated,
+                    &mut consumed,
+                    entry.source_index,
+                    source_name,
+                    call_cleanup,
+                    span,
+                )?;
+            }
+            return Ok(());
+        }
+        if call_arguments_have_named(args) {
+            return Err(self.unsupported(span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION));
+        }
+
         for (index, arg) in args.iter().enumerate() {
             let push_reference = signature.map_or_else(
                 || self.runtime_dynamic_call_reference_argument_is_supported(arg),
@@ -36750,6 +36983,7 @@ impl CGenerator {
             self.emit_native_source_call_argument(
                 call_arguments,
                 arg,
+                None,
                 span,
                 call_cleanup,
                 callee,
@@ -36777,6 +37011,7 @@ impl CGenerator {
                     owner_failure_cleanup,
                     NativeCallCallee::MethodDispatch,
                     signature_contract.signature(),
+                    signature_contract.preserves_named_source_keys_for_magic_args(),
                 ),
             NativeMethodStaticSourceCallArgumentStrategy::Frame(plan) => {
                 let call_arguments = self
@@ -37835,8 +38070,12 @@ impl CGenerator {
         method_name: &str,
         arg_count: usize,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
-        let contract =
-            self.static_method_source_call_signature_contract(class_name, method_name, arg_count)?;
+        let contract = self.static_method_source_call_signature_contract(
+            class_name,
+            method_name,
+            arg_count,
+            NativeSourceCallAccessContext::Static,
+        )?;
         contract
             .signature()
             .is_some_and(|signature| signature.returns_by_reference)
@@ -38036,6 +38275,7 @@ impl CGenerator {
             &callable_failure_cleanup,
             NativeCallCallee::DynamicExpression,
             scoped_signature.as_ref(),
+            false,
         )?;
 
         let invoke_diagnostic = self.next_native_name("source_reference_invoke_diagnostic");
@@ -39857,9 +40097,12 @@ impl CGenerator {
         failure_cleanup: &str,
         access_context: NativeSourceCallAccessContext<'_>,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let Some(signature_contract) =
-            self.static_method_source_call_signature_contract(class_name, method_name, args.len())
-        else {
+        let Some(signature_contract) = self.static_method_source_call_signature_contract(
+            class_name,
+            method_name,
+            args.len(),
+            access_context,
+        ) else {
             return Ok(None);
         };
 
@@ -61369,6 +61612,7 @@ echo " 10" < "zeta";
                 "cleanup_value_owner();",
                 NativeCallCallee::DynamicExpression,
                 None,
+                false,
             )
             .expect("value source-call arguments should emit");
         let value_carrier = generator
@@ -62018,7 +62262,14 @@ echo $call("Ada");
             ("SourceCallLeaf", "inherited"),
         ] {
             let contract = generator
-                .static_method_source_call_signature_contract(scope, method, 2)
+                .static_method_source_call_signature_contract(
+                    scope,
+                    method,
+                    2,
+                    NativeSourceCallAccessContext::ClassContext {
+                        caller_scope: "SourceCallLeaf",
+                    },
+                )
                 .expect("ancestor static source-call contract should resolve");
             assert_eq!(contract.candidate_count, 1);
             assert_eq!(contract.arity_compatible_count, 1);
