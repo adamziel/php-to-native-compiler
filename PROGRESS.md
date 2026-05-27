@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 21:27 CEST
+Updated: 2026-05-27 21:39 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -15,11 +15,55 @@ changes the roadmap position.
 
 ## Executive Read
 
-Overall integrated-roadmap progress: **85%** `[#################---]`
+Overall integrated-roadmap progress: **90%** `[##################--]`
 
-Selected executable PHP semantics: **95%** `[###################-]`
+Selected executable PHP semantics: **96%** `[###################-]`
 
-Latest accounted source capability: `dd391c36` routes reference-returning
+Latest accounted source capability: `b7ba8cfd` routes selected method/static
+source-call spreads through the existing native materialized argument carriers.
+Receiver, dynamic receiver, static, dynamic static, object-static, and
+by-reference method/static spread calls can now reuse `NativeCallArgumentsHandle`
+instead of falling back to spread blockers or generated dispatch ladders. Named
+spread semantics, unknown runtime-only callable shapes, broader COW/reference
+parity, magic dispatch, and LLVM/ASM callable parity remain blocked.
+
+Recent source commit `b7ba8cfd` advances method and static source-call spread
+lowering without adding one-callable ladders, fake argument flattening, or
+source-shape production recognizers. Spread-bearing call sites now compute an
+unknown static argument count, require parameter-name-compatible contracts where
+needed, and feed proven receiver/static/callable source-call families through
+the shared materialized argument ABI. Focused gates covered generated-C source
+proof, linked executable receiver/static spread execution, interface-only
+contract units, adjacent direct user-function spread lowering, named and
+callable family regressions, runtime callable variable spread identity,
+compile checking, formatting, and diff checks. Primary gate log:
+`state/logs/phpc-primary-callable-spread-ba7ac923-20260527.gates.log`
+sha256 `05cd93d6048f363acbf14d19fed533f44d3382fd266eacaa0d82a717bfe38530`.
+
+Recent source commit `ba7ac923` resolves generated-C relative
+`instanceof` targets from class context. `self` and `parent` targets use the
+active declared-class metadata, `static` uses the generated called-scope string
+handle, and all relative targets share the existing class-relationship ABI
+instead of text-membership tables or fixture names. Parser support for
+`instanceof static` is now present. LLVM/ASM relative targets, arbitrary
+runtime source activation, and broader class-context parity remain blocked.
+Primary gate log:
+`state/logs/phpc-primary-relative-instanceof-9d342d7a-20260527.gates.log`
+sha256 `705cc5379b3094075fcb08251c2c8dc0278bf1a059cb73106e3af08d3486dfb0`.
+
+Recent source commit `9d342d7a` lowers LLVM/ASM dynamic right-hand
+`instanceof` targets through
+`phpc_native_value_dynamic_class_relationship_matches_with_diagnostic`.
+LLVM now materializes dynamic variable and expression operands as native values,
+frees them after the relationship call, and keeps relative targets at the
+explicit LLVM boundary. Focused gates covered LLVM IR and assembly source
+proof, generated-C dynamic relationship proof, runtime dynamic relationship
+targets, named/relative/object `instanceof` regressions, syntax boundaries,
+compile checking, formatting, and diff checks. Primary gate log:
+`state/logs/phpc-primary-llvm-dynamic-instanceof-d2e48fd5-20260527.gates.log`
+sha256 `c8cb8c6d1161197c3916feaa60fd1d3895dc3d6f2aeaa3b3145834cd28be2874`.
+
+Recent source commit `dd391c36` routes reference-returning
 `ArrayAccess::offsetGet()` through the native reference-owner path for selected
 generated-C ArrayAccess subjects. Direct ArrayAccess index references and
 property-held ArrayAccess owners can now feed by-reference consumers and alias
