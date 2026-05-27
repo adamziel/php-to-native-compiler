@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 20:58 CEST
+Updated: 2026-05-27 21:06 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,15 +19,29 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `3cbaaf61` routes comparator sort
-callbacks through generalized callable writeback for `usort()`, `uasort()`,
-and `uksort()`. Runtime callable builtin metadata now exposes comparator
-signatures, generated C lowers comparator sorts through callable lookup and the
-array-lvalue writeback ABI, and the runtime invokes registered comparator
-callbacks while preserving the existing natural-sort writeback path. Full
-flag/diagnostic parity, object/ArrayAccess/resource owners, broader callable
-object/array families, broad reference/COW parity, and LLVM/ASM parity remain
-blocked.
+Latest accounted source capability: `8ad19bc5` routes named LLVM/ASM
+`instanceof` value operands through the shared runtime class-relationship ABI.
+LLVM now materializes lowerable left operands as native values, calls
+`phpc_native_value_class_relationship_matches_with_diagnostic`, reports
+diagnostics, and frees the operand handle; relative targets, dynamic targets,
+and object-producing checks stay behind explicit parse/codegen blockers. Full
+dynamic `instanceof $class`, runtime source loading/autoloaded dynamic
+declarations, object-handle parity in LLVM, broader relationship operations,
+and exact native diagnostics remain blocked.
+
+Recent source commit `8ad19bc5` advances LLVM/ASM `instanceof` parity without
+adding text-membership tables, class-name ladders, fixture recognizers, or
+generated-C snapshot production lowering. Named non-relative `instanceof`
+targets in LLVM now share the runtime relationship ABI used by generated C for
+native values; tests keep `self`/`parent`/`static`, dynamic right-hand targets,
+and LLVM object construction blocked at their existing generalized boundaries.
+Focused gates covered current-head patch apply-check, LLVM IR source proof,
+ASM source proof, relative/dynamic/object blocker regressions, syntax-boundary
+regression, existing generated-C source and linked `instanceof` regressions,
+runtime relationship metadata regression, compile checking, formatting, and
+diff checks. Primary gate log:
+`state/logs/phpc-primary-llvm-instanceof-94621061-20260527.gates.log` sha256
+`8fa8f4d16de481034a03903fd3f4ab08b61a2ec828ed889021a553cb6f7c4d9d`.
 
 Recent source commit `3cbaaf61` advances comparator sort callback writeback
 without adding fixture-array production sorting, generated-C fake comparator
