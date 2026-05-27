@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 16:07 CEST
+Updated: 2026-05-27 16:13 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,7 +19,17 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **90%** `[##################--]`
 
-Latest accounted source capability: `b85b4585` routes selected runtime-held
+Latest accounted source capability: `beb73e34` finalizes selected
+generated-native destructors through a request-owned finalizer registry.
+Eligible public non-static parameterless `__destruct` methods on generated
+declared objects, including trait-composed destructors, now register allocated
+objects, de-duplicate by object id, drain in LIFO request-end order, and invoke
+through existing declared method metadata and frame machinery. Destructor body
+reads observe final object property state. Cleanup-order-sensitive allocations
+inside `try/finally`, shutdown functions, and unsupported destructor shapes
+remain blocked instead of gaining ad hoc destructor calls.
+
+Recent source commit `b85b4585` routes selected runtime-held
 callable array/object spread calls through finite homogeneous callable identity
 sets. Expression-level ternary-selected callable arrays and invokable objects
 can now preserve declared method parameter metadata, feed the existing
