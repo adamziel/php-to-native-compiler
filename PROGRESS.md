@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 17:23 CEST
+Updated: 2026-05-27 17:37 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,15 +19,30 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `3ae68adb` forwards selected magic
-fallback spread call sources through the shared materialized call-argument
-carrier. Generated-C programs that call missing methods with spread or named
-arguments can now clone value/reference materialized entries into
-`NativeCallArgumentsHandle` in source order, preserve source keys for magic
-`$args` packing, and dispatch through the existing runtime magic method
-boundary. Runtime-unknown dynamic method-name magic spread, by-reference
-unpack through magic `$args` as full PHP parity, broad unknown signatures,
-broad COW parity, and LLVM/ASM parity remain blocked.
+Latest accounted source capability: `e829222b` supports selected custom
+character masks for the trim family across the shared runtime callable builtin
+and interpreter paths. `trim`, `ltrim`, and `rtrim` now share byte-mask parsing
+for default masks, empty masks, and incrementing `x..y` ranges over string and
+binary-string values, while malformed/decrementing ranges and ambiguous dot
+runs remain centralized blockers instead of fixture-specific behavior.
+
+Recent source commit `e829222b` aligns generated-C runtime callable trim
+handling and `phpc run` interpreter trim handling on the same selected byte-mask
+semantics. The focused gates cover runtime trim helpers, direct trim builtin
+tests, runtime callable string spread defaults, imported runtime builtin aliases,
+and generated-C source proofs without adding source-shape lowering. Full PHP
+charlist warning-and-continue behavior, ambiguous dot-run parsing, locale or
+Unicode breadth, by-reference/writeback builtins, unknown callable families,
+magic fallback, and LLVM/ASM parity remain blocked.
+
+Recent source commit `3ae68adb` forwards selected magic fallback spread call
+sources through the shared materialized call-argument carrier. Generated-C
+programs that call missing methods with spread or named arguments can now clone
+value/reference materialized entries into `NativeCallArgumentsHandle` in source
+order, preserve source keys for magic `$args` packing, and dispatch through the
+existing runtime magic method boundary. Runtime-unknown dynamic method-name
+magic spread, by-reference unpack through magic `$args` as full PHP parity,
+broad unknown signatures, broad COW parity, and LLVM/ASM parity remain blocked.
 
 Recent source commit `3ae68adb` adds a reusable runtime helper that forwards
 materialized value/reference call-argument entries into an existing
