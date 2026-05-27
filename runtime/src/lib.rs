@@ -295,6 +295,12 @@ pub struct NativeCallableValueHandle {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeSplAutoloadRegistryHandle {
+    ptr: *mut NativeSplAutoloadRegistry,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeCallArgumentsHandle {
     ptr: *mut NativeCallArguments,
 }
@@ -1448,6 +1454,12 @@ struct NativeRequestDestructorFinalizers {
     finalized_object_ids: HashSet<i64>,
 }
 
+#[derive(Debug)]
+struct NativeSplAutoloadRegistry {
+    callbacks: Vec<NativeCallableValueDispatch>,
+    loading: HashSet<Vec<u8>>,
+}
+
 #[derive(Debug, Clone)]
 struct NativeCallable {
     descriptor: NativeCallableDescriptor,
@@ -1497,7 +1509,7 @@ enum NativeCallableValueDispatch {
     DescriptorClosure(PhpClosure),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeCallableBuiltin {
     StringLength,
     StringPredicate(NativeStringPredicate),
@@ -1510,7 +1522,7 @@ enum NativeCallableBuiltin {
     TypePredicate(u8),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeTrimMode {
     Both,
     Left,
@@ -4066,6 +4078,31 @@ impl NativeRequestDestructorFinalizersHandle {
     }
 
     unsafe fn as_mut(&mut self) -> Option<&mut NativeRequestDestructorFinalizers> {
+        unsafe { self.ptr.as_mut() }
+    }
+}
+
+impl NativeSplAutoloadRegistryHandle {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    fn new() -> Self {
+        Self {
+            ptr: Box::into_raw(Box::new(NativeSplAutoloadRegistry {
+                callbacks: Vec::new(),
+                loading: HashSet::new(),
+            })),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+
+    unsafe fn as_mut(&mut self) -> Option<&mut NativeSplAutoloadRegistry> {
         unsafe { self.ptr.as_mut() }
     }
 }
@@ -10124,6 +10161,53 @@ fn native_callable_value_source_signature(
     }
 }
 
+fn native_callable_scope_key(scope: Option<&str>) -> Option<String> {
+    scope.map(normalize_class_lookup_name)
+}
+
+fn native_callable_name_key(kind: NativeCallableKind, name: &str) -> String {
+    match kind {
+        NativeCallableKind::Function | NativeCallableKind::Method => name.to_ascii_lowercase(),
+        NativeCallableKind::Constructor => name.to_ascii_lowercase(),
+    }
+}
+
+fn native_callable_dispatches_match(
+    left: &NativeCallableValueDispatch,
+    right: &NativeCallableValueDispatch,
+) -> bool {
+    match (left, right) {
+        (
+            NativeCallableValueDispatch::Table {
+                callable: left,
+                bound_receiver: left_receiver,
+            },
+            NativeCallableValueDispatch::Table {
+                callable: right,
+                bound_receiver: right_receiver,
+            },
+        ) => {
+            left.descriptor.kind == right.descriptor.kind
+                && native_callable_scope_key(left.descriptor.scope.as_deref())
+                    == native_callable_scope_key(right.descriptor.scope.as_deref())
+                && native_callable_name_key(left.descriptor.kind, &left.descriptor.name)
+                    == native_callable_name_key(right.descriptor.kind, &right.descriptor.name)
+                && native_callable_scope_key(left.called_scope.as_deref())
+                    == native_callable_scope_key(right.called_scope.as_deref())
+                && left_receiver == right_receiver
+        }
+        (
+            NativeCallableValueDispatch::Builtin(left),
+            NativeCallableValueDispatch::Builtin(right),
+        ) => left == right,
+        (
+            NativeCallableValueDispatch::DescriptorClosure(left),
+            NativeCallableValueDispatch::DescriptorClosure(right),
+        ) => left == right,
+        _ => false,
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn phpc_native_callable_value_null() -> NativeCallableValueHandle {
     NativeCallableValueHandle::null()
@@ -10145,6 +10229,259 @@ pub unsafe extern "C" fn phpc_native_callable_value_free(handle: NativeCallableV
     }
 
     drop(unsafe { Box::from_raw(handle.ptr) });
+}
+
+unsafe fn native_callable_value_dispatch_take(
+    handle: NativeCallableValueHandle,
+) -> Option<NativeCallableValueDispatch> {
+    if handle.ptr.is_null() {
+        None
+    } else {
+        Some(*unsafe { Box::from_raw(handle.ptr) })
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_spl_autoload_registry_null() -> NativeSplAutoloadRegistryHandle {
+    NativeSplAutoloadRegistryHandle::null()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_spl_autoload_registry_new() -> NativeSplAutoloadRegistryHandle {
+    NativeSplAutoloadRegistryHandle::new()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_spl_autoload_registry_is_null(
+    handle: NativeSplAutoloadRegistryHandle,
+) -> bool {
+    handle.is_null()
+}
+
+/// # Safety
+///
+/// `handle` must be null or an SPL autoload registry handle previously
+/// returned by the runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_spl_autoload_registry_free(
+    handle: NativeSplAutoloadRegistryHandle,
+) {
+    if handle.ptr.is_null() {
+        return;
+    }
+
+    drop(unsafe { Box::from_raw(handle.ptr) });
+}
+
+/// # Safety
+///
+/// `registry` must be a request-local SPL autoload registry handle.
+/// `callable` must be a normalized callable-value dispatch handle returned by
+/// the runtime callable-value lookup ABI. This function consumes `callable`
+/// exactly once. The diagnostic slot may be null or owned by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_spl_autoload_register_callable_value_and_free(
+    mut registry: NativeSplAutoloadRegistryHandle,
+    callable: NativeCallableValueHandle,
+    prepend: bool,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let Some(registry) = (unsafe { registry.as_mut() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "spl_autoload_register(): native SPL autoload registry handle is null",
+            )
+        };
+        unsafe { phpc_native_callable_value_free(callable) };
+        return false;
+    };
+    let Some(dispatch) = (unsafe { native_callable_value_dispatch_take(callable) }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "spl_autoload_register(): callable dispatch handle is null",
+            )
+        };
+        return false;
+    };
+
+    if registry
+        .callbacks
+        .iter()
+        .any(|existing| native_callable_dispatches_match(existing, &dispatch))
+    {
+        return true;
+    }
+
+    if prepend {
+        registry.callbacks.insert(0, dispatch);
+    } else {
+        registry.callbacks.push(dispatch);
+    }
+    true
+}
+
+/// # Safety
+///
+/// `registry` must be a request-local SPL autoload registry handle.
+/// `callable` must be a normalized callable-value dispatch handle returned by
+/// the runtime callable-value lookup ABI. This function consumes `callable`
+/// exactly once. The diagnostic slot may be null or owned by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_spl_autoload_unregister_callable_value_and_free(
+    mut registry: NativeSplAutoloadRegistryHandle,
+    callable: NativeCallableValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let Some(registry) = (unsafe { registry.as_mut() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "spl_autoload_unregister(): native SPL autoload registry handle is null",
+            )
+        };
+        unsafe { phpc_native_callable_value_free(callable) };
+        return false;
+    };
+    let Some(dispatch) = (unsafe { native_callable_value_dispatch_take(callable) }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "spl_autoload_unregister(): callable dispatch handle is null",
+            )
+        };
+        return false;
+    };
+    let Some(index) = registry
+        .callbacks
+        .iter()
+        .position(|existing| native_callable_dispatches_match(existing, &dispatch))
+    else {
+        return false;
+    };
+    registry.callbacks.remove(index);
+    true
+}
+
+unsafe fn native_spl_autoload_invoke_callback(
+    dispatch: NativeCallableValueDispatch,
+    class_name: &[u8],
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    let arguments = phpc_native_call_arguments_new();
+    let class_name =
+        NativeValueHandle::from_value(value_from_php_string_bytes(class_name.to_vec()));
+    if !unsafe { phpc_native_call_arguments_push_value_and_free(arguments, class_name) } {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "spl_autoload_call(): failed to materialize autoload class-name argument",
+            )
+        };
+        unsafe { phpc_native_call_arguments_free(arguments) };
+        return false;
+    }
+
+    let callable = NativeCallableValueHandle::from_dispatch(dispatch);
+    unsafe {
+        phpc_native_callable_value_invoke_discard_with_diagnostic_and_free(
+            callable, arguments, diagnostic,
+        )
+    };
+    unsafe { phpc_native_callable_value_free(callable) };
+    !unsafe { native_diagnostic_slot_is_set(diagnostic) }
+}
+
+fn native_class_like_metadata_exists_bytes(class_name: &[u8], operation: u8) -> Option<bool> {
+    let classes = PhpClassTable::with_core_classes();
+    match operation {
+        tag if tag == NativeClassMetadataOperation::ClassExists as u8 => {
+            Some(native_class_canonical_name_bytes(&classes, class_name).is_some())
+        }
+        tag if tag == NativeClassMetadataOperation::TraitExists as u8 => {
+            Some(native_user_trait_canonical_name_bytes(class_name).is_some())
+        }
+        _ => None,
+    }
+}
+
+unsafe fn native_spl_autoload_call_bytes(
+    registry: &mut NativeSplAutoloadRegistry,
+    class_name: &[u8],
+    stop_when_operation_exists: Option<u8>,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    let loading_key = native_class_metadata_lookup_key(class_name);
+    if registry.loading.contains(&loading_key) {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                format!(
+                    "spl_autoload_call(): recursive autoload for class {} is blocked by generated-native SPL registry",
+                    String::from_utf8_lossy(class_name)
+                ),
+            )
+        };
+        return false;
+    }
+
+    registry.loading.insert(loading_key.clone());
+    let callbacks = registry.callbacks.clone();
+    for callback in callbacks {
+        if !unsafe { native_spl_autoload_invoke_callback(callback, class_name, diagnostic) } {
+            registry.loading.remove(&loading_key);
+            return false;
+        }
+        if stop_when_operation_exists
+            .and_then(|operation| native_class_like_metadata_exists_bytes(class_name, operation))
+            .unwrap_or(false)
+        {
+            break;
+        }
+    }
+    registry.loading.remove(&loading_key);
+    true
+}
+
+/// # Safety
+///
+/// `registry` must be a request-local SPL autoload registry handle.
+/// `class_ptr` must be null only when `class_len == 0`, or point to
+/// `class_len` readable bytes. The callable table handle is reserved for ABI
+/// parity with generated request state; callbacks have already been normalized
+/// into callable-value dispatch entries. The diagnostic slot may be null or
+/// owned by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_spl_autoload_call_bytes_with_diagnostic(
+    mut registry: NativeSplAutoloadRegistryHandle,
+    _table: NativeCallableTableHandle,
+    class_ptr: *const u8,
+    class_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let Some(registry) = (unsafe { registry.as_mut() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "spl_autoload_call(): native SPL autoload registry handle is null",
+            )
+        };
+        return false;
+    };
+    let Some(class_name) = (unsafe { native_abi_bytes(class_ptr, class_len) }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "spl_autoload_call(): invalid class-name ABI",
+            )
+        };
+        return false;
+    };
+    unsafe { native_spl_autoload_call_bytes(registry, class_name, None, diagnostic) }
 }
 
 /// # Safety
@@ -37387,6 +37724,88 @@ pub unsafe extern "C" fn phpc_native_value_class_metadata_exists_with_autoload_p
     }
 }
 
+unsafe fn native_value_class_metadata_autoload_name_bytes(
+    subject: NativeValueHandle,
+    operation: u8,
+) -> RuntimeResult<Option<Vec<u8>>> {
+    match operation {
+        tag if tag == NativeClassMetadataOperation::ClassExists as u8 => Ok(Some(unsafe {
+            native_value_metadata_php_string_bytes_argument(
+                subject,
+                "class_exists()",
+                "class name",
+            )?
+        })),
+        tag if tag == NativeClassMetadataOperation::TraitExists as u8 => Ok(Some(unsafe {
+            native_value_metadata_php_string_bytes_argument(
+                subject,
+                "trait_exists()",
+                "trait name",
+            )?
+        })),
+        _ => Ok(None),
+    }
+}
+
+/// # Safety
+///
+/// `subject` and `member` must be null or value handles returned by the
+/// runtime ABI and not yet freed. `registry` must be a request-local SPL
+/// autoload registry handle when autoload is enabled; a null registry means no
+/// registered callbacks. `table` is accepted for request ABI symmetry and
+/// future callable-table validation, but callbacks are invoked from already
+/// normalized dispatch values. The diagnostic slot is overwritten on metadata
+/// argument errors, unsupported operations, callback failures, or reentrant
+/// autoload.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_class_metadata_exists_with_autoload_registry_and_diagnostic(
+    subject: NativeValueHandle,
+    member: NativeValueHandle,
+    operation: u8,
+    mut registry: NativeSplAutoloadRegistryHandle,
+    _table: NativeCallableTableHandle,
+    autoload: bool,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe { native_value_class_metadata_exists(subject, member, operation) } {
+        Ok(true) => true,
+        Ok(false) if autoload => {
+            let class_name = match unsafe {
+                native_value_class_metadata_autoload_name_bytes(subject, operation)
+            } {
+                Ok(Some(class_name)) => class_name,
+                Ok(None) => return false,
+                Err(error) => {
+                    unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+                    return false;
+                }
+            };
+            let Some(registry) = (unsafe { registry.as_mut() }) else {
+                return false;
+            };
+            if !unsafe {
+                native_spl_autoload_call_bytes(registry, &class_name, Some(operation), diagnostic)
+            } {
+                return false;
+            }
+            match unsafe { native_value_class_metadata_exists(subject, member, operation) } {
+                Ok(result) => result,
+                Err(error) => {
+                    unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+                    false
+                }
+            }
+        }
+        Ok(result) => result,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
 /// # Safety
 ///
 /// `receiver` must be null or a value handle previously returned by the
@@ -39785,6 +40204,95 @@ mod tests {
         result
     }
 
+    thread_local! {
+        static SPL_AUTOLOAD_EVENTS_FOR_TEST: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+        static SPL_AUTOLOAD_REENTRANT_REGISTRY_FOR_TEST: RefCell<NativeSplAutoloadRegistryHandle> =
+            const { RefCell::new(NativeSplAutoloadRegistryHandle::null()) };
+    }
+
+    fn spl_autoload_events_for_test() -> Vec<String> {
+        SPL_AUTOLOAD_EVENTS_FOR_TEST.with(|events| events.borrow().clone())
+    }
+
+    fn spl_autoload_events_reset_for_test() {
+        SPL_AUTOLOAD_EVENTS_FOR_TEST.with(|events| events.borrow_mut().clear());
+        SPL_AUTOLOAD_REENTRANT_REGISTRY_FOR_TEST.with(|registry| {
+            *registry.borrow_mut() = NativeSplAutoloadRegistryHandle::null();
+        });
+    }
+
+    fn spl_autoload_record_event_for_test(label: &str, class_name: &[u8]) {
+        SPL_AUTOLOAD_EVENTS_FOR_TEST.with(|events| {
+            events
+                .borrow_mut()
+                .push(format!("{label}:{}", String::from_utf8_lossy(class_name)));
+        });
+    }
+
+    unsafe fn stringish_bytes_from_value_handle_for_test(handle: NativeValueHandle) -> Vec<u8> {
+        let result = match unsafe { handle.as_ref() } {
+            Some(Value::String(value)) => value.as_bytes().to_vec(),
+            Some(Value::BinaryString(value)) => value.clone(),
+            other => panic!("expected string-like value, got {other:?}"),
+        };
+        unsafe { phpc_native_value_free(handle) };
+        result
+    }
+
+    unsafe fn autoload_class_bytes_from_frame_for_test(frame: NativeCallFrameHandle) -> Vec<u8> {
+        let value = unsafe { phpc_native_call_frame_read_value(frame, 0) };
+        unsafe { stringish_bytes_from_value_handle_for_test(value) }
+    }
+
+    unsafe fn normalized_callable_for_test(
+        table: NativeCallableTableHandle,
+        value: Value,
+    ) -> NativeCallableValueHandle {
+        let value = NativeValueHandle::from_value(value);
+        let (callable, diagnostic) = unsafe { lookup_callable_value_for_test(table, value, None) };
+        assert!(diagnostic.is_null());
+        assert!(!callable.is_null());
+        unsafe { phpc_native_value_free(value) };
+        callable
+    }
+
+    unsafe fn register_spl_autoload_callable_for_test(
+        registry: NativeSplAutoloadRegistryHandle,
+        table: NativeCallableTableHandle,
+        value: Value,
+        prepend: bool,
+    ) {
+        let callable = unsafe { normalized_callable_for_test(table, value) };
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        assert!(unsafe {
+            phpc_native_spl_autoload_register_callable_value_and_free(
+                registry,
+                callable,
+                prepend,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+    }
+
+    unsafe fn spl_autoload_call_for_test(
+        registry: NativeSplAutoloadRegistryHandle,
+        table: NativeCallableTableHandle,
+        class_name: &[u8],
+    ) -> NativeDiagnosticHandle {
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        assert!(unsafe {
+            phpc_native_spl_autoload_call_bytes_with_diagnostic(
+                registry,
+                table,
+                class_name.as_ptr(),
+                class_name.len(),
+                &mut diagnostic,
+            )
+        });
+        diagnostic
+    }
+
     #[test]
     fn native_materialized_call_arguments_unpack_arrays_and_finalize_into_handle_slots() {
         let materialized = phpc_native_materialized_call_arguments_new();
@@ -40633,6 +41141,77 @@ mod tests {
         phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Int(left + right)))
     }
 
+    unsafe extern "C" fn native_autoload_record_function_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        let class_name = unsafe { autoload_class_bytes_from_frame_for_test(frame) };
+        spl_autoload_record_event_for_test("function", &class_name);
+        phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Null))
+    }
+
+    unsafe extern "C" fn native_autoload_static_method_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        let scope =
+            unsafe { string_from_native_for_test(phpc_native_call_frame_called_scope(frame)) };
+        let class_name = unsafe { autoload_class_bytes_from_frame_for_test(frame) };
+        spl_autoload_record_event_for_test(&format!("{scope}::load"), &class_name);
+        phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Null))
+    }
+
+    unsafe extern "C" fn native_autoload_object_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        let receiver = unsafe { phpc_native_call_frame_read_receiver(frame) };
+        let class_name = match unsafe { receiver.as_ref() } {
+            Some(Value::Object(object)) => object.class_name().to_string(),
+            other => panic!("expected bound autoload receiver, got {other:?}"),
+        };
+        unsafe { phpc_native_value_free(receiver) };
+        let requested = unsafe { autoload_class_bytes_from_frame_for_test(frame) };
+        spl_autoload_record_event_for_test(&format!("{class_name}::__invoke"), &requested);
+        phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Null))
+    }
+
+    unsafe extern "C" fn native_autoload_declare_class_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        let class_name = unsafe { autoload_class_bytes_from_frame_for_test(frame) };
+        spl_autoload_record_event_for_test("declare-class", &class_name);
+        native_declare_user_class_bytes_result(&class_name);
+        phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Null))
+    }
+
+    unsafe extern "C" fn native_autoload_declare_trait_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        let trait_name = unsafe { autoload_class_bytes_from_frame_for_test(frame) };
+        spl_autoload_record_event_for_test("declare-trait", &trait_name);
+        native_declare_user_trait_bytes_result(&trait_name);
+        phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Null))
+    }
+
+    unsafe extern "C" fn native_autoload_reentrant_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        let class_name = unsafe { autoload_class_bytes_from_frame_for_test(frame) };
+        spl_autoload_record_event_for_test("reentrant", &class_name);
+        let registry = SPL_AUTOLOAD_REENTRANT_REGISTRY_FOR_TEST.with(|registry| *registry.borrow());
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        if unsafe {
+            phpc_native_spl_autoload_call_bytes_with_diagnostic(
+                registry,
+                NativeCallableTableHandle::null(),
+                class_name.as_ptr(),
+                class_name.len(),
+                &mut diagnostic,
+            )
+        } {
+            return phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Null));
+        }
+        phpc_native_call_result_from_diagnostic_and_free(diagnostic)
+    }
+
     unsafe extern "C" fn native_scoped_method_callback(
         frame: NativeCallFrameHandle,
     ) -> NativeCallResultHandle {
@@ -40874,6 +41453,23 @@ mod tests {
         phpc_native_closure_result_from_value(NativeValueHandle::from_value(Value::Int(
             left + right,
         )))
+    }
+
+    unsafe extern "C" fn native_autoload_descriptor_callback(
+        _call_depth: c_int,
+        args: *const NativeClosureArgument,
+        arg_count: usize,
+        status: *mut c_int,
+    ) -> NativeClosureInvocationResult {
+        if arg_count < 1 || args.is_null() {
+            return NativeClosureInvocationResult::null();
+        }
+        let class_name = unsafe {
+            stringish_bytes_from_value_handle_for_test(phpc_native_value_clone((*args).value))
+        };
+        spl_autoload_record_event_for_test("descriptor", &class_name);
+        unsafe { *status = 1 };
+        phpc_native_closure_result_from_value(NativeValueHandle::from_value(Value::Null))
     }
 
     unsafe extern "C" fn native_descriptor_variadic_sum_closure_callback(
@@ -44344,6 +44940,304 @@ mod tests {
         }
 
         unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn native_spl_autoload_registry_preserves_order_prepend_and_unregister_across_callable_shapes()
+    {
+        spl_autoload_events_reset_for_test();
+        let registry = phpc_native_spl_autoload_registry_new();
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "autoload_function",
+                NativeCallableVisibility::Public,
+                native_autoload_record_function_callback,
+            );
+            register_static_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("StaticLoader"),
+                "load",
+                NativeCallableVisibility::Public,
+                native_autoload_static_method_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("ObjectLoader"),
+                "__invoke",
+                NativeCallableVisibility::Public,
+                native_autoload_object_callback,
+            );
+        }
+
+        let mut classes = PhpClassTable::new();
+        let object_id = classes.declare_class("ObjectLoader").unwrap();
+        let object_loader = Value::Object(PhpObject::from_class(classes.get(object_id).unwrap()));
+        unsafe {
+            register_spl_autoload_callable_for_test(
+                registry,
+                table,
+                Value::String("AUTOLOAD_FUNCTION".to_string()),
+                false,
+            );
+            register_spl_autoload_callable_for_test(
+                registry,
+                table,
+                Value::Array(callable_pair(
+                    Value::String("StaticLoader".to_string()),
+                    Value::String("LOAD".to_string()),
+                )),
+                false,
+            );
+            register_spl_autoload_callable_for_test(registry, table, object_loader, false);
+            let descriptor =
+                NativeClosureDescriptor::new(native_autoload_descriptor_callback, 1, 1);
+            let descriptor_value = phpc_native_value_from_closure_descriptor(descriptor);
+            let descriptor_callable = phpc_native_callable_lookup_value_or_closure_with_diagnostic(
+                NativeCallableTableHandle::null(),
+                descriptor_value,
+                std::ptr::null_mut(),
+            );
+            assert!(phpc_native_spl_autoload_register_callable_value_and_free(
+                registry,
+                descriptor_callable,
+                true,
+                std::ptr::null_mut(),
+            ));
+            phpc_native_value_free(descriptor_value);
+        }
+
+        let diagnostic = unsafe { spl_autoload_call_for_test(registry, table, b"Package\\Thing") };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            spl_autoload_events_for_test(),
+            vec![
+                "descriptor:Package\\Thing",
+                "function:Package\\Thing",
+                "StaticLoader::load:Package\\Thing",
+                "ObjectLoader::__invoke:Package\\Thing",
+            ]
+        );
+
+        let unregister = unsafe {
+            normalized_callable_for_test(
+                table,
+                Value::Array(callable_pair(
+                    Value::String("staticloader".to_string()),
+                    Value::String("load".to_string()),
+                )),
+            )
+        };
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        assert!(unsafe {
+            phpc_native_spl_autoload_unregister_callable_value_and_free(
+                registry,
+                unregister,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        spl_autoload_events_reset_for_test();
+        let diagnostic = unsafe { spl_autoload_call_for_test(registry, table, b"Other\\Thing") };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            spl_autoload_events_for_test(),
+            vec![
+                "descriptor:Other\\Thing",
+                "function:Other\\Thing",
+                "ObjectLoader::__invoke:Other\\Thing",
+            ]
+        );
+
+        unsafe {
+            phpc_native_spl_autoload_registry_free(registry);
+            phpc_native_callable_table_free(table);
+        }
+        spl_autoload_events_reset_for_test();
+    }
+
+    #[test]
+    fn native_class_metadata_autoload_registry_invokes_callbacks_for_class_and_trait_misses() {
+        native_user_classes_reset_for_test();
+        spl_autoload_events_reset_for_test();
+        let registry = phpc_native_spl_autoload_registry_new();
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "autoload_function",
+                NativeCallableVisibility::Public,
+                native_autoload_record_function_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "declare_class",
+                NativeCallableVisibility::Public,
+                native_autoload_declare_class_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "declare_trait",
+                NativeCallableVisibility::Public,
+                native_autoload_declare_trait_callback,
+            );
+            register_spl_autoload_callable_for_test(
+                registry,
+                table,
+                Value::String("autoload_function".to_string()),
+                false,
+            );
+            register_spl_autoload_callable_for_test(
+                registry,
+                table,
+                Value::String("declare_class".to_string()),
+                false,
+            );
+        }
+
+        let class_name = NativeValueHandle::from_value(Value::String("RuntimeAlpha".to_string()));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        assert!(!unsafe {
+            phpc_native_value_class_metadata_exists_with_autoload_registry_and_diagnostic(
+                class_name,
+                NativeValueHandle::null(),
+                NativeClassMetadataOperation::ClassExists as u8,
+                registry,
+                table,
+                false,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert!(spl_autoload_events_for_test().is_empty());
+
+        assert!(unsafe {
+            phpc_native_value_class_metadata_exists_with_autoload_registry_and_diagnostic(
+                class_name,
+                NativeValueHandle::null(),
+                NativeClassMetadataOperation::ClassExists as u8,
+                registry,
+                table,
+                true,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            spl_autoload_events_for_test(),
+            vec!["function:RuntimeAlpha", "declare-class:RuntimeAlpha"]
+        );
+
+        let unregister = unsafe {
+            normalized_callable_for_test(table, Value::String("declare_class".to_string()))
+        };
+        assert!(unsafe {
+            phpc_native_spl_autoload_unregister_callable_value_and_free(
+                registry,
+                unregister,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        unsafe {
+            register_spl_autoload_callable_for_test(
+                registry,
+                table,
+                Value::String("declare_trait".to_string()),
+                false,
+            );
+        }
+
+        spl_autoload_events_reset_for_test();
+        let trait_name =
+            NativeValueHandle::from_value(Value::BinaryString(b"RuntimeTrait".to_vec()));
+        assert!(unsafe {
+            phpc_native_value_class_metadata_exists_with_autoload_registry_and_diagnostic(
+                trait_name,
+                NativeValueHandle::null(),
+                NativeClassMetadataOperation::TraitExists as u8,
+                registry,
+                table,
+                true,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            spl_autoload_events_for_test(),
+            vec!["function:RuntimeTrait", "declare-trait:RuntimeTrait"]
+        );
+
+        unsafe {
+            phpc_native_value_free(trait_name);
+            phpc_native_value_free(class_name);
+            phpc_native_spl_autoload_registry_free(registry);
+            phpc_native_callable_table_free(table);
+        }
+        native_user_classes_reset_for_test();
+        spl_autoload_events_reset_for_test();
+    }
+
+    #[test]
+    fn native_spl_autoload_registry_reports_reentrant_class_loading() {
+        spl_autoload_events_reset_for_test();
+        let registry = phpc_native_spl_autoload_registry_new();
+        let table = phpc_native_callable_table_new();
+        SPL_AUTOLOAD_REENTRANT_REGISTRY_FOR_TEST.with(|slot| *slot.borrow_mut() = registry);
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "reentrant_loader",
+                NativeCallableVisibility::Public,
+                native_autoload_reentrant_callback,
+            );
+            register_spl_autoload_callable_for_test(
+                registry,
+                table,
+                Value::String("reentrant_loader".to_string()),
+                false,
+            );
+        }
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        assert!(!unsafe {
+            phpc_native_spl_autoload_call_bytes_with_diagnostic(
+                registry,
+                table,
+                b"RecursiveTarget".as_ptr(),
+                b"RecursiveTarget".len(),
+                &mut diagnostic,
+            )
+        });
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "spl_autoload_call(): recursive autoload for class RecursiveTarget is blocked by generated-native SPL registry"
+        );
+        assert_eq!(
+            spl_autoload_events_for_test(),
+            vec!["reentrant:RecursiveTarget"]
+        );
+
+        unsafe {
+            phpc_native_diagnostic_free(diagnostic);
+            phpc_native_spl_autoload_registry_free(registry);
+            phpc_native_callable_table_free(table);
+        }
+        spl_autoload_events_reset_for_test();
     }
 
     #[test]
