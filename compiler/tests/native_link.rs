@@ -308,6 +308,55 @@ const NATIVE_STATIC_PROPERTY_MUTATION_SOURCE: &str = concat!(
     "echo StaticMutationRoot::$count, \":\", StaticMutationChild::$count, \"\\n\";\n",
 );
 
+const NATIVE_STATIC_PROPERTY_OBSERVATION_SOURCE: &str = concat!(
+    "<?php\n",
+    "class StaticObservationRoot {\n",
+    "    public static $filled = \"go\";\n",
+    "    public static $zero = \"0\";\n",
+    "    public static $number = 7;\n",
+    "    public static $null = null;\n",
+    "    public static function selfBits() {\n",
+    "        echo isset(self::$filled) ? \"S\" : \"M\";\n",
+    "        echo empty(self::$zero) ? \"Z\" : \"z\";\n",
+    "        echo isset(self::$missing) ? \"bad\" : \"m\";\n",
+    "        echo empty(self::$missing) ? \"e\" : \"bad\";\n",
+    "    }\n",
+    "    public static function lateBits() {\n",
+    "        echo isset(static::$number) ? \"N\" : \"n\";\n",
+    "        echo empty(static::$number) ? \"E\" : \"f\";\n",
+    "        echo isset(static::$child) ? \"C\" : \"c\";\n",
+    "    }\n",
+    "}\n",
+    "class StaticObservationChild extends StaticObservationRoot {\n",
+    "    public static $child = \"kid\";\n",
+    "    public static $number = 0;\n",
+    "    public static function parentBits() {\n",
+    "        echo isset(parent::$filled) ? \"P\" : \"p\";\n",
+    "        echo empty(parent::$null) ? \"E\" : \"bad\";\n",
+    "    }\n",
+    "}\n",
+    "$object = new StaticObservationRoot();\n",
+    "$class = \"StaticObservationChild\";\n",
+    "echo isset(StaticObservationRoot::$filled) ? \"L\" : \"l\";\n",
+    "echo empty(StaticObservationRoot::$zero) ? \"Z\" : \"z\";\n",
+    "echo isset(StaticObservationRoot::$missing) ? \"bad\" : \"M\";\n",
+    "echo empty(StaticObservationRoot::$missing) ? \"E\" : \"bad\";\n",
+    "echo \"|\";\n",
+    "echo isset($object::$number) ? \"O\" : \"o\";\n",
+    "echo empty($object::$zero) ? \"Z\" : \"z\";\n",
+    "echo isset($class::$child) ? \"C\" : \"c\";\n",
+    "echo empty($class::$number) ? \"N\" : \"n\";\n",
+    "echo \"|\";\n",
+    "StaticObservationRoot::selfBits();\n",
+    "echo \"|\";\n",
+    "StaticObservationChild::parentBits();\n",
+    "echo \"|\";\n",
+    "StaticObservationRoot::lateBits();\n",
+    "echo \"|\";\n",
+    "StaticObservationChild::lateBits();\n",
+    "echo \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_PROPERTY_UNSET_SOURCE: &str = concat!(
     "<?php\n",
     "class Box { public $name; public $peer; private $secret; }\n",
@@ -2055,6 +2104,34 @@ fn emit_exe_links_and_runs_static_property_mutation_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"11:5:5:21:7:16:7:21:8:22\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_static_property_observation_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "static_property_observation",
+        NATIVE_STATIC_PROPERTY_OBSERVATION_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run static-property observation executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"LZME|OZCN|SZme|PE|Nfc|NEC\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -4587,6 +4664,41 @@ fn native_executable_c_source_routes_static_property_mutations_through_shared_lv
             && !source.contains("assembly mutation lowering rejects")
             && !source.contains("assembly arithmetic lowering rejects"),
         "supported static-property mutations should not fall through old blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_static_property_observation_through_shared_lvalue_boundary() {
+    let program = parse(NATIVE_STATIC_PROPERTY_OBSERVATION_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    for required in [
+        "phpc_native_static_property_read_isset_class_with_diagnostic",
+        "phpc_native_static_property_read_isset_relative_with_diagnostic",
+        "phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free",
+        "phpc_native_value_truthy_with_reference_slot_with_diagnostic",
+        "static_property_lvalue_isset_value_",
+        "static_property_lvalue_empty_truthy_",
+        "static_property_lvalue_name_bytes",
+    ] {
+        assert!(source.contains(required), "missing {required}:\n{source}");
+    }
+    assert!(
+        body.matches("static_property_lvalue_isset_value_").count() >= 10,
+        "literal, object/class-string, self, parent, and static receivers should share the static-property isset-read value path:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free")
+            .count()
+            >= 2,
+        "object and class-string static-property observation should derive receiver scope through the shared receiver ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("static-member lowering rejects")
+            && !source.contains("assembly isset lowering rejects")
+            && !source.contains("assembly empty lowering rejects"),
+        "supported static-property observation should not fall through old blockers:\n{source}"
     );
 }
 
