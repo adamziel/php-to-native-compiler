@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 21:06 CEST
+Updated: 2026-05-27 21:10 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,15 +19,28 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `8ad19bc5` routes named LLVM/ASM
-`instanceof` value operands through the shared runtime class-relationship ABI.
-LLVM now materializes lowerable left operands as native values, calls
-`phpc_native_value_class_relationship_matches_with_diagnostic`, reports
-diagnostics, and frees the operand handle; relative targets, dynamic targets,
-and object-producing checks stay behind explicit parse/codegen blockers. Full
-dynamic `instanceof $class`, runtime source loading/autoloaded dynamic
-declarations, object-handle parity in LLVM, broader relationship operations,
-and exact native diagnostics remain blocked.
+Latest accounted source capability: `ba0dcfad` lowers generated-C unqualified
+namespaced calls through PHP's local-function-before-global-builtin fallback.
+The compiler now preserves namespace-local user functions as direct calls while
+allowing supported runtime-callable builtins such as `strlen()` and
+`strtolower()` to fall back through the shared callable lookup/invoke boundary
+when no namespaced declaration shadows them. Qualified imports, unsupported
+builtin aliases, dynamic callables, broader namespace edge cases, and LLVM/ASM
+namespace-call parity remain blocked.
+
+Recent source commit `ba0dcfad` advances generated-C function namespace
+fallback without adding exact source recognizers, one-namespace ladders,
+fixture-name dispatch, or builtin-specific production branches. Parser tests
+prove unqualified namespaced calls are marked before codegen fallback, runtime
+tests preserve namespace-local shadowing, generated-C source tests prove
+supported global builtins route through callable lookup/invoke only when no
+local declaration is available, and linked executable proof covers local
+shadowing plus builtin fallback together. Focused gates covered the new source
+and linked namespace fallback tests, the full namespace-resolution suite,
+global import snapshots, the functions/scopes regression suite, compile
+checking, formatting, and diff checks. Primary gate log:
+`state/logs/phpc-primary-function-namespace-fallback-2901b3de-20260527.gates.log`
+sha256 `667620cfe6728df0b4e72a47ee3c2e72da010205944b2f826c25ba0126ab333e`.
 
 Recent source commit `8ad19bc5` advances LLVM/ASM `instanceof` parity without
 adding text-membership tables, class-name ladders, fixture recognizers, or
