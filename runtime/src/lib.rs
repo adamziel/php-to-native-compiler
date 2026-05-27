@@ -7776,10 +7776,27 @@ pub unsafe extern "C" fn phpc_native_method_lookup_with_access_context_diagnosti
         };
         return NativeCallableHandle::null();
     };
-    let method_name = match native_callable_value_name(method, "method name") {
-        Ok(method_name) => method_name,
-        Err(message) => {
-            unsafe { native_store_diagnostic_message(diagnostic, message) };
+    let method_name = match native_value_dynamic_method_name_string(method) {
+        Some(method_name) if !method_name.is_empty() => method_name,
+        Some(_) => {
+            unsafe {
+                native_store_diagnostic_message(
+                    diagnostic,
+                    "native method lookup failed: method name must be a non-empty scalar string",
+                )
+            };
+            return NativeCallableHandle::null();
+        }
+        None => {
+            unsafe {
+                native_store_diagnostic_message(
+                    diagnostic,
+                    format!(
+                        "native method lookup failed: method name must be a scalar-convertible string, got {}",
+                        method.type_name()
+                    ),
+                )
+            };
             return NativeCallableHandle::null();
         }
     };
@@ -34255,6 +34272,68 @@ mod tests {
         unsafe { phpc_native_value_free(pubstat) };
         unsafe { phpc_native_value_free(plain) };
         unsafe { phpc_native_value_free(guarded) };
+        unsafe { phpc_native_value_free(receiver) };
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn native_method_lookup_with_access_context_normalizes_runtime_dynamic_method_names() {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("ScalarDispatch"),
+                "7",
+                NativeCallableVisibility::Public,
+                native_scoped_method_callback,
+            );
+        }
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("ScalarDispatch").unwrap();
+        let receiver = NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+            classes.get(class_id).unwrap(),
+        )));
+        let method = NativeValueHandle::from_value(Value::Int(7));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let callable = unsafe {
+            phpc_native_method_lookup_with_access_context_diagnostic(
+                table,
+                receiver,
+                method,
+                NativeCallableAccessContextTag::ObjectReceiver,
+                NativeStringHandle::null(),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!callable.is_null());
+        unsafe { phpc_native_callable_free(callable) };
+
+        let bad_method = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
+        let blocked = unsafe {
+            phpc_native_method_lookup_with_access_context_diagnostic(
+                table,
+                receiver,
+                bad_method,
+                NativeCallableAccessContextTag::ObjectReceiver,
+                NativeStringHandle::null(),
+                &mut diagnostic,
+            )
+        };
+        assert!(blocked.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "native method lookup failed: method name must be a scalar-convertible string, got array"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        unsafe { phpc_native_value_free(bad_method) };
+        unsafe { phpc_native_value_free(method) };
         unsafe { phpc_native_value_free(receiver) };
         unsafe { phpc_native_callable_table_free(table) };
     }

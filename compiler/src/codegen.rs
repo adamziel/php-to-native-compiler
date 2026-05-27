@@ -27068,7 +27068,11 @@ impl CGenerator {
             }
         }
 
-        let method_names = self.static_known_string_values_for_expr(method)?;
+        let Some(method_names) = self.static_known_string_values_for_expr(method) else {
+            return Some(native_method_static_runtime_signature_fallback_contract(
+                NativeMethodStaticSignatureFamily::ReceiverMethod,
+            ));
+        };
         let mut methods = Vec::new();
         let mut saw_runtime_lookup_only_name = false;
 
