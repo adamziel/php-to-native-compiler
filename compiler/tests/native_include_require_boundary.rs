@@ -778,9 +778,163 @@ fn native_executable_c_source_uses_runtime_include_unit_registry_for_nonfinite_p
 
     assert!(
         source.contains("phpc_native_include_unit_registry_lookup")
+            && source.contains("phpc_native_include_unit_registry_lookup_include_path")
             && source.contains("phpc_NativeIncludeUnitLookupEntry")
             && source.contains("phpc_include_unit_0"),
         "non-finite include paths should dispatch through the generated include-unit registry:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_runtime_include_registry_include_path_search() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("runtime-registry-include-path-search-exe");
+    let lib = dir.join("lib");
+    fs::create_dir_all(&lib).expect("create runtime registry include_path lib dir");
+    fs::write(
+        lib.join("declared.php"),
+        "<?php\necho 'declared|';\nreturn 'include-return';\n",
+    )
+    .expect("write runtime registry include_path include");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "set_include_path(__DIR__ . '/lib');\n",
+            "function runtime_include_path() { return 'declared.php'; }\n",
+            "require_once __DIR__ . '/lib/declared.php';\n",
+            "$path = runtime_include_path();\n",
+            "$value = include $path;\n",
+            "echo $value;\n",
+            "echo \"\\n\";\n",
+        ),
+    )
+    .expect("write runtime registry include_path search root");
+
+    let output = compile_exe(
+        &root,
+        &output,
+        "runtime include registry include_path search executable",
+    );
+    let run = Command::new(&output)
+        .output()
+        .expect("run runtime include registry include_path search executable");
+
+    assert!(
+        run.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "declared|declared|include-return\n"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_runtime_require_registry_include_path_search() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("runtime-registry-require-path-search-exe");
+    let lib = dir.join("lib");
+    fs::create_dir_all(&lib).expect("create runtime registry require include_path lib dir");
+    fs::write(
+        lib.join("required.php"),
+        "<?php\necho 'required|';\nreturn 'require-return';\n",
+    )
+    .expect("write runtime registry require include_path include");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "set_include_path(__DIR__ . '/lib');\n",
+            "function runtime_require_path() { return 'required.php'; }\n",
+            "include_once __DIR__ . '/lib/required.php';\n",
+            "$path = runtime_require_path();\n",
+            "$value = require $path;\n",
+            "echo $value;\n",
+            "echo \"\\n\";\n",
+        ),
+    )
+    .expect("write runtime registry require include_path search root");
+
+    let output = compile_exe(
+        &root,
+        &output,
+        "runtime require registry include_path search executable",
+    );
+    let run = Command::new(&output)
+        .output()
+        .expect("run runtime require registry include_path search executable");
+
+    assert!(
+        run.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "required|required|require-return\n"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_runtime_once_registry_include_path_search() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("runtime-registry-once-path-search-exe");
+    let lib = dir.join("lib");
+    fs::create_dir_all(&lib).expect("create runtime registry once include_path lib dir");
+    fs::write(
+        lib.join("once.php"),
+        "<?php\necho 'once|';\nreturn 'once-return';\n",
+    )
+    .expect("write runtime registry once include_path include");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "set_include_path(__DIR__ . '/lib');\n",
+            "function runtime_once_path() { return 'once.php'; }\n",
+            "$first = include_once __DIR__ . '/lib/once.php';\n",
+            "$path = runtime_once_path();\n",
+            "$second = include_once $path;\n",
+            "$third = require_once $path;\n",
+            "echo $first, '|', $second, '|', $third, \"\\n\";\n",
+        ),
+    )
+    .expect("write runtime registry once include_path search root");
+
+    let output = compile_exe(
+        &root,
+        &output,
+        "runtime once registry include_path search executable",
+    );
+    let run = Command::new(&output)
+        .output()
+        .expect("run runtime once registry include_path search executable");
+
+    assert!(
+        run.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "once|once-return|1|1\n"
     );
 }
 

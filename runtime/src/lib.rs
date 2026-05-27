@@ -353,7 +353,8 @@ const NATIVE_INCLUDE_LOOKUP_STATUS_AMBIGUOUS: u8 = 3;
 const NATIVE_INCLUDE_RUNTIME_NO_MATCH_MISSING: u8 = 1;
 const NATIVE_INCLUDE_RUNTIME_NO_MATCH_SOURCE_LOAD_REQUIRED: u8 = 2;
 const NATIVE_INCLUDE_RUNTIME_NO_MATCH_UNSUPPORTED: u8 = 3;
-const NATIVE_INCLUDE_PATH_SEPARATOR: char = ':';
+const NATIVE_INCLUDE_PATH_SEPARATOR: char = if cfg!(windows) { ';' } else { ':' };
+const NATIVE_INCLUDE_PATH_SEPARATOR_BYTE: u8 = if cfg!(windows) { b';' } else { b':' };
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -5558,34 +5559,20 @@ pub unsafe extern "C" fn phpc_native_string_dynamic_class_name_matches(
         == native_class_metadata_lookup_key(name)
 }
 
-/// # Safety
-///
-/// `path_ptr..path_ptr+path_len` must either be a valid byte slice or be null
-/// with a zero length. `entries..entries+entry_count` must either be a valid
-/// include-unit registry slice or be null with a zero length. Registry keys
-/// are generated request-path and canonical-path aliases for already compiled
-/// include units; this ABI does not parse source or probe the filesystem.
-#[no_mangle]
-pub unsafe extern "C" fn phpc_native_include_unit_registry_lookup(
-    path_ptr: *const u8,
-    path_len: usize,
+unsafe fn native_include_unit_registry_slice<'a>(
     entries: *const NativeIncludeUnitLookupEntry,
     entry_count: usize,
-) -> NativeIncludeUnitLookupResult {
-    let Some(path) = (unsafe { native_abi_bytes(path_ptr, path_len) }) else {
-        return NativeIncludeUnitLookupResult {
-            status: NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED,
-            unit_index: 0,
-        };
-    };
+) -> Option<&'a [NativeIncludeUnitLookupEntry]> {
     if entry_count > 0 && entries.is_null() {
-        return NativeIncludeUnitLookupResult {
-            status: NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED,
-            unit_index: 0,
-        };
+        return None;
     }
+    Some(unsafe { std::slice::from_raw_parts(entries, entry_count) })
+}
 
-    let registry = unsafe { std::slice::from_raw_parts(entries, entry_count) };
+unsafe fn native_include_unit_registry_lookup_bytes(
+    path: &[u8],
+    registry: &[NativeIncludeUnitLookupEntry],
+) -> NativeIncludeUnitLookupResult {
     let mut matched_unit = None;
     for entry in registry {
         let Some(key) = (unsafe { native_abi_bytes(entry.key_ptr, entry.key_len) }) else {
@@ -5619,6 +5606,132 @@ pub unsafe extern "C" fn phpc_native_include_unit_registry_lookup(
             status: NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED,
             unit_index: 0,
         }
+    }
+}
+
+fn native_include_path_is_absolute(path: &[u8]) -> bool {
+    path.starts_with(b"/")
+        || path.starts_with(b"\\")
+        || matches!(path, [drive, b':', ..] if drive.is_ascii_alphabetic())
+}
+
+fn native_include_path_join(root: &[u8], path: &[u8]) -> Vec<u8> {
+    if root.is_empty() {
+        return path.to_vec();
+    }
+    let mut candidate = root.to_vec();
+    if !candidate.ends_with(b"/") && !candidate.ends_with(b"\\") {
+        candidate.push(b'/');
+    }
+    candidate.extend_from_slice(path);
+    candidate
+}
+
+/// # Safety
+///
+/// `path_ptr..path_ptr+path_len` must either be a valid byte slice or be null
+/// with a zero length. `entries..entries+entry_count` must either be a valid
+/// include-unit registry slice or be null with a zero length. Registry keys
+/// are generated request-path and canonical-path aliases for already compiled
+/// include units; this ABI does not parse source or probe the filesystem.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_include_unit_registry_lookup(
+    path_ptr: *const u8,
+    path_len: usize,
+    entries: *const NativeIncludeUnitLookupEntry,
+    entry_count: usize,
+) -> NativeIncludeUnitLookupResult {
+    let Some(path) = (unsafe { native_abi_bytes(path_ptr, path_len) }) else {
+        return NativeIncludeUnitLookupResult {
+            status: NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED,
+            unit_index: 0,
+        };
+    };
+    let Some(registry) = (unsafe { native_include_unit_registry_slice(entries, entry_count) })
+    else {
+        return NativeIncludeUnitLookupResult {
+            status: NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED,
+            unit_index: 0,
+        };
+    };
+    unsafe { native_include_unit_registry_lookup_bytes(path, registry) }
+}
+
+/// # Safety
+///
+/// `path_ptr..path_ptr+path_len`, `include_path_ptr..include_path_ptr+
+/// include_path_len`, and `source_dir_ptr..source_dir_ptr+source_dir_len` must
+/// either be valid byte slices or be null with a zero length.
+/// `entries..entries+entry_count` must either be a valid include-unit registry
+/// slice or be null with a zero length. The lookup applies selected PHP
+/// include_path ordering to generated registry keys for already compiled units;
+/// it performs no filesystem probing and does not parse runtime PHP source.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_include_unit_registry_lookup_include_path(
+    path_ptr: *const u8,
+    path_len: usize,
+    include_path_ptr: *const u8,
+    include_path_len: usize,
+    source_dir_ptr: *const u8,
+    source_dir_len: usize,
+    entries: *const NativeIncludeUnitLookupEntry,
+    entry_count: usize,
+) -> NativeIncludeUnitLookupResult {
+    let Some(path) = (unsafe { native_abi_bytes(path_ptr, path_len) }) else {
+        return NativeIncludeUnitLookupResult {
+            status: NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED,
+            unit_index: 0,
+        };
+    };
+    let Some(include_path) = (unsafe { native_abi_bytes(include_path_ptr, include_path_len) })
+    else {
+        return NativeIncludeUnitLookupResult {
+            status: NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED,
+            unit_index: 0,
+        };
+    };
+    let Some(source_dir) = (unsafe { native_abi_bytes(source_dir_ptr, source_dir_len) }) else {
+        return NativeIncludeUnitLookupResult {
+            status: NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED,
+            unit_index: 0,
+        };
+    };
+    let Some(registry) = (unsafe { native_include_unit_registry_slice(entries, entry_count) })
+    else {
+        return NativeIncludeUnitLookupResult {
+            status: NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED,
+            unit_index: 0,
+        };
+    };
+
+    if native_include_path_is_absolute(path) {
+        return unsafe { native_include_unit_registry_lookup_bytes(path, registry) };
+    }
+
+    for root in include_path.split(|byte| *byte == NATIVE_INCLUDE_PATH_SEPARATOR_BYTE) {
+        let root = if root.is_empty() {
+            b".".as_slice()
+        } else {
+            root
+        };
+        let candidate = native_include_path_join(root, path);
+        let result = unsafe { native_include_unit_registry_lookup_bytes(&candidate, registry) };
+        if result.status != NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED {
+            return result;
+        }
+    }
+
+    if !source_dir.is_empty() {
+        let candidate = native_include_path_join(source_dir, path);
+        let result = unsafe { native_include_unit_registry_lookup_bytes(&candidate, registry) };
+        if result.status != NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED {
+            return result;
+        }
+    }
+
+    NativeIncludeUnitLookupResult {
+        status: NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED,
+        unit_index: 0,
     }
 }
 
@@ -49523,6 +49636,71 @@ mod tests {
             fatal.contains("native source loading/parsing ABI"),
             "{fatal}"
         );
+    }
+
+    #[test]
+    fn native_include_unit_registry_lookup_include_path_searches_declared_units_in_order() {
+        let entries = [
+            NativeIncludeUnitLookupEntry {
+                key_ptr: b"/tmp/project/first/shared.php".as_ptr(),
+                key_len: b"/tmp/project/first/shared.php".len(),
+                unit_index: 0,
+            },
+            NativeIncludeUnitLookupEntry {
+                key_ptr: b"/tmp/project/second/shared.php".as_ptr(),
+                key_len: b"/tmp/project/second/shared.php".len(),
+                unit_index: 1,
+            },
+            NativeIncludeUnitLookupEntry {
+                key_ptr: b"/tmp/project/app/fallback.php".as_ptr(),
+                key_len: b"/tmp/project/app/fallback.php".len(),
+                unit_index: 2,
+            },
+        ];
+
+        let ordered = unsafe {
+            phpc_native_include_unit_registry_lookup_include_path(
+                b"shared.php".as_ptr(),
+                b"shared.php".len(),
+                b"/tmp/project/second:/tmp/project/first".as_ptr(),
+                b"/tmp/project/second:/tmp/project/first".len(),
+                b"/tmp/project/app".as_ptr(),
+                b"/tmp/project/app".len(),
+                entries.as_ptr(),
+                entries.len(),
+            )
+        };
+        assert_eq!(ordered.status, NATIVE_INCLUDE_LOOKUP_STATUS_FOUND);
+        assert_eq!(ordered.unit_index, 1);
+
+        let fallback = unsafe {
+            phpc_native_include_unit_registry_lookup_include_path(
+                b"fallback.php".as_ptr(),
+                b"fallback.php".len(),
+                b"/tmp/project/missing".as_ptr(),
+                b"/tmp/project/missing".len(),
+                b"/tmp/project/app".as_ptr(),
+                b"/tmp/project/app".len(),
+                entries.as_ptr(),
+                entries.len(),
+            )
+        };
+        assert_eq!(fallback.status, NATIVE_INCLUDE_LOOKUP_STATUS_FOUND);
+        assert_eq!(fallback.unit_index, 2);
+
+        let missing = unsafe {
+            phpc_native_include_unit_registry_lookup_include_path(
+                b"absent.php".as_ptr(),
+                b"absent.php".len(),
+                b"/tmp/project/second:/tmp/project/first".as_ptr(),
+                b"/tmp/project/second:/tmp/project/first".len(),
+                b"/tmp/project/app".as_ptr(),
+                b"/tmp/project/app".len(),
+                entries.as_ptr(),
+                entries.len(),
+            )
+        };
+        assert_eq!(missing.status, NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED);
     }
 
     #[test]

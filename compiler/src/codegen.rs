@@ -23716,6 +23716,7 @@ impl CGenerator {
             if self.uses_native_include_unit_helpers {
                 output.push_str("extern phpc_NativeDiagnosticHandle phpc_native_diagnostic_from_severity_message_bytes(uint8_t severity, const uint8_t *ptr, size_t len);\n");
                 output.push_str("extern phpc_NativeIncludeUnitLookupResult phpc_native_include_unit_registry_lookup(const uint8_t *path_ptr, size_t path_len, const phpc_NativeIncludeUnitLookupEntry *entries, size_t entry_count);\n");
+                output.push_str("extern phpc_NativeIncludeUnitLookupResult phpc_native_include_unit_registry_lookup_include_path(const uint8_t *path_ptr, size_t path_len, const uint8_t *include_path_ptr, size_t include_path_len, const uint8_t *source_dir_ptr, size_t source_dir_len, const phpc_NativeIncludeUnitLookupEntry *entries, size_t entry_count);\n");
                 output.push_str("extern phpc_NativeIncludeRuntimeNoMatchResult phpc_native_include_runtime_no_match_diagnostic(const uint8_t *path_ptr, size_t path_len, const uint8_t *include_path_ptr, size_t include_path_len, const uint8_t *source_file_ptr, size_t source_file_len, const uint8_t *construct_ptr, size_t construct_len, bool required, size_t line);\n");
             }
             output.push_str("extern size_t phpc_native_diagnostic_message_stderr(phpc_NativeDiagnosticHandle diagnostic);\n");
@@ -35938,32 +35939,16 @@ impl CGenerator {
             }
         }
 
-        let mut aliases = self
-            .include_resolutions
-            .values()
-            .flat_map(|resolutions| resolutions.iter())
-            .filter_map(|resolution| match resolution {
-                CIncludeResolution::Found(found) if !found.requested_path.is_empty() => {
-                    Some(CIncludeLookupEntry {
-                        key: found.requested_path.clone(),
-                        path: found.path.clone(),
-                    })
-                }
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        aliases.sort_by(|left, right| {
-            left.key
-                .cmp(&right.key)
-                .then_with(|| left.path.cmp(&right.path))
-        });
-        for alias in aliases {
-            if seen.insert((alias.key.clone(), alias.path.clone())) {
-                entries.push(alias);
-            }
-        }
-
         entries
+    }
+
+    fn emit_include_lookup_bytes(&mut self, prefix: &str, value: &str) -> String {
+        let data = self.next_native_name(prefix);
+        self.static_data.push(format!(
+            "static const uint8_t {data}[] = {{{}}};",
+            c_byte_array(value.as_bytes())
+        ));
+        data
     }
 
     fn emit_include_unit_registry_entries(
@@ -36014,6 +35999,17 @@ impl CGenerator {
         let entries = self.emit_include_unit_registry_entries(&entries, span)?;
         self.ensure_globals_symbol_table("", span)?;
         let operand = self.emit_include_path_runtime_operand(path, span)?;
+        let include_path = self.current_native_include_path().to_string();
+        let include_path_data =
+            self.emit_include_lookup_bytes("include_unit_lookup_include_path", &include_path);
+        let source_dir = self
+            .active_source_file
+            .as_deref()
+            .and_then(Path::parent)
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let source_dir_data =
+            self.emit_include_lookup_bytes("include_unit_lookup_source_dir", &source_dir);
         let lookup = self.next_native_name("include_unit_lookup");
         let dynamic_value = if keep_value {
             let dynamic_value = self.next_native_name("runtime_registry_include_value");
@@ -36025,8 +36021,11 @@ impl CGenerator {
         };
         self.uses_native_include_unit_helpers = true;
         self.body.push(format!(
-            "phpc_NativeIncludeUnitLookupResult {lookup} = phpc_native_include_unit_registry_lookup({}, {}, {entries}, {entry_count});",
-            operand.bytes, operand.byte_len
+            "phpc_NativeIncludeUnitLookupResult {lookup} = phpc_native_include_unit_registry_lookup_include_path({}, {}, {include_path_data}, {}, {source_dir_data}, {}, {entries}, {entry_count});",
+            operand.bytes,
+            operand.byte_len,
+            include_path.len(),
+            source_dir.len()
         ));
         self.body.push(format!(
             "if ({lookup}.status != PHPC_NATIVE_INCLUDE_LOOKUP_STATUS_FOUND) {{"
