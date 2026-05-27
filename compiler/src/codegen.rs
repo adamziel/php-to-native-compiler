@@ -27895,6 +27895,12 @@ impl CGenerator {
         }
 
         if let Some(reference) =
+            self.materialize_request_superglobal_expr_reference_source(expr, failure_cleanup)?
+        {
+            return Ok(reference);
+        }
+
+        if let Some(reference) =
             self.materialize_object_property_expr_reference_source(expr, failure_cleanup)?
         {
             return Ok(reference);
@@ -27948,6 +27954,81 @@ impl CGenerator {
             handle: handle.clone(),
             cleanup_after_use: vec![format!("phpc_native_reference_free({handle});")],
         })
+    }
+
+    fn materialize_request_superglobal_expr_reference_source(
+        &mut self,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeReferenceMaterialization>> {
+        if let Some(name) = request_superglobal_root_name(expr) {
+            self.use_native_request_state_reference_helpers();
+            let request_state = self.ensure_native_request_state_handle();
+            let bag = self.emit_request_superglobal_bag_handle(name);
+            let reference = self.next_native_name("request_superglobal_call_reference");
+            self.body.push(format!(
+                "phpc_NativeReferenceHandle {reference} = phpc_native_request_state_superglobal_reference_for_root({request_state}, {bag});"
+            ));
+            let error_exit = self.native_error_exit(&format!(
+                "phpc_native_string_free({bag}); {failure_cleanup}"
+            ));
+            self.body
+                .push(format!("if ({reference}.ptr == NULL) {{ {error_exit} }}"));
+            self.body.push(format!("phpc_native_string_free({bag});"));
+            return Ok(Some(CNativeReferenceMaterialization {
+                handle: reference.clone(),
+                cleanup_after_use: vec![format!("phpc_native_reference_free({reference});")],
+            }));
+        }
+
+        let Some((root, indices, _)) = array_index_expr_path(expr) else {
+            return Ok(None);
+        };
+        let Expr::Variable(name, _) = root else {
+            return Ok(None);
+        };
+        if !is_request_superglobal_name(name) {
+            return Ok(None);
+        }
+
+        self.use_native_request_state_reference_helpers();
+        let path = self.materialize_request_superglobal_path_key_refs(&indices, failure_cleanup)?;
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let request_state = self.ensure_native_request_state_handle();
+        let bag_bytes = self.emit_request_superglobal_bag_static_bytes(name);
+        let result = self.next_native_name("request_superglobal_call_reference_result");
+        self.body.push(format!(
+            "phpc_NativeRequestStateReferenceResult {result} = phpc_native_request_state_superglobal_path_reference_operation({request_state}, {bag_bytes}, {}, {}, {}, {}, {});",
+            name.len(),
+            path.ptrs,
+            path.lens,
+            path.len,
+            path.status
+        ));
+        self.body.push(format!(
+            "phpc_native_request_state_reference_result_report_diagnostic({result});"
+        ));
+        let error_exit = self.native_error_exit(&format!(
+            "phpc_native_request_state_reference_result_free({result}); {path_cleanup}{failure_cleanup}"
+        ));
+        self.body.push(format!(
+            "if ({result}.status != PHPC_NATIVE_REQUEST_STATE_STATUS_OK || {result}.reference.ptr == NULL) {{ {error_exit} }}"
+        ));
+        self.body.extend(path.cleanup_after_use);
+
+        let reference = self.next_native_name("request_superglobal_call_reference");
+        self.body.push(format!(
+            "phpc_NativeReferenceHandle {reference} = {result}.reference;"
+        ));
+        self.body.push(format!("{result}.reference.ptr = NULL;"));
+        self.body.push(format!(
+            "phpc_native_request_state_reference_result_free({result});"
+        ));
+
+        Ok(Some(CNativeReferenceMaterialization {
+            handle: reference.clone(),
+            cleanup_after_use: vec![format!("phpc_native_reference_free({reference});")],
+        }))
     }
 
     fn materialize_object_property_expr_reference_source(
@@ -42408,8 +42489,26 @@ impl CGenerator {
             .is_some_and(|(variadic_index, param)| index >= variadic_index && param.by_reference)
     }
 
+    fn request_superglobal_reference_argument_is_supported(arg: &Expr) -> bool {
+        let arg = call_argument_expr(arg);
+        if request_superglobal_root_name(arg).is_some() {
+            return true;
+        }
+
+        let Some((root, _, _)) = array_index_expr_path(arg) else {
+            return false;
+        };
+
+        matches!(root, Expr::Variable(name, _) if is_request_superglobal_name(name))
+    }
+
     fn call_user_func_reference_argument_is_supported(&self, arg: &Expr) -> bool {
-        let Expr::Variable(name, _) = call_argument_expr(arg) else {
+        let arg = call_argument_expr(arg);
+        if Self::request_superglobal_reference_argument_is_supported(arg) {
+            return true;
+        }
+
+        let Expr::Variable(name, _) = arg else {
             return false;
         };
         if is_request_superglobal_name(name) || is_globals_superglobal_name(name) {
@@ -45747,6 +45846,9 @@ impl CGenerator {
         if self.reference_call_arrayaccess_argument_is_supported(arg) {
             return true;
         }
+        if Self::request_superglobal_reference_argument_is_supported(arg) {
+            return true;
+        }
 
         if let Expr::Variable(name, _) = arg {
             if matches!(
@@ -45765,6 +45867,10 @@ impl CGenerator {
     }
 
     fn runtime_dynamic_call_reference_argument_needs_symbol_table(&self, arg: &Expr) -> bool {
+        if Self::request_superglobal_reference_argument_is_supported(arg) {
+            return false;
+        }
+
         if let Expr::Variable(name, _) = arg {
             if matches!(
                 self.variables.get(name),

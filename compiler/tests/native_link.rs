@@ -12249,6 +12249,37 @@ fn native_executable_c_source_routes_call_user_func_byref_direct_variables() {
 }
 
 #[test]
+fn native_executable_c_source_lowers_request_superglobal_reference_arguments() {
+    let source = concat!(
+        "<?php\n",
+        "function mutate_request_root(&$bag, $suffix) { $bag[\"root\"] = $bag[\"root\"] . $suffix; return $bag[\"root\"]; }\n",
+        "function mutate_request_slot(&$slot, $suffix) { $slot = $slot . $suffix; return $slot; }\n",
+        "$_GET[\"root\"] = \"G\";\n",
+        "$_REQUEST[\"slot\"] = \"R\";\n",
+        "$_POST[\"nested\"] = array(\"slot\" => \"P\");\n",
+        "$callback = function (&$slot, $suffix) { $slot = $slot . $suffix; return $slot; };\n",
+        "echo mutate_request_root($_GET, \"1\"), \"|\";\n",
+        "echo mutate_request_slot($_REQUEST[\"slot\"], \"2\"), \"|\";\n",
+        "echo mutate_request_slot($_POST[\"nested\"][\"slot\"], \"3\"), \"|\";\n",
+        "echo call_user_func($callback, $_REQUEST[\"slot\"], \"4\");\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_request_state_superglobal_reference_for_root")
+            && source.contains("phpc_native_request_state_superglobal_path_reference_operation")
+            && source.contains("phpc_native_call_arguments_push_reference_and_free"),
+        "request superglobal by-reference arguments should use request-state reference handles and source-call reference arguments:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly function-call lowering rejects")
+            && !source.contains("phpc_native_materialized_call_arguments"),
+        "request superglobal by-reference arguments must not fall back to call blockers or call_user_func_array-style materialized carriers:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_keeps_call_user_func_byref_non_direct_args_blocked() {
     let source = concat!(
         "<?php\n",
@@ -12333,6 +12364,45 @@ fn emit_exe_links_and_runs_call_user_func_byref_direct_variables() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"AC:AC|ACF:ACF|ACFP:ACFP:ACFP");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_request_superglobal_reference_arguments() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function mutate_request_root(&$bag, $suffix) { $bag[\"root\"] = $bag[\"root\"] . $suffix; return $bag[\"root\"]; }\n",
+        "function mutate_request_slot(&$slot, $suffix) { $slot = $slot . $suffix; return $slot; }\n",
+        "$_GET[\"root\"] = \"G\";\n",
+        "$_REQUEST[\"slot\"] = \"R\";\n",
+        "$_POST[\"nested\"] = array(\"slot\" => \"P\");\n",
+        "$callback = function (&$slot, $suffix) { $slot = $slot . $suffix; return $slot; };\n",
+        "echo mutate_request_root($_GET, \"1\"), \"|\", $_GET[\"root\"], \"|\";\n",
+        "echo mutate_request_slot($_REQUEST[\"slot\"], \"2\"), \"|\", $_REQUEST[\"slot\"], \"|\";\n",
+        "echo mutate_request_slot($_POST[\"nested\"][\"slot\"], \"3\"), \"|\", $_POST[\"nested\"][\"slot\"], \"|\";\n",
+        "echo call_user_func($callback, $_REQUEST[\"slot\"], \"4\"), \"|\", $_REQUEST[\"slot\"];\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("request_superglobal_reference_arguments", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native request superglobal reference executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"G1|G1|R2|R2|P3|P3|R24|R24");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);
