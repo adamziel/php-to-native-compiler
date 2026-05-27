@@ -4,7 +4,7 @@ use std::process::Command;
 
 use php_compiler::{codegen::emit_native_executable_c_source, error::Phase, parse};
 
-const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including by-reference closure captures that cannot be materialized through root symbol/reference handles or promoted frame locals, by-reference variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, supported static arrow closures, by-value captures, supported by-reference captures, implicit by-value arrow captures, non-static $this closure binding, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
+const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including by-reference closure captures that cannot be materialized through root symbol/reference handles or promoted frame locals, by-reference variadic closure parameters, unsupported by-reference closure return sources, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, supported static arrow closures, by-value captures, supported by-reference captures, supported by-reference returns from by-reference parameters and captures, implicit by-value arrow captures, non-static $this closure binding, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
 
 const NATIVE_VALUE_TRUTHINESS_SOURCE: &str = concat!(
     "<?php\n",
@@ -8728,6 +8728,44 @@ fn native_executable_c_source_binds_descriptor_closure_by_reference_parameters()
 }
 
 #[test]
+fn native_executable_c_source_routes_descriptor_closure_reference_returns_to_reference_consumers() {
+    let source = concat!(
+        "<?php\n",
+        "function descriptor_ref_consume(&$slot, $value) { $slot = $value; return $slot; }\n",
+        "$borrow = function &(&$slot) { return $slot; };\n",
+        "$slot = \"old\";\n",
+        "echo descriptor_ref_consume($borrow($slot), \"argument\"), \":\", $slot, \"|\";\n",
+        "$alias =& $borrow($slot);\n",
+        "$alias = \"assignment\";\n",
+        "echo $slot;\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_closure_invoke_reference_with_diagnostic_and_free_arguments")
+            && body.contains("closure_source_reference_result_")
+            && body.contains("closure_source_reference_args_"),
+        "descriptor closure reference returns should use the shared closure reference carrier and call-argument handle:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_call_arguments_push_reference_and_free")
+            .count()
+            >= 3
+            && body.contains("phpc_native_symbol_table_bind_reference_path"),
+        "by-reference argument transfer and direct reference assignment should consume owned descriptor closure references:\n{source}"
+    );
+    assert!(
+        body.contains("PHPC_NATIVE_CLOSURE_DESCRIPTOR_RETURNS_REFERENCE")
+            && source.contains("phpc_native_closure_result_from_reference")
+            && !body.contains(" = phpc_native_callable_lookup_value_or_closure_with_context_diagnostic(")
+            && !body.contains(" = phpc_native_closure_invoke_result("),
+        "proven descriptor closure reference returns must not fall back to broad callable lookup or legacy invocation:\n{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_by_value_captured_descriptor_closure_invocation() {
     if !has_cc() {
         return;
@@ -8903,6 +8941,40 @@ fn emit_exe_links_and_runs_descriptor_closure_by_reference_parameter_program() {
         run.stdout,
         b"direct:direct|frame:frame|dynamic:dynamic|relay:relay|array:nested"
     );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_descriptor_closure_reference_return_consumers() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function descriptor_ref_consume_run(&$slot, $value) { $slot = $value; return $slot; }\n",
+        "$borrow = function &(&$slot) { return $slot; };\n",
+        "$slot = \"A\";\n",
+        "echo descriptor_ref_consume_run($borrow($slot), \"B\"), \":\", $slot, \"|\";\n",
+        "$alias =& $borrow($slot);\n",
+        "$alias = \"C\";\n",
+        "echo $slot;\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("descriptor_closure_reference_return_consumers", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native descriptor closure reference-return executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"B:B|C");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);

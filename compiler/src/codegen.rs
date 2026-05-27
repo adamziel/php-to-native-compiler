@@ -119,7 +119,7 @@ const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lo
 const LLVM_STATIC_LOCAL_REJECTION: &str = "LLVM static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const ASSEMBLY_STATIC_LOCAL_REJECTION: &str = "assembly static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const LLVM_CLOSURE_REJECTION: &str = "LLVM closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
-const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including by-reference closure captures that cannot be materialized through root symbol/reference handles or promoted frame locals, by-reference variadic closure parameters, by-reference closure returns, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, supported static arrow closures, by-value captures, supported by-reference captures, implicit by-value arrow captures, non-static $this closure binding, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
+const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including by-reference closure captures that cannot be materialized through root symbol/reference handles or promoted frame locals, by-reference variadic closure parameters, unsupported by-reference closure return sources, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, supported static arrow closures, by-value captures, supported by-reference captures, supported by-reference returns from by-reference parameters and captures, implicit by-value arrow captures, non-static $this closure binding, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
 const LLVM_REQUIRE_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
 const ASSEMBLY_REQUIRE_REJECTION: &str = "assembly include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
 const LLVM_REQUIRE_EXPRESSION_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution for expression forms with include return values, _once de-duplication results, and caller-scope side effects until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles current include/require expression behavior";
@@ -4656,66 +4656,90 @@ fn function_reference_return_sources_are_supported(function: &FunctionDecl) -> b
         return true;
     }
 
-    let by_reference_params = function
+    let by_reference_symbols = function
         .params
         .iter()
         .filter(|param| param.by_reference)
         .map(|param| param.name.as_str())
         .collect::<HashSet<_>>();
-    stmt_list_reference_return_sources_are_supported(&function.body, &by_reference_params)
+    stmt_list_reference_return_sources_are_supported(&function.body, &by_reference_symbols)
+}
+
+fn closure_reference_return_sources_are_supported<'a>(
+    params: &'a [FunctionParam],
+    captures: &'a [ClosureCapture],
+    body: &[Stmt],
+    returns_by_reference: bool,
+) -> bool {
+    if !returns_by_reference {
+        return true;
+    }
+
+    let mut by_reference_symbols = params
+        .iter()
+        .filter(|param| param.by_reference)
+        .map(|param| param.name.as_str())
+        .collect::<HashSet<_>>();
+    by_reference_symbols.extend(
+        captures
+            .iter()
+            .filter(|capture| capture.by_reference)
+            .map(|capture| capture.name.as_str()),
+    );
+    stmt_list_reference_return_sources_are_supported(body, &by_reference_symbols)
 }
 
 fn stmt_list_reference_return_sources_are_supported(
     statements: &[Stmt],
-    by_reference_params: &HashSet<&str>,
+    by_reference_symbols: &HashSet<&str>,
 ) -> bool {
     statements
         .iter()
-        .all(|stmt| stmt_reference_return_sources_are_supported(stmt, by_reference_params))
+        .all(|stmt| stmt_reference_return_sources_are_supported(stmt, by_reference_symbols))
 }
 
 fn stmt_reference_return_sources_are_supported(
     stmt: &Stmt,
-    by_reference_params: &HashSet<&str>,
+    by_reference_symbols: &HashSet<&str>,
 ) -> bool {
     match stmt {
         Stmt::Return { value, .. } => value.as_ref().map_or(true, |expr| {
-            reference_return_expr_is_supported(expr, by_reference_params)
+            reference_return_expr_is_supported(expr, by_reference_symbols)
         }),
         Stmt::If {
             then_branch,
             else_branch,
             ..
         } => {
-            stmt_list_reference_return_sources_are_supported(then_branch, by_reference_params)
+            stmt_list_reference_return_sources_are_supported(then_branch, by_reference_symbols)
                 && stmt_list_reference_return_sources_are_supported(
                     else_branch,
-                    by_reference_params,
+                    by_reference_symbols,
                 )
         }
         Stmt::While { body, .. } | Stmt::DoWhile { body, .. } | Stmt::Foreach { body, .. } => {
-            stmt_list_reference_return_sources_are_supported(body, by_reference_params)
+            stmt_list_reference_return_sources_are_supported(body, by_reference_symbols)
         }
         Stmt::For { body, .. } => {
-            stmt_list_reference_return_sources_are_supported(body, by_reference_params)
+            stmt_list_reference_return_sources_are_supported(body, by_reference_symbols)
         }
         Stmt::Switch { cases, .. } => cases.iter().all(|case| {
-            stmt_list_reference_return_sources_are_supported(&case.body, by_reference_params)
+            stmt_list_reference_return_sources_are_supported(&case.body, by_reference_symbols)
         }),
         Stmt::Try {
             body, finally_body, ..
         } => {
-            stmt_list_reference_return_sources_are_supported(body, by_reference_params)
+            stmt_list_reference_return_sources_are_supported(body, by_reference_symbols)
                 && finally_body.as_ref().map_or(true, |body| {
-                    stmt_list_reference_return_sources_are_supported(body, by_reference_params)
+                    stmt_list_reference_return_sources_are_supported(body, by_reference_symbols)
                 })
         }
         _ => true,
     }
 }
 
-fn reference_return_expr_is_supported(expr: &Expr, by_reference_params: &HashSet<&str>) -> bool {
-    matches!(expr, Expr::Variable(name, _) if by_reference_params.contains(name.as_str()))
+fn reference_return_expr_is_supported(expr: &Expr, by_reference_symbols: &HashSet<&str>) -> bool {
+    matches!(expr, Expr::Variable(name, _) if by_reference_symbols.contains(name.as_str()))
 }
 
 fn stmt_list_always_returns(statements: &[Stmt]) -> bool {
@@ -19961,7 +19985,12 @@ impl CGenerator {
             .iter()
             .any(|capture| !self.native_closure_capture_is_supported(capture))
             || native_function_params_have_malformed_variadic_params(params)
-            || returns_by_reference
+            || !closure_reference_return_sources_are_supported(
+                params,
+                captures,
+                body,
+                returns_by_reference,
+            )
             || stmt_list_frame_environment_requirement(body).any()
             || calls_root_symbol_frame
             || return_type.is_some_and(|decl| !native_function_type_decl_is_supported(decl))
@@ -25596,8 +25625,22 @@ impl CGenerator {
         }
 
         match expr {
-            Expr::DynamicCall { .. } => true,
-            Expr::Call { name, .. } => self.variables.contains_key(name),
+            Expr::DynamicCall { callee, args, .. } => self
+                .dynamic_call_has_only_reference_returning_descriptor_closure_identities(
+                    callee, args,
+                ),
+            Expr::Call { name, args, .. } => {
+                let Some(value) = self.variables.get(name) else {
+                    return false;
+                };
+                self.native_callable_identities_for_cvalue(value)
+                    .is_some_and(|identities| {
+                        self.callable_identities_are_only_reference_returning_descriptor_closures(
+                            identities,
+                            args.len(),
+                        )
+                    })
+            }
             _ => false,
         }
     }
@@ -25643,8 +25686,6 @@ impl CGenerator {
             return Ok(false);
         };
 
-        self.uses_native_closure_helpers = true;
-        self.uses_native_reference_helpers = true;
         let (callee_value, args, call_span) = match expr {
             Expr::DynamicCall {
                 callee,
@@ -25677,84 +25718,27 @@ impl CGenerator {
             }
             _ => return Ok(false),
         };
-        let mut shared_cleanup = callee_value.cleanup_after_use.clone();
-        if let Some(arg) = args
-            .iter()
-            .find(|arg| self.runtime_dynamic_call_reference_argument_needs_symbol_table(arg))
-        {
-            let table_failure_cleanup =
-                format!("{}{}", c_cleanup_sequence(&shared_cleanup), failure_cleanup);
-            self.ensure_globals_symbol_table(&table_failure_cleanup, arg.span())?;
-        }
-
-        let mut branch_cleanup = Vec::new();
-        let mut closure_args = Vec::new();
-        for (index, arg) in args.iter().enumerate() {
-            let argument = self.materialize_descriptor_closure_argument(
-                &callee_value.handle,
-                index,
-                arg,
-                &shared_cleanup,
-                failure_cleanup,
-                &branch_cleanup,
-            )?;
-            branch_cleanup.extend(argument.cleanup_after_use);
-            closure_args.push(argument.handle);
-        }
-
-        let (arg_handles, arg_count) = if closure_args.is_empty() {
-            ("NULL".to_string(), "0".to_string())
-        } else {
-            let handles = self.next_native_name("closure_reference_arg_values");
-            let argument_entries = closure_args
-                .iter()
-                .map(|argument| argument.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-            self.body.push(format!(
-                "phpc_NativeClosureArgument {handles}[] = {{ {argument_entries} }};"
-            ));
-            (handles, closure_args.len().to_string())
-        };
-
-        let invocation = self.next_native_name("closure_reference_invoke_result");
-        self.body.push(format!(
-            "phpc_NativeClosureInvocationResult {invocation} = phpc_native_closure_invoke_result({}, {}, {arg_handles}, {arg_count});",
-            callee_value.handle,
-            self.user_function_call_depth_argument()
-        ));
-        let invoke_failure_cleanup = format!(
-            "{}{}{}",
-            c_cleanup_sequence(&branch_cleanup),
-            c_cleanup_sequence(&shared_cleanup),
-            failure_cleanup
-        );
-        let invoke_error_exit = self.native_error_exit(&format!(
-            "phpc_native_closure_result_report_diagnostic({invocation}); phpc_native_closure_result_free({invocation}); {invoke_failure_cleanup}"
-        ));
-        self.body.push(format!(
-            "if ({invocation}.diagnostic.ptr != NULL || {invocation}.reference.ptr == NULL) {{ {invoke_error_exit} }}"
-        ));
-
+        let reference = self.materialize_descriptor_closure_reference_source_call(
+            callee_value,
+            args,
+            call_span,
+            failure_cleanup,
+            None,
+        )?;
         let bound = self.emit_c_symbol_path_reference_assignment_from_source_ref(
             target,
-            &format!("{invocation}.reference"),
+            &reference.handle,
             call_span,
             &format!(
-                "phpc_native_closure_result_free({invocation}); {}{}",
-                c_cleanup_sequence(&branch_cleanup),
-                c_cleanup_sequence(&shared_cleanup)
+                "{}{}",
+                c_cleanup_sequence(&reference.cleanup_after_use),
+                failure_cleanup
             ),
         )?;
         if !bound {
             return Err(self.unsupported(span, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION));
         }
-        self.body
-            .push(format!("phpc_native_closure_result_free({invocation});"));
-        for cleanup in branch_cleanup {
-            self.body.push(cleanup);
-        }
-        self.body.append(&mut shared_cleanup);
+        self.body.extend(reference.cleanup_after_use);
         Ok(true)
     }
 
@@ -25790,9 +25774,10 @@ impl CGenerator {
         self.uses_native_reference_helpers = true;
 
         let callee_value = self.emit_expr(callee_expr)?;
-        let table = self.ensure_native_callable_table(failure_cleanup);
         let callee = self.materialize_native_array_c_value_handle(callee_value, call_span)?;
         let callee_cleanup = c_cleanup_sequence(&callee.cleanup_after_use);
+        let table_failure_cleanup = format!("{callee_cleanup}{failure_cleanup}");
+        let table = self.ensure_native_callable_table(&table_failure_cleanup);
 
         let lookup_diagnostic = self.next_native_name("dynamic_callable_lookup_diagnostic");
         let callable = self.next_native_name("dynamic_callable_value");
@@ -35540,7 +35525,8 @@ impl CGenerator {
             );
         }
 
-        let table = self.ensure_native_callable_table(failure_cleanup);
+        let table_failure_cleanup = format!("{callee_cleanup}{failure_cleanup}");
+        let table = self.ensure_native_callable_table(&table_failure_cleanup);
 
         if self
             .user_functions
@@ -35636,6 +35622,46 @@ impl CGenerator {
             })
     }
 
+    fn callable_identities_are_only_reference_returning_descriptor_closures<I>(
+        &self,
+        identities: I,
+        arg_count: usize,
+    ) -> bool
+    where
+        I: IntoIterator<Item = CNativeCallableIdentity>,
+    {
+        let mut saw_identity = false;
+        for identity in identities {
+            if !matches!(identity, CNativeCallableIdentity::DescriptorClosure { .. }) {
+                return false;
+            }
+            let Some(summary) =
+                self.native_callable_return_summary_for_identity(&identity, arg_count)
+            else {
+                return false;
+            };
+            if summary.result_kind != CNativeCallableResultKind::Reference {
+                return false;
+            }
+            saw_identity = true;
+        }
+        saw_identity
+    }
+
+    fn dynamic_call_has_only_reference_returning_descriptor_closure_identities(
+        &self,
+        callee: &Expr,
+        args: &[Expr],
+    ) -> bool {
+        self.native_callable_identities_for_expr(callee)
+            .is_some_and(|identities| {
+                self.callable_identities_are_only_reference_returning_descriptor_closures(
+                    identities,
+                    args.len(),
+                )
+            })
+    }
+
     fn materialize_descriptor_closure_source_call(
         &mut self,
         callee: CNativeValueMaterialization,
@@ -35689,6 +35715,62 @@ impl CGenerator {
             handle: result.clone(),
             cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
         }))
+    }
+
+    fn materialize_descriptor_closure_reference_source_call(
+        &mut self,
+        callee: CNativeValueMaterialization,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+        scoped_signature: Option<&CScopedCallableStringSignature>,
+    ) -> CompileResult<CNativeReferenceMaterialization> {
+        self.uses_native_closure_helpers = true;
+        self.uses_native_callable_helpers = true;
+        self.uses_native_reference_helpers = true;
+        let callee_cleanup = c_cleanup_sequence(&callee.cleanup_after_use);
+        let callable_failure_cleanup = format!("{callee_cleanup}{failure_cleanup}");
+        let call_arguments = self.emit_native_source_call_arguments_handle(
+            "closure_source_reference_args",
+            args,
+            span,
+            &callable_failure_cleanup,
+            NativeCallCallee::DynamicExpression,
+            scoped_signature,
+        )?;
+
+        let invoke_diagnostic = self.next_native_name("closure_source_reference_diagnostic");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {invoke_diagnostic} = {{0}};"
+        ));
+        let carrier = self.native_source_call_carrier(
+            NativeInvokeResultTarget::ClosureArgumentHandle,
+            NativeSourceCallResultConsumer::Reference,
+            span,
+        )?;
+        let reference = self
+            .emit_native_source_call_carrier_invocation(
+                carrier,
+                &[
+                    callee.handle.clone(),
+                    self.user_function_call_depth_argument(),
+                ],
+                &call_arguments,
+                &invoke_diagnostic,
+                "closure_source_reference_result",
+            )
+            .expect("closure reference source-call carrier must produce a reference handle");
+        self.emit_report_native_diagnostic(&invoke_diagnostic);
+        let invoke_error_exit = self.native_error_exit(&callable_failure_cleanup);
+        self.body.push(format!(
+            "if ({reference}.ptr == NULL) {{ {invoke_error_exit} }}"
+        ));
+        self.body.extend(callee.cleanup_after_use);
+
+        Ok(CNativeReferenceMaterialization {
+            handle: reference.clone(),
+            cleanup_after_use: vec![format!("phpc_native_reference_free({reference});")],
+        })
     }
 
     fn native_source_call_carrier(
@@ -37717,11 +37799,26 @@ impl CGenerator {
         self.uses_native_callable_helpers = true;
         self.uses_native_reference_helpers = true;
 
-        let table = self.ensure_native_callable_table(failure_cleanup);
         let callee_value = self.emit_expr(callee)?;
+        let descriptor_closure_only =
+            self.cvalue_has_only_descriptor_closure_callable_identities(&callee_value);
         let callee = self.materialize_native_array_c_value_handle(callee_value, span)?;
         let callee_cleanup = c_cleanup_sequence(&callee.cleanup_after_use);
 
+        if descriptor_closure_only {
+            return self
+                .materialize_descriptor_closure_reference_source_call(
+                    callee,
+                    args,
+                    span,
+                    failure_cleanup,
+                    scoped_signature.as_ref(),
+                )
+                .map(Some);
+        }
+
+        let table_failure_cleanup = format!("{callee_cleanup}{failure_cleanup}");
+        let table = self.ensure_native_callable_table(&table_failure_cleanup);
         if self
             .user_functions
             .values()
@@ -58681,6 +58778,65 @@ mod tests {
             .native_value_facts_for_expr(&copied_call)
             .expect("copied descriptor closure dynamic call facts")
             .has_definite_native_object_interface("arrayaccess"));
+    }
+
+    #[test]
+    fn descriptor_closure_reference_return_identities_select_reference_source_carriers() {
+        let mut generator = CGenerator::default();
+        let identity = CNativeCallableIdentity::DescriptorClosure {
+            closure_key: "phpc_closure_frame_reference".to_string(),
+        };
+        generator.native_descriptor_closure_return_summaries.insert(
+            "phpc_closure_frame_reference".to_string(),
+            test_descriptor_closure_summary(
+                vec![test_param(true, false)],
+                CNativeCallableResultKind::Reference,
+                None,
+            ),
+        );
+        generator
+            .native_callable_value_identities
+            .insert("closure_handle".to_string(), HashSet::from([identity]));
+        generator.store_native_value_result_variable(
+            "callback",
+            CNativeValueMaterialization {
+                handle: "closure_handle".to_string(),
+                cleanup_after_use: Vec::new(),
+            },
+        );
+
+        let span = test_span();
+        let callee = test_variable_expr("callback");
+        let args = vec![test_variable_expr("slot")];
+        assert!(
+            generator
+                .source_call_reference_signature_for_dynamic_call(&callee, &args)
+                .is_some(),
+            "descriptor closure reference-return identities should publish reference-call eligibility"
+        );
+        assert!(
+            generator.dynamic_call_has_only_reference_returning_descriptor_closure_identities(
+                &callee, &args,
+            ),
+            "descriptor closure reference-return identities should select the closure carrier path"
+        );
+
+        let carrier = generator
+            .native_source_call_carrier(
+                NativeInvokeResultTarget::ClosureArgumentHandle,
+                NativeSourceCallResultConsumer::Reference,
+                span,
+            )
+            .expect("descriptor closure reference carrier should select");
+        assert_eq!(
+            carrier.result,
+            NativeSourceCallResultReturn::ReferenceHandle
+        );
+        assert_eq!(
+            carrier.invoke_helper.name,
+            "phpc_native_closure_invoke_reference_with_diagnostic_and_free_arguments"
+        );
+        assert_eq!(carrier.diagnostic_result_converter, None);
     }
 
     #[test]
