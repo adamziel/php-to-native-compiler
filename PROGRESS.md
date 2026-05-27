@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 15:09 CEST
+Updated: 2026-05-27 15:14 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,12 +19,23 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **90%** `[##################--]`
 
-Latest accounted source capability: `1554707a` extends bounded literal
-include/require declaration discovery from class-only files to declaration-only
-class, interface, and trait files. Included interface and trait declarations
-now enter the same expanded declaration stream and include metadata record as
-classes; included traits can feed generated-C trait metadata registration for
-root classes, while included interfaces compose with the integrated interface
+Latest accounted source capability: `3db04bc3` routes selected callable-family
+spread/unpack calls through the shared materialized call-argument bridge.
+Known method-backed callable arrays and callable objects now use declared
+method frame parameter metadata to build a `NativeMaterializedCallArgumentsHandle`
+and finalize it into the existing `NativeCallArgumentsHandle` before invoking
+through the shared callable lookup/method helpers. Direct user-function spread,
+callable-array, and callable-object regressions remain green. Interface-only
+callable-family spread, runtime-dynamic/descriptor-closure/magic-fallback
+callable spread, and by-reference unpack transfer remain blocked behind
+explicit reusable-boundary gaps instead of per-shape lowering.
+
+Recent source commit `1554707a` extends bounded literal include/require
+declaration discovery from class-only files to declaration-only class,
+interface, and trait files. Included interface and trait declarations now enter
+the same expanded declaration stream and include metadata record as classes;
+included traits can feed generated-C trait metadata registration for root
+classes, while included interfaces compose with the integrated interface
 metadata boundary. Dynamic paths, side-effecting includes, runtime include
 timing, include return values, `_once` runtime de-duplication, include_path and
 stream wrappers, autoload discovery, and LLVM/ASM parity remain blocked behind
