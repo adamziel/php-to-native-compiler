@@ -16563,6 +16563,34 @@ const ARRAYACCESS_NESTED_INCREMENT_DECREMENT_OWNER_STACK_SOURCE: &str = concat!(
     "echo ($holder->bag[\"douter\"][\"dmiddle\"][\"postdec\"]--);\n",
 );
 
+const ARRAYACCESS_NESTED_UNSET_OWNER_STACK_SOURCE: &str = concat!(
+    "<?php\n",
+    "class NestedUnsetLeafBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"leaf-get:\", $offset, \";\"; return 0; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"leaf-set:\", $offset, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { echo \"leaf-unset:\", $offset, \";\"; return null; }\n",
+    "}\n",
+    "class NestedUnsetMiddleBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"middle-get:\", $offset, \";\"; return new NestedUnsetLeafBag(); }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"middle-set:\", $offset, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { echo \"middle-unset:\", $offset, \";\"; return null; }\n",
+    "}\n",
+    "class NestedUnsetRootBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"root-get:\", $offset, \";\"; return new NestedUnsetMiddleBag(); }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"root-set:\", $offset, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { echo \"root-unset:\", $offset, \";\"; return null; }\n",
+    "}\n",
+    "class NestedUnsetHolder { public $bag; public function __construct() { $this->bag = new NestedUnsetRootBag(); } }\n",
+    "$direct = new NestedUnsetRootBag();\n",
+    "unset($direct[\"outer\"][\"middle\"][\"leaf\"]);\n",
+    "echo \"|\";\n",
+    "$holder = new NestedUnsetHolder();\n",
+    "unset($holder->bag[\"pouter\"][\"pmiddle\"][\"pleaf\"]);\n",
+);
+
 const ARRAYACCESS_NESTED_APPEND_OWNER_STACK_SOURCE: &str = concat!(
     "<?php\n",
     "class NestedAppendLeafBag implements ArrayAccess {\n",
@@ -16589,6 +16617,46 @@ const ARRAYACCESS_NESTED_APPEND_OWNER_STACK_SOURCE: &str = concat!(
     "echo \"|\";\n",
     "$holder = new NestedAppendHolder();\n",
     "echo ($holder->bag[\"pouter\"][\"pmiddle\"][] = \"P\");\n",
+);
+
+const ARRAYACCESS_NESTED_KEYED_APPEND_SUFFIX_OWNER_STACK_SOURCE: &str = concat!(
+    "<?php\n",
+    "class NestedKeyedAppendLeafBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"leaf-get:\", $offset, \";\"; return 0; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"leaf-set:\", $offset, \"=\", $value[\"leaf\"], \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class NestedKeyedAppendDirectMiddleBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"middle-get:\", $offset, \";\"; return new NestedKeyedAppendLeafBag(); }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"middle-set:\", $offset, \"=\", $value[\"leaf\"], \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class NestedKeyedAppendPropertyMiddleBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"middle-get:\", $offset, \";\"; return new NestedKeyedAppendLeafBag(); }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"middle-set:\", $offset, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class NestedKeyedAppendRootBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"root-get:\", $offset, \";\"; return new NestedKeyedAppendDirectMiddleBag(); }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"root-set:\", $offset, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class NestedKeyedAppendPropertyRootBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"root-get:\", $offset, \";\"; return new NestedKeyedAppendPropertyMiddleBag(); }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"root-set:\", $offset, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class NestedKeyedAppendHolder { public $bag; public function __construct() { $this->bag = new NestedKeyedAppendPropertyRootBag(); } }\n",
+    "$direct = new NestedKeyedAppendRootBag();\n",
+    "echo ($direct[\"outer\"][][\"leaf\"] = \"D\");\n",
+    "echo \"|\";\n",
+    "$holder = new NestedKeyedAppendHolder();\n",
+    "echo ($holder->bag[\"pouter\"][\"pmiddle\"][][\"leaf\"] = \"P\");\n",
 );
 
 #[test]
@@ -17024,6 +17092,69 @@ fn emit_exe_links_and_runs_nested_arrayaccess_increment_decrement_owner_stack_pr
 }
 
 #[test]
+fn native_executable_c_source_routes_nested_arrayaccess_unset_owner_stack_for_direct_and_property_roots(
+) {
+    let program = parse(ARRAYACCESS_NESTED_UNSET_OWNER_STACK_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_GET")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_UNSET")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_SET")
+            && source
+                .matches("phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic")
+                .count()
+                >= 4
+            && source
+                .matches("phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic")
+                .count()
+                >= 6
+            && source.matches("nested_arrayaccess_leaf_unset").count() >= 2
+            && source.matches("nested_arrayaccess_parent_writeback").count() >= 4
+            && source.matches("nested_arrayaccess_root_commit").count() >= 2
+            && source.contains("phpc_native_value_public_property_reference_with_diagnostic_and_free")
+            && source.contains("phpc_native_reference_set_value(")
+            && !source.contains("phpc_native_value_offset_path_unset_with_diagnostic"),
+        "nested ArrayAccess unset should emit offsetGet descent, leaf offsetUnset, reverse parent writebacks, and direct/property root commits without the generic value-path unset:\n{source}"
+    );
+    assert!(
+        !source.contains("ArrayAccess lowering rejects")
+            && !source.contains("assembly mutation lowering rejects")
+            && !source.contains("non-local assignment lowering rejects"),
+        "nested ArrayAccess unset production must not fall back to rejection paths:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_nested_arrayaccess_unset_owner_stack_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "nested_arrayaccess_unset_owner_stack_production",
+        ARRAYACCESS_NESTED_UNSET_OWNER_STACK_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native nested ArrayAccess unset executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(
+        run.stdout,
+        b"root-get:outer;middle-get:middle;leaf-unset:leaf;middle-set:middle;root-set:outer;|root-get:pouter;middle-get:pmiddle;leaf-unset:pleaf;middle-set:pmiddle;root-set:pouter;"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn native_executable_c_source_routes_nested_arrayaccess_append_owner_stack_for_direct_and_property_roots(
 ) {
     let program = parse(ARRAYACCESS_NESTED_APPEND_OWNER_STACK_SOURCE).unwrap();
@@ -17086,6 +17217,65 @@ fn emit_exe_links_and_runs_nested_arrayaccess_append_owner_stack_program() {
 }
 
 #[test]
+fn native_executable_c_source_routes_nested_arrayaccess_keyed_append_suffix_owner_stack_for_direct_and_property_roots(
+) {
+    let program = parse(ARRAYACCESS_NESTED_KEYED_APPEND_SUFFIX_OWNER_STACK_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_GET")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_APPEND")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_SET")
+            && source.contains("phpc_native_array_insert_key_value_with_diagnostic")
+            && source
+                .matches("appended_slot_suffix_array")
+                .count()
+                >= 2
+            && source.matches("nested_arrayaccess_leaf_append").count() >= 2
+            && source.matches("nested_arrayaccess_parent_writeback").count() >= 3
+            && source.matches("nested_arrayaccess_root_commit").count() >= 2
+            && source.contains("phpc_native_value_public_property_reference_with_diagnostic_and_free")
+            && source.contains("phpc_native_reference_set_value("),
+        "nested ArrayAccess keyed append suffix should materialize appended slot values, append through owner-stack leaves, reverse-write parents, and commit direct/property roots:\n{source}"
+    );
+    assert!(
+        !source.contains("ArrayAccess lowering rejects")
+            && !source.contains("assembly mutation lowering rejects")
+            && !source.contains("non-local assignment lowering rejects"),
+        "nested ArrayAccess keyed append suffix production must not fall back to rejection paths:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_nested_arrayaccess_keyed_append_suffix_owner_stack_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "nested_arrayaccess_keyed_append_suffix_owner_stack_production",
+        ARRAYACCESS_NESTED_KEYED_APPEND_SUFFIX_OWNER_STACK_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native nested ArrayAccess keyed append suffix executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(
+        run.stdout,
+        b"root-get:outer;middle-set:=D;root-set:outer;D|root-get:pouter;middle-get:pmiddle;leaf-set:=P;middle-set:pmiddle;root-set:pouter;P"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn native_executable_c_source_rejects_nested_arrayaccess_reference_returning_offsetget() {
     let program = parse(concat!(
         "<?php\n",
@@ -17107,42 +17297,6 @@ fn native_executable_c_source_rejects_nested_arrayaccess_reference_returning_off
         error.message.contains("ArrayAccess lowering rejects"),
         "reference-returning offsetGet should stay blocked at the nested owner boundary: {error:?}"
     );
-}
-
-#[test]
-fn native_executable_c_source_rejects_nested_arrayaccess_non_assignment_mutations() {
-    let sources = [(
-        "nested ArrayAccess append assignment with suffix",
-        concat!(
-            "<?php\n",
-            "class Bag implements ArrayAccess {\n",
-            "    public function offsetGet($offset) { return new Bag(); }\n",
-            "    public function offsetExists($offset) { return true; }\n",
-            "    public function offsetSet($offset, $value) { return null; }\n",
-            "    public function offsetUnset($offset) { return null; }\n",
-            "}\n",
-            "$bag = new Bag();\n",
-            "$bag[\"outer\"][][\"leaf\"] = 1;\n",
-        ),
-    )];
-
-    for (label, source) in sources {
-        let program = parse(source).unwrap_or_else(|error| {
-            panic!("{label} should parse before nested ArrayAccess blocker proof: {error:?}")
-        });
-        let error = emit_native_executable_c_source(&program)
-            .expect_err(&format!("{label} unexpectedly emitted generated C"));
-
-        assert_eq!(error.phase, Phase::Codegen, "{label}: {error:?}");
-        assert!(
-            error.message.contains("ArrayAccess lowering rejects")
-                || error.message.contains("mutation lowering rejects")
-                || error
-                    .message
-                    .contains("non-local assignment lowering rejects"),
-            "{label} should remain behind the ArrayAccess/mutation owner boundary, got {error:?}"
-        );
-    }
 }
 
 #[test]
@@ -17215,21 +17369,6 @@ fn native_executable_c_source_rejects_property_held_arrayaccess_unset_unsupporte
                 "$box = new Box();\n",
                 "$slot = 1;\n",
                 "unset($box->{$slot}[\"k\"]);\n",
-            ),
-        ),
-        (
-            "nested property-held ArrayAccess unset owner",
-            concat!(
-                "<?php\n",
-                "class Bag implements ArrayAccess {\n",
-                "    public function offsetGet($offset) { return new Bag(); }\n",
-                "    public function offsetExists($offset) { return true; }\n",
-                "    public function offsetSet($offset, $value) { return null; }\n",
-                "    public function offsetUnset($offset) { return null; }\n",
-                "}\n",
-                "class Box { public $bag; public function __construct() { $this->bag = new Bag(); } }\n",
-                "$box = new Box();\n",
-                "unset($box->bag[\"outer\"][\"leaf\"]);\n",
             ),
         ),
         (

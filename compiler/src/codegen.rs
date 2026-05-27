@@ -17113,7 +17113,14 @@ struct CNativeNestedArrayAccessAssignmentTarget<'a> {
 struct CNativeNestedArrayAccessAppendTarget<'a> {
     source: CNativeValueOwnerSource,
     offsets: &'a [Expr],
+    suffix_offsets: &'a [Expr],
     plan: CNativeNestedArrayAccessAppendPlan,
+}
+
+struct CNativeNestedArrayAccessUnsetTarget<'a> {
+    source: CNativeValueOwnerSource,
+    offsets: &'a [Expr],
+    plan: CNativeNestedArrayAccessOwnerStackPlan,
 }
 
 struct CNativeNestedArrayAccessWriteContext {
@@ -17128,6 +17135,7 @@ struct CNativeNestedArrayAccessWriteContext {
 struct CNativeNestedArrayAccessAppendContext {
     root_owner: CNativeValueOwnerMaterialization,
     offsets: Vec<CNativeValueMaterialization>,
+    suffix_offsets: Vec<Expr>,
     intermediates: Vec<CNativeValueMaterialization>,
     plan: CNativeNestedArrayAccessAppendPlan,
     callable_table: String,
@@ -28859,18 +28867,18 @@ impl CGenerator {
         &self,
         target: &'a AssignTarget,
     ) -> CompileResult<Option<CNativeNestedArrayAccessAppendTarget<'a>>> {
-        let (source, offsets, span) = match target {
+        let (source, offsets, suffix_offsets, span) = match target {
             AssignTarget::NestedArrayAppend {
                 name,
                 indices,
                 suffix_indices,
                 span,
-            } if !indices.is_empty() && suffix_indices.is_empty() => {
+            } if !indices.is_empty() => {
                 let Some(source) = self.native_arrayaccess_variable_owner_source(name, *span)
                 else {
                     return Ok(None);
                 };
-                (source, indices.as_slice(), *span)
+                (source, indices.as_slice(), suffix_indices.as_slice(), *span)
             }
             AssignTarget::ObjectPropertyArrayAppend {
                 object,
@@ -28878,7 +28886,71 @@ impl CGenerator {
                 indices,
                 suffix_indices,
                 span,
-            } if !indices.is_empty() && suffix_indices.is_empty() => {
+            } if !indices.is_empty() => {
+                let object = Expr::Variable(object.clone(), *span);
+                let Some(source) = self.native_arrayaccess_object_property_owner_source(
+                    &object,
+                    CObjectPropertyOperand::Literal(property),
+                    *span,
+                ) else {
+                    return Ok(None);
+                };
+                (source, indices.as_slice(), suffix_indices.as_slice(), *span)
+            }
+            AssignTarget::DynamicObjectPropertyArrayAppend {
+                object,
+                property,
+                indices,
+                suffix_indices,
+                span,
+            } if !indices.is_empty() => {
+                let object = Expr::Variable(object.clone(), *span);
+                let Some(source) = self.native_arrayaccess_object_property_owner_source(
+                    &object,
+                    CObjectPropertyOperand::Dynamic(property),
+                    *span,
+                ) else {
+                    return Ok(None);
+                };
+                (source, indices.as_slice(), suffix_indices.as_slice(), *span)
+            }
+            _ => return Ok(None),
+        };
+
+        let plan = self
+            .plan_native_nested_arrayaccess_append_owner_stack_from_source(&source, offsets, span)
+            .map_err(|blocker| self.unsupported_nested_arrayaccess_owner_stack(blocker))?;
+
+        Ok(Some(CNativeNestedArrayAccessAppendTarget {
+            source,
+            offsets,
+            suffix_offsets,
+            plan,
+        }))
+    }
+
+    fn native_nested_arrayaccess_unset_target_for_unset_target<'a>(
+        &self,
+        target: &'a UnsetTarget,
+    ) -> CompileResult<Option<CNativeNestedArrayAccessUnsetTarget<'a>>> {
+        let (source, offsets, span) = match target {
+            UnsetTarget::NestedArrayIndex {
+                name,
+                indices,
+                span,
+            } if indices.len() >= 2 => {
+                let Some(source) = self.native_arrayaccess_variable_owner_source(name, *span)
+                else {
+                    return Ok(None);
+                };
+                (source, indices.as_slice(), *span)
+            }
+            UnsetTarget::ObjectPropertyArrayIndex {
+                object,
+                property,
+                indices,
+                span,
+            } if indices.len() >= 2 => {
                 let object = Expr::Variable(object.clone(), *span);
                 let Some(source) = self.native_arrayaccess_object_property_owner_source(
                     &object,
@@ -28889,13 +28961,12 @@ impl CGenerator {
                 };
                 (source, indices.as_slice(), *span)
             }
-            AssignTarget::DynamicObjectPropertyArrayAppend {
+            UnsetTarget::DynamicObjectPropertyArrayIndex {
                 object,
                 property,
                 indices,
-                suffix_indices,
                 span,
-            } if !indices.is_empty() && suffix_indices.is_empty() => {
+            } if indices.len() >= 2 => {
                 let object = Expr::Variable(object.clone(), *span);
                 let Some(source) = self.native_arrayaccess_object_property_owner_source(
                     &object,
@@ -28910,10 +28981,10 @@ impl CGenerator {
         };
 
         let plan = self
-            .plan_native_nested_arrayaccess_append_owner_stack_from_source(&source, offsets, span)
+            .plan_native_nested_arrayaccess_owner_stack_from_source(&source, offsets, span)
             .map_err(|blocker| self.unsupported_nested_arrayaccess_owner_stack(blocker))?;
 
-        Ok(Some(CNativeNestedArrayAccessAppendTarget {
+        Ok(Some(CNativeNestedArrayAccessUnsetTarget {
             source,
             offsets,
             plan,
@@ -28930,7 +29001,11 @@ impl CGenerator {
             } => self
                 .native_arrayaccess_variable_owner_source(name, *span)
                 .and_then(|_| {
-                    (!(!indices.is_empty() && suffix_indices.is_empty())).then_some(*span)
+                    if !indices.is_empty() {
+                        None
+                    } else {
+                        (!suffix_indices.is_empty()).then_some(*span)
+                    }
                 }),
             _ => None,
         }
@@ -29040,6 +29115,73 @@ impl CGenerator {
             failure_cleanup
         ));
         let mut context = CNativeNestedArrayAccessAppendContext {
+            root_owner,
+            offsets,
+            suffix_offsets: target.suffix_offsets.to_vec(),
+            intermediates: Vec::with_capacity(target.plan.frames.len()),
+            plan: target.plan,
+            callable_table,
+            cleanup_after_use,
+        };
+
+        for frame in context.plan.frames.clone() {
+            let subject_handle = context.subject_handle(frame.subject_owner).to_string();
+            let operands = CNativeArrayAccessOffsetReadOperands {
+                subject_handle,
+                offset_handle: context.offsets[frame.offset.index].handle.clone(),
+                callable_table: context.callable_table.clone(),
+                cleanup_after_use: context.cleanup_after_use.clone(),
+            };
+            let intermediate = self.emit_native_arrayaccess_offset_read_operation(
+                &operands,
+                CNativeArrayAccessOffsetReadOperation::Get,
+                failure_cleanup,
+            );
+            context
+                .cleanup_after_use
+                .extend(intermediate.cleanup_after_use.clone());
+            context.intermediates.push(intermediate);
+        }
+
+        Ok(Some(context))
+    }
+
+    fn materialize_native_nested_arrayaccess_unset_context(
+        &mut self,
+        target: &UnsetTarget,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeNestedArrayAccessWriteContext>> {
+        let Some(target) = self.native_nested_arrayaccess_unset_target_for_unset_target(target)?
+        else {
+            return Ok(None);
+        };
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_callable_helpers = true;
+        self.uses_native_arrayaccess_offset_read_helpers = true;
+        self.uses_native_arrayaccess_offset_write_helpers = true;
+
+        let root_owner = self.materialize_native_value_owner(target.source, failure_cleanup)?;
+        let mut cleanup_after_use = root_owner.cleanup_after_abort();
+        let mut offsets = Vec::with_capacity(target.offsets.len());
+        for offset_expr in target.offsets {
+            let offset_failure_cleanup = format!(
+                "{}{}",
+                c_cleanup_sequence(&cleanup_after_use),
+                failure_cleanup
+            );
+            let offset =
+                self.materialize_native_value_result_operand(offset_expr, &offset_failure_cleanup)?;
+            cleanup_after_use.extend(offset.cleanup_after_use.clone());
+            offsets.push(offset);
+        }
+
+        let callable_table = self.ensure_native_callable_table(&format!(
+            "{}{}",
+            c_cleanup_sequence(&cleanup_after_use),
+            failure_cleanup
+        ));
+        let mut context = CNativeNestedArrayAccessWriteContext {
             root_owner,
             offsets,
             intermediates: Vec::with_capacity(target.plan.frames.len()),
@@ -31171,7 +31313,7 @@ impl CGenerator {
             expr,
             &format!("{suffix_cleanup}{path_cleanup}{failure_cleanup}"),
         )?;
-        let value = self.wrap_native_value_for_append_suffix(
+        let value = self.materialize_native_appended_slot_value(
             suffix_keys,
             value,
             &format!("{path_cleanup}{failure_cleanup}"),
@@ -31207,7 +31349,7 @@ impl CGenerator {
             expr,
             &format!("{suffix_cleanup}{path_cleanup}{failure_cleanup}"),
         )?;
-        let value = self.wrap_native_value_for_append_suffix(
+        let value = self.materialize_native_appended_slot_value(
             suffix_keys,
             value,
             &format!("{path_cleanup}{failure_cleanup}"),
@@ -31240,7 +31382,7 @@ impl CGenerator {
         Ok(keys)
     }
 
-    fn wrap_native_value_for_append_suffix(
+    fn materialize_native_appended_slot_value(
         &mut self,
         suffix_keys: Vec<CNativeArrayKeyMaterialization>,
         mut value: CNativeValueMaterialization,
@@ -31257,8 +31399,8 @@ impl CGenerator {
             .collect::<Vec<_>>();
 
         for key in suffix_keys.iter().rev() {
-            let array = self.next_native_name("request_append_suffix_array");
-            let diagnostic = self.next_native_name("request_append_suffix_diagnostic");
+            let array = self.next_native_name("appended_slot_suffix_array");
+            let diagnostic = self.next_native_name("appended_slot_suffix_diagnostic");
             self.body.push(format!(
                 "phpc_NativeArrayHandle {array} = phpc_native_array_empty();"
             ));
@@ -31278,7 +31420,7 @@ impl CGenerator {
             self.body
                 .push(format!("phpc_native_diagnostic_free({diagnostic});"));
             self.body.extend(value.cleanup_after_use);
-            let wrapped = self.next_native_name("request_append_suffix_value");
+            let wrapped = self.next_native_name("appended_slot_suffix_value");
             self.body.push(format!(
                 "phpc_NativeValueHandle {wrapped} = phpc_native_value_from_array({array});"
             ));
@@ -43102,6 +43244,10 @@ impl CGenerator {
             return self.emit_symbol_table_array_lvalue_unset(name, &indices, span);
         }
 
+        if self.emit_native_nested_arrayaccess_offset_unset_for_variable(name, indices, span, "")? {
+            return Ok(());
+        }
+
         if !self.uses_native_string_helpers {
             return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
         }
@@ -43242,6 +43388,9 @@ impl CGenerator {
                 | UnsetTarget::DynamicObjectPropertyArrayIndex { .. }
                 | UnsetTarget::NonDirectObjectPropertyArrayIndex { .. }
                 | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex { .. } => {
+                    if self.emit_native_nested_arrayaccess_offset_unset_for_target(target, "")? {
+                        continue;
+                    }
                     if self.emit_native_arrayaccess_offset_unset_for_target(target, "")? {
                         continue;
                     }
@@ -51002,6 +51151,41 @@ impl CGenerator {
         replacement: CNativeValueMaterialization,
         failure_cleanup: &str,
     ) -> CompileResult<()> {
+        self.emit_native_nested_arrayaccess_write_context_with_leaf_operation(
+            context,
+            replacement,
+            CNativeArrayAccessOffsetWriteOperation::Write,
+            "nested_arrayaccess_leaf_write",
+            failure_cleanup,
+        )
+    }
+
+    fn emit_native_nested_arrayaccess_unset_context(
+        &mut self,
+        context: CNativeNestedArrayAccessWriteContext,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let replacement = CNativeValueMaterialization {
+            handle: "(phpc_NativeValueHandle){0}".to_string(),
+            cleanup_after_use: Vec::new(),
+        };
+        self.emit_native_nested_arrayaccess_write_context_with_leaf_operation(
+            context,
+            replacement,
+            CNativeArrayAccessOffsetWriteOperation::Unset,
+            "nested_arrayaccess_leaf_unset",
+            failure_cleanup,
+        )
+    }
+
+    fn emit_native_nested_arrayaccess_write_context_with_leaf_operation(
+        &mut self,
+        context: CNativeNestedArrayAccessWriteContext,
+        replacement: CNativeValueMaterialization,
+        leaf_operation: CNativeArrayAccessOffsetWriteOperation,
+        leaf_result_prefix: &str,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
         let leaf_subject_handle = context
             .subject_handle(context.plan.leaf_offset.owner)
             .to_string();
@@ -51012,10 +51196,10 @@ impl CGenerator {
             &leaf_subject_handle,
             &leaf_offset_handle,
             replacement,
-            CNativeArrayAccessOffsetWriteOperation::Write,
+            leaf_operation,
             &context.callable_table,
             &context.cleanup_after_use,
-            "nested_arrayaccess_leaf_write",
+            leaf_result_prefix,
             failure_cleanup,
         );
 
@@ -51412,12 +51596,30 @@ impl CGenerator {
             let Some(replacement_expr) = replacement_expr else {
                 return Err(self.unsupported(target.span(), ASSEMBLY_ARRAY_ACCESS_REJECTION));
             };
-            let replacement_failure_cleanup =
-                format!("{}{}", context.cleanup_sequence(), failure_cleanup);
+            let context_cleanup = context.cleanup_sequence();
+            let suffix_offsets = context.suffix_offsets.iter().collect::<Vec<_>>();
+            let suffix_keys = self.materialize_native_array_key_suffix(
+                &suffix_offsets,
+                &format!("{context_cleanup}{failure_cleanup}"),
+            )?;
+            drop(suffix_offsets);
+            let suffix_cleanup_steps = suffix_keys
+                .iter()
+                .flat_map(|key| key.cleanup_after_use.clone())
+                .collect::<Vec<_>>();
+            let replacement_failure_cleanup = format!(
+                "{}{context_cleanup}{failure_cleanup}",
+                c_cleanup_sequence(&suffix_cleanup_steps)
+            );
             let replacement = self.materialize_native_value_result_operand(
                 replacement_expr,
                 &replacement_failure_cleanup,
             )?;
+            let replacement = self.materialize_native_appended_slot_value(
+                suffix_keys,
+                replacement,
+                &format!("{context_cleanup}{failure_cleanup}"),
+            );
             self.emit_native_nested_arrayaccess_append_context(
                 context,
                 replacement,
@@ -51577,13 +51779,31 @@ impl CGenerator {
         if let Some(context) =
             self.materialize_native_nested_arrayaccess_append_context(target, failure_cleanup)?
         {
-            let replacement_failure_cleanup =
-                format!("{}{}", context.cleanup_sequence(), failure_cleanup);
+            let context_cleanup = context.cleanup_sequence();
+            let suffix_offsets = context.suffix_offsets.iter().collect::<Vec<_>>();
+            let suffix_keys = self.materialize_native_array_key_suffix(
+                &suffix_offsets,
+                &format!("{context_cleanup}{failure_cleanup}"),
+            )?;
+            drop(suffix_offsets);
+            let suffix_cleanup_steps = suffix_keys
+                .iter()
+                .flat_map(|key| key.cleanup_after_use.clone())
+                .collect::<Vec<_>>();
+            let replacement_failure_cleanup = format!(
+                "{}{context_cleanup}{failure_cleanup}",
+                c_cleanup_sequence(&suffix_cleanup_steps)
+            );
             let (replacement_value, replacement) = self
                 .materialize_assignment_expression_replacement_value(
                     replacement_expr,
                     &replacement_failure_cleanup,
                 )?;
+            let replacement = self.materialize_native_appended_slot_value(
+                suffix_keys,
+                replacement,
+                &format!("{context_cleanup}{failure_cleanup}"),
+            );
             self.emit_native_nested_arrayaccess_append_context(
                 context,
                 replacement,
@@ -51662,6 +51882,36 @@ impl CGenerator {
         )? {
             return Ok(false);
         }
+        Ok(true)
+    }
+
+    fn emit_native_nested_arrayaccess_offset_unset_for_variable(
+        &mut self,
+        name: &str,
+        indices: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<bool> {
+        let target = UnsetTarget::NestedArrayIndex {
+            name: name.to_string(),
+            indices: indices.to_vec(),
+            span,
+        };
+        self.emit_native_nested_arrayaccess_offset_unset_for_target(&target, failure_cleanup)
+    }
+
+    fn emit_native_nested_arrayaccess_offset_unset_for_target(
+        &mut self,
+        target: &UnsetTarget,
+        failure_cleanup: &str,
+    ) -> CompileResult<bool> {
+        let Some(context) =
+            self.materialize_native_nested_arrayaccess_unset_context(target, failure_cleanup)?
+        else {
+            return Ok(false);
+        };
+
+        self.emit_native_nested_arrayaccess_unset_context(context, failure_cleanup)?;
         Ok(true)
     }
 
@@ -57273,6 +57523,29 @@ mod tests {
                 )
                 .is_none(),
             "RMW/??= lowering must not silently reuse nested assignment production"
+        );
+
+        let unset_target = UnsetTarget::ObjectPropertyArrayIndex {
+            object: "holder".to_string(),
+            property: "bag".to_string(),
+            indices: vec![
+                Expr::String("outer".to_string(), span(51)),
+                Expr::String("middle".to_string(), span(52)),
+                Expr::String("leaf".to_string(), span(53)),
+            ],
+            span: span(50),
+        };
+        let unset_context = generator
+            .native_nested_arrayaccess_unset_target_for_unset_target(&unset_target)
+            .expect("property-held nested ArrayAccess unset should pass owner-stack planning")
+            .expect("property-held nested ArrayAccess unset should produce a production context");
+        assert_eq!(
+            unset_context.plan.root_kind,
+            CNativeValueOwnerSourceKind::ObjectProperty
+        );
+        assert_eq!(
+            unset_context.plan.commit_order,
+            property_context.plan.commit_order
         );
     }
 
