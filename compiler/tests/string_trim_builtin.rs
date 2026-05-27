@@ -20,6 +20,20 @@ echo trim(42);\n",
 }
 
 #[test]
+fn trim_executes_custom_mask_ranges_and_empty_masks() {
+    let execution = run_source(
+        "<?php\n\
+echo trim(\"9.alpha0\", \"0..9.\"), \"|\";\n\
+echo trim(\"AZpayloadaz\", \"A..Zaz\"), \"|\";\n\
+echo trim(\" unchanged \", \"\");\n",
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "alpha|payload| unchanged ");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn trim_is_available_through_string_valued_calls() {
     let execution = run_source(
         "<?php\n\
@@ -43,13 +57,17 @@ fn ltrim_executes_current_default_and_slash_mask_subset() {
 echo ltrim(\" \\t128M\\n\"), \"|\";\n\
 echo ltrim(\"///wp-content\", \"/\"), \"|\";\n\
 echo ltrim(\"\\r\\n\\t (SELECT\", \"\\r\\n\\t (\"), \"|\";\n\
+echo ltrim(\"AZpayload\", \"A..Z\"), \"|\";\n\
 echo ltrim(null), \"|\";\n\
 $call = \"ltrim\";\n\
 echo $call(\"//plugins\", \"/\");\n",
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "128M\n|wp-content|SELECT||plugins");
+    assert_eq!(
+        execution.stdout,
+        "128M\n|wp-content|SELECT|payload||plugins"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -60,6 +78,7 @@ fn rtrim_executes_current_default_and_literal_mask_subset() {
 echo rtrim(\" \\t128M\\n\"), \"|\";\n\
 echo rtrim(\"localhost/\", \"/\"), \"|\";\n\
 echo rtrim(\"/wp-admin///\", \"/\"), \"|\";\n\
+echo rtrim(\"PAYLOADaz\", \"a..z\"), \"|\";\n\
 echo rtrim(null), \"|\";\n\
 $call = \"rtrim\";\n\
 echo $call(\"example.test///\", \"/\");\n",
@@ -68,13 +87,13 @@ echo $call(\"example.test///\", \"/\");\n",
 
     assert_eq!(
         execution.stdout,
-        " \t128M|localhost|/wp-admin||example.test"
+        " \t128M|localhost|/wp-admin|PAYLOAD||example.test"
     );
     assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
-fn trim_rejects_forms_outside_current_subset() {
+fn trim_rejects_forms_outside_supported_mask_semantics() {
     let array_arg = run_source("<?php\ntrim(['ABC']);\n").unwrap_err();
     assert_eq!(array_arg.phase, Phase::Runtime);
     assert_eq!(array_arg.line, 2);
@@ -84,13 +103,13 @@ fn trim_rejects_forms_outside_current_subset() {
         "unsupported call trim(): arrays are not supported"
     );
 
-    let custom_mask = run_source("<?php\ntrim('ABC', 'A');\n").unwrap_err();
-    assert_eq!(custom_mask.phase, Phase::Runtime);
-    assert_eq!(custom_mask.line, 2);
-    assert_eq!(custom_mask.column, 1);
+    let ambiguous = run_source("<?php\ntrim('ABC', 'A...Z');\n").unwrap_err();
+    assert_eq!(ambiguous.phase, Phase::Runtime);
+    assert_eq!(ambiguous.line, 2);
+    assert_eq!(ambiguous.column, 1);
     assert_eq!(
-        custom_mask.message,
-        "unsupported call trim(): custom character masks are not implemented; pass exactly one argument in the current subset"
+        ambiguous.message,
+        "unsupported call trim(): character mask ranges are not fully implemented: ambiguous dot-runs are blocked until full PHP charlist parsing is implemented"
     );
 
     let too_few = run_source("<?php\ntrim();\n").unwrap_err();
@@ -104,7 +123,7 @@ fn trim_rejects_forms_outside_current_subset() {
 }
 
 #[test]
-fn ltrim_rejects_forms_outside_current_subset() {
+fn ltrim_rejects_forms_outside_supported_mask_semantics() {
     let array_arg = run_source("<?php\nltrim(['ABC']);\n").unwrap_err();
     assert_eq!(array_arg.phase, Phase::Runtime);
     assert_eq!(array_arg.line, 2);
@@ -123,22 +142,13 @@ fn ltrim_rejects_forms_outside_current_subset() {
         "unsupported call ltrim(): character mask arrays are not supported"
     );
 
-    let empty_mask = run_source("<?php\nltrim('ABC', '');\n").unwrap_err();
-    assert_eq!(empty_mask.phase, Phase::Runtime);
-    assert_eq!(empty_mask.line, 2);
-    assert_eq!(empty_mask.column, 1);
-    assert_eq!(
-        empty_mask.message,
-        "unsupported call ltrim(): empty character masks are not implemented in the current subset"
-    );
-
-    let range_mask = run_source("<?php\nltrim('ABC', 'A..Z');\n").unwrap_err();
+    let range_mask = run_source("<?php\nltrim('ABC', '..Z');\n").unwrap_err();
     assert_eq!(range_mask.phase, Phase::Runtime);
     assert_eq!(range_mask.line, 2);
     assert_eq!(range_mask.column, 1);
     assert_eq!(
         range_mask.message,
-        "unsupported call ltrim(): character mask ranges are not implemented in the current subset"
+        "unsupported call ltrim(): character mask ranges are not fully implemented: no character to the left of '..'"
     );
 
     let too_few = run_source("<?php\nltrim();\n").unwrap_err();
@@ -152,7 +162,7 @@ fn ltrim_rejects_forms_outside_current_subset() {
 }
 
 #[test]
-fn rtrim_rejects_forms_outside_current_subset() {
+fn rtrim_rejects_forms_outside_supported_mask_semantics() {
     let array_arg = run_source("<?php\nrtrim(['ABC']);\n").unwrap_err();
     assert_eq!(array_arg.phase, Phase::Runtime);
     assert_eq!(array_arg.line, 2);
@@ -171,22 +181,13 @@ fn rtrim_rejects_forms_outside_current_subset() {
         "unsupported call rtrim(): character mask arrays are not supported"
     );
 
-    let empty_mask = run_source("<?php\nrtrim('ABC', '');\n").unwrap_err();
-    assert_eq!(empty_mask.phase, Phase::Runtime);
-    assert_eq!(empty_mask.line, 2);
-    assert_eq!(empty_mask.column, 1);
-    assert_eq!(
-        empty_mask.message,
-        "unsupported call rtrim(): empty character masks are not implemented in the current subset"
-    );
-
-    let range_mask = run_source("<?php\nrtrim('ABC', 'A..Z');\n").unwrap_err();
+    let range_mask = run_source("<?php\nrtrim('ABC', 'Z..A');\n").unwrap_err();
     assert_eq!(range_mask.phase, Phase::Runtime);
     assert_eq!(range_mask.line, 2);
     assert_eq!(range_mask.column, 1);
     assert_eq!(
         range_mask.message,
-        "unsupported call rtrim(): character mask ranges are not implemented in the current subset"
+        "unsupported call rtrim(): character mask ranges are not fully implemented: '..'-ranges must be incrementing"
     );
 
     let too_few = run_source("<?php\nrtrim();\n").unwrap_err();

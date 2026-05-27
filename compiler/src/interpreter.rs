@@ -72958,24 +72958,103 @@ fn call_strtolower(args: &[Value], span: Span) -> CompileResult<Value> {
     Ok(Value::String(value.to_ascii_lowercase()))
 }
 
-fn call_trim(args: &[Value], span: Span) -> CompileResult<Value> {
+const PHP_DEFAULT_TRIM_MASK_BYTES: &[u8] = b" \n\r\t\x0b\0";
+
+#[derive(Clone, Copy)]
+enum TrimMode {
+    Both,
+    Left,
+    Right,
+}
+
+fn interpreter_value_from_php_string_bytes(bytes: Vec<u8>) -> Value {
+    String::from_utf8(bytes)
+        .map(Value::String)
+        .unwrap_or_else(|error| Value::BinaryString(error.into_bytes()))
+}
+
+fn trim_mask_parse_error(name: &str, reason: &str) -> RuntimeError {
+    RuntimeError::unsupported_call(
+        name,
+        format!("character mask ranges are not fully implemented: {reason}"),
+    )
+}
+
+fn expanded_trim_mask(mask: &[u8], name: &str) -> RuntimeResult<Vec<u8>> {
+    let mut expanded = Vec::with_capacity(mask.len());
+    let mut index = 0;
+
+    while index < mask.len() {
+        if mask[index] == b'.' && mask.get(index + 1) == Some(&b'.') {
+            return Err(trim_mask_parse_error(
+                name,
+                "no character to the left of '..'",
+            ));
+        }
+
+        if mask.get(index + 1) == Some(&b'.') && mask.get(index + 2) == Some(&b'.') {
+            let Some(&end) = mask.get(index + 3) else {
+                return Err(trim_mask_parse_error(
+                    name,
+                    "no character to the right of '..'",
+                ));
+            };
+            if end == b'.' {
+                return Err(trim_mask_parse_error(
+                    name,
+                    "ambiguous dot-runs are blocked until full PHP charlist parsing is implemented",
+                ));
+            }
+
+            let start = mask[index];
+            if start > end {
+                return Err(trim_mask_parse_error(
+                    name,
+                    "'..'-ranges must be incrementing",
+                ));
+            }
+            expanded.extend(start..=end);
+            index += 4;
+        } else {
+            expanded.push(mask[index]);
+            index += 1;
+        }
+    }
+
+    Ok(expanded)
+}
+
+fn trim_bytes_with_mask(value: &[u8], mask: &[u8], mode: TrimMode) -> Vec<u8> {
+    let mut start = 0;
+    let mut end = value.len();
+
+    if matches!(mode, TrimMode::Both | TrimMode::Left) {
+        while start < end && mask.contains(&value[start]) {
+            start += 1;
+        }
+    }
+    if matches!(mode, TrimMode::Both | TrimMode::Right) {
+        while end > start && mask.contains(&value[end - 1]) {
+            end -= 1;
+        }
+    }
+
+    value[start..end].to_vec()
+}
+
+fn trim_family_call(
+    args: &[Value],
+    span: Span,
+    name: &str,
+    mode: TrimMode,
+) -> CompileResult<Value> {
     if !(1..=2).contains(&args.len()) {
         return Err(runtime_error(
             span,
             RuntimeError::arity_mismatch(
-                "trim()",
+                name,
                 ArityExpectation::Between { min: 1, max: 2 },
                 args.len(),
-            ),
-        ));
-    }
-
-    if args.len() == 2 {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "trim()",
-                "custom character masks are not implemented; pass exactly one argument in the current subset",
             ),
         ));
     }
@@ -72983,155 +73062,46 @@ fn call_trim(args: &[Value], span: Span) -> CompileResult<Value> {
     if matches!(args[0], Value::Array(_)) {
         return Err(runtime_error(
             span,
-            RuntimeError::unsupported_call("trim()", "arrays are not supported"),
+            RuntimeError::unsupported_call(name, "arrays are not supported"),
         ));
     }
 
     let value = args[0]
-        .try_echo_string()
+        .try_echo_bytes()
         .map_err(|error| runtime_error(span, error))?;
+    let mask = if let Some(mask) = args.get(1) {
+        if matches!(mask, Value::Array(_)) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(name, "character mask arrays are not supported"),
+            ));
+        }
+        expanded_trim_mask(
+            &mask
+                .try_echo_bytes()
+                .map_err(|error| runtime_error(span, error))?,
+            name,
+        )
+        .map_err(|error| runtime_error(span, error))?
+    } else {
+        PHP_DEFAULT_TRIM_MASK_BYTES.to_vec()
+    };
 
-    Ok(Value::String(
-        value
-            .trim_matches(|ch| matches!(ch, ' ' | '\t' | '\n' | '\r' | '\0' | '\u{000B}'))
-            .to_string(),
+    Ok(interpreter_value_from_php_string_bytes(
+        trim_bytes_with_mask(&value, &mask, mode),
     ))
+}
+
+fn call_trim(args: &[Value], span: Span) -> CompileResult<Value> {
+    trim_family_call(args, span, "trim()", TrimMode::Both)
 }
 
 fn call_ltrim(args: &[Value], span: Span) -> CompileResult<Value> {
-    if !(1..=2).contains(&args.len()) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::arity_mismatch(
-                "ltrim()",
-                ArityExpectation::Between { min: 1, max: 2 },
-                args.len(),
-            ),
-        ));
-    }
-
-    if matches!(args[0], Value::Array(_)) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call("ltrim()", "arrays are not supported"),
-        ));
-    }
-
-    let value = args[0]
-        .try_echo_string()
-        .map_err(|error| runtime_error(span, error))?;
-
-    if args.len() == 2 {
-        if matches!(args[1], Value::Array(_)) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "ltrim()",
-                    "character mask arrays are not supported",
-                ),
-            ));
-        }
-
-        let mask = args[1]
-            .try_echo_string()
-            .map_err(|error| runtime_error(span, error))?;
-        if mask.is_empty() {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "ltrim()",
-                    "empty character masks are not implemented in the current subset",
-                ),
-            ));
-        }
-        if mask.contains("..") {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "ltrim()",
-                    "character mask ranges are not implemented in the current subset",
-                ),
-            ));
-        }
-
-        return Ok(Value::String(
-            value.trim_start_matches(|ch| mask.contains(ch)).to_string(),
-        ));
-    }
-
-    Ok(Value::String(
-        value
-            .trim_start_matches(|ch| matches!(ch, ' ' | '\t' | '\n' | '\r' | '\0' | '\u{000B}'))
-            .to_string(),
-    ))
+    trim_family_call(args, span, "ltrim()", TrimMode::Left)
 }
 
 fn call_rtrim(args: &[Value], span: Span) -> CompileResult<Value> {
-    if !(1..=2).contains(&args.len()) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::arity_mismatch(
-                "rtrim()",
-                ArityExpectation::Between { min: 1, max: 2 },
-                args.len(),
-            ),
-        ));
-    }
-
-    if matches!(args[0], Value::Array(_)) {
-        return Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call("rtrim()", "arrays are not supported"),
-        ));
-    }
-
-    let value = args[0]
-        .try_echo_string()
-        .map_err(|error| runtime_error(span, error))?;
-
-    if args.len() == 2 {
-        if matches!(args[1], Value::Array(_)) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "rtrim()",
-                    "character mask arrays are not supported",
-                ),
-            ));
-        }
-
-        let mask = args[1]
-            .try_echo_string()
-            .map_err(|error| runtime_error(span, error))?;
-        if mask.is_empty() {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "rtrim()",
-                    "empty character masks are not implemented in the current subset",
-                ),
-            ));
-        }
-        if mask.contains("..") {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    "rtrim()",
-                    "character mask ranges are not implemented in the current subset",
-                ),
-            ));
-        }
-
-        return Ok(Value::String(
-            value.trim_end_matches(|ch| mask.contains(ch)).to_string(),
-        ));
-    }
-
-    Ok(Value::String(
-        value
-            .trim_end_matches(|ch| matches!(ch, ' ' | '\t' | '\n' | '\r' | '\0' | '\u{000B}'))
-            .to_string(),
-    ))
+    trim_family_call(args, span, "rtrim()", TrimMode::Right)
 }
 
 fn call_strcasecmp(args: &[Value], span: Span) -> CompileResult<Value> {

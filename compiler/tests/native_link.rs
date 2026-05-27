@@ -24314,11 +24314,12 @@ const NATIVE_IMPORTED_RUNTIME_BUILTIN_ALIAS_SOURCE: &str = concat!(
     "<?php\n",
     "namespace App\\Demo;\n",
     "use function strlen as imported_strlen, str_contains as contains_text, ",
-    "strtoupper as upper_text, gettype as imported_gettype;\n",
+    "strtoupper as upper_text, gettype as imported_gettype, trim as imported_trim;\n",
     "echo imported_strlen(\"abc\"), \"|\";\n",
     "echo contains_text(\"alphabet\", \"pha\"), \"|\";\n",
     "echo upper_text(\"mix\"), \"|\";\n",
-    "echo imported_gettype([1]);\n",
+    "echo imported_gettype([1]), \"|\";\n",
+    "echo imported_trim(\"9.alpha0\", \"0..9.\");\n",
 );
 
 const NATIVE_IMPORTED_UNSUPPORTED_BUILTIN_ALIAS_SOURCE: &str = concat!(
@@ -24458,7 +24459,10 @@ const NATIVE_RUNTIME_BUILTIN_TRIM_CALLABLE_STRING_SPREAD_SOURCE: &str = concat!(
     "$ltrim = \"ltrim\";\n",
     "echo $ltrim(...[\"string\" => runtime_builtin_trim_marker(\"B\", \"//wp/\"), \"characters\" => runtime_builtin_trim_marker(\"C\", \"/\")]), \"|\";\n",
     "$rtrim = \"rtrim\";\n",
-    "echo $rtrim(...[\"characters\" => runtime_builtin_trim_marker(\"D\", \"/\"), \"string\" => runtime_builtin_trim_marker(\"E\", \"/wp///\")]);\n",
+    "echo $rtrim(...[\"characters\" => runtime_builtin_trim_marker(\"D\", \"/\"), \"string\" => runtime_builtin_trim_marker(\"E\", \"/wp///\")]), \"|\";\n",
+    "echo $trim(...[\"characters\" => runtime_builtin_trim_marker(\"F\", \"0..9.\"), \"string\" => runtime_builtin_trim_marker(\"G\", \"9.alpha0\")]), \"|\";\n",
+    "echo $ltrim(...[\"string\" => runtime_builtin_trim_marker(\"H\", \"AZpayload\"), \"characters\" => runtime_builtin_trim_marker(\"I\", \"A..Z\")]), \"|\";\n",
+    "echo $rtrim(...[\"string\" => runtime_builtin_trim_marker(\"J\", \"PAYLOADaz\"), \"characters\" => runtime_builtin_trim_marker(\"K\", \"a..z\")]);\n",
 );
 
 const NATIVE_DYNAMIC_BUILTIN_CALL_SOURCE: &str = concat!(
@@ -25421,10 +25425,10 @@ fn native_executable_c_source_lowers_exact_imported_runtime_builtin_aliases() {
     assert!(
         body.matches("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic(")
             .count()
-            >= 4
+            >= 5
             && body.matches("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
                 .count()
-                >= 4
+                >= 5
             && body.contains("phpc_native_call_arguments_push_value_and_free"),
         "imported runtime builtins should use runtime callable lookup/invoke with shared call arguments:\n{source}"
     );
@@ -27658,7 +27662,7 @@ fn emit_exe_links_and_runs_exact_imported_runtime_builtin_alias_program() {
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(run.stdout, b"3|1|MIX|array");
+    assert_eq!(run.stdout, b"3|1|MIX|array|alpha");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
@@ -29103,7 +29107,7 @@ fn emit_exe_links_and_runs_runtime_builtin_callable_string_spread_trim_default_a
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(run.stdout, b"Awp|BCwp/|DE/wp");
+    assert_eq!(run.stdout, b"Awp|BCwp/|DE/wp|FGalpha|HIpayload|JKPAYLOAD");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

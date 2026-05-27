@@ -11537,6 +11537,57 @@ fn native_callable_trimmed_bytes(subject: &[u8], mask: &[u8], mode: NativeTrimMo
     subject[start..end].to_vec()
 }
 
+fn native_callable_trim_mask_parse_error(name: &str, reason: &str) -> RuntimeError {
+    RuntimeError::unsupported_call(
+        name,
+        format!("character mask ranges are not fully implemented: {reason}"),
+    )
+}
+
+fn native_callable_trim_expanded_mask(mask: &[u8], name: &str) -> RuntimeResult<Vec<u8>> {
+    let mut expanded = Vec::with_capacity(mask.len());
+    let mut index = 0;
+
+    while index < mask.len() {
+        if mask[index] == b'.' && mask.get(index + 1) == Some(&b'.') {
+            return Err(native_callable_trim_mask_parse_error(
+                name,
+                "no character to the left of '..'",
+            ));
+        }
+
+        if mask.get(index + 1) == Some(&b'.') && mask.get(index + 2) == Some(&b'.') {
+            let Some(&end) = mask.get(index + 3) else {
+                return Err(native_callable_trim_mask_parse_error(
+                    name,
+                    "no character to the right of '..'",
+                ));
+            };
+            if end == b'.' {
+                return Err(native_callable_trim_mask_parse_error(
+                    name,
+                    "ambiguous dot-runs are blocked until full PHP charlist parsing is implemented",
+                ));
+            }
+
+            let start = mask[index];
+            if start > end {
+                return Err(native_callable_trim_mask_parse_error(
+                    name,
+                    "'..'-ranges must be incrementing",
+                ));
+            }
+            expanded.extend(start..=end);
+            index += 4;
+        } else {
+            expanded.push(mask[index]);
+            index += 1;
+        }
+    }
+
+    Ok(expanded)
+}
+
 fn native_callable_trim_mask(
     mode: NativeTrimMode,
     values: &[NativeValueHandle],
@@ -11545,36 +11596,12 @@ fn native_callable_trim_mask(
         return Ok(PHP_DEFAULT_TRIM_MASK.to_vec());
     }
 
-    let mask = unsafe { native_value_to_string_bytes(values[1]) }?;
-    match mode {
-        NativeTrimMode::Both if mask != PHP_DEFAULT_TRIM_MASK => {
-            Err(RuntimeError::unsupported_call(
-                "trim()",
-                "custom character masks are not implemented; pass exactly one argument in the current subset",
-            ))
-        }
-        NativeTrimMode::Both => Ok(mask),
-        NativeTrimMode::Left | NativeTrimMode::Right => {
-            let name = match mode {
-                NativeTrimMode::Left => "ltrim()",
-                NativeTrimMode::Right => "rtrim()",
-                NativeTrimMode::Both => unreachable!(),
-            };
-            if mask.is_empty() {
-                return Err(RuntimeError::unsupported_call(
-                    name,
-                    "empty character masks are not implemented in the current subset",
-                ));
-            }
-            if mask.windows(2).any(|window| window == b"..") {
-                return Err(RuntimeError::unsupported_call(
-                    name,
-                    "character mask ranges are not implemented in the current subset",
-                ));
-            }
-            Ok(mask)
-        }
-    }
+    let name = match mode {
+        NativeTrimMode::Both => "trim()",
+        NativeTrimMode::Left => "ltrim()",
+        NativeTrimMode::Right => "rtrim()",
+    };
+    native_callable_trim_expanded_mask(&unsafe { native_value_to_string_bytes(values[1]) }?, name)
 }
 
 unsafe fn native_callable_trim_value(
@@ -42234,6 +42261,109 @@ mod tests {
         assert!(!trim.accepts_arg_count(0));
         assert!(!trim.accepts_arg_count(3));
         assert!(!trim.returns_by_reference);
+    }
+
+    #[test]
+    fn native_callable_trim_expands_custom_mask_ranges_across_modes() {
+        let cases = [
+            (
+                "trim",
+                vec![
+                    Value::BinaryString(b"9.alpha0".to_vec()),
+                    Value::String("0..9.".to_string()),
+                ],
+                Value::String("alpha".to_string()),
+            ),
+            (
+                "ltrim",
+                vec![
+                    Value::String("AZpayload".to_string()),
+                    Value::String("A..Z".to_string()),
+                ],
+                Value::String("payload".to_string()),
+            ),
+            (
+                "rtrim",
+                vec![
+                    Value::String("PAYLOADaz".to_string()),
+                    Value::String("a..z".to_string()),
+                ],
+                Value::String("PAYLOAD".to_string()),
+            ),
+            (
+                "trim",
+                vec![
+                    Value::String(" unchanged ".to_string()),
+                    Value::String(String::new()),
+                ],
+                Value::String(" unchanged ".to_string()),
+            ),
+        ];
+
+        for (name, args, expected) in cases {
+            let callable_value = NativeValueHandle::from_value(Value::String(name.to_string()));
+            let (callable, diagnostic) = unsafe {
+                lookup_callable_value_for_test(
+                    phpc_native_callable_table_null(),
+                    callable_value,
+                    None,
+                )
+            };
+            assert!(diagnostic.is_null());
+            assert!(!callable.is_null());
+            let (value, diagnostic) =
+                unsafe { invoke_callable_value_values_for_test(callable, args) };
+            assert!(diagnostic.is_null());
+            assert_eq!(unsafe { value.as_ref() }, Some(&expected));
+            unsafe { phpc_native_value_free(value) };
+            unsafe { phpc_native_callable_value_free(callable) };
+            unsafe { phpc_native_value_free(callable_value) };
+        }
+    }
+
+    #[test]
+    fn native_callable_trim_blocks_malformed_mask_ranges_without_shape_lowering() {
+        let cases = [
+            ("trim", "A...Z", "ambiguous dot-runs"),
+            ("ltrim", "..A", "no character to the left of '..'"),
+            ("rtrim", "Z..A", "'..'-ranges must be incrementing"),
+            ("trim", "A..", "no character to the right of '..'"),
+        ];
+
+        for (name, mask, reason) in cases {
+            let callable_value = NativeValueHandle::from_value(Value::String(name.to_string()));
+            let (callable, diagnostic) = unsafe {
+                lookup_callable_value_for_test(
+                    phpc_native_callable_table_null(),
+                    callable_value,
+                    None,
+                )
+            };
+            assert!(diagnostic.is_null());
+            assert!(!callable.is_null());
+            let (value, diagnostic) = unsafe {
+                invoke_callable_value_values_for_test(
+                    callable,
+                    vec![
+                        Value::String("ABC".to_string()),
+                        Value::String(mask.to_string()),
+                    ],
+                )
+            };
+            assert!(value.is_null());
+            let message = unsafe { diagnostic.as_ref() }
+                .map(|diagnostic| diagnostic.message.as_str())
+                .expect("malformed mask should produce a diagnostic");
+            assert!(
+                message.starts_with(&format!(
+                    "unsupported call {name}(): character mask ranges are not fully implemented: "
+                )) && message.contains(reason),
+                "{message}"
+            );
+            unsafe { phpc_native_diagnostic_free(diagnostic) };
+            unsafe { phpc_native_callable_value_free(callable) };
+            unsafe { phpc_native_value_free(callable_value) };
+        }
     }
 
     #[test]
