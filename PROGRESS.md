@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 05:26 CEST
+Updated: 2026-05-27 05:45 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,13 +19,21 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest accounted source capability: `3eb101aa` routes generated-C object
-static-receiver method calls through shared static source-call carriers by
-deriving an owned class scope from object or known class-string receivers,
-building the shared `NativeCallArgumentsHandle`, preserving default/variadic
-frame-compatible static method calls, and keeping `static::`, magic, traits,
-interfaces, full late-static binding, and unsupported receiver shapes blocked.
-Recent source commits also lower generated-C literal declared `Class::$prop`
+Latest accounted source capability: `99d23aa4` routes generated-C receiver and
+named static calls made from inside declared method frames through runtime
+class-context access checks, so supported declared methods can call private
+instance methods on `$this` and protected static methods on the declaring class
+through shared source-call carriers while external receiver/static callers and
+dynamic fallback ladders stay public-only. It keeps magic calls,
+late-static binding, traits/interfaces, direct private/protected frame
+shortcuts, and broad visibility/magic support blocked. Recent source commits
+also route generated-C object static-receiver method calls through shared
+static source-call carriers by deriving an owned class scope from object or
+known class-string receivers, building the shared
+`NativeCallArgumentsHandle`, preserving default/variadic frame-compatible
+static method calls, and keeping `static::`, magic, traits, interfaces, full
+late-static binding, and unsupported receiver shapes blocked (`3eb101aa`);
+lower generated-C literal declared `Class::$prop`
 reads and writes through request-owned runtime static-property storage,
 including default initialization, reset, type and visibility checks, canonical
 class/alias lookup, expression-result ownership, and unsupported
@@ -67,6 +75,9 @@ early returns run, constructor value returns now fail through an explicit
 generated-C runtime diagnostic with cleanup, method/static source calls handle
 default and variadic frame-compatible arities, `self::` and `parent::`
 static source calls now run through class-context source-call carriers,
+declared method-frame calls can now invoke supported private/protected
+receiver/static methods through runtime class-context lookup-plus-invoke
+carriers,
 object static-receiver calls now derive runtime receiver scope and run through
 shared static source-call carriers for exact/default/variadic
 frame-compatible declared static methods,
@@ -148,6 +159,7 @@ Current critical path to 100%:
 
 | Commit | Capability | Proof shape |
 | --- | --- | --- |
+| `99d23aa4` | Generated C now carries declared-class caller scope into receiver-method and named static source-call wrappers emitted from declared method frames, allowing supported private `$this->method()` and protected `Class::method()` calls through runtime class-context access checks while keeping external receiver/static callers, dynamic fallback ladders, callable-object/array shortcuts, magic calls, late-static binding, traits/interfaces, and direct private/protected frame dispatch blocked. | Runtime access-context lookup diagnostics, generated-C source proof for class-context receiver/static carriers, linked executable private/protected class-context program, object-static source-call regressions, method/static/default/variadic/self/parent carrier regressions, runtime builtin signatures, static-property storage/production regressions, source-call byref regressions, constructor value-return diagnostics, non-local object-property regressions, fmt, diff check. |
 | `3eb101aa` | Generated C now routes object static-receiver calls such as `$obj::method()` and known class-string receiver forms through shared static source-call carriers, deriving an owned runtime class scope from object/class-string receivers, building `NativeCallArgumentsHandle` once, supporting exact/default/variadic frame-compatible declared public static methods, and keeping non-static methods, `static::`, magic, traits/interfaces, full late-static binding, and unsupported receivers blocked. | Object-static signature contract proofs, runtime receiver-scope helper proof, generated-C source proofs for object-static exact/default/variadic carriers, linked object-static executable proofs, adjacent receiver/static/default/variadic/self/parent source-call regressions, runtime builtin signature/dynamic builtin regressions, static-property production/storage regressions, source-call byref regressions, constructor value-return diagnostics, non-local object-property and class-alias regressions, fmt, diff check. |
 | `22b3074f` | Generated C now lowers declared literal `Class::$prop` reads and writes for compiler-known classes through request-owned runtime static-property storage, registering defaults/reset handles, preserving assignment expression results, routing type/visibility/canonical class lookup through the runtime ABI, and keeping dynamic class/property, `self::`/`parent::`/`static::`, object-static, magic, compound/unset/reference, LLVM, and assembly static-member forms blocked. | Runtime static-property suite, generated-C static-property source proof, linked executable static-property program, unsupported dynamic-shape blocker proof, self/parent static regressions, builtin-signature/runtime dynamic builtin regressions, class-alias regressions, constructor value-return diagnostics, non-local object-property owner regressions, fmt, diff check. |
 | `b4503c2e` | Generated-C `self::` and `parent::` static source calls now carry active declared class and parent-class context, publish protected/private static method metadata for runtime access checks, and invoke through class-context static source-call carriers while keeping direct static ladders public-only and `static::`/late-static binding blocked. | Self/parent source-call unit proof, generated-C source proof, linked self/parent executable proof, builtin-signature regressions, source-call byref regressions, constructor value-return diagnostics, non-local object-property owner regressions, static-property runtime regressions, fmt, diff check. |
