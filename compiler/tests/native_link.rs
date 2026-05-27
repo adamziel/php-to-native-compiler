@@ -308,6 +308,49 @@ const NATIVE_STATIC_PROPERTY_MUTATION_SOURCE: &str = concat!(
     "echo StaticMutationRoot::$count, \":\", StaticMutationChild::$count, \"\\n\";\n",
 );
 
+const NATIVE_STATIC_PROPERTY_MUTATION_NULL_COALESCE_SOURCE: &str = concat!(
+    "<?php\n",
+    "function static_prop_rhs($value) { echo \"rhs:\", $value, \";\"; return $value; }\n",
+    "function static_prop_rhs_int($value) { echo \"rhs-int:\", $value, \";\"; return $value; }\n",
+    "class StaticCoalesceRoot {\n",
+    "    public static ?string $keep = \"K\";\n",
+    "    public static ?string $miss = null;\n",
+    "    public static ?string $selfNull = null;\n",
+    "    public static int $typed;\n",
+    "    public static int $other = 1;\n",
+    "    public static ?string $late = null;\n",
+    "    public static function mutateSelf() {\n",
+    "        self::$keep ??= static_prop_rhs(\"bad-self\");\n",
+    "        self::$selfNull ??= static_prop_rhs(\"self\");\n",
+    "        self::$typed ??= static_prop_rhs_int(3);\n",
+    "        return self::$keep . \":\" . self::$selfNull . \":\" . self::$typed;\n",
+    "    }\n",
+    "    public static function mutateLate() {\n",
+    "        static::$late ??= static_prop_rhs(\"late\");\n",
+    "        return static::$late;\n",
+    "    }\n",
+    "}\n",
+    "class StaticCoalesceChild extends StaticCoalesceRoot {\n",
+    "    public static ?string $keep = null;\n",
+    "    public static ?string $late = null;\n",
+    "    public static function mutateParent() {\n",
+    "        parent::$selfNull ??= static_prop_rhs(\"bad-parent\");\n",
+    "        parent::$other ??= static_prop_rhs_int(99);\n",
+    "        return parent::$selfNull . \":\" . parent::$other;\n",
+    "    }\n",
+    "}\n",
+    "$object = new StaticCoalesceRoot();\n",
+    "$class = \"StaticCoalesceChild\";\n",
+    "echo (StaticCoalesceRoot::$keep ??= static_prop_rhs(\"bad-lit\")), \"|\";\n",
+    "echo (StaticCoalesceRoot::$miss ??= static_prop_rhs(\"lit\")), \"|\";\n",
+    "echo ($object::$miss ??= static_prop_rhs(\"bad-obj\")), \"|\";\n",
+    "echo ($class::$keep ??= static_prop_rhs(\"class\")), \"|\";\n",
+    "echo StaticCoalesceRoot::mutateSelf(), \"|\";\n",
+    "echo StaticCoalesceChild::mutateParent(), \"|\";\n",
+    "echo StaticCoalesceChild::mutateLate(), \"|\";\n",
+    "echo StaticCoalesceRoot::$miss, \":\", StaticCoalesceChild::$keep, \":\", StaticCoalesceRoot::$typed, \":\", StaticCoalesceChild::$late, \"\\n\";\n",
+);
+
 const NATIVE_STATIC_PROPERTY_OBSERVATION_SOURCE: &str = concat!(
     "<?php\n",
     "class StaticObservationRoot {\n",
@@ -2104,6 +2147,37 @@ fn emit_exe_links_and_runs_static_property_mutation_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"11:5:5:21:7:16:7:21:8:22\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_static_property_mutation_null_coalesce_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "static_property_mutation_null_coalesce",
+        NATIVE_STATIC_PROPERTY_MUTATION_NULL_COALESCE_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run static-property null-coalesce mutation executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"K|rhs:lit;lit|lit|rhs:class;class|rhs:self;rhs-int:3;K:self:3|self:1|rhs:late;late|lit:class:3:late\n"
+    );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -4664,6 +4738,50 @@ fn native_executable_c_source_routes_static_property_mutations_through_shared_lv
             && !source.contains("assembly mutation lowering rejects")
             && !source.contains("assembly arithmetic lowering rejects"),
         "supported static-property mutations should not fall through old blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_static_property_mutation_null_coalesce_through_shared_lvalue_boundary(
+) {
+    let program = parse(NATIVE_STATIC_PROPERTY_MUTATION_NULL_COALESCE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    for required in [
+        "phpc_native_static_property_read_isset_class_with_diagnostic",
+        "phpc_native_static_property_write_class_with_diagnostic_and_free",
+        "phpc_native_static_property_read_isset_relative_with_diagnostic",
+        "phpc_native_static_property_write_relative_with_diagnostic_and_free",
+        "phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free",
+        "static_property_lvalue_isset_value_",
+        "static_property_lvalue_null_coalesce_result_",
+        "static_property_lvalue_write_value_",
+        "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_SELF",
+        "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_PARENT",
+        "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_LATE_STATIC",
+    ] {
+        assert!(source.contains(required), "missing {required}:\n{source}");
+    }
+    assert!(
+        body.matches("static_property_lvalue_isset_value_").count() >= 7
+            && body
+                .matches("static_property_lvalue_write_value_")
+                .count()
+                >= 7,
+        "static-property ??= should probe and write through the shared static-property lvalue target across receiver forms:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free")
+            .count()
+            >= 2,
+        "object and class-string static-property ??= should derive receiver scope through the shared receiver ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("static-member lowering rejects")
+            && !source.contains("assembly mutation lowering rejects")
+            && !source.contains("assembly conditional lowering rejects"),
+        "supported static-property ??= should not fall through old blockers:\n{source}"
     );
 }
 

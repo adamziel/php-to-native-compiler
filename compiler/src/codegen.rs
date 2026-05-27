@@ -33846,6 +33846,46 @@ impl CGenerator {
         Ok(Some(result))
     }
 
+    fn materialize_static_property_null_coalesce_assignment_result_for_target(
+        &mut self,
+        target: &AssignTarget,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        if native_conditional_rhs_needs_cleanup_boundary(expr) {
+            return Err(self.unsupported(expr.span(), ASSEMBLY_CONDITIONAL_REJECTION));
+        }
+
+        let Some(target) =
+            self.materialize_static_property_observation_lvalue_target(target, failure_cleanup)?
+        else {
+            return Ok(None);
+        };
+
+        let target_cleanup = target.cleanup_sequence();
+        let result = self.next_native_name("static_property_lvalue_null_coalesce_result");
+        self.body
+            .push(format!("phpc_NativeValueHandle {result} = {{0}};"));
+        let probe = self.emit_static_property_lvalue_isset_read(&target, failure_cleanup);
+        self.body
+            .push(format!("if ({}.ptr != NULL) {{", probe.handle));
+        self.body.push(format!("  {result} = {};", probe.handle));
+        self.body.push("} else {".to_string());
+        let replacement = self.materialize_native_value_result_operand(
+            expr,
+            &format!("{target_cleanup}{failure_cleanup}"),
+        )?;
+        let written = self.emit_static_property_lvalue_write(&target, replacement, failure_cleanup);
+        self.body.push(format!("  {result} = {};", written.handle));
+        self.body.push("}".to_string());
+        self.body.extend(target.cleanup_after_use);
+
+        Ok(Some(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }))
+    }
+
     fn emit_statement(&mut self, stmt: &Stmt) -> CompileResult<()> {
         if !matches!(
             stmt,
@@ -34014,6 +34054,14 @@ impl CGenerator {
                         access.span,
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
+                }
+                if let Some(value) = self
+                    .materialize_static_property_null_coalesce_assignment_result_for_target(
+                        target, expr, "",
+                    )?
+                {
+                    self.body.extend(value.cleanup_after_use);
+                    return Ok(());
                 }
                 if let Some(value) = self
                     .materialize_native_arrayaccess_offset_null_coalesce_assignment_result_for_target(
@@ -35135,6 +35183,14 @@ impl CGenerator {
                         access.span,
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
+                }
+                if let Some(value) = self
+                    .materialize_static_property_null_coalesce_assignment_result_for_target(
+                        target, expr, "",
+                    )?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
                 }
                 if let Some(value) = self.materialize_array_offset_null_coalesce_assignment_expr(
                     target, expr, *span, "",
@@ -50617,32 +50673,37 @@ impl CGenerator {
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
                 }
-                self.materialize_array_offset_null_coalesce_assignment_expr(
+                if let Some(value) = self
+                    .materialize_static_property_null_coalesce_assignment_result_for_target(
+                        target,
+                        expr,
+                        failure_cleanup,
+                    )?
+                {
+                    return Ok(Some(value));
+                }
+                if let Some(value) = self.materialize_array_offset_null_coalesce_assignment_expr(
                     target,
                     expr,
                     *span,
                     failure_cleanup,
-                )?
-                .map_or_else(
-                    || {
-                        self.materialize_native_arrayaccess_offset_null_coalesce_assignment_result_for_target(
-                            target,
-                            expr,
-                            failure_cleanup,
-                        )?
-                        .map_or_else(
-                            || {
-                                self.materialize_array_lvalue_null_coalesce_assignment_expr(
-                                    target,
-                                    expr,
-                                    *span,
-                                    failure_cleanup,
-                                )
-                            },
-                            |value| Ok(Some(value)),
-                        )
-                    },
-                    |value| Ok(Some(value)),
+                )? {
+                    return Ok(Some(value));
+                }
+                if let Some(value) = self
+                    .materialize_native_arrayaccess_offset_null_coalesce_assignment_result_for_target(
+                        target,
+                        expr,
+                        failure_cleanup,
+                    )?
+                {
+                    return Ok(Some(value));
+                }
+                self.materialize_array_lvalue_null_coalesce_assignment_expr(
+                    target,
+                    expr,
+                    *span,
+                    failure_cleanup,
                 )
             }
             Expr::Ternary {

@@ -2979,7 +2979,8 @@ impl Parser {
                     | AssignTarget::StaticProperty { .. }
                     | AssignTarget::SelfStaticProperty { .. }
                     | AssignTarget::ParentStaticProperty { .. }
-                    | AssignTarget::LateStaticProperty { .. } => {}
+                    | AssignTarget::LateStaticProperty { .. }
+                    | AssignTarget::ObjectStaticProperty { .. } => {}
                     AssignTarget::NestedArrayAppend { .. }
                     | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
                     | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
@@ -2990,7 +2991,6 @@ impl Parser {
                     | AssignTarget::DynamicProperty { .. }
                     | AssignTarget::NonDirectProperty { .. }
                     | AssignTarget::NonDirectDynamicProperty { .. }
-                    | AssignTarget::ObjectStaticProperty { .. }
                     | AssignTarget::ArrayIndex { index: None, .. } => {
                         return Err(self.error_at(
                             operator_span,
@@ -4593,6 +4593,15 @@ impl Parser {
             Expr::LateStaticProperty { property, span } => {
                 Ok(AssignTarget::LateStaticProperty { property, span })
             }
+            Expr::ObjectStaticProperty {
+                target,
+                property,
+                span,
+            } => Ok(AssignTarget::ObjectStaticProperty {
+                target: *target,
+                property,
+                span,
+            }),
             _ => Err(unsupported_null_coalescing_assignment_message()),
         }
     }
@@ -7705,7 +7714,7 @@ fn unsupported_exponentiation_message() -> &'static str {
 }
 
 fn unsupported_null_coalescing_assignment_message() -> &'static str {
-    "unsupported null coalescing assignment: only direct variable, direct or nested array-offset, direct object-property, and direct object-property array-offset targets are implemented"
+    "unsupported null coalescing assignment: only direct variable, direct or nested array-offset, direct object-property, static-property, and direct object-property array-offset targets are implemented"
 }
 
 fn unsupported_assignment_expression_message() -> &'static str {
