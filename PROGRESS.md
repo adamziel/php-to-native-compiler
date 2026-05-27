@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 16:58 CEST
+Updated: 2026-05-27 17:01 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,14 +19,24 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `b4881053` registers selected generated
-trait metadata in the shared runtime class-metadata registries. Generated-C
-`trait_exists()`, `get_declared_traits()`, and direct `class_uses()` calls now
-reuse runtime metadata declaration/value helpers, direct trait-to-class
-metadata edges, and native value array consumers instead of generated
-per-fixture trait arrays. Parent-recursive `class_uses()` helper patterns,
-autoload-discovered traits, side-effecting include timing, core/external trait
-metadata, and LLVM/ASM parity remain blocked.
+Latest accounted source capability: `8a02fbbf` prints selected generated
+runtime metadata arrays through the shared native value formatter. Discarded
+generated-C `print_r(<native value array>)` now routes through the runtime
+formatter ABI, recursively walks `PhpArray` entries, and covers
+`print_r(get_declared_interfaces())` plus
+`print_r(class_implements(...))` without per-fixture array traversal. String
+return mode, non-discarded `print_r()` expression values, core/external
+interface discovery, broad formatting parity, and LLVM/ASM parity remain
+blocked.
+
+Recent source commit `b4881053` registers selected generated trait metadata in
+the shared runtime class-metadata registries. Generated-C `trait_exists()`,
+`get_declared_traits()`, and direct `class_uses()` calls now reuse runtime
+metadata declaration/value helpers, direct trait-to-class metadata edges, and
+native value array consumers instead of generated per-fixture trait arrays.
+Parent-recursive `class_uses()` helper patterns, autoload-discovered traits,
+side-effecting include timing, core/external trait metadata, and LLVM/ASM
+parity remain blocked.
 
 Recent source commit `98e9f154` allows bounded literal `include_once` /
 `require_once` cycles during generated-C executable include unit discovery and
