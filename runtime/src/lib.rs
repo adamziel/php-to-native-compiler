@@ -23163,16 +23163,20 @@ fn native_output_buffer_operation_value(
             } else {
                 None
             };
-            if let Some(chunk_size) = args.get(1) {
-                let _ =
-                    value_to_native_int64(chunk_size, NativeIntConversionOperation::StringLength)?;
-            }
+            let chunk_size = if let Some(chunk_size) = args.get(1) {
+                value_to_native_int64(chunk_size, NativeIntConversionOperation::StringLength)?
+                    .try_into()
+                    .unwrap_or(0)
+            } else {
+                0
+            };
             if let Some(flags) = args.get(2) {
                 let _ = value_to_native_int64(flags, NativeIntConversionOperation::StringLength)?;
             }
             NATIVE_OUTPUT_BUFFERS.with(|buffers| {
                 buffers.borrow_mut().push(NativeOutputBuffer {
                     bytes: Vec::new(),
+                    chunk_size,
                     handler,
                     handler_started: false,
                 })
@@ -23243,6 +23247,7 @@ fn native_output_buffer_operation_value(
     }
 }
 
+const NATIVE_OUTPUT_HANDLER_WRITE: i64 = 0;
 const NATIVE_OUTPUT_HANDLER_START: i64 = 1;
 const NATIVE_OUTPUT_HANDLER_FLUSH: i64 = 4;
 const NATIVE_OUTPUT_HANDLER_FINAL: i64 = 8;
@@ -23434,32 +23439,68 @@ fn native_output_flush_active_bytes(bytes: &[u8]) -> RuntimeResult<usize> {
 }
 
 fn native_output_write_bytes_to_buffer(bytes: &[u8], skip_active: bool) -> RuntimeResult<usize> {
-    let buffered = NATIVE_OUTPUT_BUFFERS.with(|buffers| {
-        let mut buffers = buffers.borrow_mut();
-        let target = if skip_active {
+    let target = NATIVE_OUTPUT_BUFFERS.with(|buffers| {
+        let buffers = buffers.borrow();
+        if skip_active {
             buffers.len().checked_sub(2)
         } else {
             buffers.len().checked_sub(1)
+        }
+    });
+    native_output_write_bytes_to_buffer_index(bytes, target)
+}
+
+fn native_output_write_bytes_to_buffer_index(
+    bytes: &[u8],
+    target: Option<usize>,
+) -> RuntimeResult<usize> {
+    let Some(target) = target else {
+        let mut stdout = io::stdout();
+        stdout
+            .write_all(bytes)
+            .and_then(|()| stdout.flush())
+            .map_err(|_| {
+                RuntimeError::unsupported_call("native output buffer", "native output write failed")
+            })?;
+        return Ok(bytes.len());
+    };
+
+    let pending_flush = NATIVE_OUTPUT_BUFFERS.with(|buffers| {
+        let mut buffers = buffers.borrow_mut();
+        let Some(buffer) = buffers.get_mut(target) else {
+            return None;
         };
-        if let Some(index) = target {
-            buffers[index].bytes.extend_from_slice(bytes);
-            true
+        buffer.bytes.extend_from_slice(bytes);
+        if buffer.chunk_size > 0 && buffer.bytes.len() >= buffer.chunk_size {
+            let bytes = std::mem::take(&mut buffer.bytes);
+            let handler = buffer.handler.clone();
+            let phase = native_output_buffer_handler_phase(
+                buffer.handler_started,
+                NATIVE_OUTPUT_HANDLER_WRITE,
+            );
+            buffer.handler_started = true;
+            Some((bytes, handler, phase))
         } else {
-            false
+            None
         }
     });
 
-    if buffered {
-        return Ok(bytes.len());
+    if let Some((flush_bytes, handler, phase)) = pending_flush {
+        let output = if let Some(handler) = handler.as_ref() {
+            unsafe {
+                native_output_buffer_handler_result_bytes(
+                    handler,
+                    &flush_bytes,
+                    phase,
+                    NativeOutputBufferOperation::Flush,
+                )
+            }?
+        } else {
+            flush_bytes
+        };
+        native_output_write_bytes_to_buffer_index(&output, target.checked_sub(1))?;
     }
 
-    let mut stdout = io::stdout();
-    stdout
-        .write_all(bytes)
-        .and_then(|()| stdout.flush())
-        .map_err(|_| {
-            RuntimeError::unsupported_call("native output buffer", "native output write failed")
-        })?;
     Ok(bytes.len())
 }
 
@@ -40068,6 +40109,7 @@ impl NativeOutputBufferOperation {
 #[derive(Debug, Clone)]
 struct NativeOutputBuffer {
     bytes: Vec<u8>,
+    chunk_size: usize,
     handler: Option<NativeCallableValueDispatch>,
     handler_started: bool,
 }
@@ -40076,6 +40118,7 @@ impl Default for NativeOutputBuffer {
     fn default() -> Self {
         Self {
             bytes: Vec::new(),
+            chunk_size: 0,
             handler: None,
             handler_started: false,
         }
@@ -47230,6 +47273,168 @@ mod tests {
             raw,
             false_flush,
             false_outer_captured,
+        ] {
+            unsafe { phpc_native_value_free(handle) };
+        }
+        unsafe { phpc_native_callable_table_free(table) };
+        native_clear_output_buffers();
+    }
+
+    #[test]
+    fn native_output_buffers_flush_when_chunk_thresholds_are_reached() {
+        unsafe extern "C" fn phase_handler(frame: NativeCallFrameHandle) -> NativeCallResultHandle {
+            let buffer = unsafe { phpc_native_call_frame_read_value(frame, 0) };
+            let phase_handle = unsafe { phpc_native_call_frame_read_value(frame, 1) };
+            let bytes = unsafe { native_value_to_string_bytes(buffer) }
+                .expect("test handler should receive string-compatible buffer bytes");
+            let phase = match unsafe { phase_handle.as_ref() } {
+                Some(Value::Int(phase)) => *phase,
+                other => panic!("test handler should receive int phase, got {other:?}"),
+            };
+            unsafe { phpc_native_value_free(buffer) };
+            unsafe { phpc_native_value_free(phase_handle) };
+            let payload = format!("[{}:{phase}]", String::from_utf8_lossy(&bytes));
+            phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::String(
+                payload,
+            )))
+        }
+
+        fn call(
+            table: NativeCallableTableHandle,
+            operation: NativeOutputBufferOperation,
+            args: &[NativeValueHandle],
+            diagnostic: &mut NativeDiagnosticHandle,
+        ) -> NativeValueHandle {
+            let mut handles = [
+                NativeValueHandle::null(),
+                NativeValueHandle::null(),
+                NativeValueHandle::null(),
+            ];
+            for (index, arg) in args.iter().enumerate() {
+                handles[index] = *arg;
+            }
+            unsafe {
+                phpc_native_output_buffer_operation_with_callable_table_diagnostic(
+                    table,
+                    handles[0],
+                    handles[1],
+                    handles[2],
+                    args.len() as u8,
+                    operation as u8,
+                    diagnostic,
+                )
+            }
+        }
+
+        native_clear_output_buffers();
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "phase_handler",
+                NativeCallableVisibility::Public,
+                phase_handler,
+            );
+        }
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let outer = call(
+            table,
+            NativeOutputBufferOperation::Start,
+            &[],
+            &mut diagnostic,
+        );
+        let null_handler = NativeValueHandle::from_value(Value::Null);
+        let chunk_two = NativeValueHandle::from_value(Value::Int(2));
+        let ordinary = call(
+            table,
+            NativeOutputBufferOperation::Start,
+            &[null_handler, chunk_two],
+            &mut diagnostic,
+        );
+        for byte in ["A", "B", "C"] {
+            let value = NativeValueHandle::from_value(Value::String(byte.to_string()));
+            assert_eq!(
+                unsafe {
+                    phpc_native_value_format_stdout_with_diagnostic(value, 0, &mut diagnostic)
+                },
+                1
+            );
+            assert!(diagnostic.is_null());
+            unsafe { phpc_native_value_free(value) };
+        }
+        let ordinary_remainder = call(
+            table,
+            NativeOutputBufferOperation::GetClean,
+            &[],
+            &mut diagnostic,
+        );
+        let ordinary_flushed = call(
+            table,
+            NativeOutputBufferOperation::GetClean,
+            &[],
+            &mut diagnostic,
+        );
+        assert_eq!(native_value_string_bytes_for_test(ordinary_flushed), b"AB");
+        assert_eq!(native_value_string_bytes_for_test(ordinary_remainder), b"C");
+
+        let callback_outer = call(
+            table,
+            NativeOutputBufferOperation::Start,
+            &[],
+            &mut diagnostic,
+        );
+        let handler = NativeValueHandle::from_value(Value::String("phase_handler".to_string()));
+        let chunk_three = NativeValueHandle::from_value(Value::Int(3));
+        let callback = call(
+            table,
+            NativeOutputBufferOperation::Start,
+            &[handler, chunk_three],
+            &mut diagnostic,
+        );
+        for chunk in ["ab", "cde", "f"] {
+            let value = NativeValueHandle::from_value(Value::String(chunk.to_string()));
+            assert_eq!(
+                unsafe {
+                    phpc_native_value_format_stdout_with_diagnostic(value, 0, &mut diagnostic)
+                },
+                chunk.len()
+            );
+            assert!(diagnostic.is_null());
+            unsafe { phpc_native_value_free(value) };
+        }
+        let callback_end = call(
+            table,
+            NativeOutputBufferOperation::EndFlush,
+            &[],
+            &mut diagnostic,
+        );
+        let callback_flushed = call(
+            table,
+            NativeOutputBufferOperation::GetClean,
+            &[],
+            &mut diagnostic,
+        );
+        assert_eq!(
+            native_value_string_bytes_for_test(callback_flushed),
+            b"[abcde:1][f:8]"
+        );
+
+        for handle in [
+            outer,
+            null_handler,
+            chunk_two,
+            ordinary,
+            ordinary_remainder,
+            ordinary_flushed,
+            callback_outer,
+            handler,
+            chunk_three,
+            callback,
+            callback_end,
+            callback_flushed,
         ] {
             unsafe { phpc_native_value_free(handle) };
         }

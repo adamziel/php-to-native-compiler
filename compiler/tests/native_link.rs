@@ -119,6 +119,34 @@ const NATIVE_OUTPUT_BUFFER_CALLBACK_GET_CLEAN_SOURCE: &str = concat!(
     "echo ob_get_clean();\n",
 );
 
+const NATIVE_OUTPUT_BUFFER_CHUNK_SOURCE: &str = concat!(
+    "<?php\n",
+    "ob_start();\n",
+    "ob_start(null, 2);\n",
+    "echo \"A\";\n",
+    "echo \"B\";\n",
+    "echo \"C\";\n",
+    "$remaining = ob_get_clean();\n",
+    "$flushed = ob_get_clean();\n",
+    "echo $flushed;\n",
+    "echo \"|\";\n",
+    "echo $remaining;\n",
+);
+
+const NATIVE_OUTPUT_BUFFER_CALLBACK_CHUNK_SOURCE: &str = concat!(
+    "<?php\n",
+    "function phase_handler($buffer, $phase) {\n",
+    "    return \"[\" . $buffer . \":\" . $phase . \"]\";\n",
+    "}\n",
+    "ob_start();\n",
+    "ob_start(\"phase_handler\", 3);\n",
+    "echo \"ab\";\n",
+    "echo \"cde\";\n",
+    "echo \"f\";\n",
+    "ob_end_flush();\n",
+    "echo ob_get_clean();\n",
+);
+
 const NATIVE_DIAGNOSTIC_RESULT_DISCARDED_EXPR_SOURCE: &str = concat!(
     "<?php\n",
     "1;\n",
@@ -2343,6 +2371,55 @@ fn emit_exe_links_and_runs_native_output_buffer_callback_programs() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"raw");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_output_buffer_chunk_programs() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "native_output_buffer_chunk",
+        NATIVE_OUTPUT_BUFFER_CHUNK_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native output-buffer chunk executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"AB|C");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "native_output_buffer_callback_chunk",
+        NATIVE_OUTPUT_BUFFER_CALLBACK_CHUNK_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native output-buffer callback chunk executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"[abcde:1][f:8]");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
