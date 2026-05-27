@@ -1914,6 +1914,99 @@ echo pick($box->appendItems[0]);
 }
 
 #[test]
+fn native_executable_c_source_uses_method_context_for_object_property_visibility() {
+    let source = r#"<?php
+class NativeContextBase {
+    protected $shared = "base";
+}
+class NativeContextBox extends NativeContextBase {
+    private $secret = "seed";
+    public function readPrivate() {
+        return $this->secret;
+    }
+    public function writePrivate($value) {
+        $this->secret = $value;
+        return $this->secret;
+    }
+    public function readPeerPrivate($peer) {
+        return $peer->secret;
+    }
+    public static function readStaticPeerPrivate($peer) {
+        return $peer->secret;
+    }
+    public function readProtected() {
+        return $this->shared;
+    }
+    public function writeProtected($value) {
+        $this->shared = $value;
+        return $this->shared;
+    }
+    public function readPeerProtected($peer) {
+        return $peer->shared;
+    }
+}
+$box = new NativeContextBox();
+$peer = new NativeContextBox();
+echo $box->readPrivate(), "|";
+echo $box->writePrivate("private-new"), "|";
+echo $box->readPrivate(), "|";
+echo $box->readPeerPrivate($peer), "|";
+echo NativeContextBox::readStaticPeerPrivate($peer), "|";
+echo $box->readProtected(), "|";
+echo $box->writeProtected("protected-new"), "|";
+echo $box->readProtected(), "|";
+echo $box->readPeerProtected($peer);
+"#;
+
+    let generated = emit_native_executable_c_source(&parse(source).unwrap()).unwrap();
+    assert!(
+        generated
+            .contains("phpc_native_value_object_property_operation_with_context_and_magic_diagnostic"),
+        "literal property access inside generated method frames should carry class context:\n{generated}"
+    );
+    assert!(
+        generated.contains("object_property_context_ids_"),
+        "generated method frames should pass protected ancestor class ids:\n{generated}"
+    );
+    assert!(
+        generated.contains("phpc_native_declare_user_class_property_bytes"),
+        "declared class property metadata registration should remain adjacent to runtime access changes:\n{generated}"
+    );
+    assert!(
+        !generated.contains("property_exists") && !generated.contains("method_exists"),
+        "visibility-context regression must not be an introspection-only path:\n{generated}"
+    );
+
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_function_call_fixture("object_property_visibility_context", source);
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run object-property visibility executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"seed|private-new|private-new|seed|seed|base|protected-new|protected-new|base"
+    );
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn native_executable_c_source_executes_descriptor_ready_closure_invocation() {
     if !has_cc() {
         return;

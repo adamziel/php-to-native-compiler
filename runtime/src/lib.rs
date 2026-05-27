@@ -39408,6 +39408,48 @@ pub unsafe extern "C" fn phpc_native_value_object_property_operation_with_magic_
 
 /// # Safety
 ///
+/// Same as `phpc_native_value_object_property_operation_with_magic_diagnostic`,
+/// but direct property access first uses the supplied generated method class
+/// context before falling back to public property magic for missing or
+/// inaccessible slots.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_object_property_operation_with_context_and_magic_diagnostic(
+    table: NativeCallableTableHandle,
+    object: NativeValueHandle,
+    current_class_id: usize,
+    protected_class_ids: *const usize,
+    protected_class_count: usize,
+    property_name: *const u8,
+    property_name_len: usize,
+    replacement: NativeValueHandle,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe {
+        native_value_object_property_operation_with_context_and_magic(
+            table,
+            object,
+            current_class_id,
+            protected_class_ids,
+            protected_class_count,
+            property_name,
+            property_name_len,
+            replacement,
+            operation,
+        )
+    } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
 /// `value` must be null or a value handle previously returned by the runtime
 /// ABI and not yet freed. `target_name` must be null only when
 /// `target_name_len` is zero. The operation tag selects a class-like
@@ -40121,6 +40163,280 @@ unsafe fn native_value_object_public_property_operation_with_magic(
                 }
             }
         },
+        tag => Err(format!(
+            "native object property operation tag {tag} is not supported"
+        )),
+    }
+}
+
+unsafe fn native_property_context_ids_from_abi(
+    protected_class_ids: *const usize,
+    protected_class_count: usize,
+) -> Result<Vec<ClassId>, String> {
+    if protected_class_count == 0 {
+        return Ok(Vec::new());
+    }
+    let ids = unsafe { native_abi_slice(protected_class_ids, protected_class_count) }.ok_or_else(
+        || "native object property context received invalid protected class id ABI".to_string(),
+    )?;
+    Ok(ids.iter().copied().map(ClassId).collect())
+}
+
+unsafe fn native_value_object_property_operation_with_context_and_magic(
+    table: NativeCallableTableHandle,
+    object: NativeValueHandle,
+    current_class_id: usize,
+    protected_class_ids: *const usize,
+    protected_class_count: usize,
+    property_name: *const u8,
+    property_name_len: usize,
+    replacement: NativeValueHandle,
+    operation: u8,
+) -> Result<Value, String> {
+    let property_name =
+        unsafe { native_abi_utf8(property_name, property_name_len, "object property name") }
+            .map_err(|error| error.message().to_string())?;
+    if property_name.is_empty() {
+        return Err("native object property operation requires a non-empty property name".into());
+    }
+
+    let Some(receiver) = (unsafe { object.as_ref() }) else {
+        return Err("native object property operation requires an object value handle".to_string());
+    };
+    let Value::Object(object) = receiver else {
+        return Err("native object property operation requires an object value handle".to_string());
+    };
+    let protected_class_ids = unsafe {
+        native_property_context_ids_from_abi(protected_class_ids, protected_class_count)
+    }?;
+    let current_class_id = Some(ClassId(current_class_id));
+    let table = unsafe { table.as_ref() };
+
+    match operation {
+        NATIVE_OBJECT_PUBLIC_PROPERTY_READ => {
+            match object.read_property_from_context(
+                property_name,
+                current_class_id,
+                &protected_class_ids,
+            ) {
+                Ok(value) => Ok(value),
+                Err(error) => {
+                    let original_error = error.message().to_string();
+                    unsafe {
+                        native_value_object_property_magic_value(
+                            table,
+                            receiver,
+                            property_name,
+                            "__get",
+                            None,
+                            &original_error,
+                        )
+                    }?
+                    .ok_or(original_error)
+                }
+            }
+        }
+        NATIVE_OBJECT_PUBLIC_PROPERTY_WRITE => {
+            let replacement = unsafe { replacement.as_ref() }
+                .cloned()
+                .unwrap_or(Value::Null);
+            match object.write_property_from_context(
+                property_name,
+                replacement.clone(),
+                current_class_id,
+                &protected_class_ids,
+            ) {
+                Ok(()) => Ok(replacement),
+                Err(error) => {
+                    let original_error = error.message().to_string();
+                    if unsafe {
+                        native_value_object_property_magic_discard(
+                            table,
+                            receiver,
+                            property_name,
+                            "__set",
+                            Some(replacement.clone()),
+                            &original_error,
+                        )
+                    }? {
+                        Ok(replacement)
+                    } else {
+                        Err(original_error)
+                    }
+                }
+            }
+        }
+        NATIVE_OBJECT_PUBLIC_PROPERTY_ISSET => {
+            match object.read_property_for_isset_from_context(
+                property_name,
+                current_class_id,
+                &protected_class_ids,
+            ) {
+                Ok(Some(value)) => Ok(Value::Bool(!matches!(value, Value::Null))),
+                Ok(None) => {
+                    let original_error = RuntimeError::undefined_property(
+                        object.class_name().to_string(),
+                        property_name,
+                    )
+                    .message()
+                    .to_string();
+                    let Some(value) = (unsafe {
+                        native_value_object_property_magic_value(
+                            table,
+                            receiver,
+                            property_name,
+                            "__isset",
+                            None,
+                            &original_error,
+                        )
+                    })?
+                    else {
+                        return Ok(Value::Bool(false));
+                    };
+                    Ok(Value::Bool(value.is_truthy()))
+                }
+                Err(error) => {
+                    let original_error = error.message().to_string();
+                    unsafe {
+                        native_value_object_property_magic_value(
+                            table,
+                            receiver,
+                            property_name,
+                            "__isset",
+                            None,
+                            &original_error,
+                        )
+                    }?
+                    .map(|value| Value::Bool(value.is_truthy()))
+                    .ok_or(original_error)
+                }
+            }
+        }
+        NATIVE_OBJECT_PUBLIC_PROPERTY_EMPTY => {
+            match object.read_property_for_isset_from_context(
+                property_name,
+                current_class_id,
+                &protected_class_ids,
+            ) {
+                Ok(Some(value)) => Ok(Value::Bool(!value.is_truthy())),
+                Ok(None) => {
+                    let original_error = RuntimeError::undefined_property(
+                        object.class_name().to_string(),
+                        property_name,
+                    )
+                    .message()
+                    .to_string();
+                    let Some(isset) = (unsafe {
+                        native_value_object_property_magic_value(
+                            table,
+                            receiver,
+                            property_name,
+                            "__isset",
+                            None,
+                            &original_error,
+                        )
+                    })?
+                    else {
+                        return Ok(Value::Bool(true));
+                    };
+                    if !isset.is_truthy() {
+                        return Ok(Value::Bool(true));
+                    }
+                    let Some(value) = (unsafe {
+                        native_value_object_property_magic_value(
+                            table,
+                            receiver,
+                            property_name,
+                            "__get",
+                            None,
+                            &original_error,
+                        )
+                    })?
+                    else {
+                        return Ok(Value::Bool(true));
+                    };
+                    Ok(Value::Bool(!value.is_truthy()))
+                }
+                Err(error) => {
+                    let original_error = error.message().to_string();
+                    let Some(isset) = (unsafe {
+                        native_value_object_property_magic_value(
+                            table,
+                            receiver,
+                            property_name,
+                            "__isset",
+                            None,
+                            &original_error,
+                        )
+                    })?
+                    else {
+                        return Err(original_error);
+                    };
+                    if !isset.is_truthy() {
+                        return Ok(Value::Bool(true));
+                    }
+                    let Some(value) = (unsafe {
+                        native_value_object_property_magic_value(
+                            table,
+                            receiver,
+                            property_name,
+                            "__get",
+                            None,
+                            &original_error,
+                        )
+                    })?
+                    else {
+                        return Err(original_error);
+                    };
+                    Ok(Value::Bool(!value.is_truthy()))
+                }
+            }
+        }
+        NATIVE_OBJECT_PUBLIC_PROPERTY_UNSET => {
+            match object.unset_property_from_context(
+                property_name,
+                current_class_id,
+                &protected_class_ids,
+            ) {
+                Ok(true) => Ok(Value::Null),
+                Ok(false) => {
+                    let original_error = RuntimeError::undefined_property(
+                        object.class_name().to_string(),
+                        property_name,
+                    )
+                    .message()
+                    .to_string();
+                    unsafe {
+                        native_value_object_property_magic_discard(
+                            table,
+                            receiver,
+                            property_name,
+                            "__unset",
+                            None,
+                            &original_error,
+                        )
+                    }?;
+                    Ok(Value::Null)
+                }
+                Err(error) => {
+                    let original_error = error.message().to_string();
+                    if unsafe {
+                        native_value_object_property_magic_discard(
+                            table,
+                            receiver,
+                            property_name,
+                            "__unset",
+                            None,
+                            &original_error,
+                        )
+                    }? {
+                        Ok(Value::Null)
+                    } else {
+                        Err(original_error)
+                    }
+                }
+            }
+        }
         tag => Err(format!(
             "native object property operation tag {tag} is not supported"
         )),
@@ -51061,6 +51377,160 @@ mod tests {
         assert!(
             native_diagnostic_message_for_test(diagnostic).contains("non-public property"),
             "diagnostic should preserve inherited non-public property visibility"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        unsafe { phpc_native_value_free(object) };
+    }
+
+    #[test]
+    fn native_object_property_context_abi_enforces_private_and_protected_visibility() {
+        let child_class = b"RuntimeContextChild";
+        let base_class = b"RuntimeContextBase";
+        let protected_property = b"shared";
+        let private_property = b"secret";
+        let property_declaring_class_ids = [7usize, 11usize];
+        let property_declaring_class_names = [base_class.as_ptr(), child_class.as_ptr()];
+        let property_declaring_class_name_lens = [base_class.len(), child_class.len()];
+        let property_names = [protected_property.as_ptr(), private_property.as_ptr()];
+        let property_name_lens = [protected_property.len(), private_property.len()];
+        let property_visibilities = [
+            NATIVE_DECLARED_CLASS_PROPERTY_PROTECTED,
+            NATIVE_DECLARED_CLASS_PROPERTY_PRIVATE,
+        ];
+        let ancestor_class_names = [base_class.as_ptr()];
+        let ancestor_class_name_lens = [base_class.len()];
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let object = unsafe {
+            phpc_native_value_new_declared_class_with_ancestors_and_diagnostic(
+                11,
+                child_class.as_ptr(),
+                child_class.len(),
+                property_declaring_class_ids.as_ptr(),
+                property_declaring_class_names.as_ptr(),
+                property_declaring_class_name_lens.as_ptr(),
+                property_names.as_ptr(),
+                property_name_lens.as_ptr(),
+                property_visibilities.as_ptr(),
+                property_names.len(),
+                ancestor_class_names.as_ptr(),
+                ancestor_class_name_lens.as_ptr(),
+                ancestor_class_names.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+
+        let context_ids = [11usize, 7usize];
+        let private_replacement = NativeValueHandle::from_value(Value::String("private".into()));
+        let private_write = unsafe {
+            phpc_native_value_object_property_operation_with_context_and_magic_diagnostic(
+                NativeCallableTableHandle::null(),
+                object,
+                11,
+                context_ids.as_ptr(),
+                context_ids.len(),
+                private_property.as_ptr(),
+                private_property.len(),
+                private_replacement,
+                NATIVE_OBJECT_PUBLIC_PROPERTY_WRITE,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { private_write.as_ref() },
+            Some(&Value::String("private".into()))
+        );
+        unsafe { phpc_native_value_free(private_write) };
+        unsafe { phpc_native_value_free(private_replacement) };
+
+        let protected_replacement =
+            NativeValueHandle::from_value(Value::String("protected".into()));
+        let protected_write = unsafe {
+            phpc_native_value_object_property_operation_with_context_and_magic_diagnostic(
+                NativeCallableTableHandle::null(),
+                object,
+                11,
+                context_ids.as_ptr(),
+                context_ids.len(),
+                protected_property.as_ptr(),
+                protected_property.len(),
+                protected_replacement,
+                NATIVE_OBJECT_PUBLIC_PROPERTY_WRITE,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { protected_write.as_ref() },
+            Some(&Value::String("protected".into()))
+        );
+        unsafe { phpc_native_value_free(protected_write) };
+        unsafe { phpc_native_value_free(protected_replacement) };
+
+        let private_read = unsafe {
+            phpc_native_value_object_property_operation_with_context_and_magic_diagnostic(
+                NativeCallableTableHandle::null(),
+                object,
+                11,
+                context_ids.as_ptr(),
+                context_ids.len(),
+                private_property.as_ptr(),
+                private_property.len(),
+                NativeValueHandle::null(),
+                NATIVE_OBJECT_PUBLIC_PROPERTY_READ,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { private_read.as_ref() },
+            Some(&Value::String("private".into()))
+        );
+        unsafe { phpc_native_value_free(private_read) };
+
+        let protected_read = unsafe {
+            phpc_native_value_object_property_operation_with_context_and_magic_diagnostic(
+                NativeCallableTableHandle::null(),
+                object,
+                11,
+                context_ids.as_ptr(),
+                context_ids.len(),
+                protected_property.as_ptr(),
+                protected_property.len(),
+                NativeValueHandle::null(),
+                NATIVE_OBJECT_PUBLIC_PROPERTY_READ,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { protected_read.as_ref() },
+            Some(&Value::String("protected".into()))
+        );
+        unsafe { phpc_native_value_free(protected_read) };
+
+        let wrong_context_ids = [7usize];
+        let wrong_private_read = unsafe {
+            phpc_native_value_object_property_operation_with_context_and_magic_diagnostic(
+                NativeCallableTableHandle::null(),
+                object,
+                7,
+                wrong_context_ids.as_ptr(),
+                wrong_context_ids.len(),
+                private_property.as_ptr(),
+                private_property.len(),
+                NativeValueHandle::null(),
+                NATIVE_OBJECT_PUBLIC_PROPERTY_READ,
+                &mut diagnostic,
+            )
+        };
+        assert!(wrong_private_read.is_null());
+        assert!(
+            native_diagnostic_message_for_test(diagnostic).contains("non-public property"),
+            "wrong class context should preserve private visibility failure"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
 

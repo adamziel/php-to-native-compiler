@@ -17094,7 +17094,6 @@ struct CGenerator {
     active_declared_class_name: Option<String>,
     active_declared_parent_class_name: Option<String>,
     active_called_scope_handle: Option<String>,
-    generated_method_frame_this_property_assignment: bool,
     active_source_file: Option<PathBuf>,
     include_root_file: Option<PathBuf>,
     include_units: HashMap<PathBuf, CIncludeUnit>,
@@ -23365,7 +23364,6 @@ impl CGenerator {
             active_declared_class_name: Some(class_name.to_string()),
             active_declared_parent_class_name: self.declared_class_parent_name(class_name),
             active_called_scope_handle: Some("phpc_called_scope".to_string()),
-            generated_method_frame_this_property_assignment: !method.is_static,
             ..CGenerator::default()
         };
 
@@ -24608,6 +24606,7 @@ impl CGenerator {
             if self.uses_native_object_property_helpers {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_public_property_operation_with_diagnostic(phpc_NativeValueHandle object, const uint8_t *property_name, size_t property_name_len, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_property_operation_with_magic_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle object, const uint8_t *property_name, size_t property_name_len, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_property_operation_with_context_and_magic_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle object, size_t current_class_id, const size_t *protected_class_ids, size_t protected_class_count, const uint8_t *property_name, size_t property_name_len, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_property_mutation_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle property, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_property_mutation_operation_with_magic_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle subject, phpc_NativeValueHandle property, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_object_property_mutation_operation_with_reference_slots_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeReferenceHandle subject_reference, phpc_NativeValueHandle property, phpc_NativeReferenceHandle property_reference, phpc_NativeValueHandle replacement, phpc_NativeReferenceHandle replacement_reference, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -26157,6 +26156,147 @@ impl CGenerator {
         })
     }
 
+    fn active_declared_class_property_context_ids(&self) -> Option<(usize, Vec<usize>)> {
+        let class_name = self.active_declared_class_name.as_ref()?;
+        let class_key = Self::declared_class_key(class_name);
+        let class = self.declared_classes.get(&class_key)?;
+        let current_class_id = class.class_id;
+        let mut protected_class_ids = vec![current_class_id];
+        let mut parent_key = class.parent_key.clone();
+        let mut seen = HashSet::new();
+
+        while let Some(key) = parent_key {
+            if !seen.insert(key.clone()) {
+                break;
+            }
+            let Some(parent) = self.declared_classes.get(&key) else {
+                break;
+            };
+            protected_class_ids.push(parent.class_id);
+            parent_key = parent.parent_key.clone();
+        }
+
+        Some((current_class_id, protected_class_ids))
+    }
+
+    fn emit_object_property_context_args(&mut self) -> Option<(usize, String, usize)> {
+        let (current_class_id, protected_class_ids) =
+            self.active_declared_class_property_context_ids()?;
+        let protected_ids_name = self.next_native_name("object_property_context_ids");
+        let ids = protected_class_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.body
+            .push(format!("const size_t {protected_ids_name}[] = {{{ids}}};"));
+        Some((
+            current_class_id,
+            protected_ids_name,
+            protected_class_ids.len(),
+        ))
+    }
+
+    fn materialize_object_context_property_operation_expr(
+        &mut self,
+        object: &Expr,
+        property: &str,
+        replacement: Option<&Expr>,
+        operation_tag: &str,
+        result_prefix: &str,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some((current_class_id, protected_ids_name, protected_ids_len)) =
+            self.emit_object_property_context_args()
+        else {
+            return Ok(None);
+        };
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_object_property_helpers = true;
+
+        let object_value = self.materialize_native_value_result_operand(object, failure_cleanup)?;
+        let replacement_failure_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&object_value.cleanup_after_use),
+            failure_cleanup
+        );
+        let replacement_value = replacement
+            .map(|expr| {
+                self.materialize_native_value_result_operand(expr, &replacement_failure_cleanup)
+            })
+            .transpose()?;
+
+        let mut operand_cleanup = Vec::new();
+        let replacement_handle = if let Some(replacement_value) = replacement_value {
+            let handle = replacement_value.handle.clone();
+            operand_cleanup.extend(replacement_value.cleanup_after_use);
+            handle
+        } else {
+            "(phpc_NativeValueHandle){0}".to_string()
+        };
+        operand_cleanup.extend(object_value.cleanup_after_use);
+
+        let (property_name, property_name_len) =
+            self.emit_call_type_static_bytes("object_property_name_bytes", property);
+        let operand_cleanup_sequence = c_cleanup_sequence(&operand_cleanup);
+        let callable_table = self
+            .ensure_native_callable_table(&format!("{operand_cleanup_sequence}{failure_cleanup}"));
+        let diagnostic = self.next_native_name("object_property_context_diagnostic");
+        let result = self.next_native_name(result_prefix);
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_value_object_property_operation_with_context_and_magic_diagnostic({callable_table}, {}, (size_t){current_class_id}, {protected_ids_name}, (size_t){protected_ids_len}, {property_name}, {property_name_len}, {replacement_handle}, {operation_tag}, &{diagnostic});",
+            object_value.handle
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&operand_cleanup),
+            failure_cleanup
+        );
+        let error_exit = self.native_error_exit(&cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.body.extend(operand_cleanup);
+
+        Ok(Some(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }))
+    }
+
+    fn materialize_object_context_property_assignment_expr(
+        &mut self,
+        object: &Expr,
+        property: &str,
+        expr: &Expr,
+        result_prefix: &str,
+        failure_cleanup: &str,
+        record_write_facts: bool,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let replacement_facts = record_write_facts.then(|| self.native_value_facts_for_expr(expr));
+        let value = self.materialize_object_context_property_operation_expr(
+            object,
+            property,
+            Some(expr),
+            "PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_WRITE",
+            result_prefix,
+            failure_cleanup,
+        )?;
+        if value.is_some() {
+            if let Some(facts) = replacement_facts {
+                self.record_native_object_property_write_facts(
+                    object,
+                    CObjectPropertyOperand::Literal(property),
+                    facts,
+                );
+            }
+        }
+        Ok(value)
+    }
+
     fn materialize_object_public_property_read_expr(
         &mut self,
         object: &Expr,
@@ -26169,6 +26309,28 @@ impl CGenerator {
             None,
             "PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_READ",
             "object_property_read",
+            failure_cleanup,
+        )
+    }
+
+    fn materialize_generated_method_frame_property_read_expr(
+        &mut self,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Expr::Property {
+            target, property, ..
+        } = expr
+        else {
+            return Ok(None);
+        };
+
+        self.materialize_object_context_property_operation_expr(
+            target,
+            property,
+            None,
+            "PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_READ",
+            "object_property_context_read",
             failure_cleanup,
         )
     }
@@ -26518,37 +26680,27 @@ impl CGenerator {
         }
     }
 
-    fn materialize_generated_method_frame_this_property_assignment_result_for_target(
+    fn materialize_generated_method_frame_property_assignment_result_for_target(
         &mut self,
         target: &AssignTarget,
         expr: &Expr,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        if !self.generated_method_frame_this_property_assignment {
-            return Ok(None);
-        }
-        if !matches!(
-            self.variables.get("this"),
-            Some(CValue::NativeValueHandle(_))
-        ) {
-            return Ok(None);
-        }
-
         match target {
             AssignTarget::Property {
                 object,
                 property,
                 span,
-            } if object == "this" => {
+            } => {
                 let object = Expr::Variable(object.clone(), *span);
-                self.materialize_object_property_assignment_result(
+                self.materialize_object_context_property_assignment_expr(
                     &object,
-                    CObjectPropertyOperand::Literal(property),
+                    property,
                     expr,
-                    *span,
+                    "object_property_context_write",
                     failure_cleanup,
+                    true,
                 )
-                .map(Some)
             }
             AssignTarget::DynamicProperty {
                 object,
@@ -26566,18 +26718,15 @@ impl CGenerator {
                 .map(Some)
             }
             AssignTarget::NonDirectProperty {
+                holder, property, ..
+            } => self.materialize_object_context_property_assignment_expr(
                 holder,
                 property,
-                span,
-            } if matches!(holder, Expr::Variable(name, _) if name == "this") => self
-                .materialize_object_property_assignment_result(
-                    holder,
-                    CObjectPropertyOperand::Literal(property),
-                    expr,
-                    *span,
-                    failure_cleanup,
-                )
-                .map(Some),
+                expr,
+                "object_property_context_write",
+                failure_cleanup,
+                false,
+            ),
             AssignTarget::NonDirectDynamicProperty {
                 holder,
                 property,
@@ -41844,8 +41993,13 @@ impl CGenerator {
             Expr::Property {
                 target, property, ..
             } => {
-                let value =
-                    self.materialize_object_public_property_read_expr(target, property, "")?;
+                let value = if let Some(value) =
+                    self.materialize_generated_method_frame_property_read_expr(expr, "")?
+                {
+                    value
+                } else {
+                    self.materialize_object_public_property_read_expr(target, property, "")?
+                };
                 self.retain_native_value_cleanup_handle(&value.handle);
                 Ok(CValue::NativeValueHandle(value.handle))
             }
@@ -42406,7 +42560,7 @@ impl CGenerator {
                     ));
                 }
                 if let Some(value) = self
-                    .materialize_generated_method_frame_this_property_assignment_result_for_target(
+                    .materialize_generated_method_frame_property_assignment_result_for_target(
                         target, expr, "",
                     )?
                 {
@@ -56227,7 +56381,7 @@ impl CGenerator {
             ));
         }
         if let Some(value) = self
-            .materialize_generated_method_frame_this_property_assignment_result_for_target(
+            .materialize_generated_method_frame_property_assignment_result_for_target(
                 target, expr, "",
             )?
         {
@@ -60182,9 +60336,15 @@ impl CGenerator {
             ),
             Expr::Property {
                 target, property, ..
-            } => self
-                .materialize_object_public_property_read_expr(target, property, failure_cleanup)
-                .map(Some),
+            } => {
+                if let Some(value) = self
+                    .materialize_generated_method_frame_property_read_expr(expr, failure_cleanup)?
+                {
+                    return Ok(Some(value));
+                }
+                self.materialize_object_public_property_read_expr(target, property, failure_cleanup)
+                    .map(Some)
+            }
             Expr::NullCoalesceAssign { target, expr, span } => {
                 if let Some(access) = request_assign_target_array_key_consumer_access(target) {
                     return Err(self.unsupported(

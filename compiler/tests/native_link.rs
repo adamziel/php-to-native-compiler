@@ -3829,7 +3829,7 @@ fn emit_exe_links_and_runs_this_property_assignment_in_generated_method_frames()
 }
 
 #[test]
-fn emit_exe_this_property_assignment_reports_mutation_failure_from_method_frame() {
+fn emit_exe_links_and_runs_private_this_property_assignment_from_method_frame() {
     if !has_cc() {
         return;
     }
@@ -3840,31 +3840,27 @@ fn emit_exe_this_property_assignment_reports_mutation_failure_from_method_frame(
         "    private $secret;\n",
         "    public function store($value) {\n",
         "        $this->secret = $value;\n",
-        "        echo \"after\";\n",
+        "        return $this->secret;\n",
         "    }\n",
         "}\n",
         "$box = new Box();\n",
-        "$box->store(\"bad\");\n",
-        "echo \"tail\\n\";\n",
+        "echo $box->store(\"ok\"), \"\\n\";\n",
     );
     let (source_path, output_path) =
-        compile_native_link_fixture("this_property_method_frame_assignment_failure", source);
+        compile_native_link_fixture("private_this_property_method_frame_assignment", source);
 
     let run = Command::new(&output_path).output().unwrap_or_else(|error| {
-        panic!("failed to run method-frame $this property assignment failure executable: {error}")
+        panic!("failed to run private method-frame $this property assignment executable: {error}")
     });
 
     assert!(
-        !run.status.success(),
-        "non-public property mutation failure should terminate the native frame"
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(run.stdout, b"");
-    let stderr = String::from_utf8_lossy(&run.stderr);
-    assert!(
-        stderr.contains("non-public property") && stderr.contains("Box::$secret"),
-        "stderr:\n{stderr}"
-    );
-    assert!(!stderr.contains("after") && !stderr.contains("tail"));
+    assert_eq!(run.stdout, b"ok\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
     let _ = fs::remove_file(output_path);
@@ -6942,8 +6938,12 @@ fn native_executable_c_source_routes_declared_object_properties_through_runtime_
     assert!(
         body.matches("phpc_native_value_object_public_property_operation_with_diagnostic")
             .count()
-            >= 8,
-        "reads, writes, isset, and empty should share the public property ABI:\n{source}"
+            >= 6,
+        "reads, isset, and empty should share the public property operation ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_public_property_reference_with_diagnostic_and_free"),
+        "assignment should keep using the public property reference ABI:\n{source}"
     );
     for tag in [
         "PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_READ",
