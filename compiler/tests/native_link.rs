@@ -3309,55 +3309,65 @@ fn native_executable_c_source_routes_declared_object_property_unsets_through_run
 }
 
 #[test]
-fn native_executable_c_source_routes_object_property_mutation_reference_slots_through_shared_boundary(
+fn native_executable_c_source_routes_nonlocal_object_property_assignments_through_reference_owner_commit(
 ) {
     let program = parse(
-        "<?php\nclass Box { public $payload; }\n$obj = new Box();\n$key = \"payload\";\n$keyRef =& $key;\n$value = \"R\\0Y\";\n$valueRef =& $value;\n$obj->$key = $value;\necho $obj->payload;\nunset($obj->$key);\necho empty($obj->payload);\n$value = \"Z\";\n$obj->$key = $value;\necho $obj->payload;\n",
+        "<?php\nclass Box { public $first; public $second; }\n$box = new Box();\n$box->first = \"literal\";\n$slot = \"second\";\n$box->$slot = \"dynamic\";\necho $box->first, \"|\", $box->second;\n",
     )
     .unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
     let body = main_body(&source);
 
     assert!(
-        source.contains(
-            "extern phpc_NativeValueHandle phpc_native_object_property_mutation_operation_with_reference_slots_with_diagnostic("
-        ),
-        "{source}"
+        source.contains("phpc_native_value_public_property_reference_with_diagnostic_and_free"),
+        "literal and single-known dynamic property assignments should acquire the public-property reference owner:\n{source}"
     );
     assert!(
-        body.matches(
-            " = phpc_native_object_property_mutation_operation_with_reference_slots_with_diagnostic("
-        )
-        .count()
-            >= 3,
-        "{source}"
+        body.matches("phpc_native_value_public_property_reference_with_diagnostic_and_free")
+            .count()
+            >= 2,
+        "literal and single-known dynamic writes should both route through property reference owners:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_value_object_property_mutation_operation_with_diagnostic")
-            && body.contains("phpc_native_value_object_public_property_operation_with_diagnostic"),
-        "{source}"
+        body.matches("phpc_native_reference_set_value").count() >= 2,
+        "property assignment owner commits should write back through the native reference commit path:\n{source}"
     );
     assert!(
-        !source.contains("object-property lowering rejects")
-            && !source.contains("mutation lowering rejects")
-            && !source.contains("reference assignment lowering rejects"),
-        "{source}"
+        !body.contains("phpc_native_value_object_property_mutation_operation_with_diagnostic")
+            && !body.contains(
+                "phpc_native_object_property_mutation_operation_with_reference_slots_with_diagnostic"
+            )
+            && !source.contains("non-local assignment lowering rejects"),
+        "external property assignment must not use the temporary mutation shortcut or boundary rejection:\n{source}"
     );
 }
 
 #[test]
-fn emit_exe_links_and_runs_object_property_mutation_reference_slot_program() {
+fn emit_exe_links_and_runs_nonlocal_object_property_assignment_owner_commit_program() {
     if !has_cc() {
         return;
     }
 
-    let (source_path, output_path) = compile_native_link_fixture(
-        "native_object_property_mutation_reference_slots",
-        "<?php\nclass Box { public $payload; }\n$obj = new Box();\n$key = \"payload\";\n$keyRef =& $key;\n$value = \"R\\0Y\";\n$valueRef =& $value;\n$obj->$key = $value;\necho $obj->payload, \"|\";\nunset($obj->$key);\necho empty($obj->payload), \"|\";\n$value = \"Z\";\n$obj->$key = $value;\necho $obj->payload, \"\\n\";\n",
+    let source = concat!(
+        "<?php\n",
+        "class LeftValue { public function mark() { return \"A\"; } }\n",
+        "class RightValue { public function mark() { return \"B\"; } }\n",
+        "class Holder { public $first; public $second; public $label; }\n",
+        "$holder = new Holder();\n",
+        "echo ($holder->label = \"L\"), \"|\";\n",
+        "$holder->first = new LeftValue();\n",
+        "echo $holder->first->mark(), \"|\";\n",
+        "$holder->first = new RightValue();\n",
+        "echo $holder->first->mark(), \"|\";\n",
+        "$slot = \"second\";\n",
+        "$holder->$slot = new RightValue();\n",
+        "echo $holder->second->mark(), \"\\n\";\n",
     );
+    let (source_path, output_path) =
+        compile_native_link_fixture("nonlocal_object_property_owner_commit", source);
 
     let run = Command::new(&output_path).output().unwrap_or_else(|error| {
-        panic!("failed to run object-property reference-slot executable: {error}")
+        panic!("failed to run nonlocal object-property owner-commit executable: {error}")
     });
 
     assert!(
@@ -3366,7 +3376,94 @@ fn emit_exe_links_and_runs_object_property_mutation_reference_slot_program() {
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(run.stdout, b"R0Y|1|Z\n");
+    assert_eq!(run.stdout, b"L|A|B|B\n");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn native_executable_c_source_keeps_unsupported_nonlocal_property_assignment_shapes_blocked() {
+    for (label, source) in [
+        ("unknown dynamic property", "<?php\n$box->$slot = 1;\n"),
+        ("nested property", "<?php\n$box->child->name = 1;\n"),
+        ("static property", "<?php\nRoot::$name = 1;\n"),
+    ] {
+        let program = parse(source).unwrap();
+        let error = match emit_native_executable_c_source(&program) {
+            Ok(generated) => panic!("{label} unexpectedly emitted C:\n{generated}"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.phase, Phase::Codegen, "{label}: {error:?}");
+        assert!(
+            error.message.contains("non-local assignment lowering rejects")
+                || error.message.contains("static member"),
+            "{label} should remain behind an explicit non-local/static-property assignment boundary, got {error:?}"
+        );
+    }
+}
+
+#[test]
+fn native_executable_c_source_routes_reference_backed_dynamic_property_assignment_through_owner_commit(
+) {
+    let program = parse(
+        "<?php\nclass Box { public $payload; }\n$obj = new Box();\n$key = \"payload\";\n$keyRef =& $key;\n$value = \"R\\0Y\";\n$valueRef =& $value;\n$obj->$key = $value;\necho $obj->payload;\n$value = \"Z\";\n$obj->$key = $value;\necho $obj->payload;\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_value_public_property_reference_with_diagnostic_and_free"),
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_value_public_property_reference_with_diagnostic_and_free")
+            .count()
+            >= 2,
+        "{source}"
+    );
+    assert!(
+        body.matches("phpc_native_reference_set_value").count() >= 2
+            && body.contains("phpc_native_value_object_public_property_operation_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_value_object_property_mutation_operation_with_diagnostic")
+            && !body.contains(
+                "phpc_native_object_property_mutation_operation_with_reference_slots_with_diagnostic"
+            )
+            && !source.contains("object-property lowering rejects")
+            && !source.contains("mutation lowering rejects")
+            && !source.contains("reference assignment lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_reference_backed_dynamic_property_assignment_owner_commit_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "native_object_property_assignment_reference_slots",
+        "<?php\nclass Box { public $payload; }\n$obj = new Box();\n$key = \"payload\";\n$keyRef =& $key;\n$value = \"R\\0Y\";\n$valueRef =& $value;\n$obj->$key = $value;\necho $obj->payload, \"|\";\n$value = \"Z\";\n$obj->$key = $value;\necho $obj->payload, \"\\n\";\n",
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run object-property assignment owner-commit executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "native executable failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"R0Y|Z\n");
     let stderr = String::from_utf8_lossy(&run.stderr);
     assert!(
         !stderr.contains("object-property lowering rejects")

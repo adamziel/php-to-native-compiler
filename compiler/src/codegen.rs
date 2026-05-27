@@ -8788,7 +8788,9 @@ fn native_object_array_access_unset_operation_result_from_stmt(
 fn is_object_public_property_assign_target(target: &AssignTarget) -> bool {
     matches!(
         target,
-        AssignTarget::Property { .. } | AssignTarget::NonDirectProperty { .. }
+        AssignTarget::Property { .. }
+            | AssignTarget::DynamicProperty { .. }
+            | AssignTarget::NonDirectProperty { .. }
     )
 }
 
@@ -26453,6 +26455,14 @@ impl CGenerator {
         }
     }
 
+    fn single_static_known_string_value_for_expr(&self, expr: &Expr) -> Option<String> {
+        let values = self.static_known_string_values_for_expr(expr)?;
+        match values.values() {
+            [value] => Some(value.clone()),
+            _ => None,
+        }
+    }
+
     fn native_callable_declared_object_method_identities(
         &self,
         target: &Expr,
@@ -26837,6 +26847,147 @@ impl CGenerator {
                 *span,
             ),
             _ => None,
+        }
+    }
+
+    fn set_native_value_owner_commit_facts(
+        commit: &mut CNativeValueOwnerCommit,
+        replacement_facts: Option<CNativeValueFacts>,
+    ) {
+        match commit {
+            CNativeValueOwnerCommit::DirectVariable { facts, .. }
+            | CNativeValueOwnerCommit::ReferenceSlot { facts, .. }
+            | CNativeValueOwnerCommit::ObjectPropertyReferenceSlot { facts, .. } => {
+                *facts = replacement_facts;
+            }
+        }
+    }
+
+    fn materialize_object_property_owner_assignment_result(
+        &mut self,
+        object: &Expr,
+        property: CObjectPropertyOperand<'_>,
+        fact_target: CNativeObjectPropertyFactTarget,
+        expr: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        let replacement_facts = self.native_value_facts_for_expr(expr);
+        let owner_source = CNativeValueOwnerSource::ObjectProperty {
+            object: object.clone(),
+            property: property.into(),
+            span,
+            facts: None,
+            fact_target,
+        };
+        let owner = self.materialize_native_value_owner(owner_source, failure_cleanup)?;
+        let owner_abort_cleanup = c_cleanup_sequence(&owner.cleanup_after_abort());
+        let replacement = self.materialize_native_value_result_operand(
+            expr,
+            &format!("{owner_abort_cleanup}{failure_cleanup}"),
+        )?;
+        let replacement_cleanup = c_cleanup_sequence(&replacement.cleanup_after_use);
+        let result = self.checked_clone_native_value_handle(
+            &replacement.handle,
+            &format!("{replacement_cleanup}{owner_abort_cleanup}{failure_cleanup}"),
+        );
+        let assignment_result = CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        };
+        let assignment_result_cleanup = c_cleanup_sequence(&assignment_result.cleanup_after_use);
+        let owner_subject_cleanup = owner.subject.cleanup_after_use;
+        let mut owner_commit = owner.commit;
+        Self::set_native_value_owner_commit_facts(&mut owner_commit, replacement_facts);
+        let owner_commit_cleanup = owner_commit.cleanup_after_use();
+        let owner_commit_cleanup_sequence = c_cleanup_sequence(&owner_commit_cleanup);
+
+        self.body.extend(owner_subject_cleanup);
+        self.emit_native_value_owner_commit(
+            owner_commit,
+            &replacement.handle,
+            &format!(
+                "{assignment_result_cleanup}{replacement_cleanup}{owner_commit_cleanup_sequence}{failure_cleanup}"
+            ),
+        )?;
+        self.body.extend(owner_commit_cleanup);
+
+        Ok(assignment_result)
+    }
+
+    fn materialize_non_local_object_property_assignment_result_for_target(
+        &mut self,
+        target: &AssignTarget,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        match target {
+            AssignTarget::Property {
+                object,
+                property,
+                span,
+            } => {
+                let object_expr = Expr::Variable(object.clone(), *span);
+                let fact_target =
+                    CNativeObjectPropertyFactTarget::Key(CNativeObjectPropertyFactKey {
+                        object: object.clone(),
+                        property: property.clone(),
+                    });
+                self.materialize_object_property_owner_assignment_result(
+                    &object_expr,
+                    CObjectPropertyOperand::Literal(property),
+                    fact_target,
+                    expr,
+                    *span,
+                    failure_cleanup,
+                )
+                .map(Some)
+            }
+            AssignTarget::DynamicProperty {
+                object,
+                property,
+                span,
+            } => {
+                let Some(property_name) = self.single_static_known_string_value_for_expr(property)
+                else {
+                    return Ok(None);
+                };
+                let object_expr = Expr::Variable(object.clone(), *span);
+                let fact_target =
+                    CNativeObjectPropertyFactTarget::Key(CNativeObjectPropertyFactKey {
+                        object: object.clone(),
+                        property: property_name,
+                    });
+                self.materialize_object_property_owner_assignment_result(
+                    &object_expr,
+                    CObjectPropertyOperand::Dynamic(property),
+                    fact_target,
+                    expr,
+                    *span,
+                    failure_cleanup,
+                )
+                .map(Some)
+            }
+            AssignTarget::Variable { .. }
+            | AssignTarget::List { .. }
+            | AssignTarget::ArrayIndex { .. }
+            | AssignTarget::NestedArrayIndex { .. }
+            | AssignTarget::NestedArrayAppend { .. }
+            | AssignTarget::NonDirectProperty { .. }
+            | AssignTarget::NonDirectDynamicProperty { .. }
+            | AssignTarget::ObjectPropertyArrayIndex { .. }
+            | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
+            | AssignTarget::ObjectPropertyArrayAppend { .. }
+            | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
+            | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
+            | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
+            | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
+            | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. }
+            | AssignTarget::StaticProperty { .. }
+            | AssignTarget::ObjectStaticProperty { .. }
+            | AssignTarget::SelfStaticProperty { .. }
+            | AssignTarget::ParentStaticProperty { .. }
+            | AssignTarget::LateStaticProperty { .. } => Ok(None),
         }
     }
 
@@ -31312,6 +31463,14 @@ impl CGenerator {
                 }
                 if let Some(value) = self
                     .materialize_generated_method_frame_this_property_assignment_result_for_target(
+                        target, expr, "",
+                    )?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
+                if let Some(value) = self
+                    .materialize_non_local_object_property_assignment_result_for_target(
                         target, expr, "",
                     )?
                 {
@@ -41254,6 +41413,12 @@ impl CGenerator {
             .materialize_generated_method_frame_this_property_assignment_result_for_target(
                 target, expr, "",
             )?
+        {
+            self.body.extend(value.cleanup_after_use);
+            return Ok(());
+        }
+        if let Some(value) = self
+            .materialize_non_local_object_property_assignment_result_for_target(target, expr, "")?
         {
             self.body.extend(value.cleanup_after_use);
             return Ok(());
@@ -54652,14 +54817,13 @@ echo " 10" < "zeta";
     #[test]
     fn c_assembly_non_local_assignment_families_share_assignment_owner_boundary() {
         for source in [
-            "<?php\n$box->name = 1;\n",
-            "<?php\n$name = \"slot\";\n$box->$name = 1;\n",
+            "<?php\n$box->$name = 1;\n",
             "<?php\n$box->child->name = 1;\n",
             "<?php\nRoot::$name = 1;\n",
             "<?php\nself::$name = 1;\n",
             "<?php\nparent::$name = 1;\n",
             "<?php\nstatic::$name = 1;\n",
-            "<?php\necho ($box->name = 1);\n",
+            "<?php\necho ($box->child->name = 1);\n",
             "<?php\necho (Root::$name = 1);\n",
         ] {
             let program = crate::parse(source).unwrap();
