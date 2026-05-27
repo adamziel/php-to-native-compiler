@@ -19946,6 +19946,51 @@ impl CGenerator {
         }
     }
 
+    fn native_magic_signature_type_accepts(type_decl: Option<&TypeDecl>, expected: &str) -> bool {
+        let Some(type_decl) = type_decl else {
+            return true;
+        };
+        let mut text = type_decl.text.trim();
+        if let Some(nullable) = text.strip_prefix('?') {
+            text = nullable.trim();
+        }
+        text.split('|').any(|part| {
+            let normalized = part
+                .trim()
+                .strip_prefix('\\')
+                .unwrap_or(part.trim())
+                .to_ascii_lowercase();
+            normalized == expected || normalized == "mixed"
+        })
+    }
+
+    fn native_callable_magic_signature_status(method: &CDeclaredClassMethod) -> &'static str {
+        let name = method.decl.name.as_str();
+        if !name.eq_ignore_ascii_case("__call") && !name.eq_ignore_ascii_case("__callStatic") {
+            return "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_NOT_MAGIC";
+        }
+        if method.decl.params.len() != 2 || method.decl.params.iter().any(|param| param.is_variadic)
+        {
+            return "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_ARITY";
+        }
+        if method.decl.params.iter().any(|param| param.by_reference) {
+            return "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_BY_REFERENCE";
+        }
+        if !Self::native_magic_signature_type_accepts(
+            method.decl.params[0].type_decl.as_ref(),
+            "string",
+        ) {
+            return "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_FIRST_PARAMETER_TYPE";
+        }
+        if !Self::native_magic_signature_type_accepts(
+            method.decl.params[1].type_decl.as_ref(),
+            "array",
+        ) {
+            return "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_SECOND_PARAMETER_TYPE";
+        }
+        "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_VALID"
+    }
+
     fn register_top_level_user_functions(&mut self, statements: &[Stmt]) -> CompileResult<()> {
         for stmt in statements {
             let Stmt::Function(function) = stmt else {
@@ -21425,6 +21470,16 @@ impl CGenerator {
                 output.push_str("#define PHPC_NATIVE_CALLABLE_VISIBILITY_PUBLIC 1\n");
                 output.push_str("#define PHPC_NATIVE_CALLABLE_VISIBILITY_PROTECTED 2\n");
                 output.push_str("#define PHPC_NATIVE_CALLABLE_VISIBILITY_PRIVATE 3\n");
+                output.push_str("#define PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_NOT_MAGIC 0\n");
+                output.push_str("#define PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_VALID 1\n");
+                output.push_str("#define PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_ARITY 2\n");
+                output.push_str(
+                    "#define PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_BY_REFERENCE 3\n",
+                );
+                output.push_str(
+                    "#define PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_FIRST_PARAMETER_TYPE 4\n",
+                );
+                output.push_str("#define PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_SECOND_PARAMETER_TYPE 5\n");
                 output.push_str("#define PHPC_NATIVE_CALLABLE_ACCESS_EXTERNAL 1\n");
                 output.push_str("#define PHPC_NATIVE_CALLABLE_ACCESS_STATIC 2\n");
                 output.push_str("#define PHPC_NATIVE_CALLABLE_ACCESS_OBJECT_RECEIVER 3\n");
@@ -21744,6 +21799,7 @@ impl CGenerator {
                 output.push_str("extern bool phpc_native_callable_table_is_null(phpc_NativeCallableTableHandle handle);\n");
                 output.push_str("extern void phpc_native_callable_table_free(phpc_NativeCallableTableHandle handle);\n");
                 output.push_str("extern bool phpc_native_callable_table_register_visibility_staticness_frame_callback_and_free(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, uint8_t visibility, bool is_static, phpc_NativeCallableFrameCallback callback);\n");
+                output.push_str("extern bool phpc_native_callable_table_register_visibility_staticness_magic_signature_frame_callback_and_free(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, uint8_t visibility, bool is_static, uint8_t magic_signature_status, phpc_NativeCallableFrameCallback callback);\n");
                 output.push_str("extern bool phpc_native_callable_table_register_class_parent_and_free(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle class_name, phpc_NativeStringHandle parent_name);\n");
                 output.push_str("extern bool phpc_native_callable_table_register_allocatable_class_and_free(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle class_name);\n");
                 output.push_str("extern bool phpc_native_callable_table_can_allocate_class(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle class_name);\n");
@@ -24135,6 +24191,7 @@ impl CGenerator {
                 let registered = self.next_native_name("callable_method_registered");
                 let visibility = Self::native_callable_visibility_tag(method.visibility);
                 let is_static = if method.is_static { "true" } else { "false" };
+                let magic_signature_status = Self::native_callable_magic_signature_status(&method);
                 let wrapper_name =
                     Self::c_declared_class_method_callable_wrapper_name(&method.c_name);
                 self.body.push(format!(
@@ -24144,7 +24201,7 @@ impl CGenerator {
                     "  phpc_NativeStringHandle {name_handle} = phpc_native_string_from_bytes({name_bytes}, {name_len});"
                 ));
                 self.body.push(format!(
-                    "  bool {registered} = phpc_native_callable_table_register_visibility_staticness_frame_callback_and_free({table}, {}, {scope_handle}, {name_handle}, {visibility}, {is_static}, {wrapper_name});",
+                    "  bool {registered} = phpc_native_callable_table_register_visibility_staticness_magic_signature_frame_callback_and_free({table}, {}, {scope_handle}, {name_handle}, {visibility}, {is_static}, {magic_signature_status}, {wrapper_name});",
                     if method.decl.name.eq_ignore_ascii_case("__construct") {
                         "PHPC_NATIVE_CALLABLE_KIND_CONSTRUCTOR"
                     } else {
@@ -62403,6 +62460,73 @@ echo " 10" < "zeta";
     }
 
     #[test]
+    fn native_callable_magic_signature_status_tracks_php_compatible_metadata() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "class MagicSignatureValid {\n",
+            "    public function __call(?string $name, mixed $args) { return \"ok\"; }\n",
+            "    public static function __callStatic(string|int $name, array|null $args) { return \"ok\"; }\n",
+            "    public function normal($value) { return $value; }\n",
+            "}\n",
+            "class MagicSignatureInvalidArity { public function __call($name) {} }\n",
+            "class MagicSignatureInvalidByReference { public function __call(&$name, $args) {} }\n",
+            "class MagicSignatureInvalidFirstType { public static function __callStatic(int $name, array $args) {} }\n",
+            "class MagicSignatureInvalidSecondType { public static function __callStatic(string $name, int $args) {} }\n",
+        ))
+        .expect("magic signature metadata fixture parses");
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .expect("magic signature metadata classes register");
+
+        let method_status = |class_name: &str, method_name: &str| {
+            let class = generator
+                .declared_classes
+                .values()
+                .find(|class| class.name == class_name)
+                .expect("class metadata");
+            let method = class
+                .methods
+                .iter()
+                .find(|method| method.decl.name.eq_ignore_ascii_case(method_name))
+                .expect("method metadata");
+            CGenerator::native_callable_magic_signature_status(method)
+        };
+
+        assert_eq!(
+            method_status("MagicSignatureValid", "__call"),
+            "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_VALID"
+        );
+        assert_eq!(
+            method_status("MagicSignatureValid", "__callStatic"),
+            "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_VALID"
+        );
+        assert_eq!(
+            method_status("MagicSignatureValid", "normal"),
+            "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_NOT_MAGIC"
+        );
+        assert_eq!(
+            method_status("MagicSignatureInvalidArity", "__call"),
+            "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_ARITY"
+        );
+        assert_eq!(
+            method_status("MagicSignatureInvalidByReference", "__call"),
+            "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_BY_REFERENCE"
+        );
+        assert_eq!(
+            method_status("MagicSignatureInvalidFirstType", "__callStatic"),
+            "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_FIRST_PARAMETER_TYPE"
+        );
+        assert_eq!(
+            method_status("MagicSignatureInvalidSecondType", "__callStatic"),
+            "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_SECOND_PARAMETER_TYPE"
+        );
+    }
+
+    #[test]
     fn native_builtin_signature_metadata_maps_runtime_source_calls_and_blockers() {
         let strlen = native_builtin_signature_for_name("STRLEN")
             .expect("strlen should have native builtin signature metadata");
@@ -63356,6 +63480,9 @@ echo $call("Ada");
             "#define PHPC_NATIVE_CALLABLE_ACCESS_STATIC 2",
             "#define PHPC_NATIVE_CALLABLE_ACCESS_OBJECT_RECEIVER 3",
             "#define PHPC_NATIVE_CALLABLE_ACCESS_CLASS_CONTEXT 4",
+            "#define PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_VALID 1",
+            "#define PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_FIRST_PARAMETER_TYPE 4",
+            "extern bool phpc_native_callable_table_register_visibility_staticness_magic_signature_frame_callback_and_free(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, uint8_t visibility, bool is_static, uint8_t magic_signature_status, phpc_NativeCallableFrameCallback callback);",
             "extern bool phpc_native_callable_table_register_allocatable_class_and_free(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle class_name);",
             "extern bool phpc_native_callable_table_can_allocate_class(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle class_name);",
             "extern phpc_NativeCallableHandle phpc_native_method_lookup_with_access_context_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle receiver, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);",

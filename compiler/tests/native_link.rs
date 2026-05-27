@@ -668,6 +668,24 @@ const NATIVE_NAMED_STATIC_MAGIC_SOURCE_CALL_SOURCE: &str = concat!(
     "echo NamedStaticMagicChild::relay(), \"\\n\";\n",
 );
 
+const NATIVE_MALFORMED_MAGIC_SIGNATURE_SOURCE: &str = concat!(
+    "<?php\n",
+    "class MalformedDynamicMagicSignatureBox {\n",
+    "    public function known($value) { return \"known:\" . $value; }\n",
+    "    public function __call($name) { return \"bad:\" . $name; }\n",
+    "}\n",
+    "class MalformedStaticMagicSignatureBox {\n",
+    "    public static function known($value) { return \"known-static:\" . $value; }\n",
+    "    public static function __callStatic(int $name, array $args) { return \"bad-static\"; }\n",
+    "}\n",
+    "$box = new MalformedDynamicMagicSignatureBox();\n",
+    "echo $box->known(\"A\"), \"|\";\n",
+    "echo MalformedStaticMagicSignatureBox::known(\"B\"), \"|\";\n",
+    "$method = \"missing\";\n",
+    "echo $box->{$method}(\"C\"), \"|\";\n",
+    "echo MalformedStaticMagicSignatureBox::missing(\"D\"), \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_STATIC_METHOD_SOURCE: &str = concat!(
     "<?php\n",
     "class Label {\n",
@@ -3113,6 +3131,60 @@ fn emit_exe_links_and_runs_named_magic_static_method_source_call_program() {
 
     let _ = fs::remove_file(source_path);
     let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_reports_malformed_magic_signature_before_magic_fallback() {
+    if !has_cc() {
+        return;
+    }
+
+    for (name, source, expected_stdout, expected_stderr) in [
+        (
+            "malformed_dynamic_magic_signature_source_call",
+            NATIVE_MALFORMED_MAGIC_SIGNATURE_SOURCE,
+            "known:A|known-static:B|",
+            "Method MalformedDynamicMagicSignatureBox::__call() must take exactly 2 arguments",
+        ),
+        (
+            "malformed_static_magic_signature_source_call",
+            concat!(
+                "<?php\n",
+                "class MalformedStaticMagicOnlyBox {\n",
+                "    public static function known($value) { return \"known-static:\" . $value; }\n",
+                "    public static function __callStatic(int $name, array $args) { return \"bad-static\"; }\n",
+                "}\n",
+                "echo MalformedStaticMagicOnlyBox::known(\"B\"), \"|\";\n",
+                "echo MalformedStaticMagicOnlyBox::missing(\"D\"), \"\\n\";\n",
+            ),
+            "known-static:B|",
+            "MalformedStaticMagicOnlyBox::__callStatic(): Parameter #1 must be of type string",
+        ),
+    ] {
+        let (source_path, output_path) = compile_native_link_fixture(name, source);
+
+        let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+            panic!("failed to run malformed-magic-signature executable: {error}")
+        });
+
+        assert!(
+            !run.status.success(),
+            "{name} should fail through the shared runtime diagnostic"
+        );
+        assert_eq!(String::from_utf8_lossy(&run.stdout), expected_stdout);
+        let stderr = String::from_utf8_lossy(&run.stderr);
+        assert!(
+            stderr.contains("invalid magic method signature"),
+            "{name} stderr:\n{stderr}"
+        );
+        assert!(
+            stderr.contains(expected_stderr),
+            "{name} stderr:\n{stderr}"
+        );
+
+        let _ = fs::remove_file(source_path);
+        let _ = fs::remove_file(output_path);
+    }
 }
 
 #[test]
@@ -5910,6 +5982,54 @@ fn native_executable_c_source_preserves_named_magic_static_fallback_args_through
             && !source.contains("named argument lowering is only implemented")
             && !source.contains("method-call lowering rejects"),
         "named static magic fallback must avoid generated frame ladders and exact-shape blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_publishes_magic_signature_metadata_through_callable_table() {
+    let valid_dynamic = emit_native_executable_c_source(
+        &parse(NATIVE_DECLARED_DYNAMIC_METHOD_MAGIC_BLOCKED_SOURCE).unwrap(),
+    )
+    .unwrap();
+    let valid_static = emit_native_executable_c_source(
+        &parse(NATIVE_DECLARED_STATIC_MAGIC_SOURCE_CALL_SOURCE).unwrap(),
+    )
+    .unwrap();
+    let named_static = emit_native_executable_c_source(
+        &parse(NATIVE_NAMED_STATIC_MAGIC_SOURCE_CALL_SOURCE).unwrap(),
+    )
+    .unwrap();
+    let invalid =
+        emit_native_executable_c_source(&parse(NATIVE_MALFORMED_MAGIC_SIGNATURE_SOURCE).unwrap())
+            .unwrap();
+
+    assert!(
+        valid_dynamic.contains(
+            "phpc_native_callable_table_register_visibility_staticness_magic_signature_frame_callback_and_free"
+        ) && valid_dynamic.contains("PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_VALID")
+            && valid_dynamic.contains("PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_NOT_MAGIC"),
+        "valid __call metadata should be published through the generalized callable table:\n{valid_dynamic}"
+    );
+    assert!(
+        valid_static.contains("PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_VALID")
+            && valid_static.contains(
+                "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments"
+            ),
+        "valid __callStatic metadata should compose with shared static dispatch:\n{valid_static}"
+    );
+    assert!(
+        named_static.contains("PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_VALID")
+            && named_static.contains("phpc_native_call_arguments_push_named_value_and_free")
+            && named_static.contains("named_call_argument_"),
+        "valid named __callStatic metadata should compose with source-order named magic args:\n{named_static}"
+    );
+    assert!(
+        invalid.contains("PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_ARITY")
+            && invalid.contains("PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_FIRST_PARAMETER_TYPE")
+            && invalid.contains("PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_NOT_MAGIC")
+            && !invalid.contains("dynamic_method_dispatch_status")
+            && !invalid.contains("static_method_status"),
+        "malformed magic signatures should publish invalid metadata without reviving exact-shape dispatch:\n{invalid}"
     );
 }
 

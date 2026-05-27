@@ -45,6 +45,17 @@ pub enum NativeCallableVisibility {
 }
 
 #[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum NativeCallableMagicSignatureStatus {
+    NotMagic = 0,
+    Valid = 1,
+    InvalidArity = 2,
+    InvalidByReference = 3,
+    InvalidFirstParameterType = 4,
+    InvalidSecondParameterType = 5,
+}
+
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeCallableAccessContextTag {
     External = 1,
@@ -1509,6 +1520,7 @@ struct NativeCallableDescriptor {
     name: String,
     visibility: NativeCallableVisibility,
     is_static: bool,
+    magic_signature_status: NativeCallableMagicSignatureStatus,
     callback: NativeCallableFrameCallback,
 }
 
@@ -1562,6 +1574,36 @@ impl NativeCallableKey {
             kind,
             scope,
             name: name.to_ascii_lowercase(),
+        }
+    }
+}
+
+impl NativeCallableMagicSignatureStatus {
+    fn default_for(kind: NativeCallableKind, name: &str) -> Self {
+        if matches!(kind, NativeCallableKind::Method)
+            && (name.eq_ignore_ascii_case("__call") || name.eq_ignore_ascii_case("__callStatic"))
+        {
+            Self::Valid
+        } else {
+            Self::NotMagic
+        }
+    }
+
+    fn diagnostic_for(self, scope: &str, method_name: &str) -> Option<String> {
+        match self {
+            Self::NotMagic | Self::Valid => None,
+            Self::InvalidArity => Some(format!(
+                "Method {scope}::{method_name}() must take exactly 2 arguments"
+            )),
+            Self::InvalidByReference => Some(format!(
+                "Method {scope}::{method_name}() cannot take arguments by reference"
+            )),
+            Self::InvalidFirstParameterType => Some(format!(
+                "{scope}::{method_name}(): Parameter #1 must be of type string when declared"
+            )),
+            Self::InvalidSecondParameterType => Some(format!(
+                "{scope}::{method_name}(): Parameter #2 must be of type array when declared"
+            )),
         }
     }
 }
@@ -1725,6 +1767,19 @@ impl NativeCallableTable {
                 "native method invocation failed: magic method {scope}::__call must be public after {original_error}"
             ));
         }
+        let scope = lookup
+            .called_scope
+            .as_deref()
+            .or(descriptor.scope.as_deref())
+            .unwrap_or("<unknown>");
+        if let Some(message) = descriptor
+            .magic_signature_status
+            .diagnostic_for(scope, "__call")
+        {
+            return Err(format!(
+                "native method invocation failed: invalid magic method signature after {original_error}: {message}"
+            ));
+        }
         Ok(Some(NativeCallable {
             descriptor: descriptor.clone(),
             called_scope: lookup.called_scope,
@@ -1798,6 +1853,19 @@ impl NativeCallableTable {
                 .unwrap_or("<unknown>");
             return Err(format!(
                 "native static method invocation failed: magic method {scope}::__callStatic must be public after {original_error}"
+            ));
+        }
+        let scope = lookup
+            .called_scope
+            .as_deref()
+            .or(descriptor.scope.as_deref())
+            .unwrap_or("<unknown>");
+        if let Some(message) = descriptor
+            .magic_signature_status
+            .diagnostic_for(scope, "__callStatic")
+        {
+            return Err(format!(
+                "native static method invocation failed: invalid magic method signature after {original_error}: {message}"
             ));
         }
         Ok(Some(NativeCallable {
@@ -7709,6 +7777,7 @@ pub unsafe extern "C" fn phpc_native_callable_table_register_visibility_staticne
     if !matches!(kind, NativeCallableKind::Function) && scope.is_none() {
         return false;
     }
+    let magic_signature_status = NativeCallableMagicSignatureStatus::default_for(kind, &name);
 
     table.register(NativeCallableDescriptor {
         kind,
@@ -7716,6 +7785,46 @@ pub unsafe extern "C" fn phpc_native_callable_table_register_visibility_staticne
         name,
         visibility,
         is_static,
+        magic_signature_status,
+        callback,
+    });
+    true
+}
+
+/// # Safety
+///
+/// Same as `phpc_native_callable_table_register_visibility_staticness_frame_callback`,
+/// but accepts compiler-published magic-method signature metadata for
+/// `__call`/`__callStatic`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_table_register_visibility_staticness_magic_signature_frame_callback(
+    mut table: NativeCallableTableHandle,
+    kind: NativeCallableKind,
+    scope: NativeStringHandle,
+    name: NativeStringHandle,
+    visibility: NativeCallableVisibility,
+    is_static: bool,
+    magic_signature_status: NativeCallableMagicSignatureStatus,
+    callback: NativeCallableFrameCallback,
+) -> bool {
+    let Some(table) = (unsafe { table.as_mut() }) else {
+        return false;
+    };
+    let Some(name) = (unsafe { native_string_handle_to_string(name) }) else {
+        return false;
+    };
+    let scope = unsafe { native_string_handle_to_string(scope) };
+    if !matches!(kind, NativeCallableKind::Function) && scope.is_none() {
+        return false;
+    }
+
+    table.register(NativeCallableDescriptor {
+        kind,
+        scope,
+        name,
+        visibility,
+        is_static,
+        magic_signature_status,
         callback,
     });
     true
@@ -7738,6 +7847,39 @@ pub unsafe extern "C" fn phpc_native_callable_table_register_visibility_staticne
     let registered = unsafe {
         phpc_native_callable_table_register_visibility_staticness_frame_callback(
             table, kind, scope, name, visibility, is_static, callback,
+        )
+    };
+    unsafe { phpc_native_string_free(scope) };
+    unsafe { phpc_native_string_free(name) };
+    registered
+}
+
+/// # Safety
+///
+/// Same as
+/// `phpc_native_callable_table_register_visibility_staticness_magic_signature_frame_callback`,
+/// and always consumes `scope` and `name`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_table_register_visibility_staticness_magic_signature_frame_callback_and_free(
+    table: NativeCallableTableHandle,
+    kind: NativeCallableKind,
+    scope: NativeStringHandle,
+    name: NativeStringHandle,
+    visibility: NativeCallableVisibility,
+    is_static: bool,
+    magic_signature_status: NativeCallableMagicSignatureStatus,
+    callback: NativeCallableFrameCallback,
+) -> bool {
+    let registered = unsafe {
+        phpc_native_callable_table_register_visibility_staticness_magic_signature_frame_callback(
+            table,
+            kind,
+            scope,
+            name,
+            visibility,
+            is_static,
+            magic_signature_status,
+            callback,
         )
     };
     unsafe { phpc_native_string_free(scope) };
@@ -35246,6 +35388,30 @@ mod tests {
         });
     }
 
+    unsafe fn register_magic_signature_callable_for_test(
+        table: NativeCallableTableHandle,
+        scope: &str,
+        name: &str,
+        is_static: bool,
+        magic_signature_status: NativeCallableMagicSignatureStatus,
+        callback: NativeCallableFrameCallback,
+    ) {
+        let scope = native_string_for_test(scope);
+        let name = native_string_for_test(name);
+        assert!(unsafe {
+            phpc_native_callable_table_register_visibility_staticness_magic_signature_frame_callback_and_free(
+                table,
+                NativeCallableKind::Method,
+                scope,
+                name,
+                NativeCallableVisibility::Public,
+                is_static,
+                magic_signature_status,
+                callback,
+            )
+        });
+    }
+
     unsafe fn lookup_callable_for_test(
         table: NativeCallableTableHandle,
         kind: NativeCallableKind,
@@ -37223,6 +37389,122 @@ mod tests {
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
 
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn native_magic_method_lookup_rejects_malformed_signature_metadata_before_fallback() {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_magic_signature_callable_for_test(
+                table,
+                "MalformedMagic",
+                "__call",
+                false,
+                NativeCallableMagicSignatureStatus::InvalidArity,
+                native_magic_call_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("MalformedMagic"),
+                "known",
+                NativeCallableVisibility::Public,
+                native_scoped_method_callback,
+            );
+            register_magic_signature_callable_for_test(
+                table,
+                "MalformedStaticMagic",
+                "__callStatic",
+                true,
+                NativeCallableMagicSignatureStatus::InvalidFirstParameterType,
+                native_magic_call_static_callback,
+            );
+        }
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("MalformedMagic").unwrap();
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        reset_call_arguments_free_count_for_test();
+        let known_receiver = NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+            classes.get(class_id).unwrap(),
+        )));
+        let known = unsafe {
+            phpc_native_method_invoke_result_with_access_context_diagnostic_and_free_receiver_method_arguments(
+                table,
+                known_receiver,
+                NativeValueHandle::from_value(Value::String("known".to_string())),
+                NativeCallableAccessContextTag::ObjectReceiver,
+                NativeStringHandle::null(),
+                call_arguments_from_ints_for_test(&[9]),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        let known_value = unsafe { phpc_native_call_result_take_value_and_free(known) };
+        assert_eq!(
+            unsafe { known_value.as_ref() },
+            Some(&Value::String("MalformedMagic:9".to_string()))
+        );
+        unsafe { phpc_native_value_free(known_value) };
+
+        reset_call_arguments_free_count_for_test();
+        let missing_receiver = NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+            classes.get(class_id).unwrap(),
+        )));
+        let rejected = unsafe {
+            phpc_native_method_invoke_result_with_access_context_diagnostic_and_free_receiver_method_arguments(
+                table,
+                missing_receiver,
+                NativeValueHandle::from_value(Value::String("missing".to_string())),
+                NativeCallableAccessContextTag::ObjectReceiver,
+                NativeStringHandle::null(),
+                call_arguments_from_ints_for_test(&[3]),
+                &mut diagnostic,
+            )
+        };
+        assert!(rejected.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        let message = native_diagnostic_message_for_test(diagnostic);
+        assert!(
+            message.contains("invalid magic method signature"),
+            "{message}"
+        );
+        assert!(
+            message.contains("Method MalformedMagic::__call() must take exactly 2 arguments"),
+            "{message}"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        diagnostic = NativeDiagnosticHandle::null();
+
+        reset_call_arguments_free_count_for_test();
+        let static_rejected = unsafe {
+            phpc_native_static_method_invoke_result_with_access_context_diagnostic_and_free_scope_method_arguments(
+                table,
+                native_string_for_test("MalformedStaticMagic"),
+                NativeValueHandle::from_value(Value::String("missing".to_string())),
+                NativeCallableAccessContextTag::Static,
+                NativeStringHandle::null(),
+                call_arguments_from_ints_for_test(&[5]),
+                &mut diagnostic,
+            )
+        };
+        assert!(static_rejected.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        let message = native_diagnostic_message_for_test(diagnostic);
+        assert!(
+            message.contains("invalid magic method signature"),
+            "{message}"
+        );
+        assert!(
+            message.contains(
+                "MalformedStaticMagic::__callStatic(): Parameter #1 must be of type string"
+            ),
+            "{message}"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_callable_table_free(table) };
     }
 
