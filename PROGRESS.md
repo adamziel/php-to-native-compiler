@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 22:42 CEST
+Updated: 2026-05-27 23:25 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,13 +19,25 @@ Overall integrated-roadmap progress: **93%** `[##################--]`
 
 Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `2f6cbc0d` filters private ancestor
-properties from generated-native `property_exists()` metadata surfaces without
-changing `method_exists()` private ancestor behavior. Public and protected
-ancestor properties remain visible on child classes, private properties remain
-visible on their declaring class, and inherited private methods still report as
-existing. Broader visibility-context rules, trait conflict/precedence parity,
-destructor-risk cleanup, and non-C backend parity remain blocked.
+Latest accounted source capability: `0fe08856` tags compiled include-unit
+`exit()` as an explicit control transfer instead of treating zero exit status as
+an ordinary include value. Generated C now propagates include-unit termination
+back to the caller even when `exit()` has code 0, so caller code after the
+include does not run. Broader include exception/diagnostic propagation,
+visibility-context rules, trait conflict/precedence parity, destructor-risk
+cleanup, and non-C backend parity remain blocked.
+
+Recent source commit `0fe08856` advances compiled include control transfer
+without adding include-path tables, source-shape recognizers, or fixture-only
+lowering. Include-unit fatal/exit returns now carry
+`PHPC_NATIVE_INCLUDE_RESULT_TERMINATE`, and generated callers test that tag
+instead of using nonzero exit status as the control-transfer signal. Focused
+gates covered generated-C source proof, linked executable proof that
+`exit()` from an included compiled unit suppresses caller code after the
+include, the full native include/require boundary suite, compile checking,
+formatting, and diff checks. Primary gate log:
+`state/logs/phpc-primary-include-control-flow-aaaa0cef-20260527.gates.log`
+sha256 `12b40fa243e6754b3c1e371d13f1b2505ae6b1455ca848d85c6c7e4b57700da5`.
 
 Recent source commit `2f6cbc0d` advances declared-class metadata visibility
 without adding class/member-name ladders, source-shape recognizers, or
