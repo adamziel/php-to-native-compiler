@@ -373,29 +373,31 @@ impl Parser {
     }
 
     fn parse_type_name(&mut self, text: &mut String, message: &'static str) -> CompileResult<()> {
+        let mut raw = String::new();
         if self.match_token(|kind| matches!(kind, TokenKind::Backslash)) {
-            text.push('\\');
+            raw.push('\\');
         }
 
         let token = self.advance().clone();
         match token.kind {
-            TokenKind::Identifier(name) => text.push_str(&name),
-            TokenKind::Static => text.push_str("static"),
-            TokenKind::Null => text.push_str("null"),
-            TokenKind::True => text.push_str("true"),
-            TokenKind::False => text.push_str("false"),
+            TokenKind::Identifier(name) => raw.push_str(&name),
+            TokenKind::Static => raw.push_str("static"),
+            TokenKind::Null => raw.push_str("null"),
+            TokenKind::True => raw.push_str("true"),
+            TokenKind::False => raw.push_str("false"),
             _ => return Err(self.error_at(token.span, message)),
         }
 
         while self.match_token(|kind| matches!(kind, TokenKind::Backslash)) {
-            text.push('\\');
+            raw.push('\\');
             let token = self.advance().clone();
             match token.kind {
-                TokenKind::Identifier(name) => text.push_str(&name),
+                TokenKind::Identifier(name) => raw.push_str(&name),
                 _ => return Err(self.error_at(token.span, message)),
             }
         }
 
+        text.push_str(&self.resolve_type_decl_name(&raw));
         Ok(())
     }
 
@@ -7694,6 +7696,41 @@ impl Parser {
         } else {
             format!("{}\\{}", self.current_namespace, raw)
         }
+    }
+
+    fn resolve_type_decl_name(&self, raw: &str) -> String {
+        if Self::is_special_type_decl_name(raw) {
+            raw.to_string()
+        } else {
+            self.resolve_class_like_name(raw)
+        }
+    }
+
+    fn is_special_type_decl_name(raw: &str) -> bool {
+        if raw.starts_with('\\') {
+            return false;
+        }
+
+        matches!(
+            raw.to_ascii_lowercase().as_str(),
+            "array"
+                | "bool"
+                | "callable"
+                | "false"
+                | "float"
+                | "int"
+                | "iterable"
+                | "mixed"
+                | "never"
+                | "null"
+                | "object"
+                | "parent"
+                | "self"
+                | "static"
+                | "string"
+                | "true"
+                | "void"
+        )
     }
 
     fn consume_identifier_with_span(&mut self, message: &str) -> CompileResult<(String, Span)> {

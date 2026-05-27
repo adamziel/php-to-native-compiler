@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use php_compiler::ast::{Expr, Stmt};
+use php_compiler::ast::{ClassMember, Expr, Stmt};
 use php_compiler::error::Phase;
 use php_compiler::{
     codegen::emit_native_executable_c_source, emit_asm_source, emit_ir_source, parse, run_source,
@@ -96,6 +96,55 @@ echo \Vendor\Lib\Tool::class;
         "Vendor\\Lib\\Tool\nVendor\\Lib\\Tool\nVendor\\Lib\\Tool\nVendor\\Lib\\Tool"
     );
     assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn imported_class_aliases_resolve_type_declaration_metadata_names() {
+    let program = parse(
+        r#"<?php
+namespace App\Demo;
+use Vendor\Lib\Tool as ImportedTool;
+class Box {
+    public ImportedTool $tool;
+    public ?ImportedTool $maybe;
+    public LocalThing $local;
+    public \Vendor\Lib\Exact $exact;
+    public int|string|null $scalar;
+}
+"#,
+    )
+    .unwrap();
+
+    let class = program
+        .statements
+        .iter()
+        .find_map(|stmt| match stmt {
+            Stmt::Class(class) if class.name == "App\\Demo\\Box" => Some(class),
+            _ => None,
+        })
+        .expect("Box class should be parsed");
+    let type_names = class
+        .members
+        .iter()
+        .filter_map(|member| match member {
+            ClassMember::Property(property) => property
+                .type_decl
+                .as_ref()
+                .map(|type_decl| type_decl.text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        type_names,
+        vec![
+            "Vendor\\Lib\\Tool",
+            "?Vendor\\Lib\\Tool",
+            "App\\Demo\\LocalThing",
+            "Vendor\\Lib\\Exact",
+            "int|string|null"
+        ]
+    );
 }
 
 #[test]
@@ -896,6 +945,49 @@ echo strlen("abc"), "|", strtolower("ABC"), "\n";
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(String::from_utf8_lossy(&run.stdout), "91|abc\n");
+}
+
+#[test]
+fn generated_c_exe_runs_imported_type_alias_static_property_metadata() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = namespace_resolution_fixture_dir("imported-type-alias-static-property-exe");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        &root,
+        r#"<?php
+namespace App\Demo;
+use App\Demo\Target as ImportedTarget;
+
+class Target {}
+class Registry {
+    public static ImportedTarget $item;
+}
+
+Registry::$item = new Target();
+echo "ok\n";
+"#,
+    )
+    .expect("write imported type alias static property executable fixture");
+
+    let output = compile_exe(
+        &root,
+        &output,
+        "imported type alias static property executable",
+    );
+    let run = Command::new(&output)
+        .output()
+        .expect("run imported type alias static property executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "ok\n");
 }
 
 #[test]
