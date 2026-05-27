@@ -1,5 +1,6 @@
+use php_compiler::ast::{Expr, Stmt};
 use php_compiler::error::Phase;
-use php_compiler::run_source;
+use php_compiler::{parse, run_source};
 
 const LLVM_CONTROL_FLOW_REJECTION: &str = "LLVM control-flow lowering rejects if/else and elseif chains, while loops, for loops, do-while loops, switch statements, goto labels, break, and continue until native PHP truthiness, branch layout, loop control flow, switch fallthrough, goto jumps, references/copy-on-write side effects, and exact native error behavior exist; phpc run handles current control-flow behavior";
 const LLVM_MUTATION_REJECTION: &str = "LLVM mutation lowering rejects compound assignment outside lowerable direct variables, null coalescing assignment, increment/decrement, non-direct assignment expressions, direct variable unset, object property unset, static property unset, and multiple-operand unset until native read-modify-write ordering, null-aware mutation, unset symbol-table effects, references/copy-on-write, and exact native error behavior exist; phpc run handles current mutation behavior";
@@ -657,50 +658,47 @@ fn static_arrow_functions_parse_and_can_be_stored() {
 }
 
 #[test]
-fn unsupported_named_arguments_have_stable_parse_errors() {
-    let cases = [
-        (
-            "<?php\nfunction greet($name) { return $name; }\necho greet(name: 'Ada');\n",
-            3,
-            12,
-        ),
-        (
-            "<?php\nclass Box { public function set($value) {} }\n$box = new Box();\n$box->set(value: 1);\n",
-            4,
-            11,
-        ),
-        (
-            "<?php\nclass Box { public static function make($value) {} }\nBox::make(value: 1);\n",
-            3,
-            11,
-        ),
-        (
-            "<?php\nclass Box { public function __construct($value) {} }\n$box = new Box(value: 1);\n",
-            3,
-            16,
-        ),
-    ];
+fn named_arguments_parse_as_source_ordered_call_argument_nodes() {
+    let program =
+        parse("<?php\nfunction greet($name, $punct = '!') {}\ngreet(punct: '?', name: 'Ada');\n")
+            .unwrap();
 
-    for (source, line, column) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported named argument: call argument names require parameter-name metadata, duplicate and unknown-name diagnostics, positional/named ordering, by-reference binding, variadic collection, unpacking interaction, and native lowering"
+    let Stmt::Expr {
+        expr: Expr::Call { args, .. },
+        ..
+    } = &program.statements[1]
+    else {
+        panic!(
+            "expected direct call statement, got {:#?}",
+            program.statements[1]
         );
+    };
+
+    assert_eq!(args.len(), 2);
+    match &args[0] {
+        Expr::NamedArgument { name, expr, .. } => {
+            assert_eq!(name, "punct");
+            assert!(matches!(expr.as_ref(), Expr::String(value, _) if value == "?"));
+        }
+        other => panic!("expected first source argument to be named, got {other:#?}"),
+    }
+    match &args[1] {
+        Expr::NamedArgument { name, expr, .. } => {
+            assert_eq!(name, "name");
+            assert!(matches!(expr.as_ref(), Expr::String(value, _) if value == "Ada"));
+        }
+        other => panic!("expected second source argument to be named, got {other:#?}"),
     }
 }
 
 #[test]
-fn emit_ir_rejects_named_arguments_at_parse_boundary() {
+fn emit_ir_rejects_named_builtin_arguments_at_codegen_boundary() {
     let error = php_compiler::emit_ir_source("<?php\necho strlen(string: 'abc');\n").unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported named argument: call argument names require parameter-name metadata, duplicate and unknown-name diagnostics, positional/named ordering, by-reference binding, variadic collection, unpacking interaction, and native lowering"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(error
+        .message
+        .contains("named argument lowering is only implemented"));
 }
 
 #[test]

@@ -9,6 +9,11 @@ use crate::ast::{
     InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart, NewClassName, Program,
     ReferenceSource, Span, Stmt, SwitchCase, TypeDecl, UnaryOp, UnsetTarget,
 };
+use crate::call_arguments::{
+    normalize_call_arguments, CallArgument, CallArgumentNormalizationError, CallArgumentParameter,
+    CallArgumentPassingMode, CallArgumentSignature, CallArgumentSlotSource,
+    CallArgumentVariadicKey, NormalizedCallArguments,
+};
 use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
     classify_php_numeric_string, is_php_truthy_string, php_primitive_arithmetic_result,
@@ -78,6 +83,7 @@ const LLVM_CONDITIONAL_REJECTION: &str = "LLVM conditional lowering rejects unsu
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, unsupported by-reference argument binding, and unsupported dynamic string-valued calls, until full callable lookup, full arity/type diagnostics, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value fixed/default/variadic direct, supported direct and compiler-known single-target by-reference frames, finite known-string dynamic, and runtime string-valued dynamic user-function frames";
+const NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION: &str = "named argument lowering is only implemented for compiler-known generated-C user-function and selected method/static source-call carriers; builtins, dynamic callables, constructors, and unsupported call families remain blocked until each consumer binds through shared source-order/parameter-order call-argument normalization";
 const LLVM_STRING_PREDICATE_REJECTION: &str = "LLVM string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; lowerable LLVM and generated-native C str_starts_with(), str_ends_with(), and str_contains() operands route through the shared runtime contract";
 const ASSEMBLY_STRING_PREDICATE_REJECTION: &str = "assembly string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; generated-native C routes lowerable str_starts_with(), str_ends_with(), and str_contains() operands through the shared runtime contract";
 const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int/search builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), strpos(), substr_count(), ord(), and crc32() forms outside the reusable native string operation contracts, including unsupported arity, non-lowerable operands, nested call cleanup, references/copy-on-write, and exact native builtin diagnostics; lowerable LLVM and generated-native C string operands route through shared runtime contracts";
@@ -1643,6 +1649,59 @@ fn native_user_function_accepts_arg_count(function: &FunctionDecl, arg_count: us
         && (native_user_function_variadic_param(function).is_some() || arg_count <= fixed_count)
 }
 
+fn call_argument_name(arg: &Expr) -> Option<&str> {
+    match arg {
+        Expr::NamedArgument { name, .. } => Some(name),
+        _ => None,
+    }
+}
+
+fn call_argument_expr(arg: &Expr) -> &Expr {
+    match arg {
+        Expr::NamedArgument { expr, .. } => expr,
+        _ => arg,
+    }
+}
+
+fn call_arguments_have_named(args: &[Expr]) -> bool {
+    args.iter()
+        .any(|arg| matches!(arg, Expr::NamedArgument { .. }))
+}
+
+fn call_argument_contract_kinds(args: &[Expr]) -> Vec<CallArgument> {
+    args.iter()
+        .map(|arg| {
+            call_argument_name(arg)
+                .map(CallArgument::named)
+                .unwrap_or_else(CallArgument::positional)
+        })
+        .collect()
+}
+
+fn call_argument_signature_from_params(
+    params: &[FunctionParam],
+) -> Result<CallArgumentSignature, CallArgumentNormalizationError> {
+    CallArgumentSignature::new(
+        params
+            .iter()
+            .map(|param| {
+                let mut argument_param = if param.default.is_some() || param.is_variadic {
+                    CallArgumentParameter::optional(param.name.clone())
+                } else {
+                    CallArgumentParameter::required(param.name.clone())
+                };
+                if param.by_reference {
+                    argument_param = argument_param.with_by_reference();
+                }
+                if param.is_variadic {
+                    argument_param = argument_param.with_variadic();
+                }
+                argument_param
+            })
+            .collect(),
+    )
+}
+
 fn native_function_params_have_malformed_variadic_params(params: &[FunctionParam]) -> bool {
     let variadic_count = params.iter().filter(|param| param.is_variadic).count();
     if variadic_count == 0 {
@@ -1980,6 +2039,9 @@ fn llvm_expr_call_results_are_lowerable(expr: &Expr, allow_scalar_results: bool)
         Expr::IncrementDecrement { target, .. } => {
             llvm_assign_target_call_results_are_lowerable(target, allow_scalar_results)
         }
+        Expr::NamedArgument { expr, .. } => {
+            llvm_expr_call_results_are_lowerable(expr, allow_scalar_results)
+        }
         Expr::Null(_)
         | Expr::Bool(_, _)
         | Expr::Int(_, _)
@@ -2247,6 +2309,7 @@ fn native_expr_call_result_operation(
         Expr::IncrementDecrement { target, .. } => {
             native_rmw_assignment_target_call_operation(target)
         }
+        Expr::NamedArgument { expr, .. } => native_expr_call_result_operation(expr, blocker),
         Expr::Null(_)
         | Expr::Bool(_, _)
         | Expr::Int(_, _)
@@ -2954,6 +3017,7 @@ fn native_conditional_rhs_needs_cleanup_boundary(expr: &Expr) -> bool {
         Expr::New { args, .. } => args
             .iter()
             .any(native_conditional_rhs_needs_cleanup_boundary),
+        Expr::NamedArgument { expr, .. } => native_conditional_rhs_needs_cleanup_boundary(expr),
         Expr::Closure { .. } => true,
         Expr::Null(_)
         | Expr::Bool(_, _)
@@ -4510,6 +4574,7 @@ fn expr_contains_exit_construct(expr: &Expr) -> bool {
             assign_target_contains_exit_construct(target) || expr_contains_exit_construct(expr)
         }
         Expr::IncrementDecrement { target, .. } => assign_target_contains_exit_construct(target),
+        Expr::NamedArgument { expr, .. } => expr_contains_exit_construct(expr),
         Expr::Null(_)
         | Expr::Bool(_, _)
         | Expr::Int(_, _)
@@ -5293,6 +5358,7 @@ fn collect_direct_call_names_from_expr(expr: &Expr, names: &mut Vec<String>) {
         Expr::IncrementDecrement { target, .. } => {
             collect_direct_call_names_from_assign_target(target, names);
         }
+        Expr::NamedArgument { expr, .. } => collect_direct_call_names_from_expr(expr, names),
         Expr::Closure { .. }
         | Expr::Null(_)
         | Expr::Bool(_, _)
@@ -6028,6 +6094,9 @@ fn collect_native_arrow_capture_candidates_from_expr(
                 }
             }
         }
+        Expr::NamedArgument { expr, .. } => {
+            collect_native_arrow_capture_candidates_from_expr(expr, captures);
+        }
         Expr::Null(_)
         | Expr::Bool(_, _)
         | Expr::Int(_, _)
@@ -6157,6 +6226,7 @@ fn native_expr_contains_call_result(expr: &Expr) -> bool {
         Expr::IncrementDecrement { target, .. } => {
             native_assign_target_contains_call_result(target)
         }
+        Expr::NamedArgument { expr, .. } => native_expr_contains_call_result(expr),
         Expr::Null(_)
         | Expr::Bool(_, _)
         | Expr::Int(_, _)
@@ -7190,6 +7260,7 @@ fn expr_contains_globals_access(expr: &Expr) -> bool {
             assign_target_contains_globals_access(target) || expr_contains_globals_access(expr)
         }
         Expr::IncrementDecrement { target, .. } => assign_target_contains_globals_access(target),
+        Expr::NamedArgument { expr, .. } => expr_contains_globals_access(expr),
         Expr::Null(_)
         | Expr::Bool(_, _)
         | Expr::Int(_, _)
@@ -7681,6 +7752,7 @@ fn expr_contains_request_state_access(expr: &Expr) -> bool {
         Expr::IncrementDecrement { target, .. } => {
             assign_target_contains_request_state_access(target)
         }
+        Expr::NamedArgument { expr, .. } => expr_contains_request_state_access(expr),
         Expr::Null(_)
         | Expr::Bool(_, _)
         | Expr::Int(_, _)
@@ -10371,6 +10443,9 @@ impl LlvmGenerator {
             Expr::Int(value, _) => Ok(IrValue::Int(value.to_string())),
             Expr::Float(value, _) => Ok(IrValue::Float(format_float_literal(*value))),
             Expr::String(value, _) => Ok(IrValue::String(value.clone())),
+            Expr::NamedArgument { span, .. } => {
+                Err(self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION))
+            }
             Expr::InterpolatedString { span, .. } => {
                 Err(self.unsupported(*span, LLVM_INTERPOLATED_STRING_REJECTION))
             }
@@ -10499,6 +10574,11 @@ impl LlvmGenerator {
                     .get(name)
                     .cloned()
                     .ok_or_else(|| self.unsupported(*span, LLVM_VARIABLE_READ_REJECTION))
+            }
+            Expr::Call { args, span, .. } | Expr::DynamicCall { args, span, .. }
+                if call_arguments_have_named(args) =>
+            {
+                Err(self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION))
             }
             Expr::Call { name, args, span } if is_exit_construct_name(name) => {
                 Err(self.unsupported_direct_named_call(args, *span, LLVM_TERMINATION_REJECTION))
@@ -17111,6 +17191,31 @@ struct CNativeReferenceMaterialization {
     cleanup_after_use: Vec<String>,
 }
 
+enum CNativeEvaluatedCallArgument {
+    Value {
+        handle: String,
+        cleanup_after_use: Vec<String>,
+        cleanup_after_consuming_handle: Vec<String>,
+    },
+    Reference {
+        handle: String,
+        cleanup_after_use: Vec<String>,
+    },
+}
+
+impl CNativeEvaluatedCallArgument {
+    fn cleanup_after_use(&self) -> &[String] {
+        match self {
+            Self::Value {
+                cleanup_after_use, ..
+            }
+            | Self::Reference {
+                cleanup_after_use, ..
+            } => cleanup_after_use,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CScopedCallableStringSignature {
     fixed_param_by_reference: Vec<bool>,
@@ -17238,13 +17343,10 @@ enum NativeMethodStaticSourceCallArgumentStrategy {
 
 impl NativeMethodStaticSourceCallArgumentStrategy {
     fn for_method(method: &CDeclaredClassMethod, arg_count: usize) -> Self {
-        if native_method_static_source_call_can_forward_call_site_arguments(method, arg_count) {
-            Self::ForwardCallSite
-        } else {
-            Self::Frame(NativeMethodStaticSourceCallArgumentPlan::from_method(
-                method,
-            ))
-        }
+        let _ = arg_count;
+        Self::Frame(NativeMethodStaticSourceCallArgumentPlan::from_method(
+            method,
+        ))
     }
 
     fn semantically_matches(&self, other: &Self) -> bool {
@@ -18022,6 +18124,9 @@ fn collect_loop_assigned_direct_variables_from_expr(expr: &Expr, names: &mut BTr
         }
         Expr::IncrementDecrement { target, .. } => {
             collect_loop_assigned_direct_variables_from_assign_target(target, names);
+        }
+        Expr::NamedArgument { expr, .. } => {
+            collect_loop_assigned_direct_variables_from_expr(expr, names);
         }
         Expr::Closure { .. }
         | Expr::Null(_)
@@ -33124,6 +33229,9 @@ impl CGenerator {
             Expr::Int(value, _) => Ok(CValue::Int(value.to_string())),
             Expr::Float(value, _) => Ok(CValue::Float(format_float_literal(*value))),
             Expr::String(value, _) => Ok(CValue::String(value.clone())),
+            Expr::NamedArgument { span, .. } => {
+                Err(self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION))
+            }
             Expr::InterpolatedString { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_INTERPOLATED_STRING_REJECTION))
             }
@@ -33345,6 +33453,11 @@ impl CGenerator {
                     self.retain_native_value_cleanup_handle(&value.handle);
                     return Ok(CValue::NativeValueHandle(value.handle));
                 }
+                if call_arguments_have_named(args) {
+                    return Err(
+                        self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
+                    );
+                }
                 if let Some(value) = self
                     .try_materialize_declared_class_method_call(target, method, args, *span, "")?
                 {
@@ -33365,6 +33478,11 @@ impl CGenerator {
                 )? {
                     self.retain_native_value_cleanup_handle(&value.handle);
                     return Ok(CValue::NativeValueHandle(value.handle));
+                }
+                if call_arguments_have_named(args) {
+                    return Err(
+                        self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
+                    );
                 }
                 if let Some(value) = self.try_materialize_declared_class_static_method_call(
                     class_name, method, args, *span, "",
@@ -33387,6 +33505,11 @@ impl CGenerator {
                     self.retain_native_value_cleanup_handle(&value.handle);
                     return Ok(CValue::NativeValueHandle(value.handle));
                 }
+                if call_arguments_have_named(args) {
+                    return Err(
+                        self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
+                    );
+                }
                 if let Some(value) = self.try_materialize_declared_object_static_method_call(
                     target, method, args, *span, "",
                 )? {
@@ -33408,6 +33531,11 @@ impl CGenerator {
                     self.retain_native_value_cleanup_handle(&value.handle);
                     return Ok(CValue::NativeValueHandle(value.handle));
                 }
+                if call_arguments_have_named(args) {
+                    return Err(
+                        self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
+                    );
+                }
                 if let Some(value) = self.try_materialize_declared_class_dynamic_method_call(
                     target, method, args, *span, "",
                 )? {
@@ -33423,6 +33551,8 @@ impl CGenerator {
                 {
                     self.retain_native_value_cleanup_handle(&value.handle);
                     Ok(CValue::NativeValueHandle(value.handle))
+                } else if call_arguments_have_named(args) {
+                    Err(self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION))
                 } else {
                     Err(self.unsupported_value_call(expr))
                 }
@@ -33433,6 +33563,8 @@ impl CGenerator {
                 {
                     self.retain_native_value_cleanup_handle(&value.handle);
                     Ok(CValue::NativeValueHandle(value.handle))
+                } else if call_arguments_have_named(args) {
+                    Err(self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION))
                 } else {
                     Err(self.unsupported_value_call(expr))
                 }
@@ -33476,6 +33608,32 @@ impl CGenerator {
                     return Ok(CValue::NativeValueHandle(value.handle));
                 }
                 Err(self.unsupported(*span, ASSEMBLY_VARIABLE_READ_REJECTION))
+            }
+            Expr::Call { name, args, span }
+                if call_arguments_have_named(args)
+                    && self
+                        .user_functions
+                        .contains_key(&Self::user_function_key(name)) =>
+            {
+                let function = self
+                    .user_functions
+                    .get(&Self::user_function_key(name))
+                    .cloned()
+                    .expect("checked user function exists");
+                let value = self.materialize_user_function_call(
+                    &function,
+                    args,
+                    *span,
+                    "",
+                    NativeCallCallee::DirectNamed,
+                )?;
+                self.retain_native_value_cleanup_handle(&value.handle);
+                Ok(CValue::NativeValueHandle(value.handle))
+            }
+            Expr::Call { args, span, .. } | Expr::DynamicCall { args, span, .. }
+                if call_arguments_have_named(args) =>
+            {
+                Err(self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION))
             }
             Expr::Call { name, args, span } if is_exit_construct_name(name) => {
                 self.emit_exit_construct(args, *span)
@@ -33691,6 +33849,11 @@ impl CGenerator {
                 args,
                 span,
             } => {
+                if call_arguments_have_named(args) {
+                    return Err(
+                        self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
+                    );
+                }
                 if let Some(value) =
                     self.try_materialize_declared_class_new_expr(class_name, args, *span, "")?
                 {
@@ -34675,6 +34838,354 @@ impl CGenerator {
         Ok(())
     }
 
+    fn normalize_native_call_arguments_for_params(
+        &self,
+        params: &[FunctionParam],
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<NormalizedCallArguments> {
+        let signature = call_argument_signature_from_params(params).map_err(|error| {
+            self.unsupported(
+                span,
+                format!("unsupported named argument metadata for native call lowering: {error}"),
+            )
+        })?;
+        normalize_call_arguments(&signature, &call_argument_contract_kinds(args)).map_err(|error| {
+            self.unsupported(
+                span,
+                format!("unsupported named argument binding for native call lowering: {error}"),
+            )
+        })
+    }
+
+    fn normalized_call_argument_source_modes(
+        &self,
+        plan: &NormalizedCallArguments,
+        source_count: usize,
+    ) -> Vec<CallArgumentPassingMode> {
+        let mut modes = vec![CallArgumentPassingMode::Value; source_count];
+        for slot in &plan.fixed_slots {
+            if let CallArgumentSlotSource::Supplied { source_index } = slot.source {
+                modes[source_index] = slot.passing_mode;
+            }
+        }
+        if let Some(variadic) = &plan.variadic_slot {
+            for entry in &variadic.entries {
+                modes[entry.source_index] = variadic.entry_passing_mode;
+            }
+        }
+        modes
+    }
+
+    fn pending_evaluated_call_argument_cleanup(
+        evaluated: &[Option<CNativeEvaluatedCallArgument>],
+        consumed: &[bool],
+        excluding_source_index: Option<usize>,
+    ) -> String {
+        let mut cleanup = String::new();
+        for (index, argument) in evaluated.iter().enumerate() {
+            if consumed[index] || excluding_source_index == Some(index) {
+                continue;
+            }
+            if let Some(argument) = argument {
+                cleanup.push_str(&c_cleanup_sequence(argument.cleanup_after_use()));
+            }
+        }
+        cleanup
+    }
+
+    fn materialize_normalized_call_argument_sources(
+        &mut self,
+        args: &[Expr],
+        plan: &NormalizedCallArguments,
+        span: Span,
+        call_cleanup: &str,
+        callee: NativeCallCallee,
+    ) -> CompileResult<(Vec<Option<CNativeEvaluatedCallArgument>>, Vec<bool>)> {
+        let mut evaluated = (0..args.len()).map(|_| None).collect::<Vec<_>>();
+        let consumed = vec![false; args.len()];
+        let source_modes = self.normalized_call_argument_source_modes(plan, args.len());
+
+        for source in &plan.source_evaluations {
+            let source_index = source.source_index;
+            let expr = call_argument_expr(&args[source_index]);
+            let failure_cleanup = format!(
+                "{}{call_cleanup}",
+                Self::pending_evaluated_call_argument_cleanup(&evaluated, &consumed, None)
+            );
+            let argument = match source_modes[source_index] {
+                CallArgumentPassingMode::Reference => {
+                    let reference = self.materialize_call_reference_argument(
+                        expr,
+                        span,
+                        &failure_cleanup,
+                        callee,
+                    )?;
+                    CNativeEvaluatedCallArgument::Reference {
+                        handle: reference.handle,
+                        cleanup_after_use: reference.cleanup_after_use,
+                    }
+                }
+                CallArgumentPassingMode::Value => {
+                    let value =
+                        self.materialize_native_value_result_operand(expr, &failure_cleanup)?;
+                    let cleanup_after_consuming_handle =
+                        native_value_aux_cleanup_after_consuming_handle(&value);
+                    CNativeEvaluatedCallArgument::Value {
+                        handle: value.handle,
+                        cleanup_after_use: value.cleanup_after_use,
+                        cleanup_after_consuming_handle,
+                    }
+                }
+            };
+            evaluated[source_index] = Some(argument);
+        }
+
+        Ok((evaluated, consumed))
+    }
+
+    fn emit_evaluated_call_argument_push(
+        &mut self,
+        call_arguments: &str,
+        evaluated: &mut [Option<CNativeEvaluatedCallArgument>],
+        consumed: &mut [bool],
+        source_index: usize,
+        call_cleanup: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let pending_cleanup =
+            Self::pending_evaluated_call_argument_cleanup(evaluated, consumed, Some(source_index));
+        let failure_cleanup = format!("{pending_cleanup}{call_cleanup}");
+        let Some(argument) = evaluated[source_index].as_ref() else {
+            return Err(self.unsupported(
+                span,
+                "internal call argument lowering error: normalized source slot was not evaluated",
+            ));
+        };
+
+        match argument {
+            CNativeEvaluatedCallArgument::Reference { handle, .. } => {
+                self.body.push(format!(
+                    "if (!phpc_native_call_arguments_push_reference_and_free({call_arguments}, {handle})) {{ {} }}",
+                    self.native_error_exit(&failure_cleanup)
+                ));
+            }
+            CNativeEvaluatedCallArgument::Value {
+                handle,
+                cleanup_after_consuming_handle,
+                ..
+            } => {
+                self.body.push(format!(
+                    "if (!phpc_native_call_arguments_push_value_and_free({call_arguments}, {handle})) {{ {} }}",
+                    self.native_error_exit(&failure_cleanup)
+                ));
+                self.body.extend(cleanup_after_consuming_handle.clone());
+            }
+        }
+        consumed[source_index] = true;
+        Ok(())
+    }
+
+    fn emit_variadic_argument_array_insert_named_materialized(
+        &mut self,
+        array: &str,
+        param: &FunctionParam,
+        name: &str,
+        value: CNativeValueMaterialization,
+        callable_name: &str,
+        failure_cleanup: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        let array_failure_cleanup = format!("phpc_native_array_free({array}); {failure_cleanup}");
+        let value = self.coerce_variadic_argument_value(
+            param,
+            value,
+            callable_name,
+            &array_failure_cleanup,
+        );
+        let key_value =
+            self.emit_native_value_for_cvalue(CValue::String(name.to_string()), span)?;
+        let key_cleanup = format!("phpc_native_value_free({key_value});");
+        let key = self.next_native_name("named_variadic_key");
+        self.body.push(format!(
+            "phpc_NativeArrayKeyMaterializationResult {key} = phpc_native_value_to_array_key({key_value});"
+        ));
+        self.body.push(key_cleanup);
+        let diagnostic = self.next_native_name("named_variadic_diagnostic");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        let insert_failure_cleanup = format!(
+            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); {diagnostic}.ptr = NULL; }} phpc_native_array_key_materialization_result_free({key}); {}{array_failure_cleanup}",
+            c_cleanup_sequence(&value.cleanup_after_use)
+        );
+        let error_exit = self.native_error_exit(&insert_failure_cleanup);
+        self.body.push(format!(
+            "if (!phpc_native_array_insert_key_value_with_diagnostic({array}, {key}, {}, &{diagnostic})) {{ {error_exit} }}",
+            value.handle
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body.push(format!(
+            "phpc_native_array_key_materialization_result_free({key});"
+        ));
+        self.body.extend(value.cleanup_after_use);
+        Ok(())
+    }
+
+    fn materialize_variadic_argument_array_from_normalized_entries(
+        &mut self,
+        param: &FunctionParam,
+        variadic: &crate::call_arguments::CallArgumentVariadicSlot,
+        args: &[Expr],
+        evaluated: &mut [Option<CNativeEvaluatedCallArgument>],
+        consumed: &mut [bool],
+        callable_name: &str,
+        failure_cleanup: &str,
+        span: Span,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        if variadic.entry_passing_mode == CallArgumentPassingMode::Reference {
+            return Err(self.unsupported(
+                span,
+                "unsupported named argument binding for native call lowering: by-reference variadic collection is not implemented",
+            ));
+        }
+
+        let pending_cleanup =
+            Self::pending_evaluated_call_argument_cleanup(evaluated, consumed, None);
+        let array =
+            self.emit_empty_variadic_argument_array(&format!("{pending_cleanup}{failure_cleanup}"));
+        for entry in &variadic.entries {
+            let source_index = entry.source_index;
+            let pending_cleanup = Self::pending_evaluated_call_argument_cleanup(
+                evaluated,
+                consumed,
+                Some(source_index),
+            );
+            let entry_failure_cleanup = format!("{pending_cleanup}{failure_cleanup}");
+            let Some(CNativeEvaluatedCallArgument::Value {
+                handle,
+                cleanup_after_use,
+                ..
+            }) = evaluated[source_index].as_ref()
+            else {
+                return Err(self.unsupported(
+                    span,
+                    "unsupported named argument binding for native call lowering: variadic source slot did not produce a value",
+                ));
+            };
+            let value = CNativeValueMaterialization {
+                handle: handle.clone(),
+                cleanup_after_use: cleanup_after_use.clone(),
+            };
+            match &entry.key {
+                CallArgumentVariadicKey::NextInteger => {
+                    self.emit_variadic_argument_array_append(
+                        &array,
+                        param,
+                        value,
+                        callable_name,
+                        &entry_failure_cleanup,
+                    );
+                }
+                CallArgumentVariadicKey::Named(name) => {
+                    self.emit_variadic_argument_array_insert_named_materialized(
+                        &array,
+                        param,
+                        name,
+                        value,
+                        callable_name,
+                        &entry_failure_cleanup,
+                        call_argument_expr(&args[source_index]).span(),
+                    )?;
+                }
+            }
+            consumed[source_index] = true;
+        }
+
+        let pending_cleanup =
+            Self::pending_evaluated_call_argument_cleanup(evaluated, consumed, None);
+        Ok(self.materialize_variadic_argument_array_value(
+            array,
+            &format!("{pending_cleanup}{failure_cleanup}"),
+        ))
+    }
+
+    fn emit_normalized_native_source_call_arguments(
+        &mut self,
+        call_arguments: &str,
+        params: &[FunctionParam],
+        args: &[Expr],
+        span: Span,
+        call_cleanup: &str,
+        callee: NativeCallCallee,
+        callable_name: &str,
+    ) -> CompileResult<()> {
+        let plan = self.normalize_native_call_arguments_for_params(params, args, span)?;
+        let (mut evaluated, mut consumed) = self.materialize_normalized_call_argument_sources(
+            args,
+            &plan,
+            span,
+            call_cleanup,
+            callee,
+        )?;
+
+        for slot in &plan.fixed_slots {
+            let param = params
+                .get(slot.parameter_index)
+                .expect("normalized fixed slot must refer to declared parameter");
+            match slot.source {
+                CallArgumentSlotSource::Supplied { source_index } => {
+                    self.emit_evaluated_call_argument_push(
+                        call_arguments,
+                        &mut evaluated,
+                        &mut consumed,
+                        source_index,
+                        call_cleanup,
+                        span,
+                    )?;
+                }
+                CallArgumentSlotSource::Default => {
+                    let default = param.default.as_ref().ok_or_else(|| {
+                        self.unsupported(
+                            span,
+                            "unsupported named argument binding for native call lowering: required parameter has no source or default",
+                        )
+                    })?;
+                    self.emit_native_source_call_argument(
+                        call_arguments,
+                        default,
+                        span,
+                        call_cleanup,
+                        callee,
+                        param.by_reference,
+                    )?;
+                }
+            }
+        }
+
+        if let Some(variadic) = &plan.variadic_slot {
+            let param = params
+                .get(variadic.parameter_index)
+                .expect("normalized variadic slot must refer to declared parameter");
+            let variadic_value = self.materialize_variadic_argument_array_from_normalized_entries(
+                param,
+                variadic,
+                args,
+                &mut evaluated,
+                &mut consumed,
+                callable_name,
+                call_cleanup,
+                span,
+            )?;
+            self.emit_native_source_call_materialized_value_argument_push(
+                call_arguments,
+                variadic_value,
+                call_cleanup,
+            );
+        }
+
+        Ok(())
+    }
+
     fn emit_runtime_callable_value_call_arguments(
         &mut self,
         call_arguments: &str,
@@ -34746,49 +35257,15 @@ impl CGenerator {
         call_cleanup: &str,
         plan: &NativeMethodStaticSourceCallArgumentPlan,
     ) -> CompileResult<()> {
-        let fixed_count = plan.fixed_count();
-        for (index, param) in plan.params.iter().take(fixed_count).enumerate() {
-            let value_expr = if let Some(arg) = args.get(index) {
-                arg
-            } else {
-                param.default.as_ref().ok_or_else(|| {
-                    self.unsupported_call_operation(NativeCallOperation::value_result(
-                        span,
-                        NativeCallCallee::MethodDispatch,
-                        NativeCallBlocker::UnknownCalleeDiagnostics,
-                    ))
-                })?
-            };
-            self.emit_native_source_call_argument(
-                call_arguments,
-                value_expr,
-                span,
-                call_cleanup,
-                NativeCallCallee::MethodDispatch,
-                param.by_reference,
-            )?;
-        }
-
-        if let Some((_, variadic_param)) = plan.variadic_param() {
-            let variadic_args = if args.len() > fixed_count {
-                &args[fixed_count..]
-            } else {
-                &[]
-            };
-            let variadic_value = self.materialize_variadic_argument_array_from_exprs(
-                variadic_param,
-                variadic_args,
-                "method/static source-call",
-                call_cleanup,
-            )?;
-            self.emit_native_source_call_materialized_value_argument_push(
-                call_arguments,
-                variadic_value,
-                call_cleanup,
-            );
-        }
-
-        Ok(())
+        self.emit_normalized_native_source_call_arguments(
+            call_arguments,
+            &plan.params,
+            args,
+            span,
+            call_cleanup,
+            NativeCallCallee::MethodDispatch,
+            "method/static source-call",
+        )
     }
 
     fn materialize_variadic_argument_array_from_exprs(
@@ -36442,19 +36919,20 @@ impl CGenerator {
         &self,
         function: &FunctionDecl,
         args: &[Expr],
+        plan: &NormalizedCallArguments,
     ) -> bool {
-        function
-            .params
-            .iter()
-            .take(native_user_function_fixed_param_count(function))
-            .enumerate()
-            .any(|(index, param)| {
-                param.by_reference
-                    && args.get(index).is_some_and(|arg| {
+        plan.fixed_slots.iter().any(|slot| {
+            slot.passing_mode == CallArgumentPassingMode::Reference
+                && matches!(function.params.get(slot.parameter_index), Some(param) if param.by_reference)
+                && match slot.source {
+                    CallArgumentSlotSource::Supplied { source_index } => {
+                        let arg = call_argument_expr(&args[source_index]);
                         native_expr_contains_call_result(arg)
                             && !self.source_call_reference_argument_is_supported(arg)
-                    })
-            })
+                    }
+                    CallArgumentSlotSource::Default => false,
+                }
+        })
     }
 
     fn by_reference_argument_target_label(expr: &Expr) -> String {
@@ -36782,73 +37260,22 @@ impl CGenerator {
         failure_cleanup: &str,
         callee: NativeCallCallee,
     ) -> CompileResult<String> {
-        let signature = CScopedCallableStringSignature::from_function(&function.decl);
         let call_arguments = self.emit_empty_native_source_call_arguments_handle(
             "direct_callable_args",
             failure_cleanup,
         );
         let call_cleanup =
             format!("phpc_native_call_arguments_free({call_arguments}); {failure_cleanup}");
-        let fixed_count = native_user_function_fixed_param_count(&function.decl);
-        for (index, param) in function.decl.params.iter().take(fixed_count).enumerate() {
-            let value_expr = if let Some(arg) = args.get(index) {
-                arg
-            } else {
-                param.default.as_ref().ok_or_else(|| {
-                    self.unsupported_call_operation(NativeCallOperation::value_result(
-                        span,
-                        callee,
-                        NativeCallBlocker::UnknownCalleeDiagnostics,
-                    ))
-                })?
-            };
-            let value_failure_cleanup = call_cleanup.clone();
-            if signature.param_is_by_reference(index) {
-                let reference = self.materialize_call_reference_argument(
-                    value_expr,
-                    span,
-                    &value_failure_cleanup,
-                    callee,
-                )?;
-                self.body.push(format!(
-                    "if (!phpc_native_call_arguments_push_reference_and_free({call_arguments}, {})) {{ {} }}",
-                    reference.handle,
-                    self.native_error_exit(&call_cleanup)
-                ));
-            } else {
-                let value = self
-                    .materialize_native_value_result_operand(value_expr, &value_failure_cleanup)?;
-                let value_aux_cleanup = native_value_aux_cleanup_after_consuming_handle(&value);
-                let push_failure_cleanup =
-                    format!("{}{}", c_cleanup_sequence(&value_aux_cleanup), call_cleanup);
-                self.body.push(format!(
-                    "if (!phpc_native_call_arguments_push_value_and_free({call_arguments}, {})) {{ {} }}",
-                    value.handle,
-                    self.native_error_exit(&push_failure_cleanup)
-                ));
-                self.body.extend(value_aux_cleanup);
-            }
-        }
-        if let Some((_, variadic_param)) = native_user_function_variadic_param(&function.decl) {
-            let variadic_failure_cleanup = call_cleanup.clone();
-            let callable_name = format!("{}()", function.decl.name);
-            let variadic_value = self.materialize_variadic_argument_array_from_exprs(
-                variadic_param,
-                &args[fixed_count..],
-                &callable_name,
-                &variadic_failure_cleanup,
-            )?;
-            let value_aux_cleanup =
-                native_value_aux_cleanup_after_consuming_handle(&variadic_value);
-            let push_failure_cleanup =
-                format!("{}{}", c_cleanup_sequence(&value_aux_cleanup), call_cleanup);
-            self.body.push(format!(
-                "if (!phpc_native_call_arguments_push_value_and_free({call_arguments}, {})) {{ {} }}",
-                variadic_value.handle,
-                self.native_error_exit(&push_failure_cleanup)
-            ));
-            self.body.extend(value_aux_cleanup);
-        }
+        let callable_name = format!("{}()", function.decl.name);
+        self.emit_normalized_native_source_call_arguments(
+            &call_arguments,
+            &function.decl.params,
+            args,
+            span,
+            &call_cleanup,
+            callee,
+            &callable_name,
+        )?;
 
         Ok(call_arguments)
     }
@@ -36861,17 +37288,10 @@ impl CGenerator {
         failure_cleanup: &str,
         callee: NativeCallCallee,
     ) -> CompileResult<CNativeValueMaterialization> {
-        if !native_user_function_accepts_arg_count(&function.decl, args.len()) {
-            return Err(
-                self.unsupported_call_operation(NativeCallOperation::value_result(
-                    span,
-                    callee,
-                    NativeCallBlocker::UnknownCalleeDiagnostics,
-                )),
-            );
-        }
+        let plan =
+            self.normalize_native_call_arguments_for_params(&function.decl.params, args, span)?;
 
-        if self.user_function_call_has_produced_by_reference_argument(&function.decl, args) {
+        if self.user_function_call_has_produced_by_reference_argument(&function.decl, args, &plan) {
             return self.materialize_user_function_produced_byref_alias_transfer_result(
                 function,
                 args,
@@ -36951,17 +37371,10 @@ impl CGenerator {
                 )),
             );
         }
-        if !native_user_function_accepts_arg_count(&function.decl, args.len()) {
-            return Err(
-                self.unsupported_call_operation(NativeCallOperation::value_result(
-                    span,
-                    callee,
-                    NativeCallBlocker::UnknownCalleeDiagnostics,
-                )),
-            );
-        }
+        let plan =
+            self.normalize_native_call_arguments_for_params(&function.decl.params, args, span)?;
 
-        if self.user_function_call_has_produced_by_reference_argument(&function.decl, args) {
+        if self.user_function_call_has_produced_by_reference_argument(&function.decl, args, &plan) {
             return self.materialize_user_function_produced_byref_alias_transfer_reference_result(
                 function,
                 args,
@@ -37384,6 +37797,9 @@ impl CGenerator {
                 assign_target_contains_destructor_observable_cleanup(target, &|expr| {
                     self.expr_requires_destructor_observable_cleanup_boundary(expr)
                 })
+            }
+            Expr::NamedArgument { expr, .. } => {
+                self.expr_requires_destructor_observable_cleanup_boundary(expr)
             }
             Expr::Closure { .. } => false,
             Expr::Null(_)
@@ -48204,6 +48620,16 @@ impl CGenerator {
                 )
             }
             Expr::Call { name, args, span } => {
+                if call_arguments_have_named(args) {
+                    if let Some(value) =
+                        self.try_materialize_user_function_call(name, args, *span, failure_cleanup)?
+                    {
+                        return Ok(Some(value));
+                    }
+                    return Err(
+                        self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
+                    );
+                }
                 if let Some(op_tag) = native_value_cast_builtin_op_tag(name) {
                     let [arg] = args.as_slice() else {
                         return Err(self.unsupported(*span, ASSEMBLY_CAST_REJECTION));
@@ -48329,8 +48755,19 @@ impl CGenerator {
                 }
                 Ok(None)
             }
-            Expr::DynamicCall { callee, args, span } => self
-                .try_materialize_dynamic_user_function_call(callee, args, *span, failure_cleanup),
+            Expr::DynamicCall { callee, args, span } => {
+                if call_arguments_have_named(args) {
+                    return Err(
+                        self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
+                    );
+                }
+                self.try_materialize_dynamic_user_function_call(
+                    callee,
+                    args,
+                    *span,
+                    failure_cleanup,
+                )
+            }
             Expr::Closure {
                 params,
                 captures,
@@ -48358,13 +48795,22 @@ impl CGenerator {
                 method,
                 args,
                 span,
-            } => self.try_materialize_receiver_method_source_call(
-                target,
-                method,
-                args,
-                *span,
-                failure_cleanup,
-            ),
+            } => self
+                .try_materialize_receiver_method_source_call(
+                    target,
+                    method,
+                    args,
+                    *span,
+                    failure_cleanup,
+                )
+                .and_then(|value| {
+                    if value.is_none() && call_arguments_have_named(args) {
+                        Err(self
+                            .unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION))
+                    } else {
+                        Ok(value)
+                    }
+                }),
             Expr::StaticMethodCall {
                 class_name,
                 method,
@@ -48379,6 +48825,11 @@ impl CGenerator {
                     failure_cleanup,
                 )? {
                     return Ok(Some(value));
+                }
+                if call_arguments_have_named(args) {
+                    return Err(
+                        self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
+                    );
                 }
                 self.try_materialize_declared_class_static_method_call(
                     class_name,
@@ -48403,6 +48854,11 @@ impl CGenerator {
                 )? {
                     return Ok(Some(value));
                 }
+                if call_arguments_have_named(args) {
+                    return Err(
+                        self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
+                    );
+                }
                 self.try_materialize_declared_object_static_method_call(
                     target,
                     method,
@@ -48426,6 +48882,11 @@ impl CGenerator {
                 )? {
                     return Ok(Some(value));
                 }
+                if call_arguments_have_named(args) {
+                    return Err(
+                        self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
+                    );
+                }
                 self.try_materialize_declared_class_dynamic_method_call(
                     target,
                     method,
@@ -48434,37 +48895,71 @@ impl CGenerator {
                     failure_cleanup,
                 )
             }
-            Expr::ParentMethodCall { method, args, span } => self
-                .try_materialize_parent_static_method_source_call(
+            Expr::ParentMethodCall { method, args, span } => {
+                if let Some(value) = self.try_materialize_parent_static_method_source_call(
                     method,
                     args,
                     *span,
                     failure_cleanup,
-                ),
-            Expr::SelfMethodCall { method, args, span } => self
-                .try_materialize_self_static_method_source_call(
+                )? {
+                    return Ok(Some(value));
+                }
+                if call_arguments_have_named(args) {
+                    return Err(
+                        self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
+                    );
+                }
+                Ok(None)
+            }
+            Expr::SelfMethodCall { method, args, span } => {
+                if let Some(value) = self.try_materialize_self_static_method_source_call(
                     method,
                     args,
                     *span,
                     failure_cleanup,
-                ),
-            Expr::LateStaticMethodCall { method, args, span } => self
-                .try_materialize_late_static_method_source_call(
+                )? {
+                    return Ok(Some(value));
+                }
+                if call_arguments_have_named(args) {
+                    return Err(
+                        self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
+                    );
+                }
+                Ok(None)
+            }
+            Expr::LateStaticMethodCall { method, args, span } => {
+                if let Some(value) = self.try_materialize_late_static_method_source_call(
                     method,
                     args,
                     *span,
                     failure_cleanup,
-                ),
+                )? {
+                    return Ok(Some(value));
+                }
+                if call_arguments_have_named(args) {
+                    return Err(
+                        self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
+                    );
+                }
+                Ok(None)
+            }
             Expr::New {
                 class_name,
                 args,
                 span,
-            } => self.try_materialize_declared_class_new_expr(
-                class_name,
-                args,
-                *span,
-                failure_cleanup,
-            ),
+            } => {
+                if call_arguments_have_named(args) {
+                    return Err(
+                        self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
+                    );
+                }
+                self.try_materialize_declared_class_new_expr(
+                    class_name,
+                    args,
+                    *span,
+                    failure_cleanup,
+                )
+            }
             Expr::Property {
                 target, property, ..
             } => self
@@ -51552,6 +52047,7 @@ fn native_foreach_expr_may_mutate_storage(expr: &Expr) -> bool {
         | Expr::SelfMethodCall { args, .. }
         | Expr::LateStaticMethodCall { args, .. }
         | Expr::New { args, .. } => args.iter().any(native_foreach_expr_may_mutate_storage),
+        Expr::NamedArgument { expr, .. } => native_foreach_expr_may_mutate_storage(expr),
         Expr::Binary { left, right, .. } => {
             native_foreach_expr_may_mutate_storage(left)
                 || native_foreach_expr_may_mutate_storage(right)
@@ -58675,10 +59171,15 @@ echo " 10" < "zeta";
             static_method.availability,
             NativeMethodStaticSignatureAvailability::Known(expected_signature)
         );
-        assert_eq!(
+        assert!(matches!(
             static_method.argument_strategy,
-            NativeMethodStaticSourceCallArgumentStrategy::ForwardCallSite
-        );
+            NativeMethodStaticSourceCallArgumentStrategy::Frame(ref plan)
+                if plan.params.len() == 2
+                    && plan.fixed_count() == 2
+                    && plan.variadic_param().is_none()
+                    && plan.params[0].by_reference
+                    && !plan.params[1].by_reference
+        ));
 
         let object_static = generator
             .object_static_method_source_call_signature_contract(
@@ -58698,10 +59199,15 @@ echo " 10" < "zeta";
                 returns_by_reference: false,
             })
         );
-        assert_eq!(
+        assert!(matches!(
             object_static.argument_strategy,
-            NativeMethodStaticSourceCallArgumentStrategy::ForwardCallSite
-        );
+            NativeMethodStaticSourceCallArgumentStrategy::Frame(ref plan)
+                if plan.params.len() == 2
+                    && plan.fixed_count() == 2
+                    && plan.variadic_param().is_none()
+                    && plan.params[0].by_reference
+                    && !plan.params[1].by_reference
+        ));
         assert!(
             generator
                 .object_static_method_source_call_signature_contract(

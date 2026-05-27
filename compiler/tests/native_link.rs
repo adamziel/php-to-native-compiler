@@ -21217,6 +21217,45 @@ const NATIVE_VARIADIC_USER_FUNCTION_FRAME_SOURCE: &str = concat!(
     "echo call_dynamic(\"first_extra\", \"dyn\");\n",
 );
 
+const NATIVE_NAMED_USER_FUNCTION_ARGUMENT_SOURCE: &str = concat!(
+    "<?php\n",
+    "function named_marker($label) { echo $label; return $label; }\n",
+    "function named_join($first, &$slot, $third = \"D\", ...$tail) {\n",
+    "    $slot = $slot . \"!\";\n",
+    "    return $first . $slot . $third . $tail[\"extra\"];\n",
+    "}\n",
+    "$slot = \"S\";\n",
+    "echo named_join(third: named_marker(\"T\"), extra: named_marker(\"E\"), first: named_marker(\"F\"), slot: $slot), \"|\", $slot;\n",
+);
+
+const NATIVE_NAMED_METHOD_SOURCE_CALL_SOURCE: &str = concat!(
+    "<?php\n",
+    "function named_method_marker($label) { echo $label; return $label; }\n",
+    "class NamedMethodCallBox {\n",
+    "    public function mix($first, &$slot, $third = \"D\", ...$tail) {\n",
+    "        $slot = $slot . \"?\";\n",
+    "        return $first . $slot . $third . $tail[\"extra\"];\n",
+    "    }\n",
+    "}\n",
+    "$box = new NamedMethodCallBox();\n",
+    "$slot = \"S\";\n",
+    "echo $box->mix(third: named_method_marker(\"T\"), extra: named_method_marker(\"E\"), first: named_method_marker(\"F\"), slot: $slot), \"|\", $slot;\n",
+);
+
+const NATIVE_NAMED_DYNAMIC_METHOD_SOURCE_CALL_SOURCE: &str = concat!(
+    "<?php\n",
+    "function named_dynamic_method_marker($label) { echo $label; return $label; }\n",
+    "class NamedDynamicMethodCallBox {\n",
+    "    public function mix($first, &$slot, $third = \"D\", ...$tail) {\n",
+    "        $slot = $slot . \"~\";\n",
+    "        return $first . $slot . $third . $tail[\"extra\"];\n",
+    "    }\n",
+    "}\n",
+    "$box = new NamedDynamicMethodCallBox();\n",
+    "$slot = \"S\";\n",
+    "echo $box->{(true ? \"mix\" : \"mix\")}(third: named_dynamic_method_marker(\"T\"), extra: named_dynamic_method_marker(\"E\"), first: named_dynamic_method_marker(\"F\"), slot: $slot), \"|\", $slot;\n",
+);
+
 const NATIVE_BY_REFERENCE_USER_FUNCTION_FRAME_SOURCE: &str = concat!(
     "<?php\n",
     "function set_to(&$slot, $value) {\n",
@@ -21672,6 +21711,92 @@ fn native_executable_c_source_lowers_variadic_user_function_frames() {
             && !source.contains("assembly dynamic function-call lowering rejects")
             && !source.contains("bounded generated-C frame subset"),
         "supported by-value variadic frames should not hit declaration or call blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_named_user_function_arguments_through_shared_normalization() {
+    let program = parse(NATIVE_NAMED_USER_FUNCTION_ARGUMENT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_array_insert_key_value_with_diagnostic")
+            && body.contains("phpc_native_call_arguments_push_reference_and_free")
+            && body.contains("phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments"),
+        "named direct user-function calls should collect named variadics, propagate references, and bind through the runtime callable ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("named argument lowering is only implemented"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_named_method_source_call_arguments_through_carriers() {
+    let program = parse(NATIVE_NAMED_METHOD_SOURCE_CALL_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains(
+            "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+        ) && body.contains("receiver_method_source_call_args_")
+            && body.contains("phpc_native_array_insert_key_value_with_diagnostic")
+            && body.contains("phpc_native_call_arguments_push_reference_and_free"),
+        "named receiver-method calls should bind through shared source-call carriers with named variadic and by-reference slots:\n{source}"
+    );
+    assert!(
+        !body.contains("method_dispatch_status")
+            && !source.contains("named argument lowering is only implemented"),
+        "named receiver-method source calls should not fall back to generated frame ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_named_dynamic_method_source_call_arguments_through_carriers() {
+    let program = parse(NATIVE_NAMED_DYNAMIC_METHOD_SOURCE_CALL_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains(
+            "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+        ) && body.contains("dynamic_receiver_method_source_call_args_")
+            && body.contains("phpc_native_array_insert_key_value_with_diagnostic")
+            && body.contains("phpc_native_call_arguments_push_reference_and_free"),
+        "named dynamic receiver-method calls should bind through shared source-call carriers with named variadic and by-reference slots:\n{source}"
+    );
+    assert!(
+        !body.contains("dynamic_method_dispatch_status")
+            && !body.contains("phpc_native_value_dynamic_method_name_matches")
+            && !source.contains("named argument lowering is only implemented"),
+        "named dynamic receiver-method source calls should not fall back to generated dynamic-dispatch ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_blocks_named_dynamic_method_fallback_without_shared_contract() {
+    let program = parse(concat!(
+        "<?php\n",
+        "class NamedDynamicMethodMagicBox {\n",
+        "    public function __call($name, $args) { return \"magic\"; }\n",
+        "    public function known($value) { return $value; }\n",
+        "}\n",
+        "$box = new NamedDynamicMethodMagicBox();\n",
+        "$method = \"known\";\n",
+        "echo $box->{$method}(value: \"x\");\n",
+    ))
+    .unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error
+            .message
+            .contains("named argument lowering is only implemented"),
+        "{}",
+        error.message
     );
 }
 
@@ -22628,6 +22753,90 @@ fn emit_exe_links_and_runs_variadic_user_function_frame_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"empty|filled|A|B|5|L|dyn");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_named_user_function_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "named_user_function_arguments",
+        NATIVE_NAMED_USER_FUNCTION_ARGUMENT_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native named user-function executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"TEFFS!TE|S!");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_named_method_source_call_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "named_method_source_call_arguments",
+        NATIVE_NAMED_METHOD_SOURCE_CALL_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native named method source-call executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"TEFFS?TE|S?");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_named_dynamic_method_source_call_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "named_dynamic_method_source_call_arguments",
+        NATIVE_NAMED_DYNAMIC_METHOD_SOURCE_CALL_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native named dynamic method source-call executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"TEFFS~TE|S~");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

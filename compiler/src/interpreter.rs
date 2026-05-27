@@ -14237,6 +14237,13 @@ impl Interpreter {
             Expr::LateStaticProperty { property, span } => {
                 self.evaluate_late_static_property(property, *span)
             }
+            Expr::NamedArgument { span, .. } => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call(
+                    "named argument",
+                    "interpreter call consumers have not been wired to shared named-argument normalization",
+                ),
+            )),
             Expr::MethodCall {
                 target,
                 method,

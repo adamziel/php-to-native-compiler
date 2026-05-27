@@ -6224,7 +6224,7 @@ impl Parser {
         if !self.check(|kind| matches!(kind, TokenKind::RParen)) {
             loop {
                 self.reject_unsupported_call_argument_syntax()?;
-                args.push(self.parse_expression_with_append_read(true)?);
+                args.push(self.parse_call_argument_after_open()?);
                 if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
                     break;
                 }
@@ -6235,6 +6235,23 @@ impl Parser {
         }
         self.consume_keyword(TokenKind::RParen, "expected ')' after arguments")?;
         Ok(args)
+    }
+
+    fn parse_call_argument_after_open(&mut self) -> CompileResult<Expr> {
+        if let TokenKind::Identifier(name) = self.peek().kind.clone() {
+            if matches!(self.peek_next().kind, TokenKind::Colon) {
+                let span = self.advance().span;
+                self.consume_keyword(TokenKind::Colon, "expected ':' after named argument")?;
+                let expr = self.parse_expression_with_append_read(true)?;
+                return Ok(Expr::NamedArgument {
+                    name,
+                    expr: Box::new(expr),
+                    span,
+                });
+            }
+        }
+
+        self.parse_expression_with_append_read(true)
     }
 
     fn reject_unsupported_call_argument_syntax(&self) -> CompileResult<()> {
@@ -6248,9 +6265,6 @@ impl Parser {
             }
             TokenKind::Ampersand => {
                 Err(self.error_at(token.span, unsupported_reference_argument_message()))
-            }
-            TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::Colon) => {
-                Err(self.error_at(token.span, unsupported_named_argument_message()))
             }
             _ => Ok(()),
         }
@@ -6323,6 +6337,7 @@ impl Parser {
             | Expr::ObjectStaticMethodCall { .. }
             | Expr::SelfMethodCall { .. }
             | Expr::LateStaticMethodCall { .. }
+            | Expr::NamedArgument { .. }
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
             | Expr::Closure { .. }
@@ -6407,6 +6422,7 @@ impl Parser {
             | Expr::ObjectStaticMethodCall { .. }
             | Expr::SelfMethodCall { .. }
             | Expr::LateStaticMethodCall { .. }
+            | Expr::NamedArgument { .. }
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
             | Expr::Closure { .. }
@@ -6547,6 +6563,7 @@ impl Parser {
             Expr::Call { args, .. } | Expr::New { args, .. } => {
                 args.iter().any(Self::expr_contains_assignment)
             }
+            Expr::NamedArgument { expr, .. } => Self::expr_contains_assignment(expr),
             Expr::Clone { expr, .. } => Self::expr_contains_assignment(expr),
             Expr::Closure { params, .. } => params
                 .iter()
@@ -6688,6 +6705,9 @@ impl Parser {
             Expr::Call { args, .. } | Expr::New { args, .. } => args
                 .iter()
                 .any(Self::expr_contains_unsupported_assignment_rhs),
+            Expr::NamedArgument { expr, .. } => {
+                Self::expr_contains_unsupported_assignment_rhs(expr)
+            }
             Expr::Clone { expr, .. } => Self::expr_contains_unsupported_assignment_rhs(expr),
             Expr::Closure { params, .. } => params
                 .iter()
@@ -6785,6 +6805,7 @@ impl Parser {
             Expr::SelfMethodCall { .. } => None,
             Expr::LateStaticMethodCall { .. } => None,
             Expr::Call { .. } | Expr::New { .. } => None,
+            Expr::NamedArgument { expr, .. } => Self::find_append_index_span(expr),
             Expr::Clone { expr, .. } => Self::find_append_index_span(expr),
             Expr::Closure { params, .. } => params
                 .iter()
