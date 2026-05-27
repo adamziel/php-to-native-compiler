@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 14:46 CEST
+Updated: 2026-05-27 14:59 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -17,18 +17,30 @@ changes the roadmap position.
 
 Overall integrated-roadmap progress: **80%** `[################----]`
 
-Selected executable PHP semantics: **85%** `[#################---]`
+Selected executable PHP semantics: **90%** `[##################--]`
 
-Latest accounted source capability: `5cbb90af` routes selected direct
-generated user-function spread/unpack calls through a reusable materialized
-call-argument entry and finalizer bridge. Supported direct calls now preserve
-source-order evaluation, positional unpack, string-key named unpack, ordinary
-named source arguments, default slots, variadic collection slots, duplicate and
-unknown-name diagnostics, positional-after-named diagnostics, required-argument
-diagnostics, and cleanup of materialized/default/slot ownership. Unsupported
-callable-family spread/unpack shapes and by-reference unpack transfer remain
-blocked at shared boundaries instead of gaining per-callable or per-arity
-lowering.
+Latest accounted source capability: `a7dcd288` routes selected generated-C
+interface method dispatch through shared metadata and source-call boundaries.
+Declared user interfaces now register generated-C metadata, parent-interface
+expansion, and case-insensitive interface keys; declared classes validate
+public non-static implementation methods against interface method metadata
+before class metadata is emitted. Supported interface-typed receiver calls now
+reuse the existing receiver method lookup/invoke path, preserving declared
+method precedence, visibility/access context, source-order named arguments,
+defaults, variadics, by-reference diagnostics, receiver/value cleanup,
+malformed callable metadata rejection, and class alias/case behavior. Missing,
+heterogeneous, autoload-only, or malformed interface/implementation metadata
+remains blocked instead of gaining interface-specific dispatch ladders.
+
+Recent source commit `5cbb90af` routes selected direct generated user-function
+spread/unpack calls through a reusable materialized call-argument entry and
+finalizer bridge. Supported direct calls now preserve source-order evaluation,
+positional unpack, string-key named unpack, ordinary named source arguments,
+default slots, variadic collection slots, duplicate and unknown-name
+diagnostics, positional-after-named diagnostics, required-argument diagnostics,
+and cleanup of materialized/default/slot ownership. Unsupported callable-family
+spread/unpack shapes and by-reference unpack transfer remain blocked at shared
+boundaries instead of gaining per-callable or per-arity lowering.
 
 Recent source correction `fbf1581b` restores LLVM known-string
 `function_exists` folding before the runtime text-membership fallback. Known
