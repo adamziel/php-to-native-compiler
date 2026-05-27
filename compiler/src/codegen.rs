@@ -92,6 +92,7 @@ const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering reje
 const LLVM_FUNCTION_CALL_REJECTION: &str = "LLVM function-call lowering rejects function calls, including user functions, callable builtins outside define()/constant()/defined(), and dynamic string-valued calls, until native runtime call lookup, stack frames, arity/type diagnostics, and callback dispatch exist; phpc run handles current function-call behavior";
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, unsupported by-reference argument binding, and unsupported dynamic string-valued calls, until full callable lookup, full arity/type diagnostics, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value fixed/default/variadic direct, supported direct and compiler-known single-target by-reference frames, finite known-string dynamic, and runtime string-valued dynamic user-function frames";
 const NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION: &str = "named argument lowering is only implemented for compiler-known generated-C user-function, constructor, and selected method/static source-call carriers; builtins, dynamic callables, and unsupported call families remain blocked until each consumer binds through shared source-order/parameter-order call-argument normalization";
+const ARGUMENT_UNPACKING_REQUIRES_MATERIALIZED_ENTRY_PRODUCER_REJECTION: &str = "unsupported argument unpacking for native call lowering: spread operands need a materialized-entry producer plus finalized NativeCallArgumentsHandle bridge before dynamic callable, descriptor closure, magic fallback, and unknown-signature invocation";
 const LLVM_STRING_PREDICATE_REJECTION: &str = "LLVM string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; lowerable LLVM and generated-native C str_starts_with(), str_ends_with(), and str_contains() operands route through the shared runtime contract";
 const ASSEMBLY_STRING_PREDICATE_REJECTION: &str = "assembly string-predicate lowering rejects forms outside the reusable native string predicate contract until operands can reach byte-preserving value conversion, diagnostics, and cleanup; generated-native C routes lowerable str_starts_with(), str_ends_with(), and str_contains() operands through the shared runtime contract";
 const LLVM_STRING_INT_OPERATION_REJECTION: &str = "LLVM string-int/search builtin lowering rejects strcasecmp(), strcmp(), strncmp(), strncasecmp(), strpos(), substr_count(), ord(), and crc32() forms outside the reusable native string operation contracts, including unsupported arity, non-lowerable operands, nested call cleanup, references/copy-on-write, and exact native builtin diagnostics; lowerable LLVM and generated-native C string operands route through shared runtime contracts";
@@ -20700,6 +20701,17 @@ impl CGenerator {
         global_function_fallback_name(name)
     }
 
+    fn direct_call_matches_global_builtin(&self, name: &str, builtin: &str) -> bool {
+        if self.direct_call_targets_registered_user_function(name) {
+            return false;
+        }
+
+        exact_function_call_lookup_name(name).eq_ignore_ascii_case(builtin)
+            || self
+                .global_builtin_fallback_name_for_direct_call(name)
+                .is_some_and(|fallback| fallback.eq_ignore_ascii_case(builtin))
+    }
+
     fn direct_call_runtime_builtin_fallback_signature(
         &self,
         name: &str,
@@ -30258,6 +30270,20 @@ impl CGenerator {
             CNativeCallableIdentity::RuntimeBuiltin {
                 name: name.to_string(),
             }
+        })
+    }
+
+    fn known_callable_expr_has_blocked_runtime_builtin_source_call(&self, expr: &Expr) -> bool {
+        let Some(values) = self.static_known_string_values_for_expr(expr) else {
+            return false;
+        };
+        values.values().iter().any(|value| {
+            native_builtin_signature_for_name(value).is_some_and(|signature| {
+                matches!(
+                    signature.source_call_support,
+                    CNativeBuiltinSignatureSourceCallSupport::Blocked(_)
+                )
+            })
         })
     }
 
@@ -40938,7 +40964,16 @@ impl CGenerator {
                 Ok(CValue::NativeValueHandle(value.handle))
             }
             Expr::Call { name, args, span } => {
-                if let Some(value) =
+                if self.direct_call_matches_global_builtin(name, "call_user_func") {
+                    let value = self.materialize_call_user_func_builtin_call(args, *span, "")?;
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    Ok(CValue::NativeValueHandle(value.handle))
+                } else if self.direct_call_matches_global_builtin(name, "call_user_func_array") {
+                    let value =
+                        self.materialize_call_user_func_array_builtin_call(args, *span, "")?;
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    Ok(CValue::NativeValueHandle(value.handle))
+                } else if let Some(value) =
                     self.try_materialize_user_function_call(name, args, *span, "")?
                 {
                     self.retain_native_value_cleanup_handle(&value.handle);
@@ -41450,6 +41485,141 @@ impl CGenerator {
         .map(Some)
     }
 
+    fn source_call_params_require_reference_for_value_args(
+        params: &[FunctionParam],
+        arg_count: Option<usize>,
+    ) -> bool {
+        params.iter().enumerate().any(|(index, param)| {
+            if !param.by_reference {
+                return false;
+            }
+            if param.is_variadic {
+                return arg_count.map_or(true, |arg_count| arg_count > index);
+            }
+            arg_count.map_or(true, |arg_count| index < arg_count)
+        })
+    }
+
+    fn scoped_callable_signature_requires_reference_for_value_args(
+        signature: &CScopedCallableStringSignature,
+        arg_count: Option<usize>,
+    ) -> bool {
+        match arg_count {
+            Some(arg_count) => (0..arg_count).any(|index| signature.param_is_by_reference(index)),
+            None => signature
+                .fixed_param_by_reference
+                .iter()
+                .any(|by_reference| *by_reference),
+        }
+    }
+
+    fn source_call_contract_requires_reference_for_value_args(
+        contract: &NativeMethodStaticSignatureFallbackContract,
+        arg_count: Option<usize>,
+    ) -> bool {
+        match contract.argument_strategy() {
+            NativeMethodStaticSourceCallArgumentStrategy::Frame(plan) => {
+                Self::source_call_params_require_reference_for_value_args(&plan.params, arg_count)
+            }
+            NativeMethodStaticSourceCallArgumentStrategy::ForwardCallSite => {
+                match contract.signature() {
+                    Some(signature) => {
+                        Self::scoped_callable_signature_requires_reference_for_value_args(
+                            signature, arg_count,
+                        )
+                    }
+                    None => true,
+                }
+            }
+            NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic => true,
+        }
+    }
+
+    fn call_user_func_callback_accepts_value_args(
+        &self,
+        callee: &Expr,
+        args: &[Expr],
+        arg_count: Option<usize>,
+    ) -> bool {
+        if let Expr::Closure { params, .. } = callee {
+            return !Self::source_call_params_require_reference_for_value_args(params, arg_count);
+        }
+
+        let Some(contract) =
+            self.callable_value_source_call_signature_contract_for_args(callee, args)
+        else {
+            return false;
+        };
+        !Self::source_call_contract_requires_reference_for_value_args(&contract, arg_count)
+    }
+
+    fn materialize_call_user_func_builtin_call(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        if args.is_empty() || call_arguments_have_named(args) || call_arguments_have_spread(args) {
+            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+        }
+
+        let callee = &args[0];
+        let call_args = &args[1..];
+        if !self.call_user_func_callback_accepts_value_args(
+            callee,
+            call_args,
+            Some(call_args.len()),
+        ) {
+            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+        }
+
+        let source_call_contract =
+            self.callable_value_source_call_signature_contract_for_args(callee, call_args);
+        match self.try_materialize_dynamic_user_function_call(
+            callee,
+            call_args,
+            span,
+            failure_cleanup,
+            source_call_contract,
+        )? {
+            Some(value) => Ok(value),
+            None => Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION)),
+        }
+    }
+
+    fn materialize_call_user_func_array_builtin_call(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        if args.len() != 2 || call_arguments_have_named(args) || call_arguments_have_spread(args) {
+            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+        }
+
+        let callee = &args[0];
+        let call_args = vec![Expr::SpreadArgument {
+            expr: Box::new(args[1].clone()),
+            span: args[1].span(),
+        }];
+        if !self.call_user_func_callback_accepts_value_args(callee, &call_args, None) {
+            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+        }
+
+        let source_call_contract =
+            self.callable_value_source_call_signature_contract_for_args(callee, &call_args);
+        match self.try_materialize_dynamic_user_function_call(
+            callee,
+            &call_args,
+            span,
+            failure_cleanup,
+            source_call_contract,
+        )? {
+            Some(value) => Ok(value),
+            None => Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION)),
+        }
+    }
+
     fn materialize_exact_imported_runtime_builtin_call(
         &mut self,
         name: &str,
@@ -41521,6 +41691,16 @@ impl CGenerator {
         failure_cleanup: &str,
         source_call_contract: Option<NativeMethodStaticSignatureFallbackContract>,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        if source_call_contract.is_none()
+            && call_arguments_have_spread(args)
+            && self.known_callable_expr_has_blocked_runtime_builtin_source_call(callee)
+        {
+            return Err(self.unsupported(
+                span,
+                ARGUMENT_UNPACKING_REQUIRES_MATERIALIZED_ENTRY_PRODUCER_REJECTION,
+            ));
+        }
+
         if let Some(value) =
             self.try_materialize_callable_object_source_call(callee, args, span, failure_cleanup)?
         {
@@ -43550,7 +43730,7 @@ impl CGenerator {
         if call_arguments_have_spread(args) {
             return Err(self.unsupported(
                 span,
-                "unsupported argument unpacking for native call lowering: spread operands need a materialized-entry producer plus finalized NativeCallArgumentsHandle bridge before dynamic callable, descriptor closure, magic fallback, and unknown-signature invocation",
+                ARGUMENT_UNPACKING_REQUIRES_MATERIALIZED_ENTRY_PRODUCER_REJECTION,
             ));
         }
 

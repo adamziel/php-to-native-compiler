@@ -12017,6 +12017,103 @@ fn emit_exe_links_and_runs_by_value_captured_descriptor_closure_invocation() {
 }
 
 #[test]
+fn native_executable_c_source_routes_call_user_func_closure_captures_through_source_calls() {
+    let source = concat!(
+        "<?php\n",
+        "function call_user_func_capture_relay($value) { $base = \"R\"; $callback = function ($suffix) use ($base) { return $base . $suffix; }; return call_user_func($callback, $value); }\n",
+        "function call_user_func_array_capture_relay($value) { $base = \"A\"; $callback = function ($suffix, $tail) use ($base) { return $base . $suffix . $tail; }; return call_user_func_array($callback, array($value, \"E\")); }\n",
+        "$base = \"B\";\n",
+        "$callback = function ($suffix, $tail = \"T\") use ($base) { return $base . $suffix . $tail; };\n",
+        "$base = \"changed\";\n",
+        "echo call_user_func($callback, \"1\", \"A\"), \"|\";\n",
+        "echo call_user_func_array($callback, array(\"2\", \"C\")), \"|\";\n",
+        "echo call_user_func_capture_relay(\"3\"), \"|\";\n",
+        "echo call_user_func_array_capture_relay(\"4\"), \"|\";\n",
+        "echo call_user_func(function ($suffix) use ($base) { return $base . $suffix; }, \"5\");\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_from_closure_descriptor_captures_and_free")
+            && source.contains("phpc_NativeCallArgumentsHandle closure_source_call_args_")
+            && source.contains(
+                "phpc_native_closure_invoke_value_with_diagnostic_and_free_arguments"
+            )
+            && source.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free"),
+        "call_user_func closure captures should reuse descriptor capture and source-call argument machinery:\n{source}"
+    );
+    assert!(
+        source.contains("call_user_func_capture_relay")
+            && source.contains("call_user_func_array_capture_relay"),
+        "call_user_func closure captures should also lower inside generated user-function frames:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly function-call lowering rejects")
+            && !source.contains("assembly dynamic function-call lowering rejects")
+            && !source.contains(" = phpc_native_closure_invoke_result("),
+        "call_user_func closure capture support must not fall back to blockers or legacy closure invocation:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_keeps_call_user_func_byref_closure_params_blocked() {
+    let source = concat!(
+        "<?php\n",
+        "$slot = \"old\";\n",
+        "$callback = function (&$slot) { $slot = \"changed\"; return $slot; };\n",
+        "echo call_user_func($callback, $slot), \":\", $slot;\n",
+    );
+    let program = parse(source).unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error
+            .message
+            .contains("assembly function-call lowering rejects"),
+        "call_user_func must not lower by-reference closure parameters through ordinary dynamic-call mutation semantics:\n{error:?}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_call_user_func_captured_descriptor_closure_invocation() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function call_user_func_capture_relay($value) { $base = \"R\"; $callback = function ($suffix) use ($base) { return $base . $suffix; }; return call_user_func($callback, $value); }\n",
+        "function call_user_func_array_capture_relay($value) { $base = \"A\"; $callback = function ($suffix, $tail) use ($base) { return $base . $suffix . $tail; }; return call_user_func_array($callback, array($value, \"E\")); }\n",
+        "$base = \"B\";\n",
+        "$callback = function ($suffix, $tail = \"T\") use ($base) { return $base . $suffix . $tail; };\n",
+        "$base = \"changed\";\n",
+        "echo call_user_func($callback, \"1\", \"A\"), \"|\";\n",
+        "echo call_user_func_array($callback, array(\"2\", \"C\")), \"|\";\n",
+        "echo call_user_func_capture_relay(\"3\"), \"|\";\n",
+        "echo call_user_func_array_capture_relay(\"4\"), \"|\";\n",
+        "echo call_user_func(function ($suffix) use ($base) { return $base . $suffix; }, \"5\");\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("descriptor_closure_call_user_func_captures", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native call_user_func capture closure executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"B1A|B2C|R3|A4E|changed5");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn emit_exe_links_and_runs_by_reference_captured_descriptor_closure_invocation() {
     if !has_cc() {
         return;
