@@ -24670,6 +24670,18 @@ const NATIVE_IMPORTED_USER_FUNCTION_ALIAS_SOURCE: &str = concat!(
     "echo label(\"direct\");\n",
 );
 
+const NATIVE_QUALIFIED_USER_FUNCTION_CALL_SOURCE: &str = concat!(
+    "<?php\n",
+    "namespace App;\n",
+    "function helper($value = \"default\") {\n",
+    "    return \"App\\\\helper:\" . $value;\n",
+    "}\n",
+    "echo namespace\\helper(\"namespace\"), \"|\";\n",
+    "echo \\App\\helper(\"exact\"), \"|\";\n",
+    "echo \\App\\helper(value: \"named\"), \"|\";\n",
+    "echo helper();\n",
+);
+
 const NATIVE_IMPORTED_RUNTIME_BUILTIN_ALIAS_SOURCE: &str = concat!(
     "<?php\n",
     "namespace App\\Demo;\n",
@@ -25856,6 +25868,30 @@ fn native_executable_c_source_lowers_exact_imported_user_function_aliases() {
         !source.contains("assembly function-call lowering rejects")
             && !source.contains("assembly user-function lowering rejects"),
         "supported imported user-function aliases should not hit call/frame blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_qualified_user_function_calls() {
+    let program = parse(NATIVE_QUALIFIED_USER_FUNCTION_CALL_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_user_function_0_app_helper_native_callable_frame"),
+        "qualified direct calls should target the registered generated user-function frame:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments")
+            .count()
+            >= 4
+            && body.contains("phpc_native_call_arguments_push_value_and_free"),
+        "qualified, fully-qualified, named fully-qualified, and unqualified calls should use the shared source-call lookup/invoke ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly function-call lowering rejects")
+            && !source.contains("assembly user-function lowering rejects"),
+        "supported qualified direct user-function calls should not hit call/frame blockers:\n{source}"
     );
 }
 
@@ -28652,6 +28688,37 @@ fn emit_exe_links_and_runs_exact_imported_user_function_alias_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"label:A|new:new|label:direct");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_qualified_user_function_call_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "qualified_user_function_call",
+        NATIVE_QUALIFIED_USER_FUNCTION_CALL_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native qualified user-function executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"App\\helper:namespace|App\\helper:exact|App\\helper:named|App\\helper:default"
+    );
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

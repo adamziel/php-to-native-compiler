@@ -1001,6 +1001,48 @@ fn fully_qualified_function_calls_parse_as_exact_global_calls() {
 }
 
 #[test]
+fn qualified_function_calls_parse_to_resolved_direct_call_names() {
+    let program = parse(
+        r#"<?php
+namespace Root;
+$a = App\helper();
+$b = Sub\helper();
+namespace\helper();
+$d = \App\helper();
+$e = \strlen();
+"#,
+    )
+    .unwrap();
+
+    let names: Vec<&str> = program
+        .statements
+        .iter()
+        .filter_map(|stmt| match stmt {
+            Stmt::Assign {
+                expr: Expr::Call { name, .. },
+                ..
+            }
+            | Stmt::Expr {
+                expr: Expr::Call { name, .. },
+                ..
+            } => Some(name.as_str()),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        names,
+        [
+            "Root\\App\\helper",
+            "Root\\Sub\\helper",
+            "Root\\helper",
+            "\\App\\helper",
+            "\\strlen"
+        ]
+    );
+}
+
+#[test]
 fn unsupported_namespace_qualified_constant_reads_have_stable_parse_errors() {
     let cases = [
         (

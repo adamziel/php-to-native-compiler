@@ -224,6 +224,57 @@ echo strlen("abc");
 }
 
 #[test]
+fn qualified_function_calls_resolve_relative_namespace_and_exact_global_names() {
+    let root = std::env::temp_dir().join(format!(
+        "phpc-namespace-resolution-{}-{}",
+        std::process::id(),
+        "qualified-function-calls"
+    ));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("create qualified function fixture directory");
+    let main = root.join("index.php");
+    let lib = root.join("functions.php");
+
+    fs::write(
+        &lib,
+        r#"<?php
+namespace App\Demo\Sub;
+
+function helper($value) {
+    return __FUNCTION__ . ":" . $value;
+}
+"#,
+    )
+    .expect("write qualified function library fixture");
+
+    let source = r#"<?php
+namespace App\Demo;
+require 'functions.php';
+
+function helper($value) {
+    return __FUNCTION__ . ":" . $value;
+}
+
+echo namespace\helper("namespace"), "\n";
+echo Sub\helper("relative"), "\n";
+echo \App\Demo\Sub\helper("exact");
+"#;
+    fs::write(&main, source).expect("write qualified function main fixture");
+
+    let execution = run_source_with_source_file(source, main.display().to_string()).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "App\\Demo\\helper:namespace\nApp\\Demo\\Sub\\helper:relative\nApp\\Demo\\Sub\\helper:exact"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let _ = fs::remove_file(lib);
+    let _ = fs::remove_file(main);
+    let _ = fs::remove_dir(root);
+}
+
+#[test]
 fn function_imports_use_exact_lookup_without_global_suffix_fallback() {
     let root = std::env::temp_dir().join(format!(
         "phpc-namespace-resolution-{}-{}",

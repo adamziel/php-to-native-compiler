@@ -671,63 +671,45 @@ use App\A, App\B;
 }
 
 #[test]
-fn namespace_qualified_function_names_are_rejected_with_stable_parse_errors() {
-    let function_cases = [
-        (
-            r#"<?php
+fn namespace_qualified_function_names_resolve_before_runtime_lookup() {
+    let execution = run_source(
+        r#"<?php
+namespace App;
+function make() {
+    return __FUNCTION__;
+}
+echo namespace\make();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "App\\make");
+
+    let error = runtime_error(
+        r#"<?php
+namespace App;
 App\make();
 "#,
-            2,
-            1,
-        ),
-        (
-            r#"<?php
-$result = namespace\make();
-"#,
-            2,
-            11,
-        ),
-    ];
-
-    for (source, line, column) in function_cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported namespace-qualified function name: namespace-aware function resolution is not implemented"
-        );
-    }
+    );
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, "undefined function App\\App\\make()");
 }
 
 #[test]
-fn fully_qualified_function_calls_are_rejected_with_stable_parse_errors() {
-    let function_cases = [
-        (
-            r#"<?php
-$result = \strlen("abc");
+fn fully_qualified_function_calls_use_exact_global_lookup() {
+    let execution = run_source(
+        r#"<?php
+namespace App;
+function make() {
+    return __FUNCTION__;
+}
+echo \strlen("abc"), "|", \App\make();
 "#,
-            2,
-            11,
-        ),
-        (
-            r#"<?php
-$result = \App\make();
-"#,
-            2,
-            11,
-        ),
-    ];
+    )
+    .unwrap();
 
-    for (source, line, column) in function_cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported fully-qualified function call: leading global namespace function calls require exact function-table lookup, namespace fallback bypass, builtin/user dispatch, and native lowering"
-        );
-    }
+    assert_eq!(execution.stdout, "3|App\\make");
 }
 
 #[test]

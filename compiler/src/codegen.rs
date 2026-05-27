@@ -27795,7 +27795,7 @@ impl CGenerator {
         };
         let Some(function) = self
             .user_functions
-            .get(&Self::user_function_key(name))
+            .get(&Self::direct_call_user_function_key(name))
             .cloned()
         else {
             return Ok(false);
@@ -27846,7 +27846,7 @@ impl CGenerator {
             return false;
         };
         self.user_functions
-            .get(&Self::user_function_key(name))
+            .get(&Self::direct_call_user_function_key(name))
             .is_some_and(|function| function.decl.returns_by_reference)
     }
 
@@ -39572,11 +39572,11 @@ impl CGenerator {
                 if call_arguments_have_named(args)
                     && self
                         .user_functions
-                        .contains_key(&Self::user_function_key(name)) =>
+                        .contains_key(&Self::direct_call_user_function_key(name)) =>
             {
                 let function = self
                     .user_functions
-                    .get(&Self::user_function_key(name))
+                    .get(&Self::direct_call_user_function_key(name))
                     .cloned()
                     .expect("checked user function exists");
                 let value = self.materialize_user_function_call(
@@ -39713,7 +39713,7 @@ impl CGenerator {
                     && !(name.contains('\\')
                         && self
                             .user_functions
-                            .contains_key(&Self::user_function_key(name))) =>
+                            .contains_key(&Self::direct_call_user_function_key(name))) =>
             {
                 self.emit_class_alias_call(args, *span)
             }
@@ -43399,7 +43399,7 @@ impl CGenerator {
         match arg {
             Expr::Call { name, args, .. } => self
                 .user_functions
-                .get(&Self::user_function_key(name))
+                .get(&Self::direct_call_user_function_key(name))
                 .is_some_and(|function| {
                     function.decl.returns_by_reference
                         && native_user_function_accepts_arg_count(&function.decl, args.len())
@@ -43551,7 +43551,7 @@ impl CGenerator {
             Expr::Call { name, args, span } => {
                 let Some(function) = self
                     .user_functions
-                    .get(&Self::user_function_key(name))
+                    .get(&Self::direct_call_user_function_key(name))
                     .cloned()
                 else {
                     return Ok(None);

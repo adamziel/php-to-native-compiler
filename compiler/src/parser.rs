@@ -32,6 +32,14 @@ struct Parser {
     trace_parse: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FunctionCallName {
+    Unqualified(String),
+    Qualified(String),
+    FullyQualified(String),
+    NamespaceRelative(String),
+}
+
 #[derive(Clone, Copy)]
 enum SwitchBodyKind {
     Brace,
@@ -113,6 +121,9 @@ impl Parser {
             TokenKind::Trait => self.parse_trait(),
             TokenKind::Enum => self.parse_enum(),
             TokenKind::Abstract | TokenKind::Final | TokenKind::Readonly => self.parse_class(),
+            TokenKind::Namespace if matches!(self.peek_next().kind, TokenKind::Backslash) => {
+                self.parse_assignment_or_expression_statement()
+            }
             TokenKind::Namespace => self.parse_namespace(),
             TokenKind::Use => self.parse_use_declaration(),
             TokenKind::Declare => self.parse_unsupported_declare(),
@@ -6021,10 +6032,15 @@ impl Parser {
                             unsupported_namespace_qualified_constant_name_message(),
                         ));
                     }
-                    return Err(self.error_at(
-                        token.span,
-                        unsupported_namespace_qualified_function_name_message(),
-                    ));
+                    self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
+                    let args = self.parse_call_arguments_after_open()?;
+                    let name =
+                        self.resolve_function_call_name(FunctionCallName::Qualified(qualified));
+                    return Ok(Expr::Call {
+                        name,
+                        args,
+                        span: token.span,
+                    });
                 }
                 if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) {
                     let receiver = if is_magic_static_receiver(&name) {
@@ -6043,7 +6059,7 @@ impl Parser {
                 }
                 self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
                 let args = self.parse_call_arguments_after_open()?;
-                let name = self.resolve_function_call_name(&name);
+                let name = self.resolve_function_call_name(FunctionCallName::Unqualified(name));
                 Ok(Expr::Call {
                     name,
                     args,
@@ -6062,8 +6078,10 @@ impl Parser {
                 if self.check(|kind| matches!(kind, TokenKind::LParen)) {
                     self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
                     let args = self.parse_call_arguments_after_open()?;
+                    let name = self
+                        .resolve_function_call_name(FunctionCallName::FullyQualified(qualified));
                     return Ok(Expr::Call {
-                        name: qualified,
+                        name,
                         args,
                         span: token.span,
                     });
@@ -6086,10 +6104,15 @@ impl Parser {
                         unsupported_namespace_qualified_constant_name_message(),
                     ));
                 }
-                Err(self.error_at(
-                    token.span,
-                    unsupported_namespace_qualified_function_name_message(),
-                ))
+                self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
+                let args = self.parse_call_arguments_after_open()?;
+                let name =
+                    self.resolve_function_call_name(FunctionCallName::NamespaceRelative(suffix));
+                Ok(Expr::Call {
+                    name,
+                    args,
+                    span: token.span,
+                })
             }
             TokenKind::Static if self.check(|kind| matches!(kind, TokenKind::Function)) => {
                 self.advance();
@@ -7551,19 +7574,31 @@ impl Parser {
         }
     }
 
-    fn resolve_function_call_name(&self, name: &str) -> String {
-        if let Some((_, imported)) = self
-            .function_imports
-            .iter()
-            .find(|(alias, _)| alias.eq_ignore_ascii_case(name))
-        {
-            return imported.clone();
-        }
+    fn resolve_function_call_name(&self, name: FunctionCallName) -> String {
+        match name {
+            FunctionCallName::Unqualified(name) => {
+                if let Some((_, imported)) = self
+                    .function_imports
+                    .iter()
+                    .find(|(alias, _)| alias.eq_ignore_ascii_case(&name))
+                {
+                    return imported.clone();
+                }
 
-        if self.current_namespace.is_empty() {
-            name.to_string()
-        } else {
-            format!("{}\\{}", self.current_namespace, name)
+                if self.current_namespace.is_empty() {
+                    name
+                } else {
+                    format!("{}\\{}", self.current_namespace, name)
+                }
+            }
+            FunctionCallName::Qualified(name) | FunctionCallName::NamespaceRelative(name) => {
+                if self.current_namespace.is_empty() {
+                    name
+                } else {
+                    format!("{}\\{}", self.current_namespace, name)
+                }
+            }
+            FunctionCallName::FullyQualified(name) => name,
         }
     }
 
@@ -8341,10 +8376,6 @@ fn unsupported_nested_const_declaration_message() -> &'static str {
 
 fn unsupported_namespace_const_declaration_message() -> &'static str {
     "unsupported const declaration: namespace-qualified constant declarations are not implemented"
-}
-
-fn unsupported_namespace_qualified_function_name_message() -> &'static str {
-    "unsupported namespace-qualified function name: namespace-aware function resolution is not implemented"
 }
 
 fn unsupported_namespace_qualified_constant_name_message() -> &'static str {
