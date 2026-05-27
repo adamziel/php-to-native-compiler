@@ -139,7 +139,7 @@ const ASSEMBLY_CLASS_NAME_CONSTANT_REJECTION: &str = "assembly class-name consta
 const LLVM_STATIC_MEMBER_REJECTION: &str = "LLVM static-member lowering rejects class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
 const ASSEMBLY_STATIC_MEMBER_REJECTION: &str = "assembly static-member lowering rejects class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
 const LLVM_METHOD_CALL_REJECTION: &str = "LLVM method-call lowering rejects instance, named static, object static-receiver, self::, parent::, and static:: method calls until native method lookup, receiver/static receiver resolution, $this and late-static-binding context, argument/arity diagnostics, visibility checks, references/copy-on-write, and exact native method-call errors exist; phpc run handles current bounded method-call behavior";
-const ASSEMBLY_METHOD_CALL_REJECTION: &str = "assembly method-call lowering rejects method calls outside the bounded generated-C public declared instance/static method frame subset, including unsupported dynamic method-name dispatch, self::, parent::, static::, unsupported method declarations, unsupported receiver classes, visibility contexts, references/copy-on-write, and exact native method-call errors; generated-native C lowers supported public declared instance methods with $this frame binding, runtime string-valued dynamic public instance methods through declared-frame dispatch, supported named public static methods without $this, and supported object static-receiver calls through static frames";
+const ASSEMBLY_METHOD_CALL_REJECTION: &str = "assembly method-call lowering rejects method calls outside the bounded generated-C public declared instance/static method subset, including unsupported dynamic method-name dispatch, self::, parent::, static::, unsupported method declarations, unsupported receiver classes, visibility contexts, references/copy-on-write, and exact native method-call errors; generated-native C lowers supported public declared instance methods with $this frame binding, runtime string-valued dynamic public instance methods through declared-frame dispatch, supported named public static methods without $this, and supported object static-receiver calls through static source-call carriers";
 const LLVM_CLONE_REJECTION: &str = "LLVM clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
 const ASSEMBLY_CLONE_REJECTION: &str = "assembly clone lowering rejects clone expressions, including direct-variable clone assignments that mirror public and context-aware non-public property reference slots, until native object handles, property slot cloning, __clone dispatch, reference-slot metadata, references/copy-on-write, and exact native error behavior exist; phpc run handles current bounded clone behavior";
 const LLVM_INTERFACE_REJECTION: &str = "LLVM interface lowering rejects interface declarations until native class/interface tables, implementation checks, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current interface metadata behavior";
@@ -21092,6 +21092,7 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeCallableHandle phpc_native_callable_lookup_with_access_context_diagnostic(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeCallableHandle phpc_native_method_lookup_with_access_context_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle receiver, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeCallableHandle phpc_native_static_method_lookup_with_access_context_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeStringHandle phpc_native_static_method_scope_from_receiver_with_diagnostic_and_free(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle receiver, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_constructor_lookup_scope_with_access_context_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_constructor_lookup_scope_with_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str(
@@ -26529,6 +26530,39 @@ impl CGenerator {
         )
     }
 
+    fn object_static_method_source_call_signature_contract(
+        &self,
+        target: &Expr,
+        method_name: &str,
+        arg_count: usize,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        let facts = self.native_value_facts_for_expr(target)?;
+        let object = facts.object.as_ref()?;
+        if object.declared_class_keys.is_empty() {
+            return None;
+        }
+
+        let mut methods = Vec::new();
+        for class_key in &object.declared_class_keys {
+            let (_, method) = self.declared_class_static_method_for_key(class_key, method_name)?;
+            if !native_method_static_source_call_arity_compatible(&method, arg_count) {
+                return None;
+            }
+            methods.push(method);
+        }
+
+        let contract = native_method_static_signature_fallback_contract_from_methods(
+            NativeMethodStaticSignatureFamily::StaticMethod,
+            methods.iter(),
+            arg_count,
+        );
+        matches!(
+            contract.availability,
+            NativeMethodStaticSignatureAvailability::Known(_)
+        )
+        .then_some(contract)
+    }
+
     fn static_method_source_call_signature_contract(
         &self,
         class_name: &str,
@@ -31742,6 +31776,12 @@ impl CGenerator {
                 args,
                 span,
             } => {
+                if let Some(value) = self.try_materialize_object_static_method_source_call(
+                    target, method, args, *span, "",
+                )? {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
                 if let Some(value) = self.try_materialize_declared_object_static_method_call(
                     target, method, args, *span, "",
                 )? {
@@ -32803,6 +32843,34 @@ impl CGenerator {
         NativeSourceCallStringHandleOperand {
             handle: handle.clone(),
             cleanup_after_use: vec![format!("phpc_native_string_free({handle});")],
+        }
+    }
+
+    fn emit_native_object_static_receiver_source_call_scope_operand(
+        &mut self,
+        receiver: CNativeValueMaterialization,
+        failure_cleanup: &str,
+    ) -> NativeSourceCallStringHandleOperand {
+        let receiver_cleanup = c_cleanup_sequence(&receiver.cleanup_after_use);
+        let table =
+            self.ensure_native_callable_table(&format!("{receiver_cleanup}{failure_cleanup}"));
+        let diagnostic = self.next_native_name("object_static_scope_diagnostic");
+        let scope = self.next_native_name("object_static_scope");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeStringHandle {scope} = phpc_native_static_method_scope_from_receiver_with_diagnostic_and_free({table}, {}, &{diagnostic});",
+            receiver.handle
+        ));
+        self.body
+            .extend(native_value_aux_cleanup_after_consuming_handle(&receiver));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({scope}.ptr == NULL) {{ {error_exit} }}"));
+        NativeSourceCallStringHandleOperand {
+            handle: scope.clone(),
+            cleanup_after_use: vec![format!("phpc_native_string_free({scope});")],
         }
     }
 
@@ -35880,6 +35948,80 @@ impl CGenerator {
                 "static_method_source_call_result",
             )
             .expect("static-method value source-call carrier must produce a value handle");
+        self.body.extend(binding.target.cleanup_after_invocation);
+        self.emit_report_native_diagnostic(&invoke_diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+
+        Ok(Some(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }))
+    }
+
+    fn try_materialize_object_static_method_source_call(
+        &mut self,
+        target: &Expr,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some(signature_contract) = self.object_static_method_source_call_signature_contract(
+            target,
+            method_name,
+            args.len(),
+        ) else {
+            return Ok(None);
+        };
+
+        let receiver = self.materialize_native_value_result_operand(target, failure_cleanup)?;
+        let scope = self.emit_native_object_static_receiver_source_call_scope_operand(
+            receiver,
+            failure_cleanup,
+        );
+        let scope_cleanup = c_cleanup_sequence(&scope.cleanup_after_use);
+        let method = self.materialize_native_array_c_value_handle(
+            CValue::String(method_name.to_string()),
+            span,
+        )?;
+        let method_cleanup = c_cleanup_sequence(&method.cleanup_after_use);
+        let target_failure_cleanup = format!("{method_cleanup}{scope_cleanup}{failure_cleanup}");
+        let target = self.emit_native_static_method_source_call_target_operands(
+            scope,
+            method,
+            NativeSourceCallAccessContext::Static,
+            &target_failure_cleanup,
+        );
+        let binding = self.emit_native_method_static_source_call_binding_operands(
+            "object_static_method_source_call_args",
+            target,
+            args,
+            span,
+            failure_cleanup,
+            &signature_contract,
+        )?;
+
+        let invoke_diagnostic =
+            self.next_native_name("object_static_method_source_call_diagnostic");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {invoke_diagnostic} = {{0}};"
+        ));
+        let carrier = self.native_source_call_carrier(
+            NativeInvokeResultTarget::StaticMethodLookupWithAccessContext,
+            NativeSourceCallResultConsumer::Value,
+            span,
+        )?;
+        let result = self
+            .emit_native_source_call_carrier_invocation(
+                carrier,
+                &binding.target.args,
+                &binding.arguments,
+                &invoke_diagnostic,
+                "object_static_method_source_call_result",
+            )
+            .expect("object-static-method value source-call carrier must produce a value handle");
         self.body.extend(binding.target.cleanup_after_invocation);
         self.emit_report_native_diagnostic(&invoke_diagnostic);
         let error_exit = self.native_error_exit(failure_cleanup);
@@ -46009,13 +46151,24 @@ impl CGenerator {
                 method,
                 args,
                 span,
-            } => self.try_materialize_declared_object_static_method_call(
-                target,
-                method,
-                args,
-                *span,
-                failure_cleanup,
-            ),
+            } => {
+                if let Some(value) = self.try_materialize_object_static_method_source_call(
+                    target,
+                    method,
+                    args,
+                    *span,
+                    failure_cleanup,
+                )? {
+                    return Ok(Some(value));
+                }
+                self.try_materialize_declared_object_static_method_call(
+                    target,
+                    method,
+                    args,
+                    *span,
+                    failure_cleanup,
+                )
+            }
             Expr::DynamicMethodCall {
                 target,
                 method,
@@ -55468,6 +55621,43 @@ echo " 10" < "zeta";
             NativeMethodStaticSourceCallArgumentStrategy::ForwardCallSite
         );
 
+        let object_static = generator
+            .object_static_method_source_call_signature_contract(
+                &Expr::New {
+                    class_name: crate::ast::NewClassName::Named("SignatureBox".to_string()),
+                    args: vec![],
+                    span: test_span(),
+                },
+                "stat",
+                2,
+            )
+            .expect("declared object static receiver should expose static method metadata");
+        assert_eq!(
+            object_static.availability,
+            NativeMethodStaticSignatureAvailability::Known(CScopedCallableStringSignature {
+                fixed_param_by_reference: vec![true, false],
+                returns_by_reference: false,
+            })
+        );
+        assert_eq!(
+            object_static.argument_strategy,
+            NativeMethodStaticSourceCallArgumentStrategy::ForwardCallSite
+        );
+        assert!(
+            generator
+                .object_static_method_source_call_signature_contract(
+                    &Expr::New {
+                        class_name: crate::ast::NewClassName::Named("SignatureBox".to_string()),
+                        args: vec![],
+                        span: test_span(),
+                    },
+                    "inst",
+                    2,
+                )
+                .is_none(),
+            "object static source-call metadata must not publish non-static methods"
+        );
+
         let default_receiver =
             generator.receiver_method_signature_fallback_contract("withDefault", 1);
         assert_eq!(default_receiver.candidate_count, 1);
@@ -56462,6 +56652,7 @@ echo " 10" < "zeta";
             "extern bool phpc_native_callable_table_can_allocate_class(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle class_name);",
             "extern phpc_NativeCallableHandle phpc_native_method_lookup_with_access_context_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle receiver, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);",
             "extern phpc_NativeCallableHandle phpc_native_static_method_lookup_with_access_context_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);",
+            "extern phpc_NativeStringHandle phpc_native_static_method_scope_from_receiver_with_diagnostic_and_free(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle receiver, phpc_NativeDiagnosticHandle *diagnostic);",
             "extern bool phpc_native_constructor_lookup_scope_with_access_context_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);",
         ] {
             assert!(output.contains(expected), "missing {expected}\n{output}");

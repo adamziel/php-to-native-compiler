@@ -1524,6 +1524,21 @@ impl NativeCallableTable {
             .contains(&normalize_class_lookup_name(class_name))
     }
 
+    fn class_exists(&self, class_name: &str) -> bool {
+        let class_name = normalize_class_lookup_name(class_name);
+        !class_name.is_empty()
+            && (self.allocatable_classes.contains(&class_name)
+                || self.class_parents.contains_key(&class_name)
+                || self
+                    .class_parents
+                    .values()
+                    .any(|parent| parent == &class_name)
+                || self
+                    .entries
+                    .keys()
+                    .any(|key| key.scope.as_deref() == Some(class_name.as_str())))
+    }
+
     fn lookup(
         &self,
         kind: NativeCallableKind,
@@ -7794,6 +7809,62 @@ pub unsafe extern "C" fn phpc_native_static_method_lookup_with_access_context_di
         Err(message) => {
             unsafe { native_store_diagnostic_message(diagnostic, message) };
             NativeCallableHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `table`, `receiver`, and `diagnostic` must be valid according to the
+/// runtime ABI. The receiver is always consumed. Returns an owned class-scope
+/// string for dynamic static dispatch when the receiver is an object or known
+/// class string.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_method_scope_from_receiver_with_diagnostic_and_free(
+    table: NativeCallableTableHandle,
+    receiver: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeStringHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| -> Result<NativeStringHandle, String> {
+        let Some(receiver_value) = (unsafe { receiver.as_ref() }) else {
+            return Err("dynamic static method receiver handle is null".to_string());
+        };
+        match receiver_value {
+            Value::Object(object) => Ok(NativeStringHandle::from_vec(
+                object.class_name().as_bytes().to_vec(),
+            )),
+            Value::String(class_name) => {
+                let Some(table) = (unsafe { table.as_ref() }) else {
+                    return Err(
+                        "dynamic static method receiver lookup failed: table is null".to_string(),
+                    );
+                };
+                if !table.class_exists(class_name) {
+                    return Err(RuntimeError::undefined_class(class_name)
+                        .message()
+                        .to_string());
+                }
+                Ok(NativeStringHandle::from_vec(class_name.as_bytes().to_vec()))
+            }
+            other => Err(RuntimeError::unsupported_call(
+                "dynamic static method receiver",
+                format!(
+                    "dynamic static method receiver must be object or class string, got {}",
+                    other.type_name()
+                ),
+            )
+            .message()
+            .to_string()),
+        }
+    })();
+    unsafe { phpc_native_value_free(receiver) };
+
+    match result {
+        Ok(scope) => scope,
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeStringHandle::null()
         }
     }
 }
@@ -33883,6 +33954,86 @@ mod tests {
         unsafe { phpc_native_value_free(plain) };
         unsafe { phpc_native_value_free(guarded) };
         unsafe { phpc_native_value_free(receiver) };
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn native_static_method_scope_helper_accepts_object_and_known_class_string_receivers() {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_static_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("ScopeWidget"),
+                "stat",
+                NativeCallableVisibility::Public,
+                native_scoped_method_callback,
+            );
+        }
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("ScopeWidget").unwrap();
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let object_scope = unsafe {
+            phpc_native_static_method_scope_from_receiver_with_diagnostic_and_free(
+                table,
+                NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+                    classes.get(class_id).unwrap(),
+                ))),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { native_string_handle_to_string(object_scope) }.as_deref(),
+            Some("ScopeWidget")
+        );
+        unsafe { phpc_native_string_free(object_scope) };
+
+        let string_scope = unsafe {
+            phpc_native_static_method_scope_from_receiver_with_diagnostic_and_free(
+                table,
+                NativeValueHandle::from_value(Value::String("ScopeWidget".to_string())),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { native_string_handle_to_string(string_scope) }.as_deref(),
+            Some("ScopeWidget")
+        );
+        unsafe { phpc_native_string_free(string_scope) };
+
+        let missing_scope = unsafe {
+            phpc_native_static_method_scope_from_receiver_with_diagnostic_and_free(
+                table,
+                NativeValueHandle::from_value(Value::String("MissingScopeWidget".to_string())),
+                &mut diagnostic,
+            )
+        };
+        assert!(missing_scope.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some("undefined class MissingScopeWidget")
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let invalid_scope = unsafe {
+            phpc_native_static_method_scope_from_receiver_with_diagnostic_and_free(
+                table,
+                NativeValueHandle::from_value(Value::Int(5)),
+                &mut diagnostic,
+            )
+        };
+        assert!(invalid_scope.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "unsupported call dynamic static method receiver: dynamic static method receiver must be object or class string, got int"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
         unsafe { phpc_native_callable_table_free(table) };
     }
 

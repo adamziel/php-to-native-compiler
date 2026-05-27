@@ -354,6 +354,18 @@ const NATIVE_DECLARED_OBJECT_STATIC_METHOD_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_DECLARED_OBJECT_STATIC_DEFAULT_VARIADIC_SOURCE_CALL_SOURCE: &str = concat!(
+    "<?php\n",
+    "class ObjectStaticWide {\n",
+    "    public static function stat($head, $suffix = \"S\", ...$tail) {\n",
+    "        return $head . \":\" . $suffix . \":\" . ($tail[0] ?? \"empty\");\n",
+    "    }\n",
+    "}\n",
+    "$wide = new ObjectStaticWide();\n",
+    "echo $wide::stat(\"O\"), \"|\";\n",
+    "echo $wide::stat(\"O\", \"x\", \"tail\"), \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_METHOD_STATIC_SOURCE_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "class SourceCallAlpha {\n",
@@ -1865,6 +1877,36 @@ fn emit_exe_links_and_runs_declared_object_static_method_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"ADA|shout|7|GO|7|drop\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_declared_object_static_default_variadic_source_call_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "declared_object_static_default_variadic_source_call",
+        NATIVE_DECLARED_OBJECT_STATIC_DEFAULT_VARIADIC_SOURCE_CALL_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run declared object-static default/variadic source-call executable: {error}"
+        )
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"O:S:empty|O:x:tail\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -4162,23 +4204,54 @@ fn native_executable_c_source_uses_scalar_normalizing_dynamic_method_name_helper
 }
 
 #[test]
-fn native_executable_c_source_invokes_object_static_methods_through_static_context() {
+fn native_executable_c_source_invokes_object_static_methods_through_source_call_carrier() {
     let program = parse(NATIVE_DECLARED_OBJECT_STATIC_METHOD_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
     let body = main_body(&source);
 
     assert!(
-        body.contains("object_static_method_status")
-            && body.contains("phpc_declared_method_")
-            && body.contains("phpc_native_value_instanceof_class_with_diagnostic"),
-        "object static-receiver calls should evaluate the receiver as object class context and then call static frames:\n{source}"
+        body.contains("phpc_native_static_method_scope_from_receiver_with_diagnostic_and_free")
+            && body.contains(
+                "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments"
+            )
+            && body.contains("object_static_method_source_call_args_")
+            && body.contains("PHPC_NATIVE_CALLABLE_ACCESS_STATIC"),
+        "object static-receiver calls should derive runtime receiver scope and invoke through shared static source-call carriers:\n{source}"
     );
     assert!(
-        source
-            .lines()
-            .filter(|line| line.contains("phpc_declared_method_") && line.contains("("))
-            .all(|line| !line.contains("phpc_this")),
-        "static method frames must not bind $this:\n{source}"
+        !body.contains("object_static_method_status")
+            && !body.contains("phpc_native_value_instanceof_class_with_diagnostic"),
+        "object static source-call production should not fall back to the generated class-check frame ladder:\n{source}"
+    );
+    assert!(!source.contains("method-call lowering rejects"), "{source}");
+}
+
+#[test]
+fn native_executable_c_source_routes_declared_object_static_default_variadic_calls_through_source_call_carriers(
+) {
+    let program = parse(NATIVE_DECLARED_OBJECT_STATIC_DEFAULT_VARIADIC_SOURCE_CALL_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_static_method_scope_from_receiver_with_diagnostic_and_free")
+            && body.contains(
+                "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments"
+            )
+            && body.matches("object_static_method_source_call_args_").count() >= 2
+            && body.matches("phpc_native_call_arguments_push_value_and_free").count() >= 5,
+        "object static default/variadic calls should build shared owned argument handles before carrier invocation:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_array_empty")
+            && body.contains("phpc_native_array_append_value_with_diagnostic")
+            && body.contains("phpc_native_value_from_array"),
+        "object static variadic source calls should pack surplus call-site arguments before carrier invocation:\n{source}"
+    );
+    assert!(
+        body.contains("PHPC_NATIVE_CALLABLE_ACCESS_STATIC")
+            && !body.contains("object_static_method_status"),
+        "object static default/variadic source-call production should not fall back to generated frame-dispatch ladders:\n{source}"
     );
     assert!(!source.contains("method-call lowering rejects"), "{source}");
 }
@@ -4391,25 +4464,41 @@ fn native_executable_c_source_routes_declared_inheritance_through_ancestor_metad
     let body = main_body(&source);
 
     assert!(
-        body.contains("phpc_native_value_new_declared_class_with_ancestors_and_diagnostic")
+        body.contains("phpc_native_value_new_declared_class_with_relationships_and_diagnostic")
             && source.contains("declared_class_property_declaring_ids")
             && source.contains("declared_class_property_declaring_name_ptrs")
             && source.contains("declared_class_ancestor_name_ptrs"),
-        "inherited declared objects should allocate through ancestor-aware object metadata:\n{source}"
+        "inherited declared objects should allocate through relationship-aware object metadata:\n{source}"
     );
     assert!(
         body.matches("phpc_native_value_instanceof_class_with_diagnostic")
             .count()
-            >= 6,
-        "inherited instanceof, instance methods, dynamic methods, and object static calls should share class-relation checks:\n{source}"
+            >= 5,
+        "inherited instanceof, instance methods, and dynamic methods should share class-relation checks:\n{source}"
     );
     assert!(
-        body.contains("method_dispatch_status")
+        body.contains("receiver_method_source_call_args_")
+            && body.contains(
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+            )
+            && body.contains("PHPC_NATIVE_CALLABLE_ACCESS_OBJECT_RECEIVER")
             && body.contains("dynamic_method_dispatch_status")
-            && body.contains("static_method_status")
-            && body.contains("object_static_method_status")
+            && body.contains("static_method_source_call_args_")
+            && body.contains(
+                "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments"
+            )
+            && body.contains("phpc_native_static_method_scope_from_receiver_with_diagnostic_and_free")
+            && body.contains(
+                "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments"
+            )
+            && body.contains("object_static_method_source_call_args_")
+            && body.contains("PHPC_NATIVE_CALLABLE_ACCESS_STATIC")
             && body.contains("constructor_status"),
-        "inherited public methods, dynamic methods, static methods, object static calls, and constructors should reuse declared frames:\n{source}"
+        "inherited public methods, dynamic methods, static methods, object static source-call carriers, and constructors should stay routed through their supported paths:\n{source}"
+    );
+    assert!(
+        !body.contains("static_method_status") && !body.contains("object_static_method_status"),
+        "inherited static and object static calls should not revive generated frame-dispatch ladders:\n{source}"
     );
     assert!(
         !source.contains("object/class lowering rejects")
