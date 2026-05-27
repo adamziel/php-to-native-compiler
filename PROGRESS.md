@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 22:26 CEST
+Updated: 2026-05-27 22:32 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,14 +19,29 @@ Overall integrated-roadmap progress: **93%** `[##################--]`
 
 Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `7837d68e` bridges direct-variable
-`call_user_func()` arguments to declared by-reference parameters through the
-generated-C source-call path. Literal function names, statically-known callback
-variables, descriptor closures, and invokable objects with proven contracts can
-now forward direct variables as aliases instead of rejecting the call as
-value-only. `call_user_func_array()`, non-direct owners, array offsets,
-properties, ArrayAccess, request superglobals, `$GLOBALS`, nested owners,
-broader COW/reference parity, and LLVM/ASM parity remain blocked.
+Latest accounted source capability: `170e5766` preserves reference-returning
+source-call results when they are used as ArrayAccess owners in generated C.
+Selected reference-returning function, method, static method, and dynamic
+callable results with proven `ArrayAccess` facts can now feed ArrayAccess
+by-reference consumers and direct reference assignments through a native
+reference handle instead of cloned values or `offsetSet()` substitution.
+Unknown owner facts, arbitrary object/property reference paths, broader
+callable array by-reference carriers, superglobals, `$GLOBALS`, broader
+COW/reference parity, and LLVM/ASM parity remain blocked.
+
+Recent source commit `170e5766` advances reference/COW owner coverage without
+adding object-name ladders, source-shape production recognizers, fake
+reference cloning, or `offsetSet()` writeback. Generated C now records
+reference-return source-call facts, materializes reference-call ArrayAccess
+owners through the existing source-call reference path, clones only the native
+reference value for reading, and commits replacements back through the same
+reference handle. Focused gates covered reference-return ArrayAccess subject
+source and linked execution, adjacent ArrayAccess reference owner regressions,
+reference-return owner-stack regressions, source-call reference alias
+regressions, method spread regressions, compile checking, formatting, and diff
+checks. Primary gate log:
+`state/logs/phpc-primary-ref-cow-owners-9c0d2c89-20260527.gates.log` sha256
+`75a118265dc0e5bd851a3218def315be709176fb7bf32632a93ee63b71dcf6f0`.
 
 Recent source commit `7837d68e` advances dynamic callable by-reference
 lowering without adding callable-name ladders, source-shape production
