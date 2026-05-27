@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 17:49 CEST
+Updated: 2026-05-27 18:01 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,11 +19,28 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `9a00643a` collects direct generated
-user-function and declared-method by-reference variadic arguments through the
-normalized call-argument plan. Reference-backed positional and named variadic
-entries now flow into an array-valued frame slot and preserve caller-visible
-mutation, while value-backed entries remain blocked where PHP requires a
+Latest accounted source capability: `e297477b` routes selected runtime
+callable builtin `array_push()` / `array_unshift()` variadic writeback through
+the shared source-call argument contract. Runtime callable strings now
+finalize a by-reference array owner plus by-value variadic tail into
+`NativeCallArgumentsHandle`, expand only finalized variadic collections, and
+write the mutated array back through the reference cell.
+
+Recent source commit `e297477b` adds the selected runtime callable builtin
+variadic writeback family for `array_push()` and `array_unshift()`. Builtin
+signature metadata now exposes the shared by-reference `$array` parameter and
+variadic `$values` tail, and runtime invocation mutates the referenced owner
+through the existing array mutation semantics rather than a generated-C shape
+path. Sorting builtins, object/ArrayAccess/resource mutation operands, exact
+imported direct builtin spread routing, unknown or heterogeneous callable
+families, magic fallback, broad COW parity, and LLVM/ASM parity remain
+blocked.
+
+Recent source commit `9a00643a` collects direct generated user-function and
+declared-method by-reference variadic arguments through the normalized
+call-argument plan. Reference-backed positional and named variadic entries now
+flow into an array-valued frame slot and preserve caller-visible mutation,
+while value-backed entries remain blocked where PHP requires a
 reference/variable.
 
 Recent source commit `9a00643a` routes direct function, static method, and
