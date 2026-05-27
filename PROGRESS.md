@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 00:10 CEST
+Updated: 2026-05-28 00:16 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,21 +19,21 @@ Overall integrated-roadmap progress: **93%** `[##################--]`
 
 Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `9c2aa623` routes generated-C
-`class_alias()` calls with runtime/frame value operands through shared value
-and autoload-registry metadata helpers instead of requiring literal byte
-operands.
+Latest accounted source capability: `217701f5` routes generated-C
+dynamic-name object-property reads through shared magic/context-aware runtime
+helpers so valid `__get()` methods are honored without generated source-name
+ladders.
 
 Current blockers remain concentrated in broader array COW/reference edges,
 remaining foreach/reference owner breadth, include exception/diagnostic propagation,
-generated-frame `class_alias()` calls, remaining trait precedence parity,
-cleanup ordering, non-C backend parity, and exact PHP diagnostic/source-order
-behavior.
+remaining trait precedence parity, cleanup ordering, non-C backend parity,
+and exact PHP diagnostic/source-order behavior.
 
 Recent primary source ledger:
 
 | Commit | Compact capability | Focused proof |
 | --- | --- | --- |
+| `217701f5` | Generated-C dynamic object-property reads now normalize runtime property-name values and route valid `__get()` methods through shared magic-aware, caller-context-aware runtime property helpers instead of exact source-shape branches. | Runtime dynamic magic read/context helper tests, generated-C source routing proof, linked dynamic `__get` executable proof, `__set` non-regression, private method-frame visibility regression, property-magic/reference-boundary regressions, fmt, diff. Gate log: `state/logs/phpc-primary-magic-get-3799361f-20260528.gates.log` sha256 `0954af9b8e94da4c5797a0c2adab8b98ba8dcc7d7abc028a117e154d84a5dea0`. |
 | `9c2aa623` | Generated-C `class_alias()` now accepts runtime/frame value operands and autoload-backed alias materialization through shared class-alias value helpers while keeping direct byte operands on the existing ABI. | Runtime value/autoload alias helpers, generated-C source proof for user-function and frame operands, linked class_alias autoload/metadata programs, visibility metadata regression, fmt, diff. Gate log: `state/logs/phpc-primary-class-alias-f2c3a096-20260528.gates.log` sha256 `107c31e622fa6eee73ed9f30f78202352126a0cc607cae570cfe5ce43c280fe8`. |
 | `df87dbb2` | Generated-C declared instance properties now accept class-like, object, nullable, union, and intersection type declarations, enforcing them through shared allocation/property metadata and context-aware method-frame writes. | Native-link typed instance property source/link suite, method-context typed property proof, class metadata/instanceof/visibility regressions, fmt, diff. Gate log: `state/logs/phpc-primary-typed-instance-69da7335-20260528.gates.log` sha256 `dc3e4a8fe44aa04c78030c379d6203b8f72ff00419f313689b73a1e92f9486d6`. |
 | `b245b45f` | Generated-C direct by-reference `foreach` now preserves the non-empty loop-variable alias to the last iterated array slot and keeps empty-loop prior-value behavior. | Native-link foreach source/link suite, interpreter by-reference foreach source-of-truth suite, fmt, diff. Gate log: `state/logs/phpc-primary-foreach-alias-8acb08f6-20260527.gates.log` sha256 `ef9d80d906f5ce0f688ba54667a595b6abc014aaedfb0c9fa6309686a443f3d5`. |
