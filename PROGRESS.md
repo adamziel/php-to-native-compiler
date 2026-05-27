@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 20:32 CEST
+Updated: 2026-05-27 20:35 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,17 +19,33 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `4138e55c` routes generated-C
-`class_alias(..., true)` through the request-local SPL autoload registry before
-alias lookup. The runtime now exposes a registry-aware class-alias ABI, generated
-C uses it for default/true autoload calls, explicit `false` remains on the
-existing no-autoload ABI, and dynamic autoload operands branch at runtime. This
-uses the normalized callable registry path without adding class-name ladders,
-callback-name fixtures, one-file source loading, or docs-only substitution.
-`spl_autoload_functions()`, arbitrary runtime source loading, Composer/PSR
+Latest accounted source capability: `b0727428` exposes request-local
+`spl_autoload_functions()` snapshots from the generated-C SPL registry. The
+runtime stores both normalized callable dispatch and the original callback
+value, so snapshots preserve callback form and equality across strings, static
+method arrays, array callables, invokable objects, and descriptor closures.
+Generated C lowers `spl_autoload_functions()` through the registry snapshot ABI
+without adding callback-name fixtures, one-file source loading, class-prefix
+maps, or docs-only substitution. Arbitrary runtime source loading, Composer/PSR
 adapters, precise filesystem autoload parity, comparator callbacks, broader
 callable object/array families, full by-reference/COW parity, and LLVM/ASM
 parity remain blocked.
+
+Recent source commit `b0727428` advances generated-C
+`spl_autoload_functions()` semantics without adding runtime PHP parsing or
+fixture-shaped callback lists. The SPL autoload registry now retains original
+callback values alongside normalized callable dispatch, exposes a snapshot ABI,
+and generated C lowers `spl_autoload_functions()` through the request-local
+registry so callback order, prepend behavior, unregister equality, and callback
+forms are observable. Focused gates covered compile checking, generated-C
+source lowering, linked executable registry snapshot proof, runtime snapshot
+materialization/equality, runtime registry order/prepend/unregister regression,
+class-alias autoload regression, SPL autoload register lowering regression,
+formatting, and diff checks. Arbitrary runtime source loading, Composer/PSR
+adapters, precise filesystem autoload parity, broader class-like source/alias
+parity, and LLVM/ASM parity remain blocked. Primary gate log:
+`state/logs/phpc-primary-spl-autoload-functions-214e60a6-20260527.gates.log`
+sha256 `926bf03057cf4ed64717d0faa1657d6a5c5a1853a420cc233cae8d267693d945`.
 
 Recent source commit `4138e55c` advances generated-C class alias autoload
 semantics without adding fixture-specific alias loading. Runtime
