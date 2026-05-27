@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 22:32 CEST
+Updated: 2026-05-27 22:36 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,15 +19,25 @@ Overall integrated-roadmap progress: **93%** `[##################--]`
 
 Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `170e5766` preserves reference-returning
-source-call results when they are used as ArrayAccess owners in generated C.
-Selected reference-returning function, method, static method, and dynamic
-callable results with proven `ArrayAccess` facts can now feed ArrayAccess
-by-reference consumers and direct reference assignments through a native
-reference handle instead of cloned values or `offsetSet()` substitution.
-Unknown owner facts, arbitrary object/property reference paths, broader
-callable array by-reference carriers, superglobals, `$GLOBALS`, broader
-COW/reference parity, and LLVM/ASM parity remain blocked.
+Latest accounted source capability: `6dc005ac` preserves staticness for
+trait-composed method aliases in runtime class metadata. Static methods imported
+from traits and re-exported through aliases now remain static for metadata
+consumers, `is_callable()` checks, generated-C source-call contracts, and
+linked native execution. Full trait conflict/precedence parity, broader
+visibility context rules, destructor-risk cleanup, and non-C backend parity
+remain blocked.
+
+Recent source commit `6dc005ac` advances trait alias metadata without adding
+method-name production ladders, raw generated-C member scans, one-trait fixture
+lowering, or substring-only production gates. Interpreter class registration
+now preserves `method.is_static` when publishing composed trait method metadata,
+so public static aliases stay callable/static while protected aliases remain
+hidden from public method lists. Focused gates covered object-model static
+trait alias metadata, linked native static-alias execution, trait object-model
+regressions, trait native-link regressions, compile checking, formatting, and
+diff checks. Primary gate log:
+`state/logs/phpc-primary-trait-alias-static-f9b829bc-20260527.gates.log`
+sha256 `e2351729f3e08011599f35469155285fa179a45c7ec323035d6106bb87d009f5`.
 
 Recent source commit `170e5766` advances reference/COW owner coverage without
 adding object-name ladders, source-shape production recognizers, fake
