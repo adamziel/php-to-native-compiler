@@ -1630,6 +1630,76 @@ fn native_function_type_text_is_supported(text: &str) -> bool {
     )
 }
 
+fn native_instance_property_type_decl_is_supported(decl: &TypeDecl) -> bool {
+    native_instance_property_type_text_is_supported(decl.text.trim())
+}
+
+fn native_instance_property_type_text_is_supported(text: &str) -> bool {
+    if text.is_empty() {
+        return false;
+    }
+
+    let without_nullable = text.strip_prefix('?').unwrap_or(text).trim();
+    if without_nullable.is_empty() {
+        return false;
+    }
+    if without_nullable.contains('|') {
+        return without_nullable
+            .split('|')
+            .all(native_instance_property_type_text_is_supported);
+    }
+    if without_nullable.contains('&') {
+        return without_nullable
+            .split('&')
+            .all(native_instance_property_intersection_type_text_is_supported);
+    }
+
+    native_function_type_text_is_supported(text)
+        || native_instance_property_object_type_text_is_supported(without_nullable)
+        || native_instance_property_class_like_type_text_is_supported(without_nullable)
+}
+
+fn native_instance_property_intersection_type_text_is_supported(text: &str) -> bool {
+    let text = text.trim();
+    native_instance_property_class_like_type_text_is_supported(text)
+        && !native_instance_property_object_type_text_is_supported(text)
+}
+
+fn native_instance_property_object_type_text_is_supported(text: &str) -> bool {
+    text.strip_prefix('\\')
+        .unwrap_or(text)
+        .trim()
+        .eq_ignore_ascii_case("object")
+}
+
+fn native_instance_property_class_like_type_text_is_supported(text: &str) -> bool {
+    let text = text.strip_prefix('\\').unwrap_or(text).trim();
+    !text.is_empty() && !native_instance_property_special_type_name(text)
+}
+
+fn native_instance_property_special_type_name(text: &str) -> bool {
+    matches!(
+        text.to_ascii_lowercase().as_str(),
+        "array"
+            | "bool"
+            | "callable"
+            | "false"
+            | "float"
+            | "int"
+            | "iterable"
+            | "mixed"
+            | "never"
+            | "null"
+            | "object"
+            | "parent"
+            | "self"
+            | "static"
+            | "string"
+            | "true"
+            | "void"
+    )
+}
+
 fn native_closure_frame_blocker(
     params: &[FunctionParam],
     returns_by_reference: bool,
@@ -21531,7 +21601,7 @@ impl CGenerator {
             if property
                 .type_decl
                 .as_ref()
-                .is_some_and(|decl| !native_function_type_decl_is_supported(decl))
+                .is_some_and(|decl| !native_instance_property_type_decl_is_supported(decl))
                 || property.default.as_ref().is_some_and(|default| {
                     !Self::declared_class_property_default_is_supported(default)
                 })
@@ -21589,7 +21659,7 @@ impl CGenerator {
                     if property
                         .type_decl
                         .as_ref()
-                        .is_some_and(|decl| !native_function_type_decl_is_supported(decl))
+                        .is_some_and(|decl| !native_instance_property_type_decl_is_supported(decl))
                         || property.default.as_ref().is_some_and(|default| {
                             !Self::declared_class_property_default_is_supported(default)
                         })

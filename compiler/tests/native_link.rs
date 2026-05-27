@@ -3032,6 +3032,189 @@ fn emit_exe_typed_declared_instance_property_reports_type_failure() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_class_typed_declared_instance_property_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "interface HookContract {}\n",
+        "class Hook {}\n",
+        "class ChildHook extends Hook implements HookContract {}\n",
+        "class OtherHook {}\n",
+        "class Registry {\n",
+        "    public Hook $hook;\n",
+        "    public ?Hook $maybe = null;\n",
+        "    public HookContract $contract;\n",
+        "    public Hook|OtherHook $union;\n",
+        "    public Hook&HookContract $intersection;\n",
+        "    public object $any;\n",
+        "}\n",
+        "$registry = new Registry();\n",
+        "$registry->hook = new ChildHook();\n",
+        "$registry->maybe = new Hook();\n",
+        "$registry->contract = new ChildHook();\n",
+        "$registry->union = new OtherHook();\n",
+        "$registry->intersection = new ChildHook();\n",
+        "$registry->any = new OtherHook();\n",
+        "echo $registry->hook instanceof Hook ? \"1\" : \"0\";\n",
+        "echo $registry->maybe instanceof Hook ? \"1\" : \"0\";\n",
+        "echo $registry->contract instanceof HookContract ? \"1\" : \"0\";\n",
+        "echo $registry->union instanceof OtherHook ? \"1\" : \"0\";\n",
+        "echo $registry->intersection instanceof HookContract ? \"1\" : \"0\";\n",
+        "echo $registry->any instanceof OtherHook ? \"1\" : \"0\";\n",
+        "echo \"\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("class_typed_declared_instance_property", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run class-typed declared instance-property executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"111111\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_class_typed_declared_instance_property_reports_type_failure() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class Hook {}\n",
+        "class OtherHook {}\n",
+        "class Registry { public Hook $hook; }\n",
+        "$registry = new Registry();\n",
+        "$registry->hook = new OtherHook();\n",
+        "echo \"after\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("class_typed_declared_instance_property_failure", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run class-typed declared instance-property failure executable: {error}")
+    });
+
+    assert!(
+        !run.status.success(),
+        "class-typed property failure should exit non-zero"
+    );
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains("typed property Registry::$hook expects Hook, got object"),
+        "stderr:\n{stderr}"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_class_typed_method_context_instance_property_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "interface HookContract {}\n",
+        "class Hook {}\n",
+        "class ChildHook extends Hook implements HookContract {}\n",
+        "class RegistryBase {\n",
+        "    protected Hook $hook;\n",
+        "    protected HookContract $contract;\n",
+        "}\n",
+        "class Registry extends RegistryBase {\n",
+        "    private object $last;\n",
+        "    public function store($value) {\n",
+        "        $this->hook = $value;\n",
+        "        $this->contract = $value;\n",
+        "        $this->last = $value;\n",
+        "        return ($this->hook instanceof Hook ? \"H\" : \"x\")\n",
+        "            . ($this->contract instanceof HookContract ? \"C\" : \"x\")\n",
+        "            . ($this->last instanceof ChildHook ? \"O\" : \"x\");\n",
+        "    }\n",
+        "}\n",
+        "$registry = new Registry();\n",
+        "echo $registry->store(new ChildHook()), \"\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("class_typed_method_context_instance_property", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run class-typed method-context property executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"HCO\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_class_typed_method_context_instance_property_reports_type_failure() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class Hook {}\n",
+        "class OtherHook {}\n",
+        "class Registry {\n",
+        "    private Hook $hook;\n",
+        "    public function store($value) {\n",
+        "        $this->hook = $value;\n",
+        "        return \"after\";\n",
+        "    }\n",
+        "}\n",
+        "$registry = new Registry();\n",
+        "echo $registry->store(new OtherHook()), \"\\n\";\n",
+    );
+    let (source_path, output_path) = compile_native_link_fixture(
+        "class_typed_method_context_instance_property_failure",
+        source,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run class-typed method-context failure executable: {error}")
+    });
+
+    assert!(
+        !run.status.success(),
+        "class-typed method-context property failure should exit non-zero"
+    );
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains("typed property Registry::$hook expects Hook, got object"),
+        "stderr:\n{stderr}"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn emit_exe_links_and_runs_declared_static_property_storage_program() {
     if !has_cc() {
         return;
@@ -7013,6 +7196,80 @@ fn native_executable_c_source_routes_typed_declared_instance_properties_through_
     assert!(
         !source.contains("object/class lowering rejects")
             && !source.contains("object-instantiation lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_class_typed_declared_instance_properties_through_metadata() {
+    let program = parse(
+        "<?php\ninterface HookContract {}\nclass Hook {}\nclass ChildHook extends Hook implements HookContract {}\nclass OtherHook {}\nclass Registry { public Hook $hook; public ?Hook $maybe = null; public HookContract $contract; public Hook|OtherHook $union; public Hook&HookContract $intersection; public object $any; }\n$registry = new Registry();\n$registry->hook = new ChildHook();\n$registry->contract = new ChildHook();\n$registry->union = new OtherHook();\n$registry->intersection = new ChildHook();\n$registry->any = new OtherHook();\necho \"ok\\n\";\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "phpc_native_value_new_declared_class_with_relationships_and_property_metadata_and_diagnostic"
+        ),
+        "class-typed properties should route through the declared-class property metadata allocation ABI:\n{source}"
+    );
+    assert!(
+        source.contains("declared_class_property_type_decl_ptrs_")
+            && source.contains("declared_class_property_type_decl_lens_"),
+        "class/interface type declarations should be passed through shared metadata arrays:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_object_property_mutation_operation_with_magic_diagnostic"),
+        "class-typed property assignments should use the current runtime object-property mutation ABI:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_value_instanceof_class_with_diagnostic"),
+        "class-typed property assignments should not lower through generated instanceof ladders:\n{source}"
+    );
+    assert!(
+        !source.contains("object/class lowering rejects")
+            && !source.contains("object-instantiation lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_class_typed_method_context_properties_through_metadata() {
+    let program = parse(
+        "<?php\ninterface HookContract {}\nclass Hook {}\nclass ChildHook extends Hook implements HookContract {}\nclass RegistryBase { protected Hook $hook; protected HookContract $contract; }\nclass Registry extends RegistryBase { private object $last; public function store($value) { $this->hook = $value; $this->contract = $value; $this->last = $value; return $this->hook instanceof Hook ? \"ok\" : \"bad\"; } }\n$registry = new Registry();\necho $registry->store(new ChildHook()), \"\\n\";\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains(
+            "phpc_native_value_new_declared_class_with_relationships_and_property_metadata_and_diagnostic"
+        ),
+        "class/interface/object typed properties should route through the declared-class property metadata allocation ABI:\n{source}"
+    );
+    assert!(
+        source.contains("declared_class_property_type_decl_ptrs_")
+            && source.contains("declared_class_property_type_decl_lens_"),
+        "class/interface/object type declarations should be passed through shared metadata arrays:\n{source}"
+    );
+    assert!(
+        source.contains("object_property_context_ids_")
+            && source.contains("object_property_context_write_")
+            && source.contains(
+                "phpc_native_value_object_property_operation_with_context_and_magic_diagnostic"
+            ),
+        "method-frame private/protected typed writes should use the context-aware property ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_value_instanceof_class_with_diagnostic"),
+        "class-typed property assignments should not lower through generated instanceof ladders:\n{source}"
+    );
+    assert!(
+        !source.contains("object/class lowering rejects")
+            && !source.contains("object-instantiation lowering rejects")
+            && !source.contains("method-call lowering rejects"),
         "{source}"
     );
 }
