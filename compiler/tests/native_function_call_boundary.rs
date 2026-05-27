@@ -1123,6 +1123,39 @@ echo $object->traitMethod("frame");
 }
 
 #[test]
+fn trait_effective_method_metadata_enables_trait_constructor_frame_binding() {
+    let source = r#"<?php
+trait ConstructorTrait {
+    public function __construct($first, &$slot, $third = "D", ...$tail) {
+        $slot = $slot . "!";
+        $this->label = $first . $slot . $third . $tail["extra"];
+    }
+}
+class UsesConstructorTrait {
+    public $label;
+    use ConstructorTrait;
+}
+$slot = "S";
+$object = new UsesConstructorTrait(third: "T", extra: "E", first: "F", slot: $slot);
+echo $object->label;
+"#;
+
+    let generated = emit_native_executable_c_source(&parse(source).unwrap()).unwrap();
+
+    assert!(
+        generated.contains("PHPC_NATIVE_CALLABLE_KIND_CONSTRUCTOR")
+            && generated.contains("constructor_args")
+            && generated.contains(
+                "phpc_native_constructor_allocation_invoke_value_with_access_context_diagnostic_and_free_scope_receiver_arguments"
+            )
+            && generated.contains("phpc_native_call_frame_read_receiver")
+            && !generated.contains(ASSEMBLY_OBJECT_INSTANTIATION_REJECTION)
+            && !generated.contains(ASSEMBLY_METHOD_CALL_REJECTION),
+        "trait-provided constructors should publish normal constructor metadata and execute through declared constructor frames:\n{generated}"
+    );
+}
+
+#[test]
 fn trait_effective_method_metadata_marks_trait_destructors_before_allocation() {
     let source = r#"<?php
 trait DestructorTrait {

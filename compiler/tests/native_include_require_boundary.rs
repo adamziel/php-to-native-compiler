@@ -193,6 +193,32 @@ fn native_executable_c_source_uses_included_trait_metadata_boundary_with_trait_e
 }
 
 #[test]
+fn native_executable_c_source_uses_included_trait_constructor_metadata_boundary() {
+    let dir = include_discovery_fixture_dir("trait-constructor-c-source");
+    let root = write_supported_trait_constructor_include_fixture(&dir);
+    let unit = compilation_unit_with_literal_include_metadata(
+        &fs::read_to_string(&root).expect("read trait constructor c-source include fixture"),
+        &root,
+        workspace_root(),
+    )
+    .unwrap();
+
+    let source = emit_native_executable_c_source(&unit.program).unwrap();
+
+    assert!(
+        source.contains("PHPC_NATIVE_CALLABLE_KIND_CONSTRUCTOR")
+            && source.contains(
+                "phpc_native_callable_table_register_visibility_staticness_magic_signature_frame_callback_and_free"
+            )
+            && source.contains(
+                "phpc_native_constructor_allocation_invoke_value_with_access_context_diagnostic_and_free_scope_receiver_arguments"
+            )
+            && !source.contains("object-instantiation lowering rejects"),
+        "included trait constructors should compose into declared constructor metadata and use shared constructor invocation:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_accepts_included_interface_metadata_boundary() {
     let dir = include_discovery_fixture_dir("interface-c-boundary");
     let root = dir.join("root.php");
@@ -299,6 +325,47 @@ fn emit_exe_links_and_runs_included_trait_method_consumers() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(String::from_utf8_lossy(&run.stdout), "trait-meta|trait\n");
+}
+
+#[test]
+fn emit_exe_links_and_runs_included_trait_constructor_consumers() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("trait-constructor-exe");
+    let root = write_supported_trait_constructor_include_fixture(&dir);
+    let output = dir.join("program");
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root())
+        .args([
+            "compile",
+            root.to_str().expect("root fixture path is UTF-8"),
+            "--emit-exe",
+            output.to_str().expect("output path is UTF-8"),
+        ])
+        .output()
+        .expect("compile included trait constructor executable");
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let run = Command::new(&output)
+        .output()
+        .expect("run included trait constructor executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "trait-ctor-meta|included-ctor\n"
+    );
 }
 
 #[test]
@@ -482,6 +549,41 @@ fn write_supported_trait_include_fixture(dir: &Path) -> PathBuf {
         ),
     )
     .expect("write root trait fixture");
+    root
+}
+
+fn write_supported_trait_constructor_include_fixture(dir: &Path) -> PathBuf {
+    fs::create_dir_all(dir).expect("create include trait constructor discovery fixture dir");
+    let root = dir.join("root.php");
+    let included = dir.join("included-trait-constructor.php");
+    fs::write(
+        &included,
+        concat!(
+            "<?php\n",
+            "trait IncludedConstructorTrait {\n",
+            "    public function __construct($value) { $this->label = 'included-' . $value; }\n",
+            "    public function traitLabel() { return $this->label; }\n",
+            "}\n",
+        ),
+    )
+    .expect("write included trait constructor fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "require __DIR__ . '/included-trait-constructor.php';\n",
+            "class UsesIncludedConstructorTrait {\n",
+            "    public $label;\n",
+            "    use IncludedConstructorTrait;\n",
+            "}\n",
+            "echo class_exists('UsesIncludedConstructorTrait') ? 'trait-ctor-meta' : 'missing';\n",
+            "echo '|';\n",
+            "$box = new UsesIncludedConstructorTrait('ctor');\n",
+            "echo $box->traitLabel();\n",
+            "echo \"\\n\";\n",
+        ),
+    )
+    .expect("write root trait constructor fixture");
     root
 }
 

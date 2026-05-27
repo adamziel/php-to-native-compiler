@@ -24642,6 +24642,55 @@ const NATIVE_TRAIT_METHOD_FRAME_SOURCE: &str = concat!(
     "echo $box->{$method}(third: \"t\", extra: \"e\", first: \"f\", slot: $slot2), \"|\", $slot2;\n",
 );
 
+const NATIVE_TRAIT_CONSTRUCTOR_FRAME_SOURCE: &str = concat!(
+    "<?php\n",
+    "trait TraitConstructorFrameSource {\n",
+    "    public function __construct($first, &$slot, $third = \"D\", ...$tail) {\n",
+    "        $slot = $slot . \"!\";\n",
+    "        $this->label = $first . $slot . $third . $tail[\"extra\"];\n",
+    "    }\n",
+    "}\n",
+    "trait TraitConstructorAliasSource {\n",
+    "    public function boot($value) { $this->label = \"alias-\" . $value; }\n",
+    "}\n",
+    "trait TraitConstructorOverrideSource {\n",
+    "    public function __construct() { $this->label = \"trait\"; }\n",
+    "}\n",
+    "class TraitConstructorFrameBox {\n",
+    "    public $label;\n",
+    "    use TraitConstructorFrameSource;\n",
+    "}\n",
+    "class TraitConstructorAliasBox {\n",
+    "    public $label;\n",
+    "    use TraitConstructorAliasSource { boot as __construct; }\n",
+    "}\n",
+    "class TraitConstructorOverrideBox {\n",
+    "    public $label;\n",
+    "    use TraitConstructorOverrideSource;\n",
+    "    public function __construct() { $this->label = \"class\"; }\n",
+    "}\n",
+    "class TraitConstructorParentBase {\n",
+    "    public $label;\n",
+    "    public function __construct() { $this->label = \"parent\"; }\n",
+    "}\n",
+    "class TraitConstructorParentChild extends TraitConstructorParentBase {\n",
+    "    use TraitConstructorOverrideSource;\n",
+    "}\n",
+    "$slot = \"S\";\n",
+    "$frame = new TraitConstructorFrameBox(third: \"T\", extra: \"E\", first: \"F\", slot: $slot);\n",
+    "echo $frame->label, \"|\", $slot, \"|\";\n",
+    "$slot2 = \"D\";\n",
+    "$dynamicName = \"TraitConstructorFrameBox\";\n",
+    "$dynamic = new $dynamicName(third: \"U\", extra: \"V\", first: \"G\", slot: $slot2);\n",
+    "echo $dynamic->label, \"|\", $slot2, \"|\";\n",
+    "$alias = new TraitConstructorAliasBox(\"B\");\n",
+    "echo $alias->label, \"|\";\n",
+    "$override = new TraitConstructorOverrideBox();\n",
+    "echo $override->label, \"|\";\n",
+    "$child = new TraitConstructorParentChild();\n",
+    "echo $child->label;\n",
+);
+
 const NATIVE_INTERFACE_TYPED_METHOD_SOURCE_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "interface NativeInterfaceDispatchContract {\n",
@@ -25328,6 +25377,39 @@ fn native_executable_c_source_routes_trait_methods_through_declared_frame_carrie
             && !body.contains("method_dispatch_status")
             && !body.contains("dynamic_method_dispatch_status"),
         "trait method execution must not fall back to blockers or generated dispatch ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_trait_constructors_through_declared_frame_carriers() {
+    let program = parse(NATIVE_TRAIT_CONSTRUCTOR_FRAME_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("PHPC_NATIVE_CALLABLE_KIND_CONSTRUCTOR")
+            && source.contains("phpc_NativeValueHandle phpc_this")
+            && source.contains("phpc_native_call_frame_read_receiver")
+            && source.contains("phpc_declared_method_"),
+        "trait-provided constructors and aliases should publish normal declared constructor frame metadata:\n{source}"
+    );
+    assert!(
+        body.matches(
+            "phpc_native_constructor_allocation_invoke_value_with_access_context_diagnostic_and_free_scope_receiver_arguments"
+        )
+        .count()
+            >= 4
+            && body.contains("constructor_args")
+            && body.contains("phpc_native_array_insert_key_value_with_diagnostic")
+            && body.contains("phpc_native_call_arguments_push_reference_and_free"),
+        "trait constructor new expressions should reuse the shared constructor source-call carrier for named and by-reference arguments:\n{source}"
+    );
+    assert!(
+        !source.contains("object-instantiation lowering rejects")
+            && !source.contains("method-call lowering rejects")
+            && !body.contains("method_dispatch_status")
+            && !body.contains("dynamic_method_dispatch_status"),
+        "trait constructor execution must not fall back to blockers or generated dispatch ladders:\n{source}"
     );
 }
 
@@ -26931,6 +27013,34 @@ fn emit_exe_links_and_runs_trait_method_frame_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"FS!TE|S!|LA|HB|class|fQ!te|Q!");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_trait_constructor_frame_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "trait_constructor_frame",
+        NATIVE_TRAIT_CONSTRUCTOR_FRAME_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native trait constructor frame executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"FS!TE|S!|GD!UV|D!|alias-B|class|trait");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

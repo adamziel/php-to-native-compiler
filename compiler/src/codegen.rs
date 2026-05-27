@@ -20249,15 +20249,6 @@ impl CGenerator {
             trait_semantics::compose_class_effective_trait_methods(class, &self.declared_traits)
                 .map_err(|error| error.to_diagnostic(Phase::Codegen))?;
         self.validate_declared_class_trait_method_metadata_scope(class)?;
-        if trait_effective_methods.iter().any(|method| {
-            method
-                .method
-                .function
-                .name
-                .eq_ignore_ascii_case("__construct")
-        }) {
-            return Err(self.unsupported(class.span, ASSEMBLY_OBJECT_INSTANTIATION_REJECTION));
-        }
 
         let mut seen_properties = HashSet::new();
         let mut own_properties = Vec::new();
@@ -20284,6 +20275,33 @@ impl CGenerator {
                     visibility: method.method.visibility,
                     is_static: method.method.is_static,
                     span: method.method.span,
+                });
+                continue;
+            }
+            if method
+                .method
+                .function
+                .name
+                .eq_ignore_ascii_case("__construct")
+            {
+                self.validate_declared_class_constructor_for_native_frame(&method.method)?;
+                if constructor.is_some() {
+                    return Err(self
+                        .unsupported(method.method.span, ASSEMBLY_OBJECT_INSTANTIATION_REJECTION));
+                }
+                let c_name = Self::c_declared_class_method_name(
+                    class_index,
+                    methods.len(),
+                    &class.name,
+                    &method.method.function.name,
+                );
+                constructor = Some(CDeclaredClassMethod {
+                    c_name,
+                    decl: method.method.function.clone(),
+                    visibility: method.method.visibility,
+                    is_static: method.method.is_static,
+                    return_facts: None,
+                    this_property_value_facts: HashMap::new(),
                 });
                 continue;
             }
