@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 20:00 CEST
+Updated: 2026-05-27 20:04 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,16 +19,34 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `abe650f4` extends the selected runtime
-callable sorting writeback family to key-preserving `ksort()` and `krsort()`.
-The same runtime callable builtin lookup, builtin signature metadata,
-generated-C callable string canonicalization, by-reference array
-materialization, defaulted flags, and runtime source-call support now cover
-`sort()` / `rsort()` / `asort()` / `arsort()` / `ksort()` / `krsort()`.
-Comparator sort families, natural sort callable writeback, full flag and
-diagnostic parity, object/ArrayAccess/resource owners, broad callable
-object/array families, broad reference/COW parity, and LLVM/ASM parity remain
-blocked.
+Latest accounted source capability: `18fcb7f6` routes `interface_exists()`
+through the shared runtime class-like metadata ABI instead of generated-C text
+membership. Runtime metadata now has an `InterfaceExists` operation over the
+existing user-interface table, registry-aware autoload probing can stop after
+callbacks declare interfaces, and generated-C autoload-enabled
+`interface_exists($name)` uses the honest autoload-policy diagnostic boundary
+until request-local SPL registry lowering exists. Full generated-C SPL
+autoload registry lowering, `spl_autoload_functions()`, arbitrary runtime
+source loading, Composer/PSR adapters, and LLVM/ASM parity remain blocked.
+
+Recent source commit `18fcb7f6` advances class-like interface metadata without
+adding one-interface, namespace, fixture, or generated-text membership
+lowering. `NativeClassMetadataOperation` now includes `InterfaceExists`,
+runtime lookup normalizes interface names through the existing user-interface
+metadata table, the autoload policy wrapper reports missing generated-native
+interface autoload explicitly, and the registry-aware metadata ABI can recheck
+interfaces after normalized callable callbacks run. Generated-C
+`interface_exists($name, false)` now emits the same runtime metadata call
+family as class/trait lookups, while autoload-enabled calls continue to route
+through the centralized policy boundary until generated-C SPL registry state
+lands. Focused gates covered compile checking, runtime class/trait/interface
+autoload registry proof, generated-C source and linked `interface_exists`
+tests, SPL autoload registry regression, output-buffer chunk regression,
+formatting, and diff checks. Generated-C SPL autoload registry request state,
+`spl_autoload_functions()`, arbitrary runtime source loading, Composer/PSR
+adapters, and LLVM/ASM parity remain blocked. Primary rerun gate log:
+`state/logs/phpc-primary-interface-metadata-f02b219b-20260527.rerun.gates.log`
+sha256 `443ec3d4b3883801238cb8d56c0a394bef648992da6d93c6cdba99fbf9ee3e71`.
 
 Recent source commit `abe650f4` advances selected callable key-sort writeback
 without adding source-fixture, local-variable, literal-only, generated-C
