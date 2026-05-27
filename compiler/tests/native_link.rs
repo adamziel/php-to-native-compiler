@@ -25322,6 +25322,156 @@ fn emit_exe_links_and_runs_callable_object_invocation_program() {
 }
 
 #[test]
+fn native_executable_c_source_binds_callable_object_named_and_reference_arguments() {
+    let source = concat!(
+        "<?php\n",
+        "class CallableObjectNamedBinder {\n",
+        "    public function __invoke($first, &$slot, $tail = \"T\", ...$rest) {\n",
+        "        $slot = $first . $tail . $rest[\"extra\"];\n",
+        "        return $slot;\n",
+        "    }\n",
+        "}\n",
+        "$slot = \"old\";\n",
+        "$call = new CallableObjectNamedBinder();\n",
+        "echo $call(extra: \"C\", slot: $slot, first: \"A\", tail: \"B\"), \":\", $slot;\n",
+    );
+    let program = parse(source).unwrap();
+    let generated = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        generated.contains("callable_object_invoke_args")
+            && generated.contains("phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments")
+            && generated.contains("phpc_native_call_arguments_push_reference_and_free")
+            && generated.contains("phpc_native_array_insert_key_value_with_diagnostic")
+            && generated.contains("__invoke"),
+        "known callable-object __invoke should use receiver lookup plus shared normalized source-call arguments:\n{generated}"
+    );
+    assert!(
+        !generated.contains("named argument lowering is only implemented")
+            && !generated.contains("callable_object_matched"),
+        "named callable-object __invoke should not fall back to the named-argument blocker or legacy object ladder:\n{generated}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_callable_object_named_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class CallableObjectNamedBinder {\n",
+        "    public function __invoke($first, &$slot, $tail = \"T\", ...$rest) {\n",
+        "        $slot = $first . $tail . $rest[\"extra\"];\n",
+        "        return $slot;\n",
+        "    }\n",
+        "}\n",
+        "$slot = \"old\";\n",
+        "$call = new CallableObjectNamedBinder();\n",
+        "echo $call(extra: \"C\", slot: $slot, first: \"A\", tail: \"B\"), \":\", $slot;\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("callable_object_named_arguments", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native callable-object named-argument executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"ABC:ABC");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_rejects_static_callable_object_invoke_metadata() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class StaticCallableObjectInvoke {\n",
+        "    public static function __invoke($value) { return $value; }\n",
+        "}\n",
+        "$call = new StaticCallableObjectInvoke();\n",
+        "echo $call(\"bad\");\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("callable_object_static_invoke_rejection", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native malformed callable-object executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(
+        !run.status.success(),
+        "malformed __invoke executable should fail"
+    );
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains(
+            "static method StaticCallableObjectInvoke::__invoke cannot be used for object dispatch"
+        ),
+        "stderr:\n{stderr}"
+    );
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_executable_c_source_keeps_unsupported_callable_object_shapes_blocked() {
+    for (source, expected) in [
+        (
+            concat!(
+                "<?php\n",
+                "class UnknownCallableObject { public function __invoke($value) { return $value; } }\n",
+                "function relay($call) { return $call(value: \"x\"); }\n",
+                "echo relay(new UnknownCallableObject());\n",
+            ),
+            "named argument lowering is only implemented",
+        ),
+        (
+            concat!(
+                "<?php\n",
+                "class SpreadCallableObject { public function __invoke($value) { return $value; } }\n",
+                "$call = new SpreadCallableObject();\n",
+                "echo $call(...[\"value\" => \"x\"]);\n",
+            ),
+            "unsupported argument unpacking",
+        ),
+        (
+            concat!(
+                "<?php\n",
+                "class ReferenceCallableObject { public function __invoke(&$slot) { return $slot; } }\n",
+                "$call = new ReferenceCallableObject();\n",
+                "echo $call(\"literal\");\n",
+            ),
+            "method-call lowering rejects method calls",
+        ),
+    ] {
+        let error = match parse(source) {
+            Ok(program) => emit_native_executable_c_source(&program).unwrap_err(),
+            Err(error) => error,
+        };
+        assert!(
+            error.message.contains(expected),
+            "expected {expected:?} in error for source:\n{source}\nerror:\n{error:?}"
+        );
+    }
+}
+
+#[test]
 fn native_executable_c_source_preserves_unsupported_dynamic_builtin_lookup_boundary() {
     for source in [
         "<?php\n$call = \"count\";\necho $call([1]);\n",

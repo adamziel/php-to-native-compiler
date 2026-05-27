@@ -7115,6 +7115,7 @@ fn native_method_call_blocker_message(
             NativeCallResult::Value,
             NativeCallBlocker::MethodDispatch
             | NativeCallBlocker::ArgumentEvaluationCleanup
+            | NativeCallBlocker::ByReferenceArgumentBinding
             | NativeCallBlocker::StatementOperandEvaluationCleanup
             | NativeCallBlocker::ValueOperandEvaluationCleanup
             | NativeCallBlocker::LvalueOperandEvaluationCleanup
@@ -37309,6 +37310,12 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        if let Some(value) =
+            self.try_materialize_callable_object_source_call(callee, args, span, failure_cleanup)?
+        {
+            return Ok(Some(value));
+        }
+
         let scoped_signature = self.callable_string_signature_for_expr(callee, args.len());
         let callee_value = self.emit_expr(callee)?;
         self.materialize_runtime_callable_value_call(
@@ -37318,6 +37325,140 @@ impl CGenerator {
             failure_cleanup,
             scoped_signature,
         )
+    }
+
+    fn callable_object_source_call_signature_contract(
+        &self,
+        callee: &Expr,
+        arg_count: usize,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        let facts = self.native_value_facts_for_expr(callee)?;
+        let object = facts.object.as_ref()?;
+        if object.declared_class_keys.is_empty() {
+            return None;
+        }
+
+        let mut methods = Vec::new();
+        let mut saw_malformed_invoke = false;
+        let method_key = Self::declared_method_key("__invoke");
+        for class_key in &object.declared_class_keys {
+            let mut method = None;
+            for lookup_key in self.declared_class_lookup_keys(class_key)? {
+                let class = self
+                    .declared_classes
+                    .get(&lookup_key)
+                    .expect("declared class lookup key has metadata");
+                if let Some(candidate) = class
+                    .methods
+                    .iter()
+                    .find(|candidate| Self::declared_method_key(&candidate.decl.name) == method_key)
+                {
+                    method = Some(candidate.clone());
+                    break;
+                }
+            }
+            let method = method?;
+            if method.visibility != ClassVisibility::Public || method.is_static {
+                saw_malformed_invoke = true;
+                continue;
+            }
+            if !native_method_static_source_call_arity_compatible(&method, arg_count) {
+                return None;
+            }
+            methods.push(method);
+        }
+
+        if saw_malformed_invoke {
+            return Some(NativeMethodStaticSignatureFallbackContract {
+                family: NativeMethodStaticSignatureFamily::ReceiverMethod,
+                candidate_count: methods.len(),
+                arity_compatible_count: methods.len(),
+                availability: NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                    NativeMethodStaticSignatureFallbackReason::NoArityCompatibleDeclaredMethodMetadata,
+                ),
+                argument_strategy: NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic,
+            });
+        }
+
+        let contract = native_method_static_signature_fallback_contract_from_methods(
+            NativeMethodStaticSignatureFamily::ReceiverMethod,
+            methods.iter(),
+            arg_count,
+        );
+        matches!(
+            contract.availability,
+            NativeMethodStaticSignatureAvailability::Known(_)
+        )
+        .then_some(contract)
+    }
+
+    fn try_materialize_callable_object_source_call(
+        &mut self,
+        callee: &Expr,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some(signature_contract) =
+            self.callable_object_source_call_signature_contract(callee, args.len())
+        else {
+            return Ok(None);
+        };
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_callable_helpers = true;
+
+        let receiver = self.materialize_native_value_result_operand(callee, failure_cleanup)?;
+        let receiver_cleanup = c_cleanup_sequence(&receiver.cleanup_after_use);
+        let method = self.materialize_native_array_c_value_handle(
+            CValue::String("__invoke".to_string()),
+            span,
+        )?;
+        let method_cleanup = c_cleanup_sequence(&method.cleanup_after_use);
+        let target_failure_cleanup = format!("{method_cleanup}{receiver_cleanup}{failure_cleanup}");
+        let target = self.emit_native_receiver_method_source_call_target_operands(
+            receiver,
+            method,
+            NativeSourceCallAccessContext::ObjectReceiver,
+            &target_failure_cleanup,
+        );
+        let binding = self.emit_native_method_static_source_call_binding_operands(
+            "callable_object_invoke_args",
+            target,
+            args,
+            span,
+            failure_cleanup,
+            &signature_contract,
+        )?;
+
+        let invoke_diagnostic = self.next_native_name("callable_object_invoke_diagnostic");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {invoke_diagnostic} = {{0}};"
+        ));
+        let carrier = self.native_source_call_carrier(
+            NativeInvokeResultTarget::ReceiverMethodLookupWithAccessContext,
+            NativeSourceCallResultConsumer::Value,
+            span,
+        )?;
+        let result = self
+            .emit_native_source_call_carrier_invocation(
+                carrier,
+                &binding.target.args,
+                &binding.arguments,
+                &invoke_diagnostic,
+                "callable_object_invoke_result",
+            )
+            .expect("callable-object value source-call carrier must produce a value handle");
+        self.body.extend(binding.target.cleanup_after_invocation);
+        self.emit_report_native_diagnostic(&invoke_diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+
+        Ok(Some(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }))
     }
 
     fn materialize_runtime_callable_value_call(
@@ -52628,17 +52769,18 @@ impl CGenerator {
                 Ok(None)
             }
             Expr::DynamicCall { callee, args, span } => {
-                if call_arguments_have_named(args) {
-                    return Err(
-                        self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
-                    );
-                }
-                self.try_materialize_dynamic_user_function_call(
+                let value = self.try_materialize_dynamic_user_function_call(
                     callee,
                     args,
                     *span,
                     failure_cleanup,
-                )
+                )?;
+                if value.is_none() && call_arguments_have_named(args) {
+                    return Err(
+                        self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
+                    );
+                }
+                Ok(value)
             }
             Expr::Closure {
                 params,
@@ -61536,6 +61678,107 @@ mod tests {
             })
             .expect("inherited __invoke callable facts")
             .has_definite_native_object_interface("arrayaccess"));
+    }
+
+    #[test]
+    fn callable_object_source_call_contract_uses_invoke_metadata_for_argument_binding() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "class CallableObjectContractBase {\n",
+            "    public function __invoke($first, &$slot, $tail = \"D\", ...$rest) { return $first; }\n",
+            "}\n",
+            "class CallableObjectContractChild extends CallableObjectContractBase {}\n",
+        ))
+        .unwrap();
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            uses_native_value_clone: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .unwrap();
+        generator.emit_declared_class_method_definitions().unwrap();
+
+        let base_class = generator
+            .declared_classes
+            .get(&CGenerator::declared_class_key(
+                "CallableObjectContractBase",
+            ))
+            .expect("base test class metadata")
+            .clone();
+        let mut static_class = base_class.clone();
+        static_class.name = "CallableObjectContractStatic".to_string();
+        static_class.parent_key = None;
+        static_class.methods[0].is_static = true;
+        let static_key = CGenerator::declared_class_key(&static_class.name);
+        generator
+            .declared_classes
+            .insert(static_key.clone(), static_class);
+        generator.declared_class_order.push(static_key);
+
+        let mut missing_class = base_class;
+        missing_class.name = "CallableObjectContractMissing".to_string();
+        missing_class.parent_key = None;
+        missing_class.methods.clear();
+        let missing_key = CGenerator::declared_class_key(&missing_class.name);
+        generator
+            .declared_classes
+            .insert(missing_key.clone(), missing_class);
+        generator.declared_class_order.push(missing_key);
+
+        for (variable, class_name) in [
+            ("callable", "CallableObjectContractChild"),
+            ("static_invoke", "CallableObjectContractStatic"),
+            ("missing", "CallableObjectContractMissing"),
+        ] {
+            let class_key = CGenerator::declared_class_key(class_name);
+            let class = generator
+                .declared_classes
+                .get(&class_key)
+                .expect("test class metadata");
+            generator.native_value_variable_facts.insert(
+                variable.to_string(),
+                CNativeValueFacts::object(CNativeObjectFacts::for_declared_class(class_key, class))
+                    .expect("object facts"),
+            );
+            generator.variables.insert(
+                variable.to_string(),
+                CValue::NativeValueHandle(format!("{variable}_handle")),
+            );
+        }
+
+        let contract = generator
+            .callable_object_source_call_signature_contract(&test_variable_expr("callable"), 3)
+            .expect("known inherited __invoke should expose a source-call contract");
+        assert_eq!(
+            contract.availability,
+            NativeMethodStaticSignatureAvailability::Known(CScopedCallableStringSignature {
+                fixed_param_by_reference: vec![false, true, false],
+                returns_by_reference: false,
+            })
+        );
+        match contract.argument_strategy {
+            NativeMethodStaticSourceCallArgumentStrategy::Frame(plan) => {
+                assert_eq!(plan.params[0].name, "first");
+                assert_eq!(plan.params[1].name, "slot");
+                assert!(plan.params[1].by_reference);
+                assert_eq!(plan.params[2].name, "tail");
+                assert!(plan.params[3].is_variadic);
+            }
+            other => panic!("expected frame argument binding plan, got {other:?}"),
+        }
+
+        let static_contract = generator
+            .callable_object_source_call_signature_contract(&test_variable_expr("static_invoke"), 1)
+            .expect("malformed __invoke metadata should still route to runtime rejection");
+        assert!(matches!(
+            static_contract.availability,
+            NativeMethodStaticSignatureAvailability::RuntimeFallback(_)
+        ));
+        assert!(generator
+            .callable_object_source_call_signature_contract(&test_variable_expr("missing"), 0)
+            .is_none());
     }
 
     #[test]

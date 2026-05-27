@@ -8705,12 +8705,39 @@ fn native_callable_value_lookup(
             let table = table.ok_or_else(|| {
                 "native callable lookup failed: table is null for object callable".to_string()
             })?;
-            let callable = table.lookup(
+            let callable = table.lookup_with_access_context(
                 NativeCallableKind::Method,
                 Some(object.class_name().to_string()),
                 "__invoke".to_string(),
-                caller_scope,
+                caller_scope
+                    .map(
+                        |caller_scope| NativeCallableAccessContext::ClassContextLookup {
+                            caller_scope,
+                        },
+                    )
+                    .unwrap_or(NativeCallableAccessContext::ObjectReceiverLookup),
             )?;
+            if callable.descriptor.is_static {
+                let scope = callable
+                    .called_scope
+                    .as_deref()
+                    .or(callable.descriptor.scope.as_deref())
+                    .unwrap_or("<unknown>");
+                return Err(format!(
+                    "native callable lookup failed: static method {}::__invoke cannot be used for object callable dispatch",
+                    scope
+                ));
+            }
+            if callable.descriptor.visibility != NativeCallableVisibility::Public {
+                let scope = callable
+                    .called_scope
+                    .as_deref()
+                    .or(callable.descriptor.scope.as_deref())
+                    .unwrap_or("<unknown>");
+                return Err(format!(
+                    "native callable lookup failed: magic method {scope}::__invoke must be public for object callable dispatch"
+                ));
+            }
             Ok(NativeCallableValueDispatch::Table {
                 callable,
                 bound_receiver: Some(Value::Object(object.clone())),
@@ -38637,6 +38664,57 @@ mod tests {
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(scalar) };
+
+        unsafe {
+            register_static_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("StaticInvokable"),
+                "__invoke",
+                NativeCallableVisibility::Public,
+                native_receiver_method_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("PrivateInvokable"),
+                "__invoke",
+                NativeCallableVisibility::Private,
+                native_receiver_method_callback,
+            );
+        }
+        let static_id = classes.declare_class("StaticInvokable").unwrap();
+        let static_invokable = NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+            classes.get(static_id).unwrap(),
+        )));
+        let (callable, diagnostic) =
+            unsafe { lookup_callable_value_for_test(table, static_invokable, None) };
+        assert!(callable.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "native callable lookup failed: static method StaticInvokable::__invoke cannot be used for object callable dispatch"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(static_invokable) };
+
+        let private_id = classes.declare_class("PrivateInvokable").unwrap();
+        let private_invokable = NativeValueHandle::from_value(Value::Object(
+            PhpObject::from_class(classes.get(private_id).unwrap()),
+        ));
+        let (callable, diagnostic) = unsafe {
+            lookup_callable_value_for_test(table, private_invokable, Some("PrivateInvokable"))
+        };
+        assert!(callable.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "native callable lookup failed: magic method PrivateInvokable::__invoke must be public for object callable dispatch"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(private_invokable) };
 
         unsafe { phpc_native_callable_table_free(table) };
     }
