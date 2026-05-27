@@ -452,6 +452,8 @@ const NATIVE_ARRAY_LVALUE_INCREMENT: u8 = 0;
 const NATIVE_ARRAY_LVALUE_DECREMENT: u8 = 1;
 const NATIVE_ARRAY_LVALUE_POSITION_PRE: u8 = 0;
 const NATIVE_ARRAY_LVALUE_POSITION_POST: u8 = 1;
+const NATIVE_VALUE_INCREMENT: u8 = 0;
+const NATIVE_VALUE_DECREMENT: u8 = 1;
 const NATIVE_ARRAY_LVALUE_POINTER_CURRENT: u8 = 0;
 const NATIVE_ARRAY_LVALUE_POINTER_KEY: u8 = 1;
 const NATIVE_ARRAY_LVALUE_POINTER_NEXT: u8 = 2;
@@ -17579,6 +17581,46 @@ fn native_array_lvalue_increment_decrement_value(
                 other.type_name()
             ),
         )),
+    }
+}
+
+fn native_value_increment_decrement_value(current: &Value, op: u8) -> Result<Value, String> {
+    match (current, op) {
+        (Value::Null, NATIVE_VALUE_INCREMENT) => Ok(Value::Int(1)),
+        (Value::Null, NATIVE_VALUE_DECREMENT) => Ok(Value::Null),
+        (Value::Int(value), NATIVE_VALUE_INCREMENT) => Ok(Value::Int(value.wrapping_add(1))),
+        (Value::Int(value), NATIVE_VALUE_DECREMENT) => Ok(Value::Int(value.wrapping_sub(1))),
+        (Value::Float(value), NATIVE_VALUE_INCREMENT) => Ok(Value::Float(value + 1.0)),
+        (Value::Float(value), NATIVE_VALUE_DECREMENT) => Ok(Value::Float(value - 1.0)),
+        (_, other) if other != NATIVE_VALUE_INCREMENT && other != NATIVE_VALUE_DECREMENT => {
+            Err(format!(
+                "native value increment/decrement operation tag {other} is not supported"
+            ))
+        }
+        (other, _) => Err(format!(
+            "native value increment/decrement supports int, float, and null values in the current native boundary, got {}",
+            other.type_name()
+        )),
+    }
+}
+
+/// # Safety
+///
+/// `value` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. Null handles are treated as PHP null. The result
+/// carries the updated value or a diagnostic explaining the unsupported
+/// semantic family.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_increment_decrement_result(
+    value: NativeValueHandle,
+    op: u8,
+) -> NativeValueOperationResult {
+    let null_value = Value::Null;
+    let value = unsafe { value.as_ref() }.unwrap_or(&null_value);
+
+    match native_value_increment_decrement_value(value, op) {
+        Ok(value) => NativeValueOperationResult::value(value),
+        Err(message) => NativeValueOperationResult::diagnostic(message),
     }
 }
 

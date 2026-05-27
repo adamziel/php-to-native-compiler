@@ -3647,6 +3647,7 @@ impl Parser {
             | AssignTarget::ArrayIndex { index: None, .. }
             | AssignTarget::Property { .. }
             | AssignTarget::ObjectPropertyArrayIndex { .. }
+            | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::StaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
@@ -3659,7 +3660,6 @@ impl Parser {
             | AssignTarget::NonDirectProperty { .. }
             | AssignTarget::NonDirectDynamicProperty { .. }
             | AssignTarget::ObjectStaticProperty { .. }
-            | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
@@ -3692,6 +3692,16 @@ impl Parser {
                     Self::object_property_array_index_path_from_expr(&expr)
                 {
                     return Ok(AssignTarget::ObjectPropertyArrayIndex {
+                        object,
+                        property,
+                        indices,
+                        span,
+                    });
+                }
+                if let Some((object, property, indices, span)) =
+                    Self::dynamic_object_property_array_index_path_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::DynamicObjectPropertyArrayIndex {
                         object,
                         property,
                         indices,
