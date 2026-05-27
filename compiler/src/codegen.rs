@@ -30730,14 +30730,6 @@ impl CGenerator {
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
                 }
-                if let Some(boundary) =
-                    native_object_array_access_unset_operation_result_from_stmt(stmt)
-                {
-                    return Err(self.unsupported(
-                        boundary.span,
-                        boundary.rejection(NativeCallBackend::Assembly),
-                    ));
-                }
                 if let Some(boundary) = native_non_local_unset_statement_owner_boundary(stmt) {
                     return Err(self.unsupported(
                         boundary.span,
@@ -38782,6 +38774,21 @@ impl CGenerator {
                         "",
                     )?;
                 }
+                UnsetTarget::ObjectPropertyArrayIndex { .. }
+                | UnsetTarget::DynamicObjectPropertyArrayIndex { .. }
+                | UnsetTarget::NonDirectObjectPropertyArrayIndex { .. }
+                | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex { .. } => {
+                    if self.emit_native_arrayaccess_offset_unset_for_target(target, "")? {
+                        continue;
+                    }
+                    let boundary =
+                        native_object_array_access_unset_operation_result_from_target(target)
+                            .expect("object property array unset targets classify before lowering");
+                    return Err(self.unsupported(
+                        boundary.span,
+                        boundary.rejection(NativeCallBackend::Assembly),
+                    ));
+                }
                 _ => return Err(self.unsupported(span, ASSEMBLY_MUTATION_REJECTION)),
             }
         }
@@ -45893,6 +45900,43 @@ impl CGenerator {
         }
     }
 
+    fn native_arrayaccess_unset_owner_source_for_unset_target<'a>(
+        &self,
+        target: &'a UnsetTarget,
+    ) -> Option<(CNativeValueOwnerSource, &'a Expr)> {
+        match target {
+            UnsetTarget::ObjectPropertyArrayIndex {
+                object,
+                property,
+                indices,
+                span,
+            } if indices.len() == 1 => {
+                let object = Expr::Variable(object.clone(), *span);
+                self.native_arrayaccess_object_property_owner_source(
+                    &object,
+                    CObjectPropertyOperand::Literal(property),
+                    *span,
+                )
+                .map(|source| (source, &indices[0]))
+            }
+            UnsetTarget::DynamicObjectPropertyArrayIndex {
+                object,
+                property,
+                indices,
+                span,
+            } if indices.len() == 1 => {
+                let object = Expr::Variable(object.clone(), *span);
+                self.native_arrayaccess_object_property_owner_source(
+                    &object,
+                    CObjectPropertyOperand::Dynamic(property),
+                    *span,
+                )
+                .map(|source| (source, &indices[0]))
+            }
+            _ => None,
+        }
+    }
+
     fn emit_native_arrayaccess_offset_write_operation_for_target(
         &mut self,
         target: &AssignTarget,
@@ -46079,6 +46123,42 @@ impl CGenerator {
         )? {
             return Ok(false);
         }
+        Ok(true)
+    }
+
+    fn emit_native_arrayaccess_offset_unset_for_target(
+        &mut self,
+        target: &UnsetTarget,
+        failure_cleanup: &str,
+    ) -> CompileResult<bool> {
+        let Some((source, index)) =
+            self.native_arrayaccess_unset_owner_source_for_unset_target(target)
+        else {
+            return Ok(false);
+        };
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_callable_helpers = true;
+        self.uses_native_arrayaccess_offset_write_helpers = true;
+
+        let owner = self.materialize_native_value_owner(source, failure_cleanup)?;
+        let owner_cleanup = c_cleanup_sequence(&owner.cleanup_after_abort());
+        let offset = self.materialize_native_value_result_operand(
+            index,
+            &format!("{owner_cleanup}{failure_cleanup}"),
+        )?;
+        let replacement = CNativeValueMaterialization {
+            handle: "(phpc_NativeValueHandle){0}".to_string(),
+            cleanup_after_use: Vec::new(),
+        };
+
+        self.emit_native_arrayaccess_offset_write_operation_for_owner(
+            owner,
+            offset,
+            replacement,
+            CNativeArrayAccessOffsetWriteOperation::Unset,
+            failure_cleanup,
+        )?;
         Ok(true)
     }
 

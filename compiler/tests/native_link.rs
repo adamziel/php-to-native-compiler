@@ -14474,6 +14474,7 @@ const ARRAYACCESS_PROPERTY_HELD_OWNER_SOURCE: &str = concat!(
     "echo empty($alpha->first[true]) ? \"E\" : \"N\", \"|\";\n",
     "echo $alpha->first[true] ?? \"M\", \"|\";\n",
     "$alpha->first[\"write\"] = \"W\";\n",
+    "unset($alpha->first[\"write\"]);\n",
     "$alpha->first[\"rmw\"] += 3;\n",
     "echo ($alpha->first[0] ??= held_rhs(\"assign\")), \"|\";\n",
     "echo $beta->{$slot}[\"slot\"], \"|\";\n",
@@ -14481,6 +14482,7 @@ const ARRAYACCESS_PROPERTY_HELD_OWNER_SOURCE: &str = concat!(
     "echo empty($beta->{$slot}[true]) ? \"E\" : \"N\", \"|\";\n",
     "echo $beta->{$slot}[0] ?? held_rhs(\"fallback\"), \"|\";\n",
     "$beta->{$slot}[\"write\"] = \"D\";\n",
+    "unset($beta->{$slot}[\"write\"]);\n",
     "$beta->{$slot}[\"rmw\"] += 2;\n",
 );
 
@@ -14550,18 +14552,22 @@ fn native_executable_c_source_routes_property_held_arrayaccess_through_object_pr
         source.contains("phpc_native_value_public_property_reference_with_diagnostic_and_free")
             && source.contains("phpc_native_reference_value_clone(")
             && source.contains("phpc_native_reference_set_value(")
+            && source.contains("phpc_native_reference_free(")
             && source.contains("phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic")
             && source.contains("phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic")
+            && source.contains("arrayaccess_offset_write_diagnostic")
             && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_GET")
             && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_EXISTS")
             && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_SET")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_UNSET")
+            && source.matches("arrayaccess_offset_unset").count() >= 2
             && source.contains("arrayaccess_offset_null_coalesce_assign"),
-        "property-held ArrayAccess owners should use object-property reference owner materialization, read/write ArrayAccess ABIs, and owner commit:\n{source}"
+        "property-held ArrayAccess owners should use object-property reference owner materialization, read/write/unset ArrayAccess ABIs, and owner commit:\n{source}"
     );
     assert!(
         source.matches("phpc_native_value_public_property_reference_with_diagnostic_and_free").count()
-            >= 8
-            && source.matches("phpc_native_reference_set_value(").count() >= 4,
+            >= 10
+            && source.matches("phpc_native_reference_set_value(").count() >= 6,
         "literal and dynamic property-held owners should repeatedly route through the shared reference owner path:\n{source}"
     );
     assert!(
@@ -14593,12 +14599,79 @@ fn emit_exe_links_and_runs_property_held_arrayaccess_owner_program() {
     assert!(run.status.success(), "native executable failed");
     assert_eq!(
         run.stdout,
-        b"L:get:slot;4|L:exists:NULL;N|L:exists:1;L:get:1;N|L:exists:1;L:get:1;4|L:set:write=W;L:get:rmw;L:set:rmw=7;L:exists:NULL;R:assign;L:set:NULL=assign;assign|D:get:slot;5|D:exists:1;Y|D:exists:1;D:get:1;N|D:exists:NULL;R:fallback;fallback|D:set:write=D;D:get:rmw;D:set:rmw=7;"
+        b"L:get:slot;4|L:exists:NULL;N|L:exists:1;L:get:1;N|L:exists:1;L:get:1;4|L:set:write=W;L:unset:write;L:get:rmw;L:set:rmw=7;L:exists:NULL;R:assign;L:set:NULL=assign;assign|D:get:slot;5|D:exists:1;Y|D:exists:1;D:get:1;N|D:exists:NULL;R:fallback;fallback|D:set:write=D;D:unset:write;D:get:rmw;D:set:rmw=7;"
     );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);
     let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_executable_c_source_rejects_property_held_arrayaccess_unset_unsupported_owner_shapes() {
+    let sources = [
+        (
+            "unknown dynamic property-held ArrayAccess unset owner",
+            concat!(
+                "<?php\n",
+                "class Bag implements ArrayAccess {\n",
+                "    public function offsetGet($offset) { return 4; }\n",
+                "    public function offsetExists($offset) { return true; }\n",
+                "    public function offsetSet($offset, $value) { return null; }\n",
+                "    public function offsetUnset($offset) { return null; }\n",
+                "}\n",
+                "class Box { public $bag; public function __construct() { $this->bag = new Bag(); } }\n",
+                "$box = new Box();\n",
+                "$slot = 1;\n",
+                "unset($box->{$slot}[\"k\"]);\n",
+            ),
+        ),
+        (
+            "nested property-held ArrayAccess unset owner",
+            concat!(
+                "<?php\n",
+                "class Bag implements ArrayAccess {\n",
+                "    public function offsetGet($offset) { return new Bag(); }\n",
+                "    public function offsetExists($offset) { return true; }\n",
+                "    public function offsetSet($offset, $value) { return null; }\n",
+                "    public function offsetUnset($offset) { return null; }\n",
+                "}\n",
+                "class Box { public $bag; public function __construct() { $this->bag = new Bag(); } }\n",
+                "$box = new Box();\n",
+                "unset($box->bag[\"outer\"][\"leaf\"]);\n",
+            ),
+        ),
+        (
+            "non-direct property-held ArrayAccess unset owner",
+            concat!(
+                "<?php\n",
+                "class Bag implements ArrayAccess {\n",
+                "    public function offsetGet($offset) { return 4; }\n",
+                "    public function offsetExists($offset) { return true; }\n",
+                "    public function offsetSet($offset, $value) { return null; }\n",
+                "    public function offsetUnset($offset) { return null; }\n",
+                "}\n",
+                "class Box { public $bag; public function __construct() { $this->bag = new Bag(); } }\n",
+                "class Outer { public $child; public function __construct() { $this->child = new Box(); } }\n",
+                "$outer = new Outer();\n",
+                "unset($outer->child->bag[\"k\"]);\n",
+            ),
+        ),
+    ];
+
+    for (label, source) in sources {
+        let program = parse(source).unwrap_or_else(|error| {
+            panic!("{label} should parse before codegen boundary proof: {error:?}")
+        });
+        let error = emit_native_executable_c_source(&program)
+            .expect_err(&format!("{label} unexpectedly emitted generated C"));
+
+        assert_eq!(error.phase, Phase::Codegen, "{label}: {error:?}");
+        assert!(
+            error.message.contains("ArrayAccess lowering rejects"),
+            "{label} should remain behind the ArrayAccess owner boundary, got {error:?}"
+        );
+    }
 }
 
 #[test]
