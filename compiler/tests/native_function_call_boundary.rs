@@ -897,7 +897,7 @@ fn native_try_cleanup_unwind_requirements_route_control_transfers_through_shared
         "<?php\ntry { goto done; } catch (Exception $e) {}\ndone:\n",
         "<?php\ntry { throw 1; } finally {}\n",
         "<?php\ntry { if (true) { exit(\"done\"); } } finally {}\n",
-        "<?php\nclass Risk { public function __destruct() {} }\ntry { new Risk(); } finally {}\n",
+        "<?php\nclass Risk { public function __destruct($value = \"blocked\") {} }\ntry { new Risk(); } finally {}\n",
     ] {
         let program = parse(source).unwrap();
         let error = emit_native_executable_c_source(&program).unwrap_err();

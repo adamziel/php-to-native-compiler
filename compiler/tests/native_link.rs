@@ -24849,6 +24849,19 @@ const NATIVE_DESTRUCTOR_CLEANUP_ORDER_BLOCKED_SOURCE: &str = concat!(
     "} finally {\n",
     "    echo \"|finally\";\n",
     "}\n",
+    "echo \"|after\";\n",
+);
+
+const NATIVE_UNSUPPORTED_DESTRUCTOR_CLEANUP_ORDER_SOURCE: &str = concat!(
+    "<?php\n",
+    "class NativeUnsupportedCleanupOrderDestructorBox {\n",
+    "    public function __destruct($value = \"blocked\") { echo $value; }\n",
+    "}\n",
+    "try {\n",
+    "    new NativeUnsupportedCleanupOrderDestructorBox();\n",
+    "} finally {\n",
+    "    echo \"|finally\";\n",
+    "}\n",
 );
 
 const NATIVE_INTERFACE_TYPED_METHOD_SOURCE_CALL_SOURCE: &str = concat!(
@@ -25767,16 +25780,43 @@ fn native_executable_c_source_routes_destructor_finalization_through_request_reg
 }
 
 #[test]
-fn native_executable_c_source_blocks_destructor_cleanup_order_inside_try_finally() {
+fn native_executable_c_source_routes_try_finally_destructor_finalization_order() {
     let program = parse(NATIVE_DESTRUCTOR_CLEANUP_ORDER_BLOCKED_SOURCE).unwrap();
-    let error = emit_native_executable_c_source(&program)
-        .expect_err("destructor cleanup order inside try/finally should remain blocked");
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_request_destructor_finalizers_register_value")
+            && body.contains(
+                "phpc_native_request_destructor_finalizers_finalize_with_callable_table"
+            )
+            && body.matches("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free")
+                .count()
+                >= 3,
+        "try/finally destructor allocation should use request finalizers and keep body/finally/fallthrough output paths:\n{source}"
+    );
+    assert!(
+        !source.contains("try/catch/finally lowering rejects")
+            && !source.contains("object-instantiation lowering rejects"),
+        "request-finalizable destructor allocation inside try/finally should not hit cleanup blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_keeps_unsupported_destructor_cleanup_order_blocked() {
+    let program = parse(NATIVE_UNSUPPORTED_DESTRUCTOR_CLEANUP_ORDER_SOURCE).unwrap();
+    let error = emit_native_executable_c_source(&program).expect_err(
+        "unsupported destructor cleanup order inside try/finally should remain blocked",
+    );
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
         error.message.contains("destructor-observable cleanup")
-            || error.message.contains("try/catch/finally"),
-        "cleanup-order blocker should stay focused on destructor/finally ordering, got: {}",
+            || error.message.contains("try/catch/finally")
+            || error
+                .message
+                .contains("object-instantiation lowering rejects"),
+        "unsupported destructor cleanup-order blocker should remain focused, got: {}",
         error.message
     );
 }
@@ -27705,6 +27745,34 @@ fn emit_exe_links_and_runs_property_observing_destructor_finalization_program() 
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"body:final|destroy:final");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_try_finally_destructor_finalization_order_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "try_finally_destructor_finalization_order",
+        NATIVE_DESTRUCTOR_CLEANUP_ORDER_BLOCKED_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native try/finally destructor executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"body|finally|after|destruct");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

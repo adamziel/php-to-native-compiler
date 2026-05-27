@@ -25787,8 +25787,8 @@ impl CGenerator {
     }
 
     fn ensure_native_destructor_finalizers(&mut self, failure_cleanup: &str) -> String {
-        self.uses_native_callable_helpers = true;
         self.uses_native_destructor_finalization_helpers = true;
+        self.ensure_native_callable_table(failure_cleanup);
         let handle = self
             .native_destructor_finalizers_handle
             .clone()
@@ -43538,27 +43538,6 @@ impl CGenerator {
             .collect()
     }
 
-    fn dynamic_declared_class_constructor_has_destructor_risk(
-        &self,
-        class_name: &NewClassName,
-    ) -> bool {
-        if !self
-            .declared_class_order
-            .iter()
-            .any(|key| self.declared_class_requires_destructor_observable_cleanup_boundary(key))
-        {
-            return false;
-        }
-
-        let Some(known_keys) = self.dynamic_declared_class_known_keys(class_name) else {
-            return true;
-        };
-
-        known_keys
-            .iter()
-            .any(|key| self.declared_class_requires_destructor_observable_cleanup_boundary(key))
-    }
-
     fn dynamic_declared_class_constructor_has_unsupported_destructor_finalization(
         &self,
         class_name: &NewClassName,
@@ -43586,12 +43565,13 @@ impl CGenerator {
     ) -> bool {
         match class_name {
             NewClassName::Named(name) => self
-                .declared_class_requires_destructor_observable_cleanup_boundary(
-                    &Self::declared_class_key(name),
+                .declared_class_has_unsupported_destructor_finalization(&Self::declared_class_key(
+                    name,
+                )),
+            NewClassName::DynamicVariable(_) | NewClassName::DynamicExpression(_) => self
+                .dynamic_declared_class_constructor_has_unsupported_destructor_finalization(
+                    class_name,
                 ),
-            NewClassName::DynamicVariable(_) | NewClassName::DynamicExpression(_) => {
-                self.dynamic_declared_class_constructor_has_destructor_risk(class_name)
-            }
             NewClassName::SelfClass | NewClassName::ParentClass | NewClassName::StaticClass => {
                 false
             }
