@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 20:04 CEST
+Updated: 2026-05-27 20:09 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,15 +19,38 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `18fcb7f6` routes `interface_exists()`
-through the shared runtime class-like metadata ABI instead of generated-C text
-membership. Runtime metadata now has an `InterfaceExists` operation over the
-existing user-interface table, registry-aware autoload probing can stop after
-callbacks declare interfaces, and generated-C autoload-enabled
-`interface_exists($name)` uses the honest autoload-policy diagnostic boundary
-until request-local SPL registry lowering exists. Full generated-C SPL
-autoload registry lowering, `spl_autoload_functions()`, arbitrary runtime
-source loading, Composer/PSR adapters, and LLVM/ASM parity remain blocked.
+Latest accounted source capability: `0b7285a4` lowers generated-C SPL autoload
+registry calls through request-local runtime state. Generated-C now creates and
+cleans up one request SPL autoload registry, normalizes
+`spl_autoload_register()` / `spl_autoload_unregister()` operands through the
+shared callable-value lookup ABI, lowers `spl_autoload_call()`, and routes
+autoload-enabled `class_exists()` / `trait_exists()` / `interface_exists()`
+through the registry-aware class-like metadata ABI. Included units whose
+callbacks may need root symbols now request the callable frame root-symbol
+environment instead of relying on generated callback-name ladders.
+`spl_autoload_functions()`, arbitrary runtime source loading, Composer/PSR
+path adapters, stream-wrapper/stat-cache/open_basedir parity, and LLVM/ASM
+parity remain blocked.
+
+Recent source commit `0b7285a4` advances generated-C SPL autoload lowering
+without adding runtime PHP parsing, source-file loading, docs-only
+substitution, or fixture-shape callback dispatch. The compiler now emits a
+request-local `phpc_user_spl_autoload_registry`, registers and unregisters
+normalized callable values with prepend ordering, lowers `spl_autoload_call()`
+to the runtime registry dispatcher, and sends autoload-enabled class, trait,
+and interface metadata probes through
+`phpc_native_value_class_metadata_exists_with_autoload_registry_and_diagnostic`.
+The integration also tightened interface tests so `interface_exists(..., false)`
+stays on the no-autoload metadata ABI while default/autoload-enabled interface
+lookups use the SPL registry. Focused gates covered compile checking,
+generated-C source proof, linked SPL autoload register/call/unregister
+execution, class/trait/interface registry metadata lookups, include/require
+metadata boundaries, runtime autoload registry regressions, output-buffer
+chunk regression, formatting, and diff checks. `spl_autoload_functions()`,
+arbitrary runtime source loading, Composer/PSR adapters, precise filesystem
+autoload parity, and LLVM/ASM parity remain blocked. Primary rerun gate log:
+`state/logs/phpc-primary-spl-autoload-lowering-a1ff9df4-20260527.rerun.gates.log`
+sha256 `cac7ad09e00a4d280591cf31cfde407532a29ddc4430a757faa2075bbf6ea79c`.
 
 Recent source commit `18fcb7f6` advances class-like interface metadata without
 adding one-interface, namespace, fixture, or generated-text membership
