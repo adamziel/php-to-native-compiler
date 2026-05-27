@@ -3,7 +3,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use php_compiler::{
-    class_metadata_source, codegen::emit_native_executable_c_source, error::Phase, parse,
+    class_metadata_source,
+    codegen::{emit_native_executable_c_source, emit_native_executable_c_source_for_include_units},
+    error::Phase,
+    executable_compilation_unit_with_literal_include_units, parse,
 };
 
 const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including by-reference closure captures that cannot be materialized through root symbol/reference handles or promoted frame locals, by-reference variadic closure parameters, unsupported by-reference closure return sources, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, supported static arrow closures, by-value captures, supported by-reference captures, supported by-reference returns from by-reference parameters and captures, implicit by-value arrow captures, non-static $this closure binding, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
@@ -2075,6 +2078,23 @@ const NATIVE_TRY_FINALLY_RETURN_SOURCE: &str = concat!(
     "}\n",
     "echo \"after\";\n",
 );
+
+const NATIVE_TRY_FINALLY_THROW_SOURCE: &str = concat!(
+    "<?php\n",
+    "$items = [\"flag\" => \"1\"];\n",
+    "echo \"before|\";\n",
+    "try {\n",
+    "    throw new Exception(\"boom\");\n",
+    "} catch (Exception $e) {\n",
+    "    echo \"catch|\";\n",
+    "} finally {\n",
+    "    echo \"finally|\";\n",
+    "}\n",
+    "echo \"after\";\n",
+);
+
+const NATIVE_UNSUPPORTED_THROW_DIAGNOSTIC: &str =
+    "unsupported call throw: exception objects and stack unwinding are not implemented";
 
 const NATIVE_FUNCTION_TRY_FINALLY_FRAME_SOURCE: &str = concat!(
     "<?php\n",
@@ -10853,6 +10873,136 @@ fn native_executable_c_source_keeps_top_level_try_return_cleanup_blocked() {
 }
 
 #[test]
+fn native_executable_c_source_runs_active_finally_before_request_scope_throw_boundary() {
+    let program = parse(NATIVE_TRY_FINALLY_THROW_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        !source.contains("try/catch/finally lowering rejects")
+            && !source.contains("exception lowering rejects throw"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_constructor")
+            && !source.contains("Exception")
+            && !source.contains("catch|"),
+        "throw operand and catch body should not be lowered in the bounded boundary:\n{source}"
+    );
+
+    let stdout_sink = "phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free";
+    assert_eq!(
+        body.matches(stdout_sink).count(),
+        4,
+        "only before, active finally, unreachable normal finally, and unreachable after output paths should be emitted:\n{source}"
+    );
+    let diagnostic = body
+        .find(NATIVE_UNSUPPORTED_THROW_DIAGNOSTIC)
+        .unwrap_or_else(|| panic!("missing unsupported throw diagnostic:\n{source}"));
+    assert!(
+        body[..diagnostic].matches(stdout_sink).count() >= 2,
+        "active finally output should be emitted before the unsupported throw diagnostic:\n{source}"
+    );
+    let exit = diagnostic
+        + body[diagnostic..].find("return 1;").unwrap_or_else(|| {
+            panic!("throw boundary should exit through request cleanup:\n{source}")
+        });
+    assert!(
+        body[diagnostic..exit].contains("phpc_native_array_free("),
+        "throw boundary should use the normal request cleanup sequence:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_runs_active_finally_before_request_scope_throw_boundary() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "request_scope_throw_finally",
+        NATIVE_TRY_FINALLY_THROW_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run request-scope throw executable: {error}"));
+
+    assert!(!run.status.success());
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "before|finally|");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains(NATIVE_UNSUPPORTED_THROW_DIAGNOSTIC),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("catch|"), "{stderr}");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn native_executable_c_source_keeps_unbounded_throw_finally_shapes_rejected() {
+    for source in [
+        "<?php\necho \"before|\";\nthrow new Exception(\"boom\");\n",
+        "<?php\nfunction bad() { $e = \"boom\"; try { throw $e; } finally { echo \"finally|\"; } }\nbad();\n",
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert!(
+            error
+                .message
+                .contains("exception lowering rejects throw statements")
+                || error
+                    .message
+                    .contains("try blocks outside the bounded generated-C normal-flow subset")
+                || error.message.contains("bounded generated-C frame subset"),
+            "{source}\n{error:?}"
+        );
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let dir = workspace_root.join("target/native-link-include-unit-throw-finally-rejected");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create include-unit throw fixture dir");
+    let root = dir.join("root.php");
+    let included = dir.join("included.php");
+    fs::write(
+        &included,
+        "<?php\n$e = \"boom\";\ntry { throw $e; } finally { echo \"finally|\"; }\n",
+    )
+    .expect("write include-unit throw fixture");
+    fs::write(&root, "<?php\ninclude __DIR__ . '/included.php';\n")
+        .expect("write include-unit throw root");
+
+    let unit = executable_compilation_unit_with_literal_include_units(
+        &fs::read_to_string(&root).expect("read include-unit throw root"),
+        &root,
+        workspace_root,
+    )
+    .unwrap();
+    let error = emit_native_executable_c_source_for_include_units(&unit).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error
+            .message
+            .contains("try blocks outside the bounded generated-C normal-flow subset")
+            || error
+                .message
+                .contains("exception lowering rejects throw statements"),
+        "{error:?}"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn native_executable_c_source_runs_finally_inside_user_function_frames() {
     let program = parse(NATIVE_FUNCTION_TRY_FINALLY_FRAME_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -11019,7 +11169,7 @@ fn native_executable_c_source_rejects_try_unwind_transfers() {
     for source in [
         "<?php\ntry { return; } catch (Exception $e) { echo \"catch\"; }\n",
         "<?php\ntry { echo \"try\"; } finally { return; }\n",
-        "<?php\n$e = \"boom\";\ntry { throw $e; } catch (Exception $caught) { echo \"catch\"; } finally { echo \"finally\"; }\n",
+        "<?php\n$e = \"boom\";\ntry { throw $e; } catch (Exception $caught) { echo \"catch\"; }\n",
         "<?php\ntry { goto done; } finally { echo \"finally\"; }\ndone:\necho \"after\";\n",
         "<?php\n$i = 0;\nwhile ($i < 1) { try { echo \"try\"; } finally { break; } }\n",
         "<?php\n$i = 0;\nwhile ($i < 1) { try { echo \"try\"; } finally { continue; } }\n",

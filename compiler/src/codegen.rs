@@ -179,6 +179,8 @@ const LLVM_EXCEPTION_REJECTION: &str = "LLVM exception lowering rejects throw st
 const ASSEMBLY_EXCEPTION_REJECTION: &str = "assembly exception lowering rejects throw statements and try/catch/finally blocks until native Throwable objects, stack unwinding, catch/finally dispatch, stack traces, and exact native error behavior exist; phpc run handles the current exception boundary";
 const LLVM_TRY_BLOCK_REJECTION: &str = "LLVM try/catch/finally lowering rejects try blocks until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during normal and exceptional control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; phpc run handles current bounded no-throw try/catch/finally behavior";
 const ASSEMBLY_TRY_BLOCK_REJECTION: &str = "assembly try/catch/finally lowering rejects try blocks outside the bounded generated-C normal-flow subset until native Throwable objects, stack unwinding, catch type matching, catch variable binding, finally execution during break/continue/return/exit/goto/throw control flow, stack traces, references/copy-on-write, and exact native try-block diagnostics exist; generated-native C executes try bodies, skips catches, and runs finally bodies only when no unwinding-capable transfer is present";
+const UNSUPPORTED_THROW_RUNTIME_DIAGNOSTIC: &str =
+    "unsupported call throw: exception objects and stack unwinding are not implemented";
 const LLVM_REFERENCE_ASSIGNMENT_REJECTION: &str = "LLVM reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const LLVM_REFERENCE_WRITE_THROUGH_REJECTION: &str = "LLVM reference write-through lowering rejects direct root-variable assignment after reference binding until statement assignment and assignment-expression write-through share an alias-aware reference slot boundary with copy-on-write, cleanup ownership, and exact native error behavior; phpc run handles current reference write-through behavior";
@@ -3701,6 +3703,7 @@ fn native_try_stmt_call_operation(stmt: &Stmt) -> Option<NativeCallOperation> {
 struct NativeControlFlowCleanupRequirementOptions {
     allow_return: bool,
     allow_loop_transfer: bool,
+    allow_request_scope_throw_transfer: bool,
     include_call_operations: bool,
 }
 
@@ -3709,6 +3712,7 @@ impl NativeControlFlowCleanupRequirementOptions {
         Self {
             allow_return: false,
             allow_loop_transfer: false,
+            allow_request_scope_throw_transfer: false,
             include_call_operations: true,
         }
     }
@@ -3717,6 +3721,16 @@ impl NativeControlFlowCleanupRequirementOptions {
         Self {
             allow_return: true,
             allow_loop_transfer: true,
+            allow_request_scope_throw_transfer: false,
+            include_call_operations: true,
+        }
+    }
+
+    fn allow_return_loop_and_request_scope_throw_transfer() -> Self {
+        Self {
+            allow_return: true,
+            allow_loop_transfer: true,
+            allow_request_scope_throw_transfer: true,
             include_call_operations: true,
         }
     }
@@ -3725,6 +3739,7 @@ impl NativeControlFlowCleanupRequirementOptions {
         Self {
             allow_return: true,
             allow_loop_transfer: true,
+            allow_request_scope_throw_transfer: false,
             include_call_operations: false,
         }
     }
@@ -3974,24 +3989,26 @@ fn native_stmt_control_flow_cleanup_requirements<F>(
             }
         }
         Stmt::Throw { expr, .. } => {
-            push_native_control_flow_requirement(
-                requirements,
-                PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
-                operand_index,
-            );
-            push_native_control_flow_expr_requirements(
-                expr,
-                operand_index,
-                expr_requires_destructor_cleanup,
-                requirements,
-            );
-            if options.include_call_operations {
-                if let Some(operation) = native_statement_operand_call_result_operation(expr) {
-                    push_native_control_flow_call_operation_requirement(
-                        requirements,
-                        operation,
-                        operand_index,
-                    );
+            if !options.allow_request_scope_throw_transfer {
+                push_native_control_flow_requirement(
+                    requirements,
+                    PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+                    operand_index,
+                );
+                push_native_control_flow_expr_requirements(
+                    expr,
+                    operand_index,
+                    expr_requires_destructor_cleanup,
+                    requirements,
+                );
+                if options.include_call_operations {
+                    if let Some(operation) = native_statement_operand_call_result_operation(expr) {
+                        push_native_control_flow_call_operation_requirement(
+                            requirements,
+                            operation,
+                            operand_index,
+                        );
+                    }
                 }
             }
         }
@@ -38233,6 +38250,21 @@ impl CGenerator {
         }
     }
 
+    fn emit_request_scope_throw_statement(&mut self, span: Span) -> CompileResult<()> {
+        if self.active_finally_bodies.is_empty()
+            || self.function_return_status.is_some()
+            || self.function_return_mode == CFunctionReturnMode::IncludeUnit
+        {
+            return Err(self.unsupported(span, ASSEMBLY_EXCEPTION_REJECTION));
+        }
+
+        self.emit_active_finally_bodies_before_terminal_transfer()?;
+        let diagnostic = c_string(&format!("{UNSUPPORTED_THROW_RUNTIME_DIAGNOSTIC}\n"));
+        self.body.push(format!("fputs(\"{diagnostic}\", stderr);"));
+        self.body.push(self.native_error_exit(""));
+        Ok(())
+    }
+
     fn emit_include_unit_default_return(&mut self, span: Span) -> CompileResult<()> {
         let handle = self.emit_native_value_for_cvalue(CValue::Int("1".to_string()), span)?;
         let cleanup = self.native_scope_cleanup_sequence("");
@@ -39438,11 +39470,16 @@ impl CGenerator {
         span: Span,
     ) -> CompileResult<()> {
         let can_schedule_return = finally_body.is_some() || !self.active_finally_bodies.is_empty();
+        let can_schedule_request_scope_throw = can_schedule_return
+            && self.function_return_status.is_none()
+            && self.function_return_mode != CFunctionReturnMode::IncludeUnit;
         let body_requirements = if can_schedule_return {
-            self.stmt_list_control_flow_cleanup_requirements(
-                body,
-                NativeControlFlowCleanupRequirementOptions::allow_return_and_loop_transfer(),
-            )
+            let options = if can_schedule_request_scope_throw {
+                NativeControlFlowCleanupRequirementOptions::allow_return_loop_and_request_scope_throw_transfer()
+            } else {
+                NativeControlFlowCleanupRequirementOptions::allow_return_and_loop_transfer()
+            };
+            self.stmt_list_control_flow_cleanup_requirements(body, options)
         } else {
             self.stmt_list_control_flow_cleanup_requirements(
                 body,
@@ -41444,6 +41481,7 @@ impl CGenerator {
                 | Stmt::For { .. }
                 | Stmt::Switch { .. }
                 | Stmt::Return { .. }
+                | Stmt::Throw { .. }
                 | Stmt::Try { .. }
         ) {
             let closure_reference_source = matches!(
@@ -41978,7 +42016,7 @@ impl CGenerator {
             Stmt::Include { path, once, span } => {
                 self.emit_include_unit_statement(path, *once, *span, false)
             }
-            Stmt::Throw { span, .. } => Err(self.unsupported(*span, ASSEMBLY_EXCEPTION_REJECTION)),
+            Stmt::Throw { span, .. } => self.emit_request_scope_throw_statement(*span),
             Stmt::Try {
                 body,
                 catches,
