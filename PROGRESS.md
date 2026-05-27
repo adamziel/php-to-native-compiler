@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 14:03 CEST
+Updated: 2026-05-27 14:09 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,8 +19,19 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest accounted source capability: `7ea73c02` discovers bounded literal
-same-repository include/require class metadata for `phpc compile --emit-exe`.
+Latest accounted source capability: `bf2aa181` routes selected generated-C
+dynamic constructor class-name expressions through a shared runtime
+constructor-scope normalization boundary. Parenthesized `new (expr)(...)`
+class names can now consume class strings or object receivers, normalize
+generated-native class metadata with alias and case handling, verify that the
+target class is allocatable, and then invoke constructors through the existing
+constructor lookup/invoke and `NativeCallArgumentsHandle` path. Missing or
+unknown classes and unsupported receiver values produce focused diagnostics;
+autoload/general external classes, generic allocate-by-scope ABI, dynamic
+constructor reference results, broad reference/COW parity, and destructor
+cleanup ordering remain blocked. Recent source commit `7ea73c02` discovers
+bounded literal same-repository include/require class metadata for
+`phpc compile --emit-exe`.
 Declaration-only included files reached through literal strings or `__DIR__`
 concatenation are expanded before executable top-level statements, so generated
 C can reuse the existing class, method, static-property, class-constant,
