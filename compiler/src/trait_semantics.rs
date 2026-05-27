@@ -51,6 +51,12 @@ pub struct EffectiveTraitConstant {
     pub constant: ClassConstantDecl,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ComposedTraitMethodName {
+    declaring_trait_name: String,
+    source_method_key: String,
+}
+
 pub fn trait_key(name: &str) -> String {
     name.to_ascii_lowercase()
 }
@@ -361,7 +367,7 @@ fn compose_effective_trait_methods_from_uses(
     direct_method_names: &HashSet<String>,
 ) -> TraitSemanticResult<Vec<EffectiveTraitMethod>> {
     let mut methods = Vec::new();
-    let mut composed_names: HashMap<String, String> = HashMap::new();
+    let mut composed_names: HashMap<String, ComposedTraitMethodName> = HashMap::new();
     let precedence_exclusions =
         trait_precedence_exclusions_for_uses(trait_uses, trait_lookup, path)?;
 
@@ -401,7 +407,9 @@ fn compose_effective_trait_methods_from_uses(
                     if direct_method_names.contains(&alias_key) {
                         continue;
                     }
-                    if let Some(existing_trait) = composed_names.get(&alias_key) {
+                    if alias_key == method_name_key
+                        && alias.visibility != candidate.method.visibility
+                    {
                         return Err(TraitSemanticError::new(
                             alias.span,
                             format!(
@@ -409,7 +417,48 @@ fn compose_effective_trait_methods_from_uses(
                                 trait_decl.name,
                                 alias.method_name,
                                 alias.alias,
-                                existing_trait,
+                                candidate.declaring_trait_name,
+                                alias.alias
+                            ),
+                        ));
+                    }
+                    if let Some(existing) = composed_names.get(&alias_key) {
+                        if !composed_trait_method_name_matches_source(
+                            existing,
+                            candidate,
+                            &method_name_key,
+                        ) || alias.visibility != candidate.method.visibility
+                        {
+                            return Err(TraitSemanticError::new(
+                                alias.span,
+                                format!(
+                                    "unsupported trait use: trait alias {}::{} as {} conflicts with {}::{}",
+                                    trait_decl.name,
+                                    alias.method_name,
+                                    alias.alias,
+                                    existing.declaring_trait_name,
+                                    alias.alias
+                                ),
+                            ));
+                        }
+                        continue;
+                    }
+                    if let Some(existing) = trait_methods.iter().find(|method| {
+                        method_key(&method.method.function.name) == alias_key
+                            && !same_effective_trait_method_source(
+                                method,
+                                candidate,
+                                &method_name_key,
+                            )
+                    }) {
+                        return Err(TraitSemanticError::new(
+                            alias.span,
+                            format!(
+                                "unsupported trait use: trait alias {}::{} as {} conflicts with {}::{}",
+                                trait_decl.name,
+                                alias.method_name,
+                                alias.alias,
+                                existing.declaring_trait_name,
                                 alias.alias
                             ),
                         ));
@@ -419,7 +468,13 @@ fn compose_effective_trait_methods_from_uses(
                     aliased.method.function.name = alias.alias.clone();
                     aliased.method.visibility = alias.visibility;
                     aliased.method.span = alias.span;
-                    composed_names.insert(alias_key, aliased.declaring_trait_name.clone());
+                    composed_names.insert(
+                        alias_key,
+                        ComposedTraitMethodName {
+                            declaring_trait_name: aliased.declaring_trait_name.clone(),
+                            source_method_key: method_name_key.clone(),
+                        },
+                    );
                     methods.push(aliased);
                 }
             }
@@ -429,8 +484,9 @@ fn compose_effective_trait_methods_from_uses(
             if direct_method_names.contains(&method_name_key) {
                 continue;
             }
-            if let Some(existing_trait) = composed_names.get(&method_name_key) {
-                if existing_trait.eq_ignore_ascii_case(&candidate.declaring_trait_name) {
+            if let Some(existing) = composed_names.get(&method_name_key) {
+                if composed_trait_method_name_matches_source(existing, candidate, &method_name_key)
+                {
                     continue;
                 }
                 return Err(TraitSemanticError::new(
@@ -439,7 +495,7 @@ fn compose_effective_trait_methods_from_uses(
                         "unsupported trait use: trait method {}::{} conflicts with {}::{}; add an insteadof adaptation or class override",
                         candidate.declaring_trait_name,
                         candidate.method.function.name,
-                        existing_trait,
+                        existing.declaring_trait_name,
                         candidate.method.function.name
                     ),
                 ));
@@ -449,12 +505,39 @@ fn compose_effective_trait_methods_from_uses(
             if let Some(visibility) = visibility_adaptations.get(&method_name_key) {
                 composed.method.visibility = *visibility;
             }
-            composed_names.insert(method_name_key, composed.declaring_trait_name.clone());
+            composed_names.insert(
+                method_name_key.clone(),
+                ComposedTraitMethodName {
+                    declaring_trait_name: composed.declaring_trait_name.clone(),
+                    source_method_key: method_name_key,
+                },
+            );
             methods.push(composed);
         }
     }
 
     Ok(methods)
+}
+
+fn same_effective_trait_method_source(
+    left: &EffectiveTraitMethod,
+    right: &EffectiveTraitMethod,
+    right_method_key: &str,
+) -> bool {
+    left.declaring_trait_name
+        .eq_ignore_ascii_case(&right.declaring_trait_name)
+        && method_key(&left.method.function.name) == right_method_key
+}
+
+fn composed_trait_method_name_matches_source(
+    existing: &ComposedTraitMethodName,
+    candidate: &EffectiveTraitMethod,
+    candidate_method_key: &str,
+) -> bool {
+    existing
+        .declaring_trait_name
+        .eq_ignore_ascii_case(&candidate.declaring_trait_name)
+        && existing.source_method_key == candidate_method_key
 }
 
 fn trait_visibility_adaptations(
@@ -855,6 +938,66 @@ class Recursive { use LoopA; }
         );
         let recursive = compose_class_effective_trait_methods(&class, &traits).unwrap_err();
         assert!(recursive.message.contains("recursive trait-body use"));
+    }
+
+    #[test]
+    fn trait_alias_existing_method_collision_reports_later_trait_methods() {
+        let (traits, class) = parsed_traits_and_class(
+            r#"<?php
+trait CollidingAlias {
+    public function aliasSource() {}
+    public function existing() {}
+}
+class UsesCollidingAlias {
+    use CollidingAlias {
+        CollidingAlias::aliasSource as existing;
+    }
+}
+"#,
+        );
+        let conflict = compose_class_effective_trait_methods(&class, &traits).unwrap_err();
+        assert!(conflict.message.contains(
+            "trait alias CollidingAlias::aliasSource as existing conflicts with CollidingAlias::existing"
+        ));
+
+        let methods = effective_method_names(
+            r#"<?php
+trait SameNameAlias {
+    public function existing() {}
+}
+class UsesSameNameAlias {
+    use SameNameAlias {
+        SameNameAlias::existing as existing;
+    }
+}
+"#,
+        );
+        assert_eq!(
+            methods,
+            vec![(
+                "existing".to_string(),
+                ClassVisibility::Public,
+                "SameNameAlias".to_string()
+            )]
+        );
+
+        let (traits, class) = parsed_traits_and_class(
+            r#"<?php
+trait SameNameVisibilityAlias {
+    public function existing() {}
+}
+class UsesSameNameVisibilityAlias {
+    use SameNameVisibilityAlias {
+        SameNameVisibilityAlias::existing as private existing;
+    }
+}
+"#,
+        );
+        let visibility_conflict =
+            compose_class_effective_trait_methods(&class, &traits).unwrap_err();
+        assert!(visibility_conflict.message.contains(
+            "trait alias SameNameVisibilityAlias::existing as existing conflicts with SameNameVisibilityAlias::existing"
+        ));
     }
 
     #[test]

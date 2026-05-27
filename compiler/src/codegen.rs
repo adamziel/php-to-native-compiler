@@ -66374,6 +66374,39 @@ mod tests {
     }
 
     #[test]
+    fn trait_alias_existing_method_collision_blocks_native_callable_metadata() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "trait AliasCollisionSource {\n",
+            "    public function aliasSource() { return \"alias\"; }\n",
+            "    public function existing() { return \"existing\"; }\n",
+            "}\n",
+            "class AliasCollisionConsumer {\n",
+            "    use AliasCollisionSource {\n",
+            "        AliasCollisionSource::aliasSource as existing;\n",
+            "    }\n",
+            "}\n",
+        ))
+        .expect("trait alias collision fixture parses");
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_traits(&program.statements)
+            .expect("trait registration should not diagnose alias collisions");
+        let error = generator
+            .register_top_level_declared_classes(&program.statements)
+            .expect_err("native class metadata must reject alias/name collisions");
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(
+            error.message,
+            "unsupported trait use: trait alias AliasCollisionSource::aliasSource as existing conflicts with AliasCollisionSource::existing"
+        );
+    }
+
+    #[test]
     fn native_diagnostic_result_producers_model_owned_value_diagnostic_and_null_operands() {
         for surface in [
             NativeDiagnosticResultOperandSurface::Expression,
