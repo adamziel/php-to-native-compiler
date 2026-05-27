@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 20:42 CEST
+Updated: 2026-05-27 20:45 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,17 +19,31 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `f1386f82` feeds finite callable-array and
-invokable-object declared-method identities into the centralized source-call
-contract policy. Compatible mixed callable families can now combine generated
-functions, selected runtime builtins, descriptor closures, callable arrays, and
-callable objects when all candidates publish matching arity, by-reference,
-return-reference, default, variadic, and parameter-name metadata. Interface-only
-callable array/object shapes still use the existing fallback metadata because
-interface methods do not yet have finite callable identities. Runtime-only
-callable values, unsupported external/core callables, comparator callbacks,
-broader magic fallbacks, full by-reference/COW parity, and LLVM/ASM parity
+Latest accounted source capability: `4982fccd` routes generated-C `instanceof`
+checks through generalized runtime class relationship metadata. The runtime now
+normalizes target names through class-like metadata registries, class aliases,
+parent chains, declared class-interface links, user interface metadata, and
+bounded core interface names before answering `InstanceOf` operation tag `0`.
+Generated C no longer needs text-membership tables for the accepted declared
+class/interface slice. Dynamic `instanceof $class`, arbitrary runtime
+source-loaded declarations, broader relationship operations, and LLVM/ASM parity
 remain blocked.
+
+Recent source commit `4982fccd` advances interface-aware `instanceof` without
+adding one-interface, namespace, generated-text, or fixture-membership lowering.
+`phpc_native_value_class_relationship_matches_with_diagnostic` centralizes the
+runtime relationship check, while the old class-only wrapper remains as a
+compatibility boundary. Generated C routes named `instanceof` and related
+receiver class checks through that operation-tagged ABI, and the linked fixture
+covers ordinary classes, direct interfaces, and parent-interface relationships.
+Focused gates covered compile checking, runtime relationship metadata,
+generated-C source proof, linked declared-class/interface execution, callable
+object/array contract regression, SPL autoload function snapshot regression,
+formatting, and diff checks. Dynamic `instanceof $class`, arbitrary runtime
+source loading/autoloaded dynamic declarations, broader relationship operations,
+and LLVM/ASM parity remain blocked. Primary gate log:
+`state/logs/phpc-primary-instanceof-interface-ffac6f7a-20260527.gates.log`
+sha256 `f362eac385a8ed11d64e6d600c9b5f117750dceb0f99c0cb3416b93dce3393cd`.
 
 Recent source commit `f1386f82` advances callable-array/object source-call
 contracts without adding fixture-name, one-class, generated-C substring, or
