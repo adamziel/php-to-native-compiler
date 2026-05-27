@@ -24578,6 +24578,29 @@ const NATIVE_SPREAD_DESCRIPTOR_CLOSURE_ARGUMENT_SOURCE: &str = concat!(
     "echo $join(...[spread_descriptor_closure_marker(\"Q\")]);\n",
 );
 
+const NATIVE_RUNTIME_CALLABLE_STRING_SPREAD_SOURCE: &str = concat!(
+    "<?php\n",
+    "function runtime_callable_string_spread_marker($label) { echo $label; return $label; }\n",
+    "function runtime_callable_string_spread_left($first, $second = \"D\", $third = \"\", $name = \"\") {\n",
+    "    return \"L\" . $first . $second . $third . $name;\n",
+    "}\n",
+    "function runtime_callable_string_spread_right($first, $second = \"D\", $third = \"\", $name = \"\") {\n",
+    "    return \"R\" . $first . $second . $third . $name;\n",
+    "}\n",
+    "class RuntimeCallableStringSpreadBox {\n",
+    "    public static function joinA($first, $second = \"D\", $third = \"\", $name = \"\") {\n",
+    "        return \"MA\" . $first . $second . $third . $name;\n",
+    "    }\n",
+    "    public static function joinB($first, $second = \"D\", $third = \"\", $name = \"\") {\n",
+    "        return \"MB\" . $first . $second . $third . $name;\n",
+    "    }\n",
+    "}\n",
+    "$fn = isset($_GET[\"right\"]) ? \"runtime_callable_string_spread_right\" : \"runtime_callable_string_spread_left\";\n",
+    "echo $fn(...[runtime_callable_string_spread_marker(\"A\"), runtime_callable_string_spread_marker(\"B\")], ...[\"third\" => runtime_callable_string_spread_marker(\"C\"), \"name\" => runtime_callable_string_spread_marker(\"N\")]), \"|\";\n",
+    "$method = isset($_GET[\"method\"]) ? \"RuntimeCallableStringSpreadBox::joinB\" : \"RuntimeCallableStringSpreadBox::joinA\";\n",
+    "echo $method(...[\"second\" => runtime_callable_string_spread_marker(\"Y\"), \"first\" => runtime_callable_string_spread_marker(\"X\")]);\n",
+);
+
 const NATIVE_NAMED_METHOD_SOURCE_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "function named_method_marker($label) { echo $label; return $label; }\n",
@@ -25348,6 +25371,27 @@ fn native_executable_c_source_lowers_descriptor_closure_spread_through_runtime_s
             && !source.contains("assembly dynamic function-call lowering rejects")
             && !source.contains(ASSEMBLY_CLOSURE_REJECTION),
         "supported descriptor closure spread should not hit the old spread or closure blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_runtime_callable_string_spread_through_materialized_bridge() {
+    let program = parse(NATIVE_RUNTIME_CALLABLE_STRING_SPREAD_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && body.contains("phpc_NativeCallArgumentsHandle dynamic_callable_args_")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "runtime callable-string spread should use homogeneous known callable metadata to finalize materialized entries before callable-value invocation:\n{source}"
+    );
+    assert!(
+        !source.contains("spread operands need a materialized-entry producer")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches"),
+        "runtime callable-string spread should not use the old spread blocker or finite string dispatch ladder:\n{source}"
     );
 }
 
@@ -26968,6 +27012,34 @@ fn emit_exe_links_and_runs_descriptor_closure_spread_argument_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"ABCNCABCN|YXCXY|QCQD");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_runtime_callable_string_spread_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "runtime_callable_string_spread_arguments",
+        NATIVE_RUNTIME_CALLABLE_STRING_SPREAD_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native runtime callable-string spread executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ABCNLABCN|YXMAXY");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

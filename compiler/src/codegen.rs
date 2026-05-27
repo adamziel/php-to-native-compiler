@@ -17909,6 +17909,13 @@ enum NativeMethodStaticSourceCallArgumentStrategy {
 }
 
 impl NativeMethodStaticSourceCallArgumentStrategy {
+    fn for_function(function: &FunctionDecl, arg_count: Option<usize>) -> Self {
+        let _ = arg_count;
+        Self::Frame(NativeMethodStaticSourceCallArgumentPlan::from_function(
+            function,
+        ))
+    }
+
     fn for_method(method: &CDeclaredClassMethod, arg_count: Option<usize>) -> Self {
         let _ = arg_count;
         Self::Frame(NativeMethodStaticSourceCallArgumentPlan::from_method(
@@ -17933,6 +17940,7 @@ impl NativeMethodStaticSourceCallArgumentStrategy {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeMethodStaticSignatureFamily {
+    GeneratedFunction,
     ReceiverMethod,
     StaticMethod,
 }
@@ -28893,19 +28901,66 @@ impl CGenerator {
         }
     }
 
+    fn callable_value_source_call_contract_candidate_for_identity(
+        &self,
+        identity: &CNativeCallableIdentity,
+        arg_count: Option<usize>,
+    ) -> Option<(
+        NativeMethodStaticSignatureFamily,
+        CScopedCallableStringSignature,
+        NativeMethodStaticSourceCallArgumentStrategy,
+    )> {
+        match identity {
+            CNativeCallableIdentity::GeneratedFunction { function_key } => {
+                let function = &self.user_functions.get(function_key)?.decl;
+                if arg_count.is_some_and(|arg_count| {
+                    !native_user_function_accepts_arg_count(function, arg_count)
+                }) {
+                    return None;
+                }
+                Some((
+                    NativeMethodStaticSignatureFamily::GeneratedFunction,
+                    CScopedCallableStringSignature::from_function(function),
+                    NativeMethodStaticSourceCallArgumentStrategy::for_function(function, arg_count),
+                ))
+            }
+            CNativeCallableIdentity::DeclaredInstanceMethod { .. }
+            | CNativeCallableIdentity::DeclaredStaticMethod { .. } => {
+                let (family, method) =
+                    self.callable_value_declared_method_for_identity(identity)?;
+                if !native_method_static_source_call_arity_compatible(&method, arg_count) {
+                    return None;
+                }
+                Some((
+                    family,
+                    CScopedCallableStringSignature::from_method(&method),
+                    NativeMethodStaticSourceCallArgumentStrategy::for_method(&method, arg_count),
+                ))
+            }
+            CNativeCallableIdentity::RuntimeBuiltin { .. }
+            | CNativeCallableIdentity::DescriptorClosure { .. } => None,
+        }
+    }
+
     fn callable_value_source_call_contract_from_identities<I>(
         &self,
         identities: I,
         arg_count: Option<usize>,
+        require_param_names: bool,
     ) -> Option<NativeMethodStaticSignatureFallbackContract>
     where
         I: IntoIterator<Item = CNativeCallableIdentity>,
     {
         let mut family = None;
-        let mut methods = Vec::new();
+        let mut candidate_count = 0;
+        let mut arity_compatible_count = 0;
+        let mut signature = None;
+        let mut argument_strategy: Option<NativeMethodStaticSourceCallArgumentStrategy> = None;
         for identity in identities {
-            let (identity_family, method) =
-                self.callable_value_declared_method_for_identity(&identity)?;
+            candidate_count += 1;
+            let (identity_family, identity_signature, identity_argument_strategy) = self
+                .callable_value_source_call_contract_candidate_for_identity(&identity, arg_count)?;
+            arity_compatible_count += 1;
             family = Some(match family {
                 Some(NativeMethodStaticSignatureFamily::StaticMethod)
                     if identity_family == NativeMethodStaticSignatureFamily::ReceiverMethod =>
@@ -28915,22 +28970,34 @@ impl CGenerator {
                 Some(previous) => previous,
                 None => identity_family,
             });
-            methods.push(method);
-        }
-        if methods.is_empty() {
-            return None;
+            match &signature {
+                Some(previous) if previous != &identity_signature => return None,
+                Some(_) => {}
+                None => signature = Some(identity_signature),
+            }
+            match &argument_strategy {
+                Some(previous)
+                    if !native_method_static_argument_strategies_semantically_match(
+                        previous,
+                        &identity_argument_strategy,
+                        require_param_names,
+                    ) =>
+                {
+                    return None;
+                }
+                Some(_) => {}
+                None => argument_strategy = Some(identity_argument_strategy),
+            }
         }
 
-        let contract = native_method_static_signature_fallback_contract_from_methods(
-            family?,
-            methods.iter(),
-            arg_count,
-        );
-        matches!(
-            contract.availability,
-            NativeMethodStaticSignatureAvailability::Known(_)
-        )
-        .then_some(contract)
+        Some(NativeMethodStaticSignatureFallbackContract {
+            family: family?,
+            candidate_count,
+            arity_compatible_count,
+            availability: NativeMethodStaticSignatureAvailability::Known(signature?),
+            argument_strategy: argument_strategy
+                .unwrap_or(NativeMethodStaticSourceCallArgumentStrategy::ForwardCallSite),
+        })
     }
 
     fn native_callable_array_target_and_method<'a>(
@@ -29797,9 +29864,10 @@ impl CGenerator {
         expr: &Expr,
         args: &[Expr],
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
-        self.callable_value_source_call_signature_contract_for_arg_count(
+        self.callable_value_source_call_signature_contract_for_args_with_options(
             expr,
             native_source_call_arg_count_for_args(args),
+            call_arguments_have_named(args) || call_arguments_have_spread(args),
         )
     }
 
@@ -29808,6 +29876,17 @@ impl CGenerator {
         expr: &Expr,
         arg_count: Option<usize>,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        self.callable_value_source_call_signature_contract_for_args_with_options(
+            expr, arg_count, false,
+        )
+    }
+
+    fn callable_value_source_call_signature_contract_for_args_with_options(
+        &self,
+        expr: &Expr,
+        arg_count: Option<usize>,
+        require_param_names: bool,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
         if let Expr::Array { items, .. } = expr {
             return self.callable_array_source_call_signature_contract_for_items(items, arg_count);
         }
@@ -29815,6 +29894,7 @@ impl CGenerator {
         self.callable_value_source_call_contract_from_identities(
             self.native_callable_identities_for_expr(expr)?,
             arg_count,
+            require_param_names,
         )
     }
 
