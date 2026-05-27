@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 13:25 CEST
+Updated: 2026-05-27 13:48 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,22 +19,32 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest accounted source capability: `630f2b1f` routes selected generated-C
-callable-object invocation through declared `__invoke` metadata and the shared
-receiver-method source-call machinery. Supported `$object(...)` calls now use
-access-context method lookup plus `NativeCallArgumentsHandle`, preserving
-source-order named argument keys, defaults, variadics, selected by-reference
-argument transfer, receiver/value cleanup, and malformed metadata rejection
-through the runtime lookup/invoke diagnostics. Static or private `__invoke`,
-unknown object metadata, spread/unpack call sites, missing metadata, and
-unsupported by-reference literal/non-cell shapes remain blocked instead of
-falling into fixture-specific callable lowering. Dynamic receiver class-name
-constants, trait effective-method metadata, direct receiver magic,
-static-property storage/reference/offset/ArrayAccess references, constructor
-reference results, reference-returning ArrayAccess owner stacks, descriptor
-closures, malformed magic metadata, source-call references, exact imports,
-literal/relative class constants, and class aliases remain green. Recent
-source commit `f42f1f91` routes selected generated-C
+Latest accounted source capability: `e9ed9af4` routes selected generated-C
+computed static-property names through the shared static-property lvalue and
+runtime property-name normalization boundary. Supported `Class::${$name}`,
+`$object::${$name}`, `self::${$name}`, `parent::${$name}`, and declared
+method-frame `static::${$name}` paths now normalize dynamic names through
+`phpc_native_static_property_name_from_value_with_diagnostic_and_free`, preserve
+static-property storage identity, typed-property diagnostics, class alias/case
+normalization, receiver cleanup, and read/write/compound/isset/unset behavior,
+and keep unsupported dynamic/static reference-COW and top-level called-scope
+shapes behind explicit blockers instead of generated literal-name ladders.
+Dynamic receiver class-name constants, callable-object invocation, trait
+effective-method metadata, direct receiver magic, static-property
+storage/reference/offset/ArrayAccess references, constructor reference results,
+reference-returning ArrayAccess owner stacks, descriptor closures, malformed
+magic metadata, source-call references, exact imports, literal/relative class
+constants, and class aliases remain green. Recent source commit `630f2b1f`
+routes selected generated-C callable-object invocation through declared
+`__invoke` metadata and the shared receiver-method source-call machinery.
+Supported `$object(...)` calls now use access-context method lookup plus
+`NativeCallArgumentsHandle`, preserving source-order named argument keys,
+defaults, variadics, selected by-reference argument transfer, receiver/value
+cleanup, and malformed metadata rejection through the runtime lookup/invoke
+diagnostics. Static or private `__invoke`, unknown object metadata,
+spread/unpack call sites, missing metadata, and unsupported by-reference
+literal/non-cell shapes remain blocked instead of falling into fixture-specific
+callable lowering. Recent source commit `f42f1f91` routes selected generated-C
 dynamic receiver class-name constants through a reusable no-autoload receiver
 normalization ABI. `$receiver::class` and `($receiver)::class` now consume
 object or class-string receivers, normalize registered generated-native class
