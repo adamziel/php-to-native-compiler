@@ -8838,7 +8838,10 @@ fn native_output_buffer_operation_for_call(name: &str) -> Option<NativeOutputBuf
 fn is_native_spl_autoload_registry_builtin(name: &str) -> bool {
     matches!(
         php_unqualified_name(name).to_ascii_lowercase().as_str(),
-        "spl_autoload_register" | "spl_autoload_unregister" | "spl_autoload_call"
+        "spl_autoload_register"
+            | "spl_autoload_unregister"
+            | "spl_autoload_call"
+            | "spl_autoload_functions"
     )
 }
 
@@ -17538,6 +17541,7 @@ struct CNativeValueMaterialization {
 
 struct CNativeCallableValueMaterialization {
     handle: String,
+    value_handle: String,
     cleanup_after_use: Vec<String>,
 }
 
@@ -23735,7 +23739,10 @@ impl CGenerator {
                 output.push_str("extern void phpc_native_spl_autoload_registry_free(phpc_NativeSplAutoloadRegistryHandle handle);\n");
                 output.push_str("extern bool phpc_native_spl_autoload_register_callable_value_and_free(phpc_NativeSplAutoloadRegistryHandle registry, phpc_NativeCallableValueHandle callable, bool prepend, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_spl_autoload_unregister_callable_value_and_free(phpc_NativeSplAutoloadRegistryHandle registry, phpc_NativeCallableValueHandle callable, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_spl_autoload_register_callable_value_with_callback_value_and_free(phpc_NativeSplAutoloadRegistryHandle registry, phpc_NativeCallableValueHandle callable, phpc_NativeValueHandle callback_value, bool prepend, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_spl_autoload_unregister_callable_value_with_callback_value_and_free(phpc_NativeSplAutoloadRegistryHandle registry, phpc_NativeCallableValueHandle callable, phpc_NativeValueHandle callback_value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_spl_autoload_call_bytes_with_diagnostic(phpc_NativeSplAutoloadRegistryHandle registry, phpc_NativeCallableTableHandle table, const uint8_t *class_ptr, size_t class_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_spl_autoload_functions_value_with_diagnostic(phpc_NativeSplAutoloadRegistryHandle registry, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_object_instantiation_helpers {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_new_declared_class_with_diagnostic(size_t class_id, const uint8_t *class_name, size_t class_name_len, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, size_t property_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -26374,6 +26381,7 @@ impl CGenerator {
 
         Ok(CNativeCallableValueMaterialization {
             handle: callable,
+            value_handle: value.handle,
             cleanup_after_use: value.cleanup_after_use,
         })
     }
@@ -60339,6 +60347,9 @@ impl CGenerator {
         if name.eq_ignore_ascii_case("spl_autoload_call") {
             return self.emit_native_spl_autoload_call_call(args, span, failure_cleanup);
         }
+        if name.eq_ignore_ascii_case("spl_autoload_functions") {
+            return self.emit_native_spl_autoload_functions_call(args, span, failure_cleanup);
+        }
         Err(self.unsupported_direct_named_call(args, span, ASSEMBLY_FUNCTION_CALL_REJECTION))
     }
 
@@ -60380,8 +60391,8 @@ impl CGenerator {
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
         self.body.push(format!(
-            "bool {result} = phpc_native_spl_autoload_register_callable_value_and_free({registry}, {}, {prepend}, &{diagnostic});",
-            callable.handle
+            "bool {result} = phpc_native_spl_autoload_register_callable_value_with_callback_value_and_free({registry}, {}, {}, {prepend}, &{diagnostic});",
+            callable.handle, callable.value_handle
         ));
         let report_call = c_diagnostic_report_call(&diagnostic);
         let error_exit = self.native_error_exit(&format!("{callable_cleanup}{failure_cleanup}"));
@@ -60415,8 +60426,8 @@ impl CGenerator {
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
         self.body.push(format!(
-            "bool {result} = phpc_native_spl_autoload_unregister_callable_value_and_free({registry}, {}, &{diagnostic});",
-            callable.handle
+            "bool {result} = phpc_native_spl_autoload_unregister_callable_value_with_callback_value_and_free({registry}, {}, {}, &{diagnostic});",
+            callable.handle, callable.value_handle
         ));
         let report_call = c_diagnostic_report_call(&diagnostic);
         let error_exit = self.native_error_exit(&format!("{callable_cleanup}{failure_cleanup}"));
@@ -60466,6 +60477,36 @@ impl CGenerator {
         ));
         self.body.push(format!("(void){result};"));
         Ok(CValue::Null)
+    }
+
+    fn emit_native_spl_autoload_functions_call(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        if !args.is_empty() {
+            return Err(self.unsupported_direct_named_call(
+                args,
+                span,
+                ASSEMBLY_FUNCTION_CALL_REJECTION,
+            ));
+        }
+
+        let (registry, _) = self.ensure_native_spl_autoload_registry(failure_cleanup, span)?;
+        let diagnostic = self.next_native_name("spl_autoload_functions_diagnostic");
+        let result = self.next_native_name("spl_autoload_functions_result");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_spl_autoload_functions_value_with_diagnostic({registry}, &{diagnostic});"
+        ));
+        let report_call = c_diagnostic_report_call(&diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!(
+            "if ({diagnostic}.ptr != NULL) {{ {report_call} {diagnostic}.ptr = NULL; {error_exit} }}"
+        ));
+        Ok(CValue::NativeValueHandle(result))
     }
 
     fn emit_native_output_buffer_operation_result_handle(

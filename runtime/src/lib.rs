@@ -1467,8 +1467,14 @@ struct NativeRequestDestructorFinalizers {
 
 #[derive(Debug)]
 struct NativeSplAutoloadRegistry {
-    callbacks: Vec<NativeCallableValueDispatch>,
+    callbacks: Vec<NativeSplAutoloadCallback>,
     loading: HashSet<Vec<u8>>,
+}
+
+#[derive(Debug, Clone)]
+struct NativeSplAutoloadCallback {
+    dispatch: NativeCallableValueDispatch,
+    value: Value,
 }
 
 #[derive(Debug, Clone)]
@@ -10248,6 +10254,215 @@ fn native_callable_dispatches_match(
     }
 }
 
+fn native_spl_autoload_static_method_value(class_name: String, method_name: String) -> Value {
+    let mut callable = PhpArray::new();
+    callable.insert(ArrayKey::Int(0), Value::String(class_name));
+    callable.insert(ArrayKey::Int(1), Value::String(method_name));
+    Value::Array(callable)
+}
+
+fn native_spl_autoload_value_name(value: &Value) -> Option<String> {
+    match value {
+        Value::String(value) => Some(value.clone()),
+        Value::BinaryString(value) => String::from_utf8(value.clone()).ok(),
+        _ => None,
+    }
+}
+
+fn native_spl_autoload_callback_value_from_dispatch(
+    dispatch: &NativeCallableValueDispatch,
+) -> Result<Value, String> {
+    match dispatch {
+        NativeCallableValueDispatch::Table {
+            callable,
+            bound_receiver,
+        } => match callable.descriptor.kind {
+            NativeCallableKind::Function => Ok(Value::String(callable.descriptor.name.clone())),
+            NativeCallableKind::Method | NativeCallableKind::Constructor => {
+                if let Some(receiver) = bound_receiver {
+                    if callable.descriptor.name.eq_ignore_ascii_case("__invoke") {
+                        return Ok(receiver.clone());
+                    }
+                    let mut value = PhpArray::new();
+                    value.insert(ArrayKey::Int(0), receiver.clone());
+                    value.insert(
+                        ArrayKey::Int(1),
+                        Value::String(callable.descriptor.name.clone()),
+                    );
+                    Ok(Value::Array(value))
+                } else {
+                    let scope = callable
+                        .called_scope
+                        .as_ref()
+                        .or(callable.descriptor.scope.as_ref())
+                        .ok_or_else(|| {
+                            "spl_autoload_functions(): registered static method callback has no class scope"
+                                .to_string()
+                        })?;
+                    Ok(native_spl_autoload_static_method_value(
+                        scope.clone(),
+                        callable.descriptor.name.clone(),
+                    ))
+                }
+            }
+        },
+        NativeCallableValueDispatch::Builtin(builtin) => {
+            Ok(Value::String(builtin.name().to_string()))
+        }
+        NativeCallableValueDispatch::DescriptorClosure(closure) => {
+            Ok(Value::Closure(closure.clone()))
+        }
+    }
+}
+
+fn native_spl_autoload_callback_value_from_registration(
+    dispatch: &NativeCallableValueDispatch,
+    callback_value: Option<&Value>,
+) -> Result<Value, String> {
+    let Some(callback_value) = callback_value else {
+        return native_spl_autoload_callback_value_from_dispatch(dispatch);
+    };
+
+    match callback_value {
+        Value::String(_) | Value::BinaryString(_) => {
+            let name = native_spl_autoload_value_name(callback_value).ok_or_else(|| {
+                "spl_autoload_register(): callback string must be valid UTF-8 in the current native subset"
+                    .to_string()
+            })?;
+            if let Some(class_method) = native_callable_value_class_method_name(&name) {
+                return Ok(native_spl_autoload_static_method_value(
+                    class_method.class_name,
+                    class_method.method_name,
+                ));
+            }
+            Ok(callback_value.clone())
+        }
+        Value::Array(_) | Value::Object(_) | Value::Closure(_) => Ok(callback_value.clone()),
+        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::Resource(_) => {
+            native_spl_autoload_callback_value_from_dispatch(dispatch)
+        }
+    }
+}
+
+#[derive(Debug)]
+enum NativeSplAutoloadCallbackIdentity {
+    Function(String),
+    StaticMethod {
+        class_name: String,
+        method_name: String,
+    },
+    ObjectMethod {
+        object: PhpObject,
+        method_name: String,
+    },
+    InvokableObject(PhpObject),
+    Closure(PhpClosure),
+}
+
+fn native_spl_autoload_callback_identity(
+    value: &Value,
+) -> Option<NativeSplAutoloadCallbackIdentity> {
+    match value {
+        Value::String(_) | Value::BinaryString(_) => {
+            let name = native_spl_autoload_value_name(value)?;
+            if let Some(class_method) = native_callable_value_class_method_name(&name) {
+                Some(NativeSplAutoloadCallbackIdentity::StaticMethod {
+                    class_name: class_method.class_name,
+                    method_name: class_method.method_name,
+                })
+            } else {
+                Some(NativeSplAutoloadCallbackIdentity::Function(name))
+            }
+        }
+        Value::Array(array) => {
+            if array.len() != 2 {
+                return None;
+            }
+            let target = array.get_cloned(ArrayKey::Int(0))?;
+            let method = array.get_cloned(ArrayKey::Int(1))?;
+            let method_name = native_spl_autoload_value_name(&method)?;
+            match target {
+                Value::String(_) | Value::BinaryString(_) => {
+                    let class_name = native_spl_autoload_value_name(&target)?;
+                    Some(NativeSplAutoloadCallbackIdentity::StaticMethod {
+                        class_name,
+                        method_name,
+                    })
+                }
+                Value::Object(object) => Some(NativeSplAutoloadCallbackIdentity::ObjectMethod {
+                    object,
+                    method_name,
+                }),
+                _ => None,
+            }
+        }
+        Value::Object(object) => Some(NativeSplAutoloadCallbackIdentity::InvokableObject(
+            object.clone(),
+        )),
+        Value::Closure(closure) => {
+            Some(NativeSplAutoloadCallbackIdentity::Closure(closure.clone()))
+        }
+        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::Resource(_) => None,
+    }
+}
+
+fn native_spl_autoload_callback_identities_match(
+    left: NativeSplAutoloadCallbackIdentity,
+    right: NativeSplAutoloadCallbackIdentity,
+) -> bool {
+    match (left, right) {
+        (
+            NativeSplAutoloadCallbackIdentity::Function(left),
+            NativeSplAutoloadCallbackIdentity::Function(right),
+        ) => left.eq_ignore_ascii_case(&right),
+        (
+            NativeSplAutoloadCallbackIdentity::StaticMethod {
+                class_name: left_class,
+                method_name: left_method,
+            },
+            NativeSplAutoloadCallbackIdentity::StaticMethod {
+                class_name: right_class,
+                method_name: right_method,
+            },
+        ) => {
+            left_class.eq_ignore_ascii_case(&right_class)
+                && left_method.eq_ignore_ascii_case(&right_method)
+        }
+        (
+            NativeSplAutoloadCallbackIdentity::ObjectMethod {
+                object: left_object,
+                method_name: left_method,
+            },
+            NativeSplAutoloadCallbackIdentity::ObjectMethod {
+                object: right_object,
+                method_name: right_method,
+            },
+        ) => left_object == right_object && left_method.eq_ignore_ascii_case(&right_method),
+        (
+            NativeSplAutoloadCallbackIdentity::InvokableObject(left),
+            NativeSplAutoloadCallbackIdentity::InvokableObject(right),
+        ) => left == right,
+        (
+            NativeSplAutoloadCallbackIdentity::Closure(left),
+            NativeSplAutoloadCallbackIdentity::Closure(right),
+        ) => left.id() == right.id(),
+        _ => false,
+    }
+}
+
+fn native_spl_autoload_callbacks_match(
+    left: &NativeSplAutoloadCallback,
+    right: &NativeSplAutoloadCallback,
+) -> bool {
+    match (
+        native_spl_autoload_callback_identity(&left.value),
+        native_spl_autoload_callback_identity(&right.value),
+    ) {
+        (Some(left), Some(right)) => native_spl_autoload_callback_identities_match(left, right),
+        _ => native_callable_dispatches_match(&left.dispatch, &right.dispatch),
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn phpc_native_callable_value_null() -> NativeCallableValueHandle {
     NativeCallableValueHandle::null()
@@ -10313,16 +10528,10 @@ pub unsafe extern "C" fn phpc_native_spl_autoload_registry_free(
     drop(unsafe { Box::from_raw(handle.ptr) });
 }
 
-/// # Safety
-///
-/// `registry` must be a request-local SPL autoload registry handle.
-/// `callable` must be a normalized callable-value dispatch handle returned by
-/// the runtime callable-value lookup ABI. This function consumes `callable`
-/// exactly once. The diagnostic slot may be null or owned by the caller.
-#[no_mangle]
-pub unsafe extern "C" fn phpc_native_spl_autoload_register_callable_value_and_free(
+unsafe fn native_spl_autoload_register_callback_value_and_free(
     mut registry: NativeSplAutoloadRegistryHandle,
     callable: NativeCallableValueHandle,
+    callback_value: Option<NativeValueHandle>,
     prepend: bool,
     diagnostic: *mut NativeDiagnosticHandle,
 ) -> bool {
@@ -10346,19 +10555,31 @@ pub unsafe extern "C" fn phpc_native_spl_autoload_register_callable_value_and_fr
         };
         return false;
     };
+    let callback_value_owned = callback_value.and_then(|value| unsafe { value.as_ref().cloned() });
+    let value = match native_spl_autoload_callback_value_from_registration(
+        &dispatch,
+        callback_value_owned.as_ref(),
+    ) {
+        Ok(value) => value,
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            return false;
+        }
+    };
+    let callback = NativeSplAutoloadCallback { dispatch, value };
 
     if registry
         .callbacks
         .iter()
-        .any(|existing| native_callable_dispatches_match(existing, &dispatch))
+        .any(|existing| native_spl_autoload_callbacks_match(existing, &callback))
     {
         return true;
     }
 
     if prepend {
-        registry.callbacks.insert(0, dispatch);
+        registry.callbacks.insert(0, callback);
     } else {
-        registry.callbacks.push(dispatch);
+        registry.callbacks.push(callback);
     }
     true
 }
@@ -10370,9 +10591,50 @@ pub unsafe extern "C" fn phpc_native_spl_autoload_register_callable_value_and_fr
 /// the runtime callable-value lookup ABI. This function consumes `callable`
 /// exactly once. The diagnostic slot may be null or owned by the caller.
 #[no_mangle]
-pub unsafe extern "C" fn phpc_native_spl_autoload_unregister_callable_value_and_free(
+pub unsafe extern "C" fn phpc_native_spl_autoload_register_callable_value_and_free(
+    registry: NativeSplAutoloadRegistryHandle,
+    callable: NativeCallableValueHandle,
+    prepend: bool,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe {
+        native_spl_autoload_register_callback_value_and_free(
+            registry, callable, None, prepend, diagnostic,
+        )
+    }
+}
+
+/// # Safety
+///
+/// `registry` must be a request-local SPL autoload registry handle.
+/// `callable` must be a normalized callable-value dispatch handle returned by
+/// the runtime callable-value lookup ABI. This function consumes `callable`
+/// exactly once. `callback_value` must be null or the original callback value
+/// used to produce `callable`; it is cloned and remains owned by the caller.
+/// The diagnostic slot may be null or owned by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_spl_autoload_register_callable_value_with_callback_value_and_free(
+    registry: NativeSplAutoloadRegistryHandle,
+    callable: NativeCallableValueHandle,
+    callback_value: NativeValueHandle,
+    prepend: bool,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe {
+        native_spl_autoload_register_callback_value_and_free(
+            registry,
+            callable,
+            (!callback_value.is_null()).then_some(callback_value),
+            prepend,
+            diagnostic,
+        )
+    }
+}
+
+unsafe fn native_spl_autoload_unregister_callback_value_and_free(
     mut registry: NativeSplAutoloadRegistryHandle,
     callable: NativeCallableValueHandle,
+    callback_value: Option<NativeValueHandle>,
     diagnostic: *mut NativeDiagnosticHandle,
 ) -> bool {
     unsafe { native_clear_diagnostic_slot(diagnostic) };
@@ -10395,10 +10657,22 @@ pub unsafe extern "C" fn phpc_native_spl_autoload_unregister_callable_value_and_
         };
         return false;
     };
+    let callback_value_owned = callback_value.and_then(|value| unsafe { value.as_ref().cloned() });
+    let value = match native_spl_autoload_callback_value_from_registration(
+        &dispatch,
+        callback_value_owned.as_ref(),
+    ) {
+        Ok(value) => value,
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            return false;
+        }
+    };
+    let callback = NativeSplAutoloadCallback { dispatch, value };
     let Some(index) = registry
         .callbacks
         .iter()
-        .position(|existing| native_callable_dispatches_match(existing, &dispatch))
+        .position(|existing| native_spl_autoload_callbacks_match(existing, &callback))
     else {
         return false;
     };
@@ -10406,8 +10680,78 @@ pub unsafe extern "C" fn phpc_native_spl_autoload_unregister_callable_value_and_
     true
 }
 
+/// # Safety
+///
+/// `registry` must be a request-local SPL autoload registry handle.
+/// `callable` must be a normalized callable-value dispatch handle returned by
+/// the runtime callable-value lookup ABI. This function consumes `callable`
+/// exactly once. The diagnostic slot may be null or owned by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_spl_autoload_unregister_callable_value_and_free(
+    registry: NativeSplAutoloadRegistryHandle,
+    callable: NativeCallableValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe {
+        native_spl_autoload_unregister_callback_value_and_free(registry, callable, None, diagnostic)
+    }
+}
+
+/// # Safety
+///
+/// `registry` must be a request-local SPL autoload registry handle.
+/// `callable` must be a normalized callable-value dispatch handle returned by
+/// the runtime callable-value lookup ABI. This function consumes `callable`
+/// exactly once. `callback_value` must be null or the original callback value
+/// used to produce `callable`; it is cloned and remains owned by the caller.
+/// The diagnostic slot may be null or owned by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_spl_autoload_unregister_callable_value_with_callback_value_and_free(
+    registry: NativeSplAutoloadRegistryHandle,
+    callable: NativeCallableValueHandle,
+    callback_value: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe {
+        native_spl_autoload_unregister_callback_value_and_free(
+            registry,
+            callable,
+            (!callback_value.is_null()).then_some(callback_value),
+            diagnostic,
+        )
+    }
+}
+
+/// # Safety
+///
+/// `registry` must be a request-local SPL autoload registry handle. The
+/// diagnostic slot may be null or owned by the caller. The returned value
+/// handle owns a PHP array containing clones of the registered callback values.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_spl_autoload_functions_value_with_diagnostic(
+    mut registry: NativeSplAutoloadRegistryHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let Some(registry) = (unsafe { registry.as_mut() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "spl_autoload_functions(): native SPL autoload registry handle is null",
+            )
+        };
+        return NativeValueHandle::null();
+    };
+
+    let mut callbacks = PhpArray::new();
+    for (index, callback) in registry.callbacks.iter().enumerate() {
+        callbacks.insert(ArrayKey::Int(index as i64), callback.value.clone());
+    }
+    NativeValueHandle::from_value(Value::Array(callbacks))
+}
+
 unsafe fn native_spl_autoload_invoke_callback(
-    dispatch: NativeCallableValueDispatch,
+    callback: NativeSplAutoloadCallback,
     class_name: &[u8],
     diagnostic: *mut NativeDiagnosticHandle,
 ) -> bool {
@@ -10425,7 +10769,7 @@ unsafe fn native_spl_autoload_invoke_callback(
         return false;
     }
 
-    let callable = NativeCallableValueHandle::from_dispatch(dispatch);
+    let callable = NativeCallableValueHandle::from_dispatch(callback.dispatch);
     unsafe {
         phpc_native_callable_value_invoke_discard_with_diagnostic_and_free(
             callable, arguments, diagnostic,
@@ -40494,17 +40838,41 @@ mod tests {
         value: Value,
         prepend: bool,
     ) {
+        let callback_value = NativeValueHandle::from_value(value.clone());
         let callable = unsafe { normalized_callable_for_test(table, value) };
         let mut diagnostic = NativeDiagnosticHandle::null();
         assert!(unsafe {
-            phpc_native_spl_autoload_register_callable_value_and_free(
+            phpc_native_spl_autoload_register_callable_value_with_callback_value_and_free(
                 registry,
                 callable,
+                callback_value,
                 prepend,
                 &mut diagnostic,
             )
         });
         assert!(diagnostic.is_null());
+        unsafe { phpc_native_value_free(callback_value) };
+    }
+
+    unsafe fn unregister_spl_autoload_callable_for_test(
+        registry: NativeSplAutoloadRegistryHandle,
+        table: NativeCallableTableHandle,
+        value: Value,
+    ) -> bool {
+        let callback_value = NativeValueHandle::from_value(value.clone());
+        let callable = unsafe { normalized_callable_for_test(table, value) };
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let removed = unsafe {
+            phpc_native_spl_autoload_unregister_callable_value_with_callback_value_and_free(
+                registry,
+                callable,
+                callback_value,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        unsafe { phpc_native_value_free(callback_value) };
+        removed
     }
 
     unsafe fn spl_autoload_call_for_test(
@@ -45294,6 +45662,151 @@ mod tests {
                 "function:Other\\Thing",
                 "ObjectLoader::__invoke:Other\\Thing",
             ]
+        );
+
+        unsafe {
+            phpc_native_spl_autoload_registry_free(registry);
+            phpc_native_callable_table_free(table);
+        }
+        spl_autoload_events_reset_for_test();
+    }
+
+    #[test]
+    fn native_spl_autoload_functions_materializes_order_and_callback_form_equality() {
+        spl_autoload_events_reset_for_test();
+        let registry = phpc_native_spl_autoload_registry_new();
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "first_loader",
+                NativeCallableVisibility::Public,
+                native_autoload_record_function_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "second_loader",
+                NativeCallableVisibility::Public,
+                native_autoload_record_function_callback,
+            );
+            register_static_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("StaticLoader"),
+                "load",
+                NativeCallableVisibility::Public,
+                native_autoload_static_method_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("ObjectLoader"),
+                "__invoke",
+                NativeCallableVisibility::Public,
+                native_autoload_object_callback,
+            );
+        }
+
+        let mut classes = PhpClassTable::new();
+        let object_id = classes.declare_class("ObjectLoader").unwrap();
+        let object_loader = Value::Object(PhpObject::from_class(classes.get(object_id).unwrap()));
+
+        unsafe {
+            register_spl_autoload_callable_for_test(
+                registry,
+                table,
+                Value::String("FIRST_LOADER".to_string()),
+                false,
+            );
+            register_spl_autoload_callable_for_test(
+                registry,
+                table,
+                Value::String("StaticLoader::LOAD".to_string()),
+                false,
+            );
+            register_spl_autoload_callable_for_test(
+                registry,
+                table,
+                Value::String("second_loader".to_string()),
+                true,
+            );
+            register_spl_autoload_callable_for_test(registry, table, object_loader.clone(), false);
+        }
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let callbacks = unsafe {
+            phpc_native_spl_autoload_functions_value_with_diagnostic(registry, &mut diagnostic)
+        };
+        assert!(diagnostic.is_null());
+        let callbacks = match unsafe { callbacks.into_value() } {
+            Some(Value::Array(callbacks)) => callbacks,
+            other => panic!("expected callback list array, got {other:?}"),
+        };
+        assert_eq!(callbacks.len(), 4);
+        assert_eq!(
+            callbacks.get_cloned(ArrayKey::Int(0)),
+            Some(Value::String("second_loader".to_string()))
+        );
+        assert_eq!(
+            callbacks.get_cloned(ArrayKey::Int(1)),
+            Some(Value::String("FIRST_LOADER".to_string()))
+        );
+        assert_eq!(
+            callbacks.get_cloned(ArrayKey::Int(2)),
+            Some(Value::Array(callable_pair(
+                Value::String("StaticLoader".to_string()),
+                Value::String("LOAD".to_string()),
+            )))
+        );
+        assert_eq!(
+            callbacks.get_cloned(ArrayKey::Int(3)),
+            Some(object_loader.clone())
+        );
+
+        assert!(!unsafe {
+            unregister_spl_autoload_callable_for_test(
+                registry,
+                table,
+                Value::Array(callable_pair(
+                    object_loader.clone(),
+                    Value::String("__invoke".to_string()),
+                )),
+            )
+        });
+        assert!(unsafe {
+            unregister_spl_autoload_callable_for_test(
+                registry,
+                table,
+                Value::Array(callable_pair(
+                    Value::String("staticloader".to_string()),
+                    Value::String("load".to_string()),
+                )),
+            )
+        });
+        assert!(unsafe {
+            unregister_spl_autoload_callable_for_test(registry, table, object_loader)
+        });
+
+        let callbacks = unsafe {
+            phpc_native_spl_autoload_functions_value_with_diagnostic(registry, &mut diagnostic)
+        };
+        assert!(diagnostic.is_null());
+        let callbacks = match unsafe { callbacks.into_value() } {
+            Some(Value::Array(callbacks)) => callbacks,
+            other => panic!("expected callback list array after unregister, got {other:?}"),
+        };
+        assert_eq!(callbacks.len(), 2);
+        assert_eq!(
+            callbacks.get_cloned(ArrayKey::Int(0)),
+            Some(Value::String("second_loader".to_string()))
+        );
+        assert_eq!(
+            callbacks.get_cloned(ArrayKey::Int(1)),
+            Some(Value::String("FIRST_LOADER".to_string()))
         );
 
         unsafe {

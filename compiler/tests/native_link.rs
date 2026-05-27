@@ -5817,8 +5817,8 @@ fn native_executable_c_source_lowers_spl_autoload_register_through_callable_regi
     assert!(
         source.contains("static phpc_NativeSplAutoloadRegistryHandle phpc_user_spl_autoload_registry")
             && source.contains("phpc_native_spl_autoload_registry_new")
-            && source.contains("phpc_native_spl_autoload_register_callable_value_and_free")
-            && source.contains("phpc_native_spl_autoload_unregister_callable_value_and_free")
+            && source.contains("phpc_native_spl_autoload_register_callable_value_with_callback_value_and_free")
+            && source.contains("phpc_native_spl_autoload_unregister_callable_value_with_callback_value_and_free")
             && source.contains("phpc_native_spl_autoload_call_bytes_with_diagnostic")
             && source.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic"),
         "SPL autoload lowering should use one request registry and the shared callable-value lookup ABI:\n{source}"
@@ -5872,6 +5872,39 @@ fn native_executable_c_source_routes_class_and_trait_exists_autoload_to_registry
 }
 
 #[test]
+fn native_executable_c_source_lowers_spl_autoload_functions_through_registry_snapshot() {
+    let program = parse(concat!(
+        "<?php\n",
+        "function first_loader($name) {}\n",
+        "function second_loader($name) {}\n",
+        "class StaticLoader { public static function load($name) {} }\n",
+        "spl_autoload_register(\"first_loader\");\n",
+        "spl_autoload_register(\"StaticLoader::load\");\n",
+        "spl_autoload_register(\"second_loader\", true, true);\n",
+        "$callbacks = spl_autoload_functions();\n",
+        "echo count($callbacks);\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_spl_autoload_functions_value_with_diagnostic(")
+            && body.contains(
+                "phpc_native_spl_autoload_register_callable_value_with_callback_value_and_free("
+            )
+            && body.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic("),
+        "spl_autoload_functions() should snapshot the request-local runtime registry through the reusable SPL ABI:\n{source}"
+    );
+    assert!(
+        !body.contains("spl_autoload_functions_callback_")
+            && !body.contains("phpc_native_value_dynamic_call_name_matches")
+            && !body.contains("dynamic_user_function_matched_"),
+        "spl_autoload_functions() must not synthesize callback strings or use generated callback-name ladders:\n{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_spl_autoload_registry_lowering_program() {
     if !has_cc() {
         return;
@@ -5903,6 +5936,52 @@ fn emit_exe_links_and_runs_spl_autoload_registry_lowering_program() {
     assert_eq!(
         String::from_utf8_lossy(&run.stdout),
         "B:One\nA:One\nA:Two\nN\nN\n"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_spl_autoload_functions_registry_snapshot_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function first_loader($name) {}\n",
+        "function second_loader($name) {}\n",
+        "class StaticLoader { public static function load($name) {} }\n",
+        "spl_autoload_register(\"first_loader\");\n",
+        "spl_autoload_register(\"StaticLoader::load\");\n",
+        "spl_autoload_register(\"second_loader\", true, true);\n",
+        "$callbacks = spl_autoload_functions();\n",
+        "echo count($callbacks), \"\\n\";\n",
+        "echo $callbacks[0], \"\\n\";\n",
+        "echo $callbacks[1], \"\\n\";\n",
+        "echo $callbacks[2][0], \"::\", $callbacks[2][1], \"\\n\";\n",
+        "spl_autoload_unregister(\"first_loader\");\n",
+        "$callbacks = spl_autoload_functions();\n",
+        "echo count($callbacks), \"\\n\";\n",
+        "echo $callbacks[0], \"\\n\";\n",
+        "echo $callbacks[1][0], \"::\", $callbacks[1][1], \"\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("spl_autoload_functions_registry_snapshot", source);
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run SPL autoload functions registry snapshot executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "3\nsecond_loader\nfirst_loader\nStaticLoader::load\n2\nsecond_loader\nStaticLoader::load\n"
     );
 
     let _ = fs::remove_file(source_path);
