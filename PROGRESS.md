@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 17:13 CEST
+Updated: 2026-05-27 17:18 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,16 +19,26 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `c64a0e21` routes selected runtime
-callable `trim`/`ltrim`/`rtrim` strings through builtin signature metadata,
-defaulted `characters` parameters, the shared materialized spread bridge, and
-runtime callable builtin invocation. Generated-C programs can now execute
-`$fn(...$args)` for trim-family builtin strings, including defaulted
-`trim($string)` and named spread `characters` arguments, without generated
-name ladders or per-fixture trimming. Custom mask ranges, empty ltrim/rtrim
-masks, by-reference/writeback builtins, unknown or heterogeneous runtime
-callables, magic fallback, broad COW parity, and LLVM/ASM parity remain
-blocked.
+Latest accounted source capability: `2841e79a` preserves selected
+runtime-held callable array/object identity metadata when direct variables are
+routed through root-symbol-table by-reference activity. The shared
+symbol-table metadata path now records native value facts and callable
+identities across materialized writes and unsets, so generated-C
+`$cb(...$args)` calls can still derive by-reference parameter metadata and
+mutate the caller's original unpacked reference slots for static-method,
+instance-method, and invokable-object callable variables. Unknown or
+heterogeneous runtime callable arrays/objects, runtime builtin writeback,
+magic fallback, broad unknown signatures, broad COW parity, and LLVM/ASM
+parity remain blocked.
+
+Recent source commit `2841e79a` folds callable-variable by-reference fact
+preservation into the reusable symbol-table metadata helpers. Runtime-held
+callable arrays and invokable objects assigned through direct variables keep
+their finite callable identity sets after root-symbol-table writes, including
+materialized native value writes and unset cleanup. The generated source and
+linked executable proofs cover static method, instance method, and
+`__invoke` callables mutating reference-backed spread slots through the shared
+materialized argument finalizer.
 
 Recent source commit `c64a0e21` routes selected trim-family runtime builtin
 callables through the shared source-call and materialized-argument contracts.
