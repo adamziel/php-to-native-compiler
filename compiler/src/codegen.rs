@@ -20435,10 +20435,21 @@ impl CGenerator {
 
     fn native_callable_magic_signature_status(method: &CDeclaredClassMethod) -> &'static str {
         let name = method.decl.name.as_str();
-        if !name.eq_ignore_ascii_case("__call") && !name.eq_ignore_ascii_case("__callStatic") {
+        let expected_arity = if name.eq_ignore_ascii_case("__call")
+            || name.eq_ignore_ascii_case("__callStatic")
+            || name.eq_ignore_ascii_case("__set")
+        {
+            2
+        } else if name.eq_ignore_ascii_case("__get")
+            || name.eq_ignore_ascii_case("__isset")
+            || name.eq_ignore_ascii_case("__unset")
+        {
+            1
+        } else {
             return "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_NOT_MAGIC";
-        }
-        if method.decl.params.len() != 2 || method.decl.params.iter().any(|param| param.is_variadic)
+        };
+        if method.decl.params.len() != expected_arity
+            || method.decl.params.iter().any(|param| param.is_variadic)
         {
             return "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_ARITY";
         }
@@ -20451,10 +20462,19 @@ impl CGenerator {
         ) {
             return "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_FIRST_PARAMETER_TYPE";
         }
-        if !Self::native_magic_signature_type_accepts(
-            method.decl.params[1].type_decl.as_ref(),
-            "array",
-        ) {
+        if name.eq_ignore_ascii_case("__call") || name.eq_ignore_ascii_case("__callStatic") {
+            if !Self::native_magic_signature_type_accepts(
+                method.decl.params[1].type_decl.as_ref(),
+                "array",
+            ) {
+                return "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_SECOND_PARAMETER_TYPE";
+            }
+        } else if name.eq_ignore_ascii_case("__set")
+            && !Self::native_magic_signature_type_accepts(
+                method.decl.params[1].type_decl.as_ref(),
+                "mixed",
+            )
+        {
             return "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_SECOND_PARAMETER_TYPE";
         }
         "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_VALID"
@@ -21955,6 +21975,9 @@ impl CGenerator {
             if self.uses_native_reference_handle_type() {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeReferenceHandle;\n");
             }
+            if self.uses_native_callable_helpers || self.uses_native_object_property_helpers {
+                output.push_str("typedef struct { void *ptr; } phpc_NativeCallableTableHandle;\n");
+            }
             if self.uses_native_callable_helpers {
                 output.push_str("#define PHPC_NATIVE_CALLABLE_KIND_FUNCTION 1\n");
                 output.push_str("#define PHPC_NATIVE_CALLABLE_KIND_METHOD 2\n");
@@ -21985,7 +22008,6 @@ impl CGenerator {
                     output.push_str("#define PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_APPEND 1\n");
                     output.push_str("#define PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_UNSET 2\n");
                 }
-                output.push_str("typedef struct { void *ptr; } phpc_NativeCallableTableHandle;\n");
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallableHandle;\n");
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallableValueHandle;\n");
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallArgumentsHandle;\n");
@@ -22549,8 +22571,11 @@ impl CGenerator {
             }
             if self.uses_native_object_property_helpers {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_public_property_operation_with_diagnostic(phpc_NativeValueHandle object, const uint8_t *property_name, size_t property_name_len, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_property_operation_with_magic_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle object, const uint8_t *property_name, size_t property_name_len, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_property_mutation_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle property, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_property_mutation_operation_with_magic_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle subject, phpc_NativeValueHandle property, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_object_property_mutation_operation_with_reference_slots_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeReferenceHandle subject_reference, phpc_NativeValueHandle property, phpc_NativeReferenceHandle property_reference, phpc_NativeValueHandle replacement, phpc_NativeReferenceHandle replacement_reference, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_object_property_mutation_operation_with_magic_reference_slots_with_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle subject, phpc_NativeReferenceHandle subject_reference, phpc_NativeValueHandle property, phpc_NativeReferenceHandle property_reference, phpc_NativeValueHandle replacement, phpc_NativeReferenceHandle replacement_reference, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_value_public_property_reference_with_diagnostic_and_free(phpc_NativeValueHandle object, phpc_NativeValueHandle property, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_value_public_property_array_path_reference_with_diagnostic_and_free(phpc_NativeValueHandle object, phpc_NativeValueHandle property, const phpc_NativeValueHandle *keys, size_t len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_value_public_property_array_append_reference_with_diagnostic_and_free(phpc_NativeValueHandle object, phpc_NativeValueHandle property, const phpc_NativeValueHandle *keys, size_t len, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -23964,12 +23989,15 @@ impl CGenerator {
 
         let (property_name, property_name_len) =
             self.emit_call_type_static_bytes("object_property_name_bytes", property);
+        let operand_cleanup_sequence = c_cleanup_sequence(&operand_cleanup);
+        let callable_table = self
+            .ensure_native_callable_table(&format!("{operand_cleanup_sequence}{failure_cleanup}"));
         let diagnostic = self.next_native_name("object_property_diagnostic");
         let result = self.next_native_name(result_prefix);
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
         self.body.push(format!(
-            "phpc_NativeValueHandle {result} = phpc_native_value_object_public_property_operation_with_diagnostic({}, {property_name}, {property_name_len}, {replacement_handle}, {operation_tag}, &{diagnostic});",
+            "phpc_NativeValueHandle {result} = phpc_native_value_object_property_operation_with_magic_diagnostic({callable_table}, {}, {property_name}, {property_name_len}, {replacement_handle}, {operation_tag}, &{diagnostic});",
             object_value.handle
         ));
         self.emit_report_native_diagnostic(&diagnostic);
@@ -24224,6 +24252,9 @@ impl CGenerator {
         let mut cleanup_after_use = replacement.cleanup_after_use;
         cleanup_after_use.extend(property.cleanup_after_use);
         cleanup_after_use.extend(subject.cleanup_after_use);
+        let operand_cleanup_sequence = c_cleanup_sequence(&cleanup_after_use);
+        let callable_table = self
+            .ensure_native_callable_table(&format!("{operand_cleanup_sequence}{failure_cleanup}"));
 
         let diagnostic = self.next_native_name("object_property_mutation_diagnostic");
         let result = self.next_native_name(operation.result_prefix());
@@ -24231,12 +24262,12 @@ impl CGenerator {
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
         if use_reference_slots {
             self.body.push(format!(
-                "phpc_NativeValueHandle {result} = phpc_native_object_property_mutation_operation_with_reference_slots_with_diagnostic({subject_handle}, {subject_reference}, {property_handle}, {property_reference}, {replacement_handle}, {replacement_reference}, {}, &{diagnostic});",
+                "phpc_NativeValueHandle {result} = phpc_native_object_property_mutation_operation_with_magic_reference_slots_with_diagnostic({callable_table}, {subject_handle}, {subject_reference}, {property_handle}, {property_reference}, {replacement_handle}, {replacement_reference}, {}, &{diagnostic});",
                 operation.operation_tag()
             ));
         } else {
             self.body.push(format!(
-                "phpc_NativeValueHandle {result} = phpc_native_value_object_property_mutation_operation_with_diagnostic({subject_handle}, {property_handle}, {replacement_handle}, {}, &{diagnostic});",
+                "phpc_NativeValueHandle {result} = phpc_native_value_object_property_mutation_operation_with_magic_diagnostic({callable_table}, {subject_handle}, {property_handle}, {replacement_handle}, {}, &{diagnostic});",
                 operation.operation_tag()
             ));
         }
@@ -29443,45 +29474,6 @@ impl CGenerator {
         }
     }
 
-    fn declared_class_instance_property_is_typed(
-        &self,
-        class_key: &str,
-        property_name: &str,
-    ) -> bool {
-        let Some(lookup_keys) = self.declared_class_lookup_keys(class_key) else {
-            return false;
-        };
-        lookup_keys.iter().any(|lookup_key| {
-            self.declared_classes.get(lookup_key).is_some_and(|class| {
-                class.properties.iter().any(|property| {
-                    !property.is_static
-                        && property.name == property_name
-                        && property.type_decl.is_some()
-                })
-            })
-        })
-    }
-
-    fn native_object_property_assignment_requires_typed_mutation(
-        &self,
-        object: &Expr,
-        property: CObjectPropertyOperand<'_>,
-    ) -> bool {
-        let Some(property_name) = self.single_known_object_property_name(property) else {
-            return false;
-        };
-        let Some(facts) = self.native_value_facts_for_expr(object) else {
-            return false;
-        };
-        let Some(object) = facts.object else {
-            return false;
-        };
-        !object.declared_class_keys.is_empty()
-            && object.declared_class_keys.iter().all(|class_key| {
-                self.declared_class_instance_property_is_typed(class_key, &property_name)
-            })
-    }
-
     fn native_arrayaccess_owner_source_offset_get_may_return_reference(
         &self,
         source: &CNativeValueOwnerSource,
@@ -29511,72 +29503,6 @@ impl CGenerator {
         }
     }
 
-    fn set_native_value_owner_commit_facts(
-        commit: &mut CNativeValueOwnerCommit,
-        replacement_facts: Option<CNativeValueFacts>,
-    ) {
-        match commit {
-            CNativeValueOwnerCommit::DirectVariable { facts, .. }
-            | CNativeValueOwnerCommit::ReferenceSlot { facts, .. }
-            | CNativeValueOwnerCommit::ObjectPropertyReferenceSlot { facts, .. }
-            | CNativeValueOwnerCommit::StaticProperty { facts, .. } => {
-                *facts = replacement_facts;
-            }
-        }
-    }
-
-    fn materialize_object_property_owner_assignment_result(
-        &mut self,
-        object: &Expr,
-        property: CObjectPropertyOperand<'_>,
-        fact_target: CNativeObjectPropertyFactTarget,
-        expr: &Expr,
-        span: Span,
-        failure_cleanup: &str,
-    ) -> CompileResult<CNativeValueMaterialization> {
-        let replacement_facts = self.native_value_facts_for_expr(expr);
-        let owner_source = CNativeValueOwnerSource::ObjectProperty {
-            object: object.clone(),
-            property: property.into(),
-            span,
-            facts: None,
-            fact_target,
-        };
-        let owner = self.materialize_native_value_owner(owner_source, failure_cleanup)?;
-        let owner_abort_cleanup = c_cleanup_sequence(&owner.cleanup_after_abort());
-        let replacement = self.materialize_native_value_result_operand(
-            expr,
-            &format!("{owner_abort_cleanup}{failure_cleanup}"),
-        )?;
-        let replacement_cleanup = c_cleanup_sequence(&replacement.cleanup_after_use);
-        let result = self.checked_clone_native_value_handle(
-            &replacement.handle,
-            &format!("{replacement_cleanup}{owner_abort_cleanup}{failure_cleanup}"),
-        );
-        let assignment_result = CNativeValueMaterialization {
-            handle: result.clone(),
-            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
-        };
-        let assignment_result_cleanup = c_cleanup_sequence(&assignment_result.cleanup_after_use);
-        let owner_subject_cleanup = owner.subject.cleanup_after_use;
-        let mut owner_commit = owner.commit;
-        Self::set_native_value_owner_commit_facts(&mut owner_commit, replacement_facts);
-        let owner_commit_cleanup = owner_commit.cleanup_after_use();
-        let owner_commit_cleanup_sequence = c_cleanup_sequence(&owner_commit_cleanup);
-
-        self.body.extend(owner_subject_cleanup);
-        self.emit_native_value_owner_commit(
-            owner_commit,
-            &replacement.handle,
-            &format!(
-                "{assignment_result_cleanup}{replacement_cleanup}{owner_commit_cleanup_sequence}{failure_cleanup}"
-            ),
-        )?;
-        self.body.extend(owner_commit_cleanup);
-
-        Ok(assignment_result)
-    }
-
     fn materialize_non_local_object_property_assignment_result_for_target(
         &mut self,
         target: &AssignTarget,
@@ -29590,29 +29516,9 @@ impl CGenerator {
                 span,
             } => {
                 let object_expr = Expr::Variable(object.clone(), *span);
-                if self.native_object_property_assignment_requires_typed_mutation(
+                self.materialize_object_property_assignment_result(
                     &object_expr,
                     CObjectPropertyOperand::Literal(property),
-                ) {
-                    return self
-                        .materialize_object_property_assignment_result(
-                            &object_expr,
-                            CObjectPropertyOperand::Literal(property),
-                            expr,
-                            *span,
-                            failure_cleanup,
-                        )
-                        .map(Some);
-                }
-                let fact_target =
-                    CNativeObjectPropertyFactTarget::Key(CNativeObjectPropertyFactKey {
-                        object: object.clone(),
-                        property: property.clone(),
-                    });
-                self.materialize_object_property_owner_assignment_result(
-                    &object_expr,
-                    CObjectPropertyOperand::Literal(property),
-                    fact_target,
                     expr,
                     *span,
                     failure_cleanup,
@@ -29629,29 +29535,10 @@ impl CGenerator {
                     return Ok(None);
                 };
                 let object_expr = Expr::Variable(object.clone(), *span);
-                if self.native_object_property_assignment_requires_typed_mutation(
+                let _ = property_name;
+                self.materialize_object_property_assignment_result(
                     &object_expr,
                     CObjectPropertyOperand::Dynamic(property),
-                ) {
-                    return self
-                        .materialize_object_property_assignment_result(
-                            &object_expr,
-                            CObjectPropertyOperand::Dynamic(property),
-                            expr,
-                            *span,
-                            failure_cleanup,
-                        )
-                        .map(Some);
-                }
-                let fact_target =
-                    CNativeObjectPropertyFactTarget::Key(CNativeObjectPropertyFactKey {
-                        object: object.clone(),
-                        property: property_name,
-                    });
-                self.materialize_object_property_owner_assignment_result(
-                    &object_expr,
-                    CObjectPropertyOperand::Dynamic(property),
-                    fact_target,
                     expr,
                     *span,
                     failure_cleanup,
@@ -65034,12 +64921,20 @@ echo " 10" < "zeta";
             "class MagicSignatureValid {\n",
             "    public function __call(?string $name, mixed $args) { return \"ok\"; }\n",
             "    public static function __callStatic(string|int $name, array|null $args) { return \"ok\"; }\n",
+            "    public function __get(?string $name) { return \"ok\"; }\n",
+            "    public function __set(string $name, mixed $value) { return \"ok\"; }\n",
+            "    public function __isset(string $name) { return true; }\n",
+            "    public function __unset(string $name) { return null; }\n",
             "    public function normal($value) { return $value; }\n",
             "}\n",
             "class MagicSignatureInvalidArity { public function __call($name) {} }\n",
             "class MagicSignatureInvalidByReference { public function __call(&$name, $args) {} }\n",
             "class MagicSignatureInvalidFirstType { public static function __callStatic(int $name, array $args) {} }\n",
             "class MagicSignatureInvalidSecondType { public static function __callStatic(string $name, int $args) {} }\n",
+            "class PropertyMagicSignatureInvalidArity { public function __get($name, $extra) {} }\n",
+            "class PropertyMagicSignatureInvalidByReference { public function __isset(&$name) {} }\n",
+            "class PropertyMagicSignatureInvalidFirstType { public function __unset(int $name) {} }\n",
+            "class PropertyMagicSignatureInvalidSecondType { public function __set(string $name, int $value) {} }\n",
         ))
         .expect("magic signature metadata fixture parses");
         let mut generator = CGenerator {
@@ -65073,6 +64968,22 @@ echo " 10" < "zeta";
             "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_VALID"
         );
         assert_eq!(
+            method_status("MagicSignatureValid", "__get"),
+            "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_VALID"
+        );
+        assert_eq!(
+            method_status("MagicSignatureValid", "__set"),
+            "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_VALID"
+        );
+        assert_eq!(
+            method_status("MagicSignatureValid", "__isset"),
+            "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_VALID"
+        );
+        assert_eq!(
+            method_status("MagicSignatureValid", "__unset"),
+            "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_VALID"
+        );
+        assert_eq!(
             method_status("MagicSignatureValid", "normal"),
             "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_NOT_MAGIC"
         );
@@ -65090,6 +65001,22 @@ echo " 10" < "zeta";
         );
         assert_eq!(
             method_status("MagicSignatureInvalidSecondType", "__callStatic"),
+            "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_SECOND_PARAMETER_TYPE"
+        );
+        assert_eq!(
+            method_status("PropertyMagicSignatureInvalidArity", "__get"),
+            "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_ARITY"
+        );
+        assert_eq!(
+            method_status("PropertyMagicSignatureInvalidByReference", "__isset"),
+            "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_BY_REFERENCE"
+        );
+        assert_eq!(
+            method_status("PropertyMagicSignatureInvalidFirstType", "__unset"),
+            "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_FIRST_PARAMETER_TYPE"
+        );
+        assert_eq!(
+            method_status("PropertyMagicSignatureInvalidSecondType", "__set"),
             "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_SECOND_PARAMETER_TYPE"
         );
     }

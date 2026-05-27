@@ -1580,9 +1580,7 @@ impl NativeCallableKey {
 
 impl NativeCallableMagicSignatureStatus {
     fn default_for(kind: NativeCallableKind, name: &str) -> Self {
-        if matches!(kind, NativeCallableKind::Method)
-            && (name.eq_ignore_ascii_case("__call") || name.eq_ignore_ascii_case("__callStatic"))
-        {
+        if matches!(kind, NativeCallableKind::Method) && native_method_name_is_magic(name) {
             Self::Valid
         } else {
             Self::NotMagic
@@ -1590,10 +1588,18 @@ impl NativeCallableMagicSignatureStatus {
     }
 
     fn diagnostic_for(self, scope: &str, method_name: &str) -> Option<String> {
+        let expected_arity = if method_name.eq_ignore_ascii_case("__get")
+            || method_name.eq_ignore_ascii_case("__isset")
+            || method_name.eq_ignore_ascii_case("__unset")
+        {
+            1
+        } else {
+            2
+        };
         match self {
             Self::NotMagic | Self::Valid => None,
             Self::InvalidArity => Some(format!(
-                "Method {scope}::{method_name}() must take exactly 2 arguments"
+                "Method {scope}::{method_name}() must take exactly {expected_arity} arguments"
             )),
             Self::InvalidByReference => Some(format!(
                 "Method {scope}::{method_name}() cannot take arguments by reference"
@@ -1601,11 +1607,27 @@ impl NativeCallableMagicSignatureStatus {
             Self::InvalidFirstParameterType => Some(format!(
                 "{scope}::{method_name}(): Parameter #1 must be of type string when declared"
             )),
-            Self::InvalidSecondParameterType => Some(format!(
-                "{scope}::{method_name}(): Parameter #2 must be of type array when declared"
-            )),
+            Self::InvalidSecondParameterType => {
+                let expected_type = if method_name.eq_ignore_ascii_case("__set") {
+                    "mixed"
+                } else {
+                    "array"
+                };
+                Some(format!(
+                    "{scope}::{method_name}(): Parameter #2 must be of type {expected_type} when declared"
+                ))
+            }
         }
     }
+}
+
+fn native_method_name_is_magic(name: &str) -> bool {
+    name.eq_ignore_ascii_case("__call")
+        || name.eq_ignore_ascii_case("__callStatic")
+        || name.eq_ignore_ascii_case("__get")
+        || name.eq_ignore_ascii_case("__set")
+        || name.eq_ignore_ascii_case("__isset")
+        || name.eq_ignore_ascii_case("__unset")
 }
 
 impl NativeCallableTable {
@@ -1795,6 +1817,65 @@ impl NativeCallableTable {
         {
             return Err(format!(
                 "native method invocation failed: invalid magic method signature after {original_error}: {message}"
+            ));
+        }
+        Ok(Some(NativeCallable {
+            descriptor: descriptor.clone(),
+            called_scope: lookup.called_scope,
+        }))
+    }
+
+    fn lookup_receiver_property_magic_call(
+        &self,
+        receiver: &Value,
+        method_name: &str,
+        original_error: &str,
+    ) -> Result<Option<NativeCallable>, String> {
+        let Value::Object(object) = receiver else {
+            return Err(format!(
+                "native object property operation failed: receiver must be an object, got {}",
+                receiver.type_name()
+            ));
+        };
+        let Some(lookup) = self.lookup_descriptor(
+            NativeCallableKind::Method,
+            Some(object.class_name()),
+            method_name,
+        ) else {
+            return Ok(None);
+        };
+        let descriptor = lookup.descriptor;
+        if descriptor.is_static {
+            let scope = lookup
+                .called_scope
+                .as_deref()
+                .or(descriptor.scope.as_deref())
+                .unwrap_or("<unknown>");
+            return Err(format!(
+                "native object property operation failed: static magic method {scope}::{method_name} cannot be used for property dispatch after {original_error}"
+            ));
+        }
+        if descriptor.visibility != NativeCallableVisibility::Public {
+            let scope = lookup
+                .called_scope
+                .as_deref()
+                .or(descriptor.scope.as_deref())
+                .unwrap_or("<unknown>");
+            return Err(format!(
+                "native object property operation failed: magic method {scope}::{method_name} must be public after {original_error}"
+            ));
+        }
+        let scope = lookup
+            .called_scope
+            .as_deref()
+            .or(descriptor.scope.as_deref())
+            .unwrap_or("<unknown>");
+        if let Some(message) = descriptor
+            .magic_signature_status
+            .diagnostic_for(scope, method_name)
+        {
+            return Err(format!(
+                "native object property operation failed: invalid magic method signature after {original_error}: {message}"
             ));
         }
         Ok(Some(NativeCallable {
@@ -30058,6 +30139,12 @@ impl PhpObject {
         Ok(property.initialized && !matches!(property.value_cloned(), Value::Null))
     }
 
+    pub fn has_public_property_slot(&self, name: &str) -> RuntimeResult<bool> {
+        let properties = self.properties.borrow();
+        self.public_property_or_none(&properties, name)
+            .map(|property| property.is_some())
+    }
+
     pub fn is_property_set_from_context(
         &self,
         name: &str,
@@ -34288,6 +34375,41 @@ pub unsafe extern "C" fn phpc_native_value_object_public_property_operation_with
 
 /// # Safety
 ///
+/// Same as `phpc_native_value_object_public_property_operation_with_diagnostic`,
+/// but may dispatch inaccessible or missing instance-property operations
+/// through public non-static property magic metadata in `table`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_object_property_operation_with_magic_diagnostic(
+    table: NativeCallableTableHandle,
+    object: NativeValueHandle,
+    property_name: *const u8,
+    property_name_len: usize,
+    replacement: NativeValueHandle,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe {
+        native_value_object_public_property_operation_with_magic(
+            table,
+            object,
+            property_name,
+            property_name_len,
+            replacement,
+            operation,
+        )
+    } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
 /// `value` must be null or a value handle previously returned by the runtime
 /// ABI and not yet freed. `class_name` must be null only when `class_name_len`
 /// is zero.
@@ -34519,6 +34641,384 @@ unsafe fn native_value_object_public_property_operation(
     }
 }
 
+fn native_property_magic_arguments(
+    property_name: &str,
+    replacement: Option<Value>,
+) -> NativeCallArgumentsHandle {
+    let mut slots = vec![NativeCallArgumentSlot::Value(
+        NativeValueHandle::from_value(Value::String(property_name.to_string())),
+    )];
+    if let Some(replacement) = replacement {
+        slots.push(NativeCallArgumentSlot::Value(
+            NativeValueHandle::from_value(replacement),
+        ));
+    }
+
+    NativeCallArgumentsHandle {
+        ptr: Box::into_raw(Box::new(NativeCallArguments {
+            names: vec![None; slots.len()],
+            slots,
+        })),
+    }
+}
+
+unsafe fn native_diagnostic_message_and_free(handle: NativeDiagnosticHandle) -> String {
+    let message = unsafe { handle.as_ref() }
+        .map(|diagnostic| diagnostic.message.clone())
+        .unwrap_or_else(|| "native object property magic dispatch failed".to_string());
+    unsafe { phpc_native_diagnostic_free(handle) };
+    message
+}
+
+unsafe fn native_value_object_property_magic_result(
+    table: Option<&NativeCallableTable>,
+    receiver: &Value,
+    property_name: &str,
+    method_name: &str,
+    replacement: Option<Value>,
+    original_error: &str,
+    diagnostic_context: &'static str,
+) -> Result<Option<NativeCallResultHandle>, String> {
+    let Some(table) = table else {
+        return Ok(None);
+    };
+    let Some(callable) =
+        table.lookup_receiver_property_magic_call(receiver, method_name, original_error)?
+    else {
+        return Ok(None);
+    };
+    let arguments = native_property_magic_arguments(property_name, replacement);
+    let mut diagnostic = NativeDiagnosticHandle::null();
+    let result = unsafe {
+        native_callable_value_invoke_table_result(
+            &callable,
+            Some(receiver),
+            arguments,
+            &mut diagnostic,
+        )
+    };
+    unsafe { phpc_native_call_arguments_free(arguments) };
+    if !diagnostic.is_null() {
+        unsafe { phpc_native_call_result_free(result) };
+        return Err(unsafe { native_diagnostic_message_and_free(diagnostic) });
+    }
+    if result.is_null() {
+        return Err(format!(
+            "{diagnostic_context}: frame callback returned a null result"
+        ));
+    }
+    Ok(Some(result))
+}
+
+unsafe fn native_value_object_property_magic_value(
+    table: Option<&NativeCallableTable>,
+    receiver: &Value,
+    property_name: &str,
+    method_name: &str,
+    replacement: Option<Value>,
+    original_error: &str,
+) -> Result<Option<Value>, String> {
+    let Some(result) = (unsafe {
+        native_value_object_property_magic_result(
+            table,
+            receiver,
+            property_name,
+            method_name,
+            replacement,
+            original_error,
+            "native object property magic value dispatch failed",
+        )
+    })?
+    else {
+        return Ok(None);
+    };
+    let mut diagnostic = NativeDiagnosticHandle::null();
+    let value = unsafe {
+        native_call_result_take_value_with_diagnostic_and_free(
+            result,
+            &mut diagnostic,
+            "native object property magic dispatch failed: result did not contain a value",
+        )
+    };
+    if !diagnostic.is_null() {
+        return Err(unsafe { native_diagnostic_message_and_free(diagnostic) });
+    }
+    unsafe { value.into_value() }
+        .ok_or_else(|| "native object property magic dispatch failed: value handle is null".into())
+        .map(Some)
+}
+
+unsafe fn native_value_object_property_magic_discard(
+    table: Option<&NativeCallableTable>,
+    receiver: &Value,
+    property_name: &str,
+    method_name: &str,
+    replacement: Option<Value>,
+    original_error: &str,
+) -> Result<bool, String> {
+    let Some(result) = (unsafe {
+        native_value_object_property_magic_result(
+            table,
+            receiver,
+            property_name,
+            method_name,
+            replacement,
+            original_error,
+            "native object property magic discard dispatch failed",
+        )
+    })?
+    else {
+        return Ok(false);
+    };
+    let mut diagnostic = NativeDiagnosticHandle::null();
+    let ok =
+        unsafe { native_call_result_discard_with_diagnostic_and_free(result, &mut diagnostic) };
+    if !diagnostic.is_null() {
+        return Err(unsafe { native_diagnostic_message_and_free(diagnostic) });
+    }
+    if !ok {
+        return Err("native object property magic dispatch failed: result handle is null".into());
+    }
+    Ok(true)
+}
+
+unsafe fn native_value_object_public_property_operation_with_magic(
+    table: NativeCallableTableHandle,
+    object: NativeValueHandle,
+    property_name: *const u8,
+    property_name_len: usize,
+    replacement: NativeValueHandle,
+    operation: u8,
+) -> Result<Value, String> {
+    let property_name =
+        unsafe { native_abi_utf8(property_name, property_name_len, "object property name") }
+            .map_err(|error| error.message().to_string())?;
+    if property_name.is_empty() {
+        return Err("native object property operation requires a non-empty property name".into());
+    }
+
+    let Some(receiver) = (unsafe { object.as_ref() }) else {
+        return Err("native object property operation requires an object value handle".to_string());
+    };
+    let Value::Object(object) = receiver else {
+        return Err("native object property operation requires an object value handle".to_string());
+    };
+    let table = unsafe { table.as_ref() };
+
+    match operation {
+        NATIVE_OBJECT_PUBLIC_PROPERTY_READ => match object.read_public_property(property_name) {
+            Ok(value) => Ok(value),
+            Err(error) => {
+                let original_error = error.message().to_string();
+                unsafe {
+                    native_value_object_property_magic_value(
+                        table,
+                        receiver,
+                        property_name,
+                        "__get",
+                        None,
+                        &original_error,
+                    )
+                }?
+                .ok_or(original_error)
+            }
+        },
+        NATIVE_OBJECT_PUBLIC_PROPERTY_WRITE => {
+            let replacement = unsafe { replacement.as_ref() }
+                .cloned()
+                .unwrap_or(Value::Null);
+            match object.write_public_property(property_name, replacement.clone()) {
+                Ok(()) => Ok(replacement),
+                Err(error) => {
+                    let original_error = error.message().to_string();
+                    if unsafe {
+                        native_value_object_property_magic_discard(
+                            table,
+                            receiver,
+                            property_name,
+                            "__set",
+                            Some(replacement.clone()),
+                            &original_error,
+                        )
+                    }? {
+                        Ok(replacement)
+                    } else {
+                        Err(original_error)
+                    }
+                }
+            }
+        }
+        NATIVE_OBJECT_PUBLIC_PROPERTY_ISSET => match object.has_public_property_slot(property_name)
+        {
+            Ok(true) => object
+                .is_public_property_set(property_name)
+                .map(Value::Bool)
+                .map_err(|error| error.message().to_string()),
+            Ok(false) => {
+                let original_error = RuntimeError::undefined_property(
+                    object.class_name().to_string(),
+                    property_name,
+                )
+                .message()
+                .to_string();
+                let Some(value) = (unsafe {
+                    native_value_object_property_magic_value(
+                        table,
+                        receiver,
+                        property_name,
+                        "__isset",
+                        None,
+                        &original_error,
+                    )
+                })?
+                else {
+                    return Ok(Value::Bool(false));
+                };
+                Ok(Value::Bool(value.is_truthy()))
+            }
+            Err(error) => {
+                let original_error = error.message().to_string();
+                unsafe {
+                    native_value_object_property_magic_value(
+                        table,
+                        receiver,
+                        property_name,
+                        "__isset",
+                        None,
+                        &original_error,
+                    )
+                }?
+                .map(|value| Value::Bool(value.is_truthy()))
+                .ok_or(original_error)
+            }
+        },
+        NATIVE_OBJECT_PUBLIC_PROPERTY_EMPTY => match object.has_public_property_slot(property_name)
+        {
+            Ok(true) => object
+                .is_public_property_empty(property_name)
+                .map(Value::Bool)
+                .map_err(|error| error.message().to_string()),
+            Ok(false) => {
+                let original_error = RuntimeError::undefined_property(
+                    object.class_name().to_string(),
+                    property_name,
+                )
+                .message()
+                .to_string();
+                let Some(isset) = (unsafe {
+                    native_value_object_property_magic_value(
+                        table,
+                        receiver,
+                        property_name,
+                        "__isset",
+                        None,
+                        &original_error,
+                    )
+                })?
+                else {
+                    return Ok(Value::Bool(true));
+                };
+                if !isset.is_truthy() {
+                    return Ok(Value::Bool(true));
+                }
+                let Some(value) = (unsafe {
+                    native_value_object_property_magic_value(
+                        table,
+                        receiver,
+                        property_name,
+                        "__get",
+                        None,
+                        &original_error,
+                    )
+                })?
+                else {
+                    return Ok(Value::Bool(true));
+                };
+                Ok(Value::Bool(!value.is_truthy()))
+            }
+            Err(error) => {
+                let original_error = error.message().to_string();
+                let Some(isset) = (unsafe {
+                    native_value_object_property_magic_value(
+                        table,
+                        receiver,
+                        property_name,
+                        "__isset",
+                        None,
+                        &original_error,
+                    )
+                })?
+                else {
+                    return Err(original_error);
+                };
+                if !isset.is_truthy() {
+                    return Ok(Value::Bool(true));
+                }
+                let Some(value) = (unsafe {
+                    native_value_object_property_magic_value(
+                        table,
+                        receiver,
+                        property_name,
+                        "__get",
+                        None,
+                        &original_error,
+                    )
+                })?
+                else {
+                    return Err(original_error);
+                };
+                Ok(Value::Bool(!value.is_truthy()))
+            }
+        },
+        NATIVE_OBJECT_PUBLIC_PROPERTY_UNSET => match object.has_public_property_slot(property_name)
+        {
+            Ok(true) => object
+                .unset_property_from_context(property_name, None, &[])
+                .map(|_| Value::Null)
+                .map_err(|error| error.message().to_string()),
+            Ok(false) => {
+                let original_error = RuntimeError::undefined_property(
+                    object.class_name().to_string(),
+                    property_name,
+                )
+                .message()
+                .to_string();
+                unsafe {
+                    native_value_object_property_magic_discard(
+                        table,
+                        receiver,
+                        property_name,
+                        "__unset",
+                        None,
+                        &original_error,
+                    )
+                }?;
+                Ok(Value::Null)
+            }
+            Err(error) => {
+                let original_error = error.message().to_string();
+                if unsafe {
+                    native_value_object_property_magic_discard(
+                        table,
+                        receiver,
+                        property_name,
+                        "__unset",
+                        None,
+                        &original_error,
+                    )
+                }? {
+                    Ok(Value::Null)
+                } else {
+                    Err(original_error)
+                }
+            }
+        },
+        tag => Err(format!(
+            "native object property operation tag {tag} is not supported"
+        )),
+    }
+}
+
 unsafe fn native_value_object_property_name(handle: NativeValueHandle) -> Result<String, String> {
     let bytes = unsafe { native_value_to_string_bytes(handle) }
         .map_err(|error| error.message().to_string())?;
@@ -34555,6 +35055,102 @@ unsafe fn native_value_object_property_mutation_operation(
             .unset_property_from_context(&property_name, None, &[])
             .map(|_| Value::Object(object.clone()))
             .map_err(|error| error.message().to_string()),
+        tag => Err(format!(
+            "native object property mutation tag {tag} is not supported"
+        )),
+    }
+}
+
+unsafe fn native_value_object_property_mutation_operation_with_magic(
+    table: NativeCallableTableHandle,
+    subject: NativeValueHandle,
+    property: NativeValueHandle,
+    replacement: NativeValueHandle,
+    operation: u8,
+) -> Result<Value, String> {
+    let property_name = unsafe { native_value_object_property_name(property) }?;
+    if property_name.is_empty() {
+        return Err("native object property mutation requires a non-empty property name".into());
+    }
+
+    let Some(receiver) = (unsafe { subject.as_ref() }) else {
+        return Err("native object property mutation requires an object value handle".to_string());
+    };
+    let Value::Object(object) = receiver else {
+        return Err("native object property mutation requires an object value handle".to_string());
+    };
+    let table = unsafe { table.as_ref() };
+
+    match operation {
+        NATIVE_OBJECT_PROPERTY_MUTATION_WRITE => {
+            let replacement = unsafe { replacement.as_ref() }.cloned().ok_or_else(|| {
+                "native object property write requires a replacement value handle".to_string()
+            })?;
+            match object.write_public_property(&property_name, replacement.clone()) {
+                Ok(()) => Ok(Value::Object(object.clone())),
+                Err(error) => {
+                    let original_error = error.message().to_string();
+                    if unsafe {
+                        native_value_object_property_magic_discard(
+                            table,
+                            receiver,
+                            &property_name,
+                            "__set",
+                            Some(replacement),
+                            &original_error,
+                        )
+                    }? {
+                        Ok(Value::Object(object.clone()))
+                    } else {
+                        Err(original_error)
+                    }
+                }
+            }
+        }
+        NATIVE_OBJECT_PROPERTY_MUTATION_UNSET => {
+            match object.has_public_property_slot(&property_name) {
+                Ok(true) => object
+                    .unset_property_from_context(&property_name, None, &[])
+                    .map(|_| Value::Object(object.clone()))
+                    .map_err(|error| error.message().to_string()),
+                Ok(false) => {
+                    let original_error = RuntimeError::undefined_property(
+                        object.class_name().to_string(),
+                        &property_name,
+                    )
+                    .message()
+                    .to_string();
+                    unsafe {
+                        native_value_object_property_magic_discard(
+                            table,
+                            receiver,
+                            &property_name,
+                            "__unset",
+                            None,
+                            &original_error,
+                        )
+                    }?;
+                    Ok(Value::Object(object.clone()))
+                }
+                Err(error) => {
+                    let original_error = error.message().to_string();
+                    if unsafe {
+                        native_value_object_property_magic_discard(
+                            table,
+                            receiver,
+                            &property_name,
+                            "__unset",
+                            None,
+                            &original_error,
+                        )
+                    }? {
+                        Ok(Value::Object(object.clone()))
+                    } else {
+                        Err(original_error)
+                    }
+                }
+            }
+        }
         tag => Err(format!(
             "native object property mutation tag {tag} is not supported"
         )),
@@ -34604,6 +35200,40 @@ pub unsafe extern "C" fn phpc_native_value_object_property_mutation_operation_wi
 
     match unsafe {
         native_value_object_property_mutation_operation(subject, property, replacement, operation)
+    } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// Same as
+/// `phpc_native_value_object_property_mutation_operation_with_diagnostic`, but
+/// may dispatch missing or externally inaccessible writes/unsets through
+/// public non-static property magic metadata in `table`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_object_property_mutation_operation_with_magic_diagnostic(
+    table: NativeCallableTableHandle,
+    subject: NativeValueHandle,
+    property: NativeValueHandle,
+    replacement: NativeValueHandle,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe {
+        native_value_object_property_mutation_operation_with_magic(
+            table,
+            subject,
+            property,
+            replacement,
+            operation,
+        )
     } {
         Ok(value) => NativeValueHandle::from_value(value),
         Err(message) => {
@@ -34680,6 +35310,96 @@ pub unsafe extern "C" fn phpc_native_object_property_mutation_operation_with_ref
 
     let result = unsafe {
         phpc_native_value_object_property_mutation_operation_with_diagnostic(
+            subject,
+            property,
+            replacement,
+            operation,
+            diagnostic,
+        )
+    };
+
+    if subject_owned {
+        unsafe { phpc_native_value_free(subject) };
+    }
+    if property_owned {
+        unsafe { phpc_native_value_free(property) };
+    }
+    if replacement_owned {
+        unsafe { phpc_native_value_free(replacement) };
+    }
+
+    result
+}
+
+/// # Safety
+///
+/// Same as
+/// `phpc_native_object_property_mutation_operation_with_reference_slots_with_diagnostic`,
+/// but delegates missing or externally inaccessible writes/unsets to property
+/// magic when `table` contains valid public non-static metadata.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_object_property_mutation_operation_with_magic_reference_slots_with_diagnostic(
+    table: NativeCallableTableHandle,
+    subject: NativeValueHandle,
+    subject_reference: NativeReferenceHandle,
+    property: NativeValueHandle,
+    property_reference: NativeReferenceHandle,
+    replacement: NativeValueHandle,
+    replacement_reference: NativeReferenceHandle,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let (subject, subject_owned) = match unsafe {
+        native_object_property_mutation_slot_value(subject, subject_reference, "subject")
+    } {
+        Ok(slot) => slot,
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            return NativeValueHandle::null();
+        }
+    };
+    let (property, property_owned) = match unsafe {
+        native_object_property_mutation_slot_value(property, property_reference, "property")
+    } {
+        Ok(slot) => slot,
+        Err(message) => {
+            if subject_owned {
+                unsafe { phpc_native_value_free(subject) };
+            }
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            return NativeValueHandle::null();
+        }
+    };
+    let needs_replacement = operation == NATIVE_OBJECT_PROPERTY_MUTATION_WRITE;
+    let (replacement, replacement_owned) = if needs_replacement {
+        match unsafe {
+            native_object_property_mutation_slot_value(
+                replacement,
+                replacement_reference,
+                "replacement",
+            )
+        } {
+            Ok(slot) => slot,
+            Err(message) => {
+                if subject_owned {
+                    unsafe { phpc_native_value_free(subject) };
+                }
+                if property_owned {
+                    unsafe { phpc_native_value_free(property) };
+                }
+                unsafe { native_store_diagnostic_message(diagnostic, message) };
+                return NativeValueHandle::null();
+            }
+        }
+    } else {
+        (NativeValueHandle::null(), false)
+    };
+
+    let result = unsafe {
+        phpc_native_value_object_property_mutation_operation_with_magic_diagnostic(
+            table,
             subject,
             property,
             replacement,
@@ -36057,6 +36777,108 @@ mod tests {
         ))))
     }
 
+    unsafe fn property_magic_name_from_frame_for_test(frame: NativeCallFrameHandle) -> String {
+        let name = unsafe { phpc_native_call_frame_read_value(frame, 0) };
+        let property_name = match unsafe { name.as_ref() } {
+            Some(Value::String(value)) => value.clone(),
+            other => panic!("expected property magic name string, got {other:?}"),
+        };
+        unsafe { phpc_native_value_free(name) };
+        property_name
+    }
+
+    unsafe fn append_property_magic_event_for_test(
+        frame: NativeCallFrameHandle,
+        event: String,
+    ) -> RuntimeResult<()> {
+        let receiver = unsafe { phpc_native_call_frame_read_receiver(frame) };
+        let Some(Value::Object(object)) = (unsafe { receiver.as_ref() }) else {
+            unsafe { phpc_native_value_free(receiver) };
+            return Err(RuntimeError::unsupported_property_access(
+                "property magic callback requires an object receiver",
+            ));
+        };
+        let mut events = match object.read_public_property("events").unwrap() {
+            Value::String(events) => events,
+            other => {
+                unsafe { phpc_native_value_free(receiver) };
+                return Err(RuntimeError::unsupported_property_access(format!(
+                    "property magic event log must be string, got {}",
+                    other.type_name()
+                )));
+            }
+        };
+        events.push_str(&event);
+        object.write_public_property("events", Value::String(events))?;
+        unsafe { phpc_native_value_free(receiver) };
+        Ok(())
+    }
+
+    unsafe extern "C" fn native_magic_get_property_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        let property_name = unsafe { property_magic_name_from_frame_for_test(frame) };
+        if let Err(error) =
+            unsafe { append_property_magic_event_for_test(frame, format!("get:{property_name};")) }
+        {
+            return NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+                NativeDiagnosticHandle::from_message(error.message()),
+            ));
+        }
+        phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::String(format!(
+            "G:{property_name}"
+        ))))
+    }
+
+    unsafe extern "C" fn native_magic_set_property_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        let property_name = unsafe { property_magic_name_from_frame_for_test(frame) };
+        let value_handle = unsafe { phpc_native_call_frame_read_value(frame, 1) };
+        let value = unsafe { value_handle.as_ref() }
+            .map(Value::echo_string)
+            .unwrap_or_else(|| "<null-handle>".to_string());
+        unsafe { phpc_native_value_free(value_handle) };
+        unsafe {
+            append_property_magic_event_for_test(frame, format!("set:{property_name}={value};"))
+        }
+        .map(|_| phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Null)))
+        .unwrap_or_else(|error| {
+            NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+                NativeDiagnosticHandle::from_message(error.message()),
+            ))
+        })
+    }
+
+    unsafe extern "C" fn native_magic_isset_property_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        let property_name = unsafe { property_magic_name_from_frame_for_test(frame) };
+        if let Err(error) = unsafe {
+            append_property_magic_event_for_test(frame, format!("isset:{property_name};"))
+        } {
+            return NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+                NativeDiagnosticHandle::from_message(error.message()),
+            ));
+        }
+        phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Bool(
+            property_name == "present" || property_name == "hidden",
+        )))
+    }
+
+    unsafe extern "C" fn native_magic_unset_property_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        let property_name = unsafe { property_magic_name_from_frame_for_test(frame) };
+        unsafe { append_property_magic_event_for_test(frame, format!("unset:{property_name};")) }
+            .map(|_| phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Null)))
+            .unwrap_or_else(|error| {
+                NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+                    NativeDiagnosticHandle::from_message(error.message()),
+                ))
+            })
+    }
+
     unsafe extern "C" fn native_descriptor_sum_closure_callback(
         _call_depth: c_int,
         args: *const NativeClosureArgument,
@@ -36169,6 +36991,28 @@ mod tests {
         magic_signature_status: NativeCallableMagicSignatureStatus,
         callback: NativeCallableFrameCallback,
     ) {
+        unsafe {
+            register_magic_signature_callable_visibility_for_test(
+                table,
+                scope,
+                name,
+                NativeCallableVisibility::Public,
+                is_static,
+                magic_signature_status,
+                callback,
+            )
+        };
+    }
+
+    unsafe fn register_magic_signature_callable_visibility_for_test(
+        table: NativeCallableTableHandle,
+        scope: &str,
+        name: &str,
+        visibility: NativeCallableVisibility,
+        is_static: bool,
+        magic_signature_status: NativeCallableMagicSignatureStatus,
+        callback: NativeCallableFrameCallback,
+    ) {
         let scope = native_string_for_test(scope);
         let name = native_string_for_test(name);
         assert!(unsafe {
@@ -36177,7 +37021,7 @@ mod tests {
                 NativeCallableKind::Method,
                 scope,
                 name,
-                NativeCallableVisibility::Public,
+                visibility,
                 is_static,
                 magic_signature_status,
                 callback,
@@ -37912,6 +38756,357 @@ mod tests {
         );
         unsafe { phpc_native_value_free(value) };
         unsafe { phpc_native_string_free(caller_scope) };
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    fn property_magic_object_for_test(class_name: &str) -> PhpObject {
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class(class_name).unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("visible", Visibility::Public))
+            .unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("events", Visibility::Public))
+            .unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("hidden", Visibility::Private))
+            .unwrap();
+        let object = PhpObject::from_class(class);
+        object
+            .write_public_property("visible", Value::String("V0".to_string()))
+            .unwrap();
+        object
+            .write_public_property("events", Value::String(String::new()))
+            .unwrap();
+        object
+    }
+
+    unsafe fn object_property_operation_for_test(
+        table: NativeCallableTableHandle,
+        object: &PhpObject,
+        property: &str,
+        replacement: Option<Value>,
+        operation: u8,
+    ) -> (NativeValueHandle, NativeDiagnosticHandle) {
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let replacement = replacement
+            .map(NativeValueHandle::from_value)
+            .unwrap_or_else(NativeValueHandle::null);
+        let object_handle = NativeValueHandle::from_value(Value::Object(object.clone()));
+        let result = unsafe {
+            phpc_native_value_object_property_operation_with_magic_diagnostic(
+                table,
+                object_handle,
+                property.as_ptr(),
+                property.len(),
+                replacement,
+                operation,
+                &mut diagnostic,
+            )
+        };
+        unsafe { phpc_native_value_free(object_handle) };
+        unsafe { phpc_native_value_free(replacement) };
+        (result, diagnostic)
+    }
+
+    unsafe fn object_property_mutation_for_test(
+        table: NativeCallableTableHandle,
+        object: &PhpObject,
+        property: &str,
+        replacement: Option<Value>,
+        operation: u8,
+    ) -> (NativeValueHandle, NativeDiagnosticHandle) {
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let property = NativeValueHandle::from_value(Value::String(property.to_string()));
+        let replacement = replacement
+            .map(NativeValueHandle::from_value)
+            .unwrap_or_else(NativeValueHandle::null);
+        let object_handle = NativeValueHandle::from_value(Value::Object(object.clone()));
+        let result = unsafe {
+            phpc_native_value_object_property_mutation_operation_with_magic_diagnostic(
+                table,
+                object_handle,
+                property,
+                replacement,
+                operation,
+                &mut diagnostic,
+            )
+        };
+        unsafe { phpc_native_value_free(object_handle) };
+        unsafe { phpc_native_value_free(property) };
+        unsafe { phpc_native_value_free(replacement) };
+        (result, diagnostic)
+    }
+
+    #[test]
+    fn native_object_property_magic_uses_callable_metadata_after_visible_property_precedence() {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_magic_signature_callable_for_test(
+                table,
+                "PropertyMagic",
+                "__get",
+                false,
+                NativeCallableMagicSignatureStatus::Valid,
+                native_magic_get_property_callback,
+            );
+            register_magic_signature_callable_for_test(
+                table,
+                "PropertyMagic",
+                "__set",
+                false,
+                NativeCallableMagicSignatureStatus::Valid,
+                native_magic_set_property_callback,
+            );
+            register_magic_signature_callable_for_test(
+                table,
+                "PropertyMagic",
+                "__isset",
+                false,
+                NativeCallableMagicSignatureStatus::Valid,
+                native_magic_isset_property_callback,
+            );
+            register_magic_signature_callable_for_test(
+                table,
+                "PropertyMagic",
+                "__unset",
+                false,
+                NativeCallableMagicSignatureStatus::Valid,
+                native_magic_unset_property_callback,
+            );
+        }
+        let object = property_magic_object_for_test("PropertyMagic");
+
+        let (visible, diagnostic) = unsafe {
+            object_property_operation_for_test(
+                table,
+                &object,
+                "visible",
+                None,
+                NATIVE_OBJECT_PUBLIC_PROPERTY_READ,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { visible.as_ref() },
+            Some(&Value::String("V0".to_string()))
+        );
+        unsafe { phpc_native_value_free(visible) };
+
+        let (missing, diagnostic) = unsafe {
+            object_property_operation_for_test(
+                table,
+                &object,
+                "missing",
+                None,
+                NATIVE_OBJECT_PUBLIC_PROPERTY_READ,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { missing.as_ref() },
+            Some(&Value::String("G:missing".to_string()))
+        );
+        unsafe { phpc_native_value_free(missing) };
+
+        let (hidden, diagnostic) = unsafe {
+            object_property_operation_for_test(
+                table,
+                &object,
+                "hidden",
+                None,
+                NATIVE_OBJECT_PUBLIC_PROPERTY_READ,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { hidden.as_ref() },
+            Some(&Value::String("G:hidden".to_string()))
+        );
+        unsafe { phpc_native_value_free(hidden) };
+
+        for (property, value) in [
+            ("visible", "V1"),
+            ("missing", "M1"),
+            ("hidden", "H1"),
+            ("dynamic", "D1"),
+        ] {
+            let (result, diagnostic) = unsafe {
+                object_property_mutation_for_test(
+                    table,
+                    &object,
+                    property,
+                    Some(Value::String(value.to_string())),
+                    NATIVE_OBJECT_PROPERTY_MUTATION_WRITE,
+                )
+            };
+            assert!(diagnostic.is_null());
+            unsafe { phpc_native_value_free(result) };
+        }
+        assert_eq!(
+            object.read_public_property("visible").unwrap(),
+            Value::String("V1".to_string())
+        );
+
+        for (property, expected) in [
+            ("visible", true),
+            ("present", true),
+            ("absent", false),
+            ("hidden", true),
+        ] {
+            let (result, diagnostic) = unsafe {
+                object_property_operation_for_test(
+                    table,
+                    &object,
+                    property,
+                    None,
+                    NATIVE_OBJECT_PUBLIC_PROPERTY_ISSET,
+                )
+            };
+            assert!(diagnostic.is_null());
+            assert_eq!(unsafe { result.as_ref() }, Some(&Value::Bool(expected)));
+            unsafe { phpc_native_value_free(result) };
+        }
+
+        for property in ["visible", "absent", "hidden", "dynamic"] {
+            let (result, diagnostic) = unsafe {
+                object_property_mutation_for_test(
+                    table,
+                    &object,
+                    property,
+                    None,
+                    NATIVE_OBJECT_PROPERTY_MUTATION_UNSET,
+                )
+            };
+            assert!(diagnostic.is_null());
+            unsafe { phpc_native_value_free(result) };
+        }
+
+        assert_eq!(
+            object.read_public_property("events").unwrap(),
+            Value::String(
+                "get:missing;get:hidden;set:missing=M1;set:hidden=H1;set:dynamic=D1;isset:present;isset:absent;isset:hidden;unset:absent;unset:hidden;unset:dynamic;"
+                    .to_string()
+            )
+        );
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn native_object_property_magic_rejects_private_static_and_malformed_metadata() {
+        let object = property_magic_object_for_test("PrivatePropertyMagic");
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_magic_signature_callable_visibility_for_test(
+                table,
+                "PrivatePropertyMagic",
+                "__get",
+                NativeCallableVisibility::Private,
+                false,
+                NativeCallableMagicSignatureStatus::Valid,
+                native_magic_get_property_callback,
+            );
+        }
+        let (result, diagnostic) = unsafe {
+            object_property_operation_for_test(
+                table,
+                &object,
+                "missing",
+                None,
+                NATIVE_OBJECT_PUBLIC_PROPERTY_READ,
+            )
+        };
+        assert!(result.is_null());
+        let message = native_diagnostic_message_for_test(diagnostic);
+        assert!(message.contains("magic method PrivatePropertyMagic::__get must be public"));
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_callable_table_free(table) };
+
+        let object = property_magic_object_for_test("StaticPropertyMagic");
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_magic_signature_callable_for_test(
+                table,
+                "StaticPropertyMagic",
+                "__set",
+                true,
+                NativeCallableMagicSignatureStatus::Valid,
+                native_magic_set_property_callback,
+            );
+        }
+        let (result, diagnostic) = unsafe {
+            object_property_mutation_for_test(
+                table,
+                &object,
+                "missing",
+                Some(Value::String("value".to_string())),
+                NATIVE_OBJECT_PROPERTY_MUTATION_WRITE,
+            )
+        };
+        assert!(result.is_null());
+        let message = native_diagnostic_message_for_test(diagnostic);
+        assert!(message.contains(
+            "static magic method StaticPropertyMagic::__set cannot be used for property dispatch"
+        ));
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_callable_table_free(table) };
+
+        let object = property_magic_object_for_test("MalformedPropertyMagic");
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_magic_signature_callable_for_test(
+                table,
+                "MalformedPropertyMagic",
+                "__get",
+                false,
+                NativeCallableMagicSignatureStatus::InvalidArity,
+                native_magic_get_property_callback,
+            );
+        }
+        let (result, diagnostic) = unsafe {
+            object_property_operation_for_test(
+                table,
+                &object,
+                "missing",
+                None,
+                NATIVE_OBJECT_PUBLIC_PROPERTY_READ,
+            )
+        };
+        assert!(result.is_null());
+        let message = native_diagnostic_message_for_test(diagnostic);
+        assert!(message
+            .contains("Method MalformedPropertyMagic::__get() must take exactly 1 arguments"));
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_callable_table_free(table) };
+
+        let object = property_magic_object_for_test("MalformedSetPropertyMagic");
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_magic_signature_callable_for_test(
+                table,
+                "MalformedSetPropertyMagic",
+                "__set",
+                false,
+                NativeCallableMagicSignatureStatus::InvalidSecondParameterType,
+                native_magic_set_property_callback,
+            );
+        }
+        let (result, diagnostic) = unsafe {
+            object_property_mutation_for_test(
+                table,
+                &object,
+                "missing",
+                Some(Value::String("value".to_string())),
+                NATIVE_OBJECT_PROPERTY_MUTATION_WRITE,
+            )
+        };
+        assert!(result.is_null());
+        let message = native_diagnostic_message_for_test(diagnostic);
+        assert!(message.contains(
+            "MalformedSetPropertyMagic::__set(): Parameter #2 must be of type mixed when declared"
+        ));
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_callable_table_free(table) };
     }
 

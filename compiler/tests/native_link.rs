@@ -938,6 +938,83 @@ const NATIVE_DIRECT_RECEIVER_MALFORMED_MAGIC_SIGNATURE_SOURCE: &str = concat!(
     "echo $box->missing(\"B\"), \"\\n\";\n",
 );
 
+const NATIVE_OBJECT_PROPERTY_MAGIC_SOURCE: &str = concat!(
+    "<?php\n",
+    "class ObjectPropertyMagicBox {\n",
+    "    public $visible = \"V0\";\n",
+    "    public $events = \"\";\n",
+    "    private $hidden = \"H0\";\n",
+    "    public function __get(string $name) {\n",
+    "        $this->events = $this->events . \"get:\" . $name . \";\";\n",
+    "        return \"G:\" . $name;\n",
+    "    }\n",
+    "    public function __set(string $name, $value) {\n",
+    "        $this->events = $this->events . \"set:\" . $name . \"=\" . $value . \";\";\n",
+    "    }\n",
+    "    public function __isset(string $name) {\n",
+    "        $this->events = $this->events . \"isset:\" . $name . \";\";\n",
+    "        return $name === \"present\" || $name === \"hidden\";\n",
+    "    }\n",
+    "    public function __unset(string $name) {\n",
+    "        $this->events = $this->events . \"unset:\" . $name . \";\";\n",
+    "    }\n",
+    "}\n",
+    "$box = new ObjectPropertyMagicBox();\n",
+    "echo $box->visible, \"|\";\n",
+    "echo $box->missing, \"|\";\n",
+    "echo $box->hidden, \"|\";\n",
+    "$box->visible = \"V1\";\n",
+    "$box->missing = \"M1\";\n",
+    "$box->hidden = \"H1\";\n",
+    "$name = \"dynamic\";\n",
+    "$box->$name = \"D1\";\n",
+    "echo $box->visible, \"|\";\n",
+    "echo (isset($box->visible) ? \"T\" : \"F\"), (isset($box->present) ? \"T\" : \"F\"), (isset($box->absent) ? \"T\" : \"F\"), (isset($box->hidden) ? \"T\" : \"F\"), \"|\";\n",
+    "unset($box->visible);\n",
+    "unset($box->absent);\n",
+    "unset($box->hidden);\n",
+    "unset($box->$name);\n",
+    "echo $box->events, \"\\n\";\n",
+);
+
+const NATIVE_OBJECT_PROPERTY_MALFORMED_MAGIC_SOURCE: &str = concat!(
+    "<?php\n",
+    "class MalformedObjectPropertyMagicBox {\n",
+    "    public function __get($name, $extra) { return \"bad\"; }\n",
+    "}\n",
+    "$box = new MalformedObjectPropertyMagicBox();\n",
+    "echo $box->missing, \"\\n\";\n",
+);
+
+const NATIVE_OBJECT_PROPERTY_PRIVATE_STATIC_MAGIC_SOURCE: &str = concat!(
+    "<?php\n",
+    "class PrivateObjectPropertyMagicBox {\n",
+    "    private function __get($name) { return \"bad-private\"; }\n",
+    "}\n",
+    "$private = new PrivateObjectPropertyMagicBox();\n",
+    "echo $private->missing, \"|\";\n",
+);
+
+const NATIVE_OBJECT_PROPERTY_STATIC_MAGIC_SOURCE: &str = concat!(
+    "<?php\n",
+    "class StaticObjectPropertyMagicBox {\n",
+    "    public static function __set($name, $value) { return \"bad-static\"; }\n",
+    "}\n",
+    "$static = new StaticObjectPropertyMagicBox();\n",
+    "$static->missing = \"value\";\n",
+);
+
+const NATIVE_OBJECT_PROPERTY_MAGIC_REFERENCE_SOURCE_BLOCKED_SOURCE: &str = concat!(
+    "<?php\n",
+    "function mutate_object_property_magic_ref(&$slot) { $slot = \"changed\"; }\n",
+    "class ObjectPropertyMagicReferenceBox {\n",
+    "    public function __get($name) { return \"magic:\" . $name; }\n",
+    "}\n",
+    "$box = new ObjectPropertyMagicReferenceBox();\n",
+    "mutate_object_property_magic_ref($box->missing);\n",
+    "echo \"after\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_STATIC_METHOD_SOURCE: &str = concat!(
     "<?php\n",
     "class Label {\n",
@@ -3769,6 +3846,112 @@ fn emit_exe_reports_direct_receiver_malformed_magic_signature_before_magic_fallb
             "Method MalformedDirectReceiverMagicSignatureBox::__call() must take exactly 2 arguments"
         ) && !stderr.contains("native magic __call argument packing failed"),
         "stderr should reject malformed __call metadata before runtime magic args packing:\n{stderr}"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_object_property_magic_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "object_property_magic_read_write_isset_unset",
+        NATIVE_OBJECT_PROPERTY_MAGIC_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run object-property-magic executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"V0|G:missing|G:hidden|V1|TTFT|get:missing;get:hidden;set:missing=M1;set:hidden=H1;set:dynamic=D1;isset:present;isset:absent;isset:hidden;unset:absent;unset:hidden;unset:dynamic;\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_reports_invalid_object_property_magic_metadata_before_fallback() {
+    if !has_cc() {
+        return;
+    }
+
+    for (name, source, expected) in [
+        (
+            "malformed_object_property_magic",
+            NATIVE_OBJECT_PROPERTY_MALFORMED_MAGIC_SOURCE,
+            "Method MalformedObjectPropertyMagicBox::__get() must take exactly 1 arguments",
+        ),
+        (
+            "private_static_object_property_magic",
+            NATIVE_OBJECT_PROPERTY_PRIVATE_STATIC_MAGIC_SOURCE,
+            "magic method PrivateObjectPropertyMagicBox::__get must be public",
+        ),
+        (
+            "static_object_property_magic",
+            NATIVE_OBJECT_PROPERTY_STATIC_MAGIC_SOURCE,
+            "static magic method StaticObjectPropertyMagicBox::__set cannot be used for property dispatch",
+        ),
+    ] {
+        let (source_path, output_path) = compile_native_link_fixture(name, source);
+
+        let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+            panic!("failed to run invalid object-property-magic executable: {error}")
+        });
+
+        assert!(
+            !run.status.success(),
+            "{name} should fail through runtime property-magic diagnostics"
+        );
+        let stderr = String::from_utf8_lossy(&run.stderr);
+        assert!(
+            stderr.contains("native object property operation failed"),
+            "{name} stderr:\n{stderr}"
+        );
+        assert!(stderr.contains(expected), "{name} stderr:\n{stderr}");
+
+        let _ = fs::remove_file(source_path);
+        let _ = fs::remove_file(output_path);
+    }
+}
+
+#[test]
+fn emit_exe_keeps_object_property_magic_reference_sources_blocked() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "object_property_magic_reference_source_blocked",
+        NATIVE_OBJECT_PROPERTY_MAGIC_REFERENCE_SOURCE_BLOCKED_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run object-property-magic reference blocker executable: {error}")
+    });
+
+    assert!(
+        !run.status.success(),
+        "property magic reference sources should remain blocked"
+    );
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains("undefined property ObjectPropertyMagicReferenceBox::$missing")
+            || stderr.contains("reference source"),
+        "stderr:\n{stderr}"
     );
 
     let _ = fs::remove_file(source_path);
@@ -6929,6 +7112,49 @@ fn native_executable_c_source_preserves_named_direct_receiver_magic_fallback_arg
             && !source.contains("named argument lowering is only implemented")
             && !source.contains("method-call lowering rejects"),
         "named direct receiver magic fallback must avoid generated frame ladders and exact-shape blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_object_property_magic_through_callable_property_boundary() {
+    let program = parse(NATIVE_OBJECT_PROPERTY_MAGIC_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_value_object_property_operation_with_magic_diagnostic")
+            && source
+                .contains("phpc_native_value_object_property_mutation_operation_with_magic_diagnostic")
+            && source.contains(
+                "phpc_native_object_property_mutation_operation_with_magic_reference_slots_with_diagnostic"
+            )
+            && source.contains("PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_VALID")
+            && source.contains("__get")
+            && source.contains("__set")
+            && source.contains("__isset")
+            && source.contains("__unset"),
+        "object property magic should publish reusable magic metadata and use the shared property/callable runtime boundary:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_callable_table_is_null")
+            && !source.contains("object-property lowering rejects")
+            && !source.contains("magic_dynamic")
+            && !source.contains("magic_static"),
+        "object property magic lowering should not rely on exact-shape generated blockers or method-magic substring routes:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_keeps_object_property_magic_reference_sources_on_reference_blocker_boundary(
+) {
+    let program = parse(NATIVE_OBJECT_PROPERTY_MAGIC_REFERENCE_SOURCE_BLOCKED_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_value_public_property_reference_with_diagnostic_and_free")
+            && !body.contains("phpc_native_value_object_property_operation_with_magic_diagnostic"),
+        "object property reference sources must stay on the public-property reference boundary instead of fake __get dispatch:\n{source}"
     );
 }
 
