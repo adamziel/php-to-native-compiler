@@ -1699,6 +1699,21 @@ fn call_arguments_have_named(args: &[Expr]) -> bool {
         .any(|arg| matches!(arg, Expr::NamedArgument { .. }))
 }
 
+fn native_value_print_r_return_mode(
+    args: &[Expr],
+) -> Option<(&Expr, NativeValuePrintRReturnMode<'_>)> {
+    match args {
+        [value] => Some((value, NativeValuePrintRReturnMode::OutputTruthy)),
+        [value, Expr::Bool(false, _)] => Some((value, NativeValuePrintRReturnMode::OutputTruthy)),
+        [value, Expr::Bool(true, _)] => Some((value, NativeValuePrintRReturnMode::ReturnString)),
+        [value, return_mode] => Some((
+            value,
+            NativeValuePrintRReturnMode::RuntimeValue(return_mode),
+        )),
+        _ => None,
+    }
+}
+
 fn call_arguments_have_spread(args: &[Expr]) -> bool {
     args.iter()
         .any(|arg| matches!(arg, Expr::SpreadArgument { .. }))
@@ -17361,6 +17376,13 @@ struct CNativeValueMaterialization {
     cleanup_after_use: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug)]
+enum NativeValuePrintRReturnMode<'a> {
+    OutputTruthy,
+    ReturnString,
+    RuntimeValue(&'a Expr),
+}
+
 struct CNativeValueOwnerMaterialization {
     subject: CNativeValueMaterialization,
     commit: CNativeValueOwnerCommit,
@@ -23403,6 +23425,8 @@ impl CGenerator {
                 );
             }
             output.push_str("extern size_t phpc_native_value_format_stdout_with_diagnostic(phpc_NativeValueHandle value, uint8_t formatter, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            output.push_str("extern phpc_NativeValueHandle phpc_native_value_format_string_with_diagnostic(phpc_NativeValueHandle value, uint8_t formatter, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            output.push_str("extern phpc_NativeValueHandle phpc_native_value_format_return_mode_with_diagnostic(phpc_NativeValueHandle value, uint8_t formatter, phpc_NativeValueHandle return_mode, phpc_NativeDiagnosticHandle *diagnostic);\n");
             if self.uses_native_value_clone {
                 output.push_str(
                     "extern phpc_NativeValueHandle phpc_native_value_clone(phpc_NativeValueHandle value);\n",
@@ -35097,6 +35121,12 @@ impl CGenerator {
                 self.body.extend(value.cleanup_after_use);
                 return Ok(());
             }
+            if let Some(value) =
+                self.try_materialize_native_value_print_r_return_call(name, args, *span, "")?
+            {
+                self.body.extend(value.cleanup_after_use);
+                return Ok(());
+            }
             if name.eq_ignore_ascii_case("print_r") {
                 return Err(self.unsupported_direct_named_call(
                     args,
@@ -38620,6 +38650,20 @@ impl CGenerator {
             }
             Expr::Call { args, span, .. } if call_arguments_have_named(args) => {
                 Err(self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION))
+            }
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("print_r") => {
+                if let Some(value) =
+                    self.try_materialize_native_value_print_r_return_call(name, args, *span, "")?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    Ok(CValue::NativeValueHandle(value.handle))
+                } else {
+                    Err(self.unsupported_direct_named_call(
+                        args,
+                        *span,
+                        ASSEMBLY_FUNCTION_CALL_REJECTION,
+                    ))
+                }
             }
             Expr::Call { name, args, span } if is_exit_construct_name(name) => {
                 self.emit_exit_construct(args, *span)
@@ -55333,6 +55377,14 @@ impl CGenerator {
                         self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
                     );
                 }
+                if let Some(value) = self.try_materialize_native_value_print_r_return_call(
+                    name,
+                    args,
+                    *span,
+                    failure_cleanup,
+                )? {
+                    return Ok(Some(value));
+                }
                 if let Some(op_tag) = native_value_cast_builtin_op_tag(name) {
                     let [arg] = args.as_slice() else {
                         return Err(self.unsupported(*span, ASSEMBLY_CAST_REJECTION));
@@ -58994,6 +59046,113 @@ impl CGenerator {
             value,
             "PHPC_NATIVE_VALUE_FORMAT_PRINT_R",
         );
+    }
+
+    fn try_materialize_native_value_print_r_return_call(
+        &mut self,
+        name: &str,
+        args: &[Expr],
+        _span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        if !name.eq_ignore_ascii_case("print_r")
+            || call_arguments_have_named(args)
+            || call_arguments_have_spread(args)
+        {
+            return Ok(None);
+        }
+        let Some((value_arg, return_mode)) = native_value_print_r_return_mode(args) else {
+            return Ok(None);
+        };
+
+        let value = self.materialize_native_value_result_operand(value_arg, failure_cleanup)?;
+        let failure_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&value.cleanup_after_use),
+            failure_cleanup
+        );
+        let error_exit = self.native_error_exit(&failure_cleanup);
+
+        match return_mode {
+            NativeValuePrintRReturnMode::ReturnString => {
+                let diagnostic = self.next_native_name("print_r_return_diagnostic");
+                let result = self.next_native_name("print_r_return_value");
+                self.body
+                    .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {result} = phpc_native_value_format_string_with_diagnostic({}, PHPC_NATIVE_VALUE_FORMAT_PRINT_R, &{diagnostic});",
+                    value.handle
+                ));
+                self.body.push(format!(
+                    "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); {diagnostic}.ptr = NULL; {error_exit} }}"
+                ));
+                self.body
+                    .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+                self.body.extend(value.cleanup_after_use);
+
+                Ok(Some(CNativeValueMaterialization {
+                    handle: result.clone(),
+                    cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+                }))
+            }
+            NativeValuePrintRReturnMode::OutputTruthy => {
+                let diagnostic = self.next_native_name("print_r_output_diagnostic");
+                let result = self.next_native_name("print_r_output_value");
+                self.body
+                    .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+                self.body.push(format!(
+                    "phpc_native_value_format_stdout_with_diagnostic({}, PHPC_NATIVE_VALUE_FORMAT_PRINT_R, &{diagnostic});",
+                    value.handle
+                ));
+                self.body.push(format!(
+                    "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); {diagnostic}.ptr = NULL; {error_exit} }}"
+                ));
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {result} = phpc_native_value_from_scalar((phpc_NativeScalarValue){{1, true, 0, 0.0}});"
+                ));
+                self.body
+                    .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+                self.body.extend(value.cleanup_after_use);
+
+                Ok(Some(CNativeValueMaterialization {
+                    handle: result.clone(),
+                    cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+                }))
+            }
+            NativeValuePrintRReturnMode::RuntimeValue(return_mode_arg) => {
+                let return_mode_failure_cleanup = failure_cleanup.clone();
+                let return_mode = self.materialize_native_value_result_operand(
+                    return_mode_arg,
+                    &return_mode_failure_cleanup,
+                )?;
+                let failure_cleanup = format!(
+                    "{}{}",
+                    c_cleanup_sequence(&return_mode.cleanup_after_use),
+                    failure_cleanup
+                );
+                let error_exit = self.native_error_exit(&failure_cleanup);
+                let diagnostic = self.next_native_name("print_r_runtime_return_diagnostic");
+                let result = self.next_native_name("print_r_runtime_return_value");
+                self.body
+                    .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {result} = phpc_native_value_format_return_mode_with_diagnostic({}, PHPC_NATIVE_VALUE_FORMAT_PRINT_R, {}, &{diagnostic});",
+                    value.handle, return_mode.handle
+                ));
+                self.body.push(format!(
+                    "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); {diagnostic}.ptr = NULL; {error_exit} }}"
+                ));
+                self.body
+                    .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+                self.body.extend(return_mode.cleanup_after_use);
+                self.body.extend(value.cleanup_after_use);
+
+                Ok(Some(CNativeValueMaterialization {
+                    handle: result.clone(),
+                    cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+                }))
+            }
+        }
     }
 
     fn emit_native_value_format_stdout_with_diagnostic_tag(

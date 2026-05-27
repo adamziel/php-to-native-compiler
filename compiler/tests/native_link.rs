@@ -26635,6 +26635,293 @@ fn emit_exe_links_and_runs_interface_metadata_print_r_program() {
     let _ = fs::remove_file(output_path);
 }
 
+const NATIVE_METADATA_PRINT_R_RETURN_SOURCE: &str = concat!(
+    "<?php\n",
+    "interface NativeReturnDeclared {}\n",
+    "interface NativeReturnContract {}\n",
+    "trait NativeReturnTrait {}\n",
+    "class NativeReturnService implements NativeReturnContract { use NativeReturnTrait; }\n",
+    "$interfaces = print_r(get_declared_interfaces(), true);\n",
+    "echo \"interfaces:\\n\";\n",
+    "echo $interfaces;\n",
+    "echo \"implements:\\n\";\n",
+    "echo print_r(class_implements(\"NativeReturnService\", false), true);\n",
+    "$traits = print_r(get_declared_traits(), true);\n",
+    "echo \"traits:\\n\";\n",
+    "echo $traits;\n",
+    "echo \"uses:\\n\";\n",
+    "echo print_r(class_uses(\"NativeReturnService\", false), true);\n",
+);
+
+const NATIVE_METADATA_PRINT_R_RETURN_STDOUT: &str = concat!(
+    "interfaces:\n",
+    "Array\n",
+    "(\n",
+    "    [0] => NativeReturnDeclared\n",
+    "    [1] => NativeReturnContract\n",
+    ")\n",
+    "implements:\n",
+    "Array\n",
+    "(\n",
+    "    [NativeReturnContract] => NativeReturnContract\n",
+    ")\n",
+    "traits:\n",
+    "Array\n",
+    "(\n",
+    "    [0] => NativeReturnTrait\n",
+    ")\n",
+    "uses:\n",
+    "Array\n",
+    "(\n",
+    "    [NativeReturnTrait] => NativeReturnTrait\n",
+    ")\n",
+);
+
+#[test]
+fn native_executable_c_source_routes_metadata_print_r_return_through_value_formatter() {
+    let program = parse(NATIVE_METADATA_PRINT_R_RETURN_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("extern phpc_NativeValueHandle phpc_native_value_format_string_with_diagnostic")
+            && source.contains("#define PHPC_NATIVE_VALUE_FORMAT_PRINT_R 1")
+            && body.contains("phpc_native_value_format_string_with_diagnostic")
+            && body.contains("PHPC_NATIVE_VALUE_FORMAT_PRINT_R")
+            && body.contains("phpc_native_value_class_metadata_value_with_diagnostic"),
+        "print_r(value, true) over metadata arrays should reuse the shared native value formatter return ABI:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_array_len(")
+            && !source.contains("object/class lowering rejects")
+            && !source.contains("interface lowering rejects interface declarations"),
+        "metadata print_r() return mode should not fall back to native-array-only consumers or blockers:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_metadata_print_r_return_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "metadata_print_r_return",
+        NATIVE_METADATA_PRINT_R_RETURN_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run metadata print_r return executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        NATIVE_METADATA_PRINT_R_RETURN_STDOUT
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+const NATIVE_METADATA_PRINT_R_FALSE_RETURN_SOURCE: &str = concat!(
+    "<?php\n",
+    "interface NativeFalseDeclared {}\n",
+    "interface NativeFalseContract {}\n",
+    "trait NativeFalseTrait {}\n",
+    "class NativeFalseService implements NativeFalseContract { use NativeFalseTrait; }\n",
+    "$interfaces = print_r(get_declared_interfaces(), false);\n",
+    "echo \"interfaces-return:\";\n",
+    "echo $interfaces;\n",
+    "echo \"\\n\";\n",
+    "echo \"implements-return:\";\n",
+    "echo print_r(class_implements(\"NativeFalseService\", false), false);\n",
+    "echo \"\\n\";\n",
+    "$traits = print_r(get_declared_traits());\n",
+    "echo \"traits-return:\";\n",
+    "echo $traits;\n",
+    "echo \"\\n\";\n",
+    "echo \"uses-return:\";\n",
+    "echo print_r(class_uses(\"NativeFalseService\", false));\n",
+    "echo \"\\n\";\n",
+);
+
+const NATIVE_METADATA_PRINT_R_FALSE_RETURN_STDOUT: &str = concat!(
+    "Array\n",
+    "(\n",
+    "    [0] => NativeFalseDeclared\n",
+    "    [1] => NativeFalseContract\n",
+    ")\n",
+    "interfaces-return:1\n",
+    "implements-return:Array\n",
+    "(\n",
+    "    [NativeFalseContract] => NativeFalseContract\n",
+    ")\n",
+    "1\n",
+    "Array\n",
+    "(\n",
+    "    [0] => NativeFalseTrait\n",
+    ")\n",
+    "traits-return:1\n",
+    "uses-return:Array\n",
+    "(\n",
+    "    [NativeFalseTrait] => NativeFalseTrait\n",
+    ")\n",
+    "1\n",
+);
+
+#[test]
+fn native_executable_c_source_routes_metadata_print_r_false_return_through_value_formatter() {
+    let program = parse(NATIVE_METADATA_PRINT_R_FALSE_RETURN_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("#define PHPC_NATIVE_VALUE_FORMAT_PRINT_R 1")
+            && body.contains("phpc_native_value_format_stdout_with_diagnostic")
+            && body.contains("phpc_native_value_from_scalar((phpc_NativeScalarValue){1, true")
+            && body.contains("phpc_native_value_class_metadata_value_with_diagnostic"),
+        "print_r(value, false/default) expression mode should print through the shared native value formatter and return PHP true:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_array_len(")
+            && !source.contains("object/class lowering rejects")
+            && !source.contains("interface lowering rejects interface declarations"),
+        "metadata print_r() false/default return mode should not fall back to native-array-only consumers or blockers:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_metadata_print_r_false_return_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "metadata_print_r_false_return",
+        NATIVE_METADATA_PRINT_R_FALSE_RETURN_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run metadata print_r false return executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        NATIVE_METADATA_PRINT_R_FALSE_RETURN_STDOUT
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+const NATIVE_METADATA_PRINT_R_RUNTIME_RETURN_SOURCE: &str = concat!(
+    "<?php\n",
+    "interface NativeRuntimeDeclared {}\n",
+    "interface NativeRuntimeContract {}\n",
+    "trait NativeRuntimeTrait {}\n",
+    "class NativeRuntimeService implements NativeRuntimeContract { use NativeRuntimeTrait; }\n",
+    "$returnInterfaces = count(get_declared_interfaces()) === 2;\n",
+    "echo \"interfaces:\\n\";\n",
+    "echo print_r(get_declared_interfaces(), $returnInterfaces);\n",
+    "$returnImplements = count(class_implements(\"NativeRuntimeService\", false)) === 0;\n",
+    "echo \"implements-return:\";\n",
+    "echo print_r(class_implements(\"NativeRuntimeService\", false), $returnImplements);\n",
+    "echo \"\\n\";\n",
+    "$returnTraits = count(get_declared_traits()) === 1;\n",
+    "echo \"traits:\\n\";\n",
+    "echo print_r(get_declared_traits(), $returnTraits);\n",
+    "$returnUses = count(class_uses(\"NativeRuntimeService\", false)) === 0;\n",
+    "echo \"uses-return:\";\n",
+    "echo print_r(class_uses(\"NativeRuntimeService\", false), $returnUses);\n",
+    "echo \"\\n\";\n",
+);
+
+const NATIVE_METADATA_PRINT_R_RUNTIME_RETURN_STDOUT: &str = concat!(
+    "interfaces:\n",
+    "Array\n",
+    "(\n",
+    "    [0] => NativeRuntimeDeclared\n",
+    "    [1] => NativeRuntimeContract\n",
+    ")\n",
+    "implements-return:Array\n",
+    "(\n",
+    "    [NativeRuntimeContract] => NativeRuntimeContract\n",
+    ")\n",
+    "1\n",
+    "traits:\n",
+    "Array\n",
+    "(\n",
+    "    [0] => NativeRuntimeTrait\n",
+    ")\n",
+    "uses-return:Array\n",
+    "(\n",
+    "    [NativeRuntimeTrait] => NativeRuntimeTrait\n",
+    ")\n",
+    "1\n",
+);
+
+#[test]
+fn native_executable_c_source_routes_metadata_print_r_runtime_return_through_value_formatter() {
+    let program = parse(NATIVE_METADATA_PRINT_R_RUNTIME_RETURN_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "extern phpc_NativeValueHandle phpc_native_value_format_return_mode_with_diagnostic"
+        ) && source.contains("#define PHPC_NATIVE_VALUE_FORMAT_PRINT_R 1")
+            && body.contains("phpc_native_value_format_return_mode_with_diagnostic")
+            && body.contains("phpc_native_value_class_metadata_value_with_diagnostic")
+            && body.contains("phpc_native_value_array_query_operation_with_diagnostic"),
+        "runtime print_r(value, return_mode) should use the shared formatter return-mode ABI fed by runtime PHP truthiness operands:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_array_len(")
+            && !source.contains("object/class lowering rejects")
+            && !source.contains("interface lowering rejects interface declarations"),
+        "metadata print_r() runtime return mode should not fall back to native-array-only consumers or blockers:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_metadata_print_r_runtime_return_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "metadata_print_r_runtime_return",
+        NATIVE_METADATA_PRINT_R_RUNTIME_RETURN_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run metadata print_r runtime return executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        NATIVE_METADATA_PRINT_R_RUNTIME_RETURN_STDOUT
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
 #[test]
 fn native_executable_c_source_blocks_unknown_named_dynamic_method_fallback_until_declared_hit_shape_is_known(
 ) {

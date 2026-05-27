@@ -21729,6 +21729,13 @@ unsafe fn native_value_format_stdout_bytes(
     formatter: u8,
 ) -> RuntimeResult<Vec<u8>> {
     let formatter = NativeValueFormatterTag::from_tag(formatter)?;
+    unsafe { native_value_format_bytes(handle, formatter) }
+}
+
+unsafe fn native_value_format_bytes(
+    handle: NativeValueHandle,
+    formatter: NativeValueFormatterTag,
+) -> RuntimeResult<Vec<u8>> {
     let Some(value) = (unsafe { handle.as_ref() }) else {
         return Err(RuntimeError::unsupported_call(
             formatter.surface_name(),
@@ -21739,6 +21746,70 @@ unsafe fn native_value_format_stdout_bytes(
         NativeValueFormatterTag::Echo => value.try_echo_bytes(),
         NativeValueFormatterTag::PrintR => native_value_print_r_bytes(value),
     }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. `formatter` must be one of the
+/// `NativeValueFormatterTag` discriminants. `diagnostic` may be null; when
+/// non-null, it must point to writable storage for one
+/// `NativeDiagnosticHandle`. On formatter-tag or null-handle failure the helper
+/// stores a diagnostic handle that the caller owns and must release with
+/// `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_format_string_with_diagnostic(
+    handle: NativeValueHandle,
+    formatter: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = NativeValueFormatterTag::from_tag(formatter).and_then(|formatter| {
+        unsafe { native_value_format_bytes(handle, formatter) }.map(value_from_php_string_bytes)
+    });
+    match result {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` and `return_mode` must be null or value handles previously
+/// returned by the runtime ABI and not yet freed. `formatter` must be one of
+/// the `NativeValueFormatterTag` discriminants. `diagnostic` may be null; when
+/// non-null, it must point to writable storage for one `NativeDiagnosticHandle`.
+/// The input handles are borrowed. The returned value handle is owned by the
+/// caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_format_return_mode_with_diagnostic(
+    handle: NativeValueHandle,
+    formatter: u8,
+    return_mode: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let should_return =
+        unsafe { phpc_native_value_truthy_with_diagnostic(return_mode, diagnostic) };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        return NativeValueHandle::null();
+    }
+
+    if should_return {
+        return unsafe {
+            phpc_native_value_format_string_with_diagnostic(handle, formatter, diagnostic)
+        };
+    }
+
+    unsafe { phpc_native_value_format_stdout_with_diagnostic(handle, formatter, diagnostic) };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        return NativeValueHandle::null();
+    }
+    NativeValueHandle::from_value(Value::Bool(true))
 }
 
 #[cfg(test)]
@@ -43104,6 +43175,155 @@ mod tests {
             "unsupported call echo: native value formatting failed: value handle is null"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
+    }
+
+    #[test]
+    fn native_value_formatter_string_uses_diagnostic_abi_across_value_families() {
+        let mut array = PhpArray::new();
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert(2, Value::Bool(true));
+        let array = NativeValueHandle::from_value(Value::Array(array));
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let formatted = unsafe {
+            phpc_native_value_format_string_with_diagnostic(
+                array,
+                NativeValueFormatterTag::PrintR as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            native_value_echo_bytes_for_test(formatted),
+            b"Array\n(\n    [name] => Ada\n    [2] => 1\n)\n"
+        );
+        unsafe { phpc_native_value_free(formatted) };
+
+        let binary = NativeValueHandle::from_value(Value::BinaryString(vec![b'A', 0xff, b'B']));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let formatted_binary = unsafe {
+            phpc_native_value_format_string_with_diagnostic(
+                binary,
+                NativeValueFormatterTag::PrintR as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            native_value_echo_bytes_for_test(formatted_binary),
+            b"A\xffB"
+        );
+        unsafe { phpc_native_value_free(formatted_binary) };
+        unsafe { phpc_native_value_free(binary) };
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let invalid =
+            unsafe { phpc_native_value_format_string_with_diagnostic(array, 99, &mut diagnostic) };
+        assert!(invalid.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "unsupported call native value formatter: unsupported native value formatter tag 99"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let missing = unsafe {
+            phpc_native_value_format_string_with_diagnostic(
+                NativeValueHandle::null(),
+                NativeValueFormatterTag::PrintR as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(missing.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "unsupported call print_r: native value formatting failed: value handle is null"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(array) };
+    }
+
+    #[test]
+    fn native_value_formatter_return_mode_selects_output_or_string_at_runtime() {
+        fn start_capture() {
+            native_clear_output_buffers();
+            NATIVE_OUTPUT_BUFFERS.with(|buffers| {
+                buffers.borrow_mut().push(NativeOutputBuffer::default());
+            });
+        }
+
+        fn captured_output() -> Vec<u8> {
+            NATIVE_OUTPUT_BUFFERS.with(|buffers| {
+                buffers
+                    .borrow()
+                    .last()
+                    .map(|buffer| buffer.bytes.clone())
+                    .unwrap_or_default()
+            })
+        }
+
+        start_capture();
+        let scalar = NativeValueHandle::from_value(Value::String("Ada".to_string()));
+        let truthy_mode = phpc_native_value_from_scalar(phpc_native_bool(true));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let returned = unsafe {
+            phpc_native_value_format_return_mode_with_diagnostic(
+                scalar,
+                NativeValueFormatterTag::PrintR as u8,
+                truthy_mode,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(returned), b"Ada");
+        assert_eq!(captured_output(), b"");
+        unsafe { phpc_native_value_free(returned) };
+        unsafe { phpc_native_value_free(truthy_mode) };
+        unsafe { phpc_native_value_free(scalar) };
+
+        start_capture();
+        let mut array = PhpArray::new();
+        array.insert("name", Value::String("Ada".to_string()));
+        array.insert(2, Value::Bool(true));
+        let array = NativeValueHandle::from_value(Value::Array(array));
+        let falsey_mode = NativeValueHandle::from_value(Value::String("0".to_string()));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let returned = unsafe {
+            phpc_native_value_format_return_mode_with_diagnostic(
+                array,
+                NativeValueFormatterTag::PrintR as u8,
+                falsey_mode,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(returned), b"1");
+        assert_eq!(
+            captured_output(),
+            b"Array\n(\n    [name] => Ada\n    [2] => 1\n)\n"
+        );
+        unsafe { phpc_native_value_free(returned) };
+        unsafe { phpc_native_value_free(falsey_mode) };
+        unsafe { phpc_native_value_free(array) };
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let unused_value = NativeValueHandle::from_value(Value::Int(1));
+        let missing_mode = unsafe {
+            phpc_native_value_format_return_mode_with_diagnostic(
+                unused_value,
+                NativeValueFormatterTag::PrintR as u8,
+                NativeValueHandle::null(),
+                &mut diagnostic,
+            )
+        };
+        assert!(missing_mode.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "native truthiness conversion failed: value handle is null"
+        );
+        unsafe { phpc_native_value_free(unused_value) };
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        native_clear_output_buffers();
     }
 
     #[test]
