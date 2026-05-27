@@ -13075,6 +13075,35 @@ fn native_executable_c_source_routes_call_user_func_byref_direct_variables() {
 }
 
 #[test]
+fn native_executable_c_source_routes_call_user_func_array_stored_direct_reference_entries() {
+    let source = concat!(
+        "<?php\n",
+        "function cufa_stored_ref(&$slot, $suffix) { $slot = $slot . \":\" . $suffix; return $slot; }\n",
+        "$slot = \"seed\";\n",
+        "$args = [];\n",
+        "$args[] =& $slot;\n",
+        "$args[] = \"array\";\n",
+        "echo call_user_func_array(\"cufa_stored_ref\", $args), \"|\", $slot, \"|\", $args[0];\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && source.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && source.contains("materialized_parameter_by_reference_")
+            && source.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "call_user_func_array should route stored reference arrays through materialized argument finalization:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly function-call lowering rejects")
+            && !source
+                .contains("phpc_native_call_arguments_push_value_and_free(dynamic_callable_args"),
+        "call_user_func_array by-reference support must not fall back to the old blocker or silently push the argument array as one value:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_lowers_request_superglobal_reference_arguments() {
     let source = concat!(
         "<?php\n",
@@ -13230,6 +13259,88 @@ fn emit_exe_links_and_runs_request_superglobal_reference_arguments() {
     );
     assert_eq!(run.stdout, b"G1|G1|R2|R2|P3|P3|R24|R24");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_call_user_func_array_stored_direct_reference_entries() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function cufa_stored_ref_run(&$slot, $suffix) { $slot = $slot . \":\" . $suffix; return $slot; }\n",
+        "$slot = \"seed\";\n",
+        "$args = [];\n",
+        "$args[] =& $slot;\n",
+        "$args[] = \"array\";\n",
+        "echo call_user_func_array(\"cufa_stored_ref_run\", $args), \"|\", $slot, \"|\", $args[0];\n",
+    );
+    let (source_path, output_path) = compile_native_link_fixture(
+        "call_user_func_array_stored_direct_reference_entries",
+        source,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native call_user_func_array reference-entry executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"seed:array|seed:array|seed:array");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_reports_call_user_func_array_byref_value_copy_blocker() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function cufa_ref_copy_block(&$slot) { $slot = \"changed\"; return $slot; }\n",
+        "$slot = \"seed\";\n",
+        "echo call_user_func_array(\"cufa_ref_copy_block\", [$slot]), \"|\", $slot;\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("call_user_func_array_byref_value_copy_blocker", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native call_user_func_array blocker executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(
+        !run.status.success(),
+        "value-copy by-reference argument should fail"
+    );
+    assert!(
+        run.stdout.is_empty(),
+        "blocker should stop before echoing a copied value, stdout:\n{}",
+        String::from_utf8_lossy(&run.stdout)
+    );
+    assert!(
+        String::from_utf8_lossy(&run.stderr)
+            .contains("by-reference parameter $slot requires reference materialization"),
+        "stderr should report the exact materialized-argument by-reference blocker, got:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
 
     let _ = fs::remove_file(&source_path);
     let _ = fs::remove_file(&output_path);

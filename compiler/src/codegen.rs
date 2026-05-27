@@ -43395,12 +43395,13 @@ impl CGenerator {
             expr: Box::new(args[1].clone()),
             span: args[1].span(),
         }];
-        if !self.call_user_func_callback_accepts_value_args(callee, &call_args, None) {
-            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
-        }
-
         let source_call_contract =
             self.callable_value_source_call_signature_contract_for_args(callee, &call_args);
+        if source_call_contract.is_none()
+            && !self.call_user_func_callback_accepts_value_args(callee, &call_args, None)
+        {
+            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+        }
         match self.try_materialize_dynamic_user_function_call(
             callee,
             &call_args,
