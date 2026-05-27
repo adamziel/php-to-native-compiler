@@ -5346,9 +5346,10 @@
   declarations, non-public interface methods,
   non-public/typed/abstract/final/static trait constants, multi-constant trait
   declarations, trait constant adaptations, conflicting trait/class constants,
-  abstract/final or non-public trait methods, adaptation blocks beyond
-  the current simple method alias, visibility-adaptation, and bounded
-  `insteadof` shapes, broad conflict resolution,
+  abstract/final or non-public trait methods, native trait method execution
+  beyond generated-C metadata validation, adaptation blocks beyond the current
+  simple method alias, visibility-adaptation, and bounded `insteadof` shapes,
+  broad conflict resolution,
   `__TRAIT__` context,
   references/copy-on-write, and native trait lowering, backed enum declarations
   and enum members beyond

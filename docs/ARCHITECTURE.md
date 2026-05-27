@@ -917,6 +917,12 @@ adaptations,
 qualified or multi-trait alias edge cases beyond the current winner-alias slice,
 `__TRAIT__` context, references/copy-on-write, nested or conditional trait
 declarations, and native trait lowering remain explicit boundaries.
+Generated-C class metadata validation consumes the same trait effective-method
+composition helper as interpreter metadata/reflection, so top-level trait
+metadata registration and class trait-use composition share one semantic
+boundary. Native trait method frame emission, dispatch, trait
+properties/constants, destructor execution, interface dispatch, and autoload
+remain separate blockers.
 
 Top-level interface declarations are parsed as metadata for public method
 signatures and public constants. The current inheritance slice accepts one or

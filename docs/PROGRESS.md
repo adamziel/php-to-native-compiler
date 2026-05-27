@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added a shared trait effective-method metadata composition boundary consumed
+  by both interpreter metadata/reflection and generated-C class metadata
+  validation. The helper covers trait lookup, nested trait uses, aliases,
+  visibility adaptations, `insteadof` exclusions, direct class method
+  overrides, conflict diagnostics, recursion diagnostics, and case-insensitive
+  trait/method keys, while keeping trait method execution, trait properties/
+  constants, destructor execution, interface dispatch, and autoload out of
+  scope. The primary gate records the pre-existing stale `named_` parse-phase
+  test caveat and otherwise covers trait semantics, native call-boundary trait
+  metadata, dynamic class constants, static-property ArrayAccess references,
+  class constants, class aliases, magic calls, malformed magic, static-property
+  offset references, reference-returning ArrayAccess, constructors, descriptor
+  closures, source-call references, and exact imports.
+
 - Added generated-C static-property `ArrayAccess` by-reference source routing
   through real static-property storage identity and the existing
   reference-returning `offsetGet()` owner boundary. Literal class, object
