@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 20:25 CEST
+Updated: 2026-05-27 20:32 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,17 +19,33 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `c0e81cfe` extends the selected runtime
-callable array-sort writeback family to `natsort()` and `natcasesort()`.
-Runtime builtin lookup, callable source signatures, compiler runtime-builtin
-canonicalization, generated-C source-call metadata, and linked native execution
-now preserve the natural-sort PHP shape: one required by-reference `$array`
-argument and no `$flags` argument. This builds on the existing natural
-comparison implementation and shared array-lvalue writeback path without adding
-fixture-output sorting, one-array lowering, generated-C substring gates, or
-comparator callback claims. Comparator callbacks, broader callable object/array
-families, object/ArrayAccess/resource owners, full by-reference/COW parity,
-magic fallback callables, and LLVM/ASM parity remain blocked.
+Latest accounted source capability: `4138e55c` routes generated-C
+`class_alias(..., true)` through the request-local SPL autoload registry before
+alias lookup. The runtime now exposes a registry-aware class-alias ABI, generated
+C uses it for default/true autoload calls, explicit `false` remains on the
+existing no-autoload ABI, and dynamic autoload operands branch at runtime. This
+uses the normalized callable registry path without adding class-name ladders,
+callback-name fixtures, one-file source loading, or docs-only substitution.
+`spl_autoload_functions()`, arbitrary runtime source loading, Composer/PSR
+adapters, precise filesystem autoload parity, comparator callbacks, broader
+callable object/array families, full by-reference/COW parity, and LLVM/ASM
+parity remain blocked.
+
+Recent source commit `4138e55c` advances generated-C class alias autoload
+semantics without adding fixture-specific alias loading. Runtime
+`class_alias(..., true)` can now invoke callbacks from the existing SPL autoload
+registry before alias lookup, generated C lowers default/true alias calls
+through that registry-aware ABI, literal `false` stays on the no-registry path,
+and dynamic autoload values select the correct ABI at runtime. Focused gates
+covered compile checking, runtime alias-before-lookup proof, the generated-C
+`class_alias` native-link suite, existing runtime class alias and SPL autoload
+registry regressions, SPL autoload register lowering regression, heterogeneous
+callable policy regression, formatting, and diff checks. `spl_autoload_functions()`,
+arbitrary runtime source loading, Composer/PSR adapters, precise filesystem
+autoload parity, broader class-like alias/source parity, and LLVM/ASM parity
+remain blocked. Primary gate log:
+`state/logs/phpc-primary-class-alias-autoload-a2c56579-20260527.gates.log`
+sha256 `76fe8e2962ad5613db39301401bb342dd9294a655f090bb36da1bc74a864b9d4`.
 
 Recent source commit `c0e81cfe` advances selected natural-sort callable
 writeback without adding exact-name dynamic ladders, one-array expected-order
