@@ -24690,6 +24690,8 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_public_property_operation_with_diagnostic(phpc_NativeValueHandle object, const uint8_t *property_name, size_t property_name_len, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_property_operation_with_magic_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle object, const uint8_t *property_name, size_t property_name_len, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_property_operation_with_context_and_magic_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle object, size_t current_class_id, const size_t *protected_class_ids, size_t protected_class_count, const uint8_t *property_name, size_t property_name_len, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_dynamic_property_read_with_magic_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle object, phpc_NativeValueHandle property, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_dynamic_property_read_with_context_and_magic_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle object, size_t current_class_id, const size_t *protected_class_ids, size_t protected_class_count, phpc_NativeValueHandle property, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_property_mutation_operation_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle property, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_property_mutation_operation_with_magic_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle subject, phpc_NativeValueHandle property, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_object_property_mutation_operation_with_reference_slots_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeReferenceHandle subject_reference, phpc_NativeValueHandle property, phpc_NativeReferenceHandle property_reference, phpc_NativeValueHandle replacement, phpc_NativeReferenceHandle replacement_reference, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -26394,6 +26396,62 @@ impl CGenerator {
             "object_property_read",
             failure_cleanup,
         )
+    }
+
+    fn materialize_object_dynamic_property_read_expr(
+        &mut self,
+        object: &Expr,
+        property: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        self.uses_native_object_property_helpers = true;
+
+        let context_args = self.emit_object_property_context_args();
+        let object_value = self.materialize_native_value_result_operand(object, failure_cleanup)?;
+        let property_failure_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&object_value.cleanup_after_use),
+            failure_cleanup
+        );
+        let property_value =
+            self.materialize_native_value_result_operand(property, &property_failure_cleanup)?;
+
+        let mut operand_cleanup = property_value.cleanup_after_use;
+        operand_cleanup.extend(object_value.cleanup_after_use);
+        let operand_cleanup_sequence = c_cleanup_sequence(&operand_cleanup);
+        let callable_table = self
+            .ensure_native_callable_table(&format!("{operand_cleanup_sequence}{failure_cleanup}"));
+
+        let diagnostic = self.next_native_name("dynamic_object_property_read_diagnostic");
+        let result = self.next_native_name("dynamic_object_property_read");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        if let Some((current_class_id, protected_ids_name, protected_ids_len)) = context_args {
+            self.body.push(format!(
+                "phpc_NativeValueHandle {result} = phpc_native_value_object_dynamic_property_read_with_context_and_magic_diagnostic({callable_table}, {}, (size_t){current_class_id}, {protected_ids_name}, (size_t){protected_ids_len}, {}, &{diagnostic});",
+                object_value.handle, property_value.handle
+            ));
+        } else {
+            self.body.push(format!(
+                "phpc_NativeValueHandle {result} = phpc_native_value_object_dynamic_property_read_with_magic_diagnostic({callable_table}, {}, {}, &{diagnostic});",
+                object_value.handle, property_value.handle
+            ));
+        }
+        self.emit_report_native_diagnostic(&diagnostic);
+        let cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&operand_cleanup),
+            failure_cleanup
+        );
+        let error_exit = self.native_error_exit(&cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.body.extend(operand_cleanup);
+
+        Ok(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        })
     }
 
     fn materialize_generated_method_frame_property_read_expr(
@@ -42179,14 +42237,19 @@ impl CGenerator {
                 self.retain_native_value_cleanup_handle(&value.handle);
                 Ok(CValue::NativeValueHandle(value.handle))
             }
-            Expr::DynamicProperty { span, .. } => {
+            Expr::DynamicProperty {
+                target, property, ..
+            } => {
                 if let Some(operation) = native_dereferenced_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
                 }
                 if let Some(operation) = native_value_operand_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
                 }
-                Err(self.unsupported(*span, ASSEMBLY_OBJECT_PROPERTY_REJECTION))
+                let value =
+                    self.materialize_object_dynamic_property_read_expr(target, property, "")?;
+                self.retain_native_value_cleanup_handle(&value.handle);
+                Ok(CValue::NativeValueHandle(value.handle))
             }
             Expr::MethodCall {
                 target,
@@ -60583,6 +60646,22 @@ impl CGenerator {
                 }
                 self.materialize_object_public_property_read_expr(target, property, failure_cleanup)
                     .map(Some)
+            }
+            Expr::DynamicProperty {
+                target, property, ..
+            } => {
+                if let Some(operation) = native_dereferenced_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                self.materialize_object_dynamic_property_read_expr(
+                    target,
+                    property,
+                    failure_cleanup,
+                )
+                .map(Some)
             }
             Expr::NullCoalesceAssign { target, expr, span } => {
                 if let Some(access) = request_assign_target_array_key_consumer_access(target) {

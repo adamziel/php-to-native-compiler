@@ -39536,6 +39536,67 @@ pub unsafe extern "C" fn phpc_native_value_object_property_operation_with_contex
 
 /// # Safety
 ///
+/// Same as `phpc_native_value_object_property_operation_with_magic_diagnostic`
+/// for read operations, but the property name is supplied as a runtime value.
+/// The property value is converted with PHP string-conversion rules and is not
+/// consumed by this call.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_object_dynamic_property_read_with_magic_diagnostic(
+    table: NativeCallableTableHandle,
+    object: NativeValueHandle,
+    property: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe { native_value_object_dynamic_property_read_with_magic(table, object, property) } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// Same as
+/// `phpc_native_value_object_property_operation_with_context_and_magic_diagnostic`
+/// for read operations, but the property name is supplied as a runtime value.
+/// The property value is converted with PHP string-conversion rules and is not
+/// consumed by this call.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_object_dynamic_property_read_with_context_and_magic_diagnostic(
+    table: NativeCallableTableHandle,
+    object: NativeValueHandle,
+    current_class_id: usize,
+    protected_class_ids: *const usize,
+    protected_class_count: usize,
+    property: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe {
+        native_value_object_dynamic_property_read_with_context_and_magic(
+            table,
+            object,
+            current_class_id,
+            protected_class_ids,
+            protected_class_count,
+            property,
+        )
+    } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
 /// `value` must be null or a value handle previously returned by the runtime
 /// ABI and not yet freed. `target_name` must be null only when
 /// `target_name_len` is zero. The operation tag selects a class-like
@@ -40534,6 +40595,70 @@ unsafe fn native_value_object_property_name(handle: NativeValueHandle) -> Result
         .map_err(|error| error.message().to_string())?;
     String::from_utf8(bytes)
         .map_err(|_| "native object property mutation requires a UTF-8 property name".to_string())
+}
+
+unsafe fn native_value_object_dynamic_property_read_name(
+    handle: NativeValueHandle,
+) -> Result<String, String> {
+    let bytes = unsafe { native_value_to_string_bytes(handle) }
+        .map_err(|error| error.message().to_string())?;
+    String::from_utf8(bytes).map_err(|_| {
+        "native object dynamic property read requires a UTF-8 property name".to_string()
+    })
+}
+
+unsafe fn native_value_object_dynamic_property_read_with_magic(
+    table: NativeCallableTableHandle,
+    object: NativeValueHandle,
+    property: NativeValueHandle,
+) -> Result<Value, String> {
+    let property_name = unsafe { native_value_object_dynamic_property_read_name(property) }?;
+    if property_name.is_empty() {
+        return Err(
+            "native object dynamic property read requires a non-empty property name".into(),
+        );
+    }
+
+    unsafe {
+        native_value_object_public_property_operation_with_magic(
+            table,
+            object,
+            property_name.as_ptr(),
+            property_name.len(),
+            NativeValueHandle::null(),
+            NATIVE_OBJECT_PUBLIC_PROPERTY_READ,
+        )
+    }
+}
+
+unsafe fn native_value_object_dynamic_property_read_with_context_and_magic(
+    table: NativeCallableTableHandle,
+    object: NativeValueHandle,
+    current_class_id: usize,
+    protected_class_ids: *const usize,
+    protected_class_count: usize,
+    property: NativeValueHandle,
+) -> Result<Value, String> {
+    let property_name = unsafe { native_value_object_dynamic_property_read_name(property) }?;
+    if property_name.is_empty() {
+        return Err(
+            "native object dynamic property read requires a non-empty property name".into(),
+        );
+    }
+
+    unsafe {
+        native_value_object_property_operation_with_context_and_magic(
+            table,
+            object,
+            current_class_id,
+            protected_class_ids,
+            protected_class_count,
+            property_name.as_ptr(),
+            property_name.len(),
+            NativeValueHandle::null(),
+            NATIVE_OBJECT_PUBLIC_PROPERTY_READ,
+        )
+    }
 }
 
 unsafe fn native_value_object_property_mutation_operation(
@@ -45685,6 +45810,27 @@ mod tests {
         (result, diagnostic)
     }
 
+    unsafe fn object_dynamic_property_read_for_test(
+        table: NativeCallableTableHandle,
+        object: &PhpObject,
+        property: Value,
+    ) -> (NativeValueHandle, NativeDiagnosticHandle) {
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let property = NativeValueHandle::from_value(property);
+        let object_handle = NativeValueHandle::from_value(Value::Object(object.clone()));
+        let result = unsafe {
+            phpc_native_value_object_dynamic_property_read_with_magic_diagnostic(
+                table,
+                object_handle,
+                property,
+                &mut diagnostic,
+            )
+        };
+        unsafe { phpc_native_value_free(object_handle) };
+        unsafe { phpc_native_value_free(property) };
+        (result, diagnostic)
+    }
+
     unsafe fn object_property_mutation_for_test(
         table: NativeCallableTableHandle,
         object: &PhpObject,
@@ -45801,6 +45947,43 @@ mod tests {
         );
         unsafe { phpc_native_value_free(hidden) };
 
+        let (dynamic_visible, diagnostic) = unsafe {
+            object_dynamic_property_read_for_test(
+                table,
+                &object,
+                Value::String("visible".to_string()),
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { dynamic_visible.as_ref() },
+            Some(&Value::String("V0".to_string()))
+        );
+        unsafe { phpc_native_value_free(dynamic_visible) };
+
+        let (dynamic_missing, diagnostic) = unsafe {
+            object_dynamic_property_read_for_test(
+                table,
+                &object,
+                Value::String("dynamic-missing".to_string()),
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { dynamic_missing.as_ref() },
+            Some(&Value::String("G:dynamic-missing".to_string()))
+        );
+        unsafe { phpc_native_value_free(dynamic_missing) };
+
+        let (dynamic_integer, diagnostic) =
+            unsafe { object_dynamic_property_read_for_test(table, &object, Value::Int(123)) };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { dynamic_integer.as_ref() },
+            Some(&Value::String("G:123".to_string()))
+        );
+        unsafe { phpc_native_value_free(dynamic_integer) };
+
         for (property, value) in [
             ("visible", "V1"),
             ("missing", "M1"),
@@ -45861,7 +46044,7 @@ mod tests {
         assert_eq!(
             object.read_public_property("events").unwrap(),
             Value::String(
-                "get:missing;get:hidden;set:missing=M1;set:hidden=H1;set:dynamic=D1;isset:present;isset:absent;isset:hidden;unset:absent;unset:hidden;unset:dynamic;"
+                "get:missing;get:hidden;get:dynamic-missing;get:123;set:missing=M1;set:hidden=H1;set:dynamic=D1;isset:present;isset:absent;isset:hidden;unset:absent;unset:hidden;unset:dynamic;"
                     .to_string()
             )
         );
@@ -51597,6 +51780,27 @@ mod tests {
             Some(&Value::String("protected".into()))
         );
         unsafe { phpc_native_value_free(protected_read) };
+
+        let dynamic_private_property =
+            NativeValueHandle::from_value(Value::String("secret".to_string()));
+        let dynamic_private_read = unsafe {
+            phpc_native_value_object_dynamic_property_read_with_context_and_magic_diagnostic(
+                NativeCallableTableHandle::null(),
+                object,
+                11,
+                context_ids.as_ptr(),
+                context_ids.len(),
+                dynamic_private_property,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { dynamic_private_read.as_ref() },
+            Some(&Value::String("private".into()))
+        );
+        unsafe { phpc_native_value_free(dynamic_private_read) };
+        unsafe { phpc_native_value_free(dynamic_private_property) };
 
         let wrong_context_ids = [7usize];
         let wrong_private_read = unsafe {

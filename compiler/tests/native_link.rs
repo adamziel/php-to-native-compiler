@@ -1327,6 +1327,35 @@ const NATIVE_OBJECT_PROPERTY_DYNAMIC_MAGIC_SET_SOURCE: &str = concat!(
     "echo $box->events, \"\\n\";\n",
 );
 
+const NATIVE_OBJECT_PROPERTY_DYNAMIC_MAGIC_GET_SOURCE: &str = concat!(
+    "<?php\n",
+    "class DynamicObjectPropertyMagicGetBox {\n",
+    "    public $visible = \"V0\";\n",
+    "    public $events = \"\";\n",
+    "    private $hidden = \"H0\";\n",
+    "    public function __get(string $name) {\n",
+    "        $this->events = $this->events . \"get:\" . $name . \";\";\n",
+    "        return \"G:\" . $name;\n",
+    "    }\n",
+    "    public function reveal($name) {\n",
+    "        return $this->{$name};\n",
+    "    }\n",
+    "}\n",
+    "$box = new DynamicObjectPropertyMagicGetBox();\n",
+    "$name = \"visible\";\n",
+    "echo $box->{$name}, \"|\";\n",
+    "$name = \"missing\";\n",
+    "echo $box->$name, \"|\";\n",
+    "$name = \"hidden\";\n",
+    "echo $box->{$name}, \"|\";\n",
+    "$name = 123;\n",
+    "echo $box->{$name}, \"|\";\n",
+    "echo $box->reveal(\"hidden\"), \"|\";\n",
+    "echo $box->reveal(\"visible\"), \"|\";\n",
+    "echo $box->reveal(\"missing\"), \"|\";\n",
+    "echo $box->events, \"\\n\";\n",
+);
+
 const NATIVE_OBJECT_PROPERTY_MALFORMED_MAGIC_SOURCE: &str = concat!(
     "<?php\n",
     "class MalformedObjectPropertyMagicBox {\n",
@@ -4946,6 +4975,37 @@ fn emit_exe_links_and_runs_dynamic_name_object_property_magic_set_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"set:dynamic=D1;\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_dynamic_name_object_property_magic_get_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "dynamic_name_object_property_magic_get",
+        NATIVE_OBJECT_PROPERTY_DYNAMIC_MAGIC_GET_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run dynamic-name object-property-magic-get executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"V0|G:missing|G:hidden|G:123|H0|V0|G:missing|get:missing;get:hidden;get:123;get:missing;\n"
+    );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -9188,6 +9248,36 @@ fn native_executable_c_source_routes_dynamic_name_magic_set_through_runtime_prop
             && !source.contains("magic_static")
             && !body.contains("strcmp("),
         "dynamic-name __set writes should avoid generated property-name ladders and old blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_dynamic_name_magic_get_through_runtime_property_boundary() {
+    let program = parse(NATIVE_OBJECT_PROPERTY_DYNAMIC_MAGIC_GET_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_value_object_dynamic_property_read_with_magic_diagnostic")
+            && source.contains(
+                "phpc_native_value_object_dynamic_property_read_with_context_and_magic_diagnostic"
+            )
+            && source.contains("object_property_context_ids")
+            && body.contains("dynamic_object_property_read_")
+            && source.contains("PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_VALID")
+            && source.contains("__get"),
+        "dynamic-name __get reads should use the shared runtime property magic boundary and method-frame property context:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_value_object_property_mutation_operation_with_magic_diagnostic")
+            && !source.contains("__set")
+            && !source.contains("__isset")
+            && !source.contains("__unset")
+            && !source.contains("object-property lowering rejects")
+            && !source.contains("dynamic_property_dispatch_status")
+            && !source.contains("phpc_native_value_object_method_failure_with_diagnostic")
+            && !body.contains("strcmp("),
+        "dynamic-name __get reads must stay read-only and avoid generated property-name ladders or method-magic fallback routes:\n{source}"
     );
 }
 
