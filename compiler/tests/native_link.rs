@@ -24999,7 +24999,17 @@ const NATIVE_RUNTIME_BUILTIN_SORT_WRITEBACK_SOURCE: &str = concat!(
     "$args = [];\n",
     "$args[] =& $values;\n",
     "$rsort = \"rsort\";\n",
-    "echo $rsort(...$args), \":\", $values[0], \":\", $values[1], \":\", $values[2];\n",
+    "echo $rsort(...$args), \":\", $values[0], \":\", $values[1], \":\", $values[2], \"|\";\n",
+    "$assoc = [2 => \"b2\", 7 => \"b10\"];\n",
+    "$asort = \"asort\";\n",
+    "echo $asort($assoc, 2), \":\";\n",
+    "echo $assoc[7], \":\", $assoc[2];\n",
+    "echo \"|\";\n",
+    "$assoc_args = [];\n",
+    "$assoc_args[] =& $assoc;\n",
+    "$arsort = \"arsort\";\n",
+    "echo $arsort(...$assoc_args), \":\";\n",
+    "echo $assoc[2], \":\", $assoc[7];\n",
 );
 
 const NATIVE_UNKNOWN_RUNTIME_BUILTIN_CALLABLE_STRING_SPREAD_SOURCE: &str = concat!(
@@ -25040,7 +25050,18 @@ const NATIVE_UNKNOWN_RUNTIME_BUILTIN_SORT_WRITEBACK_SOURCE: &str = concat!(
     "$fn = isset($_GET[\"fn\"]) ? $_GET[\"fn\"] : \"sort\";\n",
     "$args = [];\n",
     "$args[] =& $values;\n",
-    "echo $fn(...$args), \":\", $values[0], \":\", $values[1], \":\", $values[2];\n",
+    "echo $fn(...$args), \":\", $values[0], \":\", $values[1], \":\", $values[2], \"|\";\n",
+    "$assoc = [2 => \"b2\", 7 => \"b10\"];\n",
+    "$_GET[\"fn\"] = \"asort\";\n",
+    "$fn = isset($_GET[\"fn\"]) ? $_GET[\"fn\"] : \"sort\";\n",
+    "echo $fn($assoc, 2), \":\";\n",
+    "echo $assoc[7], \":\", $assoc[2], \"|\";\n",
+    "$_GET[\"fn\"] = \"arsort\";\n",
+    "$fn = isset($_GET[\"fn\"]) ? $_GET[\"fn\"] : \"sort\";\n",
+    "$assoc_args = [];\n",
+    "$assoc_args[] =& $assoc;\n",
+    "echo $fn(...$assoc_args), \":\";\n",
+    "echo $assoc[2], \":\", $assoc[7];\n",
 );
 
 const NATIVE_LEADING_GLOBAL_FUNCTION_CALL_SOURCE: &str = concat!(
@@ -30733,7 +30754,7 @@ fn emit_exe_links_and_runs_runtime_builtin_sort_writeback_program() {
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(run.stdout, b"1:1:2:10|1:10:2:1");
+    assert_eq!(run.stdout, b"1:1:2:10|1:10:2:1|1:b10:b2|1:b2:b10");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
@@ -30794,7 +30815,7 @@ fn emit_exe_links_and_runs_unknown_runtime_builtin_sort_writeback_program() {
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(run.stdout, b"1:1:2:10|1:10:2:1");
+    assert_eq!(run.stdout, b"1:1:2:10|1:10:2:1|1:b10:b2|1:b2:b10");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

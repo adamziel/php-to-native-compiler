@@ -800,6 +800,10 @@ impl NativeArraySortOperation {
     fn reverses_order(self) -> bool {
         matches!(self, Self::Rsort | Self::Arsort | Self::Krsort)
     }
+
+    fn supports_runtime_callable_writeback(self) -> bool {
+        matches!(self, Self::Sort | Self::Rsort | Self::Asort | Self::Arsort)
+    }
 }
 
 impl NativeArrayMutationOperation {
@@ -1560,6 +1564,8 @@ impl NativeCallableBuiltin {
             Self::StringTrim(NativeTrimMode::Right) => "rtrim",
             Self::ArraySort(NativeArraySortOperation::Sort) => "sort",
             Self::ArraySort(NativeArraySortOperation::Rsort) => "rsort",
+            Self::ArraySort(NativeArraySortOperation::Asort) => "asort",
+            Self::ArraySort(NativeArraySortOperation::Arsort) => "arsort",
             Self::ArraySort(_) => "array-sort",
             Self::ArrayMutation(NativeArrayMutationOperation::Push) => "array_push",
             Self::ArrayMutation(NativeArrayMutationOperation::Pop) => "array_pop",
@@ -1624,15 +1630,16 @@ impl NativeCallableBuiltin {
                 accepts_variadic_args: false,
                 returns_by_reference: false,
             },
-            Self::ArraySort(NativeArraySortOperation::Sort)
-            | Self::ArraySort(NativeArraySortOperation::Rsort) => NativeCallableBuiltinSignature {
-                required_arg_count: 1,
-                fixed_param_names: PARAM_ARRAY_FLAGS,
-                fixed_param_by_reference: BY_REF_THEN_VALUE,
-                fixed_param_defaults: DEFAULTS_SORT_FLAGS,
-                accepts_variadic_args: false,
-                returns_by_reference: false,
-            },
+            Self::ArraySort(operation) if operation.supports_runtime_callable_writeback() => {
+                NativeCallableBuiltinSignature {
+                    required_arg_count: 1,
+                    fixed_param_names: PARAM_ARRAY_FLAGS,
+                    fixed_param_by_reference: BY_REF_THEN_VALUE,
+                    fixed_param_defaults: DEFAULTS_SORT_FLAGS,
+                    accepts_variadic_args: false,
+                    returns_by_reference: false,
+                }
+            }
             Self::ArraySort(_) => NativeCallableBuiltinSignature {
                 required_arg_count: usize::MAX,
                 fixed_param_names: &[],
@@ -9801,6 +9808,12 @@ fn native_callable_builtin_for_function_name(name: &str) -> Option<NativeCallabl
         "rsort" => Some(NativeCallableBuiltin::ArraySort(
             NativeArraySortOperation::Rsort,
         )),
+        "asort" => Some(NativeCallableBuiltin::ArraySort(
+            NativeArraySortOperation::Asort,
+        )),
+        "arsort" => Some(NativeCallableBuiltin::ArraySort(
+            NativeArraySortOperation::Arsort,
+        )),
         "array_push" => Some(NativeCallableBuiltin::ArrayMutation(
             NativeArrayMutationOperation::Push,
         )),
@@ -12774,10 +12787,7 @@ unsafe fn native_callable_array_sort_value(
     operation: NativeArraySortOperation,
     arguments: NativeCallArgumentsHandle,
 ) -> Result<Value, String> {
-    if !matches!(
-        operation,
-        NativeArraySortOperation::Sort | NativeArraySortOperation::Rsort
-    ) {
+    if !operation.supports_runtime_callable_writeback() {
         return Err(format!(
             "native callable builtin invocation failed: {} is not supported through the runtime sorting callable family",
             operation.label()
@@ -44439,6 +44449,10 @@ mod tests {
 
         let rsort = NativeCallableBuiltin::ArraySort(NativeArraySortOperation::Rsort).signature();
         assert_eq!(rsort, sort);
+        let asort = NativeCallableBuiltin::ArraySort(NativeArraySortOperation::Asort).signature();
+        assert_eq!(asort, sort);
+        let arsort = NativeCallableBuiltin::ArraySort(NativeArraySortOperation::Arsort).signature();
+        assert_eq!(arsort, sort);
     }
 
     #[test]
@@ -44511,15 +44525,81 @@ mod tests {
     }
 
     #[test]
-    fn native_callable_sort_rsort_mutate_reference_arguments() {
-        for (name, flags, expected_values) in [
-            ("sort", Some(Value::Int(1)), vec![1, 2, 10]),
-            ("rsort", None, vec![10, 2, 1]),
+    fn native_callable_sort_family_mutates_reference_arguments() {
+        for (name, flags, array, expected_entries) in [
+            (
+                "sort",
+                Some(Value::Int(1)),
+                {
+                    let mut array = PhpArray::new();
+                    array.append(Value::Int(10)).unwrap();
+                    array.append(Value::Int(1)).unwrap();
+                    array.append(Value::Int(2)).unwrap();
+                    array
+                },
+                vec![
+                    (ArrayKey::Int(0), Value::Int(1)),
+                    (ArrayKey::Int(1), Value::Int(2)),
+                    (ArrayKey::Int(2), Value::Int(10)),
+                ],
+            ),
+            (
+                "rsort",
+                None,
+                {
+                    let mut array = PhpArray::new();
+                    array.append(Value::Int(10)).unwrap();
+                    array.append(Value::Int(1)).unwrap();
+                    array.append(Value::Int(2)).unwrap();
+                    array
+                },
+                vec![
+                    (ArrayKey::Int(0), Value::Int(10)),
+                    (ArrayKey::Int(1), Value::Int(2)),
+                    (ArrayKey::Int(2), Value::Int(1)),
+                ],
+            ),
+            (
+                "asort",
+                Some(Value::Int(2)),
+                {
+                    let mut array = PhpArray::new();
+                    array.insert("a", Value::String("b2".to_string()));
+                    array.insert("b", Value::String("b10".to_string()));
+                    array
+                },
+                vec![
+                    (
+                        ArrayKey::String("b".to_string()),
+                        Value::String("b10".to_string()),
+                    ),
+                    (
+                        ArrayKey::String("a".to_string()),
+                        Value::String("b2".to_string()),
+                    ),
+                ],
+            ),
+            (
+                "arsort",
+                None,
+                {
+                    let mut array = PhpArray::new();
+                    array.insert("a", Value::String("b2".to_string()));
+                    array.insert("b", Value::String("b10".to_string()));
+                    array
+                },
+                vec![
+                    (
+                        ArrayKey::String("a".to_string()),
+                        Value::String("b2".to_string()),
+                    ),
+                    (
+                        ArrayKey::String("b".to_string()),
+                        Value::String("b10".to_string()),
+                    ),
+                ],
+            ),
         ] {
-            let mut array = PhpArray::new();
-            array.append(Value::Int(10)).unwrap();
-            array.append(Value::Int(1)).unwrap();
-            array.append(Value::Int(2)).unwrap();
             let cell = PhpReferenceCell::new(Value::Array(array));
 
             let callable_value = NativeValueHandle::from_value(Value::String(name.to_string()));
@@ -44569,11 +44649,7 @@ mod tests {
                     .iter()
                     .map(|entry| (entry.key.clone(), entry.value_cloned()))
                     .collect::<Vec<_>>(),
-                expected_values
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, value)| (ArrayKey::Int(index as i64), Value::Int(value)))
-                    .collect::<Vec<_>>()
+                expected_entries
             );
 
             unsafe { phpc_native_value_free(value) };
@@ -44758,15 +44834,14 @@ mod tests {
     #[test]
     fn native_callable_sort_uses_materialized_byref_slots_for_writeback() {
         let mut array = PhpArray::new();
-        array.append(Value::Int(3)).unwrap();
-        array.append(Value::Int(1)).unwrap();
-        array.append(Value::Int(2)).unwrap();
+        array.insert("a", Value::String("b2".to_string()));
+        array.insert("b", Value::String("b10".to_string()));
         let cell = PhpReferenceCell::new(Value::Array(array));
 
         let materialized = phpc_native_materialized_call_arguments_new();
         let mut unpacked = PhpArray::new();
         unpacked.append_reference(cell.clone()).unwrap();
-        unpacked.append(Value::Int(1)).unwrap();
+        unpacked.append(Value::Int(2)).unwrap();
         let mut diagnostic = NativeDiagnosticHandle::null();
         assert!(unsafe {
             phpc_native_materialized_call_arguments_unpack_array_value_and_free(
@@ -44804,7 +44879,7 @@ mod tests {
         assert!(diagnostic.is_null());
         assert!(!finalized.is_null());
 
-        let callable_value = NativeValueHandle::from_value(Value::String("rsort".to_string()));
+        let callable_value = NativeValueHandle::from_value(Value::String("arsort".to_string()));
         let (callable, lookup_diagnostic) = unsafe {
             lookup_callable_value_for_test(NativeCallableTableHandle::null(), callable_value, None)
         };
@@ -44821,15 +44896,24 @@ mod tests {
         assert!(diagnostic.is_null());
         assert_eq!(unsafe { sorted.as_ref() }, Some(&Value::Bool(true)));
         let Value::Array(updated) = cell.value_cloned() else {
-            panic!("rsort should write an array back through the materialized reference");
+            panic!("arsort should write an array back through the materialized reference");
         };
         assert_eq!(
             updated
                 .entries()
                 .iter()
-                .map(|entry| entry.value_cloned())
+                .map(|entry| (entry.key.clone(), entry.value_cloned()))
                 .collect::<Vec<_>>(),
-            vec![Value::Int(3), Value::Int(2), Value::Int(1)]
+            vec![
+                (
+                    ArrayKey::String("a".to_string()),
+                    Value::String("b2".to_string())
+                ),
+                (
+                    ArrayKey::String("b".to_string()),
+                    Value::String("b10".to_string())
+                ),
+            ]
         );
 
         unsafe { phpc_native_value_free(sorted) };

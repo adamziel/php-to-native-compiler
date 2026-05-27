@@ -62839,6 +62839,8 @@ fn native_dynamic_callable_builtin_canonical_name(name: &str) -> Option<&'static
         "rtrim" => Some("rtrim"),
         "sort" => Some("sort"),
         "rsort" => Some("rsort"),
+        "asort" => Some("asort"),
+        "arsort" => Some("arsort"),
         "array_push" => Some("array_push"),
         "array_pop" => Some("array_pop"),
         "array_shift" => Some("array_shift"),
@@ -62988,8 +62990,10 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             returns_by_reference: false,
             source_call_support: Blocked(MissingRuntimeCallableFamily),
         },
-        "sort" | "rsort" => CNativeBuiltinSignature {
+        "sort" | "rsort" | "asort" | "arsort" => CNativeBuiltinSignature {
             canonical_name: match name.to_ascii_lowercase().as_str() {
+                "arsort" => "arsort",
+                "asort" => "asort",
                 "rsort" => "rsort",
                 _ => "sort",
             },
@@ -69981,6 +69985,26 @@ echo " 10" < "zeta";
         );
         assert_eq!(rsort.fixed_param_defaults, sort.fixed_param_defaults);
         assert_eq!(rsort.source_call_support, sort.source_call_support);
+        let asort = native_builtin_signature_for_name("asort")
+            .expect("asort should share runtime sorting builtin metadata");
+        assert_eq!(asort.canonical_name, "asort");
+        assert_eq!(asort.fixed_param_names, sort.fixed_param_names);
+        assert_eq!(
+            asort.fixed_param_by_reference,
+            sort.fixed_param_by_reference
+        );
+        assert_eq!(asort.fixed_param_defaults, sort.fixed_param_defaults);
+        assert_eq!(asort.source_call_support, sort.source_call_support);
+        let arsort = native_builtin_signature_for_name("arsort")
+            .expect("arsort should share runtime sorting builtin metadata");
+        assert_eq!(arsort.canonical_name, "arsort");
+        assert_eq!(arsort.fixed_param_names, sort.fixed_param_names);
+        assert_eq!(
+            arsort.fixed_param_by_reference,
+            sort.fixed_param_by_reference
+        );
+        assert_eq!(arsort.fixed_param_defaults, sort.fixed_param_defaults);
+        assert_eq!(arsort.source_call_support, sort.source_call_support);
 
         let push = native_builtin_signature_for_name("array_push")
             .expect("array_push should be mapped as a runtime variadic mutation signature");
@@ -70117,6 +70141,16 @@ echo " 10" < "zeta";
         };
         assert_eq!(
             generator.callable_string_signature_for_expr(&sort_or_rsort, 2),
+            Some(sort_signature.clone())
+        );
+        let asort_or_arsort = Expr::Ternary {
+            condition: Box::new(Expr::Bool(true, span(7))),
+            if_true: Box::new(Expr::String("asort".to_string(), span(7))),
+            if_false: Box::new(Expr::String("arsort".to_string(), span(7))),
+            span: span(7),
+        };
+        assert_eq!(
+            generator.callable_string_signature_for_expr(&asort_or_arsort, 2),
             Some(sort_signature)
         );
         let pop_signature = generator
