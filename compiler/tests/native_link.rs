@@ -1334,6 +1334,24 @@ const NATIVE_OBJECT_PROPERTY_MAGIC_REFERENCE_SOURCE_BLOCKED_SOURCE: &str = conca
     "echo \"after\\n\";\n",
 );
 
+const NATIVE_OBJECT_PROPERTY_REFERENCE_ASSIGNMENT_SOURCE: &str = concat!(
+    "<?php\n",
+    "class ObjectPropertyReferenceAssignmentBox { public $slot; public $other; }\n",
+    "function object_property_reference_assignment_set(&$slot, $value) { $slot = $value; }\n",
+    "$value = \"seed\";\n",
+    "$box = new ObjectPropertyReferenceAssignmentBox();\n",
+    "$box->slot =& $value;\n",
+    "$copy = $box->slot;\n",
+    "$value = \"source\";\n",
+    "echo $copy, \":\", $box->slot;\n",
+    "object_property_reference_assignment_set($box->slot, \"call\");\n",
+    "echo \"|\", $value, \":\", $box->slot;\n",
+    "$prop = \"other\";\n",
+    "$box->$prop =& $box->slot;\n",
+    "object_property_reference_assignment_set($box->other, \"other\");\n",
+    "echo \"|\", $value, \":\", $box->slot, \":\", $box->other;\n",
+);
+
 const NATIVE_DECLARED_CLASS_STATIC_METHOD_SOURCE: &str = concat!(
     "<?php\n",
     "class Label {\n",
@@ -7735,6 +7753,79 @@ fn emit_exe_links_and_runs_nonlocal_object_property_assignment_owner_commit_prog
 
     let _ = fs::remove_file(source_path);
     let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn native_executable_c_source_binds_object_property_reference_assignment_targets_through_property_abi(
+) {
+    let program = parse(NATIVE_OBJECT_PROPERTY_REFERENCE_ASSIGNMENT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "phpc_native_value_public_property_bind_reference_with_diagnostic_and_free"
+        ),
+        "object-property reference assignment targets should bind to the source reference cell through the runtime property ABI:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_value_public_property_bind_reference_with_diagnostic_and_free")
+            .count()
+            >= 2,
+        "literal and dynamic object-property reference targets should share the bind-reference ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_public_property_reference_with_diagnostic_and_free")
+            && body.contains("phpc_native_call_arguments_push_reference_and_free"),
+        "bound properties should remain real by-reference consumers for later direct calls:\n{source}"
+    );
+    assert!(
+        !source.contains("reference-assignment lowering rejects")
+            && !body.contains("phpc_native_reference_from_value_and_free(object_property"),
+        "object-property reference assignment must not fall back to blockers or fake value-copy references:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_object_property_reference_assignment_alias_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "object_property_reference_assignment_alias",
+        NATIVE_OBJECT_PROPERTY_REFERENCE_ASSIGNMENT_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run object-property reference-assignment executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "native executable failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"seed:source|call:call|other:other:other");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn parser_keeps_non_direct_object_property_reference_assignment_targets_blocked() {
+    let error = parse(
+        "<?php\nclass Leaf { public $slot; }\nclass Root { public $leaf; }\n$value = \"seed\";\n$root = new Root();\n$root->leaf = new Leaf();\n$root->leaf->slot =& $value;\n",
+    )
+    .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert!(
+        error.message.contains("unsupported reference expression"),
+        "non-direct object-property reference targets should remain behind an explicit owner boundary, got {error:?}"
+    );
 }
 
 #[test]

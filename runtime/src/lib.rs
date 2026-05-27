@@ -6962,6 +6962,61 @@ pub unsafe extern "C" fn phpc_native_value_public_property_reference_with_diagno
 
 /// # Safety
 ///
+/// `object` and `property` must be null or value handles previously returned
+/// by the runtime ABI and not yet freed. `reference` must be null or a
+/// reference handle previously returned by the runtime ABI. The helper aliases
+/// an existing public property cell or creates a supported dynamic public
+/// property cell, binds it to `reference`, and frees both input value handles
+/// before returning. The `reference` handle remains owned by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_public_property_bind_reference_with_diagnostic_and_free(
+    object: NativeValueHandle,
+    property: NativeValueHandle,
+    reference: NativeReferenceHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let result = (|| {
+        let object_value = unsafe { object.as_ref() }.ok_or_else(|| {
+            "native object property reference bind failed: missing object handle".to_string()
+        })?;
+        let property_name =
+            unsafe { native_property_name_from_value_handle(property) }.map_err(|message| {
+                format!("native object property reference bind failed: {message}")
+            })?;
+        let source = unsafe { reference.as_ref() }.ok_or_else(|| {
+            "native object property reference bind failed: missing source reference handle"
+                .to_string()
+        })?;
+        let Value::Object(object) = object_value else {
+            return Err(format!(
+                "native object property reference bind failed: receiver must be an object, got {}",
+                object_value.type_name()
+            ));
+        };
+
+        object
+            .bind_public_property_reference_cell(&property_name, source.cell.clone())
+            .map_err(|error| error.message().to_string())
+    })();
+
+    unsafe {
+        phpc_native_value_free(object);
+        phpc_native_value_free(property);
+    }
+
+    match result {
+        Ok(()) => true,
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
 /// `object`, `property`, and every entry in `keys` must be null only as
 /// documented for their handle types. The helper aliases the public property
 /// reference cell, promotes the selected array path inside it to a reference,
@@ -51352,6 +51407,67 @@ mod tests {
         unsafe { phpc_native_reference_free(property_reference) };
         unsafe { phpc_native_reference_free(subject_reference) };
         unsafe { phpc_native_value_free(object) };
+    }
+
+    #[test]
+    fn native_object_property_reference_bind_abi_preserves_alias_identity() {
+        let mut classes = PhpClassTable::new();
+        let id = classes
+            .declare_class("NativePropertyReferenceBind")
+            .unwrap();
+        let class = classes.get_mut(id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("payload", Visibility::Public))
+            .unwrap();
+
+        let object = PhpObject::from_class(class);
+        let source = PhpReferenceCell::new(Value::String("seed".to_string()));
+        let source_handle = NativeReferenceHandle::from_cell(source.clone());
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let bound = unsafe {
+            phpc_native_value_public_property_bind_reference_with_diagnostic_and_free(
+                NativeValueHandle::from_value(Value::Object(object.clone())),
+                NativeValueHandle::from_value(Value::String("payload".to_string())),
+                source_handle,
+                &mut diagnostic,
+            )
+        };
+        assert!(bound);
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            object.public_property_reference_cell_id("payload").unwrap(),
+            Some(source.id())
+        );
+
+        source.set_value(Value::String("source-write".to_string()));
+        assert_eq!(
+            object.read_public_property("payload").unwrap(),
+            Value::String("source-write".to_string())
+        );
+        object
+            .write_public_property("payload", Value::String("property-write".to_string()))
+            .unwrap();
+        assert_eq!(
+            source.value_cloned(),
+            Value::String("property-write".to_string())
+        );
+
+        let scalar_bound = unsafe {
+            phpc_native_value_public_property_bind_reference_with_diagnostic_and_free(
+                NativeValueHandle::from_value(Value::Int(7)),
+                NativeValueHandle::from_value(Value::String("payload".to_string())),
+                source_handle,
+                &mut diagnostic,
+            )
+        };
+        assert!(!scalar_bound);
+        assert!(
+            native_diagnostic_message_for_test(diagnostic).contains("receiver must be an object"),
+            "diagnostic should reject non-object property reference targets"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_reference_free(source_handle) };
     }
 
     #[test]
