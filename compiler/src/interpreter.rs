@@ -14211,6 +14211,11 @@ impl Interpreter {
                 constant,
                 span,
             } => self.evaluate_named_class_constant(class_name, constant, *span),
+            Expr::ObjectStaticClassConstant {
+                target,
+                constant,
+                span,
+            } => self.evaluate_object_static_class_constant(target, constant, *span, scope),
             Expr::SelfClassConstant { constant, span } => {
                 self.evaluate_self_class_constant(constant, *span)
             }
@@ -39865,6 +39870,56 @@ impl Interpreter {
             ));
         };
         self.evaluate_interface_constant(&interface, constant, span)
+    }
+
+    fn evaluate_object_static_class_constant(
+        &mut self,
+        target: &Expr,
+        constant: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let (class_id, class_name) =
+            self.resolve_dynamic_class_constant_receiver(target, constant, span, scope)?;
+        self.evaluate_resolved_class_constant(class_id, &class_name, constant, span)
+    }
+
+    fn resolve_dynamic_class_constant_receiver(
+        &mut self,
+        target: &Expr,
+        constant: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(ClassId, String)> {
+        let target_value = self.evaluate(target, scope)?;
+        match target_value {
+            Value::Object(object) => {
+                let class_id = object.class_id();
+                let class_name = self
+                    .classes
+                    .get(class_id)
+                    .expect("object class id should resolve to class metadata")
+                    .name()
+                    .to_string();
+                Ok((class_id, class_name))
+            }
+            Value::String(class_name) => {
+                let class_id = self.classes.lookup_class_id(&class_name).ok_or_else(|| {
+                    runtime_error(span, RuntimeError::undefined_class(&class_name))
+                })?;
+                Ok((class_id, class_name))
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("::{constant}"),
+                    format!(
+                        "dynamic class constant receiver must be object or class string, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
     }
 
     fn class_constant_lookup_string_is_defined(

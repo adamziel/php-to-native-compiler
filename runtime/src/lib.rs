@@ -27927,6 +27927,31 @@ impl NativeClassConstantTable {
         )
     }
 
+    fn scope_from_receiver(&self, receiver: &Value) -> RuntimeResult<String> {
+        match receiver {
+            Value::Object(object) => Ok(object.class_name().to_string()),
+            Value::String(class_name) => {
+                let class_id = self.class_id_for_name(class_name)?;
+                self.classes
+                    .get(class_id)
+                    .map(|class| class.name().to_string())
+                    .ok_or_else(|| {
+                        RuntimeError::invalid_property_access(format!(
+                            "native class-constant receiver class id #{} does not resolve",
+                            class_id.index()
+                        ))
+                    })
+            }
+            other => Err(RuntimeError::unsupported_call(
+                "dynamic class constant receiver",
+                format!(
+                    "dynamic class constant receiver must be object or class string, got {}",
+                    other.type_name()
+                ),
+            )),
+        }
+    }
+
     fn read_relative(
         &self,
         receiver: NativeClassConstantReceiverTag,
@@ -28213,6 +28238,45 @@ pub unsafe extern "C" fn phpc_native_class_constant_read_class_with_diagnostic(
         Err(error) => {
             unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
             NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle`, `receiver`, and `diagnostic` must be valid according to the
+/// runtime ABI. The receiver is always consumed. Returns an owned class-scope
+/// string for dynamic class-constant access when the receiver is an object or
+/// declared class string.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_class_constant_scope_from_receiver_with_diagnostic_and_free(
+    handle: NativeClassConstantTableHandle,
+    receiver: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeStringHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| -> RuntimeResult<NativeStringHandle> {
+        let table = unsafe { handle.as_ref() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native class-constant table handle is null".to_string(),
+            )
+        })?;
+        let receiver_value = unsafe { receiver.as_ref() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "dynamic class constant receiver handle is null".to_string(),
+            )
+        })?;
+        table
+            .scope_from_receiver(receiver_value)
+            .map(|scope| NativeStringHandle::from_vec(scope.into_bytes()))
+    })();
+    unsafe { phpc_native_value_free(receiver) };
+
+    match result {
+        Ok(scope) => scope,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeStringHandle::null()
         }
     }
 }
@@ -64026,6 +64090,116 @@ mod tests {
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_class_constant_table_free(table) };
+    }
+
+    #[test]
+    fn class_constant_dynamic_receiver_scope_accepts_objects_class_strings_and_aliases() {
+        native_user_classes_reset_for_test();
+
+        let class = b"DynamicConstScope";
+        let alias = b"DynamicConstAlias";
+        let constant = b"LABEL";
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let table = phpc_native_class_constant_table_new();
+        assert!(!table.is_null());
+
+        assert!(unsafe {
+            phpc_native_class_constant_declare_class_bytes(
+                table,
+                class.as_ptr(),
+                class.len(),
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert!(unsafe { phpc_native_declare_user_class_bytes(class.as_ptr(), class.len()) });
+        assert!(unsafe {
+            phpc_native_class_constant_declare_constant_bytes_and_free(
+                table,
+                class.as_ptr(),
+                class.len(),
+                constant.as_ptr(),
+                constant.len(),
+                NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+                NativeValueHandle::from_value(Value::String("ok".to_string())),
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert!(unsafe {
+            phpc_native_declare_user_class_alias_bytes_with_diagnostic(
+                class.as_ptr(),
+                class.len(),
+                alias.as_ptr(),
+                alias.len(),
+                false,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("DynamicConstScope").unwrap();
+        let object_scope = unsafe {
+            phpc_native_class_constant_scope_from_receiver_with_diagnostic_and_free(
+                table,
+                NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+                    classes.get(class_id).unwrap(),
+                ))),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { native_string_handle_to_string(object_scope) }.as_deref(),
+            Some("DynamicConstScope")
+        );
+        unsafe { phpc_native_string_free(object_scope) };
+
+        let string_scope = unsafe {
+            phpc_native_class_constant_scope_from_receiver_with_diagnostic_and_free(
+                table,
+                NativeValueHandle::from_value(Value::String("DynamicConstScope".to_string())),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { native_string_handle_to_string(string_scope) }.as_deref(),
+            Some("DynamicConstScope")
+        );
+        unsafe { phpc_native_string_free(string_scope) };
+
+        let alias_scope = unsafe {
+            phpc_native_class_constant_scope_from_receiver_with_diagnostic_and_free(
+                table,
+                NativeValueHandle::from_value(Value::String("DynamicConstAlias".to_string())),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { native_string_handle_to_string(alias_scope) }.as_deref(),
+            Some("DynamicConstScope")
+        );
+        unsafe { phpc_native_string_free(alias_scope) };
+
+        let invalid_scope = unsafe {
+            phpc_native_class_constant_scope_from_receiver_with_diagnostic_and_free(
+                table,
+                NativeValueHandle::from_value(Value::Int(5)),
+                &mut diagnostic,
+            )
+        };
+        assert!(invalid_scope.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "unsupported call dynamic class constant receiver: dynamic class constant receiver must be object or class string, got int"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_class_constant_table_free(table) };
+
+        native_user_classes_reset_for_test();
     }
 
     #[test]

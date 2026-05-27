@@ -5586,6 +5586,109 @@ fn native_executable_runs_class_constants_across_literal_relative_static_and_ali
 }
 
 #[test]
+fn native_executable_c_source_routes_dynamic_class_constant_receivers_through_shared_metadata() {
+    let program = parse(
+        "<?php\nclass DynamicConstRoot { public const LABEL = \"root\"; }\nclass DynamicConstChild extends DynamicConstRoot {}\nclass_alias(\"DynamicConstRoot\", \"DynamicConstAlias\");\n$class = \"DynamicConstRoot\";\n$alias = \"DynamicConstAlias\";\n$object = new DynamicConstChild();\necho $class::LABEL, \"|\", $alias::LABEL, \"|\", $object::LABEL;\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    for required in [
+        "phpc_native_class_constant_scope_from_receiver_with_diagnostic_and_free",
+        "phpc_native_class_constant_read_class_with_diagnostic",
+        "phpc_native_class_constant_declare_constant_bytes_and_free",
+    ] {
+        assert!(source.contains(required), "missing {required}:\n{source}");
+    }
+    assert!(
+        body.matches("phpc_native_class_constant_scope_from_receiver_with_diagnostic_and_free")
+            .count()
+            >= 3,
+        "class-string, alias-string, and object receivers should normalize through the shared class-constant scope ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("static-member lowering rejects")
+            && !source.contains("object receiver class constants are not implemented"),
+        "supported dynamic class-constant receivers should not fall through old blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_runs_dynamic_class_constant_receivers() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = "<?php\nclass DynamicConstRootRun { public const LABEL = \"root\"; }\nclass DynamicConstChildRun extends DynamicConstRootRun {}\nclass_alias(\"DynamicConstRootRun\", \"DynamicConstAliasRun\");\n$class = \"DynamicConstRootRun\";\n$alias = \"DynamicConstAliasRun\";\n$object = new DynamicConstChildRun();\necho $class::LABEL, \"|\", $alias::LABEL, \"|\", $object::LABEL;\n";
+    let (source_path, output_path) =
+        compile_native_link_fixture("dynamic_class_constant_receivers", source);
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run dynamic class constants executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "root|root|root");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn native_executable_reports_dynamic_class_constant_missing_class_and_constant() {
+    if !has_cc() {
+        return;
+    }
+
+    let missing_class = "<?php\n$class = \"MissingDynamicConstRun\";\necho $class::LABEL;\n";
+    let (source_path, output_path) =
+        compile_native_link_fixture("dynamic_class_constant_missing_class", missing_class);
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run dynamic class constant missing-class executable");
+    assert!(!run.status.success(), "missing class should fail");
+    assert!(
+        String::from_utf8_lossy(&run.stderr).contains("undefined class MissingDynamicConstRun"),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+
+    let missing_constant =
+        "<?php\nclass DynamicConstMissingConstRun {}\n$class = \"DynamicConstMissingConstRun\";\necho $class::LABEL;\n";
+    let (source_path, output_path) =
+        compile_native_link_fixture("dynamic_class_constant_missing_constant", missing_constant);
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run dynamic class constant missing-constant executable");
+    assert!(!run.status.success(), "missing constant should fail");
+    assert!(
+        String::from_utf8_lossy(&run.stderr)
+            .contains("undefined constant DynamicConstMissingConstRun::LABEL"),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn native_executable_keeps_dynamic_class_name_constant_receivers_blocked() {
+    let error = parse("<?php\n$class = \"DynamicConstBlocked\";\necho $class::class;\n")
+        .expect_err("dynamic receiver ::class remains blocked");
+    assert_eq!(
+        error.message,
+        "unsupported object static class-name constant: object receiver ::class is not implemented"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_static_property_references_through_shared_storage() {
     let program = parse(NATIVE_STATIC_PROPERTY_REFERENCE_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
