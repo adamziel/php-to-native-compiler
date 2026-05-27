@@ -65018,12 +65018,21 @@ fn register_class_members(
             &method,
         )
         .map_err(|error| runtime_error(method.span, error))?;
-        let metadata_method = PhpMethodMetadata::instance_with_flags(
-            &method.function.name,
-            visibility,
-            method.is_abstract,
-            method.is_final,
-        );
+        let metadata_method = if method.is_static {
+            PhpMethodMetadata::static_method_with_flags(
+                &method.function.name,
+                visibility,
+                method.is_abstract,
+                method.is_final,
+            )
+        } else {
+            PhpMethodMetadata::instance_with_flags(
+                &method.function.name,
+                visibility,
+                method.is_abstract,
+                method.is_final,
+            )
+        };
         classes
             .get_mut(id)
             .expect("declared class id should resolve to class metadata")

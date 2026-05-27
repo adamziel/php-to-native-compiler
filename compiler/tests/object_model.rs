@@ -3504,6 +3504,59 @@ print_r($methods);
 }
 
 #[test]
+fn class_trait_use_static_aliases_preserve_static_method_metadata() {
+    let source = r#"<?php
+trait StaticHookTools {
+    public static function boot($suffix = "direct") {
+        return "boot:" . $suffix;
+    }
+}
+
+class StaticPlugin {
+    use StaticHookTools {
+        boot as boot_alias;
+        boot as protected hidden_boot;
+    }
+
+    public static function callHidden($suffix) {
+        return self::hidden_boot($suffix);
+    }
+}
+
+echo StaticPlugin::boot("direct"), "\n";
+echo StaticPlugin::boot_alias("alias"), "\n";
+echo StaticPlugin::callHidden("hidden"), "\n";
+echo is_callable(array("StaticPlugin", "boot")) ? "boot-callable\n" : "boot-missing\n";
+echo is_callable(array("StaticPlugin", "boot_alias")) ? "alias-callable\n" : "alias-missing\n";
+echo is_callable(array("StaticPlugin", "hidden_boot")) ? "bad-hidden\n" : "hidden-filtered\n";
+
+$methods = get_class_methods("StaticPlugin");
+print_r($methods);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "boot:direct\nboot:alias\nboot:hidden\nboot-callable\nalias-callable\nhidden-filtered\nArray\n(\n    [0] => boot_alias\n    [1] => boot\n    [2] => callHidden\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let classes = class_metadata_source(source).unwrap();
+    let class = classes.lookup_class("StaticPlugin").unwrap();
+    let boot = class.method("boot").unwrap();
+    assert_eq!(boot.visibility(), Visibility::Public);
+    assert!(boot.is_static());
+
+    let alias = class.method("boot_alias").unwrap();
+    assert_eq!(alias.visibility(), Visibility::Public);
+    assert!(alias.is_static());
+
+    let hidden = class.method("hidden_boot").unwrap();
+    assert_eq!(hidden.visibility(), Visibility::Protected);
+    assert!(hidden.is_static());
+}
+
+#[test]
 fn class_trait_use_insteadof_selects_public_instance_method_conflict_winner() {
     let source = r#"<?php
 interface NamedPlugin {

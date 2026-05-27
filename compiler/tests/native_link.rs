@@ -6052,6 +6052,35 @@ fn emit_exe_links_and_runs_trait_composed_class_metadata_registry_program() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_trait_static_alias_metadata_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "trait_static_alias_metadata",
+        NATIVE_TRAIT_STATIC_ALIAS_METADATA_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run trait static-alias metadata executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "boot:direct|boot:alias|boot:hidden|method|alias-method|hidden-method|list-boot|list-alias|list-hidden-filtered\n"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn native_executable_c_source_lowers_class_alias_metadata_boundary() {
     let program = parse(concat!(
         "<?php\n",
@@ -27126,6 +27155,36 @@ const NATIVE_TRAIT_CLASS_METADATA_REGISTRY_SOURCE: &str = concat!(
     "echo array_key_exists(\"slot\", $vars) ? \"var-slot\" : \"var-missing-slot\";\n",
     "echo \"|\";\n",
     "echo array_key_exists(\"hidden\", $vars) ? \"bad-hidden-var\" : \"var-hidden-filtered\";\n",
+    "echo \"\\n\";\n",
+);
+
+const NATIVE_TRAIT_STATIC_ALIAS_METADATA_SOURCE: &str = concat!(
+    "<?php\n",
+    "trait NativeTraitStaticAliasTools {\n",
+    "    public static function boot($suffix = \"direct\") { return \"boot:\" . $suffix; }\n",
+    "}\n",
+    "class NativeTraitStaticAliasPlugin {\n",
+    "    use NativeTraitStaticAliasTools {\n",
+    "        boot as boot_alias;\n",
+    "        boot as protected hidden_boot;\n",
+    "    }\n",
+    "    public static function callHidden($suffix) { return self::hidden_boot($suffix); }\n",
+    "}\n",
+    "echo NativeTraitStaticAliasPlugin::boot(\"direct\"), \"|\";\n",
+    "echo NativeTraitStaticAliasPlugin::boot_alias(\"alias\"), \"|\";\n",
+    "echo NativeTraitStaticAliasPlugin::callHidden(\"hidden\"), \"|\";\n",
+    "echo method_exists(\"NativeTraitStaticAliasPlugin\", \"boot\") ? \"method\" : \"missing\";\n",
+    "echo \"|\";\n",
+    "echo method_exists(\"NativeTraitStaticAliasPlugin\", \"boot_alias\") ? \"alias-method\" : \"alias-missing\";\n",
+    "echo \"|\";\n",
+    "echo method_exists(\"NativeTraitStaticAliasPlugin\", \"hidden_boot\") ? \"hidden-method\" : \"hidden-missing\";\n",
+    "echo \"|\";\n",
+    "$methods = get_class_methods(\"NativeTraitStaticAliasPlugin\");\n",
+    "echo in_array(\"boot\", $methods, true) ? \"list-boot\" : \"list-missing-boot\";\n",
+    "echo \"|\";\n",
+    "echo in_array(\"boot_alias\", $methods, true) ? \"list-alias\" : \"list-missing-alias\";\n",
+    "echo \"|\";\n",
+    "echo in_array(\"hidden_boot\", $methods, true) ? \"bad-hidden-list\" : \"list-hidden-filtered\";\n",
     "echo \"\\n\";\n",
 );
 
