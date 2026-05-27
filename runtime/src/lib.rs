@@ -8798,6 +8798,24 @@ pub unsafe extern "C" fn phpc_native_call_result_take_value_with_diagnostic_and_
     }
 }
 
+/// # Safety
+///
+/// Same as the native call-result reference consumer. `diagnostic` must be null
+/// or point to writable diagnostic storage.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_result_take_reference_with_diagnostic_and_free(
+    result: NativeCallResultHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeReferenceHandle {
+    unsafe {
+        native_call_result_take_reference_with_diagnostic_and_free(
+            result,
+            diagnostic,
+            "native call result consumption failed: result did not contain a reference",
+        )
+    }
+}
+
 unsafe fn native_call_result_conditional_handoff_cleanup_detail(
     result: NativeCallResultHandle,
 ) -> Option<String> {

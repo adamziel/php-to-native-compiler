@@ -19428,10 +19428,12 @@ fn native_executable_c_source_lowers_direct_user_function_frames() {
         "callee frames should clone by-value parameters and return owned handles:\n{source}"
     );
     assert!(
-        body.contains("phpc_user_function_0_pick(")
-            && body.contains("user_function_status_")
-            && body.contains("phpc_native_value_free(user_function_result_"),
-        "caller should check handoff status and own returned value cleanup:\n{source}"
+        body.contains("phpc_native_call_arguments_new()")
+            && body.contains(
+                "phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments"
+            )
+            && body.contains("phpc_native_diagnostic_result_from_value(user_function_result_"),
+        "caller should route direct user functions through source-call arguments and value-result cleanup:\n{source}"
     );
     assert!(
         !body.contains("static phpc_NativeValueHandle"),

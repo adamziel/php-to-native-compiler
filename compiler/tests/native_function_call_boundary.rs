@@ -1835,6 +1835,112 @@ fn native_executable_direct_user_function_calls_preserve_reference_arguments_thr
 }
 
 #[test]
+fn native_executable_direct_user_function_reference_returns_use_runtime_callable_frame_contract() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function &borrow(&$slot) { return $slot; }\n",
+        "function write_ref(&$slot, $value) { $slot = $value; return $slot; }\n",
+        "$value = \"old\";\n",
+        "$alias =& borrow($value);\n",
+        "$alias = \"alias\";\n",
+        "echo $value, \"|\";\n",
+        "echo write_ref(borrow($value), \"consumer\"), \"|\", $value;\n",
+    );
+
+    let generated = emit_native_executable_c_source(&parse(source).unwrap()).unwrap();
+    assert!(
+        generated.contains("static phpc_NativeReferenceHandle phpc_user_function_"),
+        "direct reference-return functions should lower to reference-returning generated-C frames:\n{generated}"
+    );
+    assert!(
+        generated.contains("return phpc_native_call_result_from_reference(phpc_call_result);"),
+        "direct reference-return callable wrappers should preserve result-slot ownership:\n{generated}"
+    );
+    assert!(
+        generated.contains(
+            "phpc_native_callable_lookup_invoke_reference_with_diagnostic_and_free_arguments"
+        ),
+        "reference consumers should use the source-call reference result carrier:\n{generated}"
+    );
+    assert!(
+        generated.contains(
+            "phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments"
+        ),
+        "value consumers should continue to use the source-call value result carrier:\n{generated}"
+    );
+    assert!(
+        generated.contains("phpc_native_call_arguments_push_reference_and_free"),
+        "direct reference-return results should be reusable as by-reference consumer arguments:\n{generated}"
+    );
+    assert!(
+        generated.contains("phpc_native_call_arguments_free(direct_callable_args"),
+        "later argument failures should clean previously materialized direct source-call arguments:\n{generated}"
+    );
+
+    let (source_path, output_path) = compile_native_function_call_fixture(
+        "direct_user_function_reference_return_callable_frame",
+        source,
+    );
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run direct user-function reference-return executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"alias|consumer|consumer");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_c_source_direct_user_function_reference_returns_keep_alias_transfer_result_vectors() {
+    let source = concat!(
+        "<?php\n",
+        "function &borrow(&$slot) { return $slot; }\n",
+        "function make_value() { return \"made\"; }\n",
+        "$alias =& borrow(make_value());\n",
+    );
+
+    let generated = emit_native_executable_c_source(&parse(source).unwrap()).unwrap();
+    assert!(
+        generated.contains("alias_transfer_arg_results"),
+        "produced by-reference arguments should still be represented as call-result vectors:\n{generated}"
+    );
+    assert!(
+        generated.contains(
+            "phpc_native_call_frame_reference_parameter_alias_transfer_result_from_results_with_diagnostic"
+        ),
+        "produced by-reference arguments should use the runtime alias-transfer contract:\n{generated}"
+    );
+    assert!(
+        generated.contains("phpc_native_call_result_take_reference_with_diagnostic_and_free"),
+        "reference consumers of alias-transfer results should take a reference result explicitly:\n{generated}"
+    );
+}
+
+#[test]
+fn native_c_source_direct_user_function_reference_return_rejects_by_value_return_source() {
+    let source = "<?php\nfunction &borrow($slot) { return $slot; }\n";
+    let error = emit_native_executable_c_source(&parse(source).unwrap()).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, ASSEMBLY_FUNCTION_DECLARATION_REJECTION);
+}
+
+#[test]
 fn native_executable_c_source_persists_by_value_closure_captures_across_invocations() {
     if !has_cc() {
         return;
