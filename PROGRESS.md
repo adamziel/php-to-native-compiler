@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 23:25 CEST
+Updated: 2026-05-27 23:30 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,13 +19,27 @@ Overall integrated-roadmap progress: **93%** `[##################--]`
 
 Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `0fe08856` tags compiled include-unit
-`exit()` as an explicit control transfer instead of treating zero exit status as
-an ordinary include value. Generated C now propagates include-unit termination
-back to the caller even when `exit()` has code 0, so caller code after the
-include does not run. Broader include exception/diagnostic propagation,
-visibility-context rules, trait conflict/precedence parity, destructor-risk
-cleanup, and non-C backend parity remain blocked.
+Latest accounted source capability: `be73c85b` passes direct request
+superglobal root/key/path expressions by reference in generated C. Source-call
+and descriptor-backed `call_user_func()` by-reference arguments now use the
+request-state reference ABI for `$_GET`, `$_POST`, `$_REQUEST`, and sibling
+request bags instead of falling through to generic symbol blockers or
+`call_user_func_array()` materialized carriers. Broader object-property
+reference owners, include exception/diagnostic propagation, visibility-context
+rules, trait conflict/precedence parity, destructor-risk cleanup, and non-C
+backend parity remain blocked.
+
+Recent source commit `be73c85b` advances request superglobal reference
+arguments without adding request-name production ladders, fake array-offset
+writeback, or callable-array carrier shortcuts. Generated C now materializes
+root and path request-state references for by-reference call operands and lets
+the existing runtime dynamic `call_user_func()` by-reference bridge admit those
+direct request-superglobal expressions without forcing a globals symbol table.
+Focused gates covered generated-C source proof, linked executable mutation of
+root/key/path request superglobals, adjacent `call_user_func` by-reference
+regressions, compile checking, formatting, and diff checks. Primary gate log:
+`state/logs/phpc-primary-superglobal-ref-7f50db6c-20260527.gates.log`
+sha256 `5ac37667f82be854a0246816a9cf7c6231d50d119147a3645610e9bdc8627eda`.
 
 Recent source commit `0fe08856` advances compiled include control transfer
 without adding include-path tables, source-shape recognizers, or fixture-only
