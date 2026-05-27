@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 14:39 CEST
+Updated: 2026-05-27 14:46 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -29,6 +29,14 @@ diagnostics, and cleanup of materialized/default/slot ownership. Unsupported
 callable-family spread/unpack shapes and by-reference unpack transfer remain
 blocked at shared boundaries instead of gaining per-callable or per-arity
 lowering.
+
+Recent source correction `fbf1581b` restores LLVM known-string
+`function_exists` folding before the runtime text-membership fallback. Known
+function-name values now reuse the shared `function_exists_result_for_value`
+proof instead of leaking runtime helper calls into callable lookup-table IR.
+Focused `array_column`, direct-literal, known-string sibling, and compact
+native-callable lookup-table gates passed on primary. This corrects an LLVM
+lowering regression and does not move the coarse progress bars.
 
 Recent source correction `416f007a` aligns the shared trait composition
 ordering boundary with PHP reflection behavior. Direct trait methods now
