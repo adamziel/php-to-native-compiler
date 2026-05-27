@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 20:09 CEST
+Updated: 2026-05-27 20:19 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,18 +19,36 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `0b7285a4` lowers generated-C SPL autoload
-registry calls through request-local runtime state. Generated-C now creates and
-cleans up one request SPL autoload registry, normalizes
-`spl_autoload_register()` / `spl_autoload_unregister()` operands through the
-shared callable-value lookup ABI, lowers `spl_autoload_call()`, and routes
-autoload-enabled `class_exists()` / `trait_exists()` / `interface_exists()`
-through the registry-aware class-like metadata ABI. Included units whose
-callbacks may need root symbols now request the callable frame root-symbol
-environment instead of relying on generated callback-name ladders.
-`spl_autoload_functions()`, arbitrary runtime source loading, Composer/PSR
-path adapters, stream-wrapper/stat-cache/open_basedir parity, and LLVM/ASM
-parity remain blocked.
+Latest accounted source capability: `db8d36f6` admits descriptor closures into
+the centralized finite mixed-callable source-call policy. Compile-time
+callable-family contracts now treat descriptor closures like generated
+functions, declared methods, and selected runtime builtins when all candidates
+publish compatible source-call metadata, including arity, by-reference
+parameters, return-reference behavior, and argument plans. This removes a
+previous conservative blocker for compatible mixed generated/builtin/descriptor
+callable values without adding name ladders, branch-shape recognizers, or
+fixture-specific lowering. Runtime-only heterogeneous callable values,
+unsupported external/core callables, comparator callbacks, broader callable
+object/array families, full by-reference/COW parity, magic fallback callables,
+and LLVM/ASM parity remain blocked.
+
+Recent source commit `db8d36f6` advances heterogeneous callable-family policy
+without adding generated-substring, one-callable, fixture-name, or per-branch
+production logic. `CNativeCallableIdentity::DescriptorClosure` now participates
+in `callable_value_source_call_contract_from_identities` by reading the copied
+descriptor closure summary, checking arity, building the same frame argument
+plan used by generated callable frames, and requiring the shared signature
+compatibility rules before a finite mixed family can use compile-time
+source-call finalization. Focused gates covered compile checking, the central
+descriptor-closure mixed-family helper, generated-C source proof, linked
+mixed generated/builtin callable execution, heterogeneous metadata regression,
+SPL autoload lowering regression, formatting, and diff checks. Runtime-only
+heterogeneous callable values, unsupported external/core callables, comparator
+callbacks, broader callable object/array families, full by-reference/COW
+parity, magic fallback callables, and LLVM/ASM parity remain blocked. Primary
+gate log:
+`state/logs/phpc-primary-heterogeneous-callable-policy-9828907a-20260527.gates.log`
+sha256 `fbc5529af2f6a440fc7e97d6f8ee69bd0f3b613b72b6537811b6bedf6bbc204b`.
 
 Recent source commit `0b7285a4` advances generated-C SPL autoload lowering
 without adding runtime PHP parsing, source-file loading, docs-only
