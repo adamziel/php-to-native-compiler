@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 16:57 CEST
+Updated: 2026-05-27 16:54 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,15 +19,23 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `98c8937b` lets selected generated native
-metadata arrays participate in shared native value-array consumers. The native
-value array query boundary now supports `count()` over any
-`NativeValueHandle` containing an array, so generated-C
-`count(get_declared_interfaces())` and `count(class_implements(...))` reuse
-the same runtime array/value path as existing metadata queries rather than
-metadata-specific lowering. Printable recursive native array traversal,
-core/external/autoload-only interface discovery, and LLVM/ASM parity remain
-blocked.
+Latest accounted source capability: `98e9f154` allows bounded literal
+`include_once` / `require_once` cycles during generated-C executable include
+unit discovery and lowering. The root file now has an include-once slot, active
+include units can treat recursive `_once` edges as duplicate truth instead of
+fatal cyclic graph blockers, and non-`_once` include cycles still reject before
+native link. Dynamic paths, include_path search, stream wrappers, missing
+include warning/false recovery, require fatal fidelity, and LLVM/ASM parity
+remain blocked.
+
+Recent source commit `98c8937b` lets selected generated native metadata arrays
+participate in shared native value-array consumers. The native value array
+query boundary now supports `count()` over any `NativeValueHandle` containing
+an array, so generated-C `count(get_declared_interfaces())` and
+`count(class_implements(...))` reuse the same runtime array/value path as
+existing metadata queries rather than metadata-specific lowering. Printable
+recursive native array traversal, core/external/autoload-only interface
+discovery, and LLVM/ASM parity remain blocked.
 
 Recent source commit `2d1144a4` preserves reference-backed unpacked slots
 inside selected by-reference variadic calls. The materialized call-argument
