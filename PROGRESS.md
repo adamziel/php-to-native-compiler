@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 19:03 CEST
+Updated: 2026-05-27 19:09 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,13 +19,26 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `9bf241cc` accepts PHP keyword tokens as
-named-argument labels through the shared call-argument parser and selected
-materialized argument normalization paths. Keyword labels such as `return:` and
-`value:` can now flow through direct selected `print_r` named/spread lowering
-and ordinary named-argument metadata without adding exact-shape production
-recognizers, while broader named-argument call families and unsupported
-non-native `print_r` operands remain blocked.
+Latest accounted source capability: `7533992f` writes selected by-reference
+`foreach` loop value mutations back through the shared native array lvalue
+owner/reference paths. Direct and nested array-lvalue assignments/appends rooted
+at the loop value reference can now update the underlying native array storage,
+while broader side-effecting bodies, control-flow writeback, object/static/non-
+local iterable owners, and lingering reference parity remain blocked.
+
+Recent source commit `7533992f` advances selected generated-C by-reference
+`foreach` writeback without adding source-shape lowering. Loop value references
+now feed `AssignTarget` array-lvalue writeback for direct keyed writes, direct
+appends, nested keyed writes, nested appends, and append-with-suffix nested
+writes rooted at the loop value reference, preserving the existing owner
+materialization and reference-slot invalidation boundaries. Focused gates cover
+by-reference foreach source/link proof, native array-lvalue regressions, array
+append call-value interaction, runtime foreach owner helpers, PHP array path
+and reference-cell helpers, array reference literal regressions, formatting,
+and diff checks. Temporary iterable owners, arbitrary side-effecting loop
+bodies, branch/control-flow writeback, symbol-table/request iterable owners,
+object/static/non-local iterable owners, broad reference/COW parity, and
+LLVM/ASM parity remain blocked.
 
 Recent source commit `9bf241cc` advances selected keyword named-argument
 semantics through generalized parsing and call-argument normalization. The
