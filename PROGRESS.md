@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 23:20 CEST
+Updated: 2026-05-27 23:26 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,14 +19,30 @@ Overall integrated-roadmap progress: **93%** `[##################--]`
 
 Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `1318ffac` resolves class-like type
-declaration names through the existing namespace/import rules before publishing
-metadata. Imported aliases, namespace-relative type names, and leading global
-type names now store the same class keys that PHP resolves, while scalar and
-special type names remain unchanged. Broader array COW/reference edges, foreach
-by-reference lifetime, include exception/diagnostic propagation,
+Latest accounted source capability: `5a5e0028` routes dynamic generated-C
+constructor class-name misses through the existing request-local SPL autoload
+registry before reporting an unknown/non-allocatable class. String class names
+now retry allocatable-scope lookup after autoload callbacks run, while object
+class-name construction, bad dynamic class-name diagnostics, and existing
+class-alias metadata paths stay on the shared runtime boundaries. Broader array
+COW/reference edges, foreach by-reference lifetime, include
+exception/diagnostic propagation, generated-frame `class_alias()` calls,
 visibility-context rules, remaining trait precedence parity, cleanup ordering,
 and non-C backend parity remain blocked.
+
+Recent source commit `5a5e0028` advances dynamic constructor autoload behavior
+without adding source-loader tables, callback-name ladders, class-name
+production shortcuts, or exact generated-C fixture dispatch. Generated C now
+ensures the SPL autoload registry for dynamic declared-class construction and
+uses `phpc_native_constructor_scope_from_value_with_autoload_registry_and_diagnostic()`;
+the runtime invokes registered autoload callbacks on string misses, then retries
+allocatable class metadata lookup before emitting the existing constructor
+allocation diagnostic. Focused gates covered the runtime ABI, generated-C source
+proof, linked executable proof that autoload output occurs before the missing
+class diagnostic, dynamic constructor regressions, SPL autoload registry and
+class-alias autoload adjacency, formatting, and diff checks. Primary gate log:
+`state/logs/phpc-primary-autoload-dc3e6fd2-20260527.gates.log`
+sha256 `5278beb2ec4faf2ec26cab5165298bf0d60ba5f89d095fa24f63574f3e66adf4`.
 
 Recent source commit `1318ffac` advances namespace/class-name metadata without
 adding class-name production ladders, fixture shortcuts, or generated-C
