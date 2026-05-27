@@ -1,5 +1,25 @@
 # Progress Log
 
+## 2026-05-27
+
+Implemented:
+
+- Added a shared generated-C static-property lvalue target for request-scoped
+  static-property storage. Plain assignment, compound assignment, and pre/post
+  increment/decrement now materialize the same target shape for literal
+  `ClassName::$prop`, object/class-string receiver `$receiver::$prop`, and
+  method-frame `self::$prop`, `parent::$prop`, and `static::$prop` receivers,
+  then route reads and writes through the existing runtime static-property
+  storage APIs. The path preserves assignment-expression result ownership,
+  receiver-scope cleanup, visibility checks, typed-write diagnostics, and
+  called-scope late-static storage. Focused generated-C and linked-executable
+  tests cover literal, object, class-string, `self`, `parent`, and
+  late-static receiver mutations. Dynamic static-property names, top-level
+  `static::$prop`, static-property references, `??=`, `unset`, `isset`,
+  `empty`, magic/static overloading, traits/interfaces, autoload breadth,
+  static-property array-offset mutation, broader reference/COW behavior, and
+  LLVM IR/assembly parity remain unsupported.
+
 ## 2026-05-23
 
 Implemented:

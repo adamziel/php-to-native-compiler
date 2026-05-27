@@ -6024,14 +6024,16 @@
   `static::$prop` in active called-class context use class-level
   storage initialized from the current constant-expression default subset or
   `null`, resolve inherited properties case-sensitively, and enforce current
-  visibility checks. Dynamic receiver static property reads and direct writes
-  through `$object::$prop` and `$className::$prop` are supported for receivers
-  that evaluate to current objects or declared class-name strings, using the
-  same storage, inherited-property lookup, and visibility rules. Typed
-  properties, computed static property names beyond direct `::$name` tokens,
-  storage-removing static-property unset, object/class-string receiver
-  compound assignment, increment/decrement, `isset`, `empty`, `??`, `??=`,
-  and `static::$prop` outside method/static class context remain unsupported.
+  visibility checks. Dynamic receiver static property reads, direct writes,
+  compound assignment, and pre/post increment/decrement through
+  `$object::$prop` and `$className::$prop` are supported for receivers that
+  evaluate to current objects or declared class-name strings, using the same
+  storage, inherited-property lookup, visibility rules, typed-write
+  diagnostics, and assignment-result ownership as literal and relative
+  receivers. Computed static property names beyond direct `::$name` tokens,
+  storage-removing static-property unset, static-property references,
+  object/class-string receiver `isset`, `empty`, `??`, `??=`, and
+  `static::$prop` outside method/static class context remain unsupported.
   `parent::method(...)` and `self::method(...)` calls are the supported magic
   receiver slices for visible non-static or static method dispatch from active
   class context; non-static methods still require current `$this`.
@@ -7148,13 +7150,17 @@
   specific codegen diagnostic until generated code has PHP truthiness, branch
   layout, loop control flow, switch fallthrough, references/copy-on-write
   side-effect behavior, and exact native error objects.
-  Native compound assignment, null coalescing assignment,
-  increment/decrement, assignment expressions, direct variable unset, object
-  property unset, static property unset, and multiple-operand unset are
-  rejected before operand or mutation-target lowering with a specific codegen
-  diagnostic until generated code has read-modify-write ordering, null-aware
-  mutation, unset symbol-table effects, references/copy-on-write, and exact
-  native error objects.
+  Native compound assignment and increment/decrement are supported for the
+  current direct-variable, array-lvalue, object/property ArrayAccess, and
+  declared static-property target subsets. Static-property read-modify-write
+  lowering covers literal `ClassName::$prop`, object/class-string receiver
+  `$receiver::$prop`, and method-frame `self::$prop`, `parent::$prop`, and
+  late `static::$prop` through one generated-C static-property lvalue target.
+  Null coalescing assignment, direct variable unset, object property unset,
+  static property unset, multiple-operand unset, unsupported mutation targets,
+  static-property references, and broader reference/copy-on-write effects are
+  still rejected before operand or mutation-target lowering with specific
+  codegen diagnostics.
 - Assembly emission: uses LLVM tools when available, with a temporary `cc -S`
   C fallback for the same narrow lowerable subset. CLI coverage for
   invalid compile output modes proves the mode flag is rejected before input

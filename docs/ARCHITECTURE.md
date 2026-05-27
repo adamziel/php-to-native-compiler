@@ -1841,14 +1841,17 @@ late-static-binding context, namespace/import canonicalization, autoload-free
 class lookup interaction, references/copy-on-write, and exact native
 class-name constant diagnostics stay visible instead of collapsing into the
 broader static-member diagnostic.
-Static class members have a dedicated native rejection boundary for class
-constants, static property reads/writes, and dynamic static-property
-receivers. Both LLVM IR emission and the C assembly fallback path reject those
-AST nodes before lowering class/member operands, so missing native class
-constant tables, static property storage, class context, late-static-binding
-resolution, visibility checks, autoload/class lookup, references/copy-on-write,
-and exact native static-member errors stay visible instead of collapsing into
-the broader object/class diagnostic.
+Static class members have a dedicated native boundary. LLVM IR emission still
+rejects class constants, static property reads/writes, and dynamic
+static-property receivers before lowering class/member operands. The generated-C
+executable path has a narrower exception for declared static properties: it
+materializes one static-property lvalue target for literal, object/class-string,
+`self`, `parent`, and method-frame late-`static` receivers, then uses the same
+request-owned runtime storage read/write APIs for plain assignment, compound
+assignment, and pre/post increment/decrement. Static-property references,
+`??=`, `unset`, `isset`, `empty`, dynamic property names, magic/static
+overloading, broad reference/COW behavior, and LLVM parity remain explicit
+native blockers instead of collapsing into generic object/class diagnostics.
 
 Current assembly emission order:
 
