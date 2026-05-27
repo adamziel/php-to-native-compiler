@@ -246,6 +246,38 @@ echo fallback_only();
 }
 
 #[test]
+fn missing_imported_function_and_non_imported_namespaced_calls_report_distinct_runtime_names() {
+    let imported_error = run_source(
+        r#"<?php
+namespace App\Demo;
+use function Vendor\Missing\shared;
+shared();
+"#,
+    )
+    .unwrap_err();
+    assert_eq!(imported_error.phase, Phase::Runtime);
+    assert_eq!(imported_error.line, 4);
+    assert_eq!(
+        imported_error.message,
+        "undefined function Vendor\\Missing\\shared()"
+    );
+
+    let fallback_error = run_source(
+        r#"<?php
+namespace App\Demo;
+shared();
+"#,
+    )
+    .unwrap_err();
+    assert_eq!(fallback_error.phase, Phase::Runtime);
+    assert_eq!(fallback_error.line, 3);
+    assert_eq!(
+        fallback_error.message,
+        "undefined function App\\Demo\\shared()"
+    );
+}
+
+#[test]
 fn function_imports_reject_same_namespace_alias_conflicts() {
     let import_then_function = parse_error(
         r#"<?php
@@ -555,13 +587,32 @@ fn generated_c_rejects_const_import_boundary() {
 }
 
 #[test]
-fn generated_c_rejects_function_import_boundary() {
+fn generated_c_lowers_imported_runtime_builtin_function_boundary() {
     let program = parse("<?php\nuse function strlen as len;\necho len(\"abc\");\n").unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && source.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
+            && source.contains("phpc_native_call_arguments_push_value_and_free"),
+        "imported runtime builtin aliases should lower through runtime callable source calls:\n{source}"
+    );
+    assert!(
+        !source.contains(ASSEMBLY_FUNCTION_CALL_REJECTION),
+        "supported imported runtime builtin aliases should not hit the old metadata boundary:\n{source}"
+    );
+}
+
+#[test]
+fn generated_c_rejects_qualified_imported_type_builtin_without_exact_user_function() {
+    let program =
+        parse("<?php\nuse function Vendor\\Missing\\is_int as imported_is_int;\necho imported_is_int(1);\n")
+            .unwrap();
     let error = emit_native_executable_c_source(&program).unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 6);
     assert_eq!(error.message, ASSEMBLY_FUNCTION_CALL_REJECTION);
 }
 

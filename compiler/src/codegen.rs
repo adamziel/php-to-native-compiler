@@ -10595,7 +10595,10 @@ impl LlvmGenerator {
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("is_callable") => {
                 self.emit_is_callable_call(args, *span)
             }
-            Expr::Call { name, args, span } if is_native_type_introspection_builtin(name) => {
+            Expr::Call { name, args, span }
+                if is_native_type_introspection_builtin(name)
+                    && !is_exact_qualified_function_call_name(name) =>
+            {
                 self.emit_native_type_introspection_call(php_unqualified_name(name), args, *span)
             }
             Expr::Call { name, args, span } if is_object_metadata_builtin(name) => {
@@ -18860,6 +18863,15 @@ impl CGenerator {
         name.to_ascii_lowercase()
     }
 
+    fn direct_call_user_function_key(name: &str) -> String {
+        Self::user_function_key(exact_function_call_lookup_name(name))
+    }
+
+    fn direct_call_targets_registered_user_function(&self, name: &str) -> bool {
+        self.user_functions
+            .contains_key(&Self::direct_call_user_function_key(name))
+    }
+
     fn c_identifier_suffix(name: &str, fallback: &str) -> String {
         let mut sanitized = String::new();
         for ch in name.chars() {
@@ -19403,7 +19415,10 @@ impl CGenerator {
 
                 let mut required = CFrameEnvironmentRequirement::default();
                 for name in calls {
-                    if let Some(callee) = self.user_functions.get(&Self::user_function_key(&name)) {
+                    if let Some(callee) = self
+                        .user_functions
+                        .get(&Self::direct_call_user_function_key(&name))
+                    {
                         required.merge(callee.frame_environment);
                     }
                 }
@@ -19468,7 +19483,7 @@ impl CGenerator {
         collect_direct_call_names_from_stmts(body, &mut direct_calls);
         let calls_root_symbol_frame = direct_calls.into_iter().any(|name| {
             self.user_functions
-                .get(&Self::user_function_key(&name))
+                .get(&Self::direct_call_user_function_key(&name))
                 .is_some_and(|function| function.frame_environment.any())
         });
 
@@ -19593,7 +19608,7 @@ impl CGenerator {
             collect_direct_call_names_from_stmts(&function.decl.body, &mut calls);
             let callees = calls
                 .into_iter()
-                .map(|name| Self::user_function_key(&name))
+                .map(|name| Self::direct_call_user_function_key(&name))
                 .filter(|callee| self.user_functions.contains_key(callee))
                 .collect::<Vec<_>>();
             graph.insert(key.clone(), callees);
@@ -26246,7 +26261,7 @@ impl CGenerator {
         &self,
         name: &str,
     ) -> Option<Vec<CNativeCallableIdentity>> {
-        let function_key = Self::user_function_key(name);
+        let function_key = Self::direct_call_user_function_key(name);
         self.user_functions
             .contains_key(&function_key)
             .then(|| vec![CNativeCallableIdentity::GeneratedFunction { function_key }])
@@ -31332,13 +31347,6 @@ impl CGenerator {
             Stmt::Use { imports, span }
                 if imports
                     .iter()
-                    .any(|import| import.kind == UseImportKind::Function) =>
-            {
-                Err(self.unsupported(*span, ASSEMBLY_FUNCTION_CALL_REJECTION))
-            }
-            Stmt::Use { imports, span }
-                if imports
-                    .iter()
                     .any(|import| import.kind == UseImportKind::Constant) =>
             {
                 Err(self.unsupported(*span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION))
@@ -32114,6 +32122,14 @@ impl CGenerator {
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("empty") => {
                 self.emit_empty_call(args, *span)
             }
+            Expr::Call { name, args, span }
+                if exact_imported_runtime_builtin_signature(name).is_some() =>
+            {
+                let value =
+                    self.materialize_exact_imported_runtime_builtin_call(name, args, *span, "")?;
+                self.retain_native_value_cleanup_handle(&value.handle);
+                Ok(CValue::NativeValueHandle(value.handle))
+            }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("strlen") => {
                 self.emit_strlen_call(args, *span)
             }
@@ -32204,10 +32220,8 @@ impl CGenerator {
             }
             Expr::Call { name, args, span }
                 if is_native_type_introspection_builtin(name)
-                    && !(name.contains('\\')
-                        && self
-                            .user_functions
-                            .contains_key(&Self::user_function_key(name))) =>
+                    && !is_exact_qualified_function_call_name(name)
+                    && !self.direct_call_targets_registered_user_function(name) =>
             {
                 self.emit_native_type_introspection_call(php_unqualified_name(name), args, *span)
             }
@@ -32702,7 +32716,7 @@ impl CGenerator {
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
         let Some(function) = self
             .user_functions
-            .get(&Self::user_function_key(name))
+            .get(&Self::direct_call_user_function_key(name))
             .cloned()
         else {
             return Ok(None);
@@ -32716,6 +32730,35 @@ impl CGenerator {
             NativeCallCallee::DirectNamed,
         )
         .map(Some)
+    }
+
+    fn materialize_exact_imported_runtime_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        let signature = exact_imported_runtime_builtin_signature(name)
+            .expect("exact imported runtime builtin signature guard should hold");
+        let source_call_signature = signature.source_call_signature(args.len());
+        let Some(value) = self.materialize_runtime_callable_value_call(
+            CValue::String(signature.canonical_name.to_string()),
+            args,
+            span,
+            failure_cleanup,
+            source_call_signature,
+        )?
+        else {
+            return Err(
+                self.unsupported_call_operation(NativeCallOperation::value_result(
+                    span,
+                    NativeCallCallee::DirectNamed,
+                    NativeCallBlocker::UnknownCalleeDiagnostics,
+                )),
+            );
+        };
+        Ok(value)
     }
 
     fn try_materialize_dynamic_user_function_call(
@@ -50302,6 +50345,31 @@ fn is_native_relationship_metadata_builtin(name: &str) -> bool {
 
 fn php_unqualified_name(name: &str) -> &str {
     name.rsplit('\\').next().unwrap_or(name)
+}
+
+fn exact_function_call_lookup_name(name: &str) -> &str {
+    name.strip_prefix('\\').unwrap_or(name)
+}
+
+fn exact_imported_global_function_call_name(name: &str) -> Option<&str> {
+    let lookup_name = name.strip_prefix('\\')?;
+    (!lookup_name.contains('\\')).then_some(lookup_name)
+}
+
+fn exact_imported_runtime_builtin_signature(name: &str) -> Option<CNativeBuiltinSignature> {
+    let signature =
+        native_builtin_signature_for_name(exact_imported_global_function_call_name(name)?)?;
+    match signature.source_call_support {
+        CNativeBuiltinSignatureSourceCallSupport::RuntimeCallableValue => Some(signature),
+        CNativeBuiltinSignatureSourceCallSupport::Blocked(
+            CNativeBuiltinSignatureBlocker::MissingRuntimeCallableFamily,
+        ) if signature.canonical_name == "count" => Some(signature),
+        CNativeBuiltinSignatureSourceCallSupport::Blocked(_) => None,
+    }
+}
+
+fn is_exact_qualified_function_call_name(name: &str) -> bool {
+    exact_function_call_lookup_name(name).contains('\\') && name.starts_with('\\')
 }
 
 fn is_builtin_class_name(name: &str) -> bool {

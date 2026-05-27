@@ -20072,6 +20072,45 @@ const NATIVE_USER_FUNCTION_FRAME_SOURCE: &str = concat!(
     "echo \"done\";\n",
 );
 
+const NATIVE_IMPORTED_USER_FUNCTION_ALIAS_SOURCE: &str = concat!(
+    "<?php\n",
+    "namespace Vendor\\Tools;\n",
+    "use function Vendor\\Tools\\label as vendor_label, Vendor\\Tools\\set_slot as assign_slot;\n",
+    "function label($value) {\n",
+    "    return \"label:\" . $value;\n",
+    "}\n",
+    "function set_slot(&$slot, $value) {\n",
+    "    $slot = $value;\n",
+    "    return $slot;\n",
+    "}\n",
+    "$slot = \"old\";\n",
+    "echo vendor_label(\"A\"), \"|\";\n",
+    "echo assign_slot($slot, \"new\"), \":\", $slot, \"|\";\n",
+    "echo label(\"direct\");\n",
+);
+
+const NATIVE_IMPORTED_RUNTIME_BUILTIN_ALIAS_SOURCE: &str = concat!(
+    "<?php\n",
+    "namespace App\\Demo;\n",
+    "use function strlen as imported_strlen, str_contains as contains_text, ",
+    "strtoupper as upper_text, gettype as imported_gettype;\n",
+    "echo imported_strlen(\"abc\"), \"|\";\n",
+    "echo contains_text(\"alphabet\", \"pha\"), \"|\";\n",
+    "echo upper_text(\"mix\"), \"|\";\n",
+    "echo imported_gettype([1]);\n",
+);
+
+const NATIVE_IMPORTED_UNSUPPORTED_BUILTIN_ALIAS_SOURCE: &str = concat!(
+    "<?php\n",
+    "namespace App\\Demo;\n",
+    "use function count as imported_count;\n",
+    "function count_arg() {\n",
+    "    echo \"arg\";\n",
+    "    return [1];\n",
+    "}\n",
+    "echo imported_count(count_arg()), \"after\";\n",
+);
+
 const NATIVE_USER_FUNCTION_INTROSPECTION_SOURCE: &str = concat!(
     "<?php\n",
     "function pick($value = \"ok\") {\n",
@@ -20581,6 +20620,87 @@ fn native_executable_c_source_lowers_direct_user_function_frames() {
     assert!(
         !source.contains("assembly user-function lowering rejects"),
         "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_exact_imported_user_function_aliases() {
+    let program = parse(NATIVE_IMPORTED_USER_FUNCTION_ALIAS_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_user_function_0_vendor_tools_label_native_callable_frame")
+            && source.contains("phpc_user_function_1_vendor_tools_set_slot_native_callable_frame"),
+        "imported aliases should resolve to registered fully-qualified user-function frames:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments")
+            && body.contains("phpc_native_call_arguments_push_value_and_free")
+            && body.contains("phpc_native_call_arguments_push_reference_and_free"),
+        "imported direct calls should use the shared source-call argument and lookup/invoke stack:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly function-call lowering rejects")
+            && !source.contains("assembly user-function lowering rejects"),
+        "supported imported user-function aliases should not hit call/frame blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_exact_imported_runtime_builtin_aliases() {
+    let program = parse(NATIVE_IMPORTED_RUNTIME_BUILTIN_ALIAS_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+    let lookup = body
+        .find("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic(")
+        .expect("imported runtime builtin should perform callable lookup");
+    let arguments = body
+        .find("phpc_native_call_arguments_new")
+        .expect("imported runtime builtin should build source-call arguments");
+
+    assert!(
+        lookup < arguments,
+        "imported runtime builtin lookup should precede argument construction:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic(")
+            .count()
+            >= 4
+            && body.matches("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
+                .count()
+                >= 4
+            && body.contains("phpc_native_call_arguments_push_value_and_free"),
+        "imported runtime builtins should use runtime callable lookup/invoke with shared call arguments:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_value_dynamic_call_name_matches")
+            && !source.contains("assembly function-call lowering rejects"),
+        "imported runtime builtin aliases should avoid legacy ladders and call blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_preserves_unsupported_imported_builtin_lookup_boundary() {
+    let program = parse(NATIVE_IMPORTED_UNSUPPORTED_BUILTIN_ALIAS_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+    let lookup = body
+        .find("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic(")
+        .expect("unsupported imported builtin should perform runtime callable lookup");
+    let arguments = body.find("phpc_native_call_arguments_new").expect(
+        "unsupported imported builtin should still emit argument construction after lookup",
+    );
+
+    assert!(
+        lookup < arguments,
+        "unsupported imported builtin lookup must happen before argument construction:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches")
+            && !source.contains("assembly function-call lowering rejects"),
+        "unsupported imported builtins should use the callable lookup boundary without legacy fallback:\n{source}"
     );
 }
 
@@ -21476,6 +21596,98 @@ fn emit_exe_links_and_runs_direct_user_function_frame_program() {
     );
     assert_eq!(run.stdout, b"GO|alt|d|relay|side:effect|done");
     assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_exact_imported_user_function_alias_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "exact_imported_user_function_alias",
+        NATIVE_IMPORTED_USER_FUNCTION_ALIAS_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native imported user-function executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"label:A|new:new|label:direct");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_exact_imported_runtime_builtin_alias_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "exact_imported_runtime_builtin_alias",
+        NATIVE_IMPORTED_RUNTIME_BUILTIN_ALIAS_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native imported runtime-builtin executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"3|1|MIX|array");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_reports_unsupported_imported_builtin_before_arguments() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "exact_imported_unsupported_builtin_alias",
+        NATIVE_IMPORTED_UNSUPPORTED_BUILTIN_ALIAS_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native unsupported imported-builtin executable: {error}")
+    });
+
+    assert!(
+        !run.status.success(),
+        "unsupported imported builtin should fail"
+    );
+    assert!(
+        run.stdout.is_empty(),
+        "unsupported imported builtin should stop before argument side effects, stdout:\n{}",
+        String::from_utf8_lossy(&run.stdout)
+    );
+    assert!(
+        String::from_utf8_lossy(&run.stderr).contains(
+            "unsupported call count(): runtime dynamic generated-C lookup did not find a registered user-function frame or supported native builtin family"
+        ),
+        "stderr should contain imported count() runtime builtin failure, got:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&source_path);
