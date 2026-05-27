@@ -207,6 +207,22 @@ Implemented:
   references/copy-on-write, exact PHP diagnostics, and LLVM IR/assembly
   lowering remain unsupported.
 
+- Added bounded generated-C constructor reference-result and by-reference
+  alias-transfer support for supported named declared constructors. When
+  `new Class(...)` is consumed by a by-reference source-call argument, the
+  constructor carrier now moves the allocated receiver into a real runtime
+  reference cell, shares that alias through the existing call-argument
+  ownership path, and allows direct function, dynamic function, and constructor
+  consumers to write through it. Focused runtime, generated-C, and
+  linked-executable tests prove receiver-cell ownership and write-through alias
+  transfer without returning copied receiver values. Dynamic class-name
+  constructor reference consumers, classes without constructors but with
+  arguments, private/protected constructor visibility breadth, magic
+  constructors, traits/interfaces/effective method tables, arbitrary
+  autoload/class-name discovery, destructor-observable cleanup ordering,
+  broader by-reference constructor alias transfer, references/copy-on-write,
+  exact PHP diagnostics, and LLVM IR/assembly lowering remain unsupported.
+
 - Added generated-C nested `ArrayAccess` unset and append-with-keyed-suffix
   production on the shared owner-stack path. Direct-variable roots and visible
   property-held roots now materialize the root owner, descend through by-value

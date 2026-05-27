@@ -7128,13 +7128,17 @@
   the constructor with `$this`, called scope, and caller access context, and
   returns or discards the allocated receiver through the shared source-call
   result/diagnostic carrier family. Constructor named arguments use the shared
-  source-order/parameter-order normalizer. Constructor reference result
-  consumers, classes without constructors but with arguments, private/protected
-  constructor visibility breadth, magic constructors, traits/interfaces,
-  arbitrary autoload/class-name discovery, destructor-observable cleanup
-  ordering, by-reference constructor alias-transfer breadth,
-  references/copy-on-write, exact PHP diagnostics, and LLVM IR/assembly
-  lowering remain unsupported.
+  source-order/parameter-order normalizer. Supported named declared
+  constructors can also feed `new Class(...)` into by-reference source-call
+  arguments by moving the allocated receiver into a real runtime reference cell
+  and transferring that alias through the shared call-argument path for direct
+  function, dynamic function, and constructor consumers. Dynamic class-name
+  constructor reference consumers, classes without constructors but with
+  arguments, private/protected constructor visibility breadth, magic
+  constructors, traits/interfaces, arbitrary autoload/class-name discovery,
+  destructor-observable cleanup ordering, broader by-reference constructor
+  alias transfer, references/copy-on-write, exact PHP diagnostics, and LLVM
+  IR/assembly lowering remain unsupported.
   Native object-property lowering has a separate rejection for instance
   property reads/writes and dynamic property-name access until generated code
   has native object layout, property tables/slots, visibility checks, magic

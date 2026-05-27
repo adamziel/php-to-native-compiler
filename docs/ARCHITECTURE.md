@@ -3406,12 +3406,18 @@ runtime carrier that resolves the constructor with called scope and caller
 access context before binding `$this`. Result, value, discard, and diagnostic
 consumers share that carrier family, so argument ownership is consumed once and
 allocated receivers are cleaned up on lookup or invocation failure. Constructor
-reference result consumers, classes without constructors but with arguments,
+reference result consumers for supported named declared constructors can also
+move the allocated receiver into a runtime reference cell when `new Class(...)`
+is consumed by a by-reference source-call argument, including direct function,
+dynamic function, and constructor consumers. That reference carrier preserves
+alias/write-through behavior through the shared call-argument ownership path
+instead of returning a copied receiver value. Dynamic class-name constructor
+reference consumers, classes without constructors but with arguments,
 private/protected constructor visibility breadth, magic constructors,
 traits/interfaces, arbitrary autoload/class-name discovery,
-destructor-observable cleanup ordering, by-reference constructor alias-transfer
-breadth, references/copy-on-write, exact PHP diagnostics, and LLVM IR/assembly
-lowering remain outside this native slice.
+destructor-observable cleanup ordering, broader by-reference constructor alias
+transfer, references/copy-on-write, exact PHP diagnostics, and LLVM
+IR/assembly lowering remain outside this native slice.
 Instance property reads/writes and dynamic property-name access have a
 separate native object-property boundary until generated code has native
 object layout, property tables/slots, visibility checks, magic property hooks,
