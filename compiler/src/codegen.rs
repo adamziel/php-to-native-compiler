@@ -7,8 +7,9 @@ use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, CatchClause, ClassDecl, ClassMember,
     ClassMethodDecl, ClassVisibility, ClosureCapture, CompoundAssignOp, ConstDeclarator, Expr,
     ForAction, FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition,
-    InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart, NewClassName, Program,
-    ReferenceSource, Span, Stmt, SwitchCase, TraitDecl, TypeDecl, UnaryOp, UnsetTarget,
+    InterfaceDecl, InterfaceMethodDecl, InterpolatedAccessSegment, InterpolatedArrayKey,
+    InterpolatedStringPart, NewClassName, Program, ReferenceSource, Span, Stmt, SwitchCase,
+    TraitDecl, TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::call_arguments::{
     normalize_call_arguments, CallArgument, CallArgumentNormalizationError, CallArgumentParameter,
@@ -16241,6 +16242,8 @@ struct CGenerator {
     native_descriptor_closure_return_summaries: HashMap<String, CNativeDescriptorClosureSummary>,
     declared_traits: HashMap<String, Rc<TraitDecl>>,
     declared_trait_order: Vec<String>,
+    declared_interfaces: HashMap<String, Rc<InterfaceDecl>>,
+    declared_interface_order: Vec<String>,
     declared_classes: HashMap<String, CDeclaredClass>,
     declared_class_order: Vec<String>,
     function_definitions: Vec<String>,
@@ -16795,6 +16798,12 @@ struct CDeclaredClassInterfaceMetadataArrays {
     names: String,
     name_lens: String,
     count: usize,
+}
+
+#[derive(Debug, Clone)]
+struct CDeclaredInterfaceMethod {
+    declaring_interface_name: String,
+    method: InterfaceMethodDecl,
 }
 
 #[derive(Debug, Clone)]
@@ -17773,6 +17782,10 @@ impl CScopedCallableStringSignature {
         }
     }
 
+    fn from_interface_method(method: &InterfaceMethodDecl) -> Self {
+        Self::from_function(&method.function)
+    }
+
     fn param_is_by_reference(&self, index: usize) -> bool {
         self.fixed_param_by_reference
             .get(index)
@@ -17835,10 +17848,18 @@ struct NativeMethodStaticSourceCallArgumentPlan {
 }
 
 impl NativeMethodStaticSourceCallArgumentPlan {
-    fn from_method(method: &CDeclaredClassMethod) -> Self {
+    fn from_function(function: &FunctionDecl) -> Self {
         Self {
-            params: method.decl.params.clone(),
+            params: function.params.clone(),
         }
+    }
+
+    fn from_method(method: &CDeclaredClassMethod) -> Self {
+        Self::from_function(&method.decl)
+    }
+
+    fn from_interface_method(method: &InterfaceMethodDecl) -> Self {
+        Self::from_function(&method.function)
     }
 
     fn fixed_count(&self) -> usize {
@@ -17850,12 +17871,19 @@ impl NativeMethodStaticSourceCallArgumentPlan {
     }
 
     fn semantically_matches(&self, other: &Self) -> bool {
+        self.semantically_matches_with_options(other, false)
+    }
+
+    fn semantically_matches_with_param_names(&self, other: &Self) -> bool {
+        self.semantically_matches_with_options(other, true)
+    }
+
+    fn semantically_matches_with_options(&self, other: &Self, require_param_names: bool) -> bool {
         self.params.len() == other.params.len()
-            && self
-                .params
-                .iter()
-                .zip(&other.params)
-                .all(|(left, right)| native_source_call_params_semantically_match(left, right))
+            && self.params.iter().zip(&other.params).all(|(left, right)| {
+                native_source_call_params_semantically_match(left, right)
+                    && (!require_param_names || left.name == right.name)
+            })
     }
 }
 
@@ -17872,6 +17900,11 @@ impl NativeMethodStaticSourceCallArgumentStrategy {
         Self::Frame(NativeMethodStaticSourceCallArgumentPlan::from_method(
             method,
         ))
+    }
+
+    fn for_interface_method(method: &InterfaceMethodDecl, arg_count: usize) -> Self {
+        let _ = arg_count;
+        Self::Frame(NativeMethodStaticSourceCallArgumentPlan::from_interface_method(method))
     }
 
     fn semantically_matches(&self, other: &Self) -> bool {
@@ -17967,6 +18000,17 @@ fn native_method_static_signature_fallback_contract_from_methods<'a>(
     methods: impl IntoIterator<Item = &'a CDeclaredClassMethod>,
     arg_count: usize,
 ) -> NativeMethodStaticSignatureFallbackContract {
+    native_method_static_signature_fallback_contract_from_methods_with_options(
+        family, methods, arg_count, false,
+    )
+}
+
+fn native_method_static_signature_fallback_contract_from_methods_with_options<'a>(
+    family: NativeMethodStaticSignatureFamily,
+    methods: impl IntoIterator<Item = &'a CDeclaredClassMethod>,
+    arg_count: usize,
+    require_param_names: bool,
+) -> NativeMethodStaticSignatureFallbackContract {
     let mut candidate_count = 0;
     let mut arity_compatible_count = 0;
     let mut signature = None;
@@ -17997,7 +18041,13 @@ fn native_method_static_signature_fallback_contract_from_methods<'a>(
             None => signature = Some(method_signature),
         }
         match &argument_strategy {
-            Some(previous) if !previous.semantically_matches(&method_argument_strategy) => {
+            Some(previous)
+                if !native_method_static_argument_strategies_semantically_match(
+                    previous,
+                    &method_argument_strategy,
+                    require_param_names,
+                ) =>
+            {
                 return NativeMethodStaticSignatureFallbackContract {
                     family,
                     candidate_count,
@@ -18041,6 +18091,120 @@ fn native_method_static_signature_fallback_contract_from_methods<'a>(
         arity_compatible_count,
         availability,
         argument_strategy,
+    }
+}
+
+fn native_method_static_signature_contract_from_interface_methods<'a>(
+    family: NativeMethodStaticSignatureFamily,
+    methods: impl IntoIterator<Item = &'a InterfaceMethodDecl>,
+    arg_count: usize,
+) -> NativeMethodStaticSignatureFallbackContract {
+    let mut candidate_count = 0;
+    let mut arity_compatible_count = 0;
+    let mut signature = None;
+    let mut argument_strategy: Option<NativeMethodStaticSourceCallArgumentStrategy> = None;
+
+    for method in methods {
+        candidate_count += 1;
+        if !native_user_function_accepts_arg_count(&method.function, arg_count) {
+            continue;
+        }
+        arity_compatible_count += 1;
+        let method_signature = CScopedCallableStringSignature::from_interface_method(method);
+        let method_argument_strategy =
+            NativeMethodStaticSourceCallArgumentStrategy::for_interface_method(method, arg_count);
+        match &signature {
+            Some(previous) if previous != &method_signature => {
+                return NativeMethodStaticSignatureFallbackContract {
+                    family,
+                    candidate_count,
+                    arity_compatible_count,
+                    availability: NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                        NativeMethodStaticSignatureFallbackReason::HeterogeneousDeclaredMethodMetadata,
+                    ),
+                    argument_strategy: NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic,
+                };
+            }
+            Some(_) => {}
+            None => signature = Some(method_signature),
+        }
+        match &argument_strategy {
+            Some(previous)
+                if !native_method_static_argument_strategies_semantically_match(
+                    previous,
+                    &method_argument_strategy,
+                    true,
+                ) =>
+            {
+                return NativeMethodStaticSignatureFallbackContract {
+                    family,
+                    candidate_count,
+                    arity_compatible_count,
+                    availability: NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                        NativeMethodStaticSignatureFallbackReason::HeterogeneousDeclaredMethodMetadata,
+                    ),
+                    argument_strategy: NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic,
+                };
+            }
+            Some(_) => {}
+            None => argument_strategy = Some(method_argument_strategy),
+        }
+    }
+
+    let (availability, argument_strategy) = if let Some(signature) = signature {
+        (
+            NativeMethodStaticSignatureAvailability::Known(signature),
+            argument_strategy
+                .unwrap_or(NativeMethodStaticSourceCallArgumentStrategy::ForwardCallSite),
+        )
+    } else if candidate_count == 0 {
+        (
+            NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                NativeMethodStaticSignatureFallbackReason::NoDeclaredMethodMetadata,
+            ),
+            NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic,
+        )
+    } else {
+        (
+            NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                NativeMethodStaticSignatureFallbackReason::NoArityCompatibleDeclaredMethodMetadata,
+            ),
+            NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic,
+        )
+    };
+
+    NativeMethodStaticSignatureFallbackContract {
+        family,
+        candidate_count,
+        arity_compatible_count,
+        availability,
+        argument_strategy,
+    }
+}
+
+fn native_method_static_argument_strategies_semantically_match(
+    left: &NativeMethodStaticSourceCallArgumentStrategy,
+    right: &NativeMethodStaticSourceCallArgumentStrategy,
+    require_param_names: bool,
+) -> bool {
+    match (left, right) {
+        (
+            NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic,
+            NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic,
+        )
+        | (
+            NativeMethodStaticSourceCallArgumentStrategy::ForwardCallSite,
+            NativeMethodStaticSourceCallArgumentStrategy::ForwardCallSite,
+        ) => true,
+        (
+            NativeMethodStaticSourceCallArgumentStrategy::Frame(left),
+            NativeMethodStaticSourceCallArgumentStrategy::Frame(right),
+        ) if require_param_names => left.semantically_matches_with_param_names(right),
+        (
+            NativeMethodStaticSourceCallArgumentStrategy::Frame(left),
+            NativeMethodStaticSourceCallArgumentStrategy::Frame(right),
+        ) => left.semantically_matches(right),
+        _ => false,
     }
 }
 
@@ -18098,6 +18262,42 @@ fn native_source_call_default_exprs_semantically_match(
         (None, None) => true,
         _ => false,
     }
+}
+
+fn declared_method_params_implement_interface_params(
+    method: &FunctionDecl,
+    interface: &FunctionDecl,
+) -> bool {
+    if method.params.len() < interface.params.len() {
+        return false;
+    }
+    method
+        .params
+        .iter()
+        .zip(&interface.params)
+        .all(|(method_param, interface_param)| {
+            method_param.by_reference == interface_param.by_reference
+                && method_param.is_variadic == interface_param.is_variadic
+                && method_param
+                    .type_decl
+                    .as_ref()
+                    .map(|decl| decl.text.as_str())
+                    == interface_param
+                        .type_decl
+                        .as_ref()
+                        .map(|decl| decl.text.as_str())
+        })
+}
+
+fn declared_method_return_type_implements_interface_method(
+    method: &FunctionDecl,
+    interface: &FunctionDecl,
+) -> bool {
+    method.return_type.as_ref().map(|decl| decl.text.as_str())
+        == interface
+            .return_type
+            .as_ref()
+            .map(|decl| decl.text.as_str())
 }
 
 fn native_source_call_default_expr_semantically_matches(left: &Expr, right: &Expr) -> bool {
@@ -19902,6 +20102,10 @@ impl CGenerator {
         name.strip_prefix('\\').unwrap_or(name).to_ascii_lowercase()
     }
 
+    fn declared_interface_key(name: &str) -> String {
+        Self::declared_class_key(name)
+    }
+
     fn declared_method_key(name: &str) -> String {
         name.to_ascii_lowercase()
     }
@@ -19930,6 +20134,23 @@ impl CGenerator {
         Ok(())
     }
 
+    fn register_top_level_declared_interfaces(&mut self, statements: &[Stmt]) -> CompileResult<()> {
+        for stmt in statements {
+            let Stmt::Interface(interface) = stmt else {
+                continue;
+            };
+            self.validate_declared_interface_for_native_metadata(interface)?;
+            let key = Self::declared_interface_key(&interface.name);
+            if self.declared_interfaces.contains_key(&key) {
+                return Err(self.unsupported(interface.span, ASSEMBLY_INTERFACE_REJECTION));
+            }
+            self.declared_interface_order.push(key.clone());
+            self.declared_interfaces
+                .insert(key, Rc::new(interface.clone()));
+        }
+        self.validate_declared_interface_parent_metadata()
+    }
+
     fn register_top_level_declared_classes(&mut self, statements: &[Stmt]) -> CompileResult<()> {
         if !self.uses_native_string_helpers {
             return Ok(());
@@ -19952,7 +20173,55 @@ impl CGenerator {
         }
 
         self.resolve_declared_class_inheritance_metadata()?;
+        self.validate_declared_class_interface_implementation_metadata()?;
 
+        Ok(())
+    }
+
+    fn validate_declared_interface_for_native_metadata(
+        &self,
+        interface: &InterfaceDecl,
+    ) -> CompileResult<()> {
+        if !interface.constants.is_empty()
+            || interface.methods.iter().any(|method| {
+                method.function.is_nested
+                    || (method.function.returns_by_reference
+                        && method.function.return_type.is_some())
+                    || native_user_function_has_malformed_variadic_params(&method.function)
+                    || method
+                        .function
+                        .return_type
+                        .as_ref()
+                        .is_some_and(|decl| !native_function_type_decl_is_supported(decl))
+                    || method.function.params.iter().any(|param| {
+                        native_user_function_param_has_unsupported_by_reference_shape(param)
+                            || param
+                                .type_decl
+                                .as_ref()
+                                .is_some_and(|decl| !native_function_type_decl_is_supported(decl))
+                    })
+            })
+        {
+            return Err(self.unsupported(interface.span, ASSEMBLY_INTERFACE_REJECTION));
+        }
+        Ok(())
+    }
+
+    fn validate_declared_interface_parent_metadata(&self) -> CompileResult<()> {
+        for key in &self.declared_interface_order {
+            let interface = self
+                .declared_interfaces
+                .get(key)
+                .expect("registered interface key has metadata");
+            for parent in &interface.parents {
+                if !self
+                    .declared_interfaces
+                    .contains_key(&Self::declared_interface_key(parent))
+                {
+                    return Err(self.unsupported(interface.span, ASSEMBLY_INTERFACE_REJECTION));
+                }
+            }
+        }
         Ok(())
     }
 
@@ -20161,15 +20430,138 @@ impl CGenerator {
         let mut seen = HashSet::new();
         let mut interfaces = Vec::new();
         for interface in &class.interfaces {
-            if !interface.eq_ignore_ascii_case("ArrayAccess") {
+            if interface.eq_ignore_ascii_case("ArrayAccess") {
+                let key = interface.to_ascii_lowercase();
+                if seen.insert(key) {
+                    interfaces.push(interface.clone());
+                }
+                continue;
+            }
+            let key = Self::declared_interface_key(interface);
+            if !self.declared_interfaces.contains_key(&key) {
                 return Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
             }
-            let key = interface.to_ascii_lowercase();
-            if seen.insert(key) {
-                interfaces.push(interface.clone());
-            }
+            self.push_declared_interface_with_parents(
+                &key,
+                &mut seen,
+                &mut interfaces,
+                class.span,
+            )?;
         }
         Ok(interfaces)
+    }
+
+    fn push_declared_interface_with_parents(
+        &self,
+        interface_key: &str,
+        seen: &mut HashSet<String>,
+        interfaces: &mut Vec<String>,
+        span: Span,
+    ) -> CompileResult<()> {
+        if !seen.insert(interface_key.to_string()) {
+            return Ok(());
+        }
+        let Some(interface) = self.declared_interfaces.get(interface_key) else {
+            return Err(self.unsupported(span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+        };
+        interfaces.push(interface.name.clone());
+        for parent in &interface.parents {
+            let parent_key = Self::declared_interface_key(parent);
+            self.push_declared_interface_with_parents(&parent_key, seen, interfaces, span)?;
+        }
+        Ok(())
+    }
+
+    fn validate_declared_class_interface_implementation_metadata(&self) -> CompileResult<()> {
+        for class_key in &self.declared_class_order {
+            let class = self
+                .declared_classes
+                .get(class_key)
+                .expect("registered class key has metadata");
+            for interface_name in &class.interface_names {
+                if interface_name.eq_ignore_ascii_case("ArrayAccess") {
+                    continue;
+                }
+                let interface_key = Self::declared_interface_key(interface_name);
+                let methods = self.declared_interface_methods(&interface_key)?;
+                for interface_method in methods {
+                    self.validate_declared_class_interface_method_implementation(
+                        class_key,
+                        class,
+                        &interface_method,
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_declared_class_interface_method_implementation(
+        &self,
+        class_key: &str,
+        class: &CDeclaredClass,
+        interface_method: &CDeclaredInterfaceMethod,
+    ) -> CompileResult<()> {
+        let method_name = &interface_method.method.function.name;
+        let Some((declaring_class, method)) =
+            self.declared_class_receiver_method_for_key(class_key, method_name)
+        else {
+            return Err(self.unsupported(class.span, ASSEMBLY_INTERFACE_REJECTION));
+        };
+        if interface_method.method.is_static != method.is_static
+            || method.visibility != ClassVisibility::Public
+            || native_user_function_required_arg_count(&method.decl)
+                > native_user_function_required_arg_count(&interface_method.method.function)
+            || method.decl.returns_by_reference
+                != interface_method.method.function.returns_by_reference
+            || !declared_method_params_implement_interface_params(
+                &method.decl,
+                &interface_method.method.function,
+            )
+            || !declared_method_return_type_implements_interface_method(
+                &method.decl,
+                &interface_method.method.function,
+            )
+        {
+            return Err(self.unsupported(declaring_class.span, ASSEMBLY_INTERFACE_REJECTION));
+        }
+        Ok(())
+    }
+
+    fn declared_interface_methods(
+        &self,
+        interface_key: &str,
+    ) -> CompileResult<Vec<CDeclaredInterfaceMethod>> {
+        let mut methods = Vec::new();
+        let mut visiting = HashSet::new();
+        self.collect_declared_interface_methods(interface_key, &mut visiting, &mut methods)?;
+        Ok(methods)
+    }
+
+    fn collect_declared_interface_methods(
+        &self,
+        interface_key: &str,
+        visiting: &mut HashSet<String>,
+        methods: &mut Vec<CDeclaredInterfaceMethod>,
+    ) -> CompileResult<()> {
+        if !visiting.insert(interface_key.to_string()) {
+            return Err(self.unsupported(Span::new(0, 0), ASSEMBLY_INTERFACE_REJECTION));
+        }
+        let Some(interface) = self.declared_interfaces.get(interface_key) else {
+            return Err(self.unsupported(Span::new(0, 0), ASSEMBLY_INTERFACE_REJECTION));
+        };
+        for parent in &interface.parents {
+            let parent_key = Self::declared_interface_key(parent);
+            self.collect_declared_interface_methods(&parent_key, visiting, methods)?;
+        }
+        for method in &interface.methods {
+            methods.push(CDeclaredInterfaceMethod {
+                declaring_interface_name: interface.name.clone(),
+                method: method.clone(),
+            });
+        }
+        visiting.remove(interface_key);
+        Ok(())
     }
 
     fn validate_declared_class_trait_method_metadata_scope(
@@ -20884,6 +21276,8 @@ impl CGenerator {
             user_function_order: self.user_function_order.clone(),
             declared_traits: self.declared_traits.clone(),
             declared_trait_order: self.declared_trait_order.clone(),
+            declared_interfaces: self.declared_interfaces.clone(),
+            declared_interface_order: self.declared_interface_order.clone(),
             declared_classes: self.declared_classes.clone(),
             declared_class_order: self.declared_class_order.clone(),
             function_return_status: Some("phpc_call_status".to_string()),
@@ -21431,6 +21825,8 @@ impl CGenerator {
             user_function_order: self.user_function_order.clone(),
             declared_traits: self.declared_traits.clone(),
             declared_trait_order: self.declared_trait_order.clone(),
+            declared_interfaces: self.declared_interfaces.clone(),
+            declared_interface_order: self.declared_interface_order.clone(),
             declared_classes: self.declared_classes.clone(),
             declared_class_order: self.declared_class_order.clone(),
             function_return_status: Some("phpc_call_status".to_string()),
@@ -21532,6 +21928,8 @@ impl CGenerator {
             user_function_order: self.user_function_order.clone(),
             declared_traits: self.declared_traits.clone(),
             declared_trait_order: self.declared_trait_order.clone(),
+            declared_interfaces: self.declared_interfaces.clone(),
+            declared_interface_order: self.declared_interface_order.clone(),
             declared_classes: self.declared_classes.clone(),
             declared_class_order: self.declared_class_order.clone(),
             function_return_status: Some("phpc_call_status".to_string()),
@@ -21941,6 +22339,7 @@ impl CGenerator {
 
     fn emit_program(&mut self, program: &Program) -> CompileResult<String> {
         self.register_top_level_declared_traits(&program.statements)?;
+        self.register_top_level_declared_interfaces(&program.statements)?;
         self.register_top_level_declared_classes(&program.statements)?;
         self.register_top_level_user_functions(&program.statements)?;
         self.emit_declared_class_method_definitions()?;
@@ -28578,7 +28977,12 @@ impl CGenerator {
         let facts = self.native_value_facts_for_expr(target)?;
         let object = facts.object.as_ref()?;
         if object.declared_class_keys.is_empty() {
-            return None;
+            return self.interface_receiver_method_source_call_signature_contract(
+                object,
+                method_name,
+                arg_count,
+                access_context,
+            );
         }
 
         let mut methods = Vec::new();
@@ -28634,6 +29038,132 @@ impl CGenerator {
             NativeMethodStaticSignatureAvailability::Known(_)
         )
         .then_some(contract)
+    }
+
+    fn interface_receiver_method_source_call_signature_contract(
+        &self,
+        object: &CNativeObjectFacts,
+        method_name: &str,
+        arg_count: usize,
+        access_context: NativeSourceCallAccessContext<'_>,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        let interface_methods =
+            self.declared_interface_receiver_methods_for_object_facts(object, method_name)?;
+        let implementation_methods = self
+            .declared_interface_implementation_receiver_methods_for_object_facts(
+                object,
+                method_name,
+                access_context,
+            )?;
+        let mut contract = native_method_static_signature_contract_from_interface_methods(
+            NativeMethodStaticSignatureFamily::ReceiverMethod,
+            interface_methods.iter().map(|method| &method.method),
+            arg_count,
+        );
+        let implementation_contract =
+            native_method_static_signature_fallback_contract_from_methods_with_options(
+                NativeMethodStaticSignatureFamily::ReceiverMethod,
+                implementation_methods.iter(),
+                arg_count,
+                true,
+            );
+        if !matches!(
+            (
+                &contract.availability,
+                &implementation_contract.availability
+            ),
+            (
+                NativeMethodStaticSignatureAvailability::Known(_),
+                NativeMethodStaticSignatureAvailability::Known(_),
+            )
+        ) {
+            return None;
+        }
+        if !native_method_static_argument_strategies_semantically_match(
+            &contract.argument_strategy,
+            &implementation_contract.argument_strategy,
+            true,
+        ) {
+            return None;
+        }
+        contract.candidate_count = implementation_contract.candidate_count;
+        contract.arity_compatible_count = implementation_contract.arity_compatible_count;
+        contract.argument_strategy = implementation_contract.argument_strategy;
+        Some(contract)
+    }
+
+    fn declared_interface_receiver_methods_for_object_facts(
+        &self,
+        object: &CNativeObjectFacts,
+        method_name: &str,
+    ) -> Option<Vec<CDeclaredInterfaceMethod>> {
+        let method_key = Self::declared_method_key(method_name);
+        let mut methods = Vec::new();
+        let mut seen = HashSet::new();
+        for interface_key in &object.implemented_interface_keys {
+            let interface_methods = self.declared_interface_methods(interface_key).ok()?;
+            for method in interface_methods {
+                let key = format!(
+                    "{}::{}",
+                    method.declaring_interface_name.to_ascii_lowercase(),
+                    Self::declared_method_key(&method.method.function.name)
+                );
+                if !method.method.is_static
+                    && Self::declared_method_key(&method.method.function.name) == method_key
+                    && seen.insert(key)
+                {
+                    methods.push(method);
+                }
+            }
+        }
+        (!methods.is_empty()).then_some(methods)
+    }
+
+    fn declared_interface_implementation_receiver_methods_for_object_facts(
+        &self,
+        object: &CNativeObjectFacts,
+        method_name: &str,
+        access_context: NativeSourceCallAccessContext<'_>,
+    ) -> Option<Vec<CDeclaredClassMethod>> {
+        let mut methods = Vec::new();
+        let mut seen = HashSet::new();
+        for class_key in &self.declared_class_order {
+            let class = self
+                .declared_classes
+                .get(class_key)
+                .expect("registered class key has metadata");
+            if !object
+                .implemented_interface_keys
+                .iter()
+                .any(|interface_key| {
+                    class
+                        .interface_names
+                        .iter()
+                        .any(|name| Self::declared_interface_key(name) == *interface_key)
+                })
+            {
+                continue;
+            }
+            let (declaring_class, method) =
+                self.declared_class_receiver_method_for_key(class_key, method_name)?;
+            if !self.declared_class_member_visible_from_source_access(
+                &declaring_class.name,
+                method.visibility,
+                access_context,
+            ) || method.is_static
+            {
+                return None;
+            }
+            let key = format!(
+                "{}::{}",
+                Self::declared_class_key(&declaring_class.name),
+                Self::declared_method_key(&method.decl.name)
+            );
+            if seen.insert(key) {
+                methods.push(method);
+            }
+        }
+        (!methods.is_empty()).then_some(methods)
     }
 
     fn receiver_dynamic_method_source_call_signature_contract(
@@ -36329,7 +36859,12 @@ impl CGenerator {
                 }
             }
             Stmt::Interface(interface) => {
-                Err(self.unsupported(interface.span, ASSEMBLY_INTERFACE_REJECTION))
+                let key = Self::declared_interface_key(&interface.name);
+                if self.declared_interfaces.contains_key(&key) {
+                    Ok(())
+                } else {
+                    Err(self.unsupported(interface.span, ASSEMBLY_INTERFACE_REJECTION))
+                }
             }
             Stmt::Trait(trait_decl) => {
                 let key = trait_semantics::trait_key(&trait_decl.name);
@@ -67806,5 +68341,91 @@ echo $call("Ada");
                 "request-key selector should route generated C through {abi_name}:\n{source}"
             );
         }
+    }
+
+    #[test]
+    fn native_interface_receiver_method_contract_uses_interface_only_object_facts() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "interface ContractOnlyDispatch { public function run($first, &$slot); }\n",
+            "class ContractOnlyLeft implements ContractOnlyDispatch {\n",
+            "    public function run($first, &$slot) { return $first; }\n",
+            "}\n",
+            "class ContractOnlyRight implements ContractOnlyDispatch {\n",
+            "    public function run($first, &$slot) { return $first; }\n",
+            "}\n",
+        ))
+        .expect("interface contract fixture parses");
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_interfaces(&program.statements)
+            .expect("interface metadata should register");
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .expect("implementation metadata should register");
+        let object = CNativeObjectFacts {
+            declared_class_keys: HashSet::new(),
+            implemented_interface_keys: HashSet::from(["contractonlydispatch".to_string()]),
+        };
+
+        let contract = generator
+            .interface_receiver_method_source_call_signature_contract(
+                &object,
+                "run",
+                2,
+                NativeSourceCallAccessContext::ObjectReceiver,
+            )
+            .expect("interface-only facts should produce a runtime method contract");
+
+        assert_eq!(contract.candidate_count, 2);
+        assert!(matches!(
+            contract.availability,
+            NativeMethodStaticSignatureAvailability::Known(_)
+        ));
+        assert!(matches!(
+            contract.argument_strategy,
+            NativeMethodStaticSourceCallArgumentStrategy::Frame(_)
+        ));
+    }
+
+    #[test]
+    fn native_interface_receiver_method_contract_blocks_heterogeneous_named_implementations() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "interface ContractNameDispatch { public function run($value); }\n",
+            "class ContractNameLeft implements ContractNameDispatch {\n",
+            "    public function run($value) { return $value; }\n",
+            "}\n",
+            "class ContractNameRight implements ContractNameDispatch {\n",
+            "    public function run($renamed) { return $renamed; }\n",
+            "}\n",
+        ))
+        .expect("interface contract fixture parses");
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_interfaces(&program.statements)
+            .expect("interface metadata should register");
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .expect("implementation metadata should register");
+        let object = CNativeObjectFacts {
+            declared_class_keys: HashSet::new(),
+            implemented_interface_keys: HashSet::from(["contractnamedispatch".to_string()]),
+        };
+
+        assert!(generator
+            .interface_receiver_method_source_call_signature_contract(
+                &object,
+                "run",
+                1,
+                NativeSourceCallAccessContext::ObjectReceiver,
+            )
+            .is_none());
     }
 }

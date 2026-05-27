@@ -2,7 +2,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use php_compiler::{codegen::emit_native_executable_c_source, error::Phase, parse};
+use php_compiler::{
+    class_metadata_source, codegen::emit_native_executable_c_source, error::Phase, parse,
+};
 
 const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects closure shapes outside the bounded generated-C descriptor-backed closure frame subset, including by-reference closure captures that cannot be materialized through root symbol/reference handles or promoted frame locals, by-reference variadic closure parameters, unsupported by-reference closure return sources, unsupported closure bodies, references/copy-on-write, and exact native callable errors; generated-native C lowers supported descriptor closures, supported static arrow closures, by-value captures, supported by-reference captures, supported by-reference returns from by-reference parameters and captures, implicit by-value arrow captures, non-static $this closure binding, typed/default/variadic by-value closure parameters, and untyped by-reference closure parameters through dynamic callable dispatch";
 
@@ -24551,6 +24553,28 @@ const NATIVE_NAMED_CALLABLE_ARRAY_SOURCE_CALL_SOURCE: &str = concat!(
     "echo [$box, \"inst\"](third: named_callable_array_marker(\"U\"), extra: named_callable_array_marker(\"X\"), first: named_callable_array_marker(\"G\"), slot: $slot), \"|\", $slot;\n",
 );
 
+const NATIVE_INTERFACE_TYPED_METHOD_SOURCE_CALL_SOURCE: &str = concat!(
+    "<?php\n",
+    "interface NativeInterfaceDispatchContract {\n",
+    "    public function mix($first, &$slot, $third = \"D\", ...$tail);\n",
+    "}\n",
+    "class NativeInterfaceDispatchLeft implements NativeInterfaceDispatchContract {\n",
+    "    public function mix($first, &$slot, $third = \"D\", ...$tail) {\n",
+    "        $slot = $slot . \"L\";\n",
+    "        return \"L:\" . $first . \":\" . $third;\n",
+    "    }\n",
+    "}\n",
+    "class NativeInterfaceDispatchRight implements NativeInterfaceDispatchContract {\n",
+    "    public function mix($first, &$slot, $third = \"D\", ...$tail) {\n",
+    "        $slot = $slot . \"R\";\n",
+    "        return \"R:\" . $first . \":\" . $third;\n",
+    "    }\n",
+    "}\n",
+    "$box = new NativeInterfaceDispatchLeft();\n",
+    "$slot = \"S\";\n",
+    "echo $box->mix(third: \"T\", extra: \"E\", first: \"F\", slot: $slot), \"|\", $slot, \"\\n\";\n",
+);
+
 const NATIVE_BY_REFERENCE_USER_FUNCTION_FRAME_SOURCE: &str = concat!(
     "<?php\n",
     "function set_to(&$slot, $value) {\n",
@@ -25132,6 +25156,117 @@ fn native_executable_c_source_lowers_named_callable_array_arguments_through_shar
             && !source.contains("named argument lowering is only implemented"),
         "callable-array source calls should not use the legacy generated dynamic-call ladder or named-argument blocker:\n{source}"
     );
+}
+
+#[test]
+fn native_class_metadata_records_declared_interface_implementation_links() {
+    let metadata = class_metadata_source(NATIVE_INTERFACE_TYPED_METHOD_SOURCE_CALL_SOURCE)
+        .expect("interface/class metadata should parse and validate");
+    let left = metadata
+        .lookup_class("NativeInterfaceDispatchLeft")
+        .expect("left implementation metadata");
+    let right = metadata
+        .lookup_class("NativeInterfaceDispatchRight")
+        .expect("right implementation metadata");
+
+    assert!(metadata.implements_interface(left.id(), "NativeInterfaceDispatchContract"));
+    assert!(metadata.implements_interface(right.id(), "nativeinterfacedispatchcontract"));
+}
+
+#[test]
+fn native_executable_c_source_routes_interface_typed_method_dispatch_through_runtime_boundary() {
+    let program = parse(NATIVE_INTERFACE_TYPED_METHOD_SOURCE_CALL_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+        ) && body.contains("receiver_method_source_call_args_"),
+        "interface-typed receiver calls should use the shared runtime method source-call boundary:\n{source}"
+    );
+    assert!(
+        !body.contains("method_dispatch_status")
+            && !body.contains("method_dispatch_class_match")
+            && !source.contains("named argument lowering is only implemented"),
+        "interface-typed receiver calls should not fall back to generated class ladders or named-argument blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_rejects_invalid_interface_method_implementation_metadata() {
+    for source in [
+        concat!(
+            "<?php\n",
+            "interface MissingInterfaceMethodContract { public function run($value); }\n",
+            "class MissingInterfaceMethodImpl implements MissingInterfaceMethodContract {}\n",
+            "$box = new MissingInterfaceMethodImpl();\n",
+            "echo $box->run(\"x\");\n",
+        ),
+        concat!(
+            "<?php\n",
+            "interface IncompatibleInterfaceMethodContract { public function run($value); }\n",
+            "class IncompatibleInterfaceMethodImpl implements IncompatibleInterfaceMethodContract {\n",
+            "    public static function run($value) { return $value; }\n",
+            "}\n",
+            "$box = new IncompatibleInterfaceMethodImpl();\n",
+            "echo $box->run(\"x\");\n",
+        ),
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert!(
+            error.message.contains("interface lowering rejects interface declarations"),
+            "{source}\n{error:?}"
+        );
+    }
+}
+
+#[test]
+fn native_executable_c_source_blocks_interface_method_unsupported_dynamic_interface_shapes() {
+    let source = concat!(
+        "<?php\n",
+        "class AutoloadOnlyInterfaceImpl implements AutoloadOnlyInterfaceContract {\n",
+        "    public function run($value) { return $value; }\n",
+        "}\n",
+        "$box = new AutoloadOnlyInterfaceImpl();\n",
+        "echo $box->run(\"x\");\n",
+    );
+    let program = parse(source).unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error
+            .message
+            .contains("object/class lowering rejects class declarations"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_interface_typed_method_dispatch_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (_source_path, output_path) = compile_native_link_fixture(
+        "interface_typed_method_dispatch",
+        NATIVE_INTERFACE_TYPED_METHOD_SOURCE_CALL_SOURCE,
+    );
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run interface method executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"L:F:T|SL\n");
 }
 
 #[test]
