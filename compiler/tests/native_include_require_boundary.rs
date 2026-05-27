@@ -88,6 +88,61 @@ fn literal_include_graph_metadata_expands_declaration_only_class_files() {
 }
 
 #[test]
+fn literal_include_graph_metadata_expands_declaration_only_trait_and_interface_files() {
+    let dir = include_discovery_fixture_dir("class-like-metadata");
+    let root = dir.join("root.php");
+    let included = dir.join("included.php");
+    fs::write(
+        &included,
+        concat!(
+            "<?php\n",
+            "interface IncludedContract { public function label(); }\n",
+            "trait IncludedTrait { public function traitLabel() { return 'trait'; } }\n",
+        ),
+    )
+    .expect("write included class-like metadata fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "require __DIR__ . '/included.php';\n",
+            "class UsesIncludedDeclarations { use IncludedTrait; }\n",
+        ),
+    )
+    .expect("write root class-like metadata fixture");
+
+    let unit = compilation_unit_with_literal_include_metadata(
+        &fs::read_to_string(&root).expect("read root class-like metadata fixture"),
+        &root,
+        workspace_root(),
+    )
+    .unwrap();
+
+    assert_eq!(unit.include_metadata.included_files.len(), 1);
+    assert_eq!(
+        unit.include_metadata.included_files[0].interface_names,
+        vec!["IncludedContract".to_string()]
+    );
+    assert_eq!(
+        unit.include_metadata.included_files[0].trait_names,
+        vec!["IncludedTrait".to_string()]
+    );
+    assert!(
+        unit.program.statements.iter().any(
+            |stmt| matches!(stmt, php_compiler::ast::Stmt::Interface(interface) if interface.name == "IncludedContract")
+        ),
+        "literal include should expand to reusable interface metadata statements"
+    );
+    assert!(
+        unit.program
+            .statements
+            .iter()
+            .any(|stmt| matches!(stmt, php_compiler::ast::Stmt::Trait(trait_decl) if trait_decl.name == "IncludedTrait")),
+        "literal include should expand to reusable trait metadata statements"
+    );
+}
+
+#[test]
 fn native_executable_c_source_uses_included_class_metadata_boundary() {
     let dir = include_discovery_fixture_dir("c-source");
     let root = write_supported_include_fixture(&dir);
@@ -108,6 +163,56 @@ fn native_executable_c_source_uses_included_class_metadata_boundary() {
             && source.contains("phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic")
             && source.contains("phpc_native_class_constant_declare_constant_bytes_and_free"),
         "generated C should declare included class/method/property/constant metadata through shared runtime boundaries:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_uses_included_trait_metadata_boundary_without_trait_execution() {
+    let dir = include_discovery_fixture_dir("trait-c-source");
+    let root = write_supported_trait_include_fixture(&dir);
+    let unit = compilation_unit_with_literal_include_metadata(
+        &fs::read_to_string(&root).expect("read trait c-source include fixture"),
+        &root,
+        workspace_root(),
+    )
+    .unwrap();
+
+    let source = emit_native_executable_c_source(&unit.program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_declare_user_class_bytes")
+            && source.contains("phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic"),
+        "generated C should accept classes using included trait metadata without executing trait methods:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_accepts_included_interface_metadata_boundary() {
+    let dir = include_discovery_fixture_dir("interface-c-boundary");
+    let root = dir.join("root.php");
+    let included = dir.join("included.php");
+    fs::write(
+        &included,
+        "<?php\ninterface IncludedContract { public function label(); }\n",
+    )
+    .expect("write included interface fixture");
+    fs::write(
+        &root,
+        "<?php\nrequire __DIR__ . '/included.php';\necho 'after';\n",
+    )
+    .expect("write root interface fixture");
+
+    let unit = compilation_unit_with_literal_include_metadata(
+        &fs::read_to_string(&root).expect("read root interface fixture"),
+        &root,
+        workspace_root(),
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&unit.program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
+        "included interface declarations should compose with generated-C metadata without blocking unrelated root execution:\n{source}"
     );
 }
 
@@ -150,6 +255,44 @@ fn emit_exe_links_and_runs_included_class_metadata_consumers() {
         String::from_utf8_lossy(&run.stdout),
         "exists|child|static|42|child-const|base-const\n"
     );
+}
+
+#[test]
+fn emit_exe_links_and_runs_included_trait_metadata_consumers_without_trait_execution() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("trait-exe");
+    let root = write_supported_trait_include_fixture(&dir);
+    let output = dir.join("program");
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root())
+        .args([
+            "compile",
+            root.to_str().expect("root fixture path is UTF-8"),
+            "--emit-exe",
+            output.to_str().expect("output path is UTF-8"),
+        ])
+        .output()
+        .expect("compile included trait metadata executable");
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let run = Command::new(&output)
+        .output()
+        .expect("run included trait metadata executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "trait-meta\n");
 }
 
 #[test]
@@ -302,6 +445,34 @@ fn write_supported_include_fixture(dir: &Path) -> PathBuf {
         ),
     )
     .expect("write root class fixture");
+    root
+}
+
+fn write_supported_trait_include_fixture(dir: &Path) -> PathBuf {
+    fs::create_dir_all(dir).expect("create include trait discovery fixture dir");
+    let root = dir.join("root.php");
+    let included = dir.join("included-trait.php");
+    fs::write(
+        &included,
+        concat!(
+            "<?php\n",
+            "trait IncludedMetaTrait {\n",
+            "    public function traitLabel() { return 'trait'; }\n",
+            "}\n",
+        ),
+    )
+    .expect("write included trait fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "require __DIR__ . '/included-trait.php';\n",
+            "class UsesIncludedMetaTrait { use IncludedMetaTrait; }\n",
+            "echo class_exists('UsesIncludedMetaTrait') ? 'trait-meta' : 'missing';\n",
+            "echo \"\\n\";\n",
+        ),
+    )
+    .expect("write root trait fixture");
     root
 }
 

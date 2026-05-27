@@ -9,7 +9,7 @@ use crate::parser::parse_source;
 const UNSUPPORTED_DYNAMIC_INCLUDE_PATH: &str = "unsupported include/require path: generated C include class discovery requires a literal same-repository path built from string literals and __DIR__";
 const UNSUPPORTED_OUT_OF_REPOSITORY_INCLUDE: &str = "unsupported include/require path: generated C include class discovery only supports same-repository files";
 const UNSUPPORTED_CYCLIC_INCLUDE: &str = "unsupported cyclic include graph: generated C include class discovery requires an acyclic literal include graph";
-const UNSUPPORTED_NON_CLASS_INCLUDE_TOP_LEVEL: &str = "unsupported include/require file: generated C include class discovery only supports class declarations and nested literal includes; top-level executable side effects and autoload registration remain blocked";
+const UNSUPPORTED_NON_DECLARATION_INCLUDE_TOP_LEVEL: &str = "unsupported include/require file: generated C include declaration discovery only supports class, interface, and trait declarations plus nested literal includes; top-level executable side effects and autoload registration remain blocked";
 const UNSUPPORTED_LATE_INCLUDE: &str = "unsupported include/require placement: generated C include class discovery requires literal includes to appear before executable top-level statements";
 
 #[derive(Debug, Clone, PartialEq)]
@@ -28,6 +28,8 @@ pub struct IncludeGraphMetadata {
 pub struct IncludedFileMetadata {
     pub path: PathBuf,
     pub class_names: Vec<String>,
+    pub interface_names: Vec<String>,
+    pub trait_names: Vec<String>,
 }
 
 pub fn parse_source_with_literal_include_metadata(
@@ -97,14 +99,14 @@ impl IncludeDiscovery {
                     }
                     expanded.extend(self.expand_include(path, *once, *span, source_file)?);
                 }
-                Stmt::Class(_) => expanded.push(stmt.clone()),
+                Stmt::Class(_) | Stmt::Interface(_) | Stmt::Trait(_) => expanded.push(stmt.clone()),
                 _ if included_file => {
                     let span = stmt.span();
                     return Err(Diagnostic::new(
                         Phase::Parse,
                         span.line,
                         span.column,
-                        UNSUPPORTED_NON_CLASS_INCLUDE_TOP_LEVEL,
+                        UNSUPPORTED_NON_DECLARATION_INCLUDE_TOP_LEVEL,
                     ));
                 }
                 _ => {
@@ -150,9 +152,25 @@ impl IncludeDiscovery {
                 _ => None,
             })
             .collect();
+        let interface_names = statements
+            .iter()
+            .filter_map(|stmt| match stmt {
+                Stmt::Interface(interface) => Some(interface.name.clone()),
+                _ => None,
+            })
+            .collect();
+        let trait_names = statements
+            .iter()
+            .filter_map(|stmt| match stmt {
+                Stmt::Trait(trait_decl) => Some(trait_decl.name.clone()),
+                _ => None,
+            })
+            .collect();
         self.included_files.push(IncludedFileMetadata {
             path: include_path.clone(),
             class_names,
+            interface_names,
+            trait_names,
         });
 
         self.visiting.remove(&include_path);
