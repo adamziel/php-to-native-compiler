@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 14:16 CEST
+Updated: 2026-05-27 14:20 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,8 +19,19 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest accounted source capability: `794af86c` routes selected generated-C
-object property overloading through reusable runtime property-magic helpers.
+Latest accounted source capability: `77cde10f` routes selected generated-C
+callable-array invocation through the shared callable/source-call machinery.
+Known object-method callable arrays and class-string/static callable arrays
+now classify as reusable callable values, preserve named argument source order
+through `NativeCallArgumentsHandle`, and use the existing method/static
+argument binding, visibility/access-context, receiver cleanup, malformed
+metadata, by-reference diagnostic, and runtime lookup/invoke boundaries.
+Malformed arrays, unknown methods, visibility failures, unsupported by-reference
+literal shapes, spread/unpack callable-array calls, and callable-array
+missing-method magic fallback remain blocked or diagnostic instead of becoming
+fixture-specific array-literal lowering. Recent source commit `794af86c`
+routes selected generated-C object property overloading through reusable
+runtime property-magic helpers.
 Missing or externally inaccessible instance property reads, writes, `isset`,
 and `unset` now dispatch through public non-static `__get`, `__set`,
 `__isset`, and `__unset` callable metadata using the shared lookup/invoke and
