@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 23:09 CEST
+Updated: 2026-05-27 23:17 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,14 +19,27 @@ Overall integrated-roadmap progress: **93%** `[##################--]`
 
 Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `1186e46a` finalizes request destructors on
-generated-C fatal cleanup paths before freeing the finalizer registry and before
-unwinding output buffers. Destructor-bearing native objects now run their
-registered destructors even when execution aborts through a runtime dynamic-call
-fatal diagnostic. Broader array COW/reference edges, foreach by-reference
-lifetime, include exception/diagnostic propagation, visibility-context rules,
-trait conflict/precedence parity, remaining cleanup ordering, and non-C backend
-parity remain blocked.
+Latest accounted source capability: `c8cc77dc` rejects generated-C trait alias
+collisions where an alias would silently overwrite another effective trait
+method name. Trait composition now tracks composed method source identity, so
+alias-to-existing-method and visibility-changing same-name alias cases stop at a
+semantic blocker instead of publishing wrong native metadata or dispatch.
+Broader array COW/reference edges, foreach by-reference lifetime, include
+exception/diagnostic propagation, visibility-context rules, remaining
+trait precedence parity, cleanup ordering, and non-C backend parity remain
+blocked.
+
+Recent source commit `c8cc77dc` advances trait conflict safety without adding
+method-name production ladders, one-trait fixture lowering, or generated-C
+substring gates. Trait composition now records each composed name's declaring
+trait and original source method key, rejects aliases that collide with later
+effective methods from the same trait, and rejects same-name aliases when they
+would mutate visibility. Focused gates covered trait semantic unit tests,
+native callable metadata blocker coverage, a runtime-style `phpc run` probe with
+the expected collision diagnostic, adjacent trait alias/static metadata filters,
+formatting, and diff checks. Primary gate log:
+`state/logs/phpc-primary-trait-conflict-714973d8-20260527.gates.log`
+sha256 `a61e9f779cc4c65ae1cf3c43775b924a238e0398217df10579163862358edb0a`.
 
 Recent source commit `1186e46a` advances fatal cleanup/destructor parity without
 adding destructor-name production ladders, source-shape recognizers, or
