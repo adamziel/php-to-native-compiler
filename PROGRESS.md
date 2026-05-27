@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 12:09 CEST
+Updated: 2026-05-27 12:16 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,22 +19,40 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest accounted source capability: `d7b5bf98` routes selected generated-C
-constructor reference results through the shared constructor allocation/invoke
-and source-call argument carrier boundary. Supported named declared
-constructors can now feed `new Class(...)` into by-reference source-call
-arguments for direct function, dynamic function, and constructor consumers by
-moving the allocated receiver into a real runtime reference cell instead of
-copying a fake alias. Constructor allocation/invoke diagnostics, value-return
-diagnostics, argument-handle ownership, static-property offset mutation,
-static-property references, named receiver magic, descriptor closures, nested
-ArrayAccess, malformed magic, source-call references, exact imports, class
-constants, and class aliases remain green. Dynamic constructor names, classes
-without constructors but with arguments, constructor named arguments,
-spread/unpack, broader by-reference constructor alias transfer,
-destructor-observable cleanup ordering, traits/interfaces/effective method
-tables, arbitrary autoload/class discovery, broad references/COW, exact PHP
-diagnostics, and LLVM/backend parity remain blocked. Recent source commit
+Latest accounted source capability: `4f0acdf2` routes selected generated-C
+nested ArrayAccess owner-stack descents through reference-returning
+`offsetGet()` intermediates when declared facts prove the returned reference
+is another ArrayAccess object. Direct-variable and visible property-held roots
+can now assign or append through the returned reference using the shared
+runtime reference dispatch ABI, preserving alias/write-through behavior and
+avoiding fake parent `offsetSet()` commits. Runtime reference dispatch,
+owner-frame cleanup, constructor/property facts, nested ArrayAccess
+owner-stack paths, property-held roots, static-property offset mutation,
+static-property references, constructor reference results, named receiver
+magic, descriptor closures, malformed magic, source-call references, exact
+imports, class constants, and class aliases remain green.
+Reference-returning `offsetGet()` without proven object facts, arbitrary or
+side-effecting `offsetGet()` bodies, unknown/mixed reference/COW facts,
+static-property ArrayAccess roots, magic/static-property overloading,
+spread/unpack, traits/interfaces/effective method tables, arbitrary
+autoload/class discovery, broad references/COW, exact PHP diagnostics, and
+LLVM/backend parity remain blocked. Recent source commit `d7b5bf98` routes
+selected generated-C constructor reference results through the shared
+constructor allocation/invoke and source-call argument carrier boundary.
+Supported named declared constructors can now feed `new Class(...)` into
+by-reference source-call arguments for direct function, dynamic function, and
+constructor consumers by moving the allocated receiver into a real runtime
+reference cell instead of copying a fake alias. Constructor allocation/invoke
+diagnostics, value-return diagnostics, argument-handle ownership,
+static-property offset mutation, static-property references, named receiver
+magic, descriptor closures, nested ArrayAccess, malformed magic, source-call
+references, exact imports, class constants, and class aliases remain green.
+Dynamic constructor names, classes without constructors but with arguments,
+constructor named arguments, spread/unpack, broader by-reference constructor
+alias transfer, destructor-observable cleanup ordering,
+traits/interfaces/effective method tables, arbitrary autoload/class
+discovery, broad references/COW, exact PHP diagnostics, and LLVM/backend
+parity remain blocked. Recent source commit
 `9d2b3526` routes selected generated-C static-property array-offset mutation
 through the shared static-property lvalue/storage boundary and ArrayAccess
 owner-stack paths. Literal class, object/class-string, `self`, `parent`, and

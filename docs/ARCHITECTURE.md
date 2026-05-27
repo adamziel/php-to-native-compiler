@@ -1812,11 +1812,14 @@ Object-property `ArrayAccess` offset shapes have a dedicated native boundary.
 Generated-C executable lowering now has selected exceptions for compiler-known
 direct `ArrayAccess` roots and visible property-held roots: read/write/RMW,
 `??=`, append, unset, and keyed-append-suffix nested owner-stack paths descend
-through by-value `offsetGet()` intermediates, perform the leaf offset
-operation, reverse-write parents, and commit the original owner. LLVM IR and
-direct assembly still reject these newer `ArrayAccess` paths, and generated C
-keeps reference-returning `offsetGet()`, arbitrary alias roots, unknown or
-non-direct property holders, root keyed-suffix append without owner-stack
+through by-value `offsetGet()` intermediates or selected reference-returning
+`offsetGet()` intermediates whose declared facts prove another `ArrayAccess`
+object. The owner stack performs the leaf offset operation, reverse-writes
+by-value parents, writes through referenced intermediate frames, and commits
+the original owner only when needed. LLVM IR and direct assembly still reject
+these newer `ArrayAccess` paths, and generated C keeps arbitrary alias roots,
+unknown or non-direct property holders, reference-returning `offsetGet()`
+without proven object facts, root keyed-suffix append without owner-stack
 descent, broad reference/COW behavior, cleanup/unwind breadth, and exact PHP
 diagnostics behind explicit blockers.
 `instanceof` expressions have a dedicated native rejection boundary for the

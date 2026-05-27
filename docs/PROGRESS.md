@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added generated-C nested `ArrayAccess` owner-stack descent through selected
+  reference-returning `offsetGet()` intermediates. When declared method facts
+  prove the returned reference is another `ArrayAccess` object, direct roots
+  and visible property-held roots now materialize a real runtime reference
+  frame, descend through that frame, and perform assignment or append leaf
+  writes against the referenced object instead of committing a fake by-value
+  parent with `offsetSet()`. The runtime exports a diagnostic
+  `offsetGet()` reference dispatch helper and the compiler preserves alias
+  write-through for both direct-variable and property-held owner stacks.
+  Focused primary gates cover the runtime reference helper, generated-C and
+  linked executable alias/write-through proof, nested ArrayAccess filters,
+  static-property storage/reference/offset behavior, constructor reference
+  results, magic dynamic/static calls, malformed magic signatures, named
+  arguments, descriptor closures, source-call references, exact imports,
+  class constants, class aliases, and `cargo check -p phpc`. Unknown or mixed
+  reference/COW facts, reference-returning `offsetGet()` without proven
+  object facts, arbitrary or side-effecting `offsetGet()` bodies,
+  static-property ArrayAccess roots, broader alias roots, spread/unpack,
+  traits/interfaces/effective method tables, autoload breadth, exact PHP
+  diagnostics, and LLVM IR/assembly parity remain unsupported.
+
 - Added generated-C named-argument preservation for selected receiver
   `__call` fallback calls. Direct receiver calls with missing or inaccessible
   instance methods, and dynamic receiver calls with statically known method

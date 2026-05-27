@@ -663,10 +663,15 @@
   bridge now covers visible property-held roots reached through bounded
   non-direct holder expressions, including method-returned holders such as
   `$holder->holder()->bag["box"]["leaf"]`, factory-returned holders such as
-  `make_holder($outer)->bag["box"]["leaf"]`, dynamic selected properties, a
-  nested append suffix such as `$holder->holder()->bag["box"][]`, and
+  `make_holder($outer)->bag["box"]["leaf"]`, dynamic selected properties,
+  nested append suffixes such as `$holder->holder()->bag["box"][]`,
   storable reference sources such as
-  `$target["slot"] =& $holder->holder()->bag["box"]["leaf"]`.
+  `$target["slot"] =& $holder->holder()->bag["box"]["leaf"]`, direct
+  production owner-stack assignments such as
+  `$bag["box"]["leaf"] = $value`, and property-held owner-stack appends such
+  as `$holder->bag["box"][] = $value` when the intermediate
+  `offsetGet()` returns by reference and its returned object facts prove
+  `ArrayAccess`.
   Public by-reference `ArrayAccess::offsetGet()` reference sources now execute
   supported top-level method-body statements before the return, so side
   effects, missing-bucket initialization, and local aliases can participate in
