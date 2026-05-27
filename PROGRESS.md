@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 20:19 CEST
+Updated: 2026-05-27 20:25 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,18 +19,36 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `db8d36f6` admits descriptor closures into
-the centralized finite mixed-callable source-call policy. Compile-time
-callable-family contracts now treat descriptor closures like generated
-functions, declared methods, and selected runtime builtins when all candidates
-publish compatible source-call metadata, including arity, by-reference
-parameters, return-reference behavior, and argument plans. This removes a
-previous conservative blocker for compatible mixed generated/builtin/descriptor
-callable values without adding name ladders, branch-shape recognizers, or
-fixture-specific lowering. Runtime-only heterogeneous callable values,
-unsupported external/core callables, comparator callbacks, broader callable
-object/array families, full by-reference/COW parity, magic fallback callables,
-and LLVM/ASM parity remain blocked.
+Latest accounted source capability: `c0e81cfe` extends the selected runtime
+callable array-sort writeback family to `natsort()` and `natcasesort()`.
+Runtime builtin lookup, callable source signatures, compiler runtime-builtin
+canonicalization, generated-C source-call metadata, and linked native execution
+now preserve the natural-sort PHP shape: one required by-reference `$array`
+argument and no `$flags` argument. This builds on the existing natural
+comparison implementation and shared array-lvalue writeback path without adding
+fixture-output sorting, one-array lowering, generated-C substring gates, or
+comparator callback claims. Comparator callbacks, broader callable object/array
+families, object/ArrayAccess/resource owners, full by-reference/COW parity,
+magic fallback callables, and LLVM/ASM parity remain blocked.
+
+Recent source commit `c0e81cfe` advances selected natural-sort callable
+writeback without adding exact-name dynamic ladders, one-array expected-order
+production lowering, or docs-only substitution. `NativeArraySortOperation` now
+marks `natsort()` / `natcasesort()` as supported by the shared runtime callable
+writeback family, runtime callable builtin signatures expose the natural-sort
+arity/reference contract, and compiler callable-string metadata recognizes both
+functions as by-reference runtime builtins with no optional flags parameter.
+Focused gates covered compile checking, runtime builtin signature metadata,
+runtime natural-sort writeback through callable references, compiler
+runtime-builtin source-call metadata, generated-C source proof, linked known and
+unknown callable-string natural-sort execution, heterogeneous callable policy
+regression, SPL autoload lowering regression, formatting, and diff checks.
+Comparator callback families (`usort`, `uasort`, `uksort`), full flag/diagnostic
+parity outside the selected mode/natural subset, object/ArrayAccess/resource
+owners, broad callable object/array families, broad reference/COW parity, and
+LLVM/ASM parity remain blocked. Primary gate log:
+`state/logs/phpc-primary-natural-sort-writeback-e9034447-20260527.gates.log`
+sha256 `35652cfdd96563e3ddc8385c1c974f4a25a359213c42dbfc77160b27ce3c8470`.
 
 Recent source commit `db8d36f6` advances heterogeneous callable-family policy
 without adding generated-substring, one-callable, fixture-name, or per-branch
