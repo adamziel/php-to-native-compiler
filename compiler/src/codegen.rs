@@ -12094,6 +12094,9 @@ impl LlvmGenerator {
         }
 
         let value = self.emit_expr(&args[0])?;
+        if let Some(result) = self.function_exists_result_for_value(&value) {
+            return Ok(IrValue::Bool(result));
+        }
         self.emit_native_text_membership_bool(
             value,
             NativeTextSurface::FunctionName,
