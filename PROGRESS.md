@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 16:32 CEST
+Updated: 2026-05-27 16:37 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,10 +19,21 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **90%** `[##################--]`
 
-Latest accounted source capability: `b8b29d93` routes bounded literal
-generated-C include/require execution through reusable include-unit functions.
-`phpc compile --emit-exe` now discovers literal included files as executable
-units, emits one canonical include function per bounded path, executes ordered
+Latest accounted source capability: `aecbc310` routes selected runtime builtin
+callable-string spread calls through reusable builtin signature metadata and
+the shared materialized argument path. Runtime string-valued callables that can
+only name supported homogeneous builtin families now build the same
+source-call argument contract used by generated functions and methods,
+materialize/unpack spread entries, finalize them through
+`NativeCallArgumentsHandle`, and invoke through existing runtime builtin
+callable helpers. Builtins without runtime callable families or default-value
+support, by-reference/writeback builtins, unknown or heterogeneous runtime
+callables, magic fallback, and broader by-reference unpack remain blocked.
+
+Recent source commit `b8b29d93` routes bounded literal generated-C
+include/require execution through reusable include-unit functions. `phpc
+compile --emit-exe` now discovers literal included files as executable units,
+emits one canonical include function per bounded path, executes ordered
 top-level statements through the active root symbol table, returns tagged
 include results for normal completion, explicit included-file `return`, and
 duplicate `_once` truth, and tracks `_once` state by canonical path. Dynamic
