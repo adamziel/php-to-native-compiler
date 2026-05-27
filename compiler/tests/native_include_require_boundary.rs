@@ -167,7 +167,7 @@ fn native_executable_c_source_uses_included_class_metadata_boundary() {
 }
 
 #[test]
-fn native_executable_c_source_uses_included_trait_metadata_boundary_without_trait_execution() {
+fn native_executable_c_source_uses_included_trait_metadata_boundary_with_trait_execution() {
     let dir = include_discovery_fixture_dir("trait-c-source");
     let root = write_supported_trait_include_fixture(&dir);
     let unit = compilation_unit_with_literal_include_metadata(
@@ -181,8 +181,14 @@ fn native_executable_c_source_uses_included_trait_metadata_boundary_without_trai
 
     assert!(
         source.contains("phpc_native_declare_user_class_bytes")
-            && source.contains("phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic"),
-        "generated C should accept classes using included trait metadata without executing trait methods:\n{source}"
+            && source.contains("phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic")
+            && source.contains(
+                "phpc_native_callable_table_register_visibility_staticness_magic_signature_frame_callback_and_free"
+            )
+            && source.contains(
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+            ),
+        "generated C should accept classes using included trait metadata and route trait methods through declared frames:\n{source}"
     );
 }
 
@@ -258,7 +264,7 @@ fn emit_exe_links_and_runs_included_class_metadata_consumers() {
 }
 
 #[test]
-fn emit_exe_links_and_runs_included_trait_metadata_consumers_without_trait_execution() {
+fn emit_exe_links_and_runs_included_trait_method_consumers() {
     if !has_cc() {
         return;
     }
@@ -292,7 +298,7 @@ fn emit_exe_links_and_runs_included_trait_metadata_consumers_without_trait_execu
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(String::from_utf8_lossy(&run.stdout), "trait-meta\n");
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "trait-meta|trait\n");
 }
 
 #[test]
@@ -469,6 +475,9 @@ fn write_supported_trait_include_fixture(dir: &Path) -> PathBuf {
             "require __DIR__ . '/included-trait.php';\n",
             "class UsesIncludedMetaTrait { use IncludedMetaTrait; }\n",
             "echo class_exists('UsesIncludedMetaTrait') ? 'trait-meta' : 'missing';\n",
+            "echo '|';\n",
+            "$box = new UsesIncludedMetaTrait();\n",
+            "echo $box->traitLabel();\n",
             "echo \"\\n\";\n",
         ),
     )

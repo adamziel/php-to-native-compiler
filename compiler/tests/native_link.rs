@@ -24574,6 +24574,36 @@ const NATIVE_NAMED_CALLABLE_ARRAY_SOURCE_CALL_SOURCE: &str = concat!(
     "echo [$box, \"inst\"](third: named_callable_array_marker(\"U\"), extra: named_callable_array_marker(\"X\"), first: named_callable_array_marker(\"G\"), slot: $slot), \"|\", $slot;\n",
 );
 
+const NATIVE_TRAIT_METHOD_FRAME_SOURCE: &str = concat!(
+    "<?php\n",
+    "trait TraitMethodFrameSource {\n",
+    "    public function mix($first, &$slot, $third = \"D\", ...$tail) {\n",
+    "        $slot = $slot . \"!\";\n",
+    "        return $first . $slot . $third . $tail[\"extra\"];\n",
+    "    }\n",
+    "    public function label($value) { return \"L\" . $value; }\n",
+    "    public function overridden() { return \"trait\"; }\n",
+    "}\n",
+    "trait TraitVisibilityFrameSource {\n",
+    "    public function hidden($value) { return \"H\" . $value; }\n",
+    "}\n",
+    "class TraitMethodFrameBox {\n",
+    "    use TraitMethodFrameSource, TraitVisibilityFrameSource {\n",
+    "        TraitMethodFrameSource::label as aliasLabel;\n",
+    "        TraitVisibilityFrameSource::hidden as private privateHidden;\n",
+    "    }\n",
+    "    public function reveal($value) { return $this->privateHidden($value); }\n",
+    "    public function overridden() { return \"class\"; }\n",
+    "}\n",
+    "$box = new TraitMethodFrameBox();\n",
+    "$slot = \"S\";\n",
+    "echo $box->mix(third: \"T\", extra: \"E\", first: \"F\", slot: $slot), \"|\", $slot, \"|\";\n",
+    "echo $box->aliasLabel(\"A\"), \"|\", $box->reveal(\"B\"), \"|\", $box->overridden(), \"|\";\n",
+    "$method = \"MIX\";\n",
+    "$slot2 = \"Q\";\n",
+    "echo $box->{$method}(third: \"t\", extra: \"e\", first: \"f\", slot: $slot2), \"|\", $slot2;\n",
+);
+
 const NATIVE_INTERFACE_TYPED_METHOD_SOURCE_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "interface NativeInterfaceDispatchContract {\n",
@@ -25202,6 +25232,38 @@ fn native_executable_c_source_lowers_named_callable_array_arguments_through_shar
             && !body.contains("phpc_native_value_dynamic_call_name_matches")
             && !source.contains("named argument lowering is only implemented"),
         "callable-array source calls should not use the legacy generated dynamic-call ladder or named-argument blocker:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_trait_methods_through_declared_frame_carriers() {
+    let program = parse(NATIVE_TRAIT_METHOD_FRAME_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "phpc_native_callable_table_register_visibility_staticness_magic_signature_frame_callback_and_free"
+        ) && source.contains("PHPC_NATIVE_CALLABLE_VISIBILITY_PRIVATE")
+            && source.contains("phpc_native_call_frame_read_receiver")
+            && source.contains("phpc_declared_method_"),
+        "trait-provided methods, aliases, and visibility adaptations should publish normal declared method frame metadata:\n{source}"
+    );
+    assert!(
+        source.contains(
+            "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+        ) && body.contains("dynamic_receiver_method_source_call_args_")
+            && body.contains("phpc_native_array_insert_key_value_with_diagnostic")
+            && body.contains("phpc_native_call_arguments_push_reference_and_free")
+            && source.contains("PHPC_NATIVE_CALLABLE_ACCESS_CLASS_CONTEXT"),
+        "trait method calls should reuse the declared method source-call carrier path for named, dynamic, by-reference, and class-context calls:\n{source}"
+    );
+    assert!(
+        !source.contains("method-call lowering rejects")
+            && !source.contains("trait lowering rejects")
+            && !body.contains("method_dispatch_status")
+            && !body.contains("dynamic_method_dispatch_status"),
+        "trait method execution must not fall back to blockers or generated dispatch ladders:\n{source}"
     );
 }
 
@@ -26684,6 +26746,32 @@ fn emit_exe_links_and_runs_named_callable_array_source_call_argument_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"TEFSFS!TE|S!|UXGIGS!?UX|S!?");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_trait_method_frame_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("trait_method_frame", NATIVE_TRAIT_METHOD_FRAME_SOURCE);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native trait method frame executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"FS!TE|S!|LA|HB|class|fQ!te|Q!");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

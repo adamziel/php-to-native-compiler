@@ -1096,22 +1096,30 @@ class UsesNestedConstantTrait { use NestedConstantTrait; }
 }
 
 #[test]
-fn trait_effective_method_metadata_does_not_enable_trait_method_execution() {
+fn trait_effective_method_metadata_enables_trait_method_frame_binding() {
     let source = r#"<?php
 trait ExecutableTrait {
-    public function traitMethod() { echo "trait"; }
+    public function traitMethod($value) { return "trait-" . $value; }
 }
 class UsesExecutableTrait {
     use ExecutableTrait;
 }
 $object = new UsesExecutableTrait();
-$object->traitMethod();
+echo $object->traitMethod("frame");
 "#;
 
-    let error = emit_native_executable_c_source(&parse(source).unwrap()).unwrap_err();
+    let generated = emit_native_executable_c_source(&parse(source).unwrap()).unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, ASSEMBLY_METHOD_CALL_REJECTION);
+    assert!(
+        generated.contains(
+            "phpc_native_callable_table_register_visibility_staticness_magic_signature_frame_callback_and_free"
+        ) && generated.contains(
+            "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+        ) && generated.contains("phpc_native_call_frame_read_receiver")
+            && generated.contains("phpc_native_call_arguments_push_value_and_free")
+            && !generated.contains(ASSEMBLY_METHOD_CALL_REJECTION),
+        "trait-provided methods should publish callable metadata and execute through declared method frames:\n{generated}"
+    );
 }
 
 #[test]

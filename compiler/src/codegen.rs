@@ -20274,7 +20274,34 @@ impl CGenerator {
             {
                 allocation_metadata.cleanup_risk =
                     CDeclaredClassCleanupRisk::destructor_observable();
+                effective_methods.push(CDeclaredClassEffectiveMethod {
+                    declaring_trait_name: Some(method.declaring_trait_name),
+                    decl: method.method.function,
+                    visibility: method.method.visibility,
+                    is_static: method.method.is_static,
+                    span: method.method.span,
+                });
+                continue;
             }
+            self.validate_declared_class_method_for_native_frame(&method.method)?;
+            let key = Self::declared_method_key(&method.method.function.name);
+            if !seen_methods.insert(key) {
+                return Err(self.unsupported(method.method.span, ASSEMBLY_METHOD_CALL_REJECTION));
+            }
+            let c_name = Self::c_declared_class_method_name(
+                class_index,
+                methods.len(),
+                &class.name,
+                &method.method.function.name,
+            );
+            methods.push(CDeclaredClassMethod {
+                c_name,
+                decl: method.method.function.clone(),
+                visibility: method.method.visibility,
+                is_static: method.method.is_static,
+                return_facts: None,
+                this_property_value_facts: HashMap::new(),
+            });
             effective_methods.push(CDeclaredClassEffectiveMethod {
                 declaring_trait_name: Some(method.declaring_trait_name),
                 decl: method.method.function,
@@ -59795,6 +59822,70 @@ mod tests {
 
     fn requirement(tag: u8, operand_index: usize) -> NativeDiagnosticOperandRequirement {
         NativeDiagnosticOperandRequirement { tag, operand_index }
+    }
+
+    #[test]
+    fn trait_effective_methods_bind_declared_callable_frame_metadata() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "trait TraitFrameSource {\n",
+            "    public function mix($first, &$slot, $third = \"D\", ...$tail) { return $first; }\n",
+            "    public function label($value) { return $value; }\n",
+            "    public function overridden() { return \"trait\"; }\n",
+            "}\n",
+            "trait VisibilityFrameSource {\n",
+            "    public function hidden($value) { return $value; }\n",
+            "}\n",
+            "class TraitFrameConsumer {\n",
+            "    use TraitFrameSource, VisibilityFrameSource {\n",
+            "        TraitFrameSource::label as aliasLabel;\n",
+            "        VisibilityFrameSource::hidden as private privateHidden;\n",
+            "    }\n",
+            "    public function overridden() { return \"class\"; }\n",
+            "}\n",
+        ))
+        .unwrap();
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_traits(&program.statements)
+            .unwrap();
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .unwrap();
+
+        let class = generator
+            .declared_classes
+            .get(&CGenerator::declared_class_key("TraitFrameConsumer"))
+            .expect("trait-consuming class registered");
+        let method = |name: &str| {
+            class
+                .methods
+                .iter()
+                .find(|method| method.decl.name.eq_ignore_ascii_case(name))
+                .expect("trait effective method should be a callable frame method")
+        };
+
+        assert!(method("mix").decl.params[1].by_reference);
+        assert_eq!(method("aliasLabel").visibility, ClassVisibility::Public);
+        assert_eq!(method("privateHidden").visibility, ClassVisibility::Private);
+        assert_eq!(method("overridden").decl.body.len(), 1);
+        assert_eq!(
+            class
+                .methods
+                .iter()
+                .filter(|method| method.decl.name.eq_ignore_ascii_case("overridden"))
+                .count(),
+            1,
+            "direct class methods should override trait methods before frame binding"
+        );
+        assert!(class.effective_methods.iter().any(|method| method
+            .declaring_trait_name
+            .as_deref()
+            == Some("TraitFrameSource")
+            && method.decl.name.eq_ignore_ascii_case("mix")));
     }
 
     #[test]
