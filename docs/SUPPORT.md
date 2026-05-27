@@ -6046,9 +6046,15 @@
   evaluate to current objects or declared class-name strings, using the same
   storage, inherited-property lookup, visibility rules, typed-write
   diagnostics, and assignment-result ownership as literal and relative
-  receivers. Computed static property names beyond direct `::$name` tokens,
-  storage-removing static-property unset, static-property references,
-  object/class-string receiver `isset`, `empty`, `??`, `??=`, and
+  receivers. Static-property references and selected static-property
+  array-offset reference sources use the same storage identity for literal,
+  object/class-string, `self`, `parent`, and method-frame late-`static`
+  receivers; when the stored root is a proven `ArrayAccess` object, selected
+  `Class::$bag[$key]` by-reference sources route through the shared
+  reference-returning `offsetGet()` owner boundary. Computed static property
+  names beyond direct `::$name` tokens, storage-removing static-property unset,
+  multi-hop static-property `ArrayAccess` reference paths, object/class-string
+  receiver `isset`, `empty`, `??`, `??=`, and
   `static::$prop` outside method/static class context remain unsupported.
   `parent::method(...)` and `self::method(...)` calls are the supported magic
   receiver slices for visible non-static or static method dispatch from active

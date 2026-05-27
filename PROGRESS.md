@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 12:39 CEST
+Updated: 2026-05-27 12:47 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,7 +19,22 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest accounted source capability: `092288d3` routes selected generated-C
+Latest accounted source capability: `ecef5dc3` routes selected generated-C
+static-property roots whose stored value is an `ArrayAccess` object into the
+shared reference-owner `offsetGet()` boundary when the static-property offset
+is used as a by-reference source. Literal class, object receiver,
+class-string receiver, `self`, `parent`, and method-frame late-`static`
+static-property roots preserve storage identity, visibility/type/missing
+diagnostics, receiver-scope cleanup, and alias/write-through behavior instead
+of reading the root by value or cloning a fake reference. Multi-hop
+static-property ArrayAccess reference paths, computed/static/dynamic
+reference-COW shapes, and new owner-stack/reference ABIs remain blocked.
+Dynamic class constants, direct receiver magic, constructor reference results,
+static-property storage/reference/offset references, reference-returning
+ArrayAccess owner stacks, descriptor closures, malformed magic metadata,
+source-call references, exact imports, literal/relative class constants, and
+class aliases remain green. Recent source commit `092288d3` routes selected
+generated-C
 dynamic class-constant receivers through the shared class/constant metadata
 tables. `$class::CONST` and `$object::CONST` now normalize declared
 class-string and object receivers, including class aliases, through the same
@@ -603,6 +618,7 @@ Current critical path to 100%:
 
 | Commit | Capability | Proof shape |
 | --- | --- | --- |
+| `ecef5dc3` | Generated C now routes selected static-property `ArrayAccess` by-reference sources through real static-property storage identity and the shared reference-returning `offsetGet()` owner boundary. Literal class, object receiver, class-string receiver, `self`, `parent`, and method-frame late-`static` static-property roots can feed by-reference calls and direct alias assignment without fake by-value reference cloning. Multi-hop static-property ArrayAccess reference paths, computed/static/dynamic reference-COW shapes, and new owner-stack/reference ABIs remain blocked. | Primary integration gates passed with `SUMMARY passes=23 failures=0`, covering fmt, diff check, `cargo check -p phpc`, unit owner-selection proof, generated-C and linked executable static-property ArrayAccess reference proofs, unsupported static-property dynamic-shape blockers, static-property reference/offset-reference/offset-mutation regressions, reference-returning ArrayAccess, nested/property-held ArrayAccess, source-call references, descriptor closures, constructors, named/magic dynamic/static calls, malformed magic, dynamic class constants, exact imports, class constants, and class aliases. Gate log: `state/workers/logs/phpc-primary-static-property-arrayaccess-reference-r1-integration-20260527.gates.log` sha256 `2e6f8470963fa3acd4850fa746e5e7c9c9ed8badee9d602d3a5af27e67d1cd15`. |
 | `092288d3` | Generated C now routes selected dynamic class-constant receivers through shared class/constant metadata. Declared class-string and object receivers for `$receiver::CONST` normalize through the runtime class-constant scope helper, honor alias canonicalization, inheritance, visibility, missing-class/missing-constant diagnostics, and explicit cleanup, while dynamic receiver `::class` remains blocked at the no-autoload ABI boundary. | Primary integration gates passed with `SUMMARY passes=19 failures=0`, covering fmt, diff check, `cargo check -p phpc`, runtime class-constant metadata, generated-C and linked executable dynamic class-constant proofs, dynamic `::class` blocker proof, class constants, class aliases, exact imports, named/magic dynamic/static calls, malformed magic, static-property reference/offset-reference, reference-returning ArrayAccess, constructors, descriptor closures, and source-call references. Gate log: `state/workers/logs/phpc-primary-dynamic-class-constant-r1-integration-20260527.gates.log` sha256 `c8160ce3a108a02118b6d7731d96095a9e579108906148984a12269041bf6f00`. |
 | `d7b5bf98` | Generated C now routes selected constructor reference results through the shared constructor allocation/invoke result carrier and call-argument ownership boundary. Supported named declared constructors consumed by by-reference source-call arguments move the allocated receiver into a real runtime reference cell for direct function, dynamic function, and constructor consumers, preserving alias/write-through behavior without cloning fake references. Dynamic constructor names, classes without constructors but with arguments, constructor named arguments, spread/unpack, destructor-observable cleanup ordering, broader by-reference constructor alias transfer, traits/interfaces, autoload breadth, broad references/COW, exact PHP diagnostics, and backend parity remain blocked. | Primary integration gates passed with `SUMMARY passes=24 failures=0`, covering fmt, diff check, `cargo check -p phpc`, invoke/source-call carrier units, runtime constructor reference ownership, generated-C and linked executable constructor reference proofs, constructor, source-call reference, descriptor closure, named, magic dynamic/static, static-property offset mutation, static-property storage/reference, runtime static-property, nested/property ArrayAccess, malformed magic, exact imports, class constants, and class aliases. Gate log: `state/workers/logs/phpc-primary-constructor-reference-result-r7-integration-20260527.gates.log` sha256 `f46ca8d8676735da381931d87c8c3fd79c48b318a3472bb09ede049afb74dde4`. |
 | `9d2b3526` | Generated C now routes selected static-property array-offset mutation through the shared static-property lvalue/storage boundary and ArrayAccess owner-stack paths. Literal class, object/class-string, `self`, `parent`, and declared method-frame `static` receivers can perform selected offset assignment, append, compound/RMW updates, `??=`, and `unset()` while preserving expression-result ownership, typed/visibility diagnostics, and static storage identity. Computed names, top-level `static::$prop`, static-property array-offset references, arbitrary alias roots, magic/static overloading, broad references/COW, cleanup/unwind breadth, and backend parity remain blocked. | Primary integration gates passed with `SUMMARY passes=22 failures=0`, covering fmt, diff check, `cargo check -p phpc`, nested ArrayAccess owner-stack and direct-root append guards, runtime static-property tests, generated-C linked static-property offset mutation proofs, static-property reference/storage regressions, named receiver magic regressions, nested/property ArrayAccess, descriptor closures, magic dynamic/static filters, malformed magic signatures, source-call references, exact imports, class constants, and class aliases. Gate log: `state/workers/logs/phpc-primary-static-property-offset-mutation-r3-integration-20260527.gates.log` sha256 `41488602ec21cdf8af469c72d323980d1f3c1a21886f93cc61c385436936c00a`. |

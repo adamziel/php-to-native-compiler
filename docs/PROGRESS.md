@@ -4,6 +4,22 @@
 
 Implemented:
 
+- Added generated-C static-property `ArrayAccess` by-reference source routing
+  through real static-property storage identity and the existing
+  reference-returning `offsetGet()` owner boundary. Literal class, object
+  receiver, class-string receiver, `self`, `parent`, and method-frame
+  late-`static` roots can now feed by-reference calls and direct alias
+  assignment from `Class::$bag[$key]`-style sources without fake by-value
+  reference cloning. Focused primary gates cover owner-selection unit proof,
+  generated-C and linked executable alias/write-through proof, unsupported
+  dynamic-shape blockers, static-property reference/offset-reference/
+  offset-mutation regressions, reference-returning ArrayAccess, nested and
+  property-held ArrayAccess, source-call references, descriptor closures,
+  constructors, named/magic dynamic/static calls, malformed magic, dynamic
+  class constants, exact imports, class constants, and class aliases.
+  Multi-hop static-property ArrayAccess reference paths and broader
+  computed/static/dynamic reference-COW shapes remain unsupported.
+
 - Added generated-C dynamic class-constant receiver production through shared
   runtime class/constant metadata. `$class::CONST` and `$object::CONST` now
   normalize declared class-string and object receivers, including class

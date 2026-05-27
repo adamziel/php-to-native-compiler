@@ -1864,8 +1864,12 @@ method-frame late-`static` receivers, then use the same request-owned runtime
 storage APIs for reads, plain assignment, compound assignment, pre/post
 increment/decrement, `isset`, `empty`, `??`, `??=`, `unset`, direct reference
 carriers, selected array-offset mutation, and selected array-offset reference
-carriers. Computed property names, top-level `static::$prop[...]` without a
-method-frame called scope, static-property `ArrayAccess` offset references,
+carriers. Static-property roots whose stored value is a proven `ArrayAccess`
+object can also feed selected by-reference offset sources through the shared
+reference-returning `offsetGet()` owner boundary, preserving static-property
+storage identity instead of inventing by-value reference owners. Computed
+property names, top-level `static::$prop[...]` without a method-frame called
+scope, multi-hop static-property `ArrayAccess` offset references,
 magic/static overloading, broad reference/COW behavior, exact diagnostics, and
 LLVM parity remain explicit native blockers instead of collapsing into generic
 object/class diagnostics.
