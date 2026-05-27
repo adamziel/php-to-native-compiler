@@ -6665,8 +6665,8 @@ impl Parser {
             });
         }
 
-        if let TokenKind::Identifier(name) = self.peek().kind.clone() {
-            if matches!(self.peek_next().kind, TokenKind::Colon) {
+        if matches!(self.peek_next().kind, TokenKind::Colon) {
+            if let Some(name) = named_argument_label_name(&self.peek().kind) {
                 let span = self.advance().span;
                 self.consume_keyword(TokenKind::Colon, "expected ':' after named argument")?;
                 let expr = self.parse_expression_with_append_read(true)?;
@@ -7879,6 +7879,47 @@ impl Parser {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parsed_named_argument_labels(source: &str) -> Vec<String> {
+        let program = parse_source(source).expect("source should parse");
+        let [Stmt::Expr {
+            expr: Expr::Call { args, .. },
+            ..
+        }] = program.statements.as_slice()
+        else {
+            panic!("expected one expression statement call");
+        };
+
+        args.iter()
+            .map(|arg| match arg {
+                Expr::NamedArgument { name, .. } => name.clone(),
+                other => panic!("expected named argument, got {other:?}"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn parser_accepts_reserved_words_as_named_argument_labels() {
+        assert_eq!(
+            parsed_named_argument_labels(
+                "<?php\nprobe(return: 1, class: 2, function: 3, value: 4);\n"
+            ),
+            ["return", "class", "function", "value"]
+        );
+    }
+
+    #[test]
+    fn parser_preserves_ordinary_identifier_named_argument_labels() {
+        assert_eq!(
+            parsed_named_argument_labels("<?php\nprobe(value: 1, return_mode: 2);\n"),
+            ["value", "return_mode"]
+        );
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum ArrayLiteralDelimiter {
     Short,
@@ -8017,7 +8058,14 @@ fn token_name(kind: &TokenKind) -> &'static str {
     }
 }
 
-fn object_property_keyword_name(kind: &TokenKind) -> Option<&'static str> {
+fn named_argument_label_name(kind: &TokenKind) -> Option<String> {
+    match kind {
+        TokenKind::Identifier(name) => Some(name.clone()),
+        _ => keyword_identifier_name(kind).map(str::to_string),
+    }
+}
+
+fn keyword_identifier_name(kind: &TokenKind) -> Option<&'static str> {
     match kind {
         TokenKind::Echo => Some("echo"),
         TokenKind::Print => Some("print"),
@@ -8069,6 +8117,10 @@ fn object_property_keyword_name(kind: &TokenKind) -> Option<&'static str> {
         TokenKind::False => Some("false"),
         _ => None,
     }
+}
+
+fn object_property_keyword_name(kind: &TokenKind) -> Option<&'static str> {
+    keyword_identifier_name(kind)
 }
 
 fn include_require_name(kind: &TokenKind) -> Option<&'static str> {

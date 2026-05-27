@@ -1717,6 +1717,27 @@ fn native_value_print_r_return_mode(
     }
 }
 
+fn native_value_print_r_params(span: Span) -> [FunctionParam; 2] {
+    [
+        FunctionParam {
+            name: "value".to_string(),
+            type_decl: None,
+            by_reference: false,
+            is_variadic: false,
+            default: None,
+            span,
+        },
+        FunctionParam {
+            name: "return".to_string(),
+            type_decl: None,
+            by_reference: false,
+            is_variadic: false,
+            default: Some(Expr::Bool(false, span)),
+            span,
+        },
+    ]
+}
+
 fn call_arguments_have_spread(args: &[Expr]) -> bool {
     args.iter()
         .any(|arg| matches!(arg, Expr::SpreadArgument { .. }))
@@ -23373,6 +23394,7 @@ impl CGenerator {
                 output.push_str("extern bool phpc_native_call_arguments_push_reference_and_free(phpc_NativeCallArgumentsHandle arguments, phpc_NativeReferenceHandle reference);\n");
                 output.push_str("extern bool phpc_native_call_arguments_push_named_reference_and_free(phpc_NativeCallArgumentsHandle arguments, phpc_NativeStringHandle name, phpc_NativeReferenceHandle reference);\n");
                 output.push_str("extern bool phpc_native_call_arguments_mark_finalized_variadic(phpc_NativeCallArgumentsHandle arguments);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_call_arguments_read_value(phpc_NativeCallArgumentsHandle arguments, size_t index);\n");
                 output.push_str("extern void phpc_native_call_arguments_free(phpc_NativeCallArgumentsHandle handle);\n");
                 if self.uses_native_materialized_call_argument_helpers {
                     output.push_str("extern phpc_NativeMaterializedCallArgumentsHandle phpc_native_materialized_call_arguments_new(void);\n");
@@ -35453,6 +35475,7 @@ impl CGenerator {
             if name.eq_ignore_ascii_case("print_r")
                 && args.len() == 1
                 && !call_arguments_have_named(args)
+                && !call_arguments_have_spread(args)
             {
                 let value = self.materialize_native_value_result_operand(&args[0], "")?;
                 self.emit_native_value_print_r_stdout_with_diagnostic(&value.handle);
@@ -39544,9 +39567,6 @@ impl CGenerator {
                 self.retain_native_value_cleanup_handle(&value.handle);
                 Ok(CValue::NativeValueHandle(value.handle))
             }
-            Expr::Call { args, span, .. } if call_arguments_have_named(args) => {
-                Err(self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION))
-            }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("print_r") => {
                 if let Some(value) =
                     self.try_materialize_native_value_print_r_return_call(name, args, *span, "")?
@@ -39560,6 +39580,9 @@ impl CGenerator {
                         ASSEMBLY_FUNCTION_CALL_REJECTION,
                     ))
                 }
+            }
+            Expr::Call { args, span, .. } if call_arguments_have_named(args) => {
+                Err(self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION))
             }
             Expr::Call { name, args, span } if is_exit_construct_name(name) => {
                 self.emit_exit_construct(args, *span)
@@ -56698,6 +56721,14 @@ impl CGenerator {
                 )
             }
             Expr::Call { name, args, span } => {
+                if let Some(value) = self.try_materialize_native_value_print_r_return_call(
+                    name,
+                    args,
+                    *span,
+                    failure_cleanup,
+                )? {
+                    return Ok(Some(value));
+                }
                 if call_arguments_have_named(args) {
                     if let Some(value) =
                         self.try_materialize_user_function_call(name, args, *span, failure_cleanup)?
@@ -56707,14 +56738,6 @@ impl CGenerator {
                     return Err(
                         self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
                     );
-                }
-                if let Some(value) = self.try_materialize_native_value_print_r_return_call(
-                    name,
-                    args,
-                    *span,
-                    failure_cleanup,
-                )? {
-                    return Ok(Some(value));
                 }
                 if let Some(op_tag) = native_value_cast_builtin_op_tag(name) {
                     let [arg] = args.as_slice() else {
@@ -60393,14 +60416,16 @@ impl CGenerator {
         &mut self,
         name: &str,
         args: &[Expr],
-        _span: Span,
+        span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        if !name.eq_ignore_ascii_case("print_r")
-            || call_arguments_have_named(args)
-            || call_arguments_have_spread(args)
-        {
+        if !name.eq_ignore_ascii_case("print_r") {
             return Ok(None);
+        }
+        if call_arguments_have_named(args) || call_arguments_have_spread(args) {
+            return self
+                .materialize_native_value_print_r_normalized_call(args, span, failure_cleanup)
+                .map(Some);
         }
         let Some((value_arg, return_mode)) = native_value_print_r_return_mode(args) else {
             return Ok(None);
@@ -60494,6 +60519,74 @@ impl CGenerator {
                 }))
             }
         }
+    }
+
+    fn materialize_native_value_print_r_normalized_call(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        let params = native_value_print_r_params(span);
+        let call_arguments = self.emit_materialized_native_source_call_arguments_handle(
+            "print_r_normalized_call_args",
+            &params,
+            args,
+            span,
+            failure_cleanup,
+            NativeCallCallee::DirectNamed,
+        )?;
+
+        let value = self.next_native_name("print_r_normalized_value");
+        let value_failure_cleanup =
+            format!("phpc_native_call_arguments_free({call_arguments}); {failure_cleanup}");
+        let value_error_exit = self.native_error_exit(&value_failure_cleanup);
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value} = phpc_native_call_arguments_read_value({call_arguments}, 0);"
+        ));
+        self.body
+            .push(format!("if ({value}.ptr == NULL) {{ {value_error_exit} }}"));
+
+        let return_mode = self.next_native_name("print_r_normalized_return_mode");
+        let return_failure_cleanup = format!(
+            "phpc_native_value_free({value}); phpc_native_call_arguments_free({call_arguments}); {failure_cleanup}"
+        );
+        let return_error_exit = self.native_error_exit(&return_failure_cleanup);
+        self.body.push(format!(
+            "phpc_NativeValueHandle {return_mode} = phpc_native_call_arguments_read_value({call_arguments}, 1);"
+        ));
+        self.body.push(format!(
+            "if ({return_mode}.ptr == NULL) {{ {return_error_exit} }}"
+        ));
+
+        let diagnostic = self.next_native_name("print_r_normalized_return_diagnostic");
+        let result = self.next_native_name("print_r_normalized_return_value");
+        let result_failure_cleanup = format!(
+            "phpc_native_value_free({return_mode}); phpc_native_value_free({value}); phpc_native_call_arguments_free({call_arguments}); {failure_cleanup}"
+        );
+        let result_error_exit = self.native_error_exit(&result_failure_cleanup);
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_value_format_return_mode_with_diagnostic({value}, PHPC_NATIVE_VALUE_FORMAT_PRINT_R, {return_mode}, &{diagnostic});"
+        ));
+        self.body.push(format!(
+            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); {diagnostic}.ptr = NULL; {result_error_exit} }}"
+        ));
+        self.body.push(format!(
+            "if ({result}.ptr == NULL) {{ {result_error_exit} }}"
+        ));
+        self.body.push(format!(
+            "phpc_native_call_arguments_free({call_arguments});"
+        ));
+        self.body
+            .push(format!("phpc_native_value_free({return_mode});"));
+        self.body.push(format!("phpc_native_value_free({value});"));
+
+        Ok(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        })
     }
 
     fn emit_native_value_format_stdout_with_diagnostic_tag(

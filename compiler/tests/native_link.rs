@@ -27466,6 +27466,116 @@ fn emit_exe_links_and_runs_metadata_print_r_runtime_return_program() {
     let _ = fs::remove_file(output_path);
 }
 
+const NATIVE_METADATA_PRINT_R_NAMED_SPREAD_SOURCE: &str = concat!(
+    "<?php\n",
+    "interface NativeArgDeclared {}\n",
+    "interface NativeArgContract {}\n",
+    "trait NativeArgTrait {}\n",
+    "class NativeArgService implements NativeArgContract { use NativeArgTrait; }\n",
+    "echo \"named:\\n\";\n",
+    "echo print_r(value: get_declared_interfaces(), return: true);\n",
+    "echo \"\\n\";\n",
+    "$implements = class_implements(\"NativeArgService\", false);\n",
+    "$spreadReturn = count($implements) === 1;\n",
+    "$spreadArgs = [\"value\" => $implements, \"return\" => $spreadReturn];\n",
+    "echo \"spread:\\n\";\n",
+    "echo print_r(...$spreadArgs);\n",
+    "$traits = get_declared_traits();\n",
+    "$mixedReturn = count($traits) === 1;\n",
+    "$mixedArgs = [\"return\" => $mixedReturn];\n",
+    "echo \"mixed:\\n\";\n",
+    "echo print_r($traits, ...$mixedArgs);\n",
+    "$uses = class_uses(\"NativeArgService\", false);\n",
+    "$statementArgs = [\"value\" => $uses];\n",
+    "echo \"statement:\\n\";\n",
+    "print_r(...$statementArgs);\n",
+    "echo \"done\\n\";\n",
+);
+
+const NATIVE_METADATA_PRINT_R_NAMED_SPREAD_STDOUT: &str = concat!(
+    "named:\n",
+    "Array\n",
+    "(\n",
+    "    [0] => NativeArgDeclared\n",
+    "    [1] => NativeArgContract\n",
+    ")\n",
+    "\n",
+    "spread:\n",
+    "Array\n",
+    "(\n",
+    "    [NativeArgContract] => NativeArgContract\n",
+    ")\n",
+    "mixed:\n",
+    "Array\n",
+    "(\n",
+    "    [0] => NativeArgTrait\n",
+    ")\n",
+    "statement:\n",
+    "Array\n",
+    "(\n",
+    "    [NativeArgTrait] => NativeArgTrait\n",
+    ")\n",
+    "done\n",
+);
+
+#[test]
+fn native_executable_c_source_routes_metadata_print_r_named_spread_arguments_through_materialized_normalization(
+) {
+    let program = parse(NATIVE_METADATA_PRINT_R_NAMED_SPREAD_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "extern phpc_NativeCallArgumentsHandle phpc_native_materialized_call_arguments_finalize_with_diagnostic"
+        ) && source.contains(
+            "extern phpc_NativeValueHandle phpc_native_call_arguments_read_value"
+        ) && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && body.contains("phpc_native_call_arguments_read_value")
+            && body.contains("phpc_native_value_format_return_mode_with_diagnostic")
+            && body.contains("phpc_native_value_class_metadata_value_with_diagnostic")
+            && body.contains("phpc_native_value_array_query_operation_with_diagnostic"),
+        "named/spread print_r() should normalize through materialized call arguments and feed the shared formatter return-mode ABI:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_array_len(")
+            && !source.contains("object/class lowering rejects")
+            && !source.contains("interface lowering rejects interface declarations")
+            && !source.contains("named argument lowering is only implemented"),
+        "named/spread metadata print_r() should not fall back to native-array-only consumers or blockers:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_metadata_print_r_named_spread_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "metadata_print_r_named_spread_arguments",
+        NATIVE_METADATA_PRINT_R_NAMED_SPREAD_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run metadata print_r named/spread argument executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        NATIVE_METADATA_PRINT_R_NAMED_SPREAD_STDOUT
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
 #[test]
 fn native_executable_c_source_blocks_unknown_named_dynamic_method_fallback_until_declared_hit_shape_is_known(
 ) {

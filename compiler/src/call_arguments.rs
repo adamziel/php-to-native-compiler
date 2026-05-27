@@ -746,6 +746,49 @@ mod tests {
     }
 
     #[test]
+    fn call_argument_normalization_binds_keyword_named_labels_as_parameter_names() {
+        let signature = signature(vec![
+            CallArgumentParameter::required("value"),
+            CallArgumentParameter::optional("return"),
+            CallArgumentParameter::optional("class"),
+        ]);
+        let plan = normalize_call_arguments(
+            &signature,
+            &[
+                CallArgument::named("return"),
+                CallArgument::named("class"),
+                CallArgument::named("value"),
+            ],
+        )
+        .expect("keyword labels should normalize as ordinary parameter names");
+
+        assert_eq!(
+            plan.fixed_slots,
+            vec![
+                CallArgumentFixedSlot {
+                    parameter_index: 0,
+                    parameter_name: "value".to_string(),
+                    source: CallArgumentSlotSource::Supplied { source_index: 2 },
+                    passing_mode: CallArgumentPassingMode::Value,
+                },
+                CallArgumentFixedSlot {
+                    parameter_index: 1,
+                    parameter_name: "return".to_string(),
+                    source: CallArgumentSlotSource::Supplied { source_index: 0 },
+                    passing_mode: CallArgumentPassingMode::Value,
+                },
+                CallArgumentFixedSlot {
+                    parameter_index: 2,
+                    parameter_name: "class".to_string(),
+                    source: CallArgumentSlotSource::Supplied { source_index: 1 },
+                    passing_mode: CallArgumentPassingMode::Value,
+                },
+            ]
+        );
+        assert_eq!(plan.cleanup.source_indices_reverse, vec![2, 1, 0]);
+    }
+
+    #[test]
     fn call_argument_normalization_reports_duplicate_missing_unknown_and_order_diagnostics() {
         let signature = signature(vec![
             CallArgumentParameter::required("first"),
@@ -988,6 +1031,54 @@ mod tests {
         assert_eq!(
             plan.cleanup.materialized_entry_indices_reverse,
             vec![3, 2, 1, 0]
+        );
+    }
+
+    #[test]
+    fn materialized_call_argument_finalization_binds_keyword_named_entries_as_parameter_names() {
+        let signature = signature(vec![
+            CallArgumentParameter::required("value"),
+            CallArgumentParameter::optional("return"),
+            CallArgumentParameter::optional("class"),
+        ]);
+        let plan = finalize_materialized_call_arguments(
+            &signature,
+            3,
+            &[
+                MaterializedCallArgumentEntry::named(0, "return"),
+                MaterializedCallArgumentEntry::named(1, "class"),
+                MaterializedCallArgumentEntry::named(2, "value"),
+            ],
+        )
+        .expect("keyword materialized labels should finalize as ordinary parameter names");
+
+        assert_eq!(
+            plan.fixed_slots,
+            vec![
+                FinalizedCallArgumentFixedSlot {
+                    parameter_index: 0,
+                    parameter_name: "value".to_string(),
+                    source: FinalizedCallArgumentSlotSource::MaterializedEntry { entry_index: 2 },
+                    passing_mode: CallArgumentPassingMode::Value,
+                },
+                FinalizedCallArgumentFixedSlot {
+                    parameter_index: 1,
+                    parameter_name: "return".to_string(),
+                    source: FinalizedCallArgumentSlotSource::MaterializedEntry { entry_index: 0 },
+                    passing_mode: CallArgumentPassingMode::Value,
+                },
+                FinalizedCallArgumentFixedSlot {
+                    parameter_index: 2,
+                    parameter_name: "class".to_string(),
+                    source: FinalizedCallArgumentSlotSource::MaterializedEntry { entry_index: 1 },
+                    passing_mode: CallArgumentPassingMode::Value,
+                },
+            ]
+        );
+        assert_eq!(plan.cleanup.source_indices_reverse, vec![2, 1, 0]);
+        assert_eq!(
+            plan.cleanup.materialized_entry_indices_reverse,
+            vec![2, 1, 0]
         );
     }
 
