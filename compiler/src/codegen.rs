@@ -42138,6 +42138,87 @@ impl CGenerator {
         }
     }
 
+    fn source_call_param_requires_reference_at_arg_index(
+        params: &[FunctionParam],
+        index: usize,
+    ) -> bool {
+        if let Some(param) = params.get(index) {
+            return param.by_reference;
+        }
+
+        native_function_variadic_param(params)
+            .is_some_and(|(variadic_index, param)| index >= variadic_index && param.by_reference)
+    }
+
+    fn call_user_func_reference_argument_is_supported(&self, arg: &Expr) -> bool {
+        let Expr::Variable(name, _) = call_argument_expr(arg) else {
+            return false;
+        };
+        if is_request_superglobal_name(name) || is_globals_superglobal_name(name) {
+            return false;
+        }
+
+        matches!(
+            self.variables.get(name),
+            Some(CValue::NativeReferenceHandle(_))
+        ) || self.function_return_status.is_none()
+            || self.function_return_mode == CFunctionReturnMode::IncludeUnit
+            || self.global_import_names.contains(name)
+    }
+
+    fn call_user_func_params_accept_supported_args(
+        &self,
+        params: &[FunctionParam],
+        args: &[Expr],
+    ) -> bool {
+        args.iter().enumerate().all(|(index, arg)| {
+            !Self::source_call_param_requires_reference_at_arg_index(params, index)
+                || self.call_user_func_reference_argument_is_supported(arg)
+        })
+    }
+
+    fn call_user_func_signature_accepts_supported_args(
+        &self,
+        signature: &CScopedCallableStringSignature,
+        args: &[Expr],
+    ) -> bool {
+        args.iter().enumerate().all(|(index, arg)| {
+            !signature.param_is_by_reference(index)
+                || self.call_user_func_reference_argument_is_supported(arg)
+        })
+    }
+
+    fn call_user_func_contract_accepts_supported_args(
+        &self,
+        contract: &NativeMethodStaticSignatureFallbackContract,
+        args: &[Expr],
+    ) -> bool {
+        match contract.argument_strategy() {
+            NativeMethodStaticSourceCallArgumentStrategy::Frame(plan) => {
+                self.call_user_func_params_accept_supported_args(&plan.params, args)
+            }
+            NativeMethodStaticSourceCallArgumentStrategy::ForwardCallSite => {
+                contract.signature().is_some_and(|signature| {
+                    self.call_user_func_signature_accepts_supported_args(signature, args)
+                })
+            }
+            NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic => false,
+        }
+    }
+
+    fn call_user_func_callback_accepts_supported_args(&self, callee: &Expr, args: &[Expr]) -> bool {
+        if let Expr::Closure { params, .. } = callee {
+            return self.call_user_func_params_accept_supported_args(params, args);
+        }
+
+        let Some(contract) =
+            self.callable_value_source_call_signature_contract_for_args(callee, args)
+        else {
+            return false;
+        };
+        self.call_user_func_contract_accepts_supported_args(&contract, args)
+    }
+
     fn call_user_func_callback_accepts_value_args(
         &self,
         callee: &Expr,
@@ -42168,11 +42249,7 @@ impl CGenerator {
 
         let callee = &args[0];
         let call_args = &args[1..];
-        if !self.call_user_func_callback_accepts_value_args(
-            callee,
-            call_args,
-            Some(call_args.len()),
-        ) {
+        if !self.call_user_func_callback_accepts_supported_args(callee, call_args) {
             return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
         }
 

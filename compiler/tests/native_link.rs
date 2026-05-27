@@ -12144,12 +12144,39 @@ fn native_executable_c_source_routes_call_user_func_closure_captures_through_sou
 }
 
 #[test]
-fn native_executable_c_source_keeps_call_user_func_byref_closure_params_blocked() {
+fn native_executable_c_source_routes_call_user_func_byref_direct_variables() {
     let source = concat!(
         "<?php\n",
-        "$slot = \"old\";\n",
+        "function touch_byref(&$slot, $suffix) { $slot = $slot . $suffix; return $slot; }\n",
+        "$slot = \"A\";\n",
+        "$callback = function (&$value, $suffix) { $value = $value . $suffix; return $value; };\n",
+        "echo call_user_func($callback, $slot, \"C\"), \":\", $slot, \"|\";\n",
+        "echo call_user_func(\"touch_byref\", $slot, \"F\"), \":\", $slot;\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_call_arguments_push_reference_and_free")
+            && source.contains("phpc_native_symbol_table_reference_for_path")
+            && source.contains("phpc_native_closure_invoke_value_with_diagnostic_and_free_arguments")
+            && source.contains("touch_byref"),
+        "call_user_func should route descriptor closures and compiler-known function frames through reference call arguments:\n{source}"
+    );
+    assert!(
+        !source.contains("assembly function-call lowering rejects")
+            && !source.contains(" = phpc_native_closure_invoke_result("),
+        "call_user_func by-reference direct variables must not fall back to blockers or legacy closure invocation:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_keeps_call_user_func_byref_non_direct_args_blocked() {
+    let source = concat!(
+        "<?php\n",
+        "$items = array(\"slot\" => \"old\");\n",
         "$callback = function (&$slot) { $slot = \"changed\"; return $slot; };\n",
-        "echo call_user_func($callback, $slot), \":\", $slot;\n",
+        "echo call_user_func($callback, $items[\"slot\"]), \":\", $items[\"slot\"];\n",
     );
     let program = parse(source).unwrap();
     let error = emit_native_executable_c_source(&program).unwrap_err();
@@ -12159,7 +12186,7 @@ fn native_executable_c_source_keeps_call_user_func_byref_closure_params_blocked(
         error
             .message
             .contains("assembly function-call lowering rejects"),
-        "call_user_func must not lower by-reference closure parameters through ordinary dynamic-call mutation semantics:\n{error:?}"
+        "call_user_func must keep array-offset/property/ArrayAccess by-reference argument owners out of this bridge:\n{error:?}"
     );
 }
 
@@ -12194,6 +12221,40 @@ fn emit_exe_links_and_runs_call_user_func_captured_descriptor_closure_invocation
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"B1A|B2C|R3|A4E|changed5");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_call_user_func_byref_direct_variables() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function touch_byref(&$slot, $suffix) { $slot = $slot . $suffix; return $slot; }\n",
+        "function relay_byref(&$slot) { $callback = function (&$value, $suffix) { $value = $value . $suffix; return $value; }; return call_user_func($callback, $slot, \"P\") . \":\" . $slot; }\n",
+        "$slot = \"A\";\n",
+        "$callback = function (&$value, $suffix) { $value = $value . $suffix; return $value; };\n",
+        "echo call_user_func($callback, $slot, \"C\"), \":\", $slot, \"|\";\n",
+        "echo call_user_func(\"touch_byref\", $slot, \"F\"), \":\", $slot, \"|\";\n",
+        "echo relay_byref($slot), \":\", $slot;\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("call_user_func_byref_direct_variables", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native call_user_func by-reference executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"AC:AC|ACF:ACF|ACFP:ACFP:ACFP");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);
