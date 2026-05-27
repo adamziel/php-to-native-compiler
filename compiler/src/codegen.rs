@@ -920,7 +920,6 @@ struct NativeInvokeResultHelper {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeInvokeResultHelperBlocker {
     MissingConstructorAllocationAbi,
-    MissingClosureArgumentHandleAbi,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1279,10 +1278,29 @@ impl NativeInvokeResultTarget {
                     NativeInvokeResultHelperBlocker::MissingConstructorAllocationAbi,
                 );
             }
-            (Self::ClosureArgumentHandle, _) => {
-                return NativeInvokeResultHelperSelection::Blocked(
-                    NativeInvokeResultHelperBlocker::MissingClosureArgumentHandleAbi,
-                );
+            (Self::ClosureArgumentHandle, NativeInvokeResultConsumer::OwnedResult) => {
+                NativeInvokeResultHelper::materialized(
+                    "phpc_native_closure_invoke_result_with_diagnostic_and_free_arguments",
+                    consumer,
+                )
+            }
+            (Self::ClosureArgumentHandle, NativeInvokeResultConsumer::Value) => {
+                NativeInvokeResultHelper::materialized(
+                    "phpc_native_closure_invoke_value_with_diagnostic_and_free_arguments",
+                    consumer,
+                )
+            }
+            (Self::ClosureArgumentHandle, NativeInvokeResultConsumer::Reference) => {
+                NativeInvokeResultHelper::materialized(
+                    "phpc_native_closure_invoke_reference_with_diagnostic_and_free_arguments",
+                    consumer,
+                )
+            }
+            (Self::ClosureArgumentHandle, NativeInvokeResultConsumer::Discard) => {
+                NativeInvokeResultHelper::materialized(
+                    "phpc_native_closure_invoke_discard_with_diagnostic_and_free_arguments",
+                    consumer,
+                )
             }
         };
         NativeInvokeResultHelperSelection::Helper(helper)
@@ -21707,6 +21725,10 @@ impl CGenerator {
                 output.push_str("extern void phpc_native_closure_result_free(phpc_NativeClosureInvocationResult result);\n");
                 output.push_str("extern phpc_NativeClosureInvocationResult phpc_native_closure_invoke_result(phpc_NativeValueHandle value, int call_depth, const phpc_NativeClosureArgument *args, size_t arg_count);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_closure_invoke_value_with_diagnostic(phpc_NativeValueHandle value, int call_depth, const phpc_NativeClosureArgument *args, size_t arg_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeCallResultHandle phpc_native_closure_invoke_result_with_diagnostic_and_free_arguments(phpc_NativeValueHandle value, int call_depth, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_closure_invoke_value_with_diagnostic_and_free_arguments(phpc_NativeValueHandle value, int call_depth, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeReferenceHandle phpc_native_closure_invoke_reference_with_diagnostic_and_free_arguments(phpc_NativeValueHandle value, int call_depth, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern void phpc_native_closure_invoke_discard_with_diagnostic_and_free_arguments(phpc_NativeValueHandle value, int call_depth, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_output_buffer_operation {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_output_buffer_operation_with_diagnostic(phpc_NativeValueHandle first, phpc_NativeValueHandle second, phpc_NativeValueHandle third, uint8_t argc, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -34471,9 +34493,22 @@ impl CGenerator {
         self.uses_native_string_helpers = true;
         self.uses_native_callable_helpers = true;
 
-        let table = self.ensure_native_callable_table(failure_cleanup);
+        let descriptor_closure_only =
+            self.cvalue_has_only_descriptor_closure_callable_identities(&callee_value);
         let callee = self.materialize_native_array_c_value_handle(callee_value, span)?;
         let callee_cleanup = c_cleanup_sequence(&callee.cleanup_after_use);
+
+        if descriptor_closure_only {
+            return self.materialize_descriptor_closure_source_call(
+                callee,
+                args,
+                span,
+                failure_cleanup,
+                scoped_signature.as_ref(),
+            );
+        }
+
+        let table = self.ensure_native_callable_table(failure_cleanup);
 
         if self
             .user_functions
@@ -34559,6 +34594,71 @@ impl CGenerator {
         }))
     }
 
+    fn cvalue_has_only_descriptor_closure_callable_identities(&self, value: &CValue) -> bool {
+        self.native_callable_identities_for_cvalue(value)
+            .is_some_and(|identities| {
+                !identities.is_empty()
+                    && identities.iter().all(|identity| {
+                        matches!(identity, CNativeCallableIdentity::DescriptorClosure { .. })
+                    })
+            })
+    }
+
+    fn materialize_descriptor_closure_source_call(
+        &mut self,
+        callee: CNativeValueMaterialization,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+        scoped_signature: Option<&CScopedCallableStringSignature>,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        self.uses_native_closure_helpers = true;
+        self.uses_native_callable_helpers = true;
+        let callee_cleanup = c_cleanup_sequence(&callee.cleanup_after_use);
+        let callable_failure_cleanup = format!("{callee_cleanup}{failure_cleanup}");
+        let call_arguments = self.emit_native_source_call_arguments_handle(
+            "closure_source_call_args",
+            args,
+            span,
+            &callable_failure_cleanup,
+            NativeCallCallee::DynamicExpression,
+            scoped_signature,
+        )?;
+
+        let invoke_diagnostic = self.next_native_name("closure_source_call_diagnostic");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {invoke_diagnostic} = {{0}};"
+        ));
+        let carrier = self.native_source_call_carrier(
+            NativeInvokeResultTarget::ClosureArgumentHandle,
+            NativeSourceCallResultConsumer::Value,
+            span,
+        )?;
+        let result = self
+            .emit_native_source_call_carrier_invocation(
+                carrier,
+                &[
+                    callee.handle.clone(),
+                    self.user_function_call_depth_argument(),
+                ],
+                &call_arguments,
+                &invoke_diagnostic,
+                "closure_source_call_result",
+            )
+            .expect("closure value source-call carrier must produce a value handle");
+        self.emit_report_native_diagnostic(&invoke_diagnostic);
+        let invoke_error_exit = self.native_error_exit(&callable_failure_cleanup);
+        self.body.push(format!(
+            "if ({result}.ptr == NULL) {{ {invoke_error_exit} }}"
+        ));
+        self.body.extend(callee.cleanup_after_use);
+
+        Ok(Some(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }))
+    }
+
     fn native_source_call_carrier(
         &self,
         target: NativeInvokeResultTarget,
@@ -34571,9 +34671,6 @@ impl CGenerator {
                 let native_blocker = match blocker {
                     NativeInvokeResultHelperBlocker::MissingConstructorAllocationAbi => {
                         NativeCallBlocker::ConstructorDispatch
-                    }
-                    NativeInvokeResultHelperBlocker::MissingClosureArgumentHandleAbi => {
-                        NativeCallBlocker::ClosureFrameHandoff
                     }
                 };
                 Err(
@@ -59014,6 +59111,30 @@ echo " 10" < "zeta";
                 NativeInvokeResultReturn::Bool,
                 "phpc_native_static_method_invoke_discard_with_access_context_diagnostic_and_free_scope_method_arguments",
             ),
+            (
+                NativeInvokeResultTarget::ClosureArgumentHandle,
+                NativeInvokeResultConsumer::OwnedResult,
+                NativeInvokeResultReturn::CallResultHandle,
+                "phpc_native_closure_invoke_result_with_diagnostic_and_free_arguments",
+            ),
+            (
+                NativeInvokeResultTarget::ClosureArgumentHandle,
+                NativeInvokeResultConsumer::Value,
+                NativeInvokeResultReturn::ValueHandle,
+                "phpc_native_closure_invoke_value_with_diagnostic_and_free_arguments",
+            ),
+            (
+                NativeInvokeResultTarget::ClosureArgumentHandle,
+                NativeInvokeResultConsumer::Reference,
+                NativeInvokeResultReturn::ReferenceHandle,
+                "phpc_native_closure_invoke_reference_with_diagnostic_and_free_arguments",
+            ),
+            (
+                NativeInvokeResultTarget::ClosureArgumentHandle,
+                NativeInvokeResultConsumer::Discard,
+                NativeInvokeResultReturn::Void,
+                "phpc_native_closure_invoke_discard_with_diagnostic_and_free_arguments",
+            ),
         ];
 
         for (target, consumer, result, name) in expected {
@@ -59027,16 +59148,10 @@ echo " 10" < "zeta";
             );
         }
 
-        for (target, blocker) in [
-            (
-                NativeInvokeResultTarget::ConstructorAllocation,
-                NativeInvokeResultHelperBlocker::MissingConstructorAllocationAbi,
-            ),
-            (
-                NativeInvokeResultTarget::ClosureArgumentHandle,
-                NativeInvokeResultHelperBlocker::MissingClosureArgumentHandleAbi,
-            ),
-        ] {
+        for (target, blocker) in [(
+            NativeInvokeResultTarget::ConstructorAllocation,
+            NativeInvokeResultHelperBlocker::MissingConstructorAllocationAbi,
+        )] {
             for consumer in [
                 NativeInvokeResultConsumer::OwnedResult,
                 NativeInvokeResultConsumer::Value,
@@ -59091,6 +59206,13 @@ echo " 10" < "zeta";
                 "phpc_native_callable_invoke_result_with_diagnostic_and_free",
                 None,
             ),
+            (
+                NativeInvokeResultTarget::ClosureArgumentHandle,
+                NativeSourceCallResultConsumer::Value,
+                NativeSourceCallResultReturn::ValueHandle,
+                "phpc_native_closure_invoke_value_with_diagnostic_and_free_arguments",
+                None,
+            ),
         ];
 
         for (target, consumer, result, helper_name, converter) in expected {
@@ -59107,10 +59229,7 @@ echo " 10" < "zeta";
             assert_eq!(carrier.diagnostic_result_converter, converter);
         }
 
-        for target in [
-            NativeInvokeResultTarget::ConstructorAllocation,
-            NativeInvokeResultTarget::ClosureArgumentHandle,
-        ] {
+        for target in [NativeInvokeResultTarget::ConstructorAllocation] {
             assert!(matches!(
                 target.source_call_result_carrier_for_consumer(
                     NativeSourceCallResultConsumer::DiagnosticResult(
@@ -59671,6 +59790,43 @@ echo " 10" < "zeta";
                 .callable_string_signature_for_expr(&Expr::String("count".to_string(), span(8)), 1,)
                 .is_none(),
             "blocked runtime builtins must preserve the unsupported-native boundary"
+        );
+    }
+
+    #[test]
+    fn generated_c_descriptor_closure_calls_use_shared_call_arguments_and_results() {
+        let program = crate::parse(
+            r#"<?php
+$suffix = "!";
+$call = function ($value) use ($suffix) {
+    return $value . $suffix;
+};
+echo $call("Ada");
+"#,
+        )
+        .expect("parse descriptor closure source-call program");
+        let c_source = emit_native_executable_c_source(&program)
+            .expect("descriptor closure source-call program should lower to generated C");
+
+        assert!(
+            c_source.contains("phpc_NativeCallArgumentsHandle closure_source_call_args_"),
+            "descriptor closure calls should build shared NativeCallArgumentsHandle operands:\n{c_source}"
+        );
+        assert!(
+            c_source.contains(
+                "phpc_native_closure_invoke_value_with_diagnostic_and_free_arguments"
+            ),
+            "descriptor closure calls should invoke through the shared call-result carrier helper:\n{c_source}"
+        );
+        assert!(
+            !c_source.contains(
+                " = phpc_native_callable_lookup_value_or_closure_with_context_diagnostic("
+            ),
+            "proven descriptor closure calls should not emit broad callable lookup call sites:\n{c_source}"
+        );
+        assert!(
+            !c_source.contains(" = phpc_native_closure_invoke_result("),
+            "production closure calls should not use the legacy NativeClosureInvocationResult call site:\n{c_source}"
         );
     }
 

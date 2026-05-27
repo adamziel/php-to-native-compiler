@@ -10212,6 +10212,198 @@ fn native_magic_call_arguments_from_method_and_arguments(
     })
 }
 
+unsafe fn native_closure_value_invoke_result_with_diagnostic(
+    handle: NativeValueHandle,
+    call_depth: c_int,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallResultHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let Some(Value::Closure(closure)) = (unsafe { handle.as_ref() }) else {
+        let type_name = unsafe { handle.as_ref() }
+            .map(Value::type_name)
+            .unwrap_or("null");
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                RuntimeError::unsupported_call(
+                    "Closure::__invoke()",
+                    format!(
+                        "direct descriptor-backed closure invocation requires a closure value, got {type_name}"
+                    ),
+                )
+                .message(),
+            )
+        };
+        return NativeCallResultHandle::null();
+    };
+    let Some(descriptor) = closure.descriptor() else {
+        return NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+            NativeDiagnosticHandle::from_message(
+                RuntimeError::unsupported_call(
+                    "Closure::__invoke()",
+                    "closure value has no native descriptor/frame callback",
+                )
+                .message(),
+            ),
+        ));
+    };
+    let closure_args =
+        match unsafe { native_closure_arguments_from_call_arguments(descriptor, arguments) } {
+            Ok(arguments) => arguments,
+            Err(message) => {
+                return NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+                    NativeDiagnosticHandle::from_message(message),
+                ));
+            }
+        };
+    let mut result = unsafe {
+        phpc_native_closure_invoke_result(
+            handle,
+            call_depth,
+            if closure_args.is_empty() {
+                ptr::null()
+            } else {
+                closure_args.as_ptr()
+            },
+            closure_args.len(),
+        )
+    };
+    unsafe { native_closure_arguments_free(closure_args) };
+
+    if !result.diagnostic.is_null() {
+        let diagnostic = result.diagnostic;
+        result.diagnostic = NativeDiagnosticHandle::null();
+        unsafe { phpc_native_closure_result_free(result) };
+        return NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(diagnostic));
+    }
+    match result.status {
+        NATIVE_CLOSURE_RESULT_VALUE if !result.value.is_null() => {
+            let value = result.take_value();
+            unsafe { phpc_native_closure_result_free(result) };
+            phpc_native_call_result_from_value(value)
+        }
+        NATIVE_CLOSURE_RESULT_REFERENCE if !result.reference.is_null() => {
+            let reference = result.reference;
+            result.reference = NativeReferenceHandle::null();
+            unsafe { phpc_native_closure_result_free(result) };
+            phpc_native_call_result_from_reference(reference)
+        }
+        _ => {
+            unsafe { phpc_native_closure_result_free(result) };
+            NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+                NativeDiagnosticHandle::from_message(
+                    "native descriptor-backed closure invocation failed: closure returned no result",
+                ),
+            ))
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be a descriptor-backed closure value handle and `arguments`
+/// must be a call-arguments handle. This helper consumes `arguments` exactly
+/// once and returns an owned call-result handle.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_closure_invoke_result_with_diagnostic_and_free_arguments(
+    handle: NativeValueHandle,
+    call_depth: c_int,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallResultHandle {
+    let result = unsafe {
+        native_closure_value_invoke_result_with_diagnostic(
+            handle, call_depth, arguments, diagnostic,
+        )
+    };
+    unsafe { phpc_native_call_arguments_free(arguments) };
+    result
+}
+
+/// # Safety
+///
+/// Invokes a descriptor-backed closure and returns an owned value result, or
+/// null with a diagnostic for failures and non-value results.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_closure_invoke_value_with_diagnostic_and_free_arguments(
+    handle: NativeValueHandle,
+    call_depth: c_int,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = unsafe {
+        phpc_native_closure_invoke_result_with_diagnostic_and_free_arguments(
+            handle, call_depth, arguments, diagnostic,
+        )
+    };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return NativeValueHandle::null();
+    }
+    unsafe {
+        native_call_result_take_value_with_diagnostic_and_free(
+            result,
+            diagnostic,
+            "native descriptor-backed closure invocation failed: result did not contain a value",
+        )
+    }
+}
+
+/// # Safety
+///
+/// Invokes a descriptor-backed closure and returns an owned reference result, or
+/// null with a diagnostic for failures and non-reference results.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_closure_invoke_reference_with_diagnostic_and_free_arguments(
+    handle: NativeValueHandle,
+    call_depth: c_int,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeReferenceHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = unsafe {
+        phpc_native_closure_invoke_result_with_diagnostic_and_free_arguments(
+            handle, call_depth, arguments, diagnostic,
+        )
+    };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return NativeReferenceHandle::null();
+    }
+    unsafe {
+        native_call_result_take_reference_with_diagnostic_and_free(
+            result,
+            diagnostic,
+            "native descriptor-backed closure invocation failed: result did not contain a reference",
+        )
+    }
+}
+
+/// # Safety
+///
+/// Invokes a descriptor-backed closure and discards any callback result.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_closure_invoke_discard_with_diagnostic_and_free_arguments(
+    handle: NativeValueHandle,
+    call_depth: c_int,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = unsafe {
+        phpc_native_closure_invoke_result_with_diagnostic_and_free_arguments(
+            handle, call_depth, arguments, diagnostic,
+        )
+    };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return;
+    }
+    unsafe { native_call_result_discard_with_diagnostic_and_free(result, diagnostic) };
+}
+
 /// # Safety
 ///
 /// `callable` must be a callable-value dispatch handle. `arguments` must be a
@@ -33494,6 +33686,19 @@ mod tests {
         )))
     }
 
+    unsafe extern "C" fn native_descriptor_first_reference_closure_callback(
+        _call_depth: c_int,
+        args: *const NativeClosureArgument,
+        arg_count: usize,
+        status: *mut c_int,
+    ) -> NativeClosureInvocationResult {
+        assert!(arg_count >= 1);
+        let reference = unsafe { (*args).reference };
+        assert!(!reference.is_null());
+        unsafe { *status = 1 };
+        phpc_native_closure_result_from_reference(unsafe { phpc_native_reference_clone(reference) })
+    }
+
     unsafe extern "C" fn native_descriptor_argument_kind_callback(
         _call_depth: c_int,
         args: *const NativeClosureArgument,
@@ -35046,6 +35251,118 @@ mod tests {
         unsafe { phpc_native_string_free(static_caller) };
 
         unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn native_closure_invoke_helpers_bridge_call_arguments_to_call_results() {
+        let closure = phpc_native_value_from_closure_descriptor(NativeClosureDescriptor::new(
+            native_descriptor_sum_closure_callback,
+            2,
+            2,
+        ));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        reset_call_arguments_free_count_for_test();
+        let result = unsafe {
+            phpc_native_closure_invoke_result_with_diagnostic_and_free_arguments(
+                closure,
+                1,
+                call_arguments_from_ints_for_test(&[3, 4]),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        let value = unsafe { phpc_native_call_result_take_value_and_free(result) };
+        assert_eq!(unsafe { value.as_ref() }, Some(&Value::Int(7)));
+        unsafe { phpc_native_value_free(value) };
+
+        reset_call_arguments_free_count_for_test();
+        let value = unsafe {
+            phpc_native_closure_invoke_value_with_diagnostic_and_free_arguments(
+                closure,
+                1,
+                call_arguments_from_ints_for_test(&[5, 6]),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        assert_eq!(unsafe { value.as_ref() }, Some(&Value::Int(11)));
+        unsafe { phpc_native_value_free(value) };
+
+        static REFERENCE_PARAM_FLAGS: [u8; 1] = [NATIVE_CLOSURE_ARGUMENT_BY_REFERENCE];
+        let reference_closure = phpc_native_value_from_closure_descriptor(
+            NativeClosureDescriptor::new_with_param_and_result_flags(
+                native_descriptor_first_reference_closure_callback,
+                1,
+                1,
+                REFERENCE_PARAM_FLAGS.as_ptr(),
+                NATIVE_CLOSURE_DESCRIPTOR_RETURNS_REFERENCE,
+            ),
+        );
+        let reference_arguments = phpc_native_call_arguments_new();
+        let cell = PhpReferenceCell::new(Value::String("shared".to_string()));
+        assert!(unsafe {
+            phpc_native_call_arguments_push_reference_and_free(
+                reference_arguments,
+                NativeReferenceHandle::from_cell(cell.clone()),
+            )
+        });
+        reset_call_arguments_free_count_for_test();
+        let reference = unsafe {
+            phpc_native_closure_invoke_reference_with_diagnostic_and_free_arguments(
+                reference_closure,
+                1,
+                reference_arguments,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        assert!(!reference.is_null());
+        let reference_value = unsafe { phpc_native_reference_value_clone(reference) };
+        assert_eq!(
+            unsafe { reference_value.as_ref() },
+            Some(&Value::String("shared".to_string()))
+        );
+        unsafe { phpc_native_value_free(reference_value) };
+        unsafe { phpc_native_reference_free(reference) };
+        unsafe { phpc_native_value_free(reference_closure) };
+
+        reset_call_arguments_free_count_for_test();
+        unsafe {
+            phpc_native_closure_invoke_discard_with_diagnostic_and_free_arguments(
+                closure,
+                1,
+                call_arguments_from_ints_for_test(&[7, 8]),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+
+        reset_call_arguments_free_count_for_test();
+        let not_closure = NativeValueHandle::from_value(Value::String("nope".to_string()));
+        let invalid = unsafe {
+            phpc_native_closure_invoke_result_with_diagnostic_and_free_arguments(
+                not_closure,
+                1,
+                call_arguments_from_ints_for_test(&[1]),
+                &mut diagnostic,
+            )
+        };
+        assert!(invalid.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "unsupported call Closure::__invoke(): direct descriptor-backed closure invocation requires a closure value, got string"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(not_closure) };
+        unsafe { phpc_native_value_free(closure) };
     }
 
     #[test]

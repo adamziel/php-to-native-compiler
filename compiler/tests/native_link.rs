@@ -8157,8 +8157,12 @@ fn native_executable_c_source_binds_descriptor_closure_by_reference_parameters()
     assert!(
         source.contains("phpc_user_function_0_apply(")
             && source.contains("phpc_user_function_1_relay(")
-            && source.contains("phpc_native_value_dynamic_call_name_matches"),
-        "by-reference descriptor closures should flow through direct, nested, and runtime dynamic callable consumers:\n{source}"
+            && source.contains(
+                "phpc_native_closure_invoke_value_with_diagnostic_and_free_arguments"
+            )
+            && source.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && source.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "by-reference descriptor closures should flow through direct closure, nested user-function, and runtime dynamic callable consumers:\n{source}"
     );
     assert!(
         !source.contains(ASSEMBLY_CLOSURE_REJECTION)
