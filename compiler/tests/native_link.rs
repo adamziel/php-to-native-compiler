@@ -24702,6 +24702,30 @@ const NATIVE_TRAIT_CONSTRUCTOR_FRAME_SOURCE: &str = concat!(
     "echo $child->label;\n",
 );
 
+const NATIVE_TRAIT_MEMBER_METADATA_SOURCE: &str = concat!(
+    "<?php\n",
+    "trait TraitMemberBase {\n",
+    "    public $label = \"seed\";\n",
+    "    public static $count = 2;\n",
+    "    public const PREFIX = \"trait\";\n",
+    "}\n",
+    "trait TraitMemberSame {\n",
+    "    public $label = \"seed\";\n",
+    "    public static $count = 2;\n",
+    "    public const PREFIX = \"trait\";\n",
+    "}\n",
+    "class TraitMemberBox {\n",
+    "    use TraitMemberBase, TraitMemberSame;\n",
+    "    public function describe() {\n",
+    "        $this->label = $this->label . \"!\";\n",
+    "        self::$count = self::$count + 3;\n",
+    "        return self::PREFIX . \":\" . $this->label . \":\" . self::$count;\n",
+    "    }\n",
+    "}\n",
+    "$box = new TraitMemberBox();\n",
+    "echo $box->describe(), \"|\", TraitMemberBox::$count;\n",
+);
+
 const NATIVE_INTERFACE_TYPED_METHOD_SOURCE_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "interface NativeInterfaceDispatchContract {\n",
@@ -27125,6 +27149,32 @@ fn emit_exe_links_and_runs_trait_constructor_frame_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"FS!TE|S!|GD!UV|D!|alias-B|class|trait");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_trait_member_metadata_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("trait_member_metadata", NATIVE_TRAIT_MEMBER_METADATA_SOURCE);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native trait member metadata executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"trait:seed!:5|5");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

@@ -20256,6 +20256,12 @@ impl CGenerator {
         let trait_effective_methods =
             trait_semantics::compose_class_effective_trait_methods(class, &self.declared_traits)
                 .map_err(|error| error.to_diagnostic(Phase::Codegen))?;
+        let trait_effective_properties =
+            trait_semantics::compose_class_effective_trait_properties(class, &self.declared_traits)
+                .map_err(|error| error.to_diagnostic(Phase::Codegen))?;
+        let trait_effective_constants =
+            trait_semantics::compose_class_effective_trait_constants(class, &self.declared_traits)
+                .map_err(|error| error.to_diagnostic(Phase::Codegen))?;
         self.validate_declared_class_trait_method_metadata_scope(class)?;
 
         let mut seen_properties = HashSet::new();
@@ -20338,6 +20344,61 @@ impl CGenerator {
                 visibility: method.method.visibility,
                 is_static: method.method.is_static,
                 span: method.method.span,
+            });
+        }
+        for property in trait_effective_properties {
+            let property = property.property;
+            if property.is_static {
+                if !seen_properties.insert(property.name.clone()) {
+                    return Err(self.unsupported(property.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+                }
+                own_static_properties.push(CDeclaredClassProperty {
+                    declaring_class_id: class_index,
+                    declaring_class_name: class.name.clone(),
+                    name: property.name,
+                    visibility: property.visibility,
+                    is_static: true,
+                    type_decl: property.type_decl.as_ref().map(|decl| decl.text.clone()),
+                    default: property.default,
+                    span: property.span,
+                });
+                continue;
+            }
+            if property
+                .type_decl
+                .as_ref()
+                .is_some_and(|decl| !native_function_type_decl_is_supported(decl))
+                || property.default.as_ref().is_some_and(|default| {
+                    !Self::declared_class_property_default_is_supported(default)
+                })
+            {
+                return Err(self.unsupported(property.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+            }
+            if !seen_properties.insert(property.name.clone()) {
+                return Err(self.unsupported(property.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+            }
+            own_properties.push(CDeclaredClassProperty {
+                declaring_class_id: class_index,
+                declaring_class_name: class.name.clone(),
+                name: property.name,
+                visibility: property.visibility,
+                is_static: false,
+                type_decl: property.type_decl.as_ref().map(|decl| decl.text.clone()),
+                default: property.default,
+                span: property.span,
+            });
+        }
+        for constant in trait_effective_constants {
+            let constant = constant.constant;
+            if !Self::declared_class_constant_value_is_supported(&constant.value)
+                || !seen_constants.insert(constant.name.clone())
+            {
+                return Err(self.unsupported(constant.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+            }
+            own_constants.push(CDeclaredClassConstant {
+                name: constant.name,
+                visibility: constant.visibility,
+                value: constant.value,
             });
         }
         for member in &class.members {
@@ -20652,9 +20713,6 @@ impl CGenerator {
         let key = trait_semantics::trait_key(&trait_decl.name);
         if !path.insert(key.clone()) {
             return Err(self.unsupported(trait_decl.span, ASSEMBLY_TRAIT_REJECTION));
-        }
-        if !trait_decl.constants.is_empty() || !trait_decl.properties.is_empty() {
-            return Err(self.unsupported(trait_decl.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
         }
         for trait_use in &trait_decl.trait_uses {
             let Some(nested) = self

@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::ast::{
-    ClassDecl, ClassMember, ClassMethodDecl, ClassVisibility, Span, TraitDecl, TraitUseDecl,
+    ClassConstantDecl, ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility,
+    Expr, Span, TraitDecl, TraitUseDecl,
 };
 use crate::error::{Diagnostic, Phase};
 
@@ -38,6 +39,18 @@ pub struct EffectiveTraitMethod {
     pub method: ClassMethodDecl,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct EffectiveTraitProperty {
+    pub declaring_trait_name: String,
+    pub property: ClassPropertyDecl,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EffectiveTraitConstant {
+    pub declaring_trait_name: String,
+    pub constant: ClassConstantDecl,
+}
+
 pub fn trait_key(name: &str) -> String {
     name.to_ascii_lowercase()
 }
@@ -63,6 +76,100 @@ pub fn compose_effective_trait_methods_for_trait(
     trait_lookup: &HashMap<String, Rc<TraitDecl>>,
 ) -> TraitSemanticResult<Vec<EffectiveTraitMethod>> {
     compose_trait_methods_for_trait(trait_decl, trait_lookup, &mut HashSet::new())
+}
+
+pub fn compose_class_effective_trait_properties(
+    class: &ClassDecl,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+) -> TraitSemanticResult<Vec<EffectiveTraitProperty>> {
+    let direct_properties = declared_class_properties(class);
+    let mut properties = Vec::new();
+    let mut composed: HashMap<String, EffectiveTraitProperty> = HashMap::new();
+    for trait_use in &class.trait_uses {
+        let trait_decl = resolve_trait_use_decl(trait_use, trait_lookup)?;
+        for property in
+            compose_trait_properties_for_trait(trait_decl, trait_lookup, &mut HashSet::new())?
+        {
+            let key = property.property.name.clone();
+            if let Some(class_property) = direct_properties.get(&key) {
+                if trait_properties_are_compatible(&property.property, class_property) {
+                    continue;
+                }
+                return Err(TraitSemanticError::new(
+                    property.property.span,
+                    format!(
+                        "unsupported trait use: class {} and trait define incompatible property ${}",
+                        class.name, property.property.name
+                    ),
+                ));
+            }
+            if let Some(existing) = composed.get(&key) {
+                if trait_properties_are_compatible(&existing.property, &property.property) {
+                    continue;
+                }
+                return Err(TraitSemanticError::new(
+                    property.property.span,
+                    format!(
+                        "unsupported trait use: trait property {}::${} conflicts with {}::${}; incompatible trait property definitions are not implemented",
+                        property.declaring_trait_name,
+                        property.property.name,
+                        existing.declaring_trait_name,
+                        property.property.name
+                    ),
+                ));
+            }
+            composed.insert(key, property.clone());
+            properties.push(property);
+        }
+    }
+    Ok(properties)
+}
+
+pub fn compose_class_effective_trait_constants(
+    class: &ClassDecl,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+) -> TraitSemanticResult<Vec<EffectiveTraitConstant>> {
+    let direct_constants = declared_class_constants(class);
+    let mut constants = Vec::new();
+    let mut composed: HashMap<String, EffectiveTraitConstant> = HashMap::new();
+    for trait_use in &class.trait_uses {
+        let trait_decl = resolve_trait_use_decl(trait_use, trait_lookup)?;
+        for constant in
+            compose_trait_constants_for_trait(trait_decl, trait_lookup, &mut HashSet::new())?
+        {
+            let key = constant.constant.name.clone();
+            if let Some(class_constant) = direct_constants.get(&key) {
+                if trait_constants_are_compatible(&constant.constant, class_constant) {
+                    continue;
+                }
+                return Err(TraitSemanticError::new(
+                    constant.constant.span,
+                    format!(
+                        "unsupported trait use: class {} and trait define incompatible constant {}",
+                        class.name, constant.constant.name
+                    ),
+                ));
+            }
+            if let Some(existing) = composed.get(&key) {
+                if trait_constants_are_compatible(&existing.constant, &constant.constant) {
+                    continue;
+                }
+                return Err(TraitSemanticError::new(
+                    constant.constant.span,
+                    format!(
+                        "unsupported trait use: trait constant {}::{} conflicts with {}::{}; incompatible trait constant definitions are not implemented",
+                        constant.declaring_trait_name,
+                        constant.constant.name,
+                        existing.declaring_trait_name,
+                        constant.constant.name
+                    ),
+                ));
+            }
+            composed.insert(key, constant.clone());
+            constants.push(constant);
+        }
+    }
+    Ok(constants)
 }
 
 fn compose_trait_methods_for_trait(
@@ -99,6 +206,152 @@ fn compose_trait_methods_for_trait(
 
     path.remove(&key);
     Ok(methods)
+}
+
+fn compose_trait_properties_for_trait(
+    trait_decl: &TraitDecl,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    path: &mut HashSet<String>,
+) -> TraitSemanticResult<Vec<EffectiveTraitProperty>> {
+    let key = trait_key(&trait_decl.name);
+    if !path.insert(key.clone()) {
+        return Err(TraitSemanticError::new(
+            trait_decl.span,
+            format!(
+                "unsupported trait use: recursive trait-body use involving {} is not implemented",
+                trait_decl.name
+            ),
+        ));
+    }
+
+    let mut properties = Vec::new();
+    let mut composed: HashMap<String, EffectiveTraitProperty> = HashMap::new();
+    let direct_properties = declared_trait_properties(trait_decl);
+    for trait_use in &trait_decl.trait_uses {
+        let nested = resolve_trait_use_decl(trait_use, trait_lookup)?;
+        for property in compose_trait_properties_for_trait(nested, trait_lookup, path)? {
+            if let Some(direct_property) = direct_properties.get(&property.property.name) {
+                if !trait_properties_are_compatible(direct_property, &property.property) {
+                    return Err(TraitSemanticError::new(
+                        direct_property.span,
+                        format!(
+                            "unsupported trait use: trait property {}::${} conflicts with {}::${}; incompatible trait property definitions are not implemented",
+                            trait_decl.name,
+                            direct_property.name,
+                            property.declaring_trait_name,
+                            property.property.name
+                        ),
+                    ));
+                }
+                continue;
+            }
+            insert_effective_trait_property(&mut properties, &mut composed, property)?;
+        }
+    }
+    for property in &trait_decl.properties {
+        insert_effective_trait_property(
+            &mut properties,
+            &mut composed,
+            EffectiveTraitProperty {
+                declaring_trait_name: trait_decl.name.clone(),
+                property: property.clone(),
+            },
+        )?;
+    }
+
+    path.remove(&key);
+    Ok(properties)
+}
+
+fn insert_effective_trait_property(
+    properties: &mut Vec<EffectiveTraitProperty>,
+    composed: &mut HashMap<String, EffectiveTraitProperty>,
+    property: EffectiveTraitProperty,
+) -> TraitSemanticResult<()> {
+    let key = property.property.name.clone();
+    if let Some(existing) = composed.get(&key) {
+        if trait_properties_are_compatible(&existing.property, &property.property) {
+            return Ok(());
+        }
+        return Err(TraitSemanticError::new(
+            property.property.span,
+            format!(
+                "unsupported trait use: trait property {}::${} conflicts with {}::${}; incompatible trait property definitions are not implemented",
+                property.declaring_trait_name,
+                property.property.name,
+                existing.declaring_trait_name,
+                property.property.name
+            ),
+        ));
+    }
+    composed.insert(key, property.clone());
+    properties.push(property);
+    Ok(())
+}
+
+fn compose_trait_constants_for_trait(
+    trait_decl: &TraitDecl,
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    path: &mut HashSet<String>,
+) -> TraitSemanticResult<Vec<EffectiveTraitConstant>> {
+    let key = trait_key(&trait_decl.name);
+    if !path.insert(key.clone()) {
+        return Err(TraitSemanticError::new(
+            trait_decl.span,
+            format!(
+                "unsupported trait use: recursive trait-body use involving {} is not implemented",
+                trait_decl.name
+            ),
+        ));
+    }
+
+    let mut constants = Vec::new();
+    let mut composed: HashMap<String, EffectiveTraitConstant> = HashMap::new();
+    for trait_use in &trait_decl.trait_uses {
+        let nested = resolve_trait_use_decl(trait_use, trait_lookup)?;
+        for constant in compose_trait_constants_for_trait(nested, trait_lookup, path)? {
+            insert_effective_trait_constant(&mut constants, &mut composed, constant)?;
+        }
+    }
+    for constant in &trait_decl.constants {
+        insert_effective_trait_constant(
+            &mut constants,
+            &mut composed,
+            EffectiveTraitConstant {
+                declaring_trait_name: trait_decl.name.clone(),
+                constant: constant.clone(),
+            },
+        )?;
+    }
+
+    path.remove(&key);
+    Ok(constants)
+}
+
+fn insert_effective_trait_constant(
+    constants: &mut Vec<EffectiveTraitConstant>,
+    composed: &mut HashMap<String, EffectiveTraitConstant>,
+    constant: EffectiveTraitConstant,
+) -> TraitSemanticResult<()> {
+    let key = constant.constant.name.clone();
+    if let Some(existing) = composed.get(&key) {
+        if trait_constants_are_compatible(&existing.constant, &constant.constant) {
+            return Ok(());
+        }
+        return Err(TraitSemanticError::new(
+            constant.constant.span,
+            format!(
+                "unsupported trait use: trait constant {}::{} conflicts with {}::{}; incompatible trait constant definitions are not implemented",
+                constant.declaring_trait_name,
+                constant.constant.name,
+                existing.declaring_trait_name,
+                constant.constant.name
+            ),
+        ));
+    }
+    composed.insert(key, constant.clone());
+    constants.push(constant);
+    Ok(())
 }
 
 fn compose_effective_trait_methods_from_uses(
@@ -259,12 +512,110 @@ fn declared_class_method_names(class: &ClassDecl) -> HashSet<String> {
         .collect()
 }
 
+fn declared_class_properties(class: &ClassDecl) -> HashMap<String, ClassPropertyDecl> {
+    class
+        .members
+        .iter()
+        .filter_map(|member| {
+            let ClassMember::Property(property) = member else {
+                return None;
+            };
+            Some((property.name.clone(), property.clone()))
+        })
+        .collect()
+}
+
+fn declared_class_constants(class: &ClassDecl) -> HashMap<String, ClassConstantDecl> {
+    class
+        .members
+        .iter()
+        .filter_map(|member| {
+            let ClassMember::Constant(constant) = member else {
+                return None;
+            };
+            Some((constant.name.clone(), constant.clone()))
+        })
+        .collect()
+}
+
 fn declared_trait_method_names(trait_decl: &TraitDecl) -> HashSet<String> {
     trait_decl
         .methods
         .iter()
         .map(|method| method_key(&method.function.name))
         .collect()
+}
+
+fn declared_trait_properties(trait_decl: &TraitDecl) -> HashMap<String, ClassPropertyDecl> {
+    trait_decl
+        .properties
+        .iter()
+        .map(|property| (property.name.clone(), property.clone()))
+        .collect()
+}
+
+pub fn trait_properties_are_compatible(
+    left: &ClassPropertyDecl,
+    right: &ClassPropertyDecl,
+) -> bool {
+    left.visibility == right.visibility
+        && left.is_static == right.is_static
+        && left.type_decl.as_ref().map(|decl| decl.text.as_str())
+            == right.type_decl.as_ref().map(|decl| decl.text.as_str())
+        && optional_default_exprs_are_compatible(left.default.as_ref(), right.default.as_ref())
+}
+
+pub fn trait_constants_are_compatible(left: &ClassConstantDecl, right: &ClassConstantDecl) -> bool {
+    left.visibility == right.visibility && default_exprs_are_compatible(&left.value, &right.value)
+}
+
+fn optional_default_exprs_are_compatible(left: Option<&Expr>, right: Option<&Expr>) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(left), Some(right)) => default_exprs_are_compatible(left, right),
+        _ => false,
+    }
+}
+
+fn default_exprs_are_compatible(left: &Expr, right: &Expr) -> bool {
+    match (left, right) {
+        (Expr::Null(_), Expr::Null(_)) => true,
+        (Expr::Bool(left, _), Expr::Bool(right, _)) => left == right,
+        (Expr::Int(left, _), Expr::Int(right, _)) => left == right,
+        (Expr::Float(left, _), Expr::Float(right, _)) => left == right,
+        (Expr::String(left, _), Expr::String(right, _)) => left == right,
+        (
+            Expr::Array {
+                items: left_items, ..
+            },
+            Expr::Array {
+                items: right_items, ..
+            },
+        ) => {
+            left_items.len() == right_items.len()
+                && left_items.iter().zip(right_items).all(|(left, right)| {
+                    left.by_reference == right.by_reference
+                        && optional_default_exprs_are_compatible(
+                            left.key.as_ref(),
+                            right.key.as_ref(),
+                        )
+                        && default_exprs_are_compatible(&left.value, &right.value)
+                })
+        }
+        (
+            Expr::Unary {
+                op: left_op,
+                expr: left_expr,
+                ..
+            },
+            Expr::Unary {
+                op: right_op,
+                expr: right_expr,
+                ..
+            },
+        ) => left_op == right_op && default_exprs_are_compatible(left_expr, right_expr),
+        _ => false,
+    }
 }
 
 fn trait_precedence_exclusions_for_uses(
@@ -368,6 +719,30 @@ mod tests {
                     method.declaring_trait_name,
                 )
             })
+            .collect()
+    }
+
+    fn effective_property_names(source: &str) -> Vec<(String, bool, String)> {
+        let (traits, class) = parsed_traits_and_class(source);
+        compose_class_effective_trait_properties(&class, &traits)
+            .unwrap()
+            .into_iter()
+            .map(|property| {
+                (
+                    property.property.name,
+                    property.property.is_static,
+                    property.declaring_trait_name,
+                )
+            })
+            .collect()
+    }
+
+    fn effective_constant_names(source: &str) -> Vec<(String, String)> {
+        let (traits, class) = parsed_traits_and_class(source);
+        compose_class_effective_trait_constants(&class, &traits)
+            .unwrap()
+            .into_iter()
+            .map(|constant| (constant.constant.name, constant.declaring_trait_name))
             .collect()
     }
 
@@ -480,5 +855,89 @@ class Recursive { use LoopA; }
         );
         let recursive = compose_class_effective_trait_methods(&class, &traits).unwrap_err();
         assert!(recursive.message.contains("recursive trait-body use"));
+    }
+
+    #[test]
+    fn trait_semantics_composes_properties_and_constants() {
+        let properties = effective_property_names(
+            r#"<?php
+trait Nested {
+    public $nested = "n";
+    public static $shared = 1;
+}
+trait Direct {
+    use Nested;
+    public $own = "d";
+    public static $shared = 1;
+}
+trait Same {
+    public $own = "d";
+}
+class UsesMembers {
+    use Direct, Same;
+    public $nested = "n";
+}
+"#,
+        );
+        assert_eq!(
+            properties,
+            vec![
+                ("own".to_string(), false, "Direct".to_string()),
+                ("shared".to_string(), true, "Direct".to_string()),
+            ]
+        );
+
+        let constants = effective_constant_names(
+            r#"<?php
+trait NestedConst { public const NESTED = "n"; }
+trait DirectConst {
+    use NestedConst;
+    public const OWN = "d";
+}
+trait SameConst { public const OWN = "d"; }
+class UsesConstants {
+    use DirectConst, SameConst;
+    public const NESTED = "n";
+}
+"#,
+        );
+        assert_eq!(
+            constants,
+            vec![("OWN".to_string(), "DirectConst".to_string())]
+        );
+    }
+
+    #[test]
+    fn trait_semantics_reports_property_and_constant_conflicts() {
+        let (traits, class) = parsed_traits_and_class(
+            r#"<?php
+trait FirstProperty { public $same = "a"; }
+trait SecondProperty { public $same = "b"; }
+class UsesProperties { use FirstProperty, SecondProperty; }
+"#,
+        );
+        let property_error = compose_class_effective_trait_properties(&class, &traits).unwrap_err();
+        assert!(property_error.message.contains("trait property"));
+
+        let (traits, class) = parsed_traits_and_class(
+            r#"<?php
+trait NestedProperty { public $same = "a"; }
+trait DirectProperty { use NestedProperty; public $same = "b"; }
+class UsesNestedProperty { use DirectProperty; }
+"#,
+        );
+        let nested_property_error =
+            compose_class_effective_trait_properties(&class, &traits).unwrap_err();
+        assert!(nested_property_error.message.contains("trait property"));
+
+        let (traits, class) = parsed_traits_and_class(
+            r#"<?php
+trait FirstConstant { public const SAME = "a"; }
+trait SecondConstant { public const SAME = "b"; }
+class UsesConstants { use FirstConstant, SecondConstant; }
+"#,
+        );
+        let constant_error = compose_class_effective_trait_constants(&class, &traits).unwrap_err();
+        assert!(constant_error.message.contains("trait constant"));
     }
 }
