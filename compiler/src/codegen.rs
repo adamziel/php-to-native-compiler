@@ -63171,6 +63171,8 @@ fn native_dynamic_callable_builtin_canonical_name(name: &str) -> Option<&'static
         "arsort" => Some("arsort"),
         "ksort" => Some("ksort"),
         "krsort" => Some("krsort"),
+        "natsort" => Some("natsort"),
+        "natcasesort" => Some("natcasesort"),
         "array_push" => Some("array_push"),
         "array_pop" => Some("array_pop"),
         "array_shift" => Some("array_shift"),
@@ -63333,6 +63335,21 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             fixed_param_names: NATIVE_BUILTIN_PARAM_ARRAY_FLAGS,
             fixed_param_by_reference: NATIVE_BUILTIN_BY_REF_THEN_VALUE_DEFAULT,
             fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_SORT_FLAGS,
+            accepts_variadic_args: false,
+            variadic_param_name: None,
+            variadic_param_by_reference: false,
+            returns_by_reference: false,
+            source_call_support: RuntimeCallableValue,
+        },
+        "natsort" | "natcasesort" => CNativeBuiltinSignature {
+            canonical_name: match name.to_ascii_lowercase().as_str() {
+                "natcasesort" => "natcasesort",
+                _ => "natsort",
+            },
+            required_arg_count: 1,
+            fixed_param_names: NATIVE_BUILTIN_PARAM_ARRAY,
+            fixed_param_by_reference: NATIVE_BUILTIN_BY_REF_1,
+            fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
             accepts_variadic_args: false,
             variadic_param_name: None,
             variadic_param_by_reference: false,
@@ -70358,6 +70375,30 @@ echo " 10" < "zeta";
         assert_eq!(krsort.fixed_param_defaults, sort.fixed_param_defaults);
         assert_eq!(krsort.source_call_support, sort.source_call_support);
 
+        let natsort = native_builtin_signature_for_name("natsort")
+            .expect("natsort should expose runtime sorting builtin metadata");
+        assert_eq!(natsort.canonical_name, "natsort");
+        assert_eq!(natsort.required_arg_count, 1);
+        assert_eq!(natsort.fixed_param_names, &["array"]);
+        assert_eq!(natsort.fixed_param_by_reference, &[true]);
+        assert_eq!(natsort.fixed_param_defaults, &[None]);
+        assert!(natsort.accepts_arg_count(1));
+        assert!(!natsort.accepts_arg_count(2));
+        assert_eq!(natsort.source_call_support, sort.source_call_support);
+        let natcasesort = native_builtin_signature_for_name("natcasesort")
+            .expect("natcasesort should expose runtime sorting builtin metadata");
+        assert_eq!(natcasesort.canonical_name, "natcasesort");
+        assert_eq!(natcasesort.fixed_param_names, natsort.fixed_param_names);
+        assert_eq!(
+            natcasesort.fixed_param_by_reference,
+            natsort.fixed_param_by_reference
+        );
+        assert_eq!(
+            natcasesort.fixed_param_defaults,
+            natsort.fixed_param_defaults
+        );
+        assert_eq!(natcasesort.source_call_support, natsort.source_call_support);
+
         let push = native_builtin_signature_for_name("array_push")
             .expect("array_push should be mapped as a runtime variadic mutation signature");
         assert_eq!(push.required_arg_count, 2);
@@ -70514,6 +70555,29 @@ echo " 10" < "zeta";
         assert_eq!(
             generator.callable_string_signature_for_expr(&ksort_or_krsort, 2),
             Some(sort_signature)
+        );
+        let natural_sort_signature = generator
+            .callable_string_signature_for_expr(&Expr::String("natsort".to_string(), span(7)), 1)
+            .expect("runtime natural sort builtin signatures should feed source-call binding");
+        assert_eq!(natural_sort_signature.fixed_param_by_reference, vec![true]);
+        assert!(
+            generator
+                .callable_string_signature_for_expr(
+                    &Expr::String("natsort".to_string(), span(7)),
+                    2,
+                )
+                .is_none(),
+            "natural sort callables must not inherit the optional flag metadata"
+        );
+        let natural_or_case = Expr::Ternary {
+            condition: Box::new(Expr::Bool(true, span(7))),
+            if_true: Box::new(Expr::String("natsort".to_string(), span(7))),
+            if_false: Box::new(Expr::String("natcasesort".to_string(), span(7))),
+            span: span(7),
+        };
+        assert_eq!(
+            generator.callable_string_signature_for_expr(&natural_or_case, 1),
+            Some(natural_sort_signature)
         );
         let pop_signature = generator
             .callable_string_signature_for_expr(&Expr::String("array_pop".to_string(), span(7)), 1)

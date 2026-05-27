@@ -811,7 +811,14 @@ impl NativeArraySortOperation {
     fn supports_runtime_callable_writeback(self) -> bool {
         matches!(
             self,
-            Self::Sort | Self::Rsort | Self::Asort | Self::Arsort | Self::Ksort | Self::Krsort
+            Self::Sort
+                | Self::Rsort
+                | Self::Asort
+                | Self::Arsort
+                | Self::Ksort
+                | Self::Krsort
+                | Self::Natsort
+                | Self::Natcasesort
         )
     }
 }
@@ -1584,6 +1591,8 @@ impl NativeCallableBuiltin {
             Self::ArraySort(NativeArraySortOperation::Arsort) => "arsort",
             Self::ArraySort(NativeArraySortOperation::Ksort) => "ksort",
             Self::ArraySort(NativeArraySortOperation::Krsort) => "krsort",
+            Self::ArraySort(NativeArraySortOperation::Natsort) => "natsort",
+            Self::ArraySort(NativeArraySortOperation::Natcasesort) => "natcasesort",
             Self::ArraySort(_) => "array-sort",
             Self::ArrayMutation(NativeArrayMutationOperation::Push) => "array_push",
             Self::ArrayMutation(NativeArrayMutationOperation::Pop) => "array_pop",
@@ -1648,6 +1657,19 @@ impl NativeCallableBuiltin {
                 accepts_variadic_args: false,
                 returns_by_reference: false,
             },
+            Self::ArraySort(operation)
+                if operation.supports_runtime_callable_writeback()
+                    && operation.uses_natural_sort() =>
+            {
+                NativeCallableBuiltinSignature {
+                    required_arg_count: 1,
+                    fixed_param_names: PARAM_ARRAY,
+                    fixed_param_by_reference: BY_REF_1,
+                    fixed_param_defaults: DEFAULTS_NONE_1,
+                    accepts_variadic_args: false,
+                    returns_by_reference: false,
+                }
+            }
             Self::ArraySort(operation) if operation.supports_runtime_callable_writeback() => {
                 NativeCallableBuiltinSignature {
                     required_arg_count: 1,
@@ -9863,6 +9885,12 @@ fn native_callable_builtin_for_function_name(name: &str) -> Option<NativeCallabl
         "krsort" => Some(NativeCallableBuiltin::ArraySort(
             NativeArraySortOperation::Krsort,
         )),
+        "natsort" => Some(NativeCallableBuiltin::ArraySort(
+            NativeArraySortOperation::Natsort,
+        )),
+        "natcasesort" => Some(NativeCallableBuiltin::ArraySort(
+            NativeArraySortOperation::Natcasesort,
+        )),
         "array_push" => Some(NativeCallableBuiltin::ArrayMutation(
             NativeArrayMutationOperation::Push,
         )),
@@ -13201,6 +13229,27 @@ unsafe fn native_callable_array_sort_value(
     }
 
     let result = (|| {
+        if !operation.operand_count_is_supported(operands.len()) {
+            return Err(format!(
+                "native callable builtin invocation failed: {} expected {} sort operand(s), got {}",
+                operation.label(),
+                match operation {
+                    NativeArraySortOperation::Sort
+                    | NativeArraySortOperation::Rsort
+                    | NativeArraySortOperation::Asort
+                    | NativeArraySortOperation::Arsort
+                    | NativeArraySortOperation::Ksort
+                    | NativeArraySortOperation::Krsort => "0 or 1",
+                    NativeArraySortOperation::Natsort | NativeArraySortOperation::Natcasesort =>
+                        "0",
+                    NativeArraySortOperation::Usort
+                    | NativeArraySortOperation::Uasort
+                    | NativeArraySortOperation::Uksort => "1",
+                },
+                operands.len()
+            ));
+        }
+
         let mode = match unsafe {
             native_array_sort_mode_from_operands(
                 operation,
@@ -45516,6 +45565,28 @@ mod tests {
         assert_eq!(ksort, sort);
         let krsort = NativeCallableBuiltin::ArraySort(NativeArraySortOperation::Krsort).signature();
         assert_eq!(krsort, sort);
+
+        let natsort =
+            NativeCallableBuiltin::ArraySort(NativeArraySortOperation::Natsort).signature();
+        assert_eq!(natsort.required_arg_count, 1);
+        assert_eq!(natsort.fixed_param_count(), 1);
+        assert_eq!(natsort.fixed_param_names, &["array"]);
+        assert_eq!(natsort.fixed_param_by_reference, &[true]);
+        assert_eq!(natsort.fixed_param_defaults, &[None]);
+        assert!(natsort.accepts_arg_count(1));
+        assert!(!natsort.accepts_arg_count(2));
+        assert!(!natsort.accepts_variadic_args);
+        assert!(!natsort.returns_by_reference);
+        let natsort_source = natsort.source_signature().unwrap();
+        assert_eq!(natsort_source.parameter_names, vec!["array"]);
+        assert_eq!(natsort_source.parameter_required, vec![1]);
+        assert_eq!(natsort_source.parameter_by_reference, vec![1]);
+        assert_eq!(natsort_source.parameter_defaults, vec![Value::Null]);
+        assert_eq!(natsort_source.variadic_parameter_name, None);
+
+        let natcasesort =
+            NativeCallableBuiltin::ArraySort(NativeArraySortOperation::Natcasesort).signature();
+        assert_eq!(natcasesort, natsort);
     }
 
     #[test]
@@ -45688,6 +45759,56 @@ mod tests {
                 vec![
                     (ArrayKey::String("b".to_string()), Value::Int(1)),
                     (ArrayKey::String("a".to_string()), Value::Int(2)),
+                ],
+            ),
+            (
+                "natsort",
+                None,
+                {
+                    let mut array = PhpArray::new();
+                    array.insert("z", Value::String("img10".to_string()));
+                    array.insert("y", Value::String("img2".to_string()));
+                    array.insert("x", Value::String("img01".to_string()));
+                    array
+                },
+                vec![
+                    (
+                        ArrayKey::String("x".to_string()),
+                        Value::String("img01".to_string()),
+                    ),
+                    (
+                        ArrayKey::String("y".to_string()),
+                        Value::String("img2".to_string()),
+                    ),
+                    (
+                        ArrayKey::String("z".to_string()),
+                        Value::String("img10".to_string()),
+                    ),
+                ],
+            ),
+            (
+                "natcasesort",
+                None,
+                {
+                    let mut array = PhpArray::new();
+                    array.insert("up", Value::String("Img12".to_string()));
+                    array.insert("low", Value::String("img2".to_string()));
+                    array.insert("first", Value::String("img1".to_string()));
+                    array
+                },
+                vec![
+                    (
+                        ArrayKey::String("first".to_string()),
+                        Value::String("img1".to_string()),
+                    ),
+                    (
+                        ArrayKey::String("low".to_string()),
+                        Value::String("img2".to_string()),
+                    ),
+                    (
+                        ArrayKey::String("up".to_string()),
+                        Value::String("Img12".to_string()),
+                    ),
                 ],
             ),
         ] {

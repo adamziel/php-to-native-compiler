@@ -25205,6 +25205,18 @@ const NATIVE_RUNTIME_BUILTIN_SORT_WRITEBACK_SOURCE: &str = concat!(
     "$krsort = \"krsort\";\n",
     "echo $krsort(...$keyed_args), \":\";\n",
     "echo print_r($keyed, true);\n",
+    "echo \"|\";\n",
+    "$natural = [\"z\" => \"img10\", \"y\" => \"img2\", \"x\" => \"img01\"];\n",
+    "$natsort = \"natsort\";\n",
+    "echo $natsort($natural), \":\";\n",
+    "echo print_r($natural, true);\n",
+    "echo \"|\";\n",
+    "$case = [\"up\" => \"Img12\", \"low\" => \"img2\", \"first\" => \"img1\"];\n",
+    "$case_args = [];\n",
+    "$case_args[] =& $case;\n",
+    "$natcasesort = \"natcasesort\";\n",
+    "echo $natcasesort(...$case_args), \":\";\n",
+    "echo print_r($case, true);\n",
 );
 
 const NATIVE_UNKNOWN_RUNTIME_BUILTIN_CALLABLE_STRING_SPREAD_SOURCE: &str = concat!(
@@ -25269,6 +25281,20 @@ const NATIVE_UNKNOWN_RUNTIME_BUILTIN_SORT_WRITEBACK_SOURCE: &str = concat!(
     "$keyed_args[] =& $keyed;\n",
     "echo $fn(...$keyed_args), \":\";\n",
     "echo print_r($keyed, true);\n",
+    "echo \"|\";\n",
+    "$natural = [\"z\" => \"img10\", \"y\" => \"img2\", \"x\" => \"img01\"];\n",
+    "$_GET[\"fn\"] = \"natsort\";\n",
+    "$fn = isset($_GET[\"fn\"]) ? $_GET[\"fn\"] : \"sort\";\n",
+    "echo $fn($natural), \":\";\n",
+    "echo print_r($natural, true);\n",
+    "echo \"|\";\n",
+    "$case = [\"up\" => \"Img12\", \"low\" => \"img2\", \"first\" => \"img1\"];\n",
+    "$_GET[\"fn\"] = \"natcasesort\";\n",
+    "$fn = isset($_GET[\"fn\"]) ? $_GET[\"fn\"] : \"sort\";\n",
+    "$case_args = [];\n",
+    "$case_args[] =& $case;\n",
+    "echo $fn(...$case_args), \":\";\n",
+    "echo print_r($case, true);\n",
 );
 
 const NATIVE_LEADING_GLOBAL_FUNCTION_CALL_SOURCE: &str = concat!(
@@ -31060,7 +31086,7 @@ fn emit_exe_links_and_runs_runtime_builtin_sort_writeback_program() {
     );
     assert_eq!(
         run.stdout,
-        b"1:1:2:10|1:10:2:1|1:b10:b2|1:b2:b10|1:Array\n(\n    [a] => 2\n    [b] => 1\n)\n|1:Array\n(\n    [b] => 1\n    [a] => 2\n)\n"
+        b"1:1:2:10|1:10:2:1|1:b10:b2|1:b2:b10|1:Array\n(\n    [a] => 2\n    [b] => 1\n)\n|1:Array\n(\n    [b] => 1\n    [a] => 2\n)\n|1:Array\n(\n    [x] => img01\n    [y] => img2\n    [z] => img10\n)\n|1:Array\n(\n    [first] => img1\n    [low] => img2\n    [up] => Img12\n)\n"
     );
     assert_eq!(run.stderr, b"");
 
@@ -31124,7 +31150,7 @@ fn emit_exe_links_and_runs_unknown_runtime_builtin_sort_writeback_program() {
     );
     assert_eq!(
         run.stdout,
-        b"1:1:2:10|1:10:2:1|1:b10:b2|1:b2:b10|1:Array\n(\n    [a] => 2\n    [b] => 1\n)\n|1:Array\n(\n    [b] => 1\n    [a] => 2\n)\n"
+        b"1:1:2:10|1:10:2:1|1:b10:b2|1:b2:b10|1:Array\n(\n    [a] => 2\n    [b] => 1\n)\n|1:Array\n(\n    [b] => 1\n    [a] => 2\n)\n|1:Array\n(\n    [x] => img01\n    [y] => img2\n    [z] => img10\n)\n|1:Array\n(\n    [first] => img1\n    [low] => img2\n    [up] => Img12\n)\n"
     );
     assert_eq!(run.stderr, b"");
 
