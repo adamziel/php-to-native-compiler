@@ -12,8 +12,10 @@ pub mod trait_semantics;
 use ast::Program;
 use error::CompileResult;
 pub use include_discovery::{
-    compilation_unit_with_literal_include_metadata, parse_source_with_literal_include_metadata,
-    CompilationUnit, IncludeGraphMetadata, IncludedFileMetadata,
+    compilation_unit_with_literal_include_metadata,
+    executable_compilation_unit_with_literal_include_units,
+    parse_source_with_literal_include_metadata, CompilationUnit, ExecutableCompilationUnit,
+    ExecutableIncludeUnit, IncludeGraphMetadata, IncludedFileMetadata,
 };
 use interpreter::{Execution, RunOptions};
 use php_runtime::PhpClassTable;

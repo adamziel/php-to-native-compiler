@@ -1,5 +1,6 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::rc::Rc;
 
@@ -17,6 +18,9 @@ use crate::call_arguments::{
     CallArgumentVariadicKey, NormalizedCallArguments,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
+use crate::include_discovery::{
+    resolve_literal_include_path, ExecutableCompilationUnit, ExecutableIncludeUnit,
+};
 use crate::trait_semantics;
 use php_runtime::{
     classify_php_numeric_string, is_php_truthy_string, php_primitive_arithmetic_result,
@@ -16165,6 +16169,17 @@ pub fn emit_native_executable_c_source(program: &Program) -> CompileResult<Strin
     generator.emit_program(program)
 }
 
+pub fn emit_native_executable_c_source_for_include_units(
+    unit: &ExecutableCompilationUnit,
+) -> CompileResult<String> {
+    let mut generator = CGenerator {
+        uses_native_string_helpers: true,
+        active_source_file: Some(unit.root_file.clone()),
+        ..CGenerator::default()
+    };
+    generator.emit_program_with_include_units(unit)
+}
+
 #[derive(Default, Clone)]
 struct CGenerator {
     body: Vec<String>,
@@ -16219,6 +16234,7 @@ struct CGenerator {
     uses_native_dynamic_call_helpers: bool,
     uses_native_closure_helpers: bool,
     uses_native_output_buffer_operation: bool,
+    uses_native_include_unit_helpers: bool,
     uses_native_object_instantiation_helpers: bool,
     uses_native_user_class_declaration: bool,
     uses_native_class_metadata_exists: bool,
@@ -16273,6 +16289,17 @@ struct CGenerator {
     active_declared_parent_class_name: Option<String>,
     active_called_scope_handle: Option<String>,
     generated_method_frame_this_property_assignment: bool,
+    active_source_file: Option<PathBuf>,
+    include_units: HashMap<PathBuf, CIncludeUnit>,
+    include_unit_order: Vec<PathBuf>,
+    include_once_slots: HashMap<PathBuf, String>,
+}
+
+#[derive(Debug, Clone)]
+struct CIncludeUnit {
+    c_name: String,
+    path: PathBuf,
+    program: Program,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -18436,6 +18463,7 @@ enum CFunctionReturnMode {
     NativeReference,
     ClosureValue,
     ClosureReference,
+    IncludeUnit,
 }
 
 struct CNativeForeachCursorStorage {
@@ -19929,6 +19957,7 @@ impl CGenerator {
         self.uses_native_dynamic_call_helpers |= branch.uses_native_dynamic_call_helpers;
         self.uses_native_closure_helpers |= branch.uses_native_closure_helpers;
         self.uses_native_output_buffer_operation |= branch.uses_native_output_buffer_operation;
+        self.uses_native_include_unit_helpers |= branch.uses_native_include_unit_helpers;
         self.uses_native_text_membership_operation |= branch.uses_native_text_membership_operation;
         self.uses_native_object_instantiation_helpers |=
             branch.uses_native_object_instantiation_helpers;
@@ -19978,6 +20007,7 @@ impl CGenerator {
             || self.uses_native_dynamic_call_helpers
             || self.uses_native_closure_helpers
             || self.uses_native_output_buffer_operation
+            || self.uses_native_include_unit_helpers
             || self.uses_native_object_instantiation_helpers
             || self.uses_native_user_class_declaration
             || self.uses_native_class_metadata_exists
@@ -21552,6 +21582,82 @@ impl CGenerator {
         Ok(definition)
     }
 
+    fn c_include_unit_signature(c_name: &str) -> String {
+        format!(
+            "static phpc_NativeIncludeResult {c_name}(phpc_NativeSymbolTableHandle phpc_root_symbols)"
+        )
+    }
+
+    fn emit_include_unit_definitions(&mut self) -> CompileResult<()> {
+        let units = self
+            .include_unit_order
+            .iter()
+            .filter_map(|path| self.include_units.get(path).cloned())
+            .collect::<Vec<_>>();
+        for unit in units {
+            let definition = self.emit_include_unit_definition(&unit)?;
+            self.function_definitions.push(definition);
+        }
+        Ok(())
+    }
+
+    fn emit_include_unit_definition(&mut self, unit: &CIncludeUnit) -> CompileResult<String> {
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            uses_native_include_unit_helpers: true,
+            uses_native_symbol_table_helpers: true,
+            uses_native_value_clone: true,
+            user_functions: self.user_functions.clone(),
+            user_function_order: self.user_function_order.clone(),
+            declared_traits: self.declared_traits.clone(),
+            declared_trait_order: self.declared_trait_order.clone(),
+            declared_interfaces: self.declared_interfaces.clone(),
+            declared_interface_order: self.declared_interface_order.clone(),
+            declared_classes: self.declared_classes.clone(),
+            declared_class_order: self.declared_class_order.clone(),
+            function_return_mode: CFunctionReturnMode::IncludeUnit,
+            next_static_data: self.next_static_data,
+            next_native_temp: self.next_native_temp,
+            native_globals_symbol_table_handle: Some("phpc_root_symbols".to_string()),
+            native_globals_symbol_table_owned: false,
+            active_source_file: Some(unit.path.clone()),
+            include_units: self.include_units.clone(),
+            include_unit_order: self.include_unit_order.clone(),
+            include_once_slots: self.include_once_slots.clone(),
+            ..CGenerator::default()
+        };
+
+        generator.emit_program_statements(&unit.program.statements)?;
+        if !stmt_list_always_returns(&unit.program.statements) {
+            generator.emit_include_unit_default_return(
+                unit.program
+                    .statements
+                    .last()
+                    .map_or(Span::new(0, 0), Stmt::span),
+            )?;
+        }
+
+        self.next_static_data = generator.next_static_data;
+        self.next_native_temp = generator.next_native_temp;
+        self.static_data
+            .extend(generator.static_data.iter().cloned());
+        self.merge_branch_feature_flags(&generator);
+
+        let mut definition = String::new();
+        for nested in &generator.function_definitions {
+            definition.push_str(nested);
+        }
+        definition.push_str(&Self::c_include_unit_signature(&unit.c_name));
+        definition.push_str(" {\n");
+        for line in &generator.body {
+            definition.push_str("  ");
+            definition.push_str(line);
+            definition.push('\n');
+        }
+        definition.push_str("}\n");
+        Ok(definition)
+    }
+
     fn emit_user_function_callable_wrapper_definition(&self, function: &CUserFunction) -> String {
         let wrapper_name = Self::c_user_function_callable_wrapper_name(&function.c_name);
         let mut definition = String::new();
@@ -22541,6 +22647,54 @@ impl CGenerator {
         Ok(())
     }
 
+    fn prepare_include_units(&mut self, units: &[ExecutableIncludeUnit]) {
+        for (index, unit) in units.iter().enumerate() {
+            let c_name = format!("phpc_include_unit_{index}");
+            let once_slot = format!("phpc_include_once_{index}");
+            self.static_data
+                .push(format!("static bool {once_slot} = false;"));
+            self.include_once_slots.insert(unit.path.clone(), once_slot);
+            self.include_unit_order.push(unit.path.clone());
+            self.include_units.insert(
+                unit.path.clone(),
+                CIncludeUnit {
+                    c_name,
+                    path: unit.path.clone(),
+                    program: unit.program.clone(),
+                },
+            );
+        }
+    }
+
+    fn all_include_unit_statements(&self) -> Vec<Stmt> {
+        let mut statements = Vec::new();
+        for path in &self.include_unit_order {
+            if let Some(unit) = self.include_units.get(path) {
+                statements.extend(unit.program.statements.clone());
+            }
+        }
+        statements
+    }
+
+    fn emit_program_with_include_units(
+        &mut self,
+        unit: &ExecutableCompilationUnit,
+    ) -> CompileResult<String> {
+        self.prepare_include_units(&unit.include_units);
+        let mut declaration_statements = unit.program.statements.clone();
+        declaration_statements.extend(self.all_include_unit_statements());
+        self.register_top_level_declared_traits(&declaration_statements)?;
+        self.register_top_level_declared_interfaces(&declaration_statements)?;
+        self.register_top_level_declared_classes(&declaration_statements)?;
+        self.register_top_level_user_functions(&declaration_statements)?;
+        self.emit_declared_class_method_definitions()?;
+        self.emit_registered_user_function_definitions()?;
+        self.emit_include_unit_definitions()?;
+        self.active_source_file = Some(unit.root_file.clone());
+        self.emit_program_statements(&unit.program.statements)?;
+        self.emit_program_output()
+    }
+
     fn emit_program(&mut self, program: &Program) -> CompileResult<String> {
         self.register_top_level_declared_traits(&program.statements)?;
         self.register_top_level_declared_interfaces(&program.statements)?;
@@ -22549,7 +22703,10 @@ impl CGenerator {
         self.emit_declared_class_method_definitions()?;
         self.emit_registered_user_function_definitions()?;
         self.emit_program_statements(&program.statements)?;
+        self.emit_program_output()
+    }
 
+    fn emit_program_output(&mut self) -> CompileResult<String> {
         let mut output = String::new();
         if self.uses_native_runtime_helpers() {
             output.push_str("/* generated by phpc native executable C link path */\n");
@@ -22688,6 +22845,11 @@ impl CGenerator {
             }
             if self.uses_native_symbol_table_helpers {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeSymbolTableHandle;\n");
+            }
+            if self.uses_native_include_unit_helpers {
+                output.push_str("#define PHPC_NATIVE_INCLUDE_RESULT_NORMAL 1\n");
+                output.push_str("#define PHPC_NATIVE_INCLUDE_RESULT_RETURN 2\n");
+                output.push_str("typedef struct { uint8_t tag; phpc_NativeValueHandle value; int32_t exit_code; } phpc_NativeIncludeResult;\n");
             }
             if self.uses_native_string_helpers || self.uses_native_array_helpers {
                 output.push_str(
@@ -23466,6 +23628,14 @@ impl CGenerator {
                     ));
                     output.push_str(";\n");
                 }
+            }
+            for path in &self.include_unit_order {
+                let unit = self
+                    .include_units
+                    .get(path)
+                    .expect("include unit order path has metadata");
+                output.push_str(&Self::c_include_unit_signature(&unit.c_name));
+                output.push_str(";\n");
             }
             output.push('\n');
         }
@@ -28645,7 +28815,9 @@ impl CGenerator {
     }
 
     fn direct_variables_route_through_global_symbol_table(&self) -> bool {
-        self.function_return_status.is_none() && self.globals_symbol_table_is_active()
+        (self.function_return_status.is_none()
+            || self.function_return_mode == CFunctionReturnMode::IncludeUnit)
+            && self.globals_symbol_table_is_active()
     }
 
     fn variable_array_path_routes_through_global_symbol_table(&self, name: &str) -> bool {
@@ -34809,6 +34981,9 @@ impl CGenerator {
     }
 
     fn emit_top_level_return_statement(&mut self, value: Option<&Expr>) -> CompileResult<()> {
+        if self.function_return_mode == CFunctionReturnMode::IncludeUnit {
+            return self.emit_include_unit_return_statement(value);
+        }
         if let Some(value) = value {
             self.emit_discarded_expr_statement(value)?;
         }
@@ -34818,11 +34993,150 @@ impl CGenerator {
     }
 
     fn emit_return_statement(&mut self, value: Option<&Expr>) -> CompileResult<()> {
+        if self.function_return_mode == CFunctionReturnMode::IncludeUnit {
+            return self.emit_include_unit_return_statement(value);
+        }
         if self.function_return_status.is_some() {
             self.emit_function_return_statement(value)
         } else {
             self.emit_top_level_return_statement(value)
         }
+    }
+
+    fn emit_include_unit_default_return(&mut self, span: Span) -> CompileResult<()> {
+        let handle = self.emit_native_value_for_cvalue(CValue::Int("1".to_string()), span)?;
+        let cleanup = self.native_scope_cleanup_sequence("");
+        self.body.push(format!(
+            "{cleanup} return (phpc_NativeIncludeResult){{PHPC_NATIVE_INCLUDE_RESULT_NORMAL, {handle}, 0}};"
+        ));
+        Ok(())
+    }
+
+    fn emit_include_unit_return_statement(&mut self, value: Option<&Expr>) -> CompileResult<()> {
+        let mut materialized = if let Some(value) = value {
+            self.materialize_native_value_result_operand(value, "")?
+        } else {
+            let handle = self.emit_native_value_for_cvalue(CValue::Null, Span::new(0, 0))?;
+            CNativeValueMaterialization {
+                handle: handle.clone(),
+                cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
+            }
+        };
+        let local_cleanup = c_cleanup_sequence(&native_value_aux_cleanup_after_consuming_handle(
+            &materialized,
+        ));
+        let cleanup = self.native_scope_cleanup_sequence(&local_cleanup);
+        self.body.push(format!(
+            "{cleanup} return (phpc_NativeIncludeResult){{PHPC_NATIVE_INCLUDE_RESULT_RETURN, {}, 0}};",
+            materialized.handle
+        ));
+        materialized.cleanup_after_use.clear();
+        Ok(())
+    }
+
+    fn resolve_active_include_unit(&self, path: &Expr, span: Span) -> CompileResult<CIncludeUnit> {
+        let Some(source_file) = &self.active_source_file else {
+            return Err(self.unsupported(span, ASSEMBLY_REQUIRE_REJECTION));
+        };
+        let include_path = resolve_literal_include_path(path, source_file, Path::new("/"), span)?;
+        self.include_units
+            .get(&include_path)
+            .cloned()
+            .ok_or_else(|| self.unsupported(span, ASSEMBLY_REQUIRE_REJECTION))
+    }
+
+    fn emit_include_unit_call(
+        &mut self,
+        path: &Expr,
+        once: bool,
+        span: Span,
+        keep_value: bool,
+    ) -> CompileResult<Option<String>> {
+        let unit = self.resolve_active_include_unit(path, span)?;
+        self.uses_native_include_unit_helpers = true;
+        self.uses_native_symbol_table_helpers = true;
+        let table = self.ensure_globals_symbol_table("", span)?;
+
+        if once {
+            let slot = self
+                .include_once_slots
+                .get(&unit.path)
+                .cloned()
+                .ok_or_else(|| self.unsupported(span, ASSEMBLY_REQUIRE_REJECTION))?;
+            if keep_value {
+                let duplicate = self.next_native_name("include_once_duplicate_value");
+                self.body
+                    .push(format!("phpc_NativeValueHandle {duplicate} = {{0}};"));
+                self.body.push(format!("if ({slot}) {{"));
+                let bool_value = self.emit_native_value_for_cvalue(CValue::Bool(true), span)?;
+                self.body.push(format!("  {duplicate} = {bool_value};"));
+                self.body.push("} else {".to_string());
+                self.body.push(format!("  {slot} = true;"));
+                let result = self.next_native_name("include_result");
+                self.body.push(format!(
+                    "  phpc_NativeIncludeResult {result} = {}({table});",
+                    unit.c_name
+                ));
+                self.body.push(format!("  {duplicate} = {result}.value;"));
+                self.body.push("}".to_string());
+                self.retain_native_value_cleanup_handle(&duplicate);
+                return Ok(Some(duplicate));
+            }
+            self.body.push(format!("if (!{slot}) {{"));
+            self.body.push(format!("  {slot} = true;"));
+            let result = self.next_native_name("include_result");
+            self.body.push(format!(
+                "  phpc_NativeIncludeResult {result} = {}({table});",
+                unit.c_name
+            ));
+            self.body
+                .push(format!("  phpc_native_value_free({result}.value);"));
+            self.body.push("}".to_string());
+            return Ok(None);
+        }
+
+        let result = self.next_native_name("include_result");
+        self.body.push(format!(
+            "phpc_NativeIncludeResult {result} = {}({table});",
+            unit.c_name
+        ));
+        if keep_value {
+            let value = format!("{result}.value");
+            let retained = self.next_native_name("include_value");
+            self.body
+                .push(format!("phpc_NativeValueHandle {retained} = {value};"));
+            self.retain_native_value_cleanup_handle(&retained);
+            Ok(Some(retained))
+        } else {
+            self.body
+                .push(format!("phpc_native_value_free({result}.value);"));
+            Ok(None)
+        }
+    }
+
+    fn emit_include_unit_statement(
+        &mut self,
+        path: &Expr,
+        once: bool,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.emit_include_unit_call(path, once, span, false)?;
+        Ok(())
+    }
+
+    fn emit_include_unit_expr(
+        &mut self,
+        path: &Expr,
+        once: bool,
+        span: Span,
+    ) -> CompileResult<CValue> {
+        if self.active_source_file.is_none() || self.include_units.is_empty() {
+            return Err(self.unsupported(span, ASSEMBLY_REQUIRE_EXPRESSION_REJECTION));
+        }
+        let value = self
+            .emit_include_unit_call(path, once, span, true)?
+            .ok_or_else(|| self.unsupported(span, ASSEMBLY_REQUIRE_EXPRESSION_REJECTION))?;
+        Ok(CValue::NativeValueHandle(value))
     }
 
     fn record_function_return_facts(&mut self, facts: Option<CNativeValueFacts>) {
@@ -34913,6 +35227,9 @@ impl CGenerator {
             CFunctionReturnMode::ClosureReference => {
                 unreachable!("closure reference returns are handled before value materialization")
             }
+            CFunctionReturnMode::IncludeUnit => {
+                unreachable!("include-unit returns are handled before function returns")
+            }
         };
         let result = match self.function_return_mode {
             CFunctionReturnMode::NativeValue => return_value.clone(),
@@ -34924,6 +35241,9 @@ impl CGenerator {
             }
             CFunctionReturnMode::ClosureReference => {
                 unreachable!("closure reference returns are handled before value materialization")
+            }
+            CFunctionReturnMode::IncludeUnit => {
+                unreachable!("include-unit returns are handled before function returns")
             }
         };
         self.body.push(format!(
@@ -34999,6 +35319,9 @@ impl CGenerator {
             }
             CFunctionReturnMode::ClosureReference => {
                 unreachable!("closure reference defaults are handled before value materialization")
+            }
+            CFunctionReturnMode::IncludeUnit => {
+                unreachable!("include-unit defaults are handled separately")
             }
         };
         self.body
@@ -37526,8 +37849,8 @@ impl CGenerator {
             Stmt::ConstDeclaration { declarations, span } => {
                 self.emit_const_declaration(declarations, *span)
             }
-            Stmt::Require { span, .. } | Stmt::Include { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_REQUIRE_REJECTION))
+            Stmt::Require { path, once, span } | Stmt::Include { path, once, span } => {
+                self.emit_include_unit_statement(path, *once, *span)
             }
             Stmt::Throw { span, .. } => Err(self.unsupported(*span, ASSEMBLY_EXCEPTION_REJECTION)),
             Stmt::Try {
@@ -38320,11 +38643,11 @@ impl CGenerator {
             Expr::ErrorControl { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_ERROR_CONTROL_REJECTION))
             }
-            Expr::Include { span, .. } | Expr::Require { span, .. } => {
+            Expr::Include { path, once, span } | Expr::Require { path, once, span } => {
                 if let Some(operation) = native_value_operand_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
                 }
-                Err(self.unsupported(*span, ASSEMBLY_REQUIRE_EXPRESSION_REJECTION))
+                self.emit_include_unit_expr(path, *once, *span)
             }
             Expr::Cast { span, .. } => {
                 if let Some(operation) = native_value_operand_call_result_operation(expr) {
@@ -58206,13 +58529,18 @@ impl CGenerator {
 
     fn native_error_exit_with_code(&self, local_cleanup: &str, exit_code: &str) -> String {
         let mut cleanup = self.native_scope_cleanup_sequence(local_cleanup);
-        if let Some(status) = &self.function_return_status {
+        if self.function_return_mode == CFunctionReturnMode::IncludeUnit {
+            cleanup.push_str(&format!(
+                " return (phpc_NativeIncludeResult){{0, (phpc_NativeValueHandle){{0}}, {exit_code}}};"
+            ));
+        } else if let Some(status) = &self.function_return_status {
             let null_result = match self.function_return_mode {
                 CFunctionReturnMode::NativeValue => "(phpc_NativeValueHandle){0}",
                 CFunctionReturnMode::NativeReference => "(phpc_NativeReferenceHandle){0}",
                 CFunctionReturnMode::ClosureValue | CFunctionReturnMode::ClosureReference => {
                     "(phpc_NativeClosureInvocationResult){0}"
                 }
+                CFunctionReturnMode::IncludeUnit => "(phpc_NativeIncludeResult){0}",
             };
             cleanup.push_str(&format!(" *{status} = 0; return {null_result};"));
         } else {

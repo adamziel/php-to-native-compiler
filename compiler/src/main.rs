@@ -3,9 +3,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-use php_compiler::codegen::{emit_assembly, emit_llvm_ir, emit_native_executable_c_source};
+use php_compiler::codegen::{
+    emit_assembly, emit_llvm_ir, emit_native_executable_c_source_for_include_units,
+};
 use php_compiler::error::{CompileResult, Diagnostic, Phase};
-use php_compiler::include_discovery::parse_source_with_literal_include_metadata;
+use php_compiler::include_discovery::executable_compilation_unit_with_literal_include_units;
 use php_compiler::interpreter::{run_program_with_source_file_and_options, RunOptions};
 use php_compiler::parser::parse_source;
 use php_compiler::test_runner::{
@@ -85,17 +87,18 @@ fn command_compile(args: &[String]) -> CompileResult<u8> {
     if flag == "--emit-exe" {
         let repo_root = env::current_dir()
             .map_err(|error| Diagnostic::new(Phase::Io, 0, 0, error.to_string()))?;
-        let program = parse_source_with_literal_include_metadata(&source, &input, &repo_root)
-            .map_err(|error| {
-                if error.file.is_some() {
-                    error
-                } else {
-                    error.with_file(&input)
-                }
-            })?;
+        let unit =
+            executable_compilation_unit_with_literal_include_units(&source, &input, &repo_root)
+                .map_err(|error| {
+                    if error.file.is_some() {
+                        error
+                    } else {
+                        error.with_file(&input)
+                    }
+                })?;
         let output = PathBuf::from(&args[2]);
-        let c_source =
-            emit_native_executable_c_source(&program).map_err(|error| error.with_file(&input))?;
+        let c_source = emit_native_executable_c_source_for_include_units(&unit)
+            .map_err(|error| error.with_file(&input))?;
         compile_native_executable(&c_source, &output)?;
         return Ok(0);
     }

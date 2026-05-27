@@ -369,6 +369,156 @@ fn emit_exe_links_and_runs_included_trait_constructor_consumers() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_side_effecting_literal_include_unit() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("execution-side-effects-exe");
+    let root = dir.join("root.php");
+    let included = dir.join("included.php");
+    let output = dir.join("program");
+    fs::write(
+        &included,
+        concat!(
+            "<?php\n",
+            "$value = 'included';\n",
+            "echo 'inc:', $value;\n",
+        ),
+    )
+    .expect("write side-effecting include fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "require __DIR__ . '/included.php';\n",
+            "echo '|', $value, \"\\n\";\n",
+        ),
+    )
+    .expect("write root side-effecting include fixture");
+
+    let output = compile_exe(&root, &output, "side-effecting include executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run side-effecting include executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "inc:included|included\n"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_include_once_return_value_and_duplicate_true() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("execution-once-return-exe");
+    let root = dir.join("root.php");
+    let included = dir.join("value.php");
+    let output = dir.join("program");
+    fs::write(&included, "<?php\nreturn 'loaded';\n").expect("write include return fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "$first = include_once __DIR__ . '/value.php';\n",
+            "$second = include_once __DIR__ . '/value.php';\n",
+            "echo $first, '|', $second, \"\\n\";\n",
+        ),
+    )
+    .expect("write include_once return fixture");
+
+    let output = compile_exe(&root, &output, "include_once return executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run include_once return executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "loaded|1\n");
+}
+
+#[test]
+fn emit_exe_blocks_dynamic_include_paths_before_native_link() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("execution-dynamic-blocker");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        &root,
+        "<?php\n$name = 'value.php';\n$value = include $name;\necho $value;\n",
+    )
+    .expect("write dynamic include blocker fixture");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root())
+        .args([
+            "compile",
+            root.to_str().expect("root fixture path is UTF-8"),
+            "--emit-exe",
+            output.to_str().expect("output path is UTF-8"),
+        ])
+        .output()
+        .expect("compile dynamic include blocker executable");
+
+    assert!(!compile.status.success());
+    assert!(
+        String::from_utf8_lossy(&compile.stderr).contains("literal same-repository path"),
+        "stderr should report dynamic include path blocker:\n{}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(!output.exists());
+}
+
+#[test]
+fn emit_exe_blocks_cyclic_once_registry_paths_before_native_link() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("execution-once-cycle-blocker");
+    let root = dir.join("root.php");
+    let other = dir.join("other.php");
+    let output = dir.join("program");
+    fs::write(&root, "<?php\nrequire_once __DIR__ . '/other.php';\n")
+        .expect("write root cyclic once fixture");
+    fs::write(&other, "<?php\nrequire_once __DIR__ . '/root.php';\n")
+        .expect("write nested cyclic once fixture");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root())
+        .args([
+            "compile",
+            root.to_str().expect("root fixture path is UTF-8"),
+            "--emit-exe",
+            output.to_str().expect("output path is UTF-8"),
+        ])
+        .output()
+        .expect("compile cyclic once blocker executable");
+
+    assert!(!compile.status.success());
+    assert!(
+        String::from_utf8_lossy(&compile.stderr).contains("cyclic include graph"),
+        "stderr should report cyclic once registry blocker:\n{}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(!output.exists());
+}
+
+#[test]
 fn literal_include_graph_blocks_dynamic_missing_cyclic_and_side_effecting_files() {
     let dir = include_discovery_fixture_dir("blockers");
     fs::write(dir.join("class.php"), "<?php\nclass BlockedMeta {}\n").unwrap();
@@ -477,6 +627,26 @@ fn include_discovery_error(path: &Path) -> php_compiler::error::Diagnostic {
         workspace_root(),
     )
     .unwrap_err()
+}
+
+fn compile_exe(root: &Path, output: &Path, label: &str) -> PathBuf {
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root())
+        .args([
+            "compile",
+            root.to_str().expect("root fixture path is UTF-8"),
+            "--emit-exe",
+            output.to_str().expect("output path is UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("compile {label}: {error}"));
+    assert!(
+        compile.status.success(),
+        "{label} compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    output.to_path_buf()
 }
 
 fn write_supported_include_fixture(dir: &Path) -> PathBuf {
