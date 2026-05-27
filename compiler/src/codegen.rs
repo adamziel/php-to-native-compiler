@@ -4322,6 +4322,7 @@ fn unset_target_contains_exit_construct(target: &UnsetTarget) -> bool {
         | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex {
             holder, property, ..
         } => expr_contains_exit_construct(holder) || expr_contains_exit_construct(property),
+        UnsetTarget::ObjectStaticProperty { target, .. } => expr_contains_exit_construct(target),
         UnsetTarget::Variable { .. }
         | UnsetTarget::ObjectProperty { .. }
         | UnsetTarget::StaticProperty { .. }
@@ -4468,6 +4469,7 @@ where
         | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex {
             holder, property, ..
         } => contains(holder) || contains(property),
+        UnsetTarget::ObjectStaticProperty { target, .. } => contains(target),
         UnsetTarget::Variable { .. }
         | UnsetTarget::ObjectProperty { .. }
         | UnsetTarget::StaticProperty { .. }
@@ -5308,6 +5310,9 @@ fn collect_direct_call_names_from_unset_target(target: &UnsetTarget, names: &mut
             collect_direct_call_names_from_expr(holder, names);
             collect_direct_call_names_from_expr(property, names);
         }
+        UnsetTarget::ObjectStaticProperty { target, .. } => {
+            collect_direct_call_names_from_expr(target, names);
+        }
         UnsetTarget::Variable { .. }
         | UnsetTarget::ObjectProperty { .. }
         | UnsetTarget::StaticProperty { .. }
@@ -5861,6 +5866,9 @@ fn collect_native_arrow_capture_candidates_from_unset_target(
             for index in indices {
                 collect_native_arrow_capture_candidates_from_expr(index, captures);
             }
+        }
+        UnsetTarget::ObjectStaticProperty { target, .. } => {
+            collect_native_arrow_capture_candidates_from_expr(target, captures);
         }
         UnsetTarget::StaticProperty { .. }
         | UnsetTarget::SelfStaticProperty { .. }
@@ -6787,6 +6795,9 @@ fn native_unset_target_call_operation(target: &UnsetTarget) -> Option<NativeCall
             holder, property, ..
         } => native_lvalue_operand_call_result_operation(holder)
             .or_else(|| native_lvalue_operand_call_result_operation(property)),
+        UnsetTarget::ObjectStaticProperty { target, .. } => {
+            native_lvalue_operand_call_result_operation(target)
+        }
         UnsetTarget::Variable { .. }
         | UnsetTarget::ObjectProperty { .. }
         | UnsetTarget::StaticProperty { .. }
@@ -7577,6 +7588,7 @@ fn unset_target_contains_globals_access(target: &UnsetTarget) -> bool {
         | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex {
             holder, property, ..
         } => expr_contains_globals_access(holder) || expr_contains_globals_access(property),
+        UnsetTarget::ObjectStaticProperty { target, .. } => expr_contains_globals_access(target),
         UnsetTarget::ObjectProperty { .. }
         | UnsetTarget::StaticProperty { .. }
         | UnsetTarget::SelfStaticProperty { .. }
@@ -8097,6 +8109,9 @@ fn unset_target_contains_request_state_access(target: &UnsetTarget) -> bool {
             expr_contains_request_state_access(holder)
                 || expr_contains_request_state_access(property)
         }
+        UnsetTarget::ObjectStaticProperty { target, .. } => {
+            expr_contains_request_state_access(target)
+        }
         UnsetTarget::ObjectProperty { .. }
         | UnsetTarget::StaticProperty { .. }
         | UnsetTarget::SelfStaticProperty { .. }
@@ -8415,6 +8430,7 @@ fn request_stmt_array_key_consumer_access(stmt: &Stmt) -> Option<RequestArrayKey
             | UnsetTarget::DynamicObjectProperty { .. }
             | UnsetTarget::NonDirectObjectProperty { .. }
             | UnsetTarget::NonDirectDynamicObjectProperty { .. }
+            | UnsetTarget::ObjectStaticProperty { .. }
             | UnsetTarget::StaticProperty { .. }
             | UnsetTarget::SelfStaticProperty { .. }
             | UnsetTarget::ParentStaticProperty { .. }
@@ -8988,6 +9004,7 @@ fn unset_target_span(target: &UnsetTarget) -> Span {
         | UnsetTarget::DynamicObjectProperty { span, .. }
         | UnsetTarget::NonDirectObjectProperty { span, .. }
         | UnsetTarget::NonDirectDynamicObjectProperty { span, .. }
+        | UnsetTarget::ObjectStaticProperty { span, .. }
         | UnsetTarget::StaticProperty { span, .. }
         | UnsetTarget::SelfStaticProperty { span, .. }
         | UnsetTarget::ParentStaticProperty { span, .. }
@@ -9004,6 +9021,7 @@ fn native_non_local_unset_target_owner_boundary(
             | UnsetTarget::DynamicObjectProperty { .. }
             | UnsetTarget::NonDirectObjectProperty { .. }
             | UnsetTarget::NonDirectDynamicObjectProperty { .. }
+            | UnsetTarget::ObjectStaticProperty { .. }
             | UnsetTarget::StaticProperty { .. }
             | UnsetTarget::SelfStaticProperty { .. }
             | UnsetTarget::ParentStaticProperty { .. }
@@ -18167,6 +18185,9 @@ fn collect_loop_assigned_direct_variables_from_unset_target(
                 collect_loop_assigned_direct_variables_from_expr(index, names);
             }
         }
+        UnsetTarget::ObjectStaticProperty { target, .. } => {
+            collect_loop_assigned_direct_variables_from_expr(target, names);
+        }
         UnsetTarget::Variable { .. }
         | UnsetTarget::ObjectProperty { .. }
         | UnsetTarget::StaticProperty { .. }
@@ -21931,9 +21952,11 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_read_class_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_read_isset_class_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_write_class_with_diagnostic_and_free(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_static_property_unset_class_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_read_relative_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, uint8_t receiver_tag, const uint8_t *current_class_ptr, size_t current_class_len, const uint8_t *called_class_ptr, size_t called_class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_read_isset_relative_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, uint8_t receiver_tag, const uint8_t *current_class_ptr, size_t current_class_len, const uint8_t *called_class_ptr, size_t called_class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_write_relative_with_diagnostic_and_free(phpc_NativeStaticPropertyStorageHandle storage, uint8_t receiver_tag, const uint8_t *current_class_ptr, size_t current_class_len, const uint8_t *called_class_ptr, size_t called_class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_static_property_unset_relative_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, uint8_t receiver_tag, const uint8_t *current_class_ptr, size_t current_class_len, const uint8_t *called_class_ptr, size_t called_class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern void phpc_native_static_property_storage_free(phpc_NativeStaticPropertyStorageHandle storage);\n");
             }
             if self.uses_native_object_instanceof_helpers {
@@ -33425,6 +33448,14 @@ impl CGenerator {
         self.materialize_static_property_lvalue_target_with_options(target, failure_cleanup, true)
     }
 
+    fn materialize_static_property_unset_lvalue_target(
+        &mut self,
+        target: &AssignTarget,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CStaticPropertyLvalueTarget>> {
+        self.materialize_static_property_lvalue_target_with_options(target, failure_cleanup, true)
+    }
+
     fn materialize_static_property_lvalue_target_with_options(
         &mut self,
         target: &AssignTarget,
@@ -33586,6 +33617,83 @@ impl CGenerator {
                 property: property.clone(),
                 span: *span,
             }),
+            _ => None,
+        }
+    }
+
+    fn static_property_lvalue_target_from_unset_target(
+        target: &UnsetTarget,
+    ) -> Option<AssignTarget> {
+        match target {
+            UnsetTarget::StaticProperty {
+                class_name,
+                property,
+                span,
+            } => Some(AssignTarget::StaticProperty {
+                class_name: class_name.clone(),
+                property: property.clone(),
+                span: *span,
+            }),
+            UnsetTarget::ObjectStaticProperty {
+                target,
+                property,
+                span,
+            } => Some(AssignTarget::ObjectStaticProperty {
+                target: target.clone(),
+                property: property.clone(),
+                span: *span,
+            }),
+            UnsetTarget::SelfStaticProperty { property, span } => {
+                Some(AssignTarget::SelfStaticProperty {
+                    property: property.clone(),
+                    span: *span,
+                })
+            }
+            UnsetTarget::ParentStaticProperty { property, span } => {
+                Some(AssignTarget::ParentStaticProperty {
+                    property: property.clone(),
+                    span: *span,
+                })
+            }
+            UnsetTarget::LateStaticProperty { property, span } => {
+                Some(AssignTarget::LateStaticProperty {
+                    property: property.clone(),
+                    span: *span,
+                })
+            }
+            _ => None,
+        }
+    }
+
+    fn static_property_lvalue_target_from_unset_stmt(stmt: &Stmt) -> Option<AssignTarget> {
+        match stmt {
+            Stmt::UnsetStaticProperty {
+                class_name,
+                property,
+                span,
+            } => Some(AssignTarget::StaticProperty {
+                class_name: class_name.clone(),
+                property: property.clone(),
+                span: *span,
+            }),
+            Stmt::UnsetSelfStaticProperty { property, span } => {
+                Some(AssignTarget::SelfStaticProperty {
+                    property: property.clone(),
+                    span: *span,
+                })
+            }
+            Stmt::UnsetParentStaticProperty { property, span } => {
+                Some(AssignTarget::ParentStaticProperty {
+                    property: property.clone(),
+                    span: *span,
+                })
+            }
+            Stmt::UnsetLateStaticProperty { property, span } => {
+                Some(AssignTarget::LateStaticProperty {
+                    property: property.clone(),
+                    span: *span,
+                })
+            }
             _ => None,
         }
     }
@@ -33808,6 +33916,62 @@ impl CGenerator {
             handle: result.clone(),
             cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
         }
+    }
+
+    fn emit_static_property_lvalue_unset(
+        &mut self,
+        target: &CStaticPropertyLvalueTarget,
+        failure_cleanup: &str,
+    ) {
+        let diagnostic = self.next_native_name("static_property_lvalue_unset_diagnostic");
+        let result = self.next_native_name("static_property_lvalue_unset_ok");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        match &target.receiver {
+            CStaticPropertyLvalueReceiver::Class {
+                class_bytes,
+                class_len,
+            } => {
+                self.body.push(format!(
+                    "bool {result} = phpc_native_static_property_unset_class_with_diagnostic({}, {class_bytes}, {class_len}, {}, {}, &{diagnostic});",
+                    target.storage, target.property_bytes, target.property_len
+                ));
+            }
+            CStaticPropertyLvalueReceiver::Relative {
+                receiver,
+                current_class_bytes,
+                current_class_len,
+                called_class_ptr,
+                called_class_len,
+            } => {
+                self.body.push(format!(
+                    "bool {result} = phpc_native_static_property_unset_relative_with_diagnostic({}, {}, {current_class_bytes}, {current_class_len}, {called_class_ptr}, {called_class_len}, {}, {}, &{diagnostic});",
+                    target.storage,
+                    receiver.abi_tag(),
+                    target.property_bytes,
+                    target.property_len
+                ));
+            }
+        }
+        self.emit_report_native_diagnostic(&diagnostic);
+        let error_exit =
+            self.native_error_exit(&format!("{}{failure_cleanup}", target.cleanup_sequence()));
+        self.body.push(format!("if (!{result}) {{ {error_exit} }}"));
+    }
+
+    fn emit_static_property_unset_for_assign_target(
+        &mut self,
+        target: &AssignTarget,
+        failure_cleanup: &str,
+    ) -> CompileResult<bool> {
+        let Some(target) =
+            self.materialize_static_property_unset_lvalue_target(target, failure_cleanup)?
+        else {
+            return Ok(false);
+        };
+        self.emit_static_property_lvalue_unset(&target, failure_cleanup);
+        self.body.extend(target.cleanup_after_use);
+        Ok(true)
     }
 
     fn materialize_static_property_assignment_result_for_target(
@@ -34288,6 +34452,11 @@ impl CGenerator {
             | Stmt::UnsetSelfStaticProperty { span, .. }
             | Stmt::UnsetParentStaticProperty { span, .. }
             | Stmt::UnsetLateStaticProperty { span, .. } => {
+                if let Some(target) = Self::static_property_lvalue_target_from_unset_stmt(stmt) {
+                    if self.emit_static_property_unset_for_assign_target(&target, "")? {
+                        return Ok(());
+                    }
+                }
                 let boundary = native_non_local_unset_statement_owner_boundary(stmt)
                     .unwrap_or_else(|| NativeNonLocalOwnerBoundary::unset(*span));
                 Err(self.unsupported(
@@ -43929,9 +44098,17 @@ impl CGenerator {
                     ));
                 }
                 UnsetTarget::StaticProperty { .. }
+                | UnsetTarget::ObjectStaticProperty { .. }
                 | UnsetTarget::SelfStaticProperty { .. }
                 | UnsetTarget::ParentStaticProperty { .. }
                 | UnsetTarget::LateStaticProperty { .. } => {
+                    if let Some(assign_target) =
+                        Self::static_property_lvalue_target_from_unset_target(target)
+                    {
+                        if self.emit_static_property_unset_for_assign_target(&assign_target, "")? {
+                            continue;
+                        }
+                    }
                     let boundary = native_non_local_unset_target_owner_boundary(target)
                         .unwrap_or_else(|| {
                             NativeNonLocalOwnerBoundary::unset(unset_target_span(target))

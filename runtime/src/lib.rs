@@ -26519,6 +26519,18 @@ impl PhpStaticPropertyStorage {
         cell.set_value_with_object_type_resolver(value, &object_type_resolver)
     }
 
+    pub fn unset(
+        &mut self,
+        classes: &PhpClassTable,
+        receiver: PhpStaticPropertyReceiver,
+        property_name: &str,
+        context: PhpStaticPropertyAccessContext,
+    ) -> RuntimeResult<()> {
+        let cell = self.resolved_cell_mut(classes, receiver, property_name, context)?;
+        cell.unset_value();
+        Ok(())
+    }
+
     pub fn reference_cell(
         &mut self,
         classes: &PhpClassTable,
@@ -26704,6 +26716,18 @@ impl PhpStaticPropertyCell {
         };
         self.initialized = true;
         Ok(value)
+    }
+
+    fn unset_value(&mut self) {
+        if let PhpStaticPropertyCellStorage::Reference(reference) = &self.storage {
+            reference.remove_property_type_constraint(
+                self.type_decl.as_deref(),
+                &self.declaring_class_name,
+                &self.name,
+            );
+        }
+        self.storage = PhpStaticPropertyCellStorage::Value(PhpValueCell::new(Value::Null));
+        self.initialized = self.type_decl.is_none();
     }
 
     fn reference_cell(&mut self) -> RuntimeResult<PhpReferenceCell> {
@@ -27128,6 +27152,19 @@ impl NativeStaticPropertyStorage {
         )
     }
 
+    fn unset_class(&mut self, class_name: &str, property_name: &str) -> RuntimeResult<()> {
+        let class_id = self
+            .classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| RuntimeError::undefined_class(class_name))?;
+        self.storage.unset(
+            &self.classes,
+            PhpStaticPropertyReceiver::Class(class_id),
+            property_name,
+            PhpStaticPropertyAccessContext::external(),
+        )
+    }
+
     fn scope_from_receiver(&self, receiver: &Value) -> RuntimeResult<String> {
         match receiver {
             Value::Object(object) => Ok(object.class_name().to_string()),
@@ -27228,6 +27265,19 @@ impl NativeStaticPropertyStorage {
             self.relative_receiver_and_context(receiver, current_class_name, called_class_name)?;
         self.storage
             .write(&self.classes, receiver, property_name, value, context)
+    }
+
+    fn unset_relative(
+        &mut self,
+        receiver: NativeStaticPropertyReceiverTag,
+        current_class_name: &str,
+        called_class_name: Option<&str>,
+        property_name: &str,
+    ) -> RuntimeResult<()> {
+        let (receiver, context) =
+            self.relative_receiver_and_context(receiver, current_class_name, called_class_name)?;
+        self.storage
+            .unset(&self.classes, receiver, property_name, context)
     }
 }
 
@@ -27779,6 +27829,43 @@ pub unsafe extern "C" fn phpc_native_static_property_write_class_with_diagnostic
     }
 }
 
+/// # Safety
+///
+/// `handle` must be a storage handle. Class and property bytes follow the
+/// same pointer/length rules as static-property class declaration. The
+/// diagnostic slot is overwritten on receiver, property, or visibility errors.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_property_unset_class_with_diagnostic(
+    mut handle: NativeStaticPropertyStorageHandle,
+    class_ptr: *const u8,
+    class_len: usize,
+    property_ptr: *const u8,
+    property_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let storage = unsafe { handle.as_mut() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native static-property storage handle is null".to_string(),
+            )
+        })?;
+        let class_name =
+            unsafe { native_static_property_utf8_argument(class_ptr, class_len, "class name") }?;
+        let property_name = unsafe {
+            native_static_property_utf8_argument(property_ptr, property_len, "property name")
+        }?;
+        storage.unset_class(&class_name, &property_name)
+    })();
+    match result {
+        Ok(()) => true,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
 unsafe fn native_static_property_optional_utf8_argument(
     ptr: *const u8,
     len: usize,
@@ -27981,6 +28068,70 @@ pub unsafe extern "C" fn phpc_native_static_property_write_relative_with_diagnos
         Err(error) => {
             unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
             NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be a storage handle. Current/called class and property bytes
+/// follow the same pointer/length rules as static-property class declaration.
+/// The diagnostic slot is overwritten on receiver, property, or visibility
+/// errors.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_property_unset_relative_with_diagnostic(
+    mut handle: NativeStaticPropertyStorageHandle,
+    receiver_tag: u8,
+    current_class_ptr: *const u8,
+    current_class_len: usize,
+    called_class_ptr: *const u8,
+    called_class_len: usize,
+    property_ptr: *const u8,
+    property_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let storage = unsafe { handle.as_mut() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native static-property storage handle is null".to_string(),
+            )
+        })?;
+        let receiver =
+            NativeStaticPropertyReceiverTag::from_abi_tag(receiver_tag).ok_or_else(|| {
+                RuntimeError::invalid_property_access(format!(
+                    "native static-property storage received unsupported relative receiver tag {receiver_tag}"
+                ))
+            })?;
+        let current_class_name = unsafe {
+            native_static_property_utf8_argument(
+                current_class_ptr,
+                current_class_len,
+                "current class name",
+            )
+        }?;
+        let called_class_name = unsafe {
+            native_static_property_optional_utf8_argument(
+                called_class_ptr,
+                called_class_len,
+                "called class name",
+            )
+        }?;
+        let property_name = unsafe {
+            native_static_property_utf8_argument(property_ptr, property_len, "property name")
+        }?;
+        storage.unset_relative(
+            receiver,
+            &current_class_name,
+            called_class_name.as_deref(),
+            &property_name,
+        )
+    })();
+    match result {
+        Ok(()) => true,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
         }
     }
 }
@@ -62581,6 +62732,84 @@ mod tests {
                 .unwrap(),
             Value::Int(1)
         );
+        first
+            .unset(
+                &classes,
+                receiver,
+                "count",
+                PhpStaticPropertyAccessContext::external(),
+            )
+            .unwrap();
+        assert_eq!(
+            first
+                .read(
+                    &classes,
+                    receiver,
+                    "count",
+                    PhpStaticPropertyAccessContext::external()
+                )
+                .unwrap(),
+            Value::Null
+        );
+        first
+            .write(
+                &classes,
+                receiver,
+                "typed",
+                Value::Int(9),
+                PhpStaticPropertyAccessContext::external(),
+            )
+            .unwrap();
+        first
+            .unset(
+                &classes,
+                receiver,
+                "typed",
+                PhpStaticPropertyAccessContext::external(),
+            )
+            .unwrap();
+        assert_eq!(
+            first
+                .read(
+                    &classes,
+                    receiver,
+                    "typed",
+                    PhpStaticPropertyAccessContext::external()
+                )
+                .unwrap_err()
+                .message(),
+            "typed property Counter::$typed must not be accessed before initialization"
+        );
+        assert_eq!(
+            first
+                .read_for_isset(
+                    &classes,
+                    receiver,
+                    "typed",
+                    PhpStaticPropertyAccessContext::external()
+                )
+                .unwrap(),
+            None
+        );
+        first
+            .unset(
+                &classes,
+                receiver,
+                "untyped",
+                PhpStaticPropertyAccessContext::external(),
+            )
+            .unwrap();
+        assert_eq!(
+            first
+                .read(
+                    &classes,
+                    receiver,
+                    "untyped",
+                    PhpStaticPropertyAccessContext::external()
+                )
+                .unwrap(),
+            Value::Null
+        );
 
         first.reset_from_class_table(&classes, &defaults).unwrap();
         assert_eq!(
@@ -62743,6 +62972,50 @@ mod tests {
         };
         assert_eq!(unsafe { write.as_ref() }.cloned(), Some(Value::Int(5)));
         unsafe { phpc_native_value_free(write) };
+
+        assert!(unsafe {
+            phpc_native_static_property_unset_class_with_diagnostic(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                property.as_ptr(),
+                property.len(),
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        let unset_read = unsafe {
+            phpc_native_static_property_read_class_with_diagnostic(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                property.as_ptr(),
+                property.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(unset_read.is_null());
+        let unset_diagnostic_message = unsafe { diagnostic.as_ref() }
+            .map(|diagnostic| diagnostic.message.clone())
+            .unwrap_or_default();
+        assert_eq!(
+            unset_diagnostic_message,
+            "typed property Counter::$count must not be accessed before initialization"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        diagnostic = NativeDiagnosticHandle::null();
+        let unset_isset = unsafe {
+            phpc_native_static_property_read_isset_class_with_diagnostic(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                property.as_ptr(),
+                property.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(unset_isset.is_null());
 
         assert!(unsafe {
             phpc_native_static_property_storage_reset_with_diagnostic(storage, &mut diagnostic)

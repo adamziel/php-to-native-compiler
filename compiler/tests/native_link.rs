@@ -400,6 +400,62 @@ const NATIVE_STATIC_PROPERTY_OBSERVATION_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_STATIC_PROPERTY_UNSET_SOURCE: &str = concat!(
+    "<?php\n",
+    "class StaticUnsetRoot {\n",
+    "    public static $literal = \"L\";\n",
+    "    public static $object = \"O\";\n",
+    "    public static $className = \"C\";\n",
+    "    public static $self = \"S\";\n",
+    "    public static $parent = \"P\";\n",
+    "    public static $late = \"R\";\n",
+    "    public static function selfBits() {\n",
+    "        unset(self::$self);\n",
+    "        echo gettype(self::$self), \":\";\n",
+    "        echo isset(self::$self) ? \"bad\" : \"s\";\n",
+    "        echo empty(self::$self) ? \"E\" : \"bad\";\n",
+    "    }\n",
+    "    public static function lateBits() {\n",
+    "        unset(static::$late);\n",
+    "        echo gettype(static::$late), \":\";\n",
+    "        echo isset(static::$late) ? \"bad\" : \"t\";\n",
+    "        echo empty(static::$late) ? \"E\" : \"bad\";\n",
+    "    }\n",
+    "}\n",
+    "class StaticUnsetChild extends StaticUnsetRoot {\n",
+    "    public static $late = \"D\";\n",
+    "    public static function parentBits() {\n",
+    "        unset(parent::$parent);\n",
+    "        echo gettype(parent::$parent), \":\";\n",
+    "        echo isset(parent::$parent) ? \"bad\" : \"p\";\n",
+    "        echo empty(parent::$parent) ? \"E\" : \"bad\";\n",
+    "    }\n",
+    "}\n",
+    "$object = new StaticUnsetRoot();\n",
+    "$class = \"StaticUnsetChild\";\n",
+    "unset(StaticUnsetRoot::$literal);\n",
+    "echo gettype(StaticUnsetRoot::$literal), \":\";\n",
+    "echo isset(StaticUnsetRoot::$literal) ? \"bad\" : \"l\";\n",
+    "echo empty(StaticUnsetRoot::$literal) ? \"E\" : \"bad\";\n",
+    "echo \"|\";\n",
+    "unset($object::$object);\n",
+    "echo gettype($object::$object), \":\";\n",
+    "echo isset($object::$object) ? \"bad\" : \"o\";\n",
+    "echo empty($object::$object) ? \"E\" : \"bad\";\n",
+    "echo \"|\";\n",
+    "unset($class::$className);\n",
+    "echo gettype($class::$className), \":\";\n",
+    "echo isset($class::$className) ? \"bad\" : \"c\";\n",
+    "echo empty($class::$className) ? \"E\" : \"bad\";\n",
+    "echo \"|\";\n",
+    "StaticUnsetRoot::selfBits();\n",
+    "echo \"|\";\n",
+    "StaticUnsetChild::parentBits();\n",
+    "echo \"|\";\n",
+    "StaticUnsetChild::lateBits();\n",
+    "echo \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_PROPERTY_UNSET_SOURCE: &str = concat!(
     "<?php\n",
     "class Box { public $name; public $peer; private $secret; }\n",
@@ -2210,6 +2266,74 @@ fn emit_exe_links_and_runs_static_property_observation_program() {
 
     let _ = fs::remove_file(source_path);
     let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_static_property_unset_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("static_property_unset", NATIVE_STATIC_PROPERTY_UNSET_SOURCE);
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run static-property unset executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"NULL:lE|NULL:oE|NULL:cE|NULL:sE|NULL:pE|NULL:tE\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_static_property_unset_preserves_runtime_diagnostics() {
+    if !has_cc() {
+        return;
+    }
+
+    for (name, source, expected) in [
+        (
+            "static_property_unset_private_visibility_failure",
+            concat!(
+                "<?php\n",
+                "class StaticUnsetPrivate { private static $secret = \"x\"; }\n",
+                "unset(StaticUnsetPrivate::$secret);\n",
+            ),
+            "private static property is not visible from the current class context",
+        ),
+        (
+            "static_property_unset_missing_property_failure",
+            concat!(
+                "<?php\n",
+                "class StaticUnsetMissing { public static $known = \"x\"; }\n",
+                "unset(StaticUnsetMissing::$missing);\n",
+            ),
+            "undefined property StaticUnsetMissing::$missing",
+        ),
+    ] {
+        let (source_path, output_path) = compile_native_link_fixture(name, source);
+        let run = Command::new(&output_path)
+            .output()
+            .unwrap_or_else(|error| panic!("failed to run {name} executable: {error}"));
+        assert!(!run.status.success(), "{name} should exit non-zero");
+        let stderr = String::from_utf8_lossy(&run.stderr);
+        assert!(stderr.contains(expected), "{name} stderr:\n{stderr}");
+
+        let _ = fs::remove_file(source_path);
+        let _ = fs::remove_file(output_path);
+    }
 }
 
 #[test]
@@ -4817,6 +4941,49 @@ fn native_executable_c_source_routes_static_property_observation_through_shared_
             && !source.contains("assembly isset lowering rejects")
             && !source.contains("assembly empty lowering rejects"),
         "supported static-property observation should not fall through old blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_static_property_unset_through_shared_lvalue_boundary() {
+    let program = parse(NATIVE_STATIC_PROPERTY_UNSET_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    for required in [
+        "phpc_native_static_property_unset_class_with_diagnostic",
+        "phpc_native_static_property_unset_relative_with_diagnostic",
+        "phpc_native_static_property_read_class_with_diagnostic",
+        "phpc_native_static_property_read_isset_class_with_diagnostic",
+        "phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free",
+        "static_property_lvalue_unset_ok_",
+        "static_property_lvalue_name_bytes",
+    ] {
+        assert!(source.contains(required), "missing {required}:\n{source}");
+    }
+    assert!(
+        body.matches("phpc_native_static_property_unset_class_with_diagnostic")
+            .count()
+            >= 3,
+        "literal and object/class-string static-property unsets should share the class unset ABI:\n{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_static_property_unset_relative_with_diagnostic")
+            .count()
+            >= 3,
+        "self, parent, and late static-property unsets should share the relative unset ABI:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free")
+            .count()
+            >= 2,
+        "object and class-string static-property unsets should derive receiver scope through the shared receiver ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("static-member lowering rejects")
+            && !source.contains("assembly native array non-local unset lowering rejects"),
+        "supported static-property unsets should not fall through old blockers:\n{source}"
     );
 }
 

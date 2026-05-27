@@ -13395,6 +13395,9 @@ impl Interpreter {
             } => self.execute_unset_non_direct_dynamic_object_property_nested_array_index(
                 holder, property, indices, span, scope,
             ),
+            UnsetTarget::ObjectStaticProperty {
+                target, property, ..
+            } => self.execute_unset_object_static_property(target, property, span, scope),
             UnsetTarget::StaticProperty {
                 class_name,
                 property,
@@ -14058,6 +14061,18 @@ impl Interpreter {
             .lookup_class_id(class_name)
             .ok_or_else(|| runtime_error(span, RuntimeError::undefined_class(class_name)))?;
         self.reject_static_property_unset(class_name, property, span)
+    }
+
+    fn execute_unset_object_static_property(
+        &mut self,
+        target: &Expr,
+        property: &str,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let (_, class_name) =
+            self.resolve_dynamic_static_receiver(target, property, span, scope)?;
+        self.reject_static_property_unset(&class_name, property, span)
     }
 
     fn execute_unset_self_static_property(&self, property: &str, span: Span) -> CompileResult<()> {

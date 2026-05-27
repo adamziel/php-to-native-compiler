@@ -2499,7 +2499,8 @@ impl Parser {
                 | UnsetTarget::NonDirectObjectPropertyArrayIndex { .. }
                 | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
                 | UnsetTarget::NonDirectObjectProperty { .. }
-                | UnsetTarget::NonDirectDynamicObjectProperty { .. }) => Ok(Stmt::UnsetMany {
+                | UnsetTarget::NonDirectDynamicObjectProperty { .. }
+                | UnsetTarget::ObjectStaticProperty { .. }) => Ok(Stmt::UnsetMany {
                     targets: vec![target],
                     span,
                 }),
@@ -2549,6 +2550,12 @@ impl Parser {
         };
 
         if !self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+            if self.check(|kind| matches!(kind, TokenKind::DoubleColon)) {
+                return self.parse_object_static_property_unset_target(
+                    Expr::Variable(name, target_span),
+                    target_span,
+                );
+            }
             if self.match_token(|kind| matches!(kind, TokenKind::ObjectOperator)) {
                 let operator_span = self.previous().span;
                 let holder = Expr::Variable(name.clone(), target_span);
@@ -2781,6 +2788,29 @@ impl Parser {
             }),
             None => Err(self.error_at(target_span, unsupported_unset_message())),
         }
+    }
+
+    fn parse_object_static_property_unset_target(
+        &mut self,
+        target: Expr,
+        target_span: Span,
+    ) -> CompileResult<UnsetTarget> {
+        self.consume_keyword(TokenKind::DoubleColon, "expected '::' after receiver")?;
+        let member = self.advance().clone();
+        let property = match member.kind {
+            TokenKind::Variable(property) => property,
+            _ => return Err(self.error_at(member.span, unsupported_unset_message())),
+        };
+
+        if !self.check(|kind| matches!(kind, TokenKind::RParen | TokenKind::Comma)) {
+            return Err(self.error_at(self.peek().span, unsupported_unset_message()));
+        }
+
+        Ok(UnsetTarget::ObjectStaticProperty {
+            target,
+            property,
+            span: target_span,
+        })
     }
 
     fn parse_assignment_or_expression_statement(&mut self) -> CompileResult<Stmt> {

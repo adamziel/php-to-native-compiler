@@ -574,6 +574,11 @@ pub enum UnsetTarget {
         property: Expr,
         span: Span,
     },
+    ObjectStaticProperty {
+        target: Expr,
+        property: String,
+        span: Span,
+    },
     StaticProperty {
         class_name: String,
         property: String,
