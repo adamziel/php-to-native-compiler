@@ -16879,6 +16879,7 @@ struct CNativeCallableSourceSignatureRegistration {
     has_variadic: bool,
     variadic_by_reference: bool,
     aux_cleanup_after_registration: Vec<String>,
+    cleanup_after_borrowed_registration: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -20164,6 +20165,8 @@ impl CGenerator {
         self.uses_native_exit_helpers |= branch.uses_native_exit_helpers;
         self.uses_native_call_type_helpers |= branch.uses_native_call_type_helpers;
         self.uses_native_callable_helpers |= branch.uses_native_callable_helpers;
+        self.uses_native_materialized_call_argument_helpers |=
+            branch.uses_native_materialized_call_argument_helpers;
         self.uses_native_destructor_finalization_helpers |=
             branch.uses_native_destructor_finalization_helpers;
         self.uses_native_arrayaccess_offset_read_helpers |=
@@ -20219,6 +20222,7 @@ impl CGenerator {
             || self.uses_native_text_membership_operation
             || self.uses_native_call_type_helpers
             || self.uses_native_callable_helpers
+            || self.uses_native_materialized_call_argument_helpers
             || self.uses_native_arrayaccess_offset_read_helpers
             || self.uses_native_arrayaccess_offset_write_helpers
             || self.uses_native_dynamic_call_helpers
@@ -22123,10 +22127,23 @@ impl CGenerator {
         } else {
             "0"
         };
+        let signature = self.emit_native_callable_source_signature_registration(params, "");
         self.body.push(format!(
-            "phpc_NativeClosureDescriptor {descriptor} = {{ &{callback_name}, {}, {}, {param_flags}, {result_flags} }};",
+            "phpc_NativeClosureDescriptor {descriptor} = {{ &{callback_name}, {}, {}, {param_flags}, {result_flags}, true, {}, {}, {}, {}, {}, {}, {}, {} }};",
             native_user_function_required_arg_count(&closure_function),
-            params.len()
+            params.len(),
+            signature.parameter_names_arg,
+            signature.parameter_required_arg,
+            signature.parameter_by_reference_arg,
+            signature.parameter_defaults_arg,
+            signature.fixed_count,
+            signature.variadic_parameter_name_arg,
+            if signature.has_variadic { "true" } else { "false" },
+            if signature.variadic_by_reference {
+                "true"
+            } else {
+                "false"
+            },
         ));
         let value = self.next_native_name("closure_value");
         if descriptor_captures.is_empty() {
@@ -22189,6 +22206,8 @@ impl CGenerator {
                 descriptor_captures.len()
             ));
         }
+        self.body
+            .extend(signature.cleanup_after_borrowed_registration);
         let error_exit = self.native_error_exit("");
         self.body
             .push(format!("if ({value}.ptr == NULL) {{ {error_exit} }}"));
@@ -23068,7 +23087,7 @@ impl CGenerator {
                 output.push_str("typedef struct { phpc_NativeValueHandle value; phpc_NativeReferenceHandle reference; uint8_t flags; } phpc_NativeClosureArgument;\n");
                 output.push_str("typedef struct { phpc_NativeValueHandle value; phpc_NativeReferenceHandle reference; phpc_NativeDiagnosticHandle diagnostic; uint8_t status; } phpc_NativeClosureInvocationResult;\n");
                 output.push_str("typedef phpc_NativeClosureInvocationResult (*phpc_NativeClosureFrameCallback)(int, const phpc_NativeClosureArgument *, size_t, int *);\n");
-                output.push_str("typedef struct { phpc_NativeClosureFrameCallback callback; size_t required_arg_count; size_t param_count; const uint8_t *param_flags; uint8_t result_flags; } phpc_NativeClosureDescriptor;\n");
+                output.push_str("typedef struct { phpc_NativeClosureFrameCallback callback; size_t required_arg_count; size_t param_count; const uint8_t *param_flags; uint8_t result_flags; bool has_source_signature; const phpc_NativeStringHandle *parameter_names; const uint8_t *parameter_required; const uint8_t *parameter_by_reference; const phpc_NativeValueHandle *parameter_defaults; size_t fixed_count; phpc_NativeStringHandle variadic_parameter_name; bool has_variadic; bool variadic_by_reference; } phpc_NativeClosureDescriptor;\n");
             }
             if self.uses_native_dynamic_call_helpers {
                 output.push_str("#define PHPC_NATIVE_CALLABLE_ARRAY_PARTS_OK 1\n");
@@ -25990,6 +26009,11 @@ impl CGenerator {
             variadic_parameter_name_arg,
             has_variadic,
             variadic_by_reference,
+            cleanup_after_borrowed_registration: pre_registration_cleanup
+                .iter()
+                .chain(aux_cleanup_after_registration.iter())
+                .cloned()
+                .collect(),
             aux_cleanup_after_registration,
         }
     }
@@ -40684,13 +40708,16 @@ impl CGenerator {
         } else {
             None
         };
+        let needs_runtime_descriptor_closure_signature = descriptor_closure_only
+            && (call_arguments_have_named(args) || call_arguments_have_spread(args))
+            && descriptor_closure_argument_plan.is_none();
         let has_known_callable_identities = self
             .native_callable_identities_for_cvalue(&callee_value)
             .is_some();
         let callee = self.materialize_native_array_c_value_handle(callee_value, span)?;
         let callee_cleanup = c_cleanup_sequence(&callee.cleanup_after_use);
 
-        if descriptor_closure_only {
+        if descriptor_closure_only && !needs_runtime_descriptor_closure_signature {
             return self.materialize_descriptor_closure_source_call(
                 callee,
                 args,
@@ -40754,7 +40781,7 @@ impl CGenerator {
                 contract,
             )?
         } else if (call_arguments_have_named(args) || call_arguments_have_spread(args))
-            && !has_known_callable_identities
+            && (!has_known_callable_identities || needs_runtime_descriptor_closure_signature)
         {
             self.emit_runtime_dynamic_materialized_source_call_arguments_handle(
                 "dynamic_callable_args",

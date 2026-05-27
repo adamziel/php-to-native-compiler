@@ -25367,6 +25367,23 @@ const NATIVE_SPREAD_DESCRIPTOR_CLOSURE_ARGUMENT_SOURCE: &str = concat!(
     "echo $join(...[spread_descriptor_closure_marker(\"Q\")]);\n",
 );
 
+const NATIVE_UNKNOWN_DESCRIPTOR_CLOSURE_NAMED_SPREAD_SOURCE: &str = concat!(
+    "<?php\n",
+    "function unknown_descriptor_closure_marker($label, $value) { echo $label; return $value; }\n",
+    "function run_unknown_variadic_descriptor_closure($call) {\n",
+    "echo $call(...[unknown_descriptor_closure_marker(\"A\", \"1\"), \"extra\" => unknown_descriptor_closure_marker(\"B\", \"E\")]), \"|\";\n",
+    "}\n",
+    "function run_unknown_fixed_descriptor_closure($fixed) {\n",
+    "echo $fixed(...[\"item\" => unknown_descriptor_closure_marker(\"D\", \"I\")]);\n",
+    "}\n",
+    "$right = function ($alpha, $beta = \"B\", ...$rest) {\n",
+    "    return \"R\" . $alpha . $beta . ($rest[\"extra\"] ?? \"\") . ($rest[0] ?? \"\");\n",
+    "};\n",
+    "run_unknown_variadic_descriptor_closure($right);\n",
+    "$fixedB = function ($item, $tail = \"T\") { return \"F\" . $item . $tail; };\n",
+    "run_unknown_fixed_descriptor_closure($fixedB);\n",
+);
+
 const NATIVE_RUNTIME_CALLABLE_STRING_SPREAD_SOURCE: &str = concat!(
     "<?php\n",
     "function runtime_callable_string_spread_marker($label) { echo $label; return $label; }\n",
@@ -26684,6 +26701,33 @@ fn native_executable_c_source_lowers_descriptor_closure_spread_through_runtime_s
             && !source.contains("assembly dynamic function-call lowering rejects")
             && !source.contains(ASSEMBLY_CLOSURE_REJECTION),
         "supported descriptor closure spread should not hit the old spread or closure blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_unknown_descriptor_closure_named_spread_through_callable_value_finalizer(
+) {
+    let program = parse(NATIVE_UNKNOWN_DESCRIPTOR_CLOSURE_NAMED_SPREAD_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("bool has_source_signature")
+            && source.contains("callable_signature_parameter_names")
+            && source.contains("callable_signature_parameter_defaults"),
+        "closure descriptors should publish copied source-call parameter metadata:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && source.contains("phpc_native_callable_value_finalize_materialized_arguments_with_diagnostic")
+            && source.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && source.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "compile-time unknown descriptor closures should use runtime callable-value signature finalization before invocation:\n{source}"
+    );
+    assert!(
+        !source.contains("spread operands need a materialized-entry producer")
+            && !source.contains("unsupported named arguments for native call lowering")
+            && !source.contains(ASSEMBLY_CLOSURE_REJECTION),
+        "unknown descriptor closure named/spread calls should not hit old exact-shape or closure blockers:\n{source}"
     );
 }
 
@@ -29362,6 +29406,34 @@ fn emit_exe_links_and_runs_descriptor_closure_spread_argument_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"ABCNCABCN|YXCXY|QCQD");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_unknown_descriptor_closure_named_spread_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "unknown_descriptor_closure_named_spread_arguments",
+        NATIVE_UNKNOWN_DESCRIPTOR_CLOSURE_NAMED_SPREAD_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native unknown descriptor-closure named/spread executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ABR1BE|DFIT");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

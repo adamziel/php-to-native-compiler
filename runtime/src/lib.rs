@@ -5094,13 +5094,19 @@ pub extern "C" fn phpc_native_value_from_closure_descriptor(
     if !descriptor.is_invokable() {
         return NativeValueHandle::null();
     }
+    let Ok(source_signature) = (unsafe { descriptor.source_signature() }) else {
+        return NativeValueHandle::null();
+    };
 
-    NativeValueHandle::from_value(Value::Closure(PhpClosure::new_with_descriptor(
-        NEXT_NATIVE_CLOSURE_ID.fetch_add(1, AtomicOrdering::Relaxed),
-        false,
-        Vec::new(),
-        descriptor,
-    )))
+    NativeValueHandle::from_value(Value::Closure(
+        PhpClosure::new_with_descriptor_and_source_signature(
+            NEXT_NATIVE_CLOSURE_ID.fetch_add(1, AtomicOrdering::Relaxed),
+            false,
+            Vec::new(),
+            descriptor,
+            source_signature,
+        ),
+    ))
 }
 
 /// # Safety
@@ -5125,17 +5131,23 @@ pub unsafe extern "C" fn phpc_native_value_from_closure_descriptor_captures_and_
     if !descriptor.is_invokable() {
         return NativeValueHandle::null();
     }
+    let Ok(source_signature) = (unsafe { descriptor.source_signature() }) else {
+        return NativeValueHandle::null();
+    };
 
     let Some(captures) = captures else {
         return NativeValueHandle::null();
     };
 
-    NativeValueHandle::from_value(Value::Closure(PhpClosure::new_with_descriptor(
-        NEXT_NATIVE_CLOSURE_ID.fetch_add(1, AtomicOrdering::Relaxed),
-        false,
-        captures,
-        descriptor,
-    )))
+    NativeValueHandle::from_value(Value::Closure(
+        PhpClosure::new_with_descriptor_and_source_signature(
+            NEXT_NATIVE_CLOSURE_ID.fetch_add(1, AtomicOrdering::Relaxed),
+            false,
+            captures,
+            descriptor,
+            source_signature,
+        ),
+    ))
 }
 
 /// # Safety
@@ -5161,17 +5173,23 @@ pub unsafe extern "C" fn phpc_native_value_from_closure_descriptor_capture_argum
     if !descriptor.is_invokable() {
         return NativeValueHandle::null();
     }
+    let Ok(source_signature) = (unsafe { descriptor.source_signature() }) else {
+        return NativeValueHandle::null();
+    };
 
     let Some(captures) = captures else {
         return NativeValueHandle::null();
     };
 
-    NativeValueHandle::from_value(Value::Closure(PhpClosure::new_with_descriptor(
-        NEXT_NATIVE_CLOSURE_ID.fetch_add(1, AtomicOrdering::Relaxed),
-        false,
-        captures,
-        descriptor,
-    )))
+    NativeValueHandle::from_value(Value::Closure(
+        PhpClosure::new_with_descriptor_and_source_signature(
+            NEXT_NATIVE_CLOSURE_ID.fetch_add(1, AtomicOrdering::Relaxed),
+            false,
+            captures,
+            descriptor,
+            source_signature,
+        ),
+    ))
 }
 
 /// # Safety
@@ -10084,10 +10102,12 @@ fn native_callable_value_source_signature(
                     scope, callable.descriptor.name
                 )
             }),
-        NativeCallableValueDispatch::DescriptorClosure(_) => Err(
-            "native callable source-call signature lookup failed: descriptor-backed closure values do not publish runtime parameter names/defaults for materialized argument finalization"
-                .to_string(),
-        ),
+        NativeCallableValueDispatch::DescriptorClosure(closure) => {
+            closure.source_signature().ok_or_else(|| {
+                "native callable source-call signature lookup failed: descriptor-backed closure value has no runtime parameter names/defaults for materialized argument finalization"
+                    .to_string()
+            })
+        }
     }
 }
 
@@ -33941,6 +33961,15 @@ pub struct NativeClosureDescriptor {
     param_count: usize,
     param_flags: *const u8,
     result_flags: u8,
+    has_source_signature: bool,
+    parameter_names: *const NativeStringHandle,
+    parameter_required: *const u8,
+    parameter_by_reference: *const u8,
+    parameter_defaults: *const NativeValueHandle,
+    fixed_count: usize,
+    variadic_parameter_name: NativeStringHandle,
+    has_variadic: bool,
+    variadic_by_reference: bool,
 }
 
 impl NativeClosureDescriptor {
@@ -33980,7 +34009,35 @@ impl NativeClosureDescriptor {
             param_count,
             param_flags,
             result_flags,
+            has_source_signature: false,
+            parameter_names: ptr::null(),
+            parameter_required: ptr::null(),
+            parameter_by_reference: ptr::null(),
+            parameter_defaults: ptr::null(),
+            fixed_count: 0,
+            variadic_parameter_name: NativeStringHandle::null(),
+            has_variadic: false,
+            variadic_by_reference: false,
         }
+    }
+
+    unsafe fn source_signature(&self) -> Result<Option<NativeCallableSourceSignature>, String> {
+        if !self.has_source_signature {
+            return Ok(None);
+        }
+        unsafe {
+            native_callable_source_signature_from_abi(
+                self.parameter_names,
+                self.parameter_required,
+                self.parameter_by_reference,
+                self.parameter_defaults,
+                self.fixed_count,
+                self.variadic_parameter_name,
+                self.has_variadic,
+                self.variadic_by_reference,
+            )
+        }
+        .map(Some)
     }
 
     fn is_invokable(&self) -> bool {
@@ -34013,6 +34070,7 @@ pub struct PhpClosure {
     is_arrow: bool,
     captures: Vec<PhpClosureCapture>,
     descriptor: Option<NativeClosureDescriptor>,
+    source_signature: Option<NativeCallableSourceSignature>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -34029,6 +34087,7 @@ impl PhpClosure {
             is_arrow,
             captures,
             descriptor: None,
+            source_signature: None,
         }
     }
 
@@ -34038,11 +34097,29 @@ impl PhpClosure {
         captures: Vec<PhpClosureCapture>,
         descriptor: NativeClosureDescriptor,
     ) -> Self {
+        let source_signature = unsafe { descriptor.source_signature() }.ok().flatten();
+        Self::new_with_descriptor_and_source_signature(
+            id,
+            is_arrow,
+            captures,
+            descriptor,
+            source_signature,
+        )
+    }
+
+    fn new_with_descriptor_and_source_signature(
+        id: i64,
+        is_arrow: bool,
+        captures: Vec<PhpClosureCapture>,
+        descriptor: NativeClosureDescriptor,
+        source_signature: Option<NativeCallableSourceSignature>,
+    ) -> Self {
         Self {
             id,
             is_arrow,
             captures,
             descriptor: Some(descriptor),
+            source_signature,
         }
     }
 
@@ -34060,6 +34137,10 @@ impl PhpClosure {
 
     pub fn descriptor(&self) -> Option<NativeClosureDescriptor> {
         self.descriptor
+    }
+
+    fn source_signature(&self) -> Option<NativeCallableSourceSignature> {
+        self.source_signature.clone()
     }
 }
 
@@ -40358,6 +40439,182 @@ mod tests {
         unsafe { phpc_native_callable_table_free(table) };
     }
 
+    #[test]
+    fn native_callable_value_finalizes_descriptor_closure_arguments_from_copied_runtime_signature()
+    {
+        let left = native_string_for_test("left");
+        let right = native_string_for_test("right");
+        let parameter_names = [left, right];
+        let required = [1u8, 0u8];
+        let by_reference = [0u8, 0u8];
+        let defaults = [
+            NativeValueHandle::null(),
+            NativeValueHandle::from_value(Value::Int(9)),
+        ];
+        let descriptor = NativeClosureDescriptor {
+            callback: Some(native_descriptor_sum_closure_callback),
+            required_arg_count: 1,
+            param_count: 2,
+            param_flags: ptr::null(),
+            result_flags: 0,
+            has_source_signature: true,
+            parameter_names: parameter_names.as_ptr(),
+            parameter_required: required.as_ptr(),
+            parameter_by_reference: by_reference.as_ptr(),
+            parameter_defaults: defaults.as_ptr(),
+            fixed_count: parameter_names.len(),
+            variadic_parameter_name: NativeStringHandle::null(),
+            has_variadic: false,
+            variadic_by_reference: false,
+        };
+        let callable_value = phpc_native_value_from_closure_descriptor(descriptor);
+        for name in parameter_names {
+            unsafe { phpc_native_string_free(name) };
+        }
+        for default in defaults {
+            unsafe { phpc_native_value_free(default) };
+        }
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let callable = unsafe {
+            phpc_native_callable_lookup_value_or_closure_with_context_diagnostic(
+                NativeCallableTableHandle::null(),
+                callable_value,
+                NativeStringHandle::null(),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!callable.is_null());
+
+        let materialized = phpc_native_materialized_call_arguments_new();
+        let left = native_string_for_test("left");
+        assert!(unsafe {
+            phpc_native_materialized_call_arguments_push_named_value_and_free(
+                materialized,
+                left,
+                NativeValueHandle::from_value(Value::Int(4)),
+            )
+        });
+        let finalized = unsafe {
+            phpc_native_callable_value_finalize_materialized_arguments_with_diagnostic(
+                callable,
+                materialized,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(unsafe { phpc_native_call_arguments_len(finalized) }, 2);
+        assert_eq!(
+            unsafe { int_from_value_for_test(phpc_native_call_arguments_read_value(finalized, 0)) },
+            4
+        );
+        assert_eq!(
+            unsafe { int_from_value_for_test(phpc_native_call_arguments_read_value(finalized, 1)) },
+            9
+        );
+        let value = unsafe {
+            phpc_native_callable_value_invoke_value_with_diagnostic_and_free(
+                callable,
+                finalized,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(unsafe { int_from_value_for_test(value) }, 13);
+
+        unsafe { phpc_native_materialized_call_arguments_free(materialized) };
+        unsafe { phpc_native_value_free(callable_value) };
+    }
+
+    #[test]
+    fn native_callable_value_finalizes_variadic_descriptor_closure_arguments_from_runtime_signature(
+    ) {
+        let first = native_string_for_test("first");
+        let parameter_names = [first];
+        let required = [1u8];
+        let by_reference = [0u8];
+        let defaults = [NativeValueHandle::null()];
+        let variadic_name = native_string_for_test("nums");
+        let flags = [NATIVE_CLOSURE_ARGUMENT_VARIADIC];
+        let descriptor = NativeClosureDescriptor {
+            callback: Some(native_descriptor_variadic_sum_closure_callback),
+            required_arg_count: 1,
+            param_count: 2,
+            param_flags: flags.as_ptr(),
+            result_flags: 0,
+            has_source_signature: true,
+            parameter_names: parameter_names.as_ptr(),
+            parameter_required: required.as_ptr(),
+            parameter_by_reference: by_reference.as_ptr(),
+            parameter_defaults: defaults.as_ptr(),
+            fixed_count: parameter_names.len(),
+            variadic_parameter_name: variadic_name,
+            has_variadic: true,
+            variadic_by_reference: false,
+        };
+        let callable_value = phpc_native_value_from_closure_descriptor(descriptor);
+        for name in parameter_names {
+            unsafe { phpc_native_string_free(name) };
+        }
+        unsafe { phpc_native_string_free(variadic_name) };
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let callable = unsafe {
+            phpc_native_callable_lookup_value_or_closure_with_context_diagnostic(
+                NativeCallableTableHandle::null(),
+                callable_value,
+                NativeStringHandle::null(),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!callable.is_null());
+
+        let materialized = phpc_native_materialized_call_arguments_new();
+        let bonus = native_string_for_test("bonus");
+        assert!(unsafe {
+            phpc_native_materialized_call_arguments_push_value_and_free(
+                materialized,
+                NativeValueHandle::from_value(Value::Int(1)),
+            )
+        });
+        assert!(unsafe {
+            phpc_native_materialized_call_arguments_push_value_and_free(
+                materialized,
+                NativeValueHandle::from_value(Value::Int(2)),
+            )
+        });
+        assert!(unsafe {
+            phpc_native_materialized_call_arguments_push_named_value_and_free(
+                materialized,
+                bonus,
+                NativeValueHandle::from_value(Value::Int(3)),
+            )
+        });
+        let finalized = unsafe {
+            phpc_native_callable_value_finalize_materialized_arguments_with_diagnostic(
+                callable,
+                materialized,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(unsafe { phpc_native_call_arguments_len(finalized) }, 2);
+        let value = unsafe {
+            phpc_native_callable_value_invoke_value_with_diagnostic_and_free(
+                callable,
+                finalized,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(unsafe { int_from_value_for_test(value) }, 6);
+
+        unsafe { phpc_native_materialized_call_arguments_free(materialized) };
+        unsafe { phpc_native_value_free(callable_value) };
+    }
+
     unsafe extern "C" fn native_sum_callback(
         frame: NativeCallFrameHandle,
     ) -> NativeCallResultHandle {
@@ -40607,6 +40864,34 @@ mod tests {
         phpc_native_closure_result_from_value(NativeValueHandle::from_value(Value::Int(
             left + right,
         )))
+    }
+
+    unsafe extern "C" fn native_descriptor_variadic_sum_closure_callback(
+        _call_depth: c_int,
+        args: *const NativeClosureArgument,
+        arg_count: usize,
+        status: *mut c_int,
+    ) -> NativeClosureInvocationResult {
+        if arg_count < 2 || args.is_null() {
+            return NativeClosureInvocationResult::null();
+        }
+        let mut total =
+            unsafe { int_from_value_for_test(phpc_native_value_clone((*args.add(0)).value)) };
+        let tail = unsafe { phpc_native_value_clone((*args.add(1)).value) };
+        match unsafe { tail.as_ref() } {
+            Some(Value::Array(array)) => {
+                for entry in array.entries() {
+                    match entry.value_cloned() {
+                        Value::Int(value) => total += value,
+                        other => panic!("expected int variadic entry, got {other:?}"),
+                    }
+                }
+            }
+            other => panic!("expected finalized variadic array, got {other:?}"),
+        }
+        unsafe { phpc_native_value_free(tail) };
+        unsafe { *status = 1 };
+        phpc_native_closure_result_from_value(NativeValueHandle::from_value(Value::Int(total)))
     }
 
     unsafe extern "C" fn native_descriptor_first_reference_closure_callback(
