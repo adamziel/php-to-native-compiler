@@ -326,6 +326,22 @@ const NATIVE_DECLARED_OBJECT_STATIC_METHOD_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_DECLARED_METHOD_STATIC_SOURCE_CALL_SOURCE: &str = concat!(
+    "<?php\n",
+    "class SourceCallAlpha {\n",
+    "    public function inst($value) { return \"A\" . strtoupper($value); }\n",
+    "    public static function stat($value) { return \"S\" . strtolower($value); }\n",
+    "}\n",
+    "class SourceCallBeta {\n",
+    "    public function inst($value) { return \"B\" . strtolower($value); }\n",
+    "    public static function stat($value) { return \"T\" . strtoupper($value); }\n",
+    "}\n",
+    "$alpha = new SourceCallAlpha();\n",
+    "$beta = new SourceCallBeta();\n",
+    "echo $alpha->inst(\"go\"), \"|\", $beta->inst(\"LOUD\"), \"|\";\n",
+    "echo SourceCallAlpha::stat(\"LOUD\"), \"|\", SourceCallBeta::stat(\"go\"), \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_CONSTRUCTOR_SOURCE: &str = concat!(
     "<?php\n",
     "class Box {\n",
@@ -1640,6 +1656,34 @@ fn emit_exe_links_and_runs_declared_object_static_method_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"ADA|shout|7|GO|7|drop\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_declared_method_static_source_call_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "declared_method_static_source_call",
+        NATIVE_DECLARED_METHOD_STATIC_SOURCE_CALL_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run declared method/static source-call executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"AGO|Bloud|Sloud|TGO\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -3400,6 +3444,36 @@ fn native_executable_c_source_invokes_object_static_methods_through_static_conte
             .filter(|line| line.contains("phpc_declared_method_") && line.contains("("))
             .all(|line| !line.contains("phpc_this")),
         "static method frames must not bind $this:\n{source}"
+    );
+    assert!(!source.contains("method-call lowering rejects"), "{source}");
+}
+
+#[test]
+fn native_executable_c_source_routes_declared_method_static_calls_through_source_call_carriers() {
+    let program = parse(NATIVE_DECLARED_METHOD_STATIC_SOURCE_CALL_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains(
+            "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+        ) && body.contains(
+            "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments"
+        ),
+        "declared exact receiver/static calls should use shared method/static source-call carriers:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_call_arguments_push_value_and_free")
+            .count()
+            >= 4,
+        "source-call method/static production should build arguments through the shared owned argument handle:\n{source}"
+    );
+    assert!(
+        body.contains("PHPC_NATIVE_CALLABLE_ACCESS_OBJECT_RECEIVER")
+            && body.contains("PHPC_NATIVE_CALLABLE_ACCESS_STATIC")
+            && !body.contains("method_dispatch_status")
+            && !body.contains("static_method_status"),
+        "the exact source-call fixture should not fall back to generated frame-dispatch ladders:\n{source}"
     );
     assert!(!source.contains("method-call lowering rejects"), "{source}");
 }

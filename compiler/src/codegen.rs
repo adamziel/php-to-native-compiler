@@ -16672,6 +16672,14 @@ fn native_method_static_runtime_signature_fallback_contract(
     }
 }
 
+fn native_method_static_source_call_frame_signature_compatible(
+    method: &CDeclaredClassMethod,
+    arg_count: usize,
+) -> bool {
+    native_user_function_variadic_param(&method.decl).is_none()
+        && method.decl.params.len() == arg_count
+}
+
 fn borrowed_native_arg(
     values: &[CNativeValueMaterialization],
     index: usize,
@@ -25447,6 +25455,40 @@ impl CGenerator {
         )
     }
 
+    fn receiver_method_source_call_signature_contract(
+        &self,
+        target: &Expr,
+        method_name: &str,
+        arg_count: usize,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        let facts = self.native_value_facts_for_expr(target)?;
+        let object = facts.object.as_ref()?;
+        if object.declared_class_keys.is_empty() {
+            return None;
+        }
+
+        let mut methods = Vec::new();
+        for class_key in &object.declared_class_keys {
+            let (_, method) =
+                self.declared_class_receiver_method_for_key(class_key, method_name)?;
+            if !native_method_static_source_call_frame_signature_compatible(&method, arg_count) {
+                return None;
+            }
+            methods.push(method);
+        }
+
+        let contract = native_method_static_signature_fallback_contract_from_methods(
+            NativeMethodStaticSignatureFamily::ReceiverMethod,
+            methods.iter(),
+            arg_count,
+        );
+        matches!(
+            contract.availability,
+            NativeMethodStaticSignatureAvailability::Known(_)
+        )
+        .then_some(contract)
+    }
+
     fn static_method_signature_fallback_contract(
         &self,
         method_name: &str,
@@ -25458,6 +25500,30 @@ impl CGenerator {
             candidates.iter().map(|(_, method)| method),
             arg_count,
         )
+    }
+
+    fn static_method_source_call_signature_contract(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        arg_count: usize,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        let (_, method) = self.declared_class_static_method(class_name, method_name)?;
+        if !native_method_static_source_call_frame_signature_compatible(&method, arg_count) {
+            return None;
+        }
+
+        let methods = [method];
+        let contract = native_method_static_signature_fallback_contract_from_methods(
+            NativeMethodStaticSignatureFamily::StaticMethod,
+            methods.iter(),
+            arg_count,
+        );
+        matches!(
+            contract.availability,
+            NativeMethodStaticSignatureAvailability::Known(_)
+        )
+        .then_some(contract)
     }
 
     fn static_known_string_values_for_expr(&self, expr: &Expr) -> Option<KnownString> {
@@ -29721,6 +29787,12 @@ impl CGenerator {
                 span,
             } => {
                 if let Some(value) = self
+                    .try_materialize_receiver_method_source_call(target, method, args, *span, "")?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
+                if let Some(value) = self
                     .try_materialize_declared_class_method_call(target, method, args, *span, "")?
                 {
                     self.retain_native_value_cleanup_handle(&value.handle);
@@ -29735,6 +29807,12 @@ impl CGenerator {
                 args,
                 span,
             } => {
+                if let Some(value) = self.try_materialize_static_method_source_call(
+                    class_name, method, args, *span, "",
+                )? {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
                 if let Some(value) = self.try_materialize_declared_class_static_method_call(
                     class_name, method, args, *span, "",
                 )? {
@@ -32559,8 +32637,36 @@ impl CGenerator {
         method_name: &str,
     ) -> Option<(CDeclaredClass, CDeclaredClassMethod)> {
         let class_key = Self::declared_class_key(class_name);
+        self.declared_class_static_method_for_key(&class_key, method_name)
+    }
+
+    fn declared_class_receiver_method_for_key(
+        &self,
+        class_key: &str,
+        method_name: &str,
+    ) -> Option<(CDeclaredClass, CDeclaredClassMethod)> {
         let method_key = Self::declared_method_key(method_name);
-        for lookup_key in self.declared_class_lookup_keys(&class_key)? {
+        for lookup_key in self.declared_class_lookup_keys(class_key)? {
+            let class = self
+                .declared_classes
+                .get(&lookup_key)
+                .expect("declared class lookup key has metadata");
+            if let Some(method) = class.methods.iter().find(|method| {
+                !method.is_static && Self::declared_method_key(&method.decl.name) == method_key
+            }) {
+                return Some((class.clone(), method.clone()));
+            }
+        }
+        None
+    }
+
+    fn declared_class_static_method_for_key(
+        &self,
+        class_key: &str,
+        method_name: &str,
+    ) -> Option<(CDeclaredClass, CDeclaredClassMethod)> {
+        let method_key = Self::declared_method_key(method_name);
+        for lookup_key in self.declared_class_lookup_keys(class_key)? {
             let class = self
                 .declared_classes
                 .get(&lookup_key)
@@ -32970,6 +33076,143 @@ impl CGenerator {
                 "{indent}if ({status} != 1 || {result}.ptr == NULL) {{ {error_exit} }}"
             ));
         }
+    }
+
+    fn try_materialize_receiver_method_source_call(
+        &mut self,
+        target: &Expr,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some(signature_contract) =
+            self.receiver_method_source_call_signature_contract(target, method_name, args.len())
+        else {
+            return Ok(None);
+        };
+
+        let receiver = self.materialize_native_value_result_operand(target, failure_cleanup)?;
+        let receiver_cleanup = c_cleanup_sequence(&receiver.cleanup_after_use);
+        let method = self.materialize_native_array_c_value_handle(
+            CValue::String(method_name.to_string()),
+            span,
+        )?;
+        let method_cleanup = c_cleanup_sequence(&method.cleanup_after_use);
+        let target_failure_cleanup = format!("{method_cleanup}{receiver_cleanup}{failure_cleanup}");
+        let target = self.emit_native_receiver_method_source_call_target_operands(
+            receiver,
+            method,
+            NativeSourceCallAccessContext::ObjectReceiver,
+            &target_failure_cleanup,
+        );
+        let binding = self.emit_native_method_static_source_call_binding_operands(
+            "receiver_method_source_call_args",
+            target,
+            args,
+            span,
+            failure_cleanup,
+            &signature_contract,
+        )?;
+
+        let invoke_diagnostic = self.next_native_name("receiver_method_source_call_diagnostic");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {invoke_diagnostic} = {{0}};"
+        ));
+        let carrier = self.native_source_call_carrier(
+            NativeInvokeResultTarget::ReceiverMethodLookupWithAccessContext,
+            NativeSourceCallResultConsumer::Value,
+            span,
+        )?;
+        let result = self
+            .emit_native_source_call_carrier_invocation(
+                carrier,
+                &binding.target.args,
+                &binding.arguments,
+                &invoke_diagnostic,
+                "receiver_method_source_call_result",
+            )
+            .expect("receiver-method value source-call carrier must produce a value handle");
+        self.body.extend(binding.target.cleanup_after_invocation);
+        self.emit_report_native_diagnostic(&invoke_diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+
+        Ok(Some(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }))
+    }
+
+    fn try_materialize_static_method_source_call(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some(signature_contract) =
+            self.static_method_source_call_signature_contract(class_name, method_name, args.len())
+        else {
+            return Ok(None);
+        };
+
+        let scope = self.emit_native_static_text_source_call_string_operand(
+            "static_method_source_call_scope",
+            class_name,
+        );
+        let scope_cleanup = c_cleanup_sequence(&scope.cleanup_after_use);
+        let method = self.materialize_native_array_c_value_handle(
+            CValue::String(method_name.to_string()),
+            span,
+        )?;
+        let method_cleanup = c_cleanup_sequence(&method.cleanup_after_use);
+        let target_failure_cleanup = format!("{method_cleanup}{scope_cleanup}{failure_cleanup}");
+        let target = self.emit_native_static_method_source_call_target_operands(
+            scope,
+            method,
+            NativeSourceCallAccessContext::Static,
+            &target_failure_cleanup,
+        );
+        let binding = self.emit_native_method_static_source_call_binding_operands(
+            "static_method_source_call_args",
+            target,
+            args,
+            span,
+            failure_cleanup,
+            &signature_contract,
+        )?;
+
+        let invoke_diagnostic = self.next_native_name("static_method_source_call_diagnostic");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {invoke_diagnostic} = {{0}};"
+        ));
+        let carrier = self.native_source_call_carrier(
+            NativeInvokeResultTarget::StaticMethodLookupWithAccessContext,
+            NativeSourceCallResultConsumer::Value,
+            span,
+        )?;
+        let result = self
+            .emit_native_source_call_carrier_invocation(
+                carrier,
+                &binding.target.args,
+                &binding.arguments,
+                &invoke_diagnostic,
+                "static_method_source_call_result",
+            )
+            .expect("static-method value source-call carrier must produce a value handle");
+        self.body.extend(binding.target.cleanup_after_invocation);
+        self.emit_report_native_diagnostic(&invoke_diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+
+        Ok(Some(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }))
     }
 
     fn try_materialize_declared_class_method_call(
@@ -42963,18 +43206,41 @@ impl CGenerator {
                     *span,
                 )
                 .map(Some),
-            Expr::StaticMethodCall {
-                class_name,
+            Expr::MethodCall {
+                target,
                 method,
                 args,
                 span,
-            } => self.try_materialize_declared_class_static_method_call(
-                class_name,
+            } => self.try_materialize_receiver_method_source_call(
+                target,
                 method,
                 args,
                 *span,
                 failure_cleanup,
             ),
+            Expr::StaticMethodCall {
+                class_name,
+                method,
+                args,
+                span,
+            } => {
+                if let Some(value) = self.try_materialize_static_method_source_call(
+                    class_name,
+                    method,
+                    args,
+                    *span,
+                    failure_cleanup,
+                )? {
+                    return Ok(Some(value));
+                }
+                self.try_materialize_declared_class_static_method_call(
+                    class_name,
+                    method,
+                    args,
+                    *span,
+                    failure_cleanup,
+                )
+            }
             Expr::ObjectStaticMethodCall {
                 target,
                 method,
