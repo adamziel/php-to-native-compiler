@@ -68,6 +68,7 @@ const NATIVE_FILESYSTEM_PATH_HAS_BOOLEAN_OPTION: u8 = 1;
 enum NativeTextSurface {
     FunctionName,
     ExtensionName,
+    InterfaceName,
 }
 
 impl NativeTextSurface {
@@ -75,6 +76,7 @@ impl NativeTextSurface {
         match self {
             Self::FunctionName => 4,
             Self::ExtensionName => 6,
+            Self::InterfaceName => 7,
         }
     }
 }
@@ -49966,10 +49968,6 @@ impl CGenerator {
             return Err(self.unsupported(span, ASSEMBLY_OBJECT_METADATA_REJECTION));
         }
 
-        if !builtin_name.eq_ignore_ascii_case("class_exists") {
-            return Ok(CValue::Bool(false));
-        }
-
         let autoload = if let Some(autoload) = args.get(1) {
             let autoload = self.emit_expr(autoload)?;
             Self::c_bool_expr(autoload).ok_or_else(|| {
@@ -49979,6 +49977,14 @@ impl CGenerator {
             "true".to_string()
         };
 
+        if builtin_name.eq_ignore_ascii_case("interface_exists") {
+            return self.emit_native_interface_exists_call(name, span);
+        }
+
+        if !builtin_name.eq_ignore_ascii_case("class_exists") {
+            return Ok(CValue::Bool(false));
+        }
+
         Ok(self.emit_native_class_metadata_exists_value(
             name,
             None,
@@ -49987,6 +49993,45 @@ impl CGenerator {
             Some(autoload),
             span,
         )?)
+    }
+
+    fn emit_native_interface_exists_call(
+        &mut self,
+        name: CValue,
+        span: Span,
+    ) -> CompileResult<CValue> {
+        let candidates = self.declared_interface_exists_candidates();
+        if candidates.is_empty() {
+            return Ok(CValue::Bool(false));
+        }
+
+        self.emit_native_text_membership_bool(
+            name,
+            NativeTextSurface::InterfaceName,
+            "interface_exists_result",
+            &candidates,
+            true,
+            span,
+            ASSEMBLY_OBJECT_METADATA_REJECTION,
+        )
+    }
+
+    fn declared_interface_exists_candidates(&self) -> Vec<String> {
+        let mut candidates = Vec::new();
+        let mut seen = HashSet::new();
+        for key in &self.declared_interface_order {
+            let Some(interface) = self.declared_interfaces.get(key) else {
+                continue;
+            };
+            let name = interface.name.strip_prefix('\\').unwrap_or(&interface.name);
+            for candidate in [name.to_string(), format!("\\{name}")] {
+                let lookup = candidate.to_ascii_lowercase();
+                if seen.insert(lookup) {
+                    candidates.push(candidate);
+                }
+            }
+        }
+        candidates
     }
 
     fn emit_native_object_metadata_call(

@@ -149,6 +149,7 @@ pub enum NativeCallFrameConditionalHandoffFeature {
 pub enum NativeTextSurfaceTag {
     FunctionName = 4,
     ExtensionName = 6,
+    InterfaceName = 7,
 }
 
 #[repr(u8)]
@@ -173,6 +174,7 @@ pub enum NativeClassMetadataValueOperation {
 enum TextOnlySurface {
     FunctionName,
     ExtensionName,
+    InterfaceName,
 }
 
 impl TextOnlySurface {
@@ -180,6 +182,7 @@ impl TextOnlySurface {
         match tag {
             NativeTextSurfaceTag::FunctionName => Self::FunctionName,
             NativeTextSurfaceTag::ExtensionName => Self::ExtensionName,
+            NativeTextSurfaceTag::InterfaceName => Self::InterfaceName,
         }
     }
 
@@ -187,6 +190,7 @@ impl TextOnlySurface {
         match self {
             Self::FunctionName => "function name",
             Self::ExtensionName => "extension name",
+            Self::InterfaceName => "interface name",
         }
     }
 }

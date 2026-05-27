@@ -25379,6 +25379,73 @@ fn emit_exe_links_and_runs_interface_typed_method_dispatch_program() {
 }
 
 #[test]
+fn native_executable_c_source_routes_declared_interface_exists_through_metadata() {
+    let program = parse(concat!(
+        "<?php\n",
+        "interface NativeInterfaceExistsContract {}\n",
+        "class NativeInterfaceExistsBox {}\n",
+        "$name = \"nativeinterfaceexistscontract\";\n",
+        "echo interface_exists(\"NativeInterfaceExistsContract\", false) ? \"I\" : \"M\";\n",
+        "echo interface_exists($name, false) ? \"D\" : \"N\";\n",
+        "echo interface_exists(\"NativeInterfaceExistsBox\", false) ? \"C\" : \"X\";\n",
+        "echo interface_exists(\"ArrayAccess\", false) ? \"A\" : \"H\";\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_text_membership_with_reference_slot_with_diagnostic")
+            && source.contains("NativeInterfaceExistsContract")
+            && !source.contains("phpc_native_value_class_metadata_exists_with_diagnostic"),
+        "declared interface_exists() should use generated interface metadata, not class metadata or hard-coded external interfaces:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_declared_interface_exists_no_autoload_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "interface NativeInterfaceExistsRunContract {}\n",
+        "class NativeInterfaceExistsRunBox {}\n",
+        "$name = \"nativeinterfaceexistsruncontract\";\n",
+        "echo interface_exists(\"NativeInterfaceExistsRunContract\", false) ? \"I\" : \"M\";\n",
+        "echo \"|\";\n",
+        "echo interface_exists($name, false) ? \"D\" : \"N\";\n",
+        "echo \"|\";\n",
+        "echo interface_exists(\"NativeInterfaceExistsRunBox\", false) ? \"class\" : \"not-class\";\n",
+        "echo \"|\";\n",
+        "echo interface_exists(\"MissingInterfaceExistsRunContract\", false) ? \"missing\" : \"no-autoload\";\n",
+        "echo \"|\";\n",
+        "echo interface_exists(\"ArrayAccess\", false) ? \"core\" : \"core-hidden\";\n",
+        "echo \"\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("declared_interface_exists_no_autoload", source);
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run declared interface_exists executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "I|D|not-class|no-autoload|core-hidden\n"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn native_executable_c_source_blocks_unknown_named_dynamic_method_fallback_until_declared_hit_shape_is_known(
 ) {
     let program = parse(concat!(
