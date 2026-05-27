@@ -9422,6 +9422,8 @@ struct LlvmGenerator {
     uses_native_value_truthiness: bool,
     uses_native_reference_helpers: bool,
     uses_native_text_membership_operation: bool,
+    uses_native_user_class_declaration: bool,
+    uses_native_class_metadata_exists: bool,
     uses_native_diagnostic_result_producers: bool,
     uses_native_diagnostic_result_consumers: bool,
 }
@@ -9757,6 +9759,18 @@ impl LlvmGenerator {
                 "%phpc.NativeReferenceHandle = type { ptr }",
             );
         }
+        if self.uses_native_class_metadata_exists {
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_value_handle,
+                "%phpc.NativeValueHandle = type { ptr }",
+            );
+            emit_llvm_type_once(
+                &mut output,
+                &mut emitted_native_diagnostic_handle,
+                "%phpc.NativeDiagnosticHandle = type { ptr }",
+            );
+        }
         if self.uses_native_value_truthiness {
             emit_llvm_type_once(
                 &mut output,
@@ -9885,6 +9899,24 @@ impl LlvmGenerator {
                 );
             }
         }
+        if self.uses_native_user_class_declaration {
+            let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+            output.push_str(&format!(
+                "declare i1 @phpc_native_declare_user_class_bytes(ptr, {usize_type})\n"
+            ));
+            output.push_str(&format!(
+                "declare i1 @phpc_native_declare_user_class_parent_bytes(ptr, {usize_type}, ptr, {usize_type})\n"
+            ));
+            output.push_str(&format!(
+                "declare i1 @phpc_native_declare_user_class_method_bytes(ptr, {usize_type}, ptr, {usize_type}, i8, i1)\n"
+            ));
+            output.push_str(&format!(
+                "declare i1 @phpc_native_declare_user_class_property_bytes(ptr, {usize_type}, ptr, {usize_type}, i8, i1)\n"
+            ));
+        }
+        if self.uses_native_class_metadata_exists {
+            output.push_str("declare i1 @phpc_native_value_class_metadata_exists_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i8, ptr)\n");
+        }
         if self.uses_native_value_comparison_operation {
             output.push_str("declare i1 @phpc_native_value_comparison_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i8, ptr)\n");
             output.push_str("declare i1 @phpc_native_value_comparison_with_reference_slots_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeReferenceHandle, %phpc.NativeValueHandle, %phpc.NativeReferenceHandle, i8, ptr)\n");
@@ -9971,6 +10003,64 @@ impl LlvmGenerator {
         }
         output.push_str("  ret i32 0\n}\n");
         Ok(output)
+    }
+
+    fn llvm_declared_class_visibility_tag(visibility: ClassVisibility) -> u8 {
+        match visibility {
+            ClassVisibility::Public => NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+            ClassVisibility::Protected => NATIVE_DECLARED_CLASS_PROPERTY_PROTECTED,
+            ClassVisibility::Private => NATIVE_DECLARED_CLASS_PROPERTY_PRIVATE,
+        }
+    }
+
+    fn emit_llvm_user_class_declaration(&mut self, class: &ClassDecl) {
+        self.uses_native_user_class_declaration = true;
+        let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
+        let class_global = self.add_string(&class.name);
+        let class_ptr = format!("@{class_global}");
+        let declared = self.next_temp();
+        self.body.push(format!(
+            "{declared} = call i1 @phpc_native_declare_user_class_bytes(ptr {class_ptr}, {usize_type} {})",
+            class.name.len()
+        ));
+
+        if let Some(parent) = &class.parent {
+            let parent_global = self.add_string(parent);
+            let parent_declared = self.next_temp();
+            self.body.push(format!(
+                "{parent_declared} = call i1 @phpc_native_declare_user_class_parent_bytes(ptr {class_ptr}, {usize_type} {}, ptr @{parent_global}, {usize_type} {})",
+                class.name.len(),
+                parent.len()
+            ));
+        }
+
+        for member in &class.members {
+            match member {
+                ClassMember::Method(method) => {
+                    let method_global = self.add_string(&method.function.name);
+                    let declared = self.next_temp();
+                    let visibility = Self::llvm_declared_class_visibility_tag(method.visibility);
+                    let is_static = if method.is_static { "true" } else { "false" };
+                    self.body.push(format!(
+                        "{declared} = call i1 @phpc_native_declare_user_class_method_bytes(ptr {class_ptr}, {usize_type} {}, ptr @{method_global}, {usize_type} {}, i8 {visibility}, i1 {is_static})",
+                        class.name.len(),
+                        method.function.name.len()
+                    ));
+                }
+                ClassMember::Property(property) => {
+                    let property_global = self.add_string(&property.name);
+                    let declared = self.next_temp();
+                    let visibility = Self::llvm_declared_class_visibility_tag(property.visibility);
+                    let is_static = if property.is_static { "true" } else { "false" };
+                    self.body.push(format!(
+                        "{declared} = call i1 @phpc_native_declare_user_class_property_bytes(ptr {class_ptr}, {usize_type} {}, ptr @{property_global}, {usize_type} {}, i8 {visibility}, i1 {is_static})",
+                        class.name.len(),
+                        property.name.len()
+                    ));
+                }
+                ClassMember::Constant(_) => {}
+            }
+        }
     }
 
     fn emit_statement(&mut self, stmt: &Stmt) -> CompileResult<()> {
@@ -10098,7 +10188,11 @@ impl LlvmGenerator {
                 if let Some(span) = find_static_local_span(std::slice::from_ref(stmt)) {
                     return Err(self.unsupported(span, LLVM_STATIC_LOCAL_REJECTION));
                 }
-                Err(self.unsupported(class.span, LLVM_OBJECT_CLASS_REJECTION))
+                if class.is_nested {
+                    return Err(self.unsupported(class.span, LLVM_OBJECT_CLASS_REJECTION));
+                }
+                self.emit_llvm_user_class_declaration(class);
+                Ok(())
             }
             Stmt::For { span, .. } => {
                 if let Some(access) = request_stmt_array_key_consumer_access(stmt) {
@@ -11605,11 +11699,15 @@ impl LlvmGenerator {
                 return Err(failure.diagnostic(NativeCallBackend::Llvm));
             }
             return match metadata_call.kind {
-                NativeObjectMetadataCallKind::MetadataExists => {
-                    self.emit_native_metadata_exists_call(metadata_call.args, metadata_call.span)
-                }
+                NativeObjectMetadataCallKind::MetadataExists => self
+                    .emit_native_metadata_exists_call(
+                        metadata_call.name,
+                        metadata_call.args,
+                        metadata_call.span,
+                    ),
                 NativeObjectMetadataCallKind::MemberMetadataExists => self
                     .emit_native_member_metadata_exists_call(
+                        metadata_call.name,
                         metadata_call.args,
                         metadata_call.span,
                     ),
@@ -11755,6 +11853,7 @@ impl LlvmGenerator {
 
     fn emit_native_metadata_exists_call(
         &mut self,
+        builtin_name: &str,
         args: &[Expr],
         span: Span,
     ) -> CompileResult<IrValue> {
@@ -11782,11 +11881,22 @@ impl LlvmGenerator {
             }
         }
 
-        Ok(IrValue::Bool(false))
+        if !builtin_name.eq_ignore_ascii_case("class_exists") {
+            return Ok(IrValue::Bool(false));
+        }
+
+        self.emit_native_class_metadata_exists_value(
+            name,
+            None,
+            native_class_metadata_exists_operation_tag(builtin_name)
+                .expect("class_exists operation tag is defined"),
+            span,
+        )
     }
 
     fn emit_native_member_metadata_exists_call(
         &mut self,
+        builtin_name: &str,
         args: &[Expr],
         span: Span,
     ) -> CompileResult<IrValue> {
@@ -11809,7 +11919,45 @@ impl LlvmGenerator {
             return Err(self.unsupported(span, LLVM_OBJECT_METADATA_REJECTION));
         }
 
-        Ok(IrValue::Bool(false))
+        let operation = native_class_metadata_exists_operation_tag(builtin_name)
+            .expect("member metadata operation tag is defined");
+        self.emit_native_class_metadata_exists_value(object_or_class, Some(member), operation, span)
+    }
+
+    fn emit_native_class_metadata_exists_value(
+        &mut self,
+        subject: IrValue,
+        member: Option<IrValue>,
+        operation: &'static str,
+        span: Span,
+    ) -> CompileResult<IrValue> {
+        let subject = self.emit_native_value_for_ir_value(subject, span)?;
+        let member = match member {
+            Some(member) => self.emit_native_value_for_ir_value(member, span)?,
+            None => "zeroinitializer".to_string(),
+        };
+        let diagnostic_slot = self.next_temp();
+        let result = self.next_temp();
+        self.uses_native_class_metadata_exists = true;
+        self.body.push(format!(
+            "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
+        ));
+        self.body.push(format!(
+            "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
+        ));
+        self.body.push(format!(
+            "{result} = call i1 @phpc_native_value_class_metadata_exists_with_diagnostic(%phpc.NativeValueHandle {subject}, %phpc.NativeValueHandle {member}, i8 {operation}, ptr {diagnostic_slot})"
+        ));
+        self.emit_report_native_diagnostic_slot(&diagnostic_slot);
+        if member != "zeroinitializer" {
+            self.body.push(format!(
+                "call void @phpc_native_value_free(%phpc.NativeValueHandle {member})"
+            ));
+        }
+        self.body.push(format!(
+            "call void @phpc_native_value_free(%phpc.NativeValueHandle {subject})"
+        ));
+        Ok(IrValue::BoolExpr(result))
     }
 
     fn emit_native_relationship_metadata_call(

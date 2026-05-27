@@ -5,8 +5,8 @@ use std::process::{Command, Output};
 use php_compiler::error::Phase;
 use php_compiler::{emit_asm_source, emit_ir_source, run_source};
 
-const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
+const ASSEMBLY_OBJECT_CLASS_REJECTION: &str = "assembly object/class lowering rejects class declarations outside the bounded generated-C declared-object subset, including inheritance metadata, unsupported constructor dispatch, unsupported public property and instance method forms, object metadata builtins, visibility contexts, references/copy-on-write, and exact native object errors; generated-native C lowers supported declared object allocation, public properties, named instanceof, public declared instance methods, and supported constructors";
 const LLVM_OBJECT_PROPERTY_REJECTION: &str = "LLVM object-property lowering rejects instance property reads/writes and dynamic property-name access until native object layout, property tables/slots, visibility checks, magic property hooks, dynamic property policy, references/copy-on-write, and exact native object-property errors exist; phpc run handles current bounded object-property behavior";
 const LLVM_OBJECT_METADATA_REJECTION: &str = "LLVM object-metadata lowering rejects object/class metadata builtins until native class metadata tables, object handles, inheritance/interface/trait/enum registries, property/method tables, autoload interaction, references/copy-on-write, and exact native object-metadata errors exist; phpc run handles current bounded object metadata behavior";
 const LLVM_INSTANCEOF_REJECTION: &str = "LLVM instanceof lowering rejects class/interface relationship checks until native class metadata tables, object handles, inheritance/interface registries, class-name resolution, autoload interaction, references/copy-on-write, and exact native instanceof diagnostics exist; phpc run handles current bounded instanceof behavior";
@@ -72,35 +72,68 @@ echo Box::$count;
 }
 
 #[test]
-fn emit_ir_rejects_class_declarations_with_specific_boundary() {
-    let error =
-        emit_ir_source("<?php\nclass Box { public $name; }\necho \"after\";\n").unwrap_err();
+fn emit_ir_lowers_class_declarations_to_native_metadata_registry() {
+    let ir = emit_ir_source("<?php\nclass Box { public $name; }\necho \"after\";\n").unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
-    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
+    assert!(
+        ir.contains("declare i1 @phpc_native_declare_user_class_bytes(ptr,"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i1 @phpc_native_declare_user_class_property_bytes(ptr,"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i1 @phpc_native_declare_user_class_bytes"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i1 @phpc_native_declare_user_class_property_bytes"),
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("class declarations") && !ir.contains("object/class lowering rejects"),
+        "{ir}"
+    );
 }
 
 #[test]
-fn emit_ir_rejects_class_declarations_with_instance_defaults_after_parsing() {
-    let error = emit_ir_source("<?php\nclass Box { public $name = \"Ada\"; }\necho \"after\";\n")
-        .unwrap_err();
+fn emit_ir_lowers_class_declarations_with_instance_defaults_to_metadata_registry() {
+    let ir =
+        emit_ir_source("<?php\nclass Box { public $name = \"Ada\"; }\necho \"after\";\n").unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
-    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
+    assert!(
+        ir.contains("call i1 @phpc_native_declare_user_class_bytes"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i1 @phpc_native_declare_user_class_property_bytes"),
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("class declarations") && !ir.contains("object/class lowering rejects"),
+        "{ir}"
+    );
 }
 
 #[test]
-fn emit_ir_rejects_inherited_class_declarations_with_specific_boundary() {
-    let error = emit_ir_source("<?php\nclass Base {}\nclass Child extends Base {}\n").unwrap_err();
+fn emit_ir_lowers_inherited_class_declarations_to_native_metadata_registry() {
+    let ir = emit_ir_source("<?php\nclass Base {}\nclass Child extends Base {}\n").unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
-    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
+    assert_eq!(
+        ir.matches("call i1 @phpc_native_declare_user_class_bytes")
+            .count(),
+        2,
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i1 @phpc_native_declare_user_class_parent_bytes"),
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("class declarations") && !ir.contains("object/class lowering rejects"),
+        "{ir}"
+    );
 }
 
 #[test]
@@ -321,11 +354,11 @@ fn emit_ir_routes_instanceof_operand_calls_through_call_boundary() {
 }
 
 #[test]
-fn emit_asm_rejects_object_class_features_before_backend_execution() {
+fn emit_asm_rejects_class_declarations_outside_generated_native_subset() {
     let error = emit_asm_source("<?php\nclass Box { public $name; }\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
+    assert_eq!(error.message, ASSEMBLY_OBJECT_CLASS_REJECTION);
 }
 
 #[test]
@@ -343,7 +376,7 @@ fn emit_asm_rejects_class_declarations_with_instance_defaults_after_parsing() {
     let error = emit_asm_source("<?php\nclass Box { public $name = \"Ada\"; }\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
+    assert_eq!(error.message, ASSEMBLY_OBJECT_CLASS_REJECTION);
 }
 
 #[test]
@@ -351,7 +384,7 @@ fn emit_asm_rejects_inherited_class_declarations_before_backend_execution() {
     let error = emit_asm_source("<?php\nclass Base {}\nclass Child extends Base {}\n").unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
+    assert_eq!(error.message, ASSEMBLY_OBJECT_CLASS_REJECTION);
 }
 
 #[test]

@@ -1,8 +1,6 @@
 use php_compiler::error::Phase;
 use php_compiler::{emit_ir_source, run_source};
 
-const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
-
 #[test]
 fn method_defaults_can_reference_self_class_constants() {
     let execution = run_source(
@@ -109,5 +107,9 @@ Defaults::stat();
     .unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, LLVM_OBJECT_CLASS_REJECTION);
+    assert!(
+        error.message.contains("method-call lowering rejects"),
+        "{}",
+        error.message
+    );
 }

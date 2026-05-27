@@ -4,6 +4,7 @@ use php_runtime::Visibility;
 
 const LLVM_CLASS_NAME_CONSTANT_REJECTION: &str = "LLVM class-name constant lowering rejects ClassName::class, self::class, parent::class, and static::class until native class-name resolution, active class/parent and late-static-binding context, namespace/import canonicalization, autoload-free class lookup interaction, references/copy-on-write, and exact native class-name constant diagnostics exist; phpc run handles current bounded class-name constant behavior";
 const LLVM_STATIC_MEMBER_REJECTION: &str = "LLVM static-member lowering rejects class constants, static property reads/writes, and dynamic static-property receivers until native class constant tables, static property storage, class context and late-static-binding resolution, visibility checks, autoload/class lookup, references/copy-on-write, and exact native static-member errors exist; phpc run handles current bounded static-member behavior";
+const LLVM_NATIVE_ARRAY_NON_LOCAL_ASSIGNMENT_REJECTION: &str = "LLVM native array non-local assignment lowering rejects object, dynamic-object, non-direct object, and static property assignment targets until non-local owner cells, magic property writes, typed/static property state, assignment-expression results, references/copy-on-write, and exact diagnostics share one assignment owner contract; local variables and native array offset assignments use their shared native lvalue assignment contracts";
 
 fn parse_error(source: &str) -> Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -9070,9 +9071,9 @@ fn emit_ir_rejects_get_debug_type_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("class declarations")
-            || error.message.contains("object instantiation")
-            || error.message.contains("object-metadata lowering rejects"),
+        error.message.contains("object-instantiation")
+            || error.message.contains("object-metadata lowering rejects")
+            || error.message.contains("function-call lowering rejects"),
         "{}",
         error.message
     );
@@ -9135,9 +9136,9 @@ fn emit_ir_rejects_is_object_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("class declarations")
-            || error.message.contains("object instantiation")
-            || error.message.contains("object-metadata lowering rejects"),
+        error.message.contains("object-instantiation")
+            || error.message.contains("object-metadata lowering rejects")
+            || error.message.contains("function-call lowering rejects"),
         "{}",
         error.message
     );
@@ -9150,16 +9151,16 @@ fn emit_ir_rejects_get_class_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("class declarations")
-            || error.message.contains("object instantiation")
-            || error.message.contains("object-metadata lowering rejects"),
+        error.message.contains("object-instantiation")
+            || error.message.contains("object-metadata lowering rejects")
+            || error.message.contains("function-call lowering rejects"),
         "{}",
         error.message
     );
 }
 
 #[test]
-fn emit_ir_folds_absent_native_class_interface_trait_enum_exists_calls() {
+fn emit_ir_routes_class_exists_through_native_metadata_abi_and_folds_other_absent_metadata_calls() {
     let ir = php_compiler::emit_ir_source(
         r#"<?php
 $name = "Box";
@@ -9173,7 +9174,17 @@ echo enum_exists("E") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"0\\00\"").count(), 5, "{ir}");
+    assert_eq!(
+        ir.matches("call i1 @phpc_native_value_class_metadata_exists_with_diagnostic")
+            .count(),
+        2,
+        "{ir}"
+    );
+    assert!(
+        ir.contains("declare i1 @phpc_native_value_class_metadata_exists_with_diagnostic"),
+        "{ir}"
+    );
+    assert!(ir.contains("i8 0"), "{ir}");
     for name in [
         "class_exists",
         "interface_exists",
@@ -9223,7 +9234,7 @@ fn emit_ir_rejects_array_metadata_exists_names_until_native_array_lowering_exist
 }
 
 #[test]
-fn emit_ir_folds_absent_native_property_and_method_exists_calls() {
+fn emit_ir_routes_absent_native_property_and_method_exists_calls_through_metadata_abi() {
     let ir = php_compiler::emit_ir_source(
         r#"<?php
 $class = "Box";
@@ -9237,7 +9248,18 @@ echo method_exists($class, $method) ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"0\\00\"").count(), 4, "{ir}");
+    assert_eq!(
+        ir.matches("call i1 @phpc_native_value_class_metadata_exists_with_diagnostic")
+            .count(),
+        4,
+        "{ir}"
+    );
+    for operation in ["i8 1", "i8 2"] {
+        assert!(
+            ir.contains(operation),
+            "missing metadata operation {operation}\n{ir}"
+        );
+    }
     assert!(!ir.contains("property_exists"), "{ir}");
     assert!(!ir.contains("method_exists"), "{ir}");
 }
@@ -9313,9 +9335,9 @@ fn emit_ir_rejects_get_object_vars_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("class declarations")
-            || error.message.contains("object instantiation")
-            || error.message.contains("object-metadata lowering rejects"),
+        error.message.contains("object-instantiation")
+            || error.message.contains("object-metadata lowering rejects")
+            || error.message.contains("function-call lowering rejects"),
         "{}",
         error.message
     );
@@ -9330,9 +9352,9 @@ fn emit_ir_rejects_get_mangled_object_vars_until_native_object_lowering_exists()
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("class declarations")
-            || error.message.contains("object instantiation")
-            || error.message.contains("object-metadata lowering rejects"),
+        error.message.contains("object-instantiation")
+            || error.message.contains("object-metadata lowering rejects")
+            || error.message.contains("function-call lowering rejects"),
         "{}",
         error.message
     );
@@ -9347,8 +9369,7 @@ fn emit_ir_rejects_object_property_empty_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("class declarations")
-            || error.message.contains("object instantiation")
+        error.message.contains("object-instantiation")
             || error.message.contains("object-metadata lowering rejects")
             || error.message.contains("object property access"),
         "{}",
@@ -9524,9 +9545,9 @@ fn emit_ir_rejects_spl_object_id_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("class declarations")
-            || error.message.contains("object instantiation")
-            || error.message.contains("object-metadata lowering rejects"),
+        error.message.contains("object-instantiation")
+            || error.message.contains("object-metadata lowering rejects")
+            || error.message.contains("function-call lowering rejects"),
         "{}",
         error.message
     );
@@ -9540,9 +9561,9 @@ fn emit_ir_rejects_spl_object_hash_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("class declarations")
-            || error.message.contains("object instantiation")
-            || error.message.contains("object-metadata lowering rejects"),
+        error.message.contains("object-instantiation")
+            || error.message.contains("object-metadata lowering rejects")
+            || error.message.contains("function-call lowering rejects"),
         "{}",
         error.message
     );
@@ -9628,7 +9649,10 @@ fn emit_ir_rejects_object_static_properties_until_native_object_lowering_exists(
 
     let write_error = php_compiler::emit_ir_source("<?php\n$box::$value = 1;\n").unwrap_err();
     assert_eq!(write_error.phase, Phase::Codegen);
-    assert_eq!(write_error.message, LLVM_STATIC_MEMBER_REJECTION);
+    assert_eq!(
+        write_error.message,
+        LLVM_NATIVE_ARRAY_NON_LOCAL_ASSIGNMENT_REJECTION
+    );
 }
 
 #[test]

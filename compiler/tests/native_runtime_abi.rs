@@ -61,6 +61,15 @@ const STRING_SEARCH_IR_SOURCE: &str = "<?php\n$payload = \"A\\0bA\\0b\";\necho s
 const STRING_RESULT_IR_SOURCE: &str = "<?php\n$payload = \"A\\0B\";\necho strrev($payload), \"|\";\nprint str_rot13(\"Az-09\");\necho \"|\";\necho bin2hex($payload), \"|\";\necho strtolower(\"MiXeD\"), \"|\";\necho strtoupper(\"MiXeD\"), \"|\";\necho ucfirst(\"word\"), \"|\";\necho lcfirst(\"Word\"), \"|\";\necho escapeshellarg(\"X ;\\$'Q\\\"\"), \"|\";\necho escapeshellcmd(\"X ;\\$'Q\\\"\"), \"|\";\necho strrev(42042);\n";
 const VALUE_OFFSET_IR_SOURCE: &str = "<?php\n$payload = \"A\\0B\\xff\";\necho $payload[1];\necho isset($payload[2]);\necho empty($payload[3]);\necho strlen($payload[0]);\necho strcmp($payload[0], \"A\");\n";
 const OUTPUT_BUFFER_RUNTIME_SOURCE: &str = "<?php\nob_start(null, strlen(\"aa\"), strlen(\"flags\"));\necho \"A\\0B\";\necho 42;\nob_get_contents();\nob_get_length();\nob_list_handlers();\nob_get_status(true);\nob_clean();\necho strtolower(\"HIDDEN\");\nob_get_clean();\nob_start();\necho \"A\";\nob_start();\necho \"B\";\nob_end_flush();\nob_get_clean();\nob_get_level();\n";
+const USER_CLASS_METADATA_REGISTRY_IR_SOURCE: &str = concat!(
+    "<?php\n",
+    "class UserBase { public $baseSlot; public static function BaseStatic() { } }\n",
+    "class UserChild extends UserBase { public $childSlot; public function run() { } }\n",
+    "echo class_exists(\"UserChild\") ? \"1\" : \"0\";\n",
+    "echo method_exists(\"UserChild\", \"basestatic\") ? \"1\" : \"0\";\n",
+    "echo property_exists(\"UserChild\", \"baseSlot\") ? \"1\" : \"0\";\n",
+    "echo property_exists(\"UserChild\", \"missing\") ? \"1\" : \"0\";\n",
+);
 
 fn runtime_diagnostic_message(handle: php_runtime::NativeDiagnosticHandle) -> String {
     let buffer = unsafe { phpc_native_diagnostic_message_clone_bytes(handle) };
@@ -1898,6 +1907,63 @@ fn native_output_buffer_builtins_share_runtime_boundary_across_backends() {
         !c_source.contains("output-buffer lowering rejects"),
         "{c_source}"
     );
+}
+
+#[test]
+fn native_user_class_metadata_registry_emit_ir_routes_llvm_through_runtime_abis() {
+    let ir = emit_ir_source(USER_CLASS_METADATA_REGISTRY_IR_SOURCE).unwrap();
+    let usize_type = if usize::BITS == 32 { "i32" } else { "i64" };
+
+    for expected in [
+        format!("declare i1 @phpc_native_declare_user_class_bytes(ptr, {usize_type})"),
+        format!(
+            "declare i1 @phpc_native_declare_user_class_parent_bytes(ptr, {usize_type}, ptr, {usize_type})"
+        ),
+        format!(
+            "declare i1 @phpc_native_declare_user_class_method_bytes(ptr, {usize_type}, ptr, {usize_type}, i8, i1)"
+        ),
+        format!(
+            "declare i1 @phpc_native_declare_user_class_property_bytes(ptr, {usize_type}, ptr, {usize_type}, i8, i1)"
+        ),
+        "declare i1 @phpc_native_value_class_metadata_exists_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i8, ptr)".to_string(),
+    ] {
+        assert!(ir.contains(&expected), "missing {expected}\n{ir}");
+    }
+
+    for expected in [
+        "call i1 @phpc_native_declare_user_class_bytes",
+        "call i1 @phpc_native_declare_user_class_parent_bytes",
+        "call i1 @phpc_native_declare_user_class_method_bytes",
+        "call i1 @phpc_native_declare_user_class_property_bytes",
+    ] {
+        assert!(ir.contains(expected), "missing {expected}\n{ir}");
+    }
+    assert_eq!(
+        ir.matches("call i1 @phpc_native_value_class_metadata_exists_with_diagnostic")
+            .count(),
+        4,
+        "{ir}"
+    );
+    for operation in ["i8 0", "i8 1", "i8 2"] {
+        assert!(
+            ir.contains(operation),
+            "missing metadata operation {operation}\n{ir}"
+        );
+    }
+    assert!(
+        !ir.contains("object/class lowering rejects") && !ir.contains("object metadata builtins"),
+        "{ir}"
+    );
+}
+
+#[test]
+fn native_user_class_metadata_registry_emit_asm_accepts_llvm_runtime_abi_routing() {
+    if !has_llvm_assembly_backend() {
+        return;
+    }
+
+    let asm = emit_asm_source(USER_CLASS_METADATA_REGISTRY_IR_SOURCE).unwrap();
+    assert!(!asm.trim().is_empty(), "{asm}");
 }
 
 #[test]

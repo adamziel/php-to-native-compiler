@@ -42,8 +42,7 @@ fn emit_ir_rejects_mangled_object_vars_until_native_object_lowering_exists() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert!(
-        error.message.contains("class declarations")
-            || error.message.contains("object instantiation")
+        error.message.contains("object-instantiation")
             || error.message.contains("object metadata builtins"),
         "{}",
         error.message

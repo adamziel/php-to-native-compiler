@@ -269,13 +269,20 @@ fn emit_ir_rejects_dynamic_function_calls_until_native_lowering_exists() {
 }
 
 #[test]
-fn emit_ir_rejects_class_declarations_until_native_metadata_lowering_exists() {
-    let error = emit_ir_source("<?php\nclass Box {}\necho 1;\n").unwrap_err();
-    assert_eq!(error.phase, php_compiler::error::Phase::Codegen);
+fn emit_ir_lowers_class_declarations_to_native_metadata_registry() {
+    let ir = emit_ir_source("<?php\nclass Box {}\necho 1;\n").unwrap();
+
     assert!(
-        error.message.contains("class declarations"),
-        "{}",
-        error.message
+        ir.contains("declare i1 @phpc_native_declare_user_class_bytes(ptr,"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i1 @phpc_native_declare_user_class_bytes"),
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("class declarations") && !ir.contains("object/class lowering rejects"),
+        "{ir}"
     );
 }
 
