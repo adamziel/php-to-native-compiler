@@ -9714,9 +9714,9 @@ case \"$ir\" in\n\
   ;;\n\
 esac\n\
 case \"$ir\" in\n\
-  *'@phpc_native_string_from_bytes(ptr @.str.6, i64 1)'*'@phpc_native_value_format_stdout_with_diagnostic'*) : ;;\n\
+  *'@phpc_native_value_from_string_bytes_with_diagnostic(ptr @.str.6, i64 1,'*'@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free'*) : ;;\n\
   *)\n\
-  printf '%s\\n' 'fake clang missing final folded false printf on stdin' >&2\n\
+  printf '%s\\n' 'fake clang missing final folded false diagnostic-result echo on stdin' >&2\n\
   exit 128\n\
   ;;\n\
 esac\n\

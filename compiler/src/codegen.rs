@@ -22378,16 +22378,9 @@ impl CGenerator {
                 output.push_str("#include <stdbool.h>\n");
             }
             output.push('\n');
-            if self.uses_native_string_helpers
-                || self.uses_native_comparison_helpers
-                || self.uses_native_array_helpers
-                || self.uses_native_value_truthiness
-                || self.uses_native_conversion_source_helpers
-            {
-                output.push_str(
-                    "typedef struct { uint8_t tag; uint8_t bool_value; int64_t int_value; double float_value; } phpc_NativeScalarValue;\n",
-                );
-            }
+            output.push_str(
+                "typedef struct { uint8_t tag; uint8_t bool_value; int64_t int_value; double float_value; } phpc_NativeScalarValue;\n",
+            );
             output.push_str("typedef struct { void *ptr; } phpc_NativeStringHandle;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeValueHandle;\n");
             output.push_str("typedef struct { void *ptr; } phpc_NativeDiagnosticHandle;\n");
