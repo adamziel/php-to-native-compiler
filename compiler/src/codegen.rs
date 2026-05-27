@@ -24028,6 +24028,7 @@ impl CGenerator {
                 output.push_str("#define PHPC_NATIVE_DIAGNOSTIC_SEVERITY_ERROR 3\n");
                 output.push_str("#define PHPC_NATIVE_INCLUDE_RESULT_NORMAL 1\n");
                 output.push_str("#define PHPC_NATIVE_INCLUDE_RESULT_RETURN 2\n");
+                output.push_str("#define PHPC_NATIVE_INCLUDE_RESULT_TERMINATE 3\n");
                 output.push_str("#define PHPC_NATIVE_INCLUDE_LOOKUP_STATUS_FOUND 1\n");
                 output.push_str("#define PHPC_NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED 2\n");
                 output.push_str("#define PHPC_NATIVE_INCLUDE_LOOKUP_STATUS_AMBIGUOUS 3\n");
@@ -37735,8 +37736,9 @@ impl CGenerator {
             &format!("phpc_native_value_free({result}.value);"),
             &format!("{result}.exit_code"),
         );
-        self.body
-            .push(format!("if ({result}.exit_code != 0) {{ {exit} }}"));
+        self.body.push(format!(
+            "if ({result}.tag == PHPC_NATIVE_INCLUDE_RESULT_TERMINATE) {{ {exit} }}"
+        ));
     }
 
     fn emit_include_execution_state(&mut self, symbol_table: &str) -> String {
@@ -63271,7 +63273,7 @@ impl CGenerator {
         let mut cleanup = self.native_scope_cleanup_sequence(local_cleanup);
         if self.function_return_mode == CFunctionReturnMode::IncludeUnit {
             cleanup.push_str(&format!(
-                " return (phpc_NativeIncludeResult){{0, (phpc_NativeValueHandle){{0}}, {exit_code}}};"
+                " return (phpc_NativeIncludeResult){{PHPC_NATIVE_INCLUDE_RESULT_TERMINATE, (phpc_NativeValueHandle){{0}}, {exit_code}}};"
             ));
         } else if let Some(status) = &self.function_return_status {
             let null_result = match self.function_return_mode {

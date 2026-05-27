@@ -539,6 +539,77 @@ fn emit_exe_links_and_runs_function_scope_literal_include_unit_symbols_and_retur
 }
 
 #[test]
+fn native_executable_c_source_tags_include_unit_exit_as_termination() {
+    let dir = include_discovery_fixture_dir("execution-exit-tag-c-source");
+    let root = dir.join("root.php");
+    fs::write(dir.join("stop.php"), "<?php\necho 'included|';\nexit();\n")
+        .expect("write include exit c-source fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "require __DIR__ . '/stop.php';\n",
+            "echo 'after';\n",
+        ),
+    )
+    .expect("write include exit root c-source fixture");
+
+    let unit = executable_compilation_unit_with_literal_include_units(
+        &fs::read_to_string(&root).expect("read include exit root fixture"),
+        &root,
+        workspace_root(),
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source_for_include_units(&unit).unwrap();
+
+    assert!(
+        source.contains("#define PHPC_NATIVE_INCLUDE_RESULT_TERMINATE 3")
+            && source.contains(
+                "return (phpc_NativeIncludeResult){PHPC_NATIVE_INCLUDE_RESULT_TERMINATE"
+            )
+            && source.contains(".tag == PHPC_NATIVE_INCLUDE_RESULT_TERMINATE")
+            && !source.contains(".exit_code != 0"),
+        "include-unit exit should propagate through an explicit control-transfer tag instead of an ordinary zero exit-code value:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_include_unit_exit_zero_terminates_caller_without_after() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("execution-exit-zero-exe");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(dir.join("stop.php"), "<?php\necho 'included|';\nexit();\n")
+        .expect("write include exit executable fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "echo 'before|';\n",
+            "require __DIR__ . '/stop.php';\n",
+            "echo 'after';\n",
+        ),
+    )
+    .expect("write include exit executable root fixture");
+
+    let output = compile_exe(&root, &output, "include unit exit zero executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run include unit exit zero executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "before|included|");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+}
+
+#[test]
 fn emit_exe_links_and_runs_literal_include_path_search_before_source_fallback() {
     if !has_cc() {
         return;
