@@ -2936,14 +2936,14 @@ impl Parser {
                     | AssignTarget::List { .. }
                     | AssignTarget::ArrayIndex { index: Some(_), .. }
                     | AssignTarget::NestedArrayIndex { .. }
+                    | AssignTarget::ObjectPropertyArrayIndex { .. }
+                    | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
                     | AssignTarget::Property { .. }
                     | AssignTarget::StaticProperty { .. }
                     | AssignTarget::SelfStaticProperty { .. }
                     | AssignTarget::ParentStaticProperty { .. }
                     | AssignTarget::LateStaticProperty { .. } => {}
                     AssignTarget::NestedArrayAppend { .. }
-                    | AssignTarget::ObjectPropertyArrayIndex { .. }
-                    | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
                     | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
                     | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
                     | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
@@ -3577,6 +3577,7 @@ impl Parser {
             | AssignTarget::ArrayIndex { index: Some(_), .. }
             | AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::ObjectPropertyArrayIndex { .. }
+            | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::Property { .. }
             | AssignTarget::StaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
@@ -3587,7 +3588,6 @@ impl Parser {
             | AssignTarget::NonDirectProperty { .. }
             | AssignTarget::NonDirectDynamicProperty { .. }
             | AssignTarget::ObjectStaticProperty { .. }
-            | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
@@ -3798,6 +3798,16 @@ impl Parser {
                     Self::object_property_array_index_path_from_expr(&expr)
                 {
                     return Ok(AssignTarget::ObjectPropertyArrayIndex {
+                        object,
+                        property,
+                        indices,
+                        span,
+                    });
+                }
+                if let Some((object, property, indices, span)) =
+                    Self::dynamic_object_property_array_index_path_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::DynamicObjectPropertyArrayIndex {
                         object,
                         property,
                         indices,
@@ -4451,6 +4461,26 @@ impl Parser {
         match expr {
             Expr::Variable(name, span) => Ok(AssignTarget::Variable { name, span }),
             Expr::Index { .. } => {
+                if let Some((object, property, indices, span)) =
+                    Self::object_property_array_index_path_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::ObjectPropertyArrayIndex {
+                        object,
+                        property,
+                        indices,
+                        span,
+                    });
+                }
+                if let Some((object, property, indices, span)) =
+                    Self::dynamic_object_property_array_index_path_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::DynamicObjectPropertyArrayIndex {
+                        object,
+                        property,
+                        indices,
+                        span,
+                    });
+                }
                 let (name, mut indices, span) = Self::array_index_path_from_expr(expr)
                     .ok_or(unsupported_null_coalescing_assignment_message())?;
                 if indices.len() == 1 {
@@ -7572,7 +7602,7 @@ fn unsupported_exponentiation_message() -> &'static str {
 }
 
 fn unsupported_null_coalescing_assignment_message() -> &'static str {
-    "unsupported null coalescing assignment: only direct variable, direct or nested array-offset, and direct object-property targets are implemented"
+    "unsupported null coalescing assignment: only direct variable, direct or nested array-offset, direct object-property, and direct object-property array-offset targets are implemented"
 }
 
 fn unsupported_assignment_expression_message() -> &'static str {

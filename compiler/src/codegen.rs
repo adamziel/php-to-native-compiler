@@ -16201,6 +16201,7 @@ struct CDeclaredClassMethod {
     visibility: ClassVisibility,
     is_static: bool,
     return_facts: Option<CNativeValueFacts>,
+    this_property_value_facts: HashMap<String, CNativeValueFacts>,
 }
 
 enum CDirectVariableCompoundAssignmentOwner {
@@ -18911,6 +18912,7 @@ impl CGenerator {
                             visibility: method.visibility,
                             is_static: false,
                             return_facts: None,
+                            this_property_value_facts: HashMap::new(),
                         });
                     } else {
                         if method.function.name.eq_ignore_ascii_case("__destruct") {
@@ -18936,6 +18938,7 @@ impl CGenerator {
                             visibility: method.visibility,
                             is_static: method.is_static,
                             return_facts: None,
+                            this_property_value_facts: HashMap::new(),
                         });
                     }
                 }
@@ -19510,21 +19513,24 @@ impl CGenerator {
         Ok(())
     }
 
-    fn set_declared_class_method_return_facts(
+    fn set_declared_class_method_summaries(
         &mut self,
         method_c_name: &str,
         facts: Option<CNativeValueFacts>,
+        this_property_value_facts: HashMap<String, CNativeValueFacts>,
     ) {
         for class in self.declared_classes.values_mut() {
             if let Some(constructor) = class.constructor.as_mut() {
                 if constructor.c_name == method_c_name {
                     constructor.return_facts = facts;
+                    constructor.this_property_value_facts = this_property_value_facts;
                     return;
                 }
             }
             for method in &mut class.methods {
                 if method.c_name == method_c_name {
                     method.return_facts = facts;
+                    method.this_property_value_facts = this_property_value_facts;
                     return;
                 }
             }
@@ -20193,9 +20199,15 @@ impl CGenerator {
         self.static_data
             .extend(generator.static_data.iter().cloned());
         self.merge_branch_feature_flags(&generator);
-        self.set_declared_class_method_return_facts(
+        let this_property_value_facts = if method.is_static {
+            HashMap::new()
+        } else {
+            generator.this_property_value_fact_summary()
+        };
+        self.set_declared_class_method_summaries(
             &method.c_name,
             generator.function_return_facts.clone(),
+            this_property_value_facts,
         );
 
         let mut definition = String::new();
@@ -25695,6 +25707,20 @@ impl CGenerator {
         }
     }
 
+    fn constructor_this_property_value_facts_for_new_class_name(
+        &self,
+        class_name: &NewClassName,
+    ) -> Option<HashMap<String, CNativeValueFacts>> {
+        let NewClassName::Named(name) = class_name else {
+            return None;
+        };
+        let key = Self::declared_class_key(name);
+        let class = self.declared_classes.get(&key)?;
+        let (_, constructor) = self.declared_class_constructor_for_instantiation(class)?;
+        (!constructor.this_property_value_facts.is_empty())
+            .then_some(constructor.this_property_value_facts.clone())
+    }
+
     fn intersect_native_value_fact_iter<I>(&self, facts: I) -> Option<CNativeValueFacts>
     where
         I: IntoIterator<Item = Option<CNativeValueFacts>>,
@@ -26383,6 +26409,7 @@ impl CGenerator {
     }
 
     fn native_object_property_fact_target(
+        &self,
         object: &Expr,
         property: CObjectPropertyOperand<'_>,
     ) -> CNativeObjectPropertyFactTarget {
@@ -26393,8 +26420,16 @@ impl CGenerator {
                     property: property.to_string(),
                 })
             }
-            (Expr::Variable(object, _), CObjectPropertyOperand::Dynamic(_)) => {
-                CNativeObjectPropertyFactTarget::Object(object.clone())
+            (Expr::Variable(object, _), CObjectPropertyOperand::Dynamic(property)) => {
+                match self.static_known_string_values_for_expr(property) {
+                    Some(values) if values.is_single() => {
+                        CNativeObjectPropertyFactTarget::Key(CNativeObjectPropertyFactKey {
+                            object: object.clone(),
+                            property: values.values()[0].clone(),
+                        })
+                    }
+                    _ => CNativeObjectPropertyFactTarget::Object(object.clone()),
+                }
             }
             _ => CNativeObjectPropertyFactTarget::All,
         }
@@ -26459,8 +26494,26 @@ impl CGenerator {
         property: CObjectPropertyOperand<'_>,
         facts: Option<CNativeValueFacts>,
     ) {
-        let target = Self::native_object_property_fact_target(object, property);
+        let target = self.native_object_property_fact_target(object, property);
         self.apply_native_object_property_fact_target(target, facts);
+    }
+
+    fn this_property_value_fact_summary(&self) -> HashMap<String, CNativeValueFacts> {
+        self.native_object_property_value_facts
+            .iter()
+            .filter_map(|(key, facts)| {
+                (key.object == "this").then(|| (key.property.clone(), facts.clone()))
+            })
+            .collect()
+    }
+
+    fn native_object_property_value_facts_for_operand(
+        &self,
+        object: &Expr,
+        property: CObjectPropertyOperand<'_>,
+    ) -> Option<CNativeValueFacts> {
+        let target = self.native_object_property_fact_target(object, property);
+        self.native_object_property_value_facts(&target)
     }
 
     fn native_value_facts_for_expr(&self, expr: &Expr) -> Option<CNativeValueFacts> {
@@ -26486,6 +26539,18 @@ impl CGenerator {
             Expr::DynamicCall { callee, args, .. } => {
                 self.native_value_facts_for_dynamic_callable_expr(callee, args)
             }
+            Expr::Property {
+                target, property, ..
+            } => self.native_object_property_value_facts_for_operand(
+                target,
+                CObjectPropertyOperand::Literal(property),
+            ),
+            Expr::DynamicProperty {
+                target, property, ..
+            } => self.native_object_property_value_facts_for_operand(
+                target,
+                CObjectPropertyOperand::Dynamic(property),
+            ),
             _ => None,
         }
     }
@@ -26522,14 +26587,13 @@ impl CGenerator {
         )
     }
 
-    #[allow(dead_code)]
     fn native_object_property_owner_source(
         &self,
         object: &Expr,
         property: CObjectPropertyOperand<'_>,
         span: Span,
     ) -> CNativeValueOwnerSource {
-        let fact_target = Self::native_object_property_fact_target(object, property);
+        let fact_target = self.native_object_property_fact_target(object, property);
         let facts = self.native_object_property_value_facts(&fact_target);
         CNativeValueOwnerSource::ObjectProperty {
             object: object.clone(),
@@ -26537,6 +26601,49 @@ impl CGenerator {
             span,
             facts,
             fact_target,
+        }
+    }
+
+    fn native_arrayaccess_object_property_owner_source(
+        &self,
+        object: &Expr,
+        property: CObjectPropertyOperand<'_>,
+        span: Span,
+    ) -> Option<CNativeValueOwnerSource> {
+        let source = self.native_object_property_owner_source(object, property, span);
+        let supports_arrayaccess = match &source {
+            CNativeValueOwnerSource::ObjectProperty {
+                facts: Some(facts), ..
+            } => facts.has_definite_native_object_interface("ArrayAccess"),
+            _ => false,
+        };
+        supports_arrayaccess.then_some(source)
+    }
+
+    fn native_arrayaccess_object_property_owner_source_for_expr(
+        &self,
+        expr: &Expr,
+    ) -> Option<CNativeValueOwnerSource> {
+        match expr {
+            Expr::Property {
+                target,
+                property,
+                span,
+            } => self.native_arrayaccess_object_property_owner_source(
+                target,
+                CObjectPropertyOperand::Literal(property),
+                *span,
+            ),
+            Expr::DynamicProperty {
+                target,
+                property,
+                span,
+            } => self.native_arrayaccess_object_property_owner_source(
+                target,
+                CObjectPropertyOperand::Dynamic(property),
+                *span,
+            ),
+            _ => None,
         }
     }
 
@@ -26906,6 +27013,7 @@ impl CGenerator {
         let callable_identities = self.native_callable_identities_for_cvalue(&value);
         let stored = self.value_for_variable_storage(value);
         self.release_variable_native_value_handle(name);
+        self.clear_native_object_property_facts_for_object(name);
         self.variables.insert(name.to_string(), stored);
         match facts.filter(|facts| !facts.is_empty()) {
             Some(facts) => {
@@ -26938,6 +27046,7 @@ impl CGenerator {
             .get(&value.handle)
             .cloned();
         self.release_variable_native_value_handle(name);
+        self.clear_native_object_property_facts_for_object(name);
         self.retain_native_value_cleanup_handle(&value.handle);
         self.variables
             .insert(name.to_string(), CValue::NativeValueHandle(value.handle));
@@ -26951,6 +27060,26 @@ impl CGenerator {
             }
         }
         self.store_native_callable_variable_identities(name, callable_identities);
+    }
+
+    fn record_constructor_this_property_facts_for_variable(&mut self, name: &str, expr: &Expr) {
+        let Expr::New { class_name, .. } = expr else {
+            return;
+        };
+        let Some(property_facts) =
+            self.constructor_this_property_value_facts_for_new_class_name(class_name)
+        else {
+            return;
+        };
+        for (property, facts) in property_facts {
+            self.set_native_object_property_value_facts(
+                CNativeObjectPropertyFactKey {
+                    object: name.to_string(),
+                    property,
+                },
+                Some(facts),
+            );
+        }
     }
 
     fn store_native_callable_variable_identities(
@@ -30128,14 +30257,6 @@ impl CGenerator {
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
                 }
-                if let Some(boundary) =
-                    native_object_array_access_null_coalesce_write_operation_result(target)
-                {
-                    return Err(self.unsupported(
-                        boundary.span,
-                        boundary.rejection(NativeCallBackend::Assembly),
-                    ));
-                }
                 if let Some(value) = self
                     .materialize_native_arrayaccess_offset_null_coalesce_assignment_result_for_target(
                         target, expr, "",
@@ -30143,6 +30264,14 @@ impl CGenerator {
                 {
                     self.body.extend(value.cleanup_after_use);
                     return Ok(());
+                }
+                if let Some(boundary) =
+                    native_object_array_access_null_coalesce_write_operation_result(target)
+                {
+                    return Err(self.unsupported(
+                        boundary.span,
+                        boundary.rejection(NativeCallBackend::Assembly),
+                    ));
                 }
                 if self.emit_array_offset_null_coalesce_assignment(target, expr, *span)? {
                     return Ok(());
@@ -30167,13 +30296,6 @@ impl CGenerator {
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
                 }
-                if let Some(boundary) = native_object_array_access_compound_operation_result(target)
-                {
-                    return Err(self.unsupported(
-                        boundary.span,
-                        boundary.rejection(NativeCallBackend::Assembly),
-                    ));
-                }
                 if let Some(value) = self
                     .materialize_direct_variable_compound_assignment_result_for_target(
                         target, *op, expr, *span, "",
@@ -30189,6 +30311,13 @@ impl CGenerator {
                 {
                     self.body.extend(value.cleanup_after_use);
                     return Ok(());
+                }
+                if let Some(boundary) = native_object_array_access_compound_operation_result(target)
+                {
+                    return Err(self.unsupported(
+                        boundary.span,
+                        boundary.rejection(NativeCallBackend::Assembly),
+                    ));
                 }
                 if let Some(value) = self
                     .materialize_array_lvalue_compound_assignment_result_for_target(
@@ -30963,6 +31092,13 @@ impl CGenerator {
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
                 }
+                if let Some(value) = self
+                    .emit_native_arrayaccess_offset_assignment_expr_for_target(
+                        target, expr, *span, "",
+                    )?
+                {
+                    return Ok(value);
+                }
                 if let Some(boundary) =
                     native_object_array_access_assignment_operation_result(target)
                 {
@@ -31011,13 +31147,6 @@ impl CGenerator {
                 {
                     return Ok(value);
                 }
-                if let Some(value) = self
-                    .emit_native_arrayaccess_offset_assignment_expr_for_target(
-                        target, expr, *span, "",
-                    )?
-                {
-                    return Ok(value);
-                }
                 if let Some(value) =
                     self.emit_array_offset_mutation_assignment_expr(target, expr, *span)?
                 {
@@ -31038,14 +31167,6 @@ impl CGenerator {
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
                 }
-                if let Some(boundary) =
-                    native_object_array_access_null_coalesce_write_operation_result(target)
-                {
-                    return Err(self.unsupported(
-                        boundary.span,
-                        boundary.rejection(NativeCallBackend::Assembly),
-                    ));
-                }
                 if let Some(value) = self.materialize_array_offset_null_coalesce_assignment_expr(
                     target, expr, *span, "",
                 )? {
@@ -31059,6 +31180,14 @@ impl CGenerator {
                 {
                     self.retain_native_value_cleanup_handle(&value.handle);
                     return Ok(CValue::NativeValueHandle(value.handle));
+                }
+                if let Some(boundary) =
+                    native_object_array_access_null_coalesce_write_operation_result(target)
+                {
+                    return Err(self.unsupported(
+                        boundary.span,
+                        boundary.rejection(NativeCallBackend::Assembly),
+                    ));
                 }
                 if let Some(value) = self.materialize_array_lvalue_null_coalesce_assignment_expr(
                     target, expr, *span, "",
@@ -31083,13 +31212,6 @@ impl CGenerator {
                         request_array_key_consumer_rejection("assembly", &access.label),
                     ));
                 }
-                if let Some(boundary) = native_object_array_access_compound_operation_result(target)
-                {
-                    return Err(self.unsupported(
-                        boundary.span,
-                        boundary.rejection(NativeCallBackend::Assembly),
-                    ));
-                }
                 if let Some(value) = self
                     .materialize_direct_variable_compound_assignment_result_for_target(
                         target, *op, expr, *span, "",
@@ -31105,6 +31227,13 @@ impl CGenerator {
                 {
                     self.retain_native_value_cleanup_handle(&value.handle);
                     return Ok(CValue::NativeValueHandle(value.handle));
+                }
+                if let Some(boundary) = native_object_array_access_compound_operation_result(target)
+                {
+                    return Err(self.unsupported(
+                        boundary.span,
+                        boundary.rejection(NativeCallBackend::Assembly),
+                    ));
                 }
                 if let Some(value) = self
                     .materialize_array_lvalue_compound_assignment_result_for_target(
@@ -40636,6 +40765,9 @@ impl CGenerator {
                 request_array_key_consumer_rejection("assembly", &access.label),
             ));
         }
+        if self.emit_native_arrayaccess_offset_assignment_for_target(target, expr, "")? {
+            return Ok(());
+        }
         if let Some(boundary) = native_object_array_access_assignment_operation_result(target) {
             return Err(self.unsupported(
                 boundary.span,
@@ -40720,6 +40852,7 @@ impl CGenerator {
                             value,
                             native_value_facts,
                         );
+                        self.record_constructor_this_property_facts_for_variable(name, expr);
                         if let Some(identities) = native_callable_identities.clone() {
                             self.store_native_callable_variable_identities(name, Some(identities));
                         }
@@ -40744,6 +40877,7 @@ impl CGenerator {
                     );
                 }
                 self.store_variable_value_with_native_value_facts(name, value, native_value_facts);
+                self.record_constructor_this_property_facts_for_variable(name, expr);
                 if let Some(identities) = native_callable_identities {
                     self.store_native_callable_variable_identities(name, Some(identities));
                 }
@@ -44922,22 +45056,30 @@ impl CGenerator {
         self.uses_native_callable_helpers = true;
         self.uses_native_arrayaccess_offset_read_helpers = true;
 
-        let subject = self.materialize_native_value_result_operand(target, failure_cleanup)?;
+        let (subject_handle, subject_cleanup) = if let Some(source) =
+            self.native_arrayaccess_object_property_owner_source_for_expr(target)
+        {
+            let owner = self.materialize_native_value_owner(source, failure_cleanup)?;
+            (owner.subject.handle.clone(), owner.cleanup_after_abort())
+        } else {
+            let subject = self.materialize_native_value_result_operand(target, failure_cleanup)?;
+            (subject.handle, subject.cleanup_after_use)
+        };
         let offset_failure_cleanup = format!(
             "{}{}",
-            c_cleanup_sequence(&subject.cleanup_after_use),
+            c_cleanup_sequence(&subject_cleanup),
             failure_cleanup
         );
         let offset =
             self.materialize_native_value_result_operand(index, &offset_failure_cleanup)?;
         let mut operand_cleanup = offset.cleanup_after_use;
-        operand_cleanup.extend(subject.cleanup_after_use);
+        operand_cleanup.extend(subject_cleanup);
         let operand_cleanup_sequence = c_cleanup_sequence(&operand_cleanup);
         let table = self
             .ensure_native_callable_table(&format!("{operand_cleanup_sequence}{failure_cleanup}"));
 
         Ok(Some(CNativeArrayAccessOffsetReadOperands {
-            subject_handle: subject.handle,
+            subject_handle,
             offset_handle: offset.handle,
             callable_table: table,
             cleanup_after_use: operand_cleanup,
@@ -45004,15 +45146,9 @@ impl CGenerator {
         target: &AssignTarget,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeArrayAccessOffsetMutationTarget>> {
-        let AssignTarget::ArrayIndex {
-            name,
-            index: Some(index),
-            span,
-        } = target
+        let Some((source, index, _span)) =
+            self.native_arrayaccess_indexed_mutation_owner_source_for_assign_target(target)
         else {
-            return Ok(None);
-        };
-        let Some(source) = self.native_arrayaccess_variable_owner_source(name, *span) else {
             return Ok(None);
         };
 
@@ -45155,6 +45291,201 @@ impl CGenerator {
         Ok(true)
     }
 
+    fn native_arrayaccess_indexed_mutation_owner_source_for_assign_target<'a>(
+        &self,
+        target: &'a AssignTarget,
+    ) -> Option<(CNativeValueOwnerSource, &'a Expr, Span)> {
+        match target {
+            AssignTarget::ArrayIndex {
+                name,
+                index: Some(index),
+                span,
+            } => self
+                .native_arrayaccess_variable_owner_source(name, *span)
+                .map(|source| (source, index, *span)),
+            AssignTarget::ObjectPropertyArrayIndex {
+                object,
+                property,
+                indices,
+                span,
+            } if indices.len() == 1 => {
+                let object = Expr::Variable(object.clone(), *span);
+                self.native_arrayaccess_object_property_owner_source(
+                    &object,
+                    CObjectPropertyOperand::Literal(property),
+                    *span,
+                )
+                .map(|source| (source, &indices[0], *span))
+            }
+            AssignTarget::DynamicObjectPropertyArrayIndex {
+                object,
+                property,
+                indices,
+                span,
+            } if indices.len() == 1 => {
+                let object = Expr::Variable(object.clone(), *span);
+                self.native_arrayaccess_object_property_owner_source(
+                    &object,
+                    CObjectPropertyOperand::Dynamic(property),
+                    *span,
+                )
+                .map(|source| (source, &indices[0], *span))
+            }
+            _ => None,
+        }
+    }
+
+    fn native_arrayaccess_write_owner_source_for_assign_target<'a>(
+        &self,
+        target: &'a AssignTarget,
+        span: Span,
+    ) -> Option<(
+        CNativeValueOwnerSource,
+        Option<&'a Expr>,
+        CNativeArrayAccessOffsetWriteOperation,
+    )> {
+        match target {
+            AssignTarget::ArrayIndex { name, index, .. } => {
+                let source = self.native_arrayaccess_variable_owner_source(name, span)?;
+                let operation = if index.is_some() {
+                    CNativeArrayAccessOffsetWriteOperation::Write
+                } else {
+                    CNativeArrayAccessOffsetWriteOperation::Append
+                };
+                Some((source, index.as_ref(), operation))
+            }
+            AssignTarget::ObjectPropertyArrayIndex {
+                object,
+                property,
+                indices,
+                span,
+            } if indices.len() == 1 => {
+                let object = Expr::Variable(object.clone(), *span);
+                let source = self.native_arrayaccess_object_property_owner_source(
+                    &object,
+                    CObjectPropertyOperand::Literal(property),
+                    *span,
+                )?;
+                Some((
+                    source,
+                    Some(&indices[0]),
+                    CNativeArrayAccessOffsetWriteOperation::Write,
+                ))
+            }
+            AssignTarget::DynamicObjectPropertyArrayIndex {
+                object,
+                property,
+                indices,
+                span,
+            } if indices.len() == 1 => {
+                let object = Expr::Variable(object.clone(), *span);
+                let source = self.native_arrayaccess_object_property_owner_source(
+                    &object,
+                    CObjectPropertyOperand::Dynamic(property),
+                    *span,
+                )?;
+                Some((
+                    source,
+                    Some(&indices[0]),
+                    CNativeArrayAccessOffsetWriteOperation::Write,
+                ))
+            }
+            AssignTarget::ObjectPropertyArrayAppend {
+                object,
+                property,
+                indices,
+                suffix_indices,
+                span,
+            } if indices.is_empty() && suffix_indices.is_empty() => {
+                let object = Expr::Variable(object.clone(), *span);
+                let source = self.native_arrayaccess_object_property_owner_source(
+                    &object,
+                    CObjectPropertyOperand::Literal(property),
+                    *span,
+                )?;
+                Some((source, None, CNativeArrayAccessOffsetWriteOperation::Append))
+            }
+            AssignTarget::DynamicObjectPropertyArrayAppend {
+                object,
+                property,
+                indices,
+                suffix_indices,
+                span,
+            } if indices.is_empty() && suffix_indices.is_empty() => {
+                let object = Expr::Variable(object.clone(), *span);
+                let source = self.native_arrayaccess_object_property_owner_source(
+                    &object,
+                    CObjectPropertyOperand::Dynamic(property),
+                    *span,
+                )?;
+                Some((source, None, CNativeArrayAccessOffsetWriteOperation::Append))
+            }
+            _ => None,
+        }
+    }
+
+    fn emit_native_arrayaccess_offset_write_operation_for_target(
+        &mut self,
+        target: &AssignTarget,
+        replacement_expr: Option<&Expr>,
+        failure_cleanup: &str,
+    ) -> CompileResult<bool> {
+        let Some((source, index, operation)) =
+            self.native_arrayaccess_write_owner_source_for_assign_target(target, target.span())
+        else {
+            return Ok(false);
+        };
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_callable_helpers = true;
+        self.uses_native_arrayaccess_offset_write_helpers = true;
+
+        let owner = self.materialize_native_value_owner(source, failure_cleanup)?;
+        let owner_cleanup = c_cleanup_sequence(&owner.cleanup_after_abort());
+        let offset_failure_cleanup = format!("{owner_cleanup}{failure_cleanup}");
+        let offset = match operation {
+            CNativeArrayAccessOffsetWriteOperation::Append => CNativeValueMaterialization {
+                handle: "(phpc_NativeValueHandle){0}".to_string(),
+                cleanup_after_use: Vec::new(),
+            },
+            CNativeArrayAccessOffsetWriteOperation::Write
+            | CNativeArrayAccessOffsetWriteOperation::Unset => {
+                let Some(index) = index else {
+                    return Err(self.unsupported(target.span(), ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                };
+                self.materialize_native_value_result_operand(index, &offset_failure_cleanup)?
+            }
+        };
+        let offset_cleanup = c_cleanup_sequence(&offset.cleanup_after_use);
+        let replacement_failure_cleanup =
+            format!("{offset_cleanup}{owner_cleanup}{failure_cleanup}");
+        let replacement = match operation {
+            CNativeArrayAccessOffsetWriteOperation::Unset => CNativeValueMaterialization {
+                handle: "(phpc_NativeValueHandle){0}".to_string(),
+                cleanup_after_use: Vec::new(),
+            },
+            CNativeArrayAccessOffsetWriteOperation::Write
+            | CNativeArrayAccessOffsetWriteOperation::Append => {
+                let Some(replacement_expr) = replacement_expr else {
+                    return Err(self.unsupported(target.span(), ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                };
+                self.materialize_native_value_result_operand(
+                    replacement_expr,
+                    &replacement_failure_cleanup,
+                )?
+            }
+        };
+
+        self.emit_native_arrayaccess_offset_write_operation_for_owner(
+            owner,
+            offset,
+            replacement,
+            operation,
+            failure_cleanup,
+        )?;
+        Ok(true)
+    }
+
     fn emit_native_arrayaccess_offset_write_operation_for_owner(
         &mut self,
         owner: CNativeValueOwnerMaterialization,
@@ -45213,25 +45544,11 @@ impl CGenerator {
         replacement_expr: &Expr,
         failure_cleanup: &str,
     ) -> CompileResult<bool> {
-        let AssignTarget::ArrayIndex { name, index, span } = target else {
-            return Ok(false);
-        };
-        let operation = if index.is_some() {
-            CNativeArrayAccessOffsetWriteOperation::Write
-        } else {
-            CNativeArrayAccessOffsetWriteOperation::Append
-        };
-        if !self.emit_native_arrayaccess_offset_write_operation_for_variable(
-            name,
-            index.as_ref(),
+        self.emit_native_arrayaccess_offset_write_operation_for_target(
+            target,
             Some(replacement_expr),
-            operation,
-            *span,
             failure_cleanup,
-        )? {
-            return Ok(false);
-        }
-        Ok(true)
+        )
     }
 
     fn emit_native_arrayaccess_offset_assignment_expr_for_target(
@@ -45241,22 +45558,16 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CValue>> {
-        let AssignTarget::ArrayIndex { name, index, .. } = target else {
-            return Ok(None);
-        };
-        let Some(source) = self.native_arrayaccess_variable_owner_source(name, span) else {
+        let Some((source, index, operation)) =
+            self.native_arrayaccess_write_owner_source_for_assign_target(target, span)
+        else {
             return Ok(None);
         };
 
-        let operation = if index.is_some() {
-            CNativeArrayAccessOffsetWriteOperation::Write
-        } else {
-            CNativeArrayAccessOffsetWriteOperation::Append
-        };
         let owner = self.materialize_native_value_owner(source, failure_cleanup)?;
         let owner_cleanup = c_cleanup_sequence(&owner.cleanup_after_abort());
         let offset_failure_cleanup = format!("{owner_cleanup}{failure_cleanup}");
-        let offset = if let Some(index) = index.as_ref() {
+        let offset = if let Some(index) = index {
             self.materialize_native_value_result_operand(index, &offset_failure_cleanup)?
         } else {
             CNativeValueMaterialization {

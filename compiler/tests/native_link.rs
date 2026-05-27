@@ -14449,6 +14449,41 @@ const ARRAYACCESS_REFERENCE_SLOT_OWNER_SOURCE: &str = concat!(
     "echo reference_slot_capture_surface(), \"|\", reference_slot_global_surface();\n",
 );
 
+const ARRAYACCESS_PROPERTY_HELD_OWNER_SOURCE: &str = concat!(
+    "<?php\n",
+    "class LiteralHeldBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"L:get:\"; if ($offset) { echo $offset; } else { echo \"NULL\"; } echo \";\"; return 4; }\n",
+    "    public function offsetExists($offset) { echo \"L:exists:\"; if ($offset) { echo $offset; } else { echo \"NULL\"; } echo \";\"; return $offset; }\n",
+    "    public function offsetSet($offset, $value) { echo \"L:set:\"; if ($offset) { echo $offset; } else { echo \"NULL\"; } echo \"=\", $value, \";\"; }\n",
+    "    public function offsetUnset($offset) { echo \"L:unset:\"; if ($offset) { echo $offset; } else { echo \"NULL\"; } echo \";\"; }\n",
+    "}\n",
+    "class DynamicHeldBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"D:get:\"; if ($offset) { echo $offset; } else { echo \"NULL\"; } echo \";\"; return 5; }\n",
+    "    public function offsetExists($offset) { echo \"D:exists:\"; if ($offset) { echo $offset; } else { echo \"NULL\"; } echo \";\"; return $offset; }\n",
+    "    public function offsetSet($offset, $value) { echo \"D:set:\"; if ($offset) { echo $offset; } else { echo \"NULL\"; } echo \"=\", $value, \";\"; }\n",
+    "    public function offsetUnset($offset) { echo \"D:unset:\"; if ($offset) { echo $offset; } else { echo \"NULL\"; } echo \";\"; }\n",
+    "}\n",
+    "class AlphaHolder { public $first; public $other; public function __construct() { $this->first = new LiteralHeldBag(); } }\n",
+    "class BetaHolder { public $dyn; public $extra; public function __construct() { $this->dyn = new DynamicHeldBag(); } }\n",
+    "function held_rhs($value) { echo \"R:\", $value, \";\"; return $value; }\n",
+    "$alpha = new AlphaHolder();\n",
+    "$beta = new BetaHolder();\n",
+    "$slot = \"dyn\";\n",
+    "echo $alpha->first[\"slot\"], \"|\";\n",
+    "echo isset($alpha->first[0]) ? \"Y\" : \"N\", \"|\";\n",
+    "echo empty($alpha->first[true]) ? \"E\" : \"N\", \"|\";\n",
+    "echo $alpha->first[true] ?? \"M\", \"|\";\n",
+    "$alpha->first[\"write\"] = \"W\";\n",
+    "$alpha->first[\"rmw\"] += 3;\n",
+    "echo ($alpha->first[0] ??= held_rhs(\"assign\")), \"|\";\n",
+    "echo $beta->{$slot}[\"slot\"], \"|\";\n",
+    "echo isset($beta->{$slot}[true]) ? \"Y\" : \"N\", \"|\";\n",
+    "echo empty($beta->{$slot}[true]) ? \"E\" : \"N\", \"|\";\n",
+    "echo $beta->{$slot}[0] ?? held_rhs(\"fallback\"), \"|\";\n",
+    "$beta->{$slot}[\"write\"] = \"D\";\n",
+    "$beta->{$slot}[\"rmw\"] += 2;\n",
+);
+
 #[test]
 fn native_executable_c_source_routes_arrayaccess_reference_slot_owners_through_value_owner_boundary(
 ) {
@@ -14506,6 +14541,67 @@ fn emit_exe_links_and_runs_arrayaccess_reference_slot_owner_program() {
 }
 
 #[test]
+fn native_executable_c_source_routes_property_held_arrayaccess_through_object_property_owner_boundary(
+) {
+    let program = parse(ARRAYACCESS_PROPERTY_HELD_OWNER_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_public_property_reference_with_diagnostic_and_free")
+            && source.contains("phpc_native_reference_value_clone(")
+            && source.contains("phpc_native_reference_set_value(")
+            && source.contains("phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic")
+            && source.contains("phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_GET")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_EXISTS")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_SET")
+            && source.contains("arrayaccess_offset_null_coalesce_assign"),
+        "property-held ArrayAccess owners should use object-property reference owner materialization, read/write ArrayAccess ABIs, and owner commit:\n{source}"
+    );
+    assert!(
+        source.matches("phpc_native_value_public_property_reference_with_diagnostic_and_free").count()
+            >= 8
+            && source.matches("phpc_native_reference_set_value(").count() >= 4,
+        "literal and dynamic property-held owners should repeatedly route through the shared reference owner path:\n{source}"
+    );
+    assert!(
+        !source.contains("ArrayAccess lowering rejects")
+            && !source.contains("assembly mutation lowering rejects")
+            && !source.contains("non-local assignment lowering rejects"),
+        "property-held ArrayAccess lowering must not fall back to exact-shape rejection paths:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_property_held_arrayaccess_owner_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "property_held_arrayaccess_owner",
+        ARRAYACCESS_PROPERTY_HELD_OWNER_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native property-held ArrayAccess executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(
+        run.stdout,
+        b"L:get:slot;4|L:exists:NULL;N|L:exists:1;L:get:1;N|L:exists:1;L:get:1;4|L:set:write=W;L:get:rmw;L:set:rmw=7;L:exists:NULL;R:assign;L:set:NULL=assign;assign|D:get:slot;5|D:exists:1;Y|D:exists:1;D:get:1;N|D:exists:NULL;R:fallback;fallback|D:set:write=D;D:get:rmw;D:set:rmw=7;"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn native_executable_c_source_routes_arrayaccess_rmw_nullcoalesce_assignment_through_owner_boundary(
 ) {
     let program = parse(ARRAYACCESS_RMW_NULLCOALESCE_ASSIGNMENT_SOURCE).unwrap();
@@ -14535,7 +14631,7 @@ fn native_executable_c_source_routes_arrayaccess_rmw_nullcoalesce_assignment_thr
 fn native_executable_c_source_rejects_arrayaccess_rmw_unsupported_owner_shapes() {
     let sources = [
         (
-            "property-held ArrayAccess RMW owner",
+            "unknown dynamic property-held ArrayAccess RMW owner",
             concat!(
                 "<?php\n",
                 "class Bag implements ArrayAccess {\n",
@@ -14544,9 +14640,10 @@ fn native_executable_c_source_rejects_arrayaccess_rmw_unsupported_owner_shapes()
                 "    public function offsetSet($offset, $value) { return null; }\n",
                 "    public function offsetUnset($offset) { return null; }\n",
                 "}\n",
-                "class Box { public $bag; public function __construct() { $this->bag = new Bag(); } }\n",
+                "class Box { public $bag; }\n",
                 "$box = new Box();\n",
-                "$box->bag[\"k\"] += 1;\n",
+                "$slot = 1;\n",
+                "$box->{$slot}[\"k\"] += 1;\n",
             ),
         ),
         (
