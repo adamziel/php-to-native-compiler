@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 19:39 CEST
+Updated: 2026-05-27 19:46 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,13 +19,34 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `ebd29e69` publishes descriptor-backed
-closure source signatures through the same runtime callable-value finalizer
-used by generated functions, methods, and selected builtins. Unknown callable
-named/spread calls can now finalize descriptor closure arguments from runtime
-parameter names, defaults, by-reference flags, and variadic metadata, while
-heterogeneous callable-family policy, broader callable object/array/external
-families, broad reference/COW parity, and LLVM/ASM parity remain blocked.
+Latest accounted source capability: `e74e365a` extends the shared runtime
+callable sorting writeback family from `sort()` / `rsort()` to key-preserving
+`asort()` / `arsort()`. Runtime callable strings, unknown callable string
+branches, named/spread finalization, and generated-C linked execution now share
+the same builtin signature metadata, by-reference array materialization,
+defaulted flags, and array writeback path across the selected ascending and
+descending value-sort family. Comparator callbacks, key-sort families,
+full flag/diagnostic parity, heterogeneous callable-family policy, broader
+callable object/array/external families, broad reference/COW parity, and
+LLVM/ASM parity remain blocked.
+
+Recent source commit `e74e365a` advances selected runtime callable sorting
+writeback without adding callable-name or fixture-shape lowering. The runtime
+sort operation metadata now exposes the same callable builtin signature and
+writeback support for `asort()` / `arsort()` as for `sort()` / `rsort()`, and
+compiler callable-string canonicalization plus native builtin source-call
+metadata recognize the expanded family. Focused gates covered runtime callable
+sort helpers, native array lvalue sorting, builtin signature metadata,
+runtime callable array regressions, generated-C source proof, linked known and
+unknown callable string execution, by-reference and variadic writeback
+regressions, callable string spread regression, descriptor closure spread
+regression, output-buffer callback regression, formatting, and diff checks.
+Key-sort families, comparator callbacks, full flag/diagnostic parity,
+object/ArrayAccess/resource operands, heterogeneous callable-family policy,
+broader callable object/array/external families, broad COW/reference parity,
+and LLVM/ASM parity remain blocked. Primary gate log:
+`state/logs/phpc-primary-sort-after-closure-6f3157ea-20260527.gates.log`
+sha256 `5b08c278181a9c25266258a39659e136a5c57e601feb3e7b29aa5dc566c58cca`.
 
 Recent source commit `ebd29e69` advances selected descriptor closure callable
 semantics without adding closure-literal or fixture-shape lowering.
