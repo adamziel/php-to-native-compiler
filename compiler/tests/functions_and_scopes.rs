@@ -8714,8 +8714,8 @@ echo $fn("Ada");
 }
 
 #[test]
-fn variadic_argument_unpacking_is_rejected_with_stable_parse_error() {
-    let error = parse_error(
+fn variadic_argument_unpacking_is_rejected_at_source_order_call_argument_boundary() {
+    let error = runtime_error(
         r#"<?php
 function first($value) {
     return $value;
@@ -8729,7 +8729,7 @@ echo first(...$items);
     assert_eq!(error.column, 12);
     assert_eq!(
         error.message,
-        "unsupported argument unpacking: call-site ... expansion requires iterable unpacking order, string-keyed named-argument interaction, by-reference argument propagation, variadic collection, duplicate argument diagnostics, and native lowering"
+        "unsupported call source-order call argument: interpreter call consumers have not been wired to shared source-order call-argument normalization"
     );
 }
 

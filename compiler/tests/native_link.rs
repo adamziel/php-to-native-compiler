@@ -24486,6 +24486,17 @@ const NATIVE_NAMED_USER_FUNCTION_ARGUMENT_SOURCE: &str = concat!(
     "echo named_join(third: named_marker(\"T\"), extra: named_marker(\"E\"), first: named_marker(\"F\"), slot: $slot), \"|\", $slot;\n",
 );
 
+const NATIVE_SPREAD_DIRECT_USER_FUNCTION_ARGUMENT_SOURCE: &str = concat!(
+    "<?php\n",
+    "function spread_marker($label) { echo $label; return $label; }\n",
+    "function spread_join($first, $second = \"D\", ...$tail) {\n",
+    "    return $first . $second . ($tail[0] ?? \"\") . ($tail[\"name\"] ?? \"\");\n",
+    "}\n",
+    "echo spread_join(spread_marker(\"A\"), ...[spread_marker(\"B\"), spread_marker(\"C\")], name: spread_marker(\"N\")), \"|\";\n",
+    "echo spread_join(...[\"second\" => spread_marker(\"Y\"), \"first\" => spread_marker(\"X\")]), \"|\";\n",
+    "echo spread_join(...[spread_marker(\"Q\")]);\n",
+);
+
 const NATIVE_NAMED_METHOD_SOURCE_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "function named_method_marker($label) { echo $label; return $label; }\n",
@@ -25013,6 +25024,48 @@ fn native_executable_c_source_lowers_named_user_function_arguments_through_share
     assert!(
         !source.contains("named argument lowering is only implemented"),
         "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_direct_user_function_spread_through_materialized_bridge() {
+    let program = parse(NATIVE_SPREAD_DIRECT_USER_FUNCTION_ARGUMENT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && body.contains(
+                "phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments"
+            ),
+        "direct user-function spread calls should materialize source-order entries and finalize them into the shared NativeCallArgumentsHandle:\n{source}"
+    );
+    assert!(
+        !source.contains("spread operands need a materialized-entry producer")
+            && !source.contains("runtime unpack normalization"),
+        "supported direct user-function spread should not hit the old shared spread blocker:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_blocks_spread_for_unsupported_callable_families_at_shared_boundary() {
+    let program = parse(concat!(
+        "<?php\n",
+        "$name = \"strlen\";\n",
+        "echo $name(...[\"abc\"]);\n",
+    ))
+    .unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error
+            .message
+            .contains("spread operands need a materialized-entry producer"),
+        "{}",
+        error.message
     );
 }
 
@@ -26242,6 +26295,79 @@ fn emit_exe_links_and_runs_named_user_function_argument_program() {
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_direct_user_function_spread_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "spread_direct_user_function_arguments",
+        NATIVE_SPREAD_DIRECT_USER_FUNCTION_ARGUMENT_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native direct user-function spread executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ABCNABCN|YXXY|QQD");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_reports_direct_user_function_spread_shape_diagnostics() {
+    if !has_cc() {
+        return;
+    }
+
+    for (name, source, expected) in [
+        (
+            "spread_direct_duplicate_named",
+            "<?php\nfunction fixed($first) { return $first; }\necho fixed(\"a\", ...[\"first\" => \"b\"]), \"after\";\n",
+            "duplicate argument for parameter $first",
+        ),
+        (
+            "spread_direct_unknown_named",
+            "<?php\nfunction fixed($first) { return $first; }\necho fixed(...[\"missing\" => \"b\"]), \"after\";\n",
+            "unknown named argument $missing",
+        ),
+        (
+            "spread_direct_positional_after_named",
+            "<?php\nfunction vari($first, ...$tail) { return $first; }\necho vari(...[\"first\" => \"a\", \"b\"]), \"after\";\n",
+            "follows a named argument",
+        ),
+        (
+            "spread_direct_by_reference_rejected",
+            "<?php\nfunction takes_ref(&$slot) { $slot = \"changed\"; return $slot; }\n$value = \"old\";\necho takes_ref(...[$value]), \"after\";\n",
+            "by-reference parameter $slot requires reference materialization",
+        ),
+    ] {
+        let (source_path, output_path) = compile_native_link_fixture(name, source);
+        let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+            panic!("failed to run native spread diagnostic executable {name}: {error}")
+        });
+
+        assert!(!run.status.success(), "{name} should fail");
+        assert!(
+            String::from_utf8_lossy(&run.stderr).contains(expected),
+            "{name} stderr should contain {expected:?}, got:\n{}",
+            String::from_utf8_lossy(&run.stderr)
+        );
+
+        let _ = fs::remove_file(&output_path);
+        let _ = fs::remove_file(&source_path);
+    }
 }
 
 #[test]

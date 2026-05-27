@@ -14324,11 +14324,11 @@ impl Interpreter {
                 let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
                 self.evaluate_late_static_property(&property, *span)
             }
-            Expr::NamedArgument { span, .. } => Err(runtime_error(
+            Expr::NamedArgument { span, .. } | Expr::SpreadArgument { span, .. } => Err(runtime_error(
                 *span,
                 RuntimeError::unsupported_call(
-                    "named argument",
-                    "interpreter call consumers have not been wired to shared named-argument normalization",
+                    "source-order call argument",
+                    "interpreter call consumers have not been wired to shared source-order call-argument normalization",
                 ),
             )),
             Expr::MethodCall {

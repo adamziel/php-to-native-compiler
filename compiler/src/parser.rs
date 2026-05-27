@@ -6650,6 +6650,18 @@ impl Parser {
     }
 
     fn parse_call_argument_after_open(&mut self) -> CompileResult<Expr> {
+        if self.match_token(|kind| matches!(kind, TokenKind::Ellipsis)) {
+            let span = self.previous().span;
+            if matches!(self.peek().kind, TokenKind::RParen) {
+                return Err(self.error_at(span, unsupported_first_class_callable_message()));
+            }
+            let expr = self.parse_expression_with_append_read(true)?;
+            return Ok(Expr::SpreadArgument {
+                expr: Box::new(expr),
+                span,
+            });
+        }
+
         if let TokenKind::Identifier(name) = self.peek().kind.clone() {
             if matches!(self.peek_next().kind, TokenKind::Colon) {
                 let span = self.advance().span;
@@ -6671,9 +6683,6 @@ impl Parser {
         match &token.kind {
             TokenKind::Ellipsis if matches!(self.peek_next().kind, TokenKind::RParen) => {
                 Err(self.error_at(token.span, unsupported_first_class_callable_message()))
-            }
-            TokenKind::Ellipsis => {
-                Err(self.error_at(token.span, unsupported_argument_unpacking_message()))
             }
             TokenKind::Ampersand => {
                 Err(self.error_at(token.span, unsupported_reference_argument_message()))
@@ -6757,6 +6766,7 @@ impl Parser {
             | Expr::SelfMethodCall { .. }
             | Expr::LateStaticMethodCall { .. }
             | Expr::NamedArgument { .. }
+            | Expr::SpreadArgument { .. }
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
             | Expr::Closure { .. }
@@ -6849,6 +6859,7 @@ impl Parser {
             | Expr::SelfMethodCall { .. }
             | Expr::LateStaticMethodCall { .. }
             | Expr::NamedArgument { .. }
+            | Expr::SpreadArgument { .. }
             | Expr::Call { .. }
             | Expr::DynamicCall { .. }
             | Expr::Closure { .. }
@@ -6994,7 +7005,9 @@ impl Parser {
             Expr::Call { args, .. } | Expr::New { args, .. } => {
                 args.iter().any(Self::expr_contains_assignment)
             }
-            Expr::NamedArgument { expr, .. } => Self::expr_contains_assignment(expr),
+            Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => {
+                Self::expr_contains_assignment(expr)
+            }
             Expr::Clone { expr, .. } => Self::expr_contains_assignment(expr),
             Expr::Closure { params, .. } => params
                 .iter()
@@ -7145,7 +7158,7 @@ impl Parser {
             Expr::Call { args, .. } | Expr::New { args, .. } => args
                 .iter()
                 .any(Self::expr_contains_unsupported_assignment_rhs),
-            Expr::NamedArgument { expr, .. } => {
+            Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => {
                 Self::expr_contains_unsupported_assignment_rhs(expr)
             }
             Expr::Clone { expr, .. } => Self::expr_contains_unsupported_assignment_rhs(expr),
@@ -7254,7 +7267,9 @@ impl Parser {
             Expr::SelfMethodCall { .. } => None,
             Expr::LateStaticMethodCall { .. } => None,
             Expr::Call { .. } | Expr::New { .. } => None,
-            Expr::NamedArgument { expr, .. } => Self::find_append_index_span(expr),
+            Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => {
+                Self::find_append_index_span(expr)
+            }
             Expr::Clone { expr, .. } => Self::find_append_index_span(expr),
             Expr::Closure { params, .. } => params
                 .iter()
@@ -8303,10 +8318,6 @@ fn unsupported_reference_assignment_source_message() -> &'static str {
 
 fn unsupported_first_class_callable_message() -> &'static str {
     "unsupported first-class callable syntax: Closure creation with ... is not implemented"
-}
-
-fn unsupported_argument_unpacking_message() -> &'static str {
-    "unsupported argument unpacking: call-site ... expansion requires iterable unpacking order, string-keyed named-argument interaction, by-reference argument propagation, variadic collection, duplicate argument diagnostics, and native lowering"
 }
 
 fn unsupported_reference_argument_message() -> &'static str {

@@ -121,6 +121,34 @@ impl CallArgument {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MaterializedCallArgumentEntry {
+    pub source_index: usize,
+    pub key: MaterializedCallArgumentKey,
+}
+
+impl MaterializedCallArgumentEntry {
+    pub fn positional(source_index: usize) -> Self {
+        Self {
+            source_index,
+            key: MaterializedCallArgumentKey::NextInteger,
+        }
+    }
+
+    pub fn named(source_index: usize, name: impl Into<String>) -> Self {
+        Self {
+            source_index,
+            key: MaterializedCallArgumentKey::Named(name.into()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MaterializedCallArgumentKey {
+    NextInteger,
+    Named(String),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CallArgumentPassingMode {
     Value,
@@ -196,6 +224,47 @@ pub struct CallArgumentCleanupPlan {
     pub source_indices_reverse: Vec<usize>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FinalizedCallArguments {
+    pub fixed_slots: Vec<FinalizedCallArgumentFixedSlot>,
+    pub variadic_slot: Option<FinalizedCallArgumentVariadicSlot>,
+    pub cleanup: CallArgumentFinalizationCleanupPlan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FinalizedCallArgumentFixedSlot {
+    pub parameter_index: usize,
+    pub parameter_name: String,
+    pub source: FinalizedCallArgumentSlotSource,
+    pub passing_mode: CallArgumentPassingMode,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FinalizedCallArgumentSlotSource {
+    MaterializedEntry { entry_index: usize },
+    Default,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FinalizedCallArgumentVariadicSlot {
+    pub parameter_index: usize,
+    pub parameter_name: String,
+    pub entries: Vec<FinalizedCallArgumentVariadicEntry>,
+    pub entry_passing_mode: CallArgumentPassingMode,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FinalizedCallArgumentVariadicEntry {
+    pub entry_index: usize,
+    pub key: CallArgumentVariadicKey,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallArgumentFinalizationCleanupPlan {
+    pub source_indices_reverse: Vec<usize>,
+    pub materialized_entry_indices_reverse: Vec<usize>,
+}
+
 pub type CallArgumentNormalizationResult<T> = Result<T, CallArgumentNormalizationError>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -234,6 +303,27 @@ pub enum CallArgumentNormalizationError {
     MissingRequiredArgument {
         parameter_name: String,
         parameter_index: usize,
+    },
+    MaterializedSourceIndexOutOfRange {
+        entry_index: usize,
+        source_index: usize,
+        source_count: usize,
+    },
+    MaterializedPositionalArgumentAfterNamedArgument {
+        entry_index: usize,
+    },
+    TooManyMaterializedPositionalArguments {
+        entry_index: usize,
+        max_positional_count: usize,
+    },
+    DuplicateMaterializedArgument {
+        parameter_name: String,
+        first_entry_index: usize,
+        duplicate_entry_index: usize,
+    },
+    UnknownMaterializedNamedArgument {
+        name: String,
+        entry_index: usize,
     },
 }
 
@@ -292,11 +382,174 @@ impl fmt::Display for CallArgumentNormalizationError {
                 f,
                 "required call parameter ${parameter_name} at parameter {parameter_index} is missing"
             ),
+            Self::MaterializedSourceIndexOutOfRange {
+                entry_index,
+                source_index,
+                source_count,
+            } => write!(
+                f,
+                "materialized call argument entry {entry_index} refers to source slot {source_index}, but only {source_count} source slots were evaluated"
+            ),
+            Self::MaterializedPositionalArgumentAfterNamedArgument { entry_index } => write!(
+                f,
+                "materialized positional call argument entry {entry_index} follows a named entry"
+            ),
+            Self::TooManyMaterializedPositionalArguments {
+                entry_index,
+                max_positional_count,
+            } => write!(
+                f,
+                "materialized positional call argument entry {entry_index} exceeds maximum positional count {max_positional_count}"
+            ),
+            Self::DuplicateMaterializedArgument {
+                parameter_name,
+                first_entry_index,
+                duplicate_entry_index,
+            } => write!(
+                f,
+                "materialized call argument for ${parameter_name} at entry {duplicate_entry_index} duplicates entry {first_entry_index}"
+            ),
+            Self::UnknownMaterializedNamedArgument { name, entry_index } => write!(
+                f,
+                "materialized named call argument ${name} at entry {entry_index} does not match a parameter"
+            ),
         }
     }
 }
 
 impl std::error::Error for CallArgumentNormalizationError {}
+
+pub fn finalize_materialized_call_arguments(
+    signature: &CallArgumentSignature,
+    source_count: usize,
+    entries: &[MaterializedCallArgumentEntry],
+) -> CallArgumentNormalizationResult<FinalizedCallArguments> {
+    let fixed_count = signature.fixed_param_count();
+    let mut supplied_fixed_entries: Vec<Option<usize>> = vec![None; fixed_count];
+    let mut variadic_entries = Vec::new();
+    let mut seen_named_entry = false;
+    let mut next_positional_index = 0;
+    let mut named_entries: HashMap<String, usize> = HashMap::new();
+
+    for (entry_index, entry) in entries.iter().enumerate() {
+        if entry.source_index >= source_count {
+            return Err(
+                CallArgumentNormalizationError::MaterializedSourceIndexOutOfRange {
+                    entry_index,
+                    source_index: entry.source_index,
+                    source_count,
+                },
+            );
+        }
+
+        match &entry.key {
+            MaterializedCallArgumentKey::NextInteger => {
+                if seen_named_entry {
+                    return Err(
+                        CallArgumentNormalizationError::MaterializedPositionalArgumentAfterNamedArgument {
+                            entry_index,
+                        },
+                    );
+                }
+                if next_positional_index < fixed_count {
+                    supplied_fixed_entries[next_positional_index] = Some(entry_index);
+                    next_positional_index += 1;
+                } else if signature.variadic_param().is_some() {
+                    variadic_entries.push(FinalizedCallArgumentVariadicEntry {
+                        entry_index,
+                        key: CallArgumentVariadicKey::NextInteger,
+                    });
+                } else {
+                    return Err(
+                        CallArgumentNormalizationError::TooManyMaterializedPositionalArguments {
+                            entry_index,
+                            max_positional_count: fixed_count,
+                        },
+                    );
+                }
+            }
+            MaterializedCallArgumentKey::Named(name) => {
+                seen_named_entry = true;
+                if let Some(first_entry_index) = named_entries.get(name).copied() {
+                    return Err(
+                        CallArgumentNormalizationError::DuplicateMaterializedArgument {
+                            parameter_name: name.clone(),
+                            first_entry_index,
+                            duplicate_entry_index: entry_index,
+                        },
+                    );
+                }
+                named_entries.insert(name.clone(), entry_index);
+
+                if let Some(parameter_index) = signature.fixed_name_to_index.get(name).copied() {
+                    if let Some(first_entry_index) = supplied_fixed_entries[parameter_index] {
+                        return Err(
+                            CallArgumentNormalizationError::DuplicateMaterializedArgument {
+                                parameter_name: name.clone(),
+                                first_entry_index,
+                                duplicate_entry_index: entry_index,
+                            },
+                        );
+                    }
+                    supplied_fixed_entries[parameter_index] = Some(entry_index);
+                } else if signature.variadic_param().is_some() {
+                    variadic_entries.push(FinalizedCallArgumentVariadicEntry {
+                        entry_index,
+                        key: CallArgumentVariadicKey::Named(name.clone()),
+                    });
+                } else {
+                    return Err(
+                        CallArgumentNormalizationError::UnknownMaterializedNamedArgument {
+                            name: name.clone(),
+                            entry_index,
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    let mut fixed_slots = Vec::with_capacity(fixed_count);
+    for (parameter_index, param) in signature.params.iter().take(fixed_count).enumerate() {
+        let source = match supplied_fixed_entries[parameter_index] {
+            Some(entry_index) => FinalizedCallArgumentSlotSource::MaterializedEntry { entry_index },
+            None if param.required => {
+                return Err(CallArgumentNormalizationError::MissingRequiredArgument {
+                    parameter_name: param.name.clone(),
+                    parameter_index,
+                });
+            }
+            None => FinalizedCallArgumentSlotSource::Default,
+        };
+
+        fixed_slots.push(FinalizedCallArgumentFixedSlot {
+            parameter_index,
+            parameter_name: param.name.clone(),
+            source,
+            passing_mode: CallArgumentPassingMode::for_param(param),
+        });
+    }
+
+    let variadic_slot = signature.variadic_param().map(|(parameter_index, param)| {
+        FinalizedCallArgumentVariadicSlot {
+            parameter_index,
+            parameter_name: param.name.clone(),
+            entries: variadic_entries,
+            entry_passing_mode: CallArgumentPassingMode::for_param(param),
+        }
+    });
+
+    let cleanup = CallArgumentFinalizationCleanupPlan {
+        source_indices_reverse: (0..source_count).rev().collect(),
+        materialized_entry_indices_reverse: (0..entries.len()).rev().collect(),
+    };
+
+    Ok(FinalizedCallArguments {
+        fixed_slots,
+        variadic_slot,
+        cleanup,
+    })
+}
 
 pub fn normalize_call_arguments(
     signature: &CallArgumentSignature,
@@ -649,6 +902,162 @@ mod tests {
         assert!(
             error.to_string().contains("runtime unpack normalization"),
             "{error}"
+        );
+    }
+
+    #[test]
+    fn call_argument_normalization_blocks_spread_before_by_reference_or_named_shortcuts() {
+        let signature = signature(vec![
+            CallArgumentParameter::required("first"),
+            CallArgumentParameter::required("slot").with_by_reference(),
+            CallArgumentParameter::optional("rest").with_variadic(),
+        ]);
+        let error = normalize_call_arguments(
+            &signature,
+            &[
+                CallArgument::named("slot"),
+                CallArgument::spread(),
+                CallArgument::named("tail"),
+            ],
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CallArgumentNormalizationError::UnsupportedSpreadArgument { source_index: 1 }
+        );
+    }
+
+    #[test]
+    fn materialized_call_argument_finalization_binds_unpacked_entries_after_runtime_key_classification(
+    ) {
+        let signature = signature(vec![
+            CallArgumentParameter::required("head"),
+            CallArgumentParameter::required("slot").with_by_reference(),
+            CallArgumentParameter::optional("mode"),
+            CallArgumentParameter::optional("rest").with_variadic(),
+        ]);
+        let plan = finalize_materialized_call_arguments(
+            &signature,
+            3,
+            &[
+                MaterializedCallArgumentEntry::positional(0),
+                MaterializedCallArgumentEntry::positional(1),
+                MaterializedCallArgumentEntry::named(1, "extra"),
+                MaterializedCallArgumentEntry::named(2, "mode"),
+            ],
+        )
+        .expect("runtime-classified entries should finalize through the shared ABI");
+
+        assert_eq!(
+            plan.fixed_slots,
+            vec![
+                FinalizedCallArgumentFixedSlot {
+                    parameter_index: 0,
+                    parameter_name: "head".to_string(),
+                    source: FinalizedCallArgumentSlotSource::MaterializedEntry { entry_index: 0 },
+                    passing_mode: CallArgumentPassingMode::Value,
+                },
+                FinalizedCallArgumentFixedSlot {
+                    parameter_index: 1,
+                    parameter_name: "slot".to_string(),
+                    source: FinalizedCallArgumentSlotSource::MaterializedEntry { entry_index: 1 },
+                    passing_mode: CallArgumentPassingMode::Reference,
+                },
+                FinalizedCallArgumentFixedSlot {
+                    parameter_index: 2,
+                    parameter_name: "mode".to_string(),
+                    source: FinalizedCallArgumentSlotSource::MaterializedEntry { entry_index: 3 },
+                    passing_mode: CallArgumentPassingMode::Value,
+                },
+            ]
+        );
+        assert_eq!(
+            plan.variadic_slot,
+            Some(FinalizedCallArgumentVariadicSlot {
+                parameter_index: 3,
+                parameter_name: "rest".to_string(),
+                entries: vec![FinalizedCallArgumentVariadicEntry {
+                    entry_index: 2,
+                    key: CallArgumentVariadicKey::Named("extra".to_string()),
+                }],
+                entry_passing_mode: CallArgumentPassingMode::Value,
+            })
+        );
+        assert_eq!(plan.cleanup.source_indices_reverse, vec![2, 1, 0]);
+        assert_eq!(
+            plan.cleanup.materialized_entry_indices_reverse,
+            vec![3, 2, 1, 0]
+        );
+    }
+
+    #[test]
+    fn materialized_call_argument_finalization_reports_duplicate_and_order_diagnostics() {
+        let signature = signature(vec![
+            CallArgumentParameter::required("first"),
+            CallArgumentParameter::required("second"),
+        ]);
+
+        assert_eq!(
+            finalize_materialized_call_arguments(
+                &signature,
+                2,
+                &[
+                    MaterializedCallArgumentEntry::positional(0),
+                    MaterializedCallArgumentEntry::named(1, "first"),
+                ],
+            )
+            .unwrap_err(),
+            CallArgumentNormalizationError::DuplicateMaterializedArgument {
+                parameter_name: "first".to_string(),
+                first_entry_index: 0,
+                duplicate_entry_index: 1,
+            }
+        );
+        assert_eq!(
+            finalize_materialized_call_arguments(
+                &signature,
+                2,
+                &[
+                    MaterializedCallArgumentEntry::named(0, "second"),
+                    MaterializedCallArgumentEntry::positional(1),
+                ],
+            )
+            .unwrap_err(),
+            CallArgumentNormalizationError::MaterializedPositionalArgumentAfterNamedArgument {
+                entry_index: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn materialized_call_argument_finalization_keeps_unknown_named_and_source_ownership_guards() {
+        let signature = signature(vec![CallArgumentParameter::required("first")]);
+
+        assert_eq!(
+            finalize_materialized_call_arguments(
+                &signature,
+                1,
+                &[MaterializedCallArgumentEntry::named(0, "missing")],
+            )
+            .unwrap_err(),
+            CallArgumentNormalizationError::UnknownMaterializedNamedArgument {
+                name: "missing".to_string(),
+                entry_index: 0,
+            }
+        );
+        assert_eq!(
+            finalize_materialized_call_arguments(
+                &signature,
+                1,
+                &[MaterializedCallArgumentEntry::positional(1)],
+            )
+            .unwrap_err(),
+            CallArgumentNormalizationError::MaterializedSourceIndexOutOfRange {
+                entry_index: 0,
+                source_index: 1,
+                source_count: 1,
+            }
         );
     }
 

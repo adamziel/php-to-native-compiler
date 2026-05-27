@@ -1,4 +1,5 @@
 use php_compiler::ast::{Expr, Stmt};
+use php_compiler::codegen::emit_native_executable_c_source;
 use php_compiler::error::Phase;
 use php_compiler::{parse, run_source};
 
@@ -546,50 +547,89 @@ fn emit_ir_rejects_first_class_callable_syntax_at_parse_boundary() {
 }
 
 #[test]
-fn unsupported_argument_unpacking_has_stable_parse_errors() {
+fn spread_arguments_parse_as_source_ordered_call_argument_nodes() {
+    let program = parse(
+        "<?php\nfunction handler($first, $tail, $named) {}\n$args = ['tail'];\nhandler('first', ...$args, named: 'named');\n",
+    )
+    .unwrap();
+
+    let Stmt::Expr {
+        expr: Expr::Call { args, .. },
+        ..
+    } = &program.statements[2]
+    else {
+        panic!(
+            "expected direct call statement, got {:#?}",
+            program.statements[2]
+        );
+    };
+
+    assert_eq!(args.len(), 3);
+    assert!(matches!(args[0], Expr::String(ref value, _) if value == "first"));
+    match &args[1] {
+        Expr::SpreadArgument { expr, .. } => {
+            assert!(matches!(expr.as_ref(), Expr::Variable(name, _) if name == "args"));
+        }
+        other => panic!("expected second source argument to be spread, got {other:#?}"),
+    }
+    match &args[2] {
+        Expr::NamedArgument { name, expr, .. } => {
+            assert_eq!(name, "named");
+            assert!(matches!(expr.as_ref(), Expr::String(value, _) if value == "named"));
+        }
+        other => panic!("expected third source argument to be named, got {other:#?}"),
+    }
+}
+
+#[test]
+fn native_codegen_rejects_argument_unpacking_at_shared_finalization_bridge() {
     let cases = [
         (
-            "<?php\nfunction handler($value) {}\n$args = ['post'];\nhandler(...$args);\n",
-            4,
-            9,
+            "<?php\nclass Handler { public function run($first, $value) {} }\n$handler = new Handler();\n$args = ['init'];\n$handler->run('first', ...$args);\n",
+            1,
         ),
         (
-            "<?php\nclass Hooks { public function add($hook) {} }\n$hooks = new Hooks();\n$args = ['init'];\n$hooks->add(...$args);\n",
-            5,
-            13,
-        ),
-        (
-            "<?php\nclass Hooks { public static function add($hook) {} }\n$args = ['init'];\nHooks::add(...$args);\n",
-            4,
-            12,
-        ),
-        (
-            "<?php\nclass Hook { public function __construct($hook) {} }\n$args = ['init'];\n$hook = new Hook(...$args);\n",
-            4,
-            18,
+            "<?php\nclass Handler { public static function run($first, $value) {} }\n$args = ['init'];\nHandler::run('first', ...$args);\n",
+            1,
         ),
     ];
 
-    for (source, line, column) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported argument unpacking: call-site ... expansion requires iterable unpacking order, string-keyed named-argument interaction, by-reference argument propagation, variadic collection, duplicate argument diagnostics, and native lowering"
+    for (source, source_index) in cases {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert!(
+            error.message.contains(&format!(
+                "spread call argument at source slot {source_index} requires runtime unpack normalization"
+            )),
+            "{}",
+            error.message
         );
     }
 }
 
 #[test]
-fn emit_ir_rejects_argument_unpacking_at_parse_boundary() {
-    let error =
-        php_compiler::emit_ir_source("<?php\n$args = ['init'];\nhandler(...$args);\n").unwrap_err();
+fn native_codegen_blocks_descriptor_closure_spread_until_unpacked_handle_bridge_exists() {
+    let program = parse(
+        "<?php\n$closure = function ($first, $value) { return $first . $value; };\n$args = ['tail'];\necho $closure('head', ...$args);\n",
+    )
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported argument unpacking: call-site ... expansion requires iterable unpacking order, string-keyed named-argument interaction, by-reference argument propagation, variadic collection, duplicate argument diagnostics, and native lowering"
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error
+            .message
+            .contains("spread operands need a materialized-entry producer plus finalized NativeCallArgumentsHandle bridge"),
+        "{}",
+        error.message
+    );
+    assert!(
+        error.message.contains("descriptor closure"),
+        "{}",
+        error.message
     );
 }
 

@@ -290,6 +290,12 @@ pub struct NativeCallArgumentsHandle {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeMaterializedCallArgumentsHandle {
+    ptr: *mut NativeMaterializedCallArguments,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeCallResultHandle {
     ptr: *mut NativeCallResult,
 }
@@ -1535,6 +1541,17 @@ struct NativeCallableKey {
 struct NativeCallArguments {
     slots: Vec<NativeCallArgumentSlot>,
     names: Vec<Option<String>>,
+}
+
+#[derive(Debug)]
+struct NativeMaterializedCallArguments {
+    entries: Vec<NativeMaterializedCallArgumentEntry>,
+}
+
+#[derive(Debug)]
+struct NativeMaterializedCallArgumentEntry {
+    name: Option<String>,
+    slot: NativeCallArgumentSlot,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -3869,6 +3886,34 @@ impl NativeCallArgumentsHandle {
     }
 
     unsafe fn as_mut(&mut self) -> Option<&mut NativeCallArguments> {
+        unsafe { self.ptr.as_mut() }
+    }
+}
+
+impl NativeMaterializedCallArgumentsHandle {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    fn new() -> Self {
+        Self {
+            ptr: Box::into_raw(Box::new(NativeMaterializedCallArguments {
+                entries: Vec::new(),
+            })),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+
+    unsafe fn as_ref(&self) -> Option<&NativeMaterializedCallArguments> {
+        unsafe { self.ptr.as_ref() }
+    }
+
+    unsafe fn as_mut(&mut self) -> Option<&mut NativeMaterializedCallArguments> {
         unsafe { self.ptr.as_mut() }
     }
 }
@@ -9146,6 +9191,468 @@ pub unsafe extern "C" fn phpc_native_call_arguments_push_named_reference_and_fre
         return false;
     };
     unsafe { native_call_arguments_push_slot(arguments, slot, Some(name)) }
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_materialized_call_arguments_new(
+) -> NativeMaterializedCallArgumentsHandle {
+    NativeMaterializedCallArgumentsHandle::new()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_materialized_call_arguments_is_null(
+    handle: NativeMaterializedCallArgumentsHandle,
+) -> bool {
+    handle.is_null()
+}
+
+unsafe fn native_materialized_call_arguments_push_slot(
+    mut arguments: NativeMaterializedCallArgumentsHandle,
+    slot: NativeCallArgumentSlot,
+    name: Option<String>,
+) -> bool {
+    let Some(arguments) = (unsafe { arguments.as_mut() }) else {
+        unsafe { slot.free() };
+        return false;
+    };
+    arguments
+        .entries
+        .push(NativeMaterializedCallArgumentEntry { name, slot });
+    true
+}
+
+/// # Safety
+///
+/// `arguments` must be a materialized call-arguments handle. `value` is
+/// consumed exactly once.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_materialized_call_arguments_push_value_and_free(
+    arguments: NativeMaterializedCallArgumentsHandle,
+    value: NativeValueHandle,
+) -> bool {
+    let Some(slot) = (unsafe { native_call_argument_slot_from_value(value, true) }) else {
+        unsafe { phpc_native_value_free(value) };
+        return false;
+    };
+    unsafe { native_materialized_call_arguments_push_slot(arguments, slot, None) }
+}
+
+/// # Safety
+///
+/// `arguments` must be a materialized call-arguments handle. `name` is borrowed
+/// and `value` is consumed exactly once.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_materialized_call_arguments_push_named_value_and_free(
+    arguments: NativeMaterializedCallArgumentsHandle,
+    name: NativeStringHandle,
+    value: NativeValueHandle,
+) -> bool {
+    let Some(name) = (unsafe { native_string_handle_to_string(name) }) else {
+        unsafe { phpc_native_value_free(value) };
+        return false;
+    };
+    let Some(slot) = (unsafe { native_call_argument_slot_from_value(value, true) }) else {
+        unsafe { phpc_native_value_free(value) };
+        return false;
+    };
+    unsafe { native_materialized_call_arguments_push_slot(arguments, slot, Some(name)) }
+}
+
+/// # Safety
+///
+/// `arguments` must be a materialized call-arguments handle. `value` is
+/// consumed exactly once. Array integer keys become positional materialized
+/// entries and array string keys become named materialized entries.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_materialized_call_arguments_unpack_array_value_and_free(
+    mut arguments: NativeMaterializedCallArgumentsHandle,
+    value: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let Some(arguments) = (unsafe { arguments.as_mut() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native call argument unpack failed: materialized entries handle is null",
+            )
+        };
+        unsafe { phpc_native_value_free(value) };
+        return false;
+    };
+
+    let Some(value_ref) = (unsafe { value.as_ref() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native call argument unpack failed: spread value handle is null",
+            )
+        };
+        unsafe { phpc_native_value_free(value) };
+        return false;
+    };
+
+    let Value::Array(array) = value_ref else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                RuntimeError::unsupported_call(
+                    "argument unpacking",
+                    format!(
+                        "spread operand must be array in generated C, got {}",
+                        value_ref.type_name()
+                    ),
+                )
+                .message(),
+            )
+        };
+        unsafe { phpc_native_value_free(value) };
+        return false;
+    };
+
+    for entry in array.entries() {
+        let name = match &entry.key {
+            ArrayKey::Int(_) => None,
+            ArrayKey::String(name) => Some(name.clone()),
+        };
+        arguments.entries.push(NativeMaterializedCallArgumentEntry {
+            name,
+            slot: NativeCallArgumentSlot::Value(NativeValueHandle::from_value(
+                entry.value_cloned(),
+            )),
+        });
+    }
+
+    unsafe { phpc_native_value_free(value) };
+    true
+}
+
+unsafe fn native_parameter_name_slice(
+    parameter_names: *const NativeStringHandle,
+    fixed_count: usize,
+) -> Result<Vec<String>, String> {
+    if fixed_count == 0 {
+        return Ok(Vec::new());
+    }
+    if parameter_names.is_null() {
+        return Err(
+            "native materialized call-argument finalization failed: parameter-name vector is null"
+                .to_string(),
+        );
+    }
+
+    unsafe { std::slice::from_raw_parts(parameter_names, fixed_count) }
+        .iter()
+        .enumerate()
+        .map(|(index, name)| {
+            unsafe { native_string_handle_to_string(*name) }.ok_or_else(|| {
+                format!(
+                    "native materialized call-argument finalization failed: parameter name at slot {index} is null or not UTF-8"
+                )
+            })
+        })
+        .collect()
+}
+
+unsafe fn native_u8_metadata_slice<'a>(
+    pointer: *const u8,
+    fixed_count: usize,
+    label: &str,
+) -> Result<&'a [u8], String> {
+    if fixed_count == 0 {
+        return Ok(&[]);
+    }
+    if pointer.is_null() {
+        return Err(format!(
+            "native materialized call-argument finalization failed: {label} vector is null"
+        ));
+    }
+    Ok(unsafe { std::slice::from_raw_parts(pointer, fixed_count) })
+}
+
+unsafe fn native_default_value_slice<'a>(
+    pointer: *const NativeValueHandle,
+    fixed_count: usize,
+) -> Result<&'a [NativeValueHandle], String> {
+    if fixed_count == 0 {
+        return Ok(&[]);
+    }
+    if pointer.is_null() {
+        return Err(
+            "native materialized call-argument finalization failed: default-value vector is null"
+                .to_string(),
+        );
+    }
+    Ok(unsafe { std::slice::from_raw_parts(pointer, fixed_count) })
+}
+
+unsafe fn native_materialized_slot_for_parameter(
+    slot: NativeCallArgumentSlot,
+    parameter_name: &str,
+    by_reference: bool,
+) -> Result<NativeCallArgumentSlot, String> {
+    match (slot, by_reference) {
+        (NativeCallArgumentSlot::Value(value), false) => {
+            let cloned = unsafe { phpc_native_value_clone(value) };
+            if cloned.is_null() {
+                Err(format!(
+                    "native materialized call-argument finalization failed: value for parameter ${parameter_name} is null"
+                ))
+            } else {
+                Ok(NativeCallArgumentSlot::Value(cloned))
+            }
+        }
+        (NativeCallArgumentSlot::Reference(reference), false) => {
+            let cloned = unsafe { phpc_native_reference_value_clone(reference) };
+            if cloned.is_null() {
+                Err(format!(
+                    "native materialized call-argument finalization failed: reference value for parameter ${parameter_name} is null"
+                ))
+            } else {
+                Ok(NativeCallArgumentSlot::Value(cloned))
+            }
+        }
+        (NativeCallArgumentSlot::Reference(reference), true) => {
+            let cloned = unsafe { phpc_native_reference_clone(reference) };
+            if cloned.is_null() {
+                Err(format!(
+                    "native materialized call-argument finalization failed: reference for parameter ${parameter_name} is null"
+                ))
+            } else {
+                Ok(NativeCallArgumentSlot::Reference(cloned))
+            }
+        }
+        (NativeCallArgumentSlot::Value(_), true) => Err(format!(
+            "unsupported call argument unpacking: by-reference parameter ${parameter_name} requires reference materialization before NativeCallArgumentsHandle finalization"
+        )),
+    }
+}
+
+unsafe fn native_materialized_slot_value_clone(
+    slot: NativeCallArgumentSlot,
+) -> Result<Value, String> {
+    match slot {
+        NativeCallArgumentSlot::Value(value) => unsafe { value.as_ref() }.cloned().ok_or_else(|| {
+            "native materialized call-argument finalization failed: variadic value slot is null"
+                .to_string()
+        }),
+        NativeCallArgumentSlot::Reference(reference) => unsafe { reference.as_ref() }
+            .map(|reference| reference.cell.value_cloned())
+            .ok_or_else(|| {
+                "native materialized call-argument finalization failed: variadic reference slot is null"
+                    .to_string()
+            }),
+    }
+}
+
+unsafe fn native_materialized_call_arguments_finalize(
+    materialized: &NativeMaterializedCallArguments,
+    parameter_names: Vec<String>,
+    parameter_required: &[u8],
+    parameter_by_reference: &[u8],
+    parameter_defaults: &[NativeValueHandle],
+    has_variadic: bool,
+    variadic_by_reference: bool,
+) -> Result<NativeCallArgumentsHandle, String> {
+    let fixed_count = parameter_names.len();
+    let mut supplied_fixed_entries: Vec<Option<usize>> = vec![None; fixed_count];
+    let mut variadic_entries = Vec::new();
+    let mut seen_named = false;
+    let mut next_positional_index = 0usize;
+    let mut named_entries = std::collections::HashMap::<String, usize>::new();
+    let fixed_name_to_index = parameter_names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| (name.clone(), index))
+        .collect::<std::collections::HashMap<_, _>>();
+
+    for (entry_index, entry) in materialized.entries.iter().enumerate() {
+        if let Some(name) = &entry.name {
+            seen_named = true;
+            if let Some(first_entry_index) = named_entries.get(name).copied() {
+                return Err(format!(
+                    "duplicate named argument ${name} from materialized entry {entry_index}; first supplied by entry {first_entry_index}"
+                ));
+            }
+            named_entries.insert(name.clone(), entry_index);
+
+            if let Some(parameter_index) = fixed_name_to_index.get(name).copied() {
+                if let Some(first_entry_index) = supplied_fixed_entries[parameter_index] {
+                    return Err(format!(
+                        "duplicate argument for parameter ${name} from materialized entry {entry_index}; first supplied by entry {first_entry_index}"
+                    ));
+                }
+                supplied_fixed_entries[parameter_index] = Some(entry_index);
+            } else if has_variadic {
+                variadic_entries.push(entry_index);
+            } else {
+                return Err(format!(
+                    "unknown named argument ${name} from materialized entry {entry_index}"
+                ));
+            }
+        } else {
+            if seen_named {
+                return Err(format!(
+                    "positional argument from materialized entry {entry_index} follows a named argument"
+                ));
+            }
+            if next_positional_index < fixed_count {
+                supplied_fixed_entries[next_positional_index] = Some(entry_index);
+                next_positional_index += 1;
+            } else if has_variadic {
+                variadic_entries.push(entry_index);
+            } else {
+                return Err(format!(
+                    "too many positional arguments: materialized entry {entry_index} exceeds fixed parameter count {fixed_count}"
+                ));
+            }
+        }
+    }
+
+    let mut slots = Vec::new();
+    let mut names = Vec::new();
+    for parameter_index in 0..fixed_count {
+        let parameter_name = &parameter_names[parameter_index];
+        if let Some(entry_index) = supplied_fixed_entries[parameter_index] {
+            slots.push(unsafe {
+                native_materialized_slot_for_parameter(
+                    materialized.entries[entry_index].slot,
+                    parameter_name,
+                    parameter_by_reference[parameter_index] != 0,
+                )?
+            });
+            names.push(None);
+        } else if parameter_required[parameter_index] != 0 {
+            return Err(format!(
+                "missing required argument ${parameter_name} at parameter {parameter_index}"
+            ));
+        } else {
+            if parameter_by_reference[parameter_index] != 0 {
+                return Err(format!(
+                    "unsupported call argument unpacking: defaulted by-reference parameter ${parameter_name} requires reference materialization before NativeCallArgumentsHandle finalization"
+                ));
+            }
+            let default = parameter_defaults[parameter_index];
+            let value = unsafe { phpc_native_value_clone(default) };
+            if value.is_null() {
+                return Err(format!(
+                    "native materialized call-argument finalization failed: default value for parameter ${parameter_name} is null"
+                ));
+            }
+            slots.push(NativeCallArgumentSlot::Value(value));
+            names.push(None);
+        }
+    }
+
+    if has_variadic {
+        if variadic_by_reference && !variadic_entries.is_empty() {
+            return Err(
+                "unsupported call argument unpacking: by-reference variadic parameter requires reference materialization before NativeCallArgumentsHandle finalization"
+                    .to_string(),
+            );
+        }
+        let mut array = PhpArray::new();
+        for entry_index in variadic_entries {
+            let entry = &materialized.entries[entry_index];
+            let value = unsafe { native_materialized_slot_value_clone(entry.slot)? };
+            if let Some(name) = &entry.name {
+                array.insert_checked(ArrayKey::string(name.clone()), value)
+            } else {
+                array.append(value)
+            }
+            .map_err(|error| {
+                format!(
+                    "native materialized call-argument finalization failed: variadic collection rejected entry {entry_index}: {}",
+                    error.message()
+                )
+            })?;
+        }
+        slots.push(NativeCallArgumentSlot::Value(
+            NativeValueHandle::from_value(Value::Array(array)),
+        ));
+        names.push(None);
+    }
+
+    Ok(NativeCallArgumentsHandle {
+        ptr: Box::into_raw(Box::new(NativeCallArguments { slots, names })),
+    })
+}
+
+/// # Safety
+///
+/// `entries` is borrowed. Metadata pointers must be null only when
+/// `fixed_count` is zero; otherwise they must point to `fixed_count` entries.
+/// Default value handles are borrowed and cloned into the finalized call
+/// argument handle only when the matching parameter is omitted.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_materialized_call_arguments_finalize_with_diagnostic(
+    entries: NativeMaterializedCallArgumentsHandle,
+    parameter_names: *const NativeStringHandle,
+    parameter_required: *const u8,
+    parameter_by_reference: *const u8,
+    parameter_defaults: *const NativeValueHandle,
+    fixed_count: usize,
+    has_variadic: bool,
+    variadic_by_reference: bool,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallArgumentsHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let Some(entries) = (unsafe { entries.as_ref() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native materialized call-argument finalization failed: entries handle is null",
+            )
+        };
+        return NativeCallArgumentsHandle::null();
+    };
+
+    let result = (|| {
+        let names = unsafe { native_parameter_name_slice(parameter_names, fixed_count)? };
+        let required =
+            unsafe { native_u8_metadata_slice(parameter_required, fixed_count, "required-flag")? };
+        let by_reference = unsafe {
+            native_u8_metadata_slice(parameter_by_reference, fixed_count, "by-reference-flag")?
+        };
+        let defaults = unsafe { native_default_value_slice(parameter_defaults, fixed_count)? };
+        unsafe {
+            native_materialized_call_arguments_finalize(
+                entries,
+                names,
+                required,
+                by_reference,
+                defaults,
+                has_variadic,
+                variadic_by_reference,
+            )
+        }
+    })();
+
+    match result {
+        Ok(handle) => handle,
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeCallArgumentsHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a materialized call-arguments handle previously
+/// returned by the runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_materialized_call_arguments_free(
+    handle: NativeMaterializedCallArgumentsHandle,
+) {
+    if handle.ptr.is_null() {
+        return;
+    }
+    let entries = unsafe { Box::from_raw(handle.ptr) };
+    for entry in entries.entries {
+        unsafe { entry.slot.free() };
+    }
 }
 
 /// # Safety
@@ -36645,6 +37152,217 @@ mod tests {
         let string = unsafe { native_string_handle_to_string(handle) }.expect("native string");
         unsafe { phpc_native_string_free(handle) };
         string
+    }
+
+    unsafe fn call_argument_string_for_test(
+        arguments: NativeCallArgumentsHandle,
+        index: usize,
+    ) -> String {
+        let value = unsafe { phpc_native_call_arguments_read_value(arguments, index) };
+        let result = match unsafe { value.as_ref() } {
+            Some(Value::String(value)) => value.clone(),
+            other => panic!("expected string call argument, got {other:?}"),
+        };
+        unsafe { phpc_native_value_free(value) };
+        result
+    }
+
+    unsafe fn call_argument_array_for_test(
+        arguments: NativeCallArgumentsHandle,
+        index: usize,
+    ) -> PhpArray {
+        let value = unsafe { phpc_native_call_arguments_read_value(arguments, index) };
+        let result = match unsafe { value.as_ref() } {
+            Some(Value::Array(value)) => value.clone(),
+            other => panic!("expected array call argument, got {other:?}"),
+        };
+        unsafe { phpc_native_value_free(value) };
+        result
+    }
+
+    #[test]
+    fn native_materialized_call_arguments_unpack_arrays_and_finalize_into_handle_slots() {
+        let materialized = phpc_native_materialized_call_arguments_new();
+        let mut unpacked = PhpArray::new();
+        unpacked.append(Value::String("first".to_string())).unwrap();
+        unpacked.insert("mode", Value::String("named".to_string()));
+        let unpacked_value = NativeValueHandle::from_value(Value::Array(unpacked));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        assert!(unsafe {
+            phpc_native_materialized_call_arguments_unpack_array_value_and_free(
+                materialized,
+                unpacked_value,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let names = [
+            native_string_for_test("first"),
+            native_string_for_test("second"),
+            native_string_for_test("mode"),
+        ];
+        let required = [1, 0, 0];
+        let by_reference = [0, 0, 0];
+        let defaults = [
+            NativeValueHandle::null(),
+            NativeValueHandle::from_value(Value::String("default".to_string())),
+            NativeValueHandle::from_value(Value::String("plain".to_string())),
+        ];
+        let finalized = unsafe {
+            phpc_native_materialized_call_arguments_finalize_with_diagnostic(
+                materialized,
+                names.as_ptr(),
+                required.as_ptr(),
+                by_reference.as_ptr(),
+                defaults.as_ptr(),
+                names.len(),
+                true,
+                false,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!finalized.is_null());
+
+        assert_eq!(
+            unsafe { phpc_native_call_arguments_len(finalized) },
+            4,
+            "fixed slots plus one variadic array should be finalized"
+        );
+        assert_eq!(
+            unsafe { call_argument_string_for_test(finalized, 0) },
+            "first"
+        );
+        assert_eq!(
+            unsafe { call_argument_string_for_test(finalized, 1) },
+            "default"
+        );
+        assert_eq!(
+            unsafe { call_argument_string_for_test(finalized, 2) },
+            "named"
+        );
+        let variadic = unsafe { call_argument_array_for_test(finalized, 3) };
+        assert!(variadic.is_empty());
+
+        unsafe { phpc_native_call_arguments_free(finalized) };
+        unsafe { phpc_native_materialized_call_arguments_free(materialized) };
+        for name in names {
+            unsafe { phpc_native_string_free(name) };
+        }
+        for default in defaults {
+            unsafe { phpc_native_value_free(default) };
+        }
+    }
+
+    #[test]
+    fn native_materialized_call_argument_finalizer_reports_runtime_shape_diagnostics() {
+        let first = native_string_for_test("first");
+        let required = [1];
+        let by_reference = [0];
+        let defaults = [NativeValueHandle::null()];
+
+        let duplicate = phpc_native_materialized_call_arguments_new();
+        assert!(unsafe {
+            phpc_native_materialized_call_arguments_push_named_value_and_free(
+                duplicate,
+                first,
+                NativeValueHandle::from_value(Value::String("a".to_string())),
+            )
+        });
+        assert!(unsafe {
+            phpc_native_materialized_call_arguments_push_named_value_and_free(
+                duplicate,
+                first,
+                NativeValueHandle::from_value(Value::String("b".to_string())),
+            )
+        });
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let finalized = unsafe {
+            phpc_native_materialized_call_arguments_finalize_with_diagnostic(
+                duplicate,
+                &first,
+                required.as_ptr(),
+                by_reference.as_ptr(),
+                defaults.as_ptr(),
+                1,
+                false,
+                false,
+                &mut diagnostic,
+            )
+        };
+        assert!(finalized.is_null());
+        let message = unsafe { diagnostic.as_ref() }
+            .expect("duplicate diagnostic should be set")
+            .message
+            .clone();
+        assert!(message.contains("duplicate"), "{message}");
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_materialized_call_arguments_free(duplicate) };
+
+        for (label, array, expected) in [
+            (
+                "unknown",
+                {
+                    let mut array = PhpArray::new();
+                    array.insert("missing", Value::String("x".to_string()));
+                    array
+                },
+                "unknown named argument $missing",
+            ),
+            (
+                "positional-after-named",
+                {
+                    let mut array = PhpArray::new();
+                    array.insert("first", Value::String("a".to_string()));
+                    array.append(Value::String("b".to_string())).unwrap();
+                    array
+                },
+                "follows a named argument",
+            ),
+        ] {
+            let materialized = phpc_native_materialized_call_arguments_new();
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            assert!(
+                unsafe {
+                    phpc_native_materialized_call_arguments_unpack_array_value_and_free(
+                        materialized,
+                        NativeValueHandle::from_value(Value::Array(array)),
+                        &mut diagnostic,
+                    )
+                },
+                "{label} unpack should classify array entries"
+            );
+            assert!(diagnostic.is_null());
+
+            let finalized = unsafe {
+                phpc_native_materialized_call_arguments_finalize_with_diagnostic(
+                    materialized,
+                    &first,
+                    required.as_ptr(),
+                    by_reference.as_ptr(),
+                    defaults.as_ptr(),
+                    1,
+                    false,
+                    false,
+                    &mut diagnostic,
+                )
+            };
+            assert!(finalized.is_null(), "{label} should not finalize");
+            let message = unsafe { diagnostic.as_ref() }
+                .expect("diagnostic should be set")
+                .message
+                .clone();
+            assert!(
+                message.contains(expected),
+                "{label} diagnostic should contain {expected:?}, got {message:?}"
+            );
+            unsafe { phpc_native_diagnostic_free(diagnostic) };
+            unsafe { phpc_native_materialized_call_arguments_free(materialized) };
+        }
+
+        unsafe { phpc_native_string_free(first) };
     }
 
     unsafe extern "C" fn native_sum_callback(

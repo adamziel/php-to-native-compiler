@@ -1078,6 +1078,10 @@ pub enum Expr {
         expr: Box<Expr>,
         span: Span,
     },
+    SpreadArgument {
+        expr: Box<Expr>,
+        span: Span,
+    },
     Call {
         name: String,
         args: Vec<Expr>,
@@ -1268,6 +1272,7 @@ impl Expr {
             | Expr::SelfMethodCall { span, .. }
             | Expr::LateStaticMethodCall { span, .. }
             | Expr::NamedArgument { span, .. }
+            | Expr::SpreadArgument { span, .. }
             | Expr::Call { span, .. }
             | Expr::DynamicCall { span, .. }
             | Expr::InstanceOf { span, .. }

@@ -1670,7 +1670,7 @@ fn call_argument_name(arg: &Expr) -> Option<&str> {
 
 fn call_argument_expr(arg: &Expr) -> &Expr {
     match arg {
-        Expr::NamedArgument { expr, .. } => expr,
+        Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => expr,
         _ => arg,
     }
 }
@@ -1680,12 +1680,21 @@ fn call_arguments_have_named(args: &[Expr]) -> bool {
         .any(|arg| matches!(arg, Expr::NamedArgument { .. }))
 }
 
+fn call_arguments_have_spread(args: &[Expr]) -> bool {
+    args.iter()
+        .any(|arg| matches!(arg, Expr::SpreadArgument { .. }))
+}
+
 fn call_argument_contract_kinds(args: &[Expr]) -> Vec<CallArgument> {
     args.iter()
         .map(|arg| {
-            call_argument_name(arg)
-                .map(CallArgument::named)
-                .unwrap_or_else(CallArgument::positional)
+            if matches!(arg, Expr::SpreadArgument { .. }) {
+                CallArgument::spread()
+            } else {
+                call_argument_name(arg)
+                    .map(CallArgument::named)
+                    .unwrap_or_else(CallArgument::positional)
+            }
         })
         .collect()
 }
@@ -2054,7 +2063,7 @@ fn llvm_expr_call_results_are_lowerable(expr: &Expr, allow_scalar_results: bool)
         Expr::IncrementDecrement { target, .. } => {
             llvm_assign_target_call_results_are_lowerable(target, allow_scalar_results)
         }
-        Expr::NamedArgument { expr, .. } => {
+        Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => {
             llvm_expr_call_results_are_lowerable(expr, allow_scalar_results)
         }
         Expr::Null(_)
@@ -2342,7 +2351,9 @@ fn native_expr_call_result_operation(
         Expr::IncrementDecrement { target, .. } => {
             native_rmw_assignment_target_call_operation(target)
         }
-        Expr::NamedArgument { expr, .. } => native_expr_call_result_operation(expr, blocker),
+        Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => {
+            native_expr_call_result_operation(expr, blocker)
+        }
         Expr::Null(_)
         | Expr::Bool(_, _)
         | Expr::Int(_, _)
@@ -3057,7 +3068,9 @@ fn native_conditional_rhs_needs_cleanup_boundary(expr: &Expr) -> bool {
         Expr::New { args, .. } => args
             .iter()
             .any(native_conditional_rhs_needs_cleanup_boundary),
-        Expr::NamedArgument { expr, .. } => native_conditional_rhs_needs_cleanup_boundary(expr),
+        Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => {
+            native_conditional_rhs_needs_cleanup_boundary(expr)
+        }
         Expr::Closure { .. } => true,
         Expr::Null(_)
         | Expr::Bool(_, _)
@@ -4647,7 +4660,9 @@ fn expr_contains_exit_construct(expr: &Expr) -> bool {
             assign_target_contains_exit_construct(target) || expr_contains_exit_construct(expr)
         }
         Expr::IncrementDecrement { target, .. } => assign_target_contains_exit_construct(target),
-        Expr::NamedArgument { expr, .. } => expr_contains_exit_construct(expr),
+        Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => {
+            expr_contains_exit_construct(expr)
+        }
         Expr::Null(_)
         | Expr::Bool(_, _)
         | Expr::Int(_, _)
@@ -5478,7 +5493,9 @@ fn collect_direct_call_names_from_expr(expr: &Expr, names: &mut Vec<String>) {
         Expr::IncrementDecrement { target, .. } => {
             collect_direct_call_names_from_assign_target(target, names);
         }
-        Expr::NamedArgument { expr, .. } => collect_direct_call_names_from_expr(expr, names),
+        Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => {
+            collect_direct_call_names_from_expr(expr, names)
+        }
         Expr::Closure { .. }
         | Expr::Null(_)
         | Expr::Bool(_, _)
@@ -6259,7 +6276,7 @@ fn collect_native_arrow_capture_candidates_from_expr(
                 }
             }
         }
-        Expr::NamedArgument { expr, .. } => {
+        Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => {
             collect_native_arrow_capture_candidates_from_expr(expr, captures);
         }
         Expr::Null(_)
@@ -6398,7 +6415,9 @@ fn native_expr_contains_call_result(expr: &Expr) -> bool {
         Expr::IncrementDecrement { target, .. } => {
             native_assign_target_contains_call_result(target)
         }
-        Expr::NamedArgument { expr, .. } => native_expr_contains_call_result(expr),
+        Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => {
+            native_expr_contains_call_result(expr)
+        }
         Expr::Null(_)
         | Expr::Bool(_, _)
         | Expr::Int(_, _)
@@ -7476,7 +7495,9 @@ fn expr_contains_globals_access(expr: &Expr) -> bool {
             assign_target_contains_globals_access(target) || expr_contains_globals_access(expr)
         }
         Expr::IncrementDecrement { target, .. } => assign_target_contains_globals_access(target),
-        Expr::NamedArgument { expr, .. } => expr_contains_globals_access(expr),
+        Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => {
+            expr_contains_globals_access(expr)
+        }
         Expr::Null(_)
         | Expr::Bool(_, _)
         | Expr::Int(_, _)
@@ -7988,7 +8009,9 @@ fn expr_contains_request_state_access(expr: &Expr) -> bool {
         Expr::IncrementDecrement { target, .. } => {
             assign_target_contains_request_state_access(target)
         }
-        Expr::NamedArgument { expr, .. } => expr_contains_request_state_access(expr),
+        Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => {
+            expr_contains_request_state_access(expr)
+        }
         Expr::Null(_)
         | Expr::Bool(_, _)
         | Expr::Int(_, _)
@@ -10729,7 +10752,7 @@ impl LlvmGenerator {
             Expr::Int(value, _) => Ok(IrValue::Int(value.to_string())),
             Expr::Float(value, _) => Ok(IrValue::Float(format_float_literal(*value))),
             Expr::String(value, _) => Ok(IrValue::String(value.clone())),
-            Expr::NamedArgument { span, .. } => {
+            Expr::NamedArgument { span, .. } | Expr::SpreadArgument { span, .. } => {
                 Err(self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION))
             }
             Expr::InterpolatedString { span, .. } => {
@@ -16173,6 +16196,7 @@ struct CGenerator {
     uses_native_exit_helpers: bool,
     uses_native_call_type_helpers: bool,
     uses_native_callable_helpers: bool,
+    uses_native_materialized_call_argument_helpers: bool,
     uses_native_arrayaccess_offset_read_helpers: bool,
     uses_native_arrayaccess_offset_write_helpers: bool,
     uses_native_dynamic_call_helpers: bool,
@@ -18661,7 +18685,7 @@ fn collect_loop_assigned_direct_variables_from_expr(expr: &Expr, names: &mut BTr
         Expr::IncrementDecrement { target, .. } => {
             collect_loop_assigned_direct_variables_from_assign_target(target, names);
         }
-        Expr::NamedArgument { expr, .. } => {
+        Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => {
             collect_loop_assigned_direct_variables_from_expr(expr, names);
         }
         Expr::Closure { .. }
@@ -22009,6 +22033,9 @@ impl CGenerator {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallableHandle;\n");
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallableValueHandle;\n");
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallArgumentsHandle;\n");
+                if self.uses_native_materialized_call_argument_helpers {
+                    output.push_str("typedef struct { void *ptr; } phpc_NativeMaterializedCallArgumentsHandle;\n");
+                }
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallFrameHandle;\n");
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallResultHandle;\n");
                 output.push_str("typedef phpc_NativeCallResultHandle (*phpc_NativeCallableFrameCallback)(phpc_NativeCallFrameHandle);\n");
@@ -22341,6 +22368,15 @@ impl CGenerator {
                 output.push_str("extern bool phpc_native_call_arguments_push_reference_and_free(phpc_NativeCallArgumentsHandle arguments, phpc_NativeReferenceHandle reference);\n");
                 output.push_str("extern bool phpc_native_call_arguments_push_named_reference_and_free(phpc_NativeCallArgumentsHandle arguments, phpc_NativeStringHandle name, phpc_NativeReferenceHandle reference);\n");
                 output.push_str("extern void phpc_native_call_arguments_free(phpc_NativeCallArgumentsHandle handle);\n");
+                if self.uses_native_materialized_call_argument_helpers {
+                    output.push_str("extern phpc_NativeMaterializedCallArgumentsHandle phpc_native_materialized_call_arguments_new(void);\n");
+                    output.push_str("extern bool phpc_native_materialized_call_arguments_is_null(phpc_NativeMaterializedCallArgumentsHandle handle);\n");
+                    output.push_str("extern bool phpc_native_materialized_call_arguments_push_value_and_free(phpc_NativeMaterializedCallArgumentsHandle arguments, phpc_NativeValueHandle value);\n");
+                    output.push_str("extern bool phpc_native_materialized_call_arguments_push_named_value_and_free(phpc_NativeMaterializedCallArgumentsHandle arguments, phpc_NativeStringHandle name, phpc_NativeValueHandle value);\n");
+                    output.push_str("extern bool phpc_native_materialized_call_arguments_unpack_array_value_and_free(phpc_NativeMaterializedCallArgumentsHandle arguments, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                    output.push_str("extern phpc_NativeCallArgumentsHandle phpc_native_materialized_call_arguments_finalize_with_diagnostic(phpc_NativeMaterializedCallArgumentsHandle entries, const phpc_NativeStringHandle *parameter_names, const uint8_t *parameter_required, const uint8_t *parameter_by_reference, const phpc_NativeValueHandle *parameter_defaults, size_t fixed_count, bool has_variadic, bool variadic_by_reference, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                    output.push_str("extern void phpc_native_materialized_call_arguments_free(phpc_NativeMaterializedCallArgumentsHandle handle);\n");
+                }
                 output.push_str("extern phpc_NativeValueHandle phpc_native_call_frame_read_value(phpc_NativeCallFrameHandle frame, size_t index);\n");
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_call_frame_read_reference(phpc_NativeCallFrameHandle frame, size_t index);\n");
                 output.push_str("extern phpc_NativeStringHandle phpc_native_call_frame_called_scope(phpc_NativeCallFrameHandle frame);\n");
@@ -36500,7 +36536,7 @@ impl CGenerator {
             Expr::Int(value, _) => Ok(CValue::Int(value.to_string())),
             Expr::Float(value, _) => Ok(CValue::Float(format_float_literal(*value))),
             Expr::String(value, _) => Ok(CValue::String(value.clone())),
-            Expr::NamedArgument { span, .. } => {
+            Expr::NamedArgument { span, .. } | Expr::SpreadArgument { span, .. } => {
                 Err(self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION))
             }
             Expr::InterpolatedString { span, .. } => {
@@ -38559,6 +38595,237 @@ impl CGenerator {
         }
     }
 
+    fn emit_materialized_call_argument_value_push(
+        &mut self,
+        materialized: &str,
+        value: CNativeValueMaterialization,
+        source_name: Option<&str>,
+        failure_cleanup: &str,
+    ) {
+        let value_aux_cleanup = native_value_aux_cleanup_after_consuming_handle(&value);
+        let name = source_name.map(|source_name| {
+            self.emit_native_static_text_source_call_string_operand(
+                "materialized_call_argument_name",
+                source_name,
+            )
+        });
+        let name_cleanup = name
+            .as_ref()
+            .map(|name| c_cleanup_sequence(&name.cleanup_after_use))
+            .unwrap_or_default();
+        let push_failure_cleanup = format!(
+            "{name_cleanup}{}{}",
+            c_cleanup_sequence(&value_aux_cleanup),
+            failure_cleanup
+        );
+        if let Some(name) = &name {
+            self.body.push(format!(
+                "if (!phpc_native_materialized_call_arguments_push_named_value_and_free({materialized}, {}, {})) {{ {} }}",
+                name.handle,
+                value.handle,
+                self.native_error_exit(&push_failure_cleanup)
+            ));
+        } else {
+            self.body.push(format!(
+                "if (!phpc_native_materialized_call_arguments_push_value_and_free({materialized}, {})) {{ {} }}",
+                value.handle,
+                self.native_error_exit(&push_failure_cleanup)
+            ));
+        }
+        self.body.extend(value_aux_cleanup);
+        if let Some(name) = name {
+            self.body.extend(name.cleanup_after_use);
+        }
+    }
+
+    fn emit_materialized_call_argument_spread_unpack(
+        &mut self,
+        materialized: &str,
+        value: CNativeValueMaterialization,
+        failure_cleanup: &str,
+    ) {
+        let value_aux_cleanup = native_value_aux_cleanup_after_consuming_handle(&value);
+        let diagnostic = self.next_native_name("materialized_unpack_diagnostic");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        let unpack_failure_cleanup = format!(
+            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {diagnostic}.ptr = NULL; }} {}{failure_cleanup}",
+            c_cleanup_sequence(&value_aux_cleanup)
+        );
+        let error_exit = self.native_error_exit(&unpack_failure_cleanup);
+        self.body.push(format!(
+            "if (!phpc_native_materialized_call_arguments_unpack_array_value_and_free({materialized}, {}, &{diagnostic})) {{ {error_exit} }}",
+            value.handle
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body.extend(value_aux_cleanup);
+    }
+
+    fn emit_materialized_native_source_call_arguments_handle(
+        &mut self,
+        prefix: &str,
+        params: &[FunctionParam],
+        args: &[Expr],
+        span: Span,
+        owner_failure_cleanup: &str,
+    ) -> CompileResult<String> {
+        self.uses_native_callable_helpers = true;
+        self.uses_native_materialized_call_argument_helpers = true;
+
+        let materialized = self.next_native_name("materialized_call_args");
+        self.body.push(format!(
+            "phpc_NativeMaterializedCallArgumentsHandle {materialized} = phpc_native_materialized_call_arguments_new();"
+        ));
+        let materialized_error_exit = self.native_error_exit(owner_failure_cleanup);
+        self.body.push(format!(
+            "if (phpc_native_materialized_call_arguments_is_null({materialized})) {{ {materialized_error_exit} }}"
+        ));
+        let materialized_failure_cleanup = format!(
+            "phpc_native_materialized_call_arguments_free({materialized}); {owner_failure_cleanup}"
+        );
+
+        for arg in args {
+            let source_failure_cleanup = materialized_failure_cleanup.clone();
+            match arg {
+                Expr::SpreadArgument { expr, .. } => {
+                    let value = self
+                        .materialize_native_value_result_operand(expr, &source_failure_cleanup)?;
+                    self.emit_materialized_call_argument_spread_unpack(
+                        &materialized,
+                        value,
+                        &source_failure_cleanup,
+                    );
+                }
+                Expr::NamedArgument { name, expr, .. } => {
+                    let value = self
+                        .materialize_native_value_result_operand(expr, &source_failure_cleanup)?;
+                    self.emit_materialized_call_argument_value_push(
+                        &materialized,
+                        value,
+                        Some(name.as_str()),
+                        &source_failure_cleanup,
+                    );
+                }
+                _ => {
+                    let value =
+                        self.materialize_native_value_result_operand(arg, &source_failure_cleanup)?;
+                    self.emit_materialized_call_argument_value_push(
+                        &materialized,
+                        value,
+                        None,
+                        &source_failure_cleanup,
+                    );
+                }
+            }
+        }
+
+        let fixed_count = native_function_fixed_param_count(params);
+        let fixed_params = params.iter().take(fixed_count).collect::<Vec<_>>();
+        let mut metadata_cleanup = Vec::new();
+        let mut parameter_names = Vec::new();
+        let mut required_flags = Vec::new();
+        let mut by_reference_flags = Vec::new();
+        let mut default_handles = Vec::new();
+
+        for (index, param) in fixed_params.iter().enumerate() {
+            let name = self.emit_native_static_text_source_call_string_operand(
+                "materialized_parameter_name",
+                &param.name,
+            );
+            metadata_cleanup.extend(name.cleanup_after_use.clone());
+            parameter_names.push(name.handle);
+            required_flags.push(if param.default.is_none() { "1" } else { "0" }.to_string());
+            by_reference_flags.push(if param.by_reference { "1" } else { "0" }.to_string());
+
+            if let Some(default) = &param.default {
+                let default_failure_cleanup = format!(
+                    "{}{materialized_failure_cleanup}",
+                    c_cleanup_sequence(&metadata_cleanup)
+                );
+                let value = self
+                    .materialize_native_value_result_operand(default, &default_failure_cleanup)?;
+                metadata_cleanup.extend(value.cleanup_after_use.clone());
+                default_handles.push(value.handle);
+            } else {
+                default_handles.push("(phpc_NativeValueHandle){0}".to_string());
+            }
+
+            debug_assert_eq!(parameter_names.len(), index + 1);
+        }
+
+        let (parameter_name_arg, required_arg, by_reference_arg, default_arg) = if fixed_count == 0
+        {
+            let names = self.next_native_name("materialized_parameter_names");
+            let required = self.next_native_name("materialized_parameter_required");
+            let by_reference = self.next_native_name("materialized_parameter_by_reference");
+            let defaults = self.next_native_name("materialized_parameter_defaults");
+            self.body.push(format!(
+                "phpc_NativeStringHandle {names}[1] = {{ (phpc_NativeStringHandle){{0}} }};"
+            ));
+            self.body.push(format!("uint8_t {required}[1] = {{ 0 }};"));
+            self.body
+                .push(format!("uint8_t {by_reference}[1] = {{ 0 }};"));
+            self.body.push(format!(
+                "phpc_NativeValueHandle {defaults}[1] = {{ (phpc_NativeValueHandle){{0}} }};"
+            ));
+            (names, required, by_reference, defaults)
+        } else {
+            let names = self.next_native_name("materialized_parameter_names");
+            let required = self.next_native_name("materialized_parameter_required");
+            let by_reference = self.next_native_name("materialized_parameter_by_reference");
+            let defaults = self.next_native_name("materialized_parameter_defaults");
+            self.body.push(format!(
+                "phpc_NativeStringHandle {names}[{fixed_count}] = {{ {} }};",
+                parameter_names.join(", ")
+            ));
+            self.body.push(format!(
+                "uint8_t {required}[{fixed_count}] = {{ {} }};",
+                required_flags.join(", ")
+            ));
+            self.body.push(format!(
+                "uint8_t {by_reference}[{fixed_count}] = {{ {} }};",
+                by_reference_flags.join(", ")
+            ));
+            self.body.push(format!(
+                "phpc_NativeValueHandle {defaults}[{fixed_count}] = {{ {} }};",
+                default_handles.join(", ")
+            ));
+            (names, required, by_reference, defaults)
+        };
+
+        let has_variadic = native_function_variadic_param(params).is_some();
+        let variadic_by_reference = native_function_variadic_param(params)
+            .map(|(_, param)| param.by_reference)
+            .unwrap_or(false);
+        let call_arguments = self.next_native_name(prefix);
+        let diagnostic = self.next_native_name("materialized_finalize_diagnostic");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeCallArgumentsHandle {call_arguments} = phpc_native_materialized_call_arguments_finalize_with_diagnostic({materialized}, {parameter_name_arg}, {required_arg}, {by_reference_arg}, {default_arg}, {fixed_count}, {}, {}, &{diagnostic});",
+            if has_variadic { "true" } else { "false" },
+            if variadic_by_reference { "true" } else { "false" }
+        ));
+        let finalize_failure_cleanup = format!(
+            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {diagnostic}.ptr = NULL; }} {}{materialized_failure_cleanup}",
+            c_cleanup_sequence(&metadata_cleanup)
+        );
+        let finalize_error_exit = self.native_error_exit(&finalize_failure_cleanup);
+        self.body.push(format!(
+            "if ({diagnostic}.ptr != NULL) {{ {finalize_error_exit} }}"
+        ));
+        self.body.push(format!(
+            "if (phpc_native_call_arguments_is_null({call_arguments})) {{ {finalize_error_exit} }}"
+        ));
+        self.body.push(format!(
+            "phpc_native_materialized_call_arguments_free({materialized});"
+        ));
+        self.body.extend(metadata_cleanup);
+
+        let _ = span;
+        Ok(call_arguments)
+    }
+
     fn emit_native_source_call_argument(
         &mut self,
         call_arguments: &str,
@@ -39061,6 +39328,12 @@ impl CGenerator {
         }
         if call_arguments_have_named(args) {
             return Err(self.unsupported(span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION));
+        }
+        if call_arguments_have_spread(args) {
+            return Err(self.unsupported(
+                span,
+                "unsupported argument unpacking for native call lowering: spread operands need a materialized-entry producer plus finalized NativeCallArgumentsHandle bridge before dynamic callable, descriptor closure, magic fallback, and unknown-signature invocation",
+            ));
         }
 
         for (index, arg) in args.iter().enumerate() {
@@ -41218,6 +41491,16 @@ impl CGenerator {
         failure_cleanup: &str,
         callee: NativeCallCallee,
     ) -> CompileResult<String> {
+        if call_arguments_have_spread(args) {
+            return self.emit_materialized_native_source_call_arguments_handle(
+                "direct_callable_args",
+                &function.decl.params,
+                args,
+                span,
+                failure_cleanup,
+            );
+        }
+
         let call_arguments = self.emit_empty_native_source_call_arguments_handle(
             "direct_callable_args",
             failure_cleanup,
@@ -41246,15 +41529,21 @@ impl CGenerator {
         failure_cleanup: &str,
         callee: NativeCallCallee,
     ) -> CompileResult<CNativeValueMaterialization> {
-        let plan =
-            self.normalize_native_call_arguments_for_params(&function.decl.params, args, span)?;
+        if !call_arguments_have_spread(args) {
+            let plan =
+                self.normalize_native_call_arguments_for_params(&function.decl.params, args, span)?;
 
-        if self.user_function_call_has_produced_by_reference_argument(&function.decl, args, &plan) {
-            return self.materialize_user_function_produced_byref_alias_transfer_result(
-                function,
+            if self.user_function_call_has_produced_by_reference_argument(
+                &function.decl,
                 args,
-                failure_cleanup,
-            );
+                &plan,
+            ) {
+                return self.materialize_user_function_produced_byref_alias_transfer_result(
+                    function,
+                    args,
+                    failure_cleanup,
+                );
+            }
         }
 
         if function.frame_environment.root_symbols {
@@ -41329,15 +41618,22 @@ impl CGenerator {
                 )),
             );
         }
-        let plan =
-            self.normalize_native_call_arguments_for_params(&function.decl.params, args, span)?;
+        if !call_arguments_have_spread(args) {
+            let plan =
+                self.normalize_native_call_arguments_for_params(&function.decl.params, args, span)?;
 
-        if self.user_function_call_has_produced_by_reference_argument(&function.decl, args, &plan) {
-            return self.materialize_user_function_produced_byref_alias_transfer_reference_result(
-                function,
+            if self.user_function_call_has_produced_by_reference_argument(
+                &function.decl,
                 args,
-                failure_cleanup,
-            );
+                &plan,
+            ) {
+                return self
+                    .materialize_user_function_produced_byref_alias_transfer_reference_result(
+                        function,
+                        args,
+                        failure_cleanup,
+                    );
+            }
         }
 
         if function.frame_environment.root_symbols {
@@ -41819,7 +42115,7 @@ impl CGenerator {
                     self.expr_requires_destructor_observable_cleanup_boundary(expr)
                 })
             }
-            Expr::NamedArgument { expr, .. } => {
+            Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => {
                 self.expr_requires_destructor_observable_cleanup_boundary(expr)
             }
             Expr::Closure { .. } => false,
@@ -57048,7 +57344,9 @@ fn native_foreach_expr_may_mutate_storage(expr: &Expr) -> bool {
         | Expr::SelfMethodCall { args, .. }
         | Expr::LateStaticMethodCall { args, .. }
         | Expr::New { args, .. } => args.iter().any(native_foreach_expr_may_mutate_storage),
-        Expr::NamedArgument { expr, .. } => native_foreach_expr_may_mutate_storage(expr),
+        Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => {
+            native_foreach_expr_may_mutate_storage(expr)
+        }
         Expr::Binary { left, right, .. } => {
             native_foreach_expr_may_mutate_storage(left)
                 || native_foreach_expr_may_mutate_storage(right)
