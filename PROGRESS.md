@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 16:02 CEST
+Updated: 2026-05-27 16:07 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,16 +19,35 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **90%** `[##################--]`
 
-Latest accounted source capability: `1c0b8707` preserves real
-reference-backed array slots when materialized spread/unpack arguments are
-finalized for direct user-function calls. Unpacked array entries whose source
-slot is a `PhpReferenceCell` now flow into `NativeCallArgumentSlot::Reference`
-instead of being cloned as values, so `...$args` can satisfy a by-reference
-parameter and mutate the original cell through the existing native reference
-handle and finalizer machinery. Value-backed unpack entries still reject
-by-reference parameters, and callable-array/object spread, descriptor-closure
-spread, runtime callable-string spread, by-reference variadic unpack, broad
-COW parity, and LLVM/ASM parity remain blocked.
+Latest accounted source capability: `b85b4585` routes selected runtime-held
+callable array/object spread calls through finite homogeneous callable identity
+sets. Expression-level ternary-selected callable arrays and invokable objects
+can now preserve declared method parameter metadata, feed the existing
+callable-value source-call contract, materialize and finalize spread/unpack
+arguments, and invoke through the shared callable-value helpers. Heterogeneous
+parameter metadata, unknown-signature runtime callables, magic fallback
+callables, branch-join callable identity merges, by-reference callable-family
+unpack, and LLVM/ASM parity remain blocked.
+
+Recent source commit `1de45e2f` routes selected runtime string-valued callable
+spread calls when the possible generated user functions or scoped static method
+strings are known and homogeneous. The path derives a reusable callable-value
+contract from `CNativeCallableIdentity` metadata, uses preserved function or
+method parameter metadata, finalizes materialized unpack entries through
+`NativeCallArgumentsHandle`, and avoids string-specific dispatch ladders.
+Runtime builtins, magic fallback, unknown/heterogeneous callable strings, and
+descriptor-closure variadics remain blocked.
+
+Recent source commit `1c0b8707` preserves real reference-backed array slots
+when materialized spread/unpack arguments are finalized for direct
+user-function calls. Unpacked array entries whose source slot is a
+`PhpReferenceCell` now flow into `NativeCallArgumentSlot::Reference` instead of
+being cloned as values, so `...$args` can satisfy a by-reference parameter and
+mutate the original cell through the existing native reference handle and
+finalizer machinery. Value-backed unpack entries still reject by-reference
+parameters, and callable-array/object by-reference unpack, descriptor-closure
+by-reference unpack, by-reference variadic unpack, broad COW parity, and
+LLVM/ASM parity remain blocked.
 
 Recent source commit `15b8f029` composes selected trait properties and trait
 constants through `trait_semantics` before declared class metadata emission.
