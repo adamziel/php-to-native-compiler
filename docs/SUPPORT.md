@@ -7120,11 +7120,21 @@
   object handles, inheritance/interface registries, class-name resolution,
   autoload interaction, references/copy-on-write, and exact native
   `instanceof` diagnostics.
-  Native object-instantiation lowering has a separate rejection for `new`
-  expressions and constructor dispatch until generated code has native object
-  allocation, object handles, constructor calls, visibility checks,
-  autoload/class lookup, references/copy-on-write, and exact native
-  object-instantiation errors.
+  Native object-instantiation lowering supports a bounded generated-C
+  declared-class slice for `new Class(...)` and selected runtime string-valued
+  `new $class(...)` expressions when a supported public constructor is present.
+  The path allocates through declared class metadata, uses typed-property-aware
+  default initialization, builds a shared `NativeCallArgumentsHandle`, invokes
+  the constructor with `$this`, called scope, and caller access context, and
+  returns or discards the allocated receiver through the shared source-call
+  result/diagnostic carrier family. Constructor named arguments use the shared
+  source-order/parameter-order normalizer. Constructor reference result
+  consumers, classes without constructors but with arguments, private/protected
+  constructor visibility breadth, magic constructors, traits/interfaces,
+  arbitrary autoload/class-name discovery, destructor-observable cleanup
+  ordering, by-reference constructor alias-transfer breadth,
+  references/copy-on-write, exact PHP diagnostics, and LLVM IR/assembly
+  lowering remain unsupported.
   Native object-property lowering has a separate rejection for instance
   property reads/writes and dynamic property-name access until generated code
   has native object layout, property tables/slots, visibility checks, magic

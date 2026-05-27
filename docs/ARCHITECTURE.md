@@ -3397,10 +3397,21 @@ object layout, object handles, visibility checks, method dispatch, class
 metadata tables, property/method tables, inheritance/interface/trait/enum
 registries, property-slot cloning, `__clone` dispatch, reference-slot
 metadata, inheritance, autoload interaction, and exact native error behavior.
-Object instantiation and constructor dispatch have a separate native rejection
-until generated code has native object allocation, object handles, constructor
-calls, visibility checks, autoload/class lookup, references/copy-on-write, and
-exact native object-instantiation errors.
+Object instantiation and constructor dispatch use a bounded generated-C
+allocation-plus-invoke source-call carrier for supported declared classes with
+public constructors. The compiler allocates the receiver through declared class
+metadata, preserving typed-property default initialization, evaluates
+constructor arguments into one shared `NativeCallArgumentsHandle`, and calls a
+runtime carrier that resolves the constructor with called scope and caller
+access context before binding `$this`. Result, value, discard, and diagnostic
+consumers share that carrier family, so argument ownership is consumed once and
+allocated receivers are cleaned up on lookup or invocation failure. Constructor
+reference result consumers, classes without constructors but with arguments,
+private/protected constructor visibility breadth, magic constructors,
+traits/interfaces, arbitrary autoload/class-name discovery,
+destructor-observable cleanup ordering, by-reference constructor alias-transfer
+breadth, references/copy-on-write, exact PHP diagnostics, and LLVM IR/assembly
+lowering remain outside this native slice.
 Instance property reads/writes and dynamic property-name access have a
 separate native object-property boundary until generated code has native
 object layout, property tables/slots, visibility checks, magic property hooks,

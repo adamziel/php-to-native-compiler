@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added a bounded generated-native constructor allocation-plus-invoke carrier
+  for the `phpc compile --emit-exe` C-link path. Supported `new Class(...)`
+  and selected runtime string-valued `new $class(...)` expressions now allocate
+  through declared class metadata, build a shared `NativeCallArgumentsHandle`,
+  invoke the resolved public constructor with `$this`, called scope, and caller
+  access context, and return or discard the allocated receiver through the same
+  source-call result/diagnostic carrier family used by functions, methods, and
+  descriptor closures. The runtime carrier owns call arguments exactly once,
+  frees scope/receiver handles on success and failure paths, cleans up an
+  allocated receiver when lookup/invocation fails, preserves typed-property
+  allocation/default metadata, and reports constructor value returns through a
+  dedicated diagnostic. Focused tests cover constructor result/value/discard
+  carriers, named constructor arguments, dynamic class-name construction,
+  arity misses, value-return diagnostics, generated-C carrier selection, and
+  preservation gates for named arguments, typed properties, magic receiver
+  calls, exact imports, late/static properties, nested `ArrayAccess`,
+  source-call references, class aliases, descriptor closures, and object
+  static-property receivers. Constructor reference result consumers, classes
+  without constructors but with arguments, private/protected constructor
+  visibility breadth, magic constructors, traits/interfaces/effective method
+  tables, arbitrary autoload/class-name discovery, destructor-observable
+  cleanup ordering, by-reference constructor alias-transfer breadth,
+  references/copy-on-write, exact PHP diagnostics, and LLVM IR/assembly
+  lowering remain unsupported.
+
 - Added generated-C nested `ArrayAccess` unset and append-with-keyed-suffix
   production on the shared owner-stack path. Direct-variable roots and visible
   property-held roots now materialize the root owner, descend through by-value
