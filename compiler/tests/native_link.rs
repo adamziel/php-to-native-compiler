@@ -24520,6 +24520,44 @@ const NATIVE_SPREAD_CALLABLE_FAMILY_ARGUMENT_SOURCE: &str = concat!(
     "echo $box(...[spread_callable_family_marker(\"Q\")]);\n",
 );
 
+const NATIVE_INTERFACE_ONLY_CALLABLE_SPREAD_SOURCE: &str = concat!(
+    "<?php\n",
+    "function interface_spread_marker($label) { echo $label; return $label; }\n",
+    "interface InterfaceSpreadCallableArrayContract {\n",
+    "    public function run($first, $second = \"D\", ...$tail);\n",
+    "}\n",
+    "class InterfaceSpreadCallableArrayLeft implements InterfaceSpreadCallableArrayContract {\n",
+    "    public function run($first, $second = \"D\", ...$tail) {\n",
+    "        return \"L\" . $first . $second . ($tail[0] ?? \"\") . ($tail[\"name\"] ?? \"\");\n",
+    "    }\n",
+    "}\n",
+    "class InterfaceSpreadCallableArrayRight implements InterfaceSpreadCallableArrayContract {\n",
+    "    public function run($first, $second = \"D\", ...$tail) {\n",
+    "        return \"R\" . $first . $second . ($tail[0] ?? \"\") . ($tail[\"name\"] ?? \"\");\n",
+    "    }\n",
+    "}\n",
+    "interface InterfaceSpreadCallableObjectContract {\n",
+    "    public function __invoke($first, $second = \"D\", ...$tail);\n",
+    "}\n",
+    "class InterfaceSpreadCallableObjectLeft implements InterfaceSpreadCallableObjectContract {\n",
+    "    public function __invoke($first, $second = \"D\", ...$tail) {\n",
+    "        return \"l\" . $first . $second . ($tail[0] ?? \"\") . ($tail[\"name\"] ?? \"\");\n",
+    "    }\n",
+    "}\n",
+    "class InterfaceSpreadCallableObjectRight implements InterfaceSpreadCallableObjectContract {\n",
+    "    public function __invoke($first, $second = \"D\", ...$tail) {\n",
+    "        return \"r\" . $first . $second . ($tail[0] ?? \"\") . ($tail[\"name\"] ?? \"\");\n",
+    "    }\n",
+    "}\n",
+    "$_GET[\"left\"] = \"\";\n",
+    "$arrayBox = new InterfaceSpreadCallableArrayRight();\n",
+    "if ($_GET[\"left\"]) { $arrayBox = new InterfaceSpreadCallableArrayLeft(); }\n",
+    "$objectCall = new InterfaceSpreadCallableObjectRight();\n",
+    "if ($_GET[\"left\"]) { $objectCall = new InterfaceSpreadCallableObjectLeft(); }\n",
+    "echo [$arrayBox, \"run\"](...[interface_spread_marker(\"A\"), interface_spread_marker(\"B\")], ...[interface_spread_marker(\"C\"), \"name\" => interface_spread_marker(\"N\")]), \"|\";\n",
+    "echo $objectCall(...[interface_spread_marker(\"X\"), interface_spread_marker(\"Y\")], ...[interface_spread_marker(\"Z\"), \"name\" => interface_spread_marker(\"M\")]);\n",
+);
+
 const NATIVE_NAMED_METHOD_SOURCE_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "function named_method_marker($label) { echo $label; return $label; }\n",
@@ -25167,6 +25205,32 @@ fn native_executable_c_source_lowers_callable_family_spread_through_materialized
             && !source.contains("callable_array_matched")
             && !source.contains("callable_object_matched"),
         "supported callable-family spread should not hit the old spread blocker or legacy callable ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_interface_only_callable_spread_through_materialized_bridge() {
+    let program = parse(NATIVE_INTERFACE_ONLY_CALLABLE_SPREAD_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && body.contains("phpc_NativeCallArgumentsHandle dynamic_callable_args_")
+            && body.contains("callable_object_invoke_args_")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
+            && body.contains(
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+            ),
+        "interface-only callable spread should use interface method metadata, the materialized finalizer, and existing callable invoke boundaries:\n{source}"
+    );
+    assert!(
+        !source.contains("spread operands need a materialized-entry producer")
+            && !source.contains("callable_array_matched")
+            && !source.contains("callable_object_matched"),
+        "interface-only callable spread should not hit old spread blockers or legacy ladders:\n{source}"
     );
 }
 
@@ -26649,6 +26713,34 @@ fn emit_exe_links_and_runs_callable_family_spread_argument_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"ABCNSABCN|XZIXDZ|QOQD");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_interface_only_callable_spread_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "interface_only_callable_spread_arguments",
+        NATIVE_INTERFACE_ONLY_CALLABLE_SPREAD_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native interface-only callable spread executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ABCNRABCN|XYZMrXYZM");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

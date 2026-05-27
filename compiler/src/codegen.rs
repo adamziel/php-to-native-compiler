@@ -17908,7 +17908,7 @@ impl NativeMethodStaticSourceCallArgumentStrategy {
         ))
     }
 
-    fn for_interface_method(method: &InterfaceMethodDecl, arg_count: usize) -> Self {
+    fn for_interface_method(method: &InterfaceMethodDecl, arg_count: Option<usize>) -> Self {
         let _ = arg_count;
         Self::Frame(NativeMethodStaticSourceCallArgumentPlan::from_interface_method(method))
     }
@@ -18103,7 +18103,7 @@ fn native_method_static_signature_fallback_contract_from_methods_with_options<'a
 fn native_method_static_signature_contract_from_interface_methods<'a>(
     family: NativeMethodStaticSignatureFamily,
     methods: impl IntoIterator<Item = &'a InterfaceMethodDecl>,
-    arg_count: usize,
+    arg_count: Option<usize>,
 ) -> NativeMethodStaticSignatureFallbackContract {
     let mut candidate_count = 0;
     let mut arity_compatible_count = 0;
@@ -18112,8 +18112,10 @@ fn native_method_static_signature_contract_from_interface_methods<'a>(
 
     for method in methods {
         candidate_count += 1;
-        if !native_user_function_accepts_arg_count(&method.function, arg_count) {
-            continue;
+        if let Some(arg_count) = arg_count {
+            if !native_user_function_accepts_arg_count(&method.function, arg_count) {
+                continue;
+            }
         }
         arity_compatible_count += 1;
         let method_signature = CScopedCallableStringSignature::from_interface_method(method);
@@ -29020,7 +29022,6 @@ impl CGenerator {
         let facts = self.native_value_facts_for_expr(target)?;
         let object = facts.object.as_ref()?;
         if object.declared_class_keys.is_empty() {
-            let arg_count = arg_count?;
             return self.interface_receiver_method_source_call_signature_contract(
                 object,
                 method_name,
@@ -29088,27 +29089,34 @@ impl CGenerator {
         &self,
         object: &CNativeObjectFacts,
         method_name: &str,
-        arg_count: usize,
+        arg_count: Option<usize>,
         access_context: NativeSourceCallAccessContext<'_>,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
         let interface_methods =
             self.declared_interface_receiver_methods_for_object_facts(object, method_name)?;
+        let mut contract = native_method_static_signature_contract_from_interface_methods(
+            NativeMethodStaticSignatureFamily::ReceiverMethod,
+            interface_methods.iter().map(|method| &method.method),
+            arg_count,
+        );
+        if arg_count.is_none() {
+            return matches!(
+                contract.availability,
+                NativeMethodStaticSignatureAvailability::Known(_)
+            )
+            .then_some(contract);
+        }
         let implementation_methods = self
             .declared_interface_implementation_receiver_methods_for_object_facts(
                 object,
                 method_name,
                 access_context,
             )?;
-        let mut contract = native_method_static_signature_contract_from_interface_methods(
-            NativeMethodStaticSignatureFamily::ReceiverMethod,
-            interface_methods.iter().map(|method| &method.method),
-            arg_count,
-        );
         let implementation_contract =
             native_method_static_signature_fallback_contract_from_methods_with_options(
                 NativeMethodStaticSignatureFamily::ReceiverMethod,
                 implementation_methods.iter(),
-                Some(arg_count),
+                arg_count,
                 true,
             );
         if !matches!(
@@ -38407,7 +38415,12 @@ impl CGenerator {
         let facts = self.native_value_facts_for_expr(callee)?;
         let object = facts.object.as_ref()?;
         if object.declared_class_keys.is_empty() {
-            return None;
+            return self.interface_receiver_method_source_call_signature_contract(
+                object,
+                "__invoke",
+                arg_count,
+                NativeSourceCallAccessContext::ObjectReceiver,
+            );
         }
 
         let mut methods = Vec::new();
@@ -68592,7 +68605,7 @@ echo $call("Ada");
             .interface_receiver_method_source_call_signature_contract(
                 &object,
                 "run",
-                2,
+                Some(2),
                 NativeSourceCallAccessContext::ObjectReceiver,
             )
             .expect("interface-only facts should produce a runtime method contract");
@@ -68606,6 +68619,119 @@ echo $call("Ada");
             contract.argument_strategy,
             NativeMethodStaticSourceCallArgumentStrategy::Frame(_)
         ));
+    }
+
+    #[test]
+    fn native_interface_receiver_method_contract_uses_interface_only_spread_contract() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "interface ContractOnlySpread { public function run($first, $second = \"D\", ...$tail); }\n",
+            "class ContractOnlySpreadLeft implements ContractOnlySpread {\n",
+            "    public function run($first, $second = \"D\", ...$tail) { return $first; }\n",
+            "}\n",
+            "class ContractOnlySpreadRight implements ContractOnlySpread {\n",
+            "    public function run($first, $second = \"D\", ...$tail) { return $first; }\n",
+            "}\n",
+        ))
+        .expect("interface spread contract fixture parses");
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_interfaces(&program.statements)
+            .expect("interface metadata should register");
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .expect("implementation metadata should register");
+        let object = CNativeObjectFacts {
+            declared_class_keys: HashSet::new(),
+            implemented_interface_keys: HashSet::from(["contractonlyspread".to_string()]),
+        };
+        generator.native_value_variable_facts.insert(
+            "iface".to_string(),
+            CNativeValueFacts::object(object).expect("interface-only facts"),
+        );
+        let span = test_span();
+        let callable = callable_array_expr(
+            test_variable_expr("iface"),
+            Expr::String("run".to_string(), span),
+        );
+        let args = vec![Expr::SpreadArgument {
+            expr: Box::new(Expr::Array {
+                items: Vec::new(),
+                span,
+            }),
+            span,
+        }];
+
+        let contract = generator
+            .callable_value_source_call_signature_contract_for_args(&callable, &args)
+            .expect("interface-only callable-array spread should produce a parameter contract");
+
+        assert_eq!(contract.candidate_count, 1);
+        assert!(matches!(
+            contract.availability,
+            NativeMethodStaticSignatureAvailability::Known(_)
+        ));
+        let NativeMethodStaticSourceCallArgumentStrategy::Frame(plan) = contract.argument_strategy
+        else {
+            panic!("interface spread contract should use declared interface frame metadata");
+        };
+        assert_eq!(
+            plan.params
+                .iter()
+                .map(|param| param.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["first", "second", "tail"]
+        );
+    }
+
+    #[test]
+    fn native_interface_receiver_method_contract_blocks_heterogeneous_interface_spread_shapes() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "interface ContractSpreadLeft { public function run($first, ...$tail); }\n",
+            "interface ContractSpreadRight { public function run($renamed, ...$tail); }\n",
+        ))
+        .expect("heterogeneous interface spread fixture parses");
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_interfaces(&program.statements)
+            .expect("interface metadata should register");
+        let object = CNativeObjectFacts {
+            declared_class_keys: HashSet::new(),
+            implemented_interface_keys: HashSet::from([
+                "contractspreadleft".to_string(),
+                "contractspreadright".to_string(),
+            ]),
+        };
+        generator.native_value_variable_facts.insert(
+            "iface".to_string(),
+            CNativeValueFacts::object(object).expect("interface-only facts"),
+        );
+        let span = test_span();
+        let callable = callable_array_expr(
+            test_variable_expr("iface"),
+            Expr::String("run".to_string(), span),
+        );
+        let args = vec![Expr::SpreadArgument {
+            expr: Box::new(Expr::Array {
+                items: Vec::new(),
+                span,
+            }),
+            span,
+        }];
+
+        assert!(
+            generator
+                .callable_value_source_call_signature_contract_for_args(&callable, &args)
+                .is_none(),
+            "heterogeneous interface parameter names must stay blocked for spread"
+        );
     }
 
     #[test]
@@ -68640,7 +68766,7 @@ echo $call("Ada");
             .interface_receiver_method_source_call_signature_contract(
                 &object,
                 "run",
-                1,
+                Some(1),
                 NativeSourceCallAccessContext::ObjectReceiver,
             )
             .is_none());
