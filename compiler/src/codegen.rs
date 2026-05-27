@@ -2389,7 +2389,12 @@ fn native_expr_call_result_operation(
             ..
         } => native_expr_call_result_operation(condition, blocker)
             .or_else(|| native_expr_call_result_operation(if_false, blocker)),
-        Expr::Assign { target, .. } if is_object_public_property_assign_target(target) => None,
+        Expr::Assign { target, .. }
+            if native_array_append_assignment_target_materializes_rhs_value(target)
+                || is_object_public_property_assign_target(target) =>
+        {
+            native_assignment_target_call_operation(target)
+        }
         Expr::Assign { target, expr, .. } => native_assignment_target_call_operation(target)
             .or_else(|| native_expr_call_result_operation(expr, blocker)),
         Expr::CompoundAssign { target, expr, .. }
@@ -3317,6 +3322,7 @@ fn native_statement_assignment_rhs_call_operation(
 ) -> Option<NativeCallOperation> {
     match target {
         AssignTarget::Variable { .. } => None,
+        target if native_array_append_assignment_target_materializes_rhs_value(target) => None,
         target if is_object_public_property_assign_target(target) => None,
         target if direct_property_held_arrayaccess_assignment_target_is_lowerable(target) => None,
         _ => native_value_result_expr_call_operation(
@@ -3324,6 +3330,13 @@ fn native_statement_assignment_rhs_call_operation(
             NativeCallBlocker::StatementOperandEvaluationCleanup,
         ),
     }
+}
+
+fn native_array_append_assignment_target_materializes_rhs_value(target: &AssignTarget) -> bool {
+    matches!(
+        target,
+        AssignTarget::ArrayIndex { index: None, .. } | AssignTarget::NestedArrayAppend { .. }
+    )
 }
 
 fn direct_property_held_arrayaccess_assignment_target_is_lowerable(target: &AssignTarget) -> bool {
@@ -50168,11 +50181,13 @@ impl CGenerator {
                 cleanup_after_use: Vec::new(),
             }
         };
-        let replacement_value = self.emit_expr(replacement_expr)?;
-        let replacement = self.materialize_native_array_c_value_handle(
-            replacement_value.clone(),
-            replacement_expr.span(),
-        )?;
+        let offset_cleanup = c_cleanup_sequence(&offset.cleanup_after_use);
+        let replacement_failure_cleanup = format!("{offset_cleanup}{subject_cleanup}");
+        let (replacement_value, replacement) = self
+            .materialize_assignment_expression_replacement_value(
+                replacement_expr,
+                &replacement_failure_cleanup,
+            )?;
 
         let (operation, temp_prefix) = if index.is_some() {
             (
@@ -50270,11 +50285,9 @@ impl CGenerator {
             _ => return Ok(None),
         };
 
-        let replacement_value = self.emit_expr(replacement_expr)?;
-        let replacement = self.materialize_native_array_c_value_handle(
-            replacement_value.clone(),
-            replacement_expr.span(),
-        )?;
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let (replacement_value, replacement) = self
+            .materialize_assignment_expression_replacement_value(replacement_expr, &path_cleanup)?;
 
         self.emit_array_lvalue_write_materialized_for_handle(
             Some(name),
@@ -68371,6 +68384,63 @@ echo " 10" < "zeta";
         assert_eq!(
             native_statement_operand_call_operation(&Stmt::Assign {
                 target: nested_append,
+                expr: rhs_call,
+                span,
+            }),
+            Some(NativeCallOperation::direct_named_value(
+                span,
+                NativeCallBlocker::StatementOperandEvaluationCleanup,
+            ))
+        );
+    }
+
+    #[test]
+    fn native_array_append_assignment_rhs_calls_are_materialized_by_append_paths() {
+        let span = test_span();
+        let rhs_call = Expr::Call {
+            name: "produce".to_string(),
+            args: vec![Expr::String("value".to_string(), span)],
+            span,
+        };
+
+        for target in [
+            AssignTarget::ArrayIndex {
+                name: "items".to_string(),
+                index: None,
+                span,
+            },
+            AssignTarget::NestedArrayAppend {
+                name: "items".to_string(),
+                indices: vec![Expr::String("outer".to_string(), span)],
+                suffix_indices: Vec::new(),
+                span,
+            },
+        ] {
+            assert_eq!(
+                native_statement_operand_call_operation(&Stmt::Assign {
+                    target: target.clone(),
+                    expr: rhs_call.clone(),
+                    span,
+                }),
+                None
+            );
+            assert_eq!(
+                native_unemitted_statement_operand_call_operation(&Expr::Assign {
+                    target: Box::new(target),
+                    expr: Box::new(rhs_call.clone()),
+                    span,
+                }),
+                None
+            );
+        }
+
+        assert_eq!(
+            native_statement_operand_call_operation(&Stmt::Assign {
+                target: AssignTarget::ArrayIndex {
+                    name: "items".to_string(),
+                    index: Some(Expr::String("key".to_string(), span)),
+                    span,
+                },
                 expr: rhs_call,
                 span,
             }),
