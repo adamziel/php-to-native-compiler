@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 23:30 CEST
+Updated: 2026-05-27 23:36 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,15 +19,32 @@ Overall integrated-roadmap progress: **93%** `[##################--]`
 
 Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `be73c85b` passes direct request
-superglobal root/key/path expressions by reference in generated C. Source-call
-and descriptor-backed `call_user_func()` by-reference arguments now use the
-request-state reference ABI for `$_GET`, `$_POST`, `$_REQUEST`, and sibling
-request bags instead of falling through to generic symbol blockers or
-`call_user_func_array()` materialized carriers. Broader object-property
-reference owners, include exception/diagnostic propagation, visibility-context
+Latest accounted source capability: `38997317` binds declared public object
+properties to native references in generated C. Direct and dynamic known public
+property reference assignments now use a runtime public-property reference bind
+ABI, and selected plain public property owner writes commit through existing
+reference handles instead of copying values back through fake writeback.
+Typed, magic, non-public, static, and non-direct property owner cases remain
+blocked, along with include exception/diagnostic propagation, visibility-context
 rules, trait conflict/precedence parity, destructor-risk cleanup, and non-C
-backend parity remain blocked.
+backend parity.
+
+Recent source commit `38997317` advances object-property reference/COW owner
+coverage without adding ArrayAccess overlap, call-result owner shortcuts,
+source-shape recognizers, fake reference cloning, or value-copy reference
+writeback. The runtime now exposes
+`phpc_native_value_public_property_bind_reference_with_diagnostic_and_free()`,
+and generated C routes supported declared public property reference assignments
+and owner commits through real property reference cells while keeping unsupported
+typed/magic/non-public/static/non-direct cases on existing boundaries. Focused
+gates covered the runtime bind ABI, generated-C source proof, linked executable
+object-property reference assignment, nonlocal/dynamic property owner
+regressions, typed-property boundaries, symbol reference assignment paths, a
+nonzero property-held ArrayAccess owner boundary regression, compile checking,
+formatting, and diff checks. One stale zero-test filter was corrected before
+accounting. Primary gate log:
+`state/logs/phpc-primary-object-property-ref-f5327931-20260527.gates.log`
+sha256 `0dea01e422d2ef5beebf2375b9ce7f26d0580ea3d6620b1041ffdeb5ad1ba050`.
 
 Recent source commit `be73c85b` advances request superglobal reference
 arguments without adding request-name production ladders, fake array-offset
