@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 00:22 CEST
+Updated: 2026-05-28 00:25 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,10 +19,10 @@ Overall integrated-roadmap progress: **93%** `[##################--]`
 
 Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `2168719d` preserves reference-backed
-array entries unpacked through generated-C `call_user_func_array()`, letting
-the shared materialized argument bridge carry by-reference slots instead of
-diagnosing them as value-only copies.
+Latest accounted source capability: `3cb69e40` resolves unqualified
+multi-trait alias and visibility adaptations semantically, accepting unique
+method targets and rejecting ambiguous ones instead of failing every
+unqualified adaptation at parse time.
 
 Current blockers remain concentrated in broader array COW/reference edges,
 remaining foreach/reference owner breadth, include exception/diagnostic propagation,
@@ -33,6 +33,7 @@ Recent primary source ledger:
 
 | Commit | Compact capability | Focused proof |
 | --- | --- | --- |
+| `3cb69e40` | Trait composition now resolves unqualified multi-trait alias/visibility adaptations when a method name has a unique declaring trait and reports ambiguity when multiple traits define the method. | Corrected nonzero trait semantic unique/ambiguous unit tests, object-model unqualified multi-trait runtime/metadata tests, native-link source/link proof, static alias metadata, alias visibility context, trait-composed metadata, static alias native-link, trait callable frame-binding regressions, fmt, diff. Gate log: `state/logs/phpc-primary-trait-precedence-f5d497c2-20260528.gates.log` sha256 `e7db123153bf23c570c78b85686e6e2087c48d1365502156843faff8dd7f70b2`. |
 | `2168719d` | Generated-C `call_user_func_array()` now allows stored reference-backed array entries to flow through the shared materialized argument bridge, preserving aliases while copied value-backed by-reference entries still diagnose. | Runtime materialized reference-slot proof, generated-C source and linked executable `call_user_func_array` stored-reference proof, value-copy byref blocker, adjacent direct `call_user_func` byref variables, request-superglobal reference owners, callable-family byref unpack source bridge, spread diagnostics, fmt, diff. Gate log: `state/logs/phpc-primary-callable-array-byref-19ad2463-20260528.gates.log` sha256 `7a2af3bfa0c53335d49feaf39694ed476980b1327b3feb9aee66d2ef0d37cf97`. |
 | `b6b063c8` | Generated user functions declared in include units now carry their declaring source path into generated-C function-body emission, preserving runtime include-registry source-dir lookup inside those functions. | Generated-C source-dir proof, linked included-function source-relative include executable, function-scope include regression, runtime include/require registry regressions, no-match diagnostic and source-loader ABI blocker regressions, fmt, diff. Gate log: `state/logs/phpc-primary-source-activation-ef20ccf-20260528.gates.log` sha256 `e88eab351d11ed0ff666835527a3edd097050532fccf2e505415c4aa256a7e30`. |
 | `217701f5` | Generated-C dynamic object-property reads now normalize runtime property-name values and route valid `__get()` methods through shared magic-aware, caller-context-aware runtime property helpers instead of exact source-shape branches. | Runtime dynamic magic read/context helper tests, generated-C source routing proof, linked dynamic `__get` executable proof, `__set` non-regression, private method-frame visibility regression, property-magic/reference-boundary regressions, fmt, diff. Gate log: `state/logs/phpc-primary-magic-get-3799361f-20260528.gates.log` sha256 `0954af9b8e94da4c5797a0c2adab8b98ba8dcc7d7abc028a117e154d84a5dea0`. |
