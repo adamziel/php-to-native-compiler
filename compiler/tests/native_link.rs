@@ -1579,6 +1579,92 @@ fn emit_exe_links_and_runs_declared_class_method_program() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_this_property_assignment_in_generated_method_frames() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class Box {\n",
+        "    public $name;\n",
+        "    public $alt;\n",
+        "    public function literal($value) {\n",
+        "        $this->name = strtoupper($value);\n",
+        "        return $this->name;\n",
+        "    }\n",
+        "    public function dynamic($property, $value) {\n",
+        "        $this->$property = $value;\n",
+        "        return $value;\n",
+        "    }\n",
+        "}\n",
+        "$box = new Box();\n",
+        "echo $box->literal(\"ada\"), \":\", $box->name, \"|\";\n",
+        "echo $box->dynamic(\"alt\", 7), \":\", $box->alt, \"\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("this_property_method_frame_assignment", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run method-frame $this property assignment executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ADA:ADA|7:7\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_this_property_assignment_reports_mutation_failure_from_method_frame() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class Box {\n",
+        "    private $secret;\n",
+        "    public function store($value) {\n",
+        "        $this->secret = $value;\n",
+        "        echo \"after\";\n",
+        "    }\n",
+        "}\n",
+        "$box = new Box();\n",
+        "$box->store(\"bad\");\n",
+        "echo \"tail\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("this_property_method_frame_assignment_failure", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run method-frame $this property assignment failure executable: {error}")
+    });
+
+    assert!(
+        !run.status.success(),
+        "non-public property mutation failure should terminate the native frame"
+    );
+    assert_eq!(run.stdout, b"");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains("non-public property") && stderr.contains("Box::$secret"),
+        "stderr:\n{stderr}"
+    );
+    assert!(!stderr.contains("after") && !stderr.contains("tail"));
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn emit_exe_links_and_runs_declared_class_dynamic_method_program() {
     if !has_cc() {
         return;
@@ -3356,13 +3442,56 @@ fn native_executable_c_source_routes_declared_methods_through_frame_dispatch() {
         "method misses should use the shared runtime failure ABI:\n{source}"
     );
     assert!(
-        source
-            .matches("phpc_native_value_object_public_property_operation_with_diagnostic")
-            .count()
-            >= 6,
-        "$this property reads and writes should stay on the shared property ABI:\n{source}"
+        source.contains("phpc_native_value_object_property_mutation_operation_with_diagnostic")
+            && source
+                .contains("phpc_native_value_object_public_property_operation_with_diagnostic"),
+        "$this property writes and reads should stay on the shared property ABIs:\n{source}"
     );
     assert!(!source.contains("method-call lowering rejects"), "{source}");
+}
+
+#[test]
+fn native_executable_c_source_routes_this_property_assignments_through_method_frame_contract() {
+    let program = parse(
+        "<?php\nclass Box { public $name; public $alt; public function literal($value) { $this->name = strtoupper($value); return $this->name; } public function dynamic($property, $value) { $this->$property = $value; return $value; } }\n$box = new Box();\necho $box->literal(\"ada\"), $box->dynamic(\"alt\", 7), $box->alt;\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_NativeValueHandle phpc_this")
+            && source.contains("phpc_native_value_clone(phpc_this)"),
+        "instance method frames must own a cloned $this receiver:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_object_property_mutation_operation_with_diagnostic"),
+        "$this writes should use the shared object-property mutation ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_NativeDiagnosticHandle object_property_mutation_diagnostic_")
+            && source.contains("phpc_native_diagnostic_message_stderr(object_property_mutation_diagnostic_")
+            && source.contains("phpc_native_diagnostic_free(object_property_mutation_diagnostic_"),
+        "mutation diagnostics and failure cleanup must be emitted at the shared boundary:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_free(frame_this_")
+            && source.contains("phpc_native_value_free(object_property_write_value_"),
+        "receiver and replacement/result handles must be released by generated method frames:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_declared_method_")
+            && body.contains("receiver_method_source_call_args_")
+            && body.contains(
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+            ),
+        "caller-side method calls should use source-call carriers while generated method frames still own $this assignment:\n{source}"
+    );
+    assert!(
+        !source.contains("non-local assignment lowering rejects")
+            && !source.contains("object-property lowering rejects"),
+        "{source}"
+    );
 }
 
 #[test]
@@ -3498,11 +3627,9 @@ fn native_executable_c_source_routes_declared_constructors_through_frame_dispatc
         "new expressions should dispatch supported constructors through generated frames:\n{source}"
     );
     assert!(
-        source
-            .matches("phpc_native_value_object_public_property_operation_with_diagnostic")
-            .count()
-            >= 5,
-        "$this constructor writes and method reads should stay on the shared property ABI:\n{source}"
+        source.contains("phpc_native_value_object_property_mutation_operation_with_diagnostic")
+            && source.contains("phpc_native_value_object_public_property_operation_with_diagnostic"),
+        "$this constructor writes and method reads should stay on the shared property ABIs:\n{source}"
     );
     assert!(
         !source.contains("object-instantiation lowering rejects")
@@ -3528,14 +3655,18 @@ fn native_executable_c_source_routes_dynamic_declared_constructors_through_frame
     );
     assert!(
         body.contains("phpc_native_value_new_declared_class_with_diagnostic")
-            && body.contains("phpc_native_value_new_declared_class_with_ancestors_and_diagnostic"),
-        "dynamic constructor new should keep declared allocation on shared object helpers, including inherited constructor receivers:\n{source}"
+            && (body.contains("phpc_native_value_new_declared_class_with_ancestors_and_diagnostic")
+                || body.contains(
+                    "phpc_native_value_new_declared_class_with_relationships_and_diagnostic"
+                )),
+        "dynamic constructor new should keep declared allocation on shared object helpers, including inherited/relationship metadata receivers:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_value_object_public_property_operation_with_diagnostic")
+        source.contains("phpc_native_value_object_property_mutation_operation_with_diagnostic")
+            && source.contains("phpc_native_value_object_public_property_operation_with_diagnostic")
             && source.contains("phpc_native_value_type_name_result")
             && source.contains("phpc_native_value_instanceof_class_with_diagnostic"),
-        "dynamic constructor results should compose with property reads, debug type, and ancestor checks:\n{source}"
+        "dynamic constructor results should compose with property writes/reads, debug type, and ancestor checks:\n{source}"
     );
     assert!(
         !source.contains("object-instantiation lowering rejects")

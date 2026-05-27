@@ -15553,6 +15553,7 @@ struct CGenerator {
     function_call_depth: Option<String>,
     function_callable_name: Option<String>,
     function_return_type: Option<String>,
+    generated_method_frame_this_property_assignment: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -19586,6 +19587,7 @@ impl CGenerator {
             },
             next_static_data: self.next_static_data,
             next_native_temp: self.next_native_temp,
+            generated_method_frame_this_property_assignment: !method.is_static,
             ..CGenerator::default()
         };
 
@@ -21885,6 +21887,83 @@ impl CGenerator {
             | AssignTarget::SelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
             | AssignTarget::LateStaticProperty { .. } => Ok(None),
+        }
+    }
+
+    fn materialize_generated_method_frame_this_property_assignment_result_for_target(
+        &mut self,
+        target: &AssignTarget,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        if !self.generated_method_frame_this_property_assignment {
+            return Ok(None);
+        }
+        if !matches!(
+            self.variables.get("this"),
+            Some(CValue::NativeValueHandle(_))
+        ) {
+            return Ok(None);
+        }
+
+        match target {
+            AssignTarget::Property {
+                object,
+                property,
+                span,
+            } if object == "this" => {
+                let object = Expr::Variable(object.clone(), *span);
+                self.materialize_object_property_assignment_result(
+                    &object,
+                    CObjectPropertyOperand::Literal(property),
+                    expr,
+                    *span,
+                    failure_cleanup,
+                )
+                .map(Some)
+            }
+            AssignTarget::DynamicProperty {
+                object,
+                property,
+                span,
+            } if object == "this" => {
+                let object = Expr::Variable(object.clone(), *span);
+                self.materialize_object_property_assignment_result(
+                    &object,
+                    CObjectPropertyOperand::Dynamic(property),
+                    expr,
+                    *span,
+                    failure_cleanup,
+                )
+                .map(Some)
+            }
+            AssignTarget::NonDirectProperty {
+                holder,
+                property,
+                span,
+            } if matches!(holder, Expr::Variable(name, _) if name == "this") => self
+                .materialize_object_property_assignment_result(
+                    holder,
+                    CObjectPropertyOperand::Literal(property),
+                    expr,
+                    *span,
+                    failure_cleanup,
+                )
+                .map(Some),
+            AssignTarget::NonDirectDynamicProperty {
+                holder,
+                property,
+                span,
+            } if matches!(holder, Expr::Variable(name, _) if name == "this") => self
+                .materialize_object_property_assignment_result(
+                    holder,
+                    CObjectPropertyOperand::Dynamic(property),
+                    expr,
+                    *span,
+                    failure_cleanup,
+                )
+                .map(Some),
+            _ => Ok(None),
         }
     }
 
@@ -30146,6 +30225,14 @@ impl CGenerator {
                         boundary.span,
                         boundary.rejection(NativeCallBackend::Assembly),
                     ));
+                }
+                if let Some(value) = self
+                    .materialize_generated_method_frame_this_property_assignment_result_for_target(
+                        target, expr, "",
+                    )?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
                 }
                 if let Some(boundary) = native_non_local_assignment_owner_boundary(target) {
                     return Err(self.unsupported(
@@ -39654,6 +39741,14 @@ impl CGenerator {
                 boundary.span,
                 boundary.rejection(NativeCallBackend::Assembly),
             ));
+        }
+        if let Some(value) = self
+            .materialize_generated_method_frame_this_property_assignment_result_for_target(
+                target, expr, "",
+            )?
+        {
+            self.body.extend(value.cleanup_after_use);
+            return Ok(());
         }
         if let Some(boundary) = native_non_local_assignment_owner_boundary(target) {
             return Err(self.unsupported(
