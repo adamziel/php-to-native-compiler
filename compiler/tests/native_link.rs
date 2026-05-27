@@ -147,6 +147,44 @@ const NATIVE_OUTPUT_BUFFER_CALLBACK_CHUNK_SOURCE: &str = concat!(
     "echo ob_get_clean();\n",
 );
 
+const NATIVE_OUTPUT_BUFFER_STATUS_SOURCE: &str = concat!(
+    "<?php\n",
+    "function phase_handler($buffer, $phase) {\n",
+    "    return \"[\" . $buffer . \":\" . $phase . \"]\";\n",
+    "}\n",
+    "function status_text($label, $status) {\n",
+    "    return $label . \"=\" . $status[\"name\"] . \":\" . $status[\"level\"] . \":\" . $status[\"buffer_used\"] . \":\" . $status[\"chunk_size\"];\n",
+    "}\n",
+    "$report = \"initial=\" . count(ob_list_handlers()) . \":\" . count(ob_get_status(true));\n",
+    "ob_start(null, 6);\n",
+    "echo \"out\";\n",
+    "ob_start(\"phase_handler\", 10);\n",
+    "echo \"in\";\n",
+    "$handlers = ob_list_handlers();\n",
+    "$full = ob_get_status(true);\n",
+    "$active = ob_get_status();\n",
+    "$report = $report . \"|handlers=\" . count($handlers) . \":\" . $handlers[0] . \":\" . $handlers[1];\n",
+    "$report = $report . \"|\" . status_text(\"outer\", $full[0]);\n",
+    "$report = $report . \"|\" . status_text(\"inner\", $full[1]);\n",
+    "$report = $report . \"|\" . status_text(\"active\", $active);\n",
+    "$inner = ob_get_clean();\n",
+    "$after = ob_get_status();\n",
+    "$outer = ob_get_clean();\n",
+    "$report = $report . \"|\" . status_text(\"after\", $after);\n",
+    "$report = $report . \"|captures=\" . $outer . \"/\" . $inner;\n",
+    "ob_start();\n",
+    "ob_start(\"phase_handler\", 3);\n",
+    "echo \"ab\";\n",
+    "echo \"c\";\n",
+    "$chunk = ob_get_status();\n",
+    "ob_end_clean();\n",
+    "$chunk_capture = ob_get_clean();\n",
+    "$report = $report . \"|\" . status_text(\"chunk\", $chunk);\n",
+    "$report = $report . \"|chunk-capture=\" . $chunk_capture;\n",
+    "$report = $report . \"|final=\" . count(ob_list_handlers()) . \":\" . count(ob_get_status(true));\n",
+    "echo $report . \"\\n\";\n",
+);
+
 const NATIVE_DIAGNOSTIC_RESULT_DISCARDED_EXPR_SOURCE: &str = concat!(
     "<?php\n",
     "1;\n",
@@ -2425,6 +2463,37 @@ fn emit_exe_links_and_runs_native_output_buffer_chunk_programs() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"[abcde:1][f:8]");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_output_buffer_status_metadata_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "native_output_buffer_status_metadata",
+        NATIVE_OUTPUT_BUFFER_STATUS_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native output-buffer status executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"initial=0:0|handlers=2:default output handler:phase_handler|outer=default output handler:1:3:6|inner=phase_handler:2:2:10|active=phase_handler:2:2:10|after=default output handler:1:3:6|captures=out/in|chunk=phase_handler:2:0:3|chunk-capture=[abc:1]|final=0:0\n"
+    );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -5385,6 +5454,26 @@ fn native_executable_c_source_routes_output_buffer_callbacks_through_callable_ru
     assert!(
         !source.contains("callback output handlers await"),
         "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_keeps_output_buffer_status_metadata_in_runtime_stack() {
+    let program = parse(NATIVE_OUTPUT_BUFFER_STATUS_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_output_buffer_operation_with_callable_table_diagnostic(phpc_user_callable_table"),
+        "callback output-buffer status should route through the shared runtime stack ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_output_buffer_operation_with_diagnostic("),
+        "ordinary output-buffer status calls should route through the shared runtime stack ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("default output handler"),
+        "generated C should not snapshot default output-handler metadata:\n{source}"
     );
 }
 

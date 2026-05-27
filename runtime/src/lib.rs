@@ -23626,9 +23626,9 @@ fn native_output_buffer_operation_value(
         })),
         NativeOutputBufferOperation::ListHandlers => Ok(NATIVE_OUTPUT_BUFFERS.with(|buffers| {
             let mut handlers = PhpArray::new();
-            for _ in buffers.borrow().iter() {
+            for buffer in buffers.borrow().iter() {
                 handlers
-                    .append(Value::String("default output handler".to_string()))
+                    .append(Value::String(native_output_buffer_handler_name(buffer)))
                     .expect("output buffer handler list append should use integer keys");
             }
             Value::Array(handlers)
@@ -23785,14 +23785,46 @@ fn native_output_buffer_flush_active() -> RuntimeResult<Value> {
     })
 }
 
+fn native_output_buffer_handler_name(buffer: &NativeOutputBuffer) -> String {
+    match buffer.handler.as_ref() {
+        Some(handler) => native_callable_dispatch_handler_name(handler),
+        None => "default output handler".to_string(),
+    }
+}
+
+fn native_callable_dispatch_handler_name(handler: &NativeCallableValueDispatch) -> String {
+    match handler {
+        NativeCallableValueDispatch::Builtin(builtin) => builtin.name().to_string(),
+        NativeCallableValueDispatch::Table { callable, .. } => match callable.descriptor.kind {
+            NativeCallableKind::Function => callable.descriptor.name.clone(),
+            NativeCallableKind::Method | NativeCallableKind::Constructor => {
+                let scope = callable
+                    .called_scope
+                    .as_deref()
+                    .or(callable.descriptor.scope.as_deref())
+                    .unwrap_or("<unknown>");
+                format!("{scope}::{}", callable.descriptor.name)
+            }
+        },
+        NativeCallableValueDispatch::DescriptorClosure(_) => "Closure::__invoke".to_string(),
+    }
+}
+
 fn native_output_buffer_status_value(level: usize, buffer: &NativeOutputBuffer) -> Value {
     let mut status = PhpArray::new();
-    status.insert("name", Value::String("default output handler".to_string()));
+    status.insert(
+        "name",
+        Value::String(native_output_buffer_handler_name(buffer)),
+    );
     status.insert("type", Value::Int(0));
     status.insert("flags", Value::Int(112));
     status.insert(
         "level",
         Value::Int(i64::try_from(level).unwrap_or(i64::MAX)),
+    );
+    status.insert(
+        "chunk_size",
+        Value::Int(i64::try_from(buffer.chunk_size).unwrap_or(i64::MAX)),
     );
     status.insert(
         "buffer_used",
@@ -48446,6 +48478,233 @@ mod tests {
             callback,
             callback_end,
             callback_flushed,
+        ] {
+            unsafe { phpc_native_value_free(handle) };
+        }
+        unsafe { phpc_native_callable_table_free(table) };
+        native_clear_output_buffers();
+    }
+
+    #[test]
+    fn native_output_buffer_metadata_reports_live_stack_handlers_and_chunk_sizes() {
+        unsafe extern "C" fn phase_handler(frame: NativeCallFrameHandle) -> NativeCallResultHandle {
+            let buffer = unsafe { phpc_native_call_frame_read_value(frame, 0) };
+            unsafe { phpc_native_value_free(buffer) };
+            let phase = unsafe { phpc_native_call_frame_read_value(frame, 1) };
+            unsafe { phpc_native_value_free(phase) };
+            phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::String(
+                "handled".to_string(),
+            )))
+        }
+
+        fn call(
+            table: NativeCallableTableHandle,
+            operation: NativeOutputBufferOperation,
+            args: &[NativeValueHandle],
+            diagnostic: &mut NativeDiagnosticHandle,
+        ) -> NativeValueHandle {
+            let mut handles = [
+                NativeValueHandle::null(),
+                NativeValueHandle::null(),
+                NativeValueHandle::null(),
+            ];
+            for (index, arg) in args.iter().enumerate() {
+                handles[index] = *arg;
+            }
+            unsafe {
+                phpc_native_output_buffer_operation_with_callable_table_diagnostic(
+                    table,
+                    handles[0],
+                    handles[1],
+                    handles[2],
+                    args.len() as u8,
+                    operation as u8,
+                    diagnostic,
+                )
+            }
+        }
+
+        native_clear_output_buffers();
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "phase_handler",
+                NativeCallableVisibility::Public,
+                phase_handler,
+            );
+        }
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let initial_handlers = call(
+            table,
+            NativeOutputBufferOperation::ListHandlers,
+            &[],
+            &mut diagnostic,
+        );
+        assert_eq!(native_value_array_for_test(initial_handlers).len(), 0);
+        let initial_status = call(
+            table,
+            NativeOutputBufferOperation::GetStatus,
+            &[],
+            &mut diagnostic,
+        );
+        assert_eq!(native_value_array_for_test(initial_status).len(), 0);
+
+        let null_handler = NativeValueHandle::from_value(Value::Null);
+        let outer_chunk = NativeValueHandle::from_value(Value::Int(8));
+        let outer = call(
+            table,
+            NativeOutputBufferOperation::Start,
+            &[null_handler, outer_chunk],
+            &mut diagnostic,
+        );
+        assert_eq!(unsafe { outer.as_ref() }, Some(&Value::Bool(true)));
+        let outer_bytes = NativeValueHandle::from_value(Value::String("abc".to_string()));
+        assert_eq!(
+            unsafe {
+                phpc_native_value_format_stdout_with_diagnostic(
+                    outer_bytes,
+                    NativeValueFormatterTag::Echo as u8,
+                    &mut diagnostic,
+                )
+            },
+            3
+        );
+        assert!(diagnostic.is_null());
+
+        let handler = NativeValueHandle::from_value(Value::String("phase_handler".to_string()));
+        let inner_chunk = NativeValueHandle::from_value(Value::Int(6));
+        let inner = call(
+            table,
+            NativeOutputBufferOperation::Start,
+            &[handler, inner_chunk],
+            &mut diagnostic,
+        );
+        assert_eq!(unsafe { inner.as_ref() }, Some(&Value::Bool(true)));
+        let inner_bytes = NativeValueHandle::from_value(Value::String("xy".to_string()));
+        assert_eq!(
+            unsafe {
+                phpc_native_value_format_stdout_with_diagnostic(
+                    inner_bytes,
+                    NativeValueFormatterTag::Echo as u8,
+                    &mut diagnostic,
+                )
+            },
+            2
+        );
+        assert!(diagnostic.is_null());
+
+        let handlers_handle = call(
+            table,
+            NativeOutputBufferOperation::ListHandlers,
+            &[],
+            &mut diagnostic,
+        );
+        let handlers = native_value_array_for_test(handlers_handle);
+        assert_eq!(
+            handlers.get(0),
+            Some(&Value::String("default output handler".to_string()))
+        );
+        assert_eq!(
+            handlers.get(1),
+            Some(&Value::String("phase_handler".to_string()))
+        );
+
+        let full_flag = NativeValueHandle::from_value(Value::Bool(true));
+        let full_status_handle = call(
+            table,
+            NativeOutputBufferOperation::GetStatus,
+            &[full_flag],
+            &mut diagnostic,
+        );
+        let full_status = native_value_array_for_test(full_status_handle);
+        let Some(Value::Array(outer_status)) = full_status.get(0) else {
+            panic!("expected outer status array, got {full_status:?}");
+        };
+        assert_eq!(
+            outer_status.get("name"),
+            Some(&Value::String("default output handler".to_string()))
+        );
+        assert_eq!(outer_status.get("level"), Some(&Value::Int(1)));
+        assert_eq!(outer_status.get("chunk_size"), Some(&Value::Int(8)));
+        assert_eq!(outer_status.get("buffer_used"), Some(&Value::Int(3)));
+        let Some(Value::Array(inner_status)) = full_status.get(1) else {
+            panic!("expected inner status array, got {full_status:?}");
+        };
+        assert_eq!(
+            inner_status.get("name"),
+            Some(&Value::String("phase_handler".to_string()))
+        );
+        assert_eq!(inner_status.get("level"), Some(&Value::Int(2)));
+        assert_eq!(inner_status.get("chunk_size"), Some(&Value::Int(6)));
+        assert_eq!(inner_status.get("buffer_used"), Some(&Value::Int(2)));
+
+        let active_status_handle = call(
+            table,
+            NativeOutputBufferOperation::GetStatus,
+            &[],
+            &mut diagnostic,
+        );
+        let active_status = native_value_array_for_test(active_status_handle);
+        assert_eq!(
+            active_status.get("name"),
+            Some(&Value::String("phase_handler".to_string()))
+        );
+        assert_eq!(active_status.get("level"), Some(&Value::Int(2)));
+
+        let inner_capture = call(
+            table,
+            NativeOutputBufferOperation::GetClean,
+            &[],
+            &mut diagnostic,
+        );
+        assert_eq!(native_value_string_bytes_for_test(inner_capture), b"xy");
+        let after_inner_status_handle = call(
+            table,
+            NativeOutputBufferOperation::GetStatus,
+            &[],
+            &mut diagnostic,
+        );
+        let after_inner_status = native_value_array_for_test(after_inner_status_handle);
+        assert_eq!(after_inner_status.get("level"), Some(&Value::Int(1)));
+        assert_eq!(after_inner_status.get("buffer_used"), Some(&Value::Int(3)));
+        let outer_capture = call(
+            table,
+            NativeOutputBufferOperation::GetClean,
+            &[],
+            &mut diagnostic,
+        );
+        assert_eq!(native_value_string_bytes_for_test(outer_capture), b"abc");
+        let final_status = call(
+            table,
+            NativeOutputBufferOperation::GetStatus,
+            &[],
+            &mut diagnostic,
+        );
+        assert_eq!(native_value_array_for_test(final_status).len(), 0);
+
+        for handle in [
+            initial_handlers,
+            initial_status,
+            null_handler,
+            outer_chunk,
+            outer,
+            outer_bytes,
+            handler,
+            inner_chunk,
+            inner,
+            inner_bytes,
+            handlers_handle,
+            full_flag,
+            full_status_handle,
+            active_status_handle,
+            inner_capture,
+            after_inner_status_handle,
+            outer_capture,
+            final_status,
         ] {
             unsafe { phpc_native_value_free(handle) };
         }
