@@ -12663,6 +12663,48 @@ echo $child instanceof ("Box") ? "1" : "0";
 }
 
 #[test]
+fn instanceof_supports_relative_class_targets_from_class_context() {
+    let execution = run_source(
+        r#"<?php
+class RelativeRoot {}
+class RelativeBase extends RelativeRoot {
+    public function check($target) {
+        echo $target instanceof self ? "S" : "-";
+        echo $target instanceof parent ? "P" : "-";
+        echo $target instanceof static ? "T" : "-";
+        echo "|";
+    }
+    public static function stat($target) {
+        echo $target instanceof self ? "s" : "-";
+        echo $target instanceof parent ? "p" : "-";
+        echo $target instanceof static ? "t" : "-";
+        echo "|";
+    }
+}
+class RelativeChild extends RelativeBase {}
+
+$root = new RelativeRoot();
+$base = new RelativeBase();
+$child = new RelativeChild();
+
+$base->check($root);
+$base->check($base);
+$child->check($base);
+$child->check($child);
+RelativeBase::stat($root);
+RelativeChild::stat($child);
+$baseName = "RelativeBase";
+echo $child instanceof RelativeBase ? "N" : "-";
+echo $child instanceof $baseName ? "D" : "-";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "-P-|SPT|SP-|SPT|-p-|spt|ND");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn public_instance_method_dispatch_binds_this_and_preserves_handles() {
     let execution = run_source(
         r#"<?php

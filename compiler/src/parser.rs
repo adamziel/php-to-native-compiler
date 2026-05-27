@@ -6584,6 +6584,7 @@ impl Parser {
                 );
                 Ok(NewClassName::Named(self.resolve_class_like_name(&raw)))
             }
+            TokenKind::Static => Ok(NewClassName::StaticClass),
             TokenKind::Identifier(name) => {
                 if name.eq_ignore_ascii_case("self") {
                     Ok(NewClassName::SelfClass)

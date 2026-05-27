@@ -26243,13 +26243,6 @@ impl CGenerator {
         class_name: &NewClassName,
         span: Span,
     ) -> CompileResult<CValue> {
-        if matches!(
-            class_name,
-            NewClassName::SelfClass | NewClassName::ParentClass | NewClassName::StaticClass
-        ) {
-            return Err(self.unsupported(span, ASSEMBLY_INSTANCEOF_REJECTION));
-        }
-
         self.uses_native_string_helpers = true;
         self.uses_native_object_instanceof_helpers = true;
 
@@ -26280,7 +26273,15 @@ impl CGenerator {
                 cleanup_after_use.extend(target.cleanup_after_use);
             }
             NewClassName::SelfClass | NewClassName::ParentClass | NewClassName::StaticClass => {
-                unreachable!("relative instanceof class names rejected before lowering")
+                let Some((class_name, class_name_len)) =
+                    self.relative_instanceof_target_operands(class_name, span)?
+                else {
+                    return Err(self.unsupported(span, ASSEMBLY_INSTANCEOF_REJECTION));
+                };
+                self.body.push(format!(
+                    "_Bool {result} = phpc_native_value_class_relationship_matches_with_diagnostic({}, {class_name}, {class_name_len}, 0, &{diagnostic});",
+                    value.handle
+                ));
             }
         }
         cleanup_after_use.extend(value.cleanup_after_use);
@@ -26295,6 +26296,46 @@ impl CGenerator {
         self.body.extend(cleanup_after_use);
 
         Ok(CValue::BoolExpr(result))
+    }
+
+    fn relative_instanceof_target_operands(
+        &mut self,
+        class_name: &NewClassName,
+        span: Span,
+    ) -> CompileResult<Option<(String, String)>> {
+        match class_name {
+            NewClassName::SelfClass => {
+                let Some(current_class_name) = self.active_declared_class_name.clone() else {
+                    return Ok(None);
+                };
+                Ok(Some(self.emit_call_type_static_bytes(
+                    "instanceof_current_class_name_bytes",
+                    &current_class_name,
+                )))
+            }
+            NewClassName::ParentClass => {
+                if self.active_declared_class_name.is_none() {
+                    return Ok(None);
+                }
+                let Some(parent_class_name) = self.active_declared_parent_class_name.clone() else {
+                    return Err(self.unsupported(span, ASSEMBLY_INSTANCEOF_REJECTION));
+                };
+                Ok(Some(self.emit_call_type_static_bytes(
+                    "instanceof_parent_class_name_bytes",
+                    &parent_class_name,
+                )))
+            }
+            NewClassName::StaticClass => {
+                let Some(called_scope) = self.active_called_scope_handle.clone() else {
+                    return Ok(None);
+                };
+                Ok(Some((
+                    format!("phpc_native_string_bytes({called_scope})"),
+                    format!("phpc_native_string_len({called_scope})"),
+                )))
+            }
+            _ => Ok(None),
+        }
     }
 
     fn emit_call_frame_type_coercion_assignment(

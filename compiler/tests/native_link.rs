@@ -815,6 +815,39 @@ const NATIVE_DECLARED_CLASS_INSTANCEOF_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_RELATIVE_INSTANCEOF_SOURCE: &str = concat!(
+    "<?php\n",
+    "class RelativeRoot {}\n",
+    "class RelativeBase extends RelativeRoot {\n",
+    "    public function check($target) {\n",
+    "        echo $target instanceof self ? \"S\" : \"-\";\n",
+    "        echo $target instanceof parent ? \"P\" : \"-\";\n",
+    "        echo $target instanceof static ? \"T\" : \"-\";\n",
+    "        echo \"|\";\n",
+    "    }\n",
+    "    public static function stat($target) {\n",
+    "        echo $target instanceof self ? \"s\" : \"-\";\n",
+    "        echo $target instanceof parent ? \"p\" : \"-\";\n",
+    "        echo $target instanceof static ? \"t\" : \"-\";\n",
+    "        echo \"|\";\n",
+    "    }\n",
+    "}\n",
+    "class RelativeChild extends RelativeBase {}\n",
+    "$root = new RelativeRoot();\n",
+    "$base = new RelativeBase();\n",
+    "$child = new RelativeChild();\n",
+    "$base->check($root);\n",
+    "$base->check($base);\n",
+    "$child->check($base);\n",
+    "$child->check($child);\n",
+    "RelativeBase::stat($root);\n",
+    "RelativeChild::stat($child);\n",
+    "$baseName = \"RelativeBase\";\n",
+    "echo $child instanceof RelativeBase ? \"N\" : \"-\";\n",
+    "echo $child instanceof $baseName ? \"D\" : \"-\";\n",
+    "echo \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_METHOD_SOURCE: &str = concat!(
     "<?php\n",
     "class Box {\n",
@@ -3420,6 +3453,34 @@ fn emit_exe_links_and_runs_declared_class_instanceof_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"YYNYNYYYYYN\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_relative_instanceof_class_context_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "relative_instanceof_class_context",
+        NATIVE_RELATIVE_INSTANCEOF_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run relative-instanceof executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"-P-|SPT|SP-|SPT|-p-|spt|ND\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -7690,6 +7751,41 @@ fn native_executable_c_source_routes_declared_instanceof_through_runtime_abi() {
         "interface instanceof checks should flow through class-like metadata declarations, not text membership:\n{source}"
     );
     assert!(!source.contains("instanceof lowering rejects"), "{source}");
+}
+
+#[test]
+fn native_executable_c_source_routes_relative_instanceof_through_class_context() {
+    let program = parse(NATIVE_RELATIVE_INSTANCEOF_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_NativeStringHandle phpc_called_scope")
+            && source.contains("phpc_native_string_bytes(phpc_called_scope)")
+            && source.contains("phpc_native_string_len(phpc_called_scope)"),
+        "static instanceof targets should use the generated method called-scope operand:\n{source}"
+    );
+    assert!(
+        source.contains("instanceof_current_class_name_bytes")
+            && source.contains("instanceof_parent_class_name_bytes"),
+        "self/parent instanceof targets should resolve from declared class metadata:\n{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_value_class_relationship_matches_with_diagnostic")
+            .count()
+            >= 8,
+        "relative and named instanceof targets should share the class relationship ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_dynamic_class_relationship_matches_with_diagnostic"),
+        "dynamic instanceof targets must remain on the dynamic relationship ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_text_membership_with_reference_slot_with_diagnostic")
+            && !source.contains("phpc_native_text_membership_candidates")
+            && !source.contains("instanceof lowering rejects"),
+        "relative instanceof should not regress to text membership or native rejection:\n{source}"
+    );
 }
 
 #[test]
