@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 15:31 CEST
+Updated: 2026-05-27 15:40 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,7 +19,31 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **90%** `[##################--]`
 
-Latest accounted source capability: `b14186bc` routes selected generated-C
+Latest accounted source capability: `b07e2407` routes selected generated-C
+trait constructors through the existing trait composition and declared
+constructor frame machinery. Trait-composed public non-static `__construct`
+methods that pass constructor frame validation can fill the normal class
+constructor metadata slot, so direct and included trait constructors reuse
+constructor lookup/invoke, declared frame setup, `$this`, called scope,
+named/default/variadic/by-reference argument binding, dynamic constructor
+class-name dispatch, and callable-family regressions. Class constructors still
+win; duplicate, conflicting, malformed, static, or non-public trait
+constructors, destructor-observable cleanup, trait properties/constants,
+autoload-discovered traits, broad reference/COW parity, and LLVM/ASM parity
+remain blocked.
+
+Recent source commit `b17f08f7` routes selected interface-only
+callable-family spread/unpack calls through declared interface method
+parameter metadata. Callable arrays and callable objects whose receiver facts
+only expose an interface can now use that interface method contract to feed
+the materialized argument finalizer and existing callable/receiver invoke
+boundaries, while implementation-homogeneity and non-spread interface
+receiver safeguards remain intact. Heterogeneous interface parameters,
+runtime-dynamic callable values, descriptor closures, magic fallback callable
+spread, and by-reference unpack transfer remain blocked behind reusable
+signature/materialized-entry gaps.
+
+Recent source commit `b14186bc` routes selected generated-C
 `interface_exists()` checks through declared generated-native interface
 metadata. Literal and dynamic interface names now reuse the shared native text
 membership helper against `declared_interfaces` / `declared_interface_order`,
