@@ -7364,6 +7364,44 @@ pub unsafe extern "C" fn phpc_native_reference_set_value(
 /// # Safety
 ///
 /// `handle` must be null or a reference handle previously returned by the
+/// runtime ABI and not yet freed. `value` must be null or a value handle
+/// previously returned by the runtime ABI and not yet freed. Null handles and
+/// type-constraint failures are reported through `diagnostic` and leave the
+/// reference unchanged. Ownership of `value` remains with the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_reference_set_value_with_diagnostic(
+    handle: NativeReferenceHandle,
+    value: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let (Some(reference), Some(value)) = (unsafe { handle.as_ref() }, unsafe { value.as_ref() })
+    else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native reference set failed: reference or value handle is null",
+            )
+        };
+        return false;
+    };
+
+    match reference.cell.coerce_value_for_write(value.clone()) {
+        Ok(value) => {
+            reference.cell.set_value(value);
+            true
+        }
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a reference handle previously returned by the
 /// runtime ABI and not yet freed. Passing any other pointer is undefined
 /// behavior.
 #[no_mangle]
@@ -29832,6 +29870,10 @@ pub unsafe extern "C" fn phpc_native_value_new_declared_class_with_ancestors_and
             property_names,
             property_name_lens,
             property_visibilities,
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
             property_count,
             ancestor_class_names,
             ancestor_class_name_lens,
@@ -29889,6 +29931,77 @@ pub unsafe extern "C" fn phpc_native_value_new_declared_class_with_relationships
             property_names,
             property_name_lens,
             property_visibilities,
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            property_count,
+            ancestor_class_names,
+            ancestor_class_name_lens,
+            ancestor_class_count,
+            interface_names,
+            interface_name_lens,
+            interface_count,
+        )
+    } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `class_name` must be null only when `class_name_len` is zero. Property,
+/// declaring-class, type-declaration, default-value, ancestor, and interface
+/// arrays must either all be null with a zero count or point to their
+/// corresponding count. Type-declaration entries may be null only when the
+/// matching length is zero. Default value handles are borrowed and cloned into
+/// object storage; callers retain ownership of every handle and must free them
+/// after this call.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_new_declared_class_with_relationships_and_property_metadata_and_diagnostic(
+    class_id: usize,
+    class_name: *const u8,
+    class_name_len: usize,
+    property_declaring_class_ids: *const usize,
+    property_declaring_class_names: *const *const u8,
+    property_declaring_class_name_lens: *const usize,
+    property_names: *const *const u8,
+    property_name_lens: *const usize,
+    property_visibilities: *const u8,
+    property_type_decls: *const *const u8,
+    property_type_decl_lens: *const usize,
+    property_default_values: *const NativeValueHandle,
+    property_default_flags: *const u8,
+    property_count: usize,
+    ancestor_class_names: *const *const u8,
+    ancestor_class_name_lens: *const usize,
+    ancestor_class_count: usize,
+    interface_names: *const *const u8,
+    interface_name_lens: *const usize,
+    interface_count: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe {
+        native_value_new_declared_class_with_ancestors(
+            class_id,
+            class_name,
+            class_name_len,
+            property_declaring_class_ids,
+            property_declaring_class_names,
+            property_declaring_class_name_lens,
+            property_names,
+            property_name_lens,
+            property_visibilities,
+            property_type_decls,
+            property_type_decl_lens,
+            property_default_values,
+            property_default_flags,
             property_count,
             ancestor_class_names,
             ancestor_class_name_lens,
@@ -29984,6 +30097,10 @@ unsafe fn native_value_new_declared_class_with_ancestors(
     property_names: *const *const u8,
     property_name_lens: *const usize,
     property_visibilities: *const u8,
+    property_type_decls: *const *const u8,
+    property_type_decl_lens: *const usize,
+    property_default_values: *const NativeValueHandle,
+    property_default_flags: *const u8,
     property_count: usize,
     ancestor_class_names: *const *const u8,
     ancestor_class_name_lens: *const usize,
@@ -30042,6 +30159,48 @@ unsafe fn native_value_new_declared_class_with_ancestors(
             "native declared class inheritance allocation received invalid property-visibility ABI"
                 .to_string()
         })?;
+    let property_type_decls = if property_type_decls.is_null() && property_type_decl_lens.is_null()
+    {
+        None
+    } else if property_type_decls.is_null() || property_type_decl_lens.is_null() {
+        return Err(
+            "native declared class inheritance allocation received partial property-type ABI"
+                .to_string(),
+        );
+    } else {
+        let decls =
+            unsafe { native_abi_slice(property_type_decls, property_count) }.ok_or_else(|| {
+                "native declared class inheritance allocation received invalid property-type ABI"
+                    .to_string()
+            })?;
+        let lens = unsafe { native_abi_slice(property_type_decl_lens, property_count) }
+            .ok_or_else(|| {
+                "native declared class inheritance allocation received invalid property-type length ABI"
+                    .to_string()
+            })?;
+        Some((decls, lens))
+    };
+    let property_defaults = if property_default_values.is_null() && property_default_flags.is_null()
+    {
+        None
+    } else if property_default_values.is_null() || property_default_flags.is_null() {
+        return Err(
+            "native declared class inheritance allocation received partial property-default ABI"
+                .to_string(),
+        );
+    } else {
+        let values = unsafe { native_abi_slice(property_default_values, property_count) }
+            .ok_or_else(|| {
+                "native declared class inheritance allocation received invalid property-default value ABI"
+                    .to_string()
+            })?;
+        let flags = unsafe { native_abi_slice(property_default_flags, property_count) }
+            .ok_or_else(|| {
+                "native declared class inheritance allocation received invalid property-default flag ABI"
+                    .to_string()
+            })?;
+        Some((values, flags))
+    };
     let ancestor_class_names =
         unsafe { native_abi_slice(ancestor_class_names, ancestor_class_count) }.ok_or_else(
             || {
@@ -30069,6 +30228,7 @@ unsafe fn native_value_new_declared_class_with_ancestors(
 
     let mut class = PhpClassMetadata::new(ClassId(class_id), class_name.clone());
     let mut inherited_properties = Vec::new();
+    let mut default_assignments = Vec::new();
     for index in 0..property_count {
         let declaring_class_name = unsafe {
             native_declared_class_utf8_name(
@@ -30106,8 +30266,57 @@ unsafe fn native_value_new_declared_class_with_ancestors(
                     property_visibilities[index]
                 )
             })?;
-        let property = PhpPropertyMetadata::instance(property_name, visibility);
+        let type_decl = if let Some((type_decls, type_lens)) = property_type_decls {
+            let type_len = type_lens[index];
+            if type_len == 0 {
+                None
+            } else {
+                let type_bytes =
+                    unsafe { native_abi_bytes(type_decls[index], type_len) }.ok_or_else(|| {
+                        "native declared class inheritance allocation received invalid property-type bytes"
+                            .to_string()
+                    })?;
+                let type_decl = std::str::from_utf8(type_bytes).map_err(|_| {
+                    "native declared class inheritance allocation requires UTF-8 property type declarations"
+                        .to_string()
+                })?;
+                if type_decl.is_empty() {
+                    return Err(
+                        "native declared class inheritance allocation requires non-empty property type declarations"
+                            .to_string(),
+                    );
+                }
+                Some(type_decl.to_string())
+            }
+        } else {
+            None
+        };
+        let property = PhpPropertyMetadata::instance(property_name.clone(), visibility)
+            .with_type_decl(type_decl);
         let declaring_class_id = ClassId(property_declaring_class_ids[index]);
+        if let Some((default_values, default_flags)) = property_defaults {
+            match default_flags[index] {
+                0 => {}
+                1 => {
+                    let Some(default) = (unsafe { default_values[index].as_ref() }) else {
+                        return Err(
+                            "native declared class inheritance allocation received null property-default value handle"
+                                .to_string(),
+                        );
+                    };
+                    default_assignments.push((
+                        declaring_class_id,
+                        property_name.to_string(),
+                        default.clone(),
+                    ));
+                }
+                tag => {
+                    return Err(format!(
+                        "native declared class inheritance allocation received unsupported property-default flag {tag}"
+                    ));
+                }
+            }
+        }
         if declaring_class_id == ClassId(class_id)
             && declaring_class_name.eq_ignore_ascii_case(&class_name)
         {
@@ -30161,15 +30370,25 @@ unsafe fn native_value_new_declared_class_with_ancestors(
         interfaces.push(interface);
     }
 
-    Ok(Value::Object(
-        PhpObject::from_class_with_relationship_metadata_with_id(
-            &class,
-            &inherited_properties,
-            ancestors,
-            interfaces,
-            NEXT_OBJECT_ID.fetch_add(1, AtomicOrdering::Relaxed),
-        ),
-    ))
+    let object = PhpObject::from_class_with_relationship_metadata_with_id(
+        &class,
+        &inherited_properties,
+        ancestors,
+        interfaces,
+        NEXT_OBJECT_ID.fetch_add(1, AtomicOrdering::Relaxed),
+    );
+    for (declaring_class_id, property_name, default) in default_assignments {
+        object
+            .write_property_from_context(
+                &property_name,
+                default,
+                Some(declaring_class_id),
+                &[declaring_class_id],
+            )
+            .map_err(|error| error.message().to_string())?;
+    }
+
+    Ok(Value::Object(object))
 }
 
 unsafe fn native_declared_class_utf8_name(
@@ -36429,6 +36648,226 @@ mod tests {
         unsafe { phpc_native_diagnostic_free(diagnostic) };
 
         unsafe { phpc_native_value_free(object) };
+    }
+
+    #[test]
+    fn native_declared_class_allocation_enforces_typed_instance_property_metadata() {
+        let class_name = b"TypedNativeBox";
+        let property_count = b"count";
+        let property_name = b"name";
+        let type_int = b"int";
+        let type_string = b"string";
+        let property_declaring_class_ids = [41usize, 41usize];
+        let property_declaring_class_names = [class_name.as_ptr(), class_name.as_ptr()];
+        let property_declaring_class_name_lens = [class_name.len(), class_name.len()];
+        let property_names = [property_count.as_ptr(), property_name.as_ptr()];
+        let property_name_lens = [property_count.len(), property_name.len()];
+        let property_visibilities = [
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+        ];
+        let property_type_decls = [type_int.as_ptr(), type_string.as_ptr()];
+        let property_type_decl_lens = [type_int.len(), type_string.len()];
+        let default_count = NativeValueHandle::from_value(Value::Int(5));
+        let property_default_values = [default_count, NativeValueHandle::null()];
+        let property_default_flags = [1u8, 0u8];
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let object = unsafe {
+            phpc_native_value_new_declared_class_with_relationships_and_property_metadata_and_diagnostic(
+                41,
+                class_name.as_ptr(),
+                class_name.len(),
+                property_declaring_class_ids.as_ptr(),
+                property_declaring_class_names.as_ptr(),
+                property_declaring_class_name_lens.as_ptr(),
+                property_names.as_ptr(),
+                property_name_lens.as_ptr(),
+                property_visibilities.as_ptr(),
+                property_type_decls.as_ptr(),
+                property_type_decl_lens.as_ptr(),
+                property_default_values.as_ptr(),
+                property_default_flags.as_ptr(),
+                property_names.len(),
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        unsafe { phpc_native_value_free(default_count) };
+
+        let read_default = unsafe {
+            phpc_native_value_object_public_property_operation_with_diagnostic(
+                object,
+                property_count.as_ptr(),
+                property_count.len(),
+                NativeValueHandle::null(),
+                NATIVE_OBJECT_PUBLIC_PROPERTY_READ,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(unsafe { read_default.as_ref() }, Some(&Value::Int(5)));
+        unsafe { phpc_native_value_free(read_default) };
+
+        let read_uninitialized = unsafe {
+            phpc_native_value_object_public_property_operation_with_diagnostic(
+                object,
+                property_name.as_ptr(),
+                property_name.len(),
+                NativeValueHandle::null(),
+                NATIVE_OBJECT_PUBLIC_PROPERTY_READ,
+                &mut diagnostic,
+            )
+        };
+        assert!(read_uninitialized.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "typed property TypedNativeBox::$name must not be accessed before initialization"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let replacement = NativeValueHandle::from_value(Value::String("6".to_string()));
+        let written = unsafe {
+            phpc_native_value_object_public_property_operation_with_diagnostic(
+                object,
+                property_count.as_ptr(),
+                property_count.len(),
+                replacement,
+                NATIVE_OBJECT_PUBLIC_PROPERTY_WRITE,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { written.as_ref() },
+            Some(&Value::String("6".to_string()))
+        );
+        unsafe { phpc_native_value_free(written) };
+        unsafe { phpc_native_value_free(replacement) };
+
+        let reread = unsafe {
+            phpc_native_value_object_public_property_operation_with_diagnostic(
+                object,
+                property_count.as_ptr(),
+                property_count.len(),
+                NativeValueHandle::null(),
+                NATIVE_OBJECT_PUBLIC_PROPERTY_READ,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(unsafe { reread.as_ref() }, Some(&Value::Int(6)));
+        unsafe { phpc_native_value_free(reread) };
+
+        let bad = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
+        let failed = unsafe {
+            phpc_native_value_object_public_property_operation_with_diagnostic(
+                object,
+                property_count.as_ptr(),
+                property_count.len(),
+                bad,
+                NATIVE_OBJECT_PUBLIC_PROPERTY_WRITE,
+                &mut diagnostic,
+            )
+        };
+        assert!(failed.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid property access: typed property TypedNativeBox::$count expects int, got array"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(bad) };
+        unsafe { phpc_native_value_free(object) };
+    }
+
+    #[test]
+    fn native_declared_class_allocation_reports_property_metadata_abi_diagnostics() {
+        let class_name = b"BadTypedNativeBox";
+        let property_name = b"count";
+        let type_int = b"int";
+        let property_declaring_class_ids = [42usize];
+        let property_declaring_class_names = [class_name.as_ptr()];
+        let property_declaring_class_name_lens = [class_name.len()];
+        let property_names = [property_name.as_ptr()];
+        let property_name_lens = [property_name.len()];
+        let property_visibilities = [NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC];
+        let property_type_decls = [type_int.as_ptr()];
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let partial = unsafe {
+            phpc_native_value_new_declared_class_with_relationships_and_property_metadata_and_diagnostic(
+                42,
+                class_name.as_ptr(),
+                class_name.len(),
+                property_declaring_class_ids.as_ptr(),
+                property_declaring_class_names.as_ptr(),
+                property_declaring_class_name_lens.as_ptr(),
+                property_names.as_ptr(),
+                property_name_lens.as_ptr(),
+                property_visibilities.as_ptr(),
+                property_type_decls.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(),
+                property_names.len(),
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                &mut diagnostic,
+            )
+        };
+        assert!(partial.is_null());
+        assert!(
+            native_diagnostic_message_for_test(diagnostic).contains("partial property-type ABI")
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        let property_type_decl_lens = [type_int.len()];
+        let bad_default = NativeValueHandle::from_value(Value::Array(PhpArray::new()));
+        let property_default_values = [bad_default];
+        let property_default_flags = [1u8];
+        diagnostic = NativeDiagnosticHandle::null();
+        let bad_default_object = unsafe {
+            phpc_native_value_new_declared_class_with_relationships_and_property_metadata_and_diagnostic(
+                42,
+                class_name.as_ptr(),
+                class_name.len(),
+                property_declaring_class_ids.as_ptr(),
+                property_declaring_class_names.as_ptr(),
+                property_declaring_class_name_lens.as_ptr(),
+                property_names.as_ptr(),
+                property_name_lens.as_ptr(),
+                property_visibilities.as_ptr(),
+                property_type_decls.as_ptr(),
+                property_type_decl_lens.as_ptr(),
+                property_default_values.as_ptr(),
+                property_default_flags.as_ptr(),
+                property_names.len(),
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                &mut diagnostic,
+            )
+        };
+        assert!(bad_default_object.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid property access: typed property BadTypedNativeBox::$count expects int, got array"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(bad_default) };
     }
 
     #[test]

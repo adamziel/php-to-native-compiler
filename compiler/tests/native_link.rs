@@ -1664,6 +1664,80 @@ fn emit_exe_links_and_runs_declared_object_property_program() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_typed_declared_instance_property_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class TypedBox {\n",
+        "    public int $count = 5;\n",
+        "    public string $name = \"Ada\";\n",
+        "    public function label() { return $this->name . \":\" . $this->count; }\n",
+        "    public function bump($value) { $this->count = $value; }\n",
+        "}\n",
+        "$first = new TypedBox();\n",
+        "$second = new TypedBox();\n",
+        "$first->bump(\"7\");\n",
+        "$second->count = \"8\";\n",
+        "echo $first->label(), \"|\", $second->label(), \"\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("typed_declared_instance_property", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run typed declared instance-property executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"Ada:7|Ada:8\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_typed_declared_instance_property_reports_type_failure() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class TypedFailure { public int $count; }\n",
+        "$box = new TypedFailure();\n",
+        "$box->count = [];\n",
+        "echo \"after\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("typed_declared_instance_property_failure", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run typed declared instance-property failure executable: {error}")
+    });
+
+    assert!(
+        !run.status.success(),
+        "typed property failure should exit non-zero"
+    );
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains("typed property TypedFailure::$count expects int, got array"),
+        "stderr:\n{stderr}"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn emit_exe_links_and_runs_declared_static_property_storage_program() {
     if !has_cc() {
         return;
@@ -3704,6 +3778,39 @@ fn native_executable_c_source_routes_declared_object_properties_through_runtime_
 }
 
 #[test]
+fn native_executable_c_source_routes_typed_declared_instance_properties_through_allocation_contract(
+) {
+    let program = parse(
+        "<?php\nclass TypedBox { public int $count = 5; public ?string $label = null; public array $items = array(\"seed\" => \"base\"); }\n$box = new TypedBox();\n$box->count = \"6\";\necho $box->count;\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains(
+            "phpc_native_value_new_declared_class_with_relationships_and_property_metadata_and_diagnostic"
+        ),
+        "typed/default properties should route through the declared-class property metadata allocation ABI:\n{source}"
+    );
+    assert!(
+        source.contains("declared_class_property_type_decl_ptrs_")
+            && source.contains("declared_class_property_type_decl_lens_")
+            && source.contains("declared_class_property_default_values_")
+            && source.contains("declared_class_property_default_flags_"),
+        "type declarations and defaults should be passed as metadata arrays, not source-shape special cases:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_value_object_property_mutation_operation_with_diagnostic"),
+        "known typed property assignments should use the mutation ABI so uninitialized typed slots can be initialized with diagnostics:\n{source}"
+    );
+    assert!(
+        !source.contains("object/class lowering rejects")
+            && !source.contains("object-instantiation lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_declared_static_property_reads_writes_through_runtime_storage()
 {
     let program = parse(NATIVE_DECLARED_CLASS_STATIC_PROPERTY_SOURCE).unwrap();
@@ -4842,8 +4949,7 @@ fn native_executable_c_source_keeps_unsupported_declared_class_features_blocked(
     for source in [
         "<?php\nclass Child extends Missing {}\nnew Child();\n",
         "<?php\nfinal class Base {}\nclass Child extends Base {}\nnew Child();\n",
-        "<?php\nclass Box { public static $count; }\nnew Box();\n",
-        "<?php\nclass Box { public $name = \"Ada\"; }\nnew Box();\n",
+        "<?php\nclass Box { public object $name; }\nnew Box();\n",
     ] {
         let program = parse(source).expect("unsupported declared-class source parses");
         let error = emit_native_executable_c_source(&program).unwrap_err();
@@ -15606,7 +15712,7 @@ fn native_executable_c_source_routes_property_held_arrayaccess_through_object_pr
     assert!(
         source.contains("phpc_native_value_public_property_reference_with_diagnostic_and_free")
             && source.contains("phpc_native_reference_value_clone(")
-            && source.contains("phpc_native_reference_set_value(")
+            && source.contains("phpc_native_reference_set_value_with_diagnostic(")
             && source.contains("phpc_native_reference_free(")
             && source.contains("phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic")
             && source.contains("phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic")
@@ -15626,7 +15732,10 @@ fn native_executable_c_source_routes_property_held_arrayaccess_through_object_pr
     assert!(
         source.matches("phpc_native_value_public_property_reference_with_diagnostic_and_free").count()
             >= 10
-            && source.matches("phpc_native_reference_set_value(").count() >= 6,
+            && source
+                .matches("phpc_native_reference_set_value_with_diagnostic(")
+                .count()
+                >= 6,
         "literal and dynamic property-held owners should repeatedly route through the shared reference owner path:\n{source}"
     );
     assert!(

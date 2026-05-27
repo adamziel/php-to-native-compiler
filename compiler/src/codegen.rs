@@ -16262,7 +16262,18 @@ struct CDeclaredClassPropertyMetadataArrays {
     names: String,
     name_lens: String,
     visibilities: String,
+    type_decls: String,
+    type_decl_lens: String,
     count: usize,
+    has_type_decls: bool,
+}
+
+#[derive(Debug, Clone)]
+struct CDeclaredClassPropertyDefaultValueHandles {
+    values: String,
+    flags: String,
+    cleanup_after_use: Vec<String>,
+    has_defaults: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -19240,7 +19251,14 @@ impl CGenerator {
                         });
                         continue;
                     }
-                    if property.type_decl.is_some() || property.default.is_some() {
+                    if property
+                        .type_decl
+                        .as_ref()
+                        .is_some_and(|decl| !native_function_type_decl_is_supported(decl))
+                        || property.default.as_ref().is_some_and(|default| {
+                            !Self::declared_class_property_default_is_supported(default)
+                        })
+                    {
                         return Err(
                             self.unsupported(property.span, ASSEMBLY_OBJECT_CLASS_REJECTION)
                         );
@@ -19256,8 +19274,8 @@ impl CGenerator {
                         name: property.name.clone(),
                         visibility: property.visibility,
                         is_static: false,
-                        type_decl: None,
-                        default: None,
+                        type_decl: property.type_decl.as_ref().map(|decl| decl.text.clone()),
+                        default: property.default.clone(),
                         span: property.span,
                     });
                 }
@@ -19534,6 +19552,26 @@ impl CGenerator {
             ClassVisibility::Public => NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
             ClassVisibility::Protected => NATIVE_DECLARED_CLASS_PROPERTY_PROTECTED,
             ClassVisibility::Private => NATIVE_DECLARED_CLASS_PROPERTY_PRIVATE,
+        }
+    }
+
+    fn declared_class_property_default_is_supported(expr: &Expr) -> bool {
+        match expr {
+            Expr::Null(_)
+            | Expr::Bool(_, _)
+            | Expr::Int(_, _)
+            | Expr::Float(_, _)
+            | Expr::String(_, _) => true,
+            Expr::Array { items, .. } => items.iter().all(|item| {
+                !item.by_reference
+                    && item
+                        .key
+                        .as_ref()
+                        .map_or(true, Self::declared_class_property_default_is_supported)
+                    && Self::declared_class_property_default_is_supported(&item.value)
+            }),
+            Expr::Unary { expr, .. } => Self::declared_class_property_default_is_supported(expr),
+            _ => false,
         }
     }
 
@@ -21533,6 +21571,7 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_new_declared_class_with_diagnostic(size_t class_id, const uint8_t *class_name, size_t class_name_len, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, size_t property_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_new_declared_class_with_ancestors_and_diagnostic(size_t class_id, const uint8_t *class_name, size_t class_name_len, const size_t *property_declaring_class_ids, const uint8_t *const *property_declaring_class_names, const size_t *property_declaring_class_name_lens, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, size_t property_count, const uint8_t *const *ancestor_class_names, const size_t *ancestor_class_name_lens, size_t ancestor_class_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_new_declared_class_with_relationships_and_diagnostic(size_t class_id, const uint8_t *class_name, size_t class_name_len, const size_t *property_declaring_class_ids, const uint8_t *const *property_declaring_class_names, const size_t *property_declaring_class_name_lens, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, size_t property_count, const uint8_t *const *ancestor_class_names, const size_t *ancestor_class_name_lens, size_t ancestor_class_count, const uint8_t *const *interface_names, const size_t *interface_name_lens, size_t interface_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_new_declared_class_with_relationships_and_property_metadata_and_diagnostic(size_t class_id, const uint8_t *class_name, size_t class_name_len, const size_t *property_declaring_class_ids, const uint8_t *const *property_declaring_class_names, const size_t *property_declaring_class_name_lens, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, const uint8_t *const *property_type_decls, const size_t *property_type_decl_lens, const phpc_NativeValueHandle *property_default_values, const uint8_t *property_default_flags, size_t property_count, const uint8_t *const *ancestor_class_names, const size_t *ancestor_class_name_lens, size_t ancestor_class_count, const uint8_t *const *interface_names, const size_t *interface_name_lens, size_t interface_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_user_class_declaration {
                 output.push_str("extern bool phpc_native_declare_user_class_bytes(const uint8_t *ptr, size_t len);\n");
@@ -21595,6 +21634,7 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_reference_value_clone(phpc_NativeReferenceHandle reference);\n");
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_reference_from_value_and_free(phpc_NativeValueHandle value);\n");
                 output.push_str("extern bool phpc_native_reference_set_value(phpc_NativeReferenceHandle reference, phpc_NativeValueHandle value);\n");
+                output.push_str("extern bool phpc_native_reference_set_value_with_diagnostic(phpc_NativeReferenceHandle reference, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern void phpc_native_reference_free(phpc_NativeReferenceHandle reference);\n");
             }
             output.push_str(
@@ -22019,7 +22059,10 @@ impl CGenerator {
                 names: "NULL".to_string(),
                 name_lens: "NULL".to_string(),
                 visibilities: "NULL".to_string(),
+                type_decls: "NULL".to_string(),
+                type_decl_lens: "NULL".to_string(),
                 count: 0,
+                has_type_decls: false,
             };
         }
 
@@ -22029,6 +22072,9 @@ impl CGenerator {
         let mut name_ptrs = Vec::new();
         let mut name_lens = Vec::new();
         let mut visibilities = Vec::new();
+        let mut type_decl_ptrs = Vec::new();
+        let mut type_decl_lens = Vec::new();
+        let mut has_type_decls = false;
         for property in &class.properties {
             declaring_ids.push(property.declaring_class_id);
             let (declaring_bytes, declaring_len) = self.emit_call_type_static_bytes(
@@ -22045,6 +22091,18 @@ impl CGenerator {
             visibilities.push(Self::declared_class_property_visibility_tag(
                 property.visibility,
             ));
+            if let Some(type_decl) = &property.type_decl {
+                let (type_bytes, type_len) = self.emit_call_type_static_bytes(
+                    "declared_class_property_type_decl_bytes",
+                    type_decl,
+                );
+                type_decl_ptrs.push(type_bytes);
+                type_decl_lens.push(type_len);
+                has_type_decls = true;
+            } else {
+                type_decl_ptrs.push("NULL".to_string());
+                type_decl_lens.push("0".to_string());
+            }
         }
 
         let index = self.next_static_data;
@@ -22055,6 +22113,8 @@ impl CGenerator {
         let ptrs_name = format!("declared_class_property_name_ptrs_{index}");
         let lens_name = format!("declared_class_property_name_lens_{index}");
         let visibility_name = format!("declared_class_property_visibilities_{index}");
+        let type_ptrs_name = format!("declared_class_property_type_decl_ptrs_{index}");
+        let type_lens_name = format!("declared_class_property_type_decl_lens_{index}");
         self.static_data.push(format!(
             "static const size_t {declaring_ids_name}[] = {{{}}};",
             declaring_ids
@@ -22087,6 +22147,14 @@ impl CGenerator {
                 .collect::<Vec<_>>()
                 .join(", ")
         ));
+        self.static_data.push(format!(
+            "static const uint8_t *{type_ptrs_name}[] = {{{}}};",
+            type_decl_ptrs.join(", ")
+        ));
+        self.static_data.push(format!(
+            "static const size_t {type_lens_name}[] = {{{}}};",
+            type_decl_lens.join(", ")
+        ));
 
         CDeclaredClassPropertyMetadataArrays {
             declaring_class_ids: declaring_ids_name,
@@ -22095,8 +22163,86 @@ impl CGenerator {
             names: ptrs_name,
             name_lens: lens_name,
             visibilities: visibility_name,
+            type_decls: if has_type_decls {
+                type_ptrs_name
+            } else {
+                "NULL".to_string()
+            },
+            type_decl_lens: if has_type_decls {
+                type_lens_name
+            } else {
+                "NULL".to_string()
+            },
             count: class.properties.len(),
+            has_type_decls,
         }
+    }
+
+    fn materialize_declared_class_property_default_value_handles(
+        &mut self,
+        class: &CDeclaredClass,
+        failure_cleanup: &str,
+    ) -> CompileResult<CDeclaredClassPropertyDefaultValueHandles> {
+        if !class
+            .properties
+            .iter()
+            .any(|property| property.default.is_some())
+        {
+            return Ok(CDeclaredClassPropertyDefaultValueHandles {
+                values: "NULL".to_string(),
+                flags: "NULL".to_string(),
+                cleanup_after_use: Vec::new(),
+                has_defaults: false,
+            });
+        }
+
+        let mut value_handles = Vec::new();
+        let mut flags = Vec::new();
+        let mut cleanup_after_use = Vec::new();
+        for property in &class.properties {
+            if let Some(default) = &property.default {
+                let default_failure_cleanup = format!(
+                    "{}{}",
+                    c_cleanup_sequence(&cleanup_after_use),
+                    failure_cleanup
+                );
+                let value = self
+                    .materialize_native_value_result_operand(default, &default_failure_cleanup)?;
+                value_handles.push(value.handle.clone());
+                cleanup_after_use.extend(value.cleanup_after_use);
+                flags.push(1u8);
+            } else {
+                value_handles.push("(phpc_NativeValueHandle){0}".to_string());
+                flags.push(0u8);
+            }
+        }
+
+        let values_index = self.next_native_temp;
+        self.next_native_temp += 1;
+        let values = format!("declared_class_property_default_values_{values_index}");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {values}[] = {{{}}};",
+            value_handles.join(", ")
+        ));
+
+        let flags_index = self.next_static_data;
+        self.next_static_data += 1;
+        let flags_name = format!("declared_class_property_default_flags_{flags_index}");
+        self.static_data.push(format!(
+            "static const uint8_t {flags_name}[] = {{{}}};",
+            flags
+                .iter()
+                .map(u8::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+
+        Ok(CDeclaredClassPropertyDefaultValueHandles {
+            values,
+            flags: flags_name,
+            cleanup_after_use,
+            has_defaults: true,
+        })
     }
 
     fn emit_declared_class_ancestor_metadata_arrays(
@@ -22199,18 +22345,45 @@ impl CGenerator {
         class: &CDeclaredClass,
         result: &str,
         failure_cleanup: &str,
-    ) {
+    ) -> CompileResult<()> {
         self.uses_native_string_helpers = true;
         self.uses_native_object_instantiation_helpers = true;
 
         let (class_name, class_name_len) =
             self.emit_call_type_static_bytes("declared_class_name_bytes", &class.name);
         let property_metadata = self.emit_declared_class_property_metadata_arrays(class);
+        let property_defaults =
+            self.materialize_declared_class_property_default_value_handles(class, failure_cleanup)?;
+        let property_default_cleanup = c_cleanup_sequence(&property_defaults.cleanup_after_use);
 
         let diagnostic = self.next_native_name("declared_class_diagnostic");
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
-        if Self::declared_class_requires_relationship_allocation(class) {
+        if property_metadata.has_type_decls || property_defaults.has_defaults {
+            let ancestor_metadata = self.emit_declared_class_ancestor_metadata_arrays(class);
+            let interface_metadata = self.emit_declared_class_interface_metadata_arrays(class);
+            self.body.push(format!(
+                "{result} = phpc_native_value_new_declared_class_with_relationships_and_property_metadata_and_diagnostic({}, {class_name}, {class_name_len}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, &{diagnostic});",
+                class.class_id,
+                property_metadata.declaring_class_ids,
+                property_metadata.declaring_class_names,
+                property_metadata.declaring_class_name_lens,
+                property_metadata.names,
+                property_metadata.name_lens,
+                property_metadata.visibilities,
+                property_metadata.type_decls,
+                property_metadata.type_decl_lens,
+                property_defaults.values,
+                property_defaults.flags,
+                property_metadata.count,
+                ancestor_metadata.names,
+                ancestor_metadata.name_lens,
+                ancestor_metadata.count,
+                interface_metadata.names,
+                interface_metadata.name_lens,
+                interface_metadata.count
+            ));
+        } else if Self::declared_class_requires_relationship_allocation(class) {
             let ancestor_metadata = self.emit_declared_class_ancestor_metadata_arrays(class);
             let interface_metadata = self.emit_declared_class_interface_metadata_arrays(class);
             self.body.push(format!(
@@ -22242,25 +22415,28 @@ impl CGenerator {
         }
         self.emit_report_native_diagnostic(&diagnostic);
         let error_exit = self.native_error_exit(failure_cleanup);
-        self.body
-            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.body.push(format!(
+            "if ({result}.ptr == NULL) {{ {property_default_cleanup}{error_exit} }}"
+        ));
+        self.body.extend(property_defaults.cleanup_after_use);
+        Ok(())
     }
 
     fn materialize_declared_class_instantiation(
         &mut self,
         class: CDeclaredClass,
         failure_cleanup: &str,
-    ) -> CNativeValueMaterialization {
+    ) -> CompileResult<CNativeValueMaterialization> {
         let result = self.next_native_name("declared_class_object");
         self.body.push(format!(
             "phpc_NativeValueHandle {result} = (phpc_NativeValueHandle){{0}};"
         ));
-        self.emit_declared_class_instantiation_assignment(&class, &result, failure_cleanup);
+        self.emit_declared_class_instantiation_assignment(&class, &result, failure_cleanup)?;
 
-        CNativeValueMaterialization {
+        Ok(CNativeValueMaterialization {
             handle: result.clone(),
             cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
-        }
+        })
     }
 
     fn try_materialize_declared_class_new_expr(
@@ -22316,7 +22492,7 @@ impl CGenerator {
         let constructor = self.declared_class_constructor_for_instantiation(&class);
         let value = if let Some((constructor_class, constructor)) = constructor {
             let value =
-                self.materialize_declared_class_instantiation(class.clone(), failure_cleanup);
+                self.materialize_declared_class_instantiation(class.clone(), failure_cleanup)?;
             let constructor_failure_cleanup = format!(
                 "{}{}",
                 c_cleanup_sequence(&value.cleanup_after_use),
@@ -22339,7 +22515,7 @@ impl CGenerator {
             let value = self.materialize_declared_class_instantiation(
                 class.clone(),
                 &allocation_failure_cleanup,
-            );
+            )?;
             if constructor_args.count() > 0 {
                 self.body
                     .push(format!("(void){};", constructor_args.handles));
@@ -22390,7 +22566,7 @@ impl CGenerator {
                     &class,
                     &result,
                     &allocation_failure_cleanup,
-                );
+                )?;
                 let constructor_failure_cleanup = format!(
                     "phpc_native_value_free({result}); {class_name_cleanup}{failure_cleanup}"
                 );
@@ -22412,7 +22588,7 @@ impl CGenerator {
                     &class,
                     &result,
                     &allocation_failure_cleanup,
-                );
+                )?;
                 if constructor_args.count() > 0 {
                     self.body
                         .push(format!("(void){};", constructor_args.handles));
@@ -22761,6 +22937,43 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<CNativeValueMaterialization> {
+        self.materialize_object_property_assignment_result_with_fact_recording(
+            object,
+            property,
+            expr,
+            span,
+            failure_cleanup,
+            true,
+        )
+    }
+
+    fn materialize_object_property_assignment_result_without_fact_recording(
+        &mut self,
+        object: &Expr,
+        property: CObjectPropertyOperand<'_>,
+        expr: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        self.materialize_object_property_assignment_result_with_fact_recording(
+            object,
+            property,
+            expr,
+            span,
+            failure_cleanup,
+            false,
+        )
+    }
+
+    fn materialize_object_property_assignment_result_with_fact_recording(
+        &mut self,
+        object: &Expr,
+        property: CObjectPropertyOperand<'_>,
+        expr: &Expr,
+        span: Span,
+        failure_cleanup: &str,
+        record_write_facts: bool,
+    ) -> CompileResult<CNativeValueMaterialization> {
         self.uses_native_string_helpers = true;
         self.uses_native_object_property_helpers = true;
 
@@ -22801,7 +23014,9 @@ impl CGenerator {
             &assignment_result_failure_cleanup,
         );
         self.body.extend(mutation.cleanup_after_use);
-        self.record_native_object_property_write_facts(object, property, replacement_facts);
+        if record_write_facts {
+            self.record_native_object_property_write_facts(object, property, replacement_facts);
+        }
         Ok(assignment_result)
     }
 
@@ -23053,11 +23268,67 @@ impl CGenerator {
         property: &str,
         failure_cleanup: &str,
     ) -> CompileResult<()> {
-        self.emit_object_property_unset_expr(
+        self.emit_object_public_property_unset_expr_with_fact_recording(
             object,
-            CObjectPropertyOperand::Literal(property),
-            object.span(),
+            property,
             failure_cleanup,
+            true,
+        )
+    }
+
+    fn emit_object_public_property_unset_expr_without_fact_recording(
+        &mut self,
+        object: &Expr,
+        property: &str,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        self.emit_object_public_property_unset_expr_with_fact_recording(
+            object,
+            property,
+            failure_cleanup,
+            false,
+        )
+    }
+
+    fn emit_object_public_property_unset_expr_with_fact_recording(
+        &mut self,
+        object: &Expr,
+        property: &str,
+        failure_cleanup: &str,
+        record_write_facts: bool,
+    ) -> CompileResult<()> {
+        let value = self.materialize_object_public_property_operation_expr(
+            object,
+            property,
+            None,
+            "PHPC_NATIVE_OBJECT_PUBLIC_PROPERTY_UNSET",
+            "object_property_unset",
+            failure_cleanup,
+        )?;
+        self.body.extend(value.cleanup_after_use);
+        if record_write_facts {
+            self.record_native_object_property_write_facts(
+                object,
+                CObjectPropertyOperand::Literal(property),
+                None,
+            );
+        }
+        Ok(())
+    }
+
+    fn emit_object_property_unset_expr_without_fact_recording(
+        &mut self,
+        object: &Expr,
+        property: CObjectPropertyOperand<'_>,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        self.emit_object_property_unset_expr_with_fact_recording(
+            object,
+            property,
+            span,
+            failure_cleanup,
+            false,
         )
     }
 
@@ -23067,6 +23338,23 @@ impl CGenerator {
         property: CObjectPropertyOperand<'_>,
         span: Span,
         failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        self.emit_object_property_unset_expr_with_fact_recording(
+            object,
+            property,
+            span,
+            failure_cleanup,
+            true,
+        )
+    }
+
+    fn emit_object_property_unset_expr_with_fact_recording(
+        &mut self,
+        object: &Expr,
+        property: CObjectPropertyOperand<'_>,
+        span: Span,
+        failure_cleanup: &str,
+        record_write_facts: bool,
     ) -> CompileResult<()> {
         let (object_value, property_value) =
             self.materialize_object_property_operand(object, property, span, failure_cleanup)?;
@@ -23078,7 +23366,9 @@ impl CGenerator {
             failure_cleanup,
         );
         self.body.extend(value.cleanup_after_use);
-        self.record_native_object_property_write_facts(object, property, None);
+        if record_write_facts {
+            self.record_native_object_property_write_facts(object, property, None);
+        }
         Ok(())
     }
 
@@ -27226,6 +27516,12 @@ impl CGenerator {
             .is_some_and(|facts| facts.has_definite_native_object_interface(interface_name))
     }
 
+    fn expr_has_definite_declared_native_object(&self, expr: &Expr) -> bool {
+        self.native_value_facts_for_expr(expr)
+            .and_then(|facts| facts.object)
+            .is_some_and(|object| !object.declared_class_keys.is_empty())
+    }
+
     fn expr_is_native_arrayaccess_subject(&self, expr: &Expr) -> bool {
         self.expr_has_definite_native_object_interface(expr, "ArrayAccess")
     }
@@ -27403,6 +27699,45 @@ impl CGenerator {
         }
     }
 
+    fn declared_class_instance_property_is_typed(
+        &self,
+        class_key: &str,
+        property_name: &str,
+    ) -> bool {
+        let Some(lookup_keys) = self.declared_class_lookup_keys(class_key) else {
+            return false;
+        };
+        lookup_keys.iter().any(|lookup_key| {
+            self.declared_classes.get(lookup_key).is_some_and(|class| {
+                class.properties.iter().any(|property| {
+                    !property.is_static
+                        && property.name == property_name
+                        && property.type_decl.is_some()
+                })
+            })
+        })
+    }
+
+    fn native_object_property_assignment_requires_typed_mutation(
+        &self,
+        object: &Expr,
+        property: CObjectPropertyOperand<'_>,
+    ) -> bool {
+        let Some(property_name) = self.single_known_object_property_name(property) else {
+            return false;
+        };
+        let Some(facts) = self.native_value_facts_for_expr(object) else {
+            return false;
+        };
+        let Some(object) = facts.object else {
+            return false;
+        };
+        !object.declared_class_keys.is_empty()
+            && object.declared_class_keys.iter().all(|class_key| {
+                self.declared_class_instance_property_is_typed(class_key, &property_name)
+            })
+    }
+
     fn native_arrayaccess_owner_source_offset_get_may_return_reference(
         &self,
         source: &CNativeValueOwnerSource,
@@ -27508,6 +27843,20 @@ impl CGenerator {
                 span,
             } => {
                 let object_expr = Expr::Variable(object.clone(), *span);
+                if self.native_object_property_assignment_requires_typed_mutation(
+                    &object_expr,
+                    CObjectPropertyOperand::Literal(property),
+                ) {
+                    return self
+                        .materialize_object_property_assignment_result(
+                            &object_expr,
+                            CObjectPropertyOperand::Literal(property),
+                            expr,
+                            *span,
+                            failure_cleanup,
+                        )
+                        .map(Some);
+                }
                 let fact_target =
                     CNativeObjectPropertyFactTarget::Key(CNativeObjectPropertyFactKey {
                         object: object.clone(),
@@ -27533,6 +27882,20 @@ impl CGenerator {
                     return Ok(None);
                 };
                 let object_expr = Expr::Variable(object.clone(), *span);
+                if self.native_object_property_assignment_requires_typed_mutation(
+                    &object_expr,
+                    CObjectPropertyOperand::Dynamic(property),
+                ) {
+                    return self
+                        .materialize_object_property_assignment_result(
+                            &object_expr,
+                            CObjectPropertyOperand::Dynamic(property),
+                            expr,
+                            *span,
+                            failure_cleanup,
+                        )
+                        .map(Some);
+                }
                 let fact_target =
                     CNativeObjectPropertyFactTarget::Key(CNativeObjectPropertyFactKey {
                         object: object.clone(),
@@ -27548,12 +27911,28 @@ impl CGenerator {
                 )
                 .map(Some)
             }
+            AssignTarget::NonDirectProperty {
+                holder,
+                property,
+                span,
+            } => {
+                if !self.expr_has_definite_declared_native_object(holder) {
+                    return Ok(None);
+                }
+                self.materialize_object_property_assignment_result_without_fact_recording(
+                    holder,
+                    CObjectPropertyOperand::Literal(property),
+                    expr,
+                    *span,
+                    failure_cleanup,
+                )
+                .map(Some)
+            }
             AssignTarget::Variable { .. }
             | AssignTarget::List { .. }
             | AssignTarget::ArrayIndex { .. }
             | AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
-            | AssignTarget::NonDirectProperty { .. }
             | AssignTarget::NonDirectDynamicProperty { .. }
             | AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
@@ -28131,7 +28510,7 @@ impl CGenerator {
                 fact_target,
                 cleanup_after_use: _,
             } => {
-                self.emit_native_reference_value_commit(
+                self.emit_native_reference_value_commit_with_diagnostic(
                     &reference,
                     replacement,
                     facts.clone(),
@@ -28158,6 +28537,28 @@ impl CGenerator {
         self.body.push(format!(
             "bool {stored} = phpc_native_reference_set_value({reference}, {replacement});"
         ));
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!("if (!{stored}) {{ {error_exit} }}"));
+        self.set_native_reference_facts(reference, facts);
+        Ok(())
+    }
+
+    fn emit_native_reference_value_commit_with_diagnostic(
+        &mut self,
+        reference: &str,
+        replacement: &str,
+        facts: Option<CNativeValueFacts>,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        self.uses_native_reference_helpers = true;
+        let diagnostic = self.next_native_name("native_reference_set_diagnostic");
+        let stored = self.next_native_name("native_reference_set");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "bool {stored} = phpc_native_reference_set_value_with_diagnostic({reference}, {replacement}, &{diagnostic});"
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
         let error_exit = self.native_error_exit(failure_cleanup);
         self.body.push(format!("if (!{stored}) {{ {error_exit} }}"));
         self.set_native_reference_facts(reference, facts);
@@ -32416,7 +32817,15 @@ impl CGenerator {
                     boundary.rejection(NativeCallBackend::Assembly),
                 ))
             }
-            Stmt::UnsetObjectProperty { span, .. } => {
+            Stmt::UnsetObjectProperty {
+                object,
+                property,
+                span,
+            } => {
+                let object = Expr::Variable(object.clone(), *span);
+                if self.expr_has_definite_declared_native_object(&object) {
+                    return self.emit_object_public_property_unset_expr(&object, property, "");
+                }
                 let boundary = native_non_local_unset_statement_owner_boundary(stmt)
                     .unwrap_or_else(|| NativeNonLocalOwnerBoundary::unset(*span));
                 Err(self.unsupported(
@@ -32424,7 +32833,24 @@ impl CGenerator {
                     boundary.rejection(NativeCallBackend::Assembly),
                 ))
             }
-            Stmt::UnsetDynamicObjectProperty { span, .. } => {
+            Stmt::UnsetDynamicObjectProperty {
+                object,
+                property,
+                span,
+            } => {
+                let object = Expr::Variable(object.clone(), *span);
+                if self.expr_has_definite_declared_native_object(&object)
+                    && self
+                        .single_static_known_string_value_for_expr(property)
+                        .is_some()
+                {
+                    return self.emit_object_property_unset_expr(
+                        &object,
+                        CObjectPropertyOperand::Dynamic(property),
+                        *span,
+                        "",
+                    );
+                }
                 let boundary = native_non_local_unset_statement_owner_boundary(stmt)
                     .unwrap_or_else(|| NativeNonLocalOwnerBoundary::unset(*span));
                 Err(self.unsupported(
@@ -32459,12 +32885,6 @@ impl CGenerator {
                     return Err(self.unsupported(
                         access.span,
                         request_array_key_consumer_rejection("assembly", &access.label),
-                    ));
-                }
-                if let Some(boundary) = native_non_local_unset_statement_owner_boundary(stmt) {
-                    return Err(self.unsupported(
-                        boundary.span,
-                        boundary.rejection(NativeCallBackend::Assembly),
                     ));
                 }
                 self.emit_unset_many(targets, *span)
@@ -41132,12 +41552,32 @@ impl CGenerator {
                     span,
                 } => {
                     let object = Expr::Variable(object.clone(), *span);
+                    if !self.expr_has_definite_declared_native_object(&object) {
+                        let boundary = native_non_local_unset_target_owner_boundary(target)
+                            .unwrap_or_else(|| NativeNonLocalOwnerBoundary::unset(*span));
+                        return Err(self.unsupported(
+                            boundary.span,
+                            boundary.rejection(NativeCallBackend::Assembly),
+                        ));
+                    }
                     self.emit_object_public_property_unset_expr(&object, property, "")?;
                 }
                 UnsetTarget::NonDirectObjectProperty {
-                    holder, property, ..
+                    holder,
+                    property,
+                    span,
                 } => {
-                    self.emit_object_public_property_unset_expr(holder, property, "")?;
+                    if !self.expr_has_definite_declared_native_object(holder) {
+                        let boundary = native_non_local_unset_target_owner_boundary(target)
+                            .unwrap_or_else(|| NativeNonLocalOwnerBoundary::unset(*span));
+                        return Err(self.unsupported(
+                            boundary.span,
+                            boundary.rejection(NativeCallBackend::Assembly),
+                        ));
+                    }
+                    self.emit_object_public_property_unset_expr_without_fact_recording(
+                        holder, property, "",
+                    )?;
                 }
                 UnsetTarget::DynamicObjectProperty {
                     object,
@@ -41145,6 +41585,18 @@ impl CGenerator {
                     span,
                 } => {
                     let object = Expr::Variable(object.clone(), *span);
+                    if !self.expr_has_definite_declared_native_object(&object)
+                        || self
+                            .single_static_known_string_value_for_expr(property)
+                            .is_none()
+                    {
+                        let boundary = native_non_local_unset_target_owner_boundary(target)
+                            .unwrap_or_else(|| NativeNonLocalOwnerBoundary::unset(*span));
+                        return Err(self.unsupported(
+                            boundary.span,
+                            boundary.rejection(NativeCallBackend::Assembly),
+                        ));
+                    }
                     self.emit_object_property_unset_expr(
                         &object,
                         CObjectPropertyOperand::Dynamic(property),
@@ -41157,7 +41609,19 @@ impl CGenerator {
                     property,
                     span,
                 } => {
-                    self.emit_object_property_unset_expr(
+                    if !self.expr_has_definite_declared_native_object(holder)
+                        || self
+                            .single_static_known_string_value_for_expr(property)
+                            .is_none()
+                    {
+                        let boundary = native_non_local_unset_target_owner_boundary(target)
+                            .unwrap_or_else(|| NativeNonLocalOwnerBoundary::unset(*span));
+                        return Err(self.unsupported(
+                            boundary.span,
+                            boundary.rejection(NativeCallBackend::Assembly),
+                        ));
+                    }
+                    self.emit_object_property_unset_expr_without_fact_recording(
                         holder,
                         CObjectPropertyOperand::Dynamic(property),
                         *span,
@@ -41179,7 +41643,19 @@ impl CGenerator {
                         boundary.rejection(NativeCallBackend::Assembly),
                     ));
                 }
-                _ => return Err(self.unsupported(span, ASSEMBLY_MUTATION_REJECTION)),
+                UnsetTarget::StaticProperty { .. }
+                | UnsetTarget::SelfStaticProperty { .. }
+                | UnsetTarget::ParentStaticProperty { .. }
+                | UnsetTarget::LateStaticProperty { .. } => {
+                    let boundary = native_non_local_unset_target_owner_boundary(target)
+                        .unwrap_or_else(|| {
+                            NativeNonLocalOwnerBoundary::unset(unset_target_span(target))
+                        });
+                    return Err(self.unsupported(
+                        boundary.span,
+                        boundary.rejection(NativeCallBackend::Assembly),
+                    ));
+                }
             }
         }
 
@@ -53943,7 +54419,7 @@ mod tests {
             body.contains("phpc_native_value_public_property_reference_with_diagnostic_and_free")
         );
         assert!(body.contains("phpc_native_reference_value_clone("));
-        assert!(body.contains("phpc_native_reference_set_value("));
+        assert!(body.contains("phpc_native_reference_set_value_with_diagnostic("));
         assert!(body.contains("phpc_native_value_free(replacement_value);"));
         assert_eq!(
             generator.native_object_property_value_facts.get(&key),
