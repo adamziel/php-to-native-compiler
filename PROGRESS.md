@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 19:09 CEST
+Updated: 2026-05-27 19:14 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,12 +19,27 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `7533992f` writes selected by-reference
-`foreach` loop value mutations back through the shared native array lvalue
-owner/reference paths. Direct and nested array-lvalue assignments/appends rooted
-at the loop value reference can now update the underlying native array storage,
-while broader side-effecting bodies, control-flow writeback, object/static/non-
-local iterable owners, and lingering reference parity remain blocked.
+Latest accounted source capability: `d6760f45` accepts namespace-qualified
+direct function call names through shared parser/name-resolution call
+categories. Unqualified, relative namespace-qualified, leading-global, and
+`namespace\...` calls can now route selected generated user functions and
+supported direct builtins through the shared direct-call lookup paths, while
+dynamic runtime function lookup and namespace-qualified constants/static-member
+surfaces remain blocked.
+
+Recent source commit `d6760f45` advances selected direct function-call
+namespace semantics without adding one-name or one-namespace lowering. The
+parser now normalizes direct call names into unqualified, namespace-relative,
+leading-global, and explicit `namespace\...` categories; namespace resolution
+applies imports only where PHP does, and generated-C user-function lookup
+continues through the shared direct-call key path. Focused gates cover syntax
+boundaries, namespace resolution, dynamic-feature lookup diagnostics,
+generated-C source proof, linked qualified-call execution, imported and
+leading-global regressions, keyword named-argument parser composition,
+formatting, and diff checks. Multiple namespace declaration forms,
+namespace-qualified function declarations, arbitrary dynamic runtime lookup,
+namespace-qualified constants/static-member surfaces, broad callable/magic
+fallback, and LLVM/ASM namespace lowering remain blocked.
 
 Recent source commit `7533992f` advances selected generated-C by-reference
 `foreach` writeback without adding source-shape lowering. Loop value references
