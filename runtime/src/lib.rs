@@ -5977,6 +5977,56 @@ pub unsafe extern "C" fn phpc_native_array_append_value_with_diagnostic(
 
 /// # Safety
 ///
+/// `handle` must be null or an array handle previously returned by the runtime
+/// ABI and not yet freed. `reference` must be null or a live reference handle.
+/// The appended array slot shares the reference cell; ownership of `reference`
+/// remains with the caller. On failure the helper stores a diagnostic handle
+/// that the caller owns and must release with `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_append_reference_with_diagnostic(
+    mut handle: NativeArrayHandle,
+    reference: NativeReferenceHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let Some(array) = (unsafe { handle.as_mut() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                RuntimeError::invalid_array_access(
+                    "native array reference append failed: array handle is null",
+                )
+                .message(),
+            )
+        };
+        return false;
+    };
+
+    let Some(reference) = (unsafe { reference.as_ref() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                RuntimeError::invalid_array_access(
+                    "native array reference append failed: reference handle is null",
+                )
+                .message(),
+            )
+        };
+        return false;
+    };
+
+    match array.value.append_reference(reference.cell.clone()) {
+        Ok(_) => true,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
 /// `value` must be null or a value handle previously returned by the runtime
 /// ABI and not yet freed. The returned key materialization result must be
 /// released with `phpc_native_array_key_materialization_result_free`.
@@ -6082,6 +6132,62 @@ pub unsafe extern "C" fn phpc_native_array_insert_key_value_with_diagnostic(
     match unsafe { native_array_key_materialization_to_array_key(&key) } {
         Ok(key) => {
             array.value.insert(key, value.clone());
+            true
+        }
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or an array handle previously returned by the runtime
+/// ABI and not yet freed. `key` must be a result returned by
+/// `phpc_native_value_to_array_key`. `reference` must be null or a live
+/// reference handle. The inserted array slot shares the reference cell;
+/// ownership of `key` and `reference` remains with the caller. On failure the
+/// helper stores a diagnostic handle that the caller owns and must release with
+/// `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_insert_key_reference_with_diagnostic(
+    mut handle: NativeArrayHandle,
+    key: NativeArrayKeyMaterializationResult,
+    reference: NativeReferenceHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let Some(array) = (unsafe { handle.as_mut() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                RuntimeError::invalid_array_access(
+                    "native array reference keyed insert failed: array handle is null",
+                )
+                .message(),
+            )
+        };
+        return false;
+    };
+
+    let Some(reference) = (unsafe { reference.as_ref() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                RuntimeError::invalid_array_access(
+                    "native array reference keyed insert failed: reference handle is null",
+                )
+                .message(),
+            )
+        };
+        return false;
+    };
+
+    match unsafe { native_array_key_materialization_to_array_key(&key) } {
+        Ok(key) => {
+            array.value.insert_reference(key, reference.cell.clone());
             true
         }
         Err(error) => {
@@ -52541,6 +52647,81 @@ mod tests {
             "invalid array access: native array append failed: value handle is null"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_array_free(array) };
+    }
+
+    #[test]
+    fn native_reference_array_append_and_insert_share_source_cells() {
+        let array = phpc_native_array_empty();
+        let positional = PhpReferenceCell::new(Value::String("P".to_string()));
+        let named = PhpReferenceCell::new(Value::String("N".to_string()));
+        let positional_handle = NativeReferenceHandle::from_cell(positional.clone());
+        let named_handle = NativeReferenceHandle::from_cell(named.clone());
+        let key_value = NativeValueHandle::from_value(Value::String("name".to_string()));
+        let key = unsafe { phpc_native_value_to_array_key(key_value) };
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        assert!(unsafe {
+            phpc_native_array_append_reference_with_diagnostic(
+                array,
+                positional_handle,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert!(unsafe {
+            phpc_native_array_insert_key_reference_with_diagnostic(
+                array,
+                key,
+                named_handle,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        positional.set_value(Value::String("P!".to_string()));
+        named.set_value(Value::String("N?".to_string()));
+        let array_ref = unsafe { array.as_ref() }.expect("array");
+        assert_eq!(
+            array_ref.value.get_cloned(0),
+            Some(Value::String("P!".to_string()))
+        );
+        assert_eq!(
+            array_ref.value.get_cloned("name"),
+            Some(Value::String("N?".to_string()))
+        );
+
+        assert!(!unsafe {
+            phpc_native_array_append_reference_with_diagnostic(
+                NativeArrayHandle::null(),
+                NativeReferenceHandle::null(),
+                &mut diagnostic,
+            )
+        });
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid array access: native array reference append failed: array handle is null"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        assert!(!unsafe {
+            phpc_native_array_insert_key_reference_with_diagnostic(
+                array,
+                key,
+                NativeReferenceHandle::null(),
+                &mut diagnostic,
+            )
+        });
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid array access: native array reference keyed insert failed: reference handle is null"
+        );
+
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_array_key_materialization_result_free(key) };
+        unsafe { phpc_native_value_free(key_value) };
+        unsafe { phpc_native_reference_free(named_handle) };
+        unsafe { phpc_native_reference_free(positional_handle) };
         unsafe { phpc_native_array_free(array) };
     }
 

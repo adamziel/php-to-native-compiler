@@ -124,7 +124,7 @@ const ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION: &str = "assembly dynamic functio
 const LLVM_TERMINATION_REJECTION: &str = "LLVM termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const ASSEMBLY_TERMINATION_REJECTION: &str = "assembly termination lowering rejects exit()/die() until native termination control flow, exit status/stdout handoff, shutdown functions, destructors/finally ordering, output buffers, SAPI interaction, and exact native diagnostics exist; phpc run handles current bounded exit/die behavior";
 const LLVM_FUNCTION_DECLARATION_REJECTION: &str = "LLVM user-function lowering rejects function declarations and return statements until native function symbol tables, stack-frame layout, default parameter binding, recursion guards, return-value flow, and exact native error behavior exist; phpc run handles current user-function declaration and return behavior";
-const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations outside the bounded generated-C frame subset, including nested functions, unsupported typed/default/variadic by-reference parameters, malformed variadic declarations, unsupported parameter or return type metadata, static locals, and unsupported body cleanup, until full native function symbol tables, stack-frame layout, complete callable lookup, return-value flow, and exact native error behavior exist; generated-native C lowers supported by-value fixed/default/variadic direct, supported direct and compiler-known single-target by-reference frames, finite known-string dynamic, and runtime string-valued dynamic user-function frames with bounded scalar/array type enforcement";
+const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations outside the bounded generated-C frame subset, including nested functions, unsupported typed/default by-reference parameters, malformed variadic declarations, unsupported parameter or return type metadata, static locals, and unsupported body cleanup, until full native function symbol tables, stack-frame layout, complete callable lookup, return-value flow, and exact native error behavior exist; generated-native C lowers supported by-value fixed/default/variadic direct, supported direct and compiler-known single-target by-reference frames, supported untyped by-reference variadic frames, finite known-string dynamic, and runtime string-valued dynamic user-function frames with bounded scalar/array type enforcement";
 const LLVM_STATIC_LOCAL_REJECTION: &str = "LLVM static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const ASSEMBLY_STATIC_LOCAL_REJECTION: &str = "assembly static-local lowering rejects static local declarations until native persistent per-function storage, initialization ordering, local scope interaction, references/copy-on-write, recursion, and exact native diagnostics exist; phpc run handles current bounded static local behavior";
 const LLVM_CLOSURE_REJECTION: &str = "LLVM closure lowering rejects anonymous closures, arrow functions, closure captures, implicit arrow captures, closure values and invocation, callback integration, references/copy-on-write, and exact native callable errors until native closure objects and call dispatch exist; phpc run handles current closure parse/runtime boundary";
@@ -1636,7 +1636,7 @@ fn native_closure_frame_blocker(
         NativeCallBlocker::ReturnValueOwnership
     } else if params
         .iter()
-        .any(native_user_function_param_has_unsupported_by_reference_shape)
+        .any(native_closure_param_has_unsupported_by_reference_shape)
     {
         NativeCallBlocker::ByReferenceArgumentBinding
     } else {
@@ -1785,6 +1785,15 @@ fn native_user_function_has_malformed_variadic_params(function: &FunctionDecl) -
 
 fn native_user_function_param_has_unsupported_by_reference_shape(param: &FunctionParam) -> bool {
     param.by_reference && (param.default.is_some() || param.type_decl.is_some())
+}
+
+fn native_closure_param_has_unsupported_by_reference_shape(param: &FunctionParam) -> bool {
+    param.by_reference
+        && (param.is_variadic || param.default.is_some() || param.type_decl.is_some())
+}
+
+fn native_frame_param_uses_reference_slot(param: &FunctionParam) -> bool {
+    param.by_reference && !param.is_variadic
 }
 
 fn native_diagnostic_operation_list_is_blocked(
@@ -20220,7 +20229,7 @@ impl CGenerator {
             params.push("phpc_NativeRequestStateHandle phpc_request_state".to_string());
         }
         params.extend(function_params.iter().enumerate().map(|(index, param)| {
-            if param.by_reference && !param.is_variadic {
+            if native_frame_param_uses_reference_slot(param) {
                 format!("phpc_NativeReferenceHandle arg_{index}")
             } else {
                 format!("phpc_NativeValueHandle arg_{index}")
@@ -20249,7 +20258,7 @@ impl CGenerator {
             params.push("phpc_NativeValueHandle phpc_this".to_string());
         }
         params.extend(function_params.iter().enumerate().map(|(index, param)| {
-            if param.by_reference && !param.is_variadic {
+            if native_frame_param_uses_reference_slot(param) {
                 format!("phpc_NativeReferenceHandle arg_{index}")
             } else {
                 format!("phpc_NativeValueHandle arg_{index}")
@@ -21332,7 +21341,7 @@ impl CGenerator {
             || calls_root_symbol_frame
             || return_type.is_some_and(|decl| !native_function_type_decl_is_supported(decl))
             || params.iter().any(|param| {
-                native_user_function_param_has_unsupported_by_reference_shape(param)
+                native_closure_param_has_unsupported_by_reference_shape(param)
                     || param
                         .type_decl
                         .as_ref()
@@ -21768,7 +21777,7 @@ impl CGenerator {
         }
         let mut cleanup = Vec::new();
         for (index, param) in function.decl.params.iter().enumerate() {
-            if param.by_reference && !param.is_variadic {
+            if native_frame_param_uses_reference_slot(param) {
                 definition.push_str(&format!(
                     "  phpc_NativeReferenceHandle arg_{index} = phpc_native_call_frame_read_reference(phpc_call_frame, {index});\n"
                 ));
@@ -21845,7 +21854,7 @@ impl CGenerator {
         }
 
         for (index, param) in method.decl.params.iter().enumerate() {
-            if param.by_reference && !param.is_variadic {
+            if native_frame_param_uses_reference_slot(param) {
                 definition.push_str(&format!(
                     "  phpc_NativeReferenceHandle arg_{index} = phpc_native_call_frame_read_reference(phpc_call_frame, {index});\n"
                 ));
@@ -22446,7 +22455,7 @@ impl CGenerator {
     fn bind_function_frame_parameters(&mut self, function: &FunctionDecl) {
         for (index, param) in function.params.iter().enumerate() {
             let handle = self.next_native_name("frame_param");
-            if param.by_reference && !param.is_variadic {
+            if native_frame_param_uses_reference_slot(param) {
                 self.uses_native_reference_helpers = true;
                 self.body.push(format!(
                     "phpc_NativeReferenceHandle {handle} = phpc_native_reference_clone(arg_{index});"
@@ -23586,6 +23595,9 @@ impl CGenerator {
                 output.push_str("extern bool phpc_native_value_is_callable_syntax_only(phpc_NativeValueHandle value);\n");
                 output.push_str("extern bool phpc_native_array_append_value(phpc_NativeArrayHandle array, phpc_NativeValueHandle value);\n");
                 output.push_str("extern bool phpc_native_array_append_value_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                if self.uses_native_reference_helpers || self.uses_native_symbol_table_helpers {
+                    output.push_str("extern bool phpc_native_array_append_reference_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeReferenceHandle reference, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                }
                 output.push_str("extern phpc_NativeArrayKeyMaterializationResult phpc_native_value_to_array_key(phpc_NativeValueHandle value);\n");
                 output.push_str("extern phpc_NativeArrayKeyMaterializationResult phpc_native_value_to_array_key_with_reference_slot(phpc_NativeValueHandle value, phpc_NativeReferenceHandle reference);\n");
                 output.push_str("extern phpc_NativeValueOperationResult phpc_native_value_unary_result(phpc_NativeValueHandle value, uint8_t op);\n");
@@ -23608,6 +23620,9 @@ impl CGenerator {
                     output.push_str("extern bool phpc_native_reference_array_key_exists_value_with_diagnostic(phpc_NativeValueHandle key, phpc_NativeReferenceHandle reference, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 }
                 output.push_str("extern bool phpc_native_array_insert_key_value_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeArrayKeyMaterializationResult key, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                if self.uses_native_reference_helpers || self.uses_native_symbol_table_helpers {
+                    output.push_str("extern bool phpc_native_array_insert_key_reference_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeArrayKeyMaterializationResult key, phpc_NativeReferenceHandle reference, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                }
                 output.push_str("extern phpc_NativeValueHandle phpc_native_array_read_key_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeArrayKeyMaterializationResult key, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern void phpc_native_array_key_materialization_result_free(phpc_NativeArrayKeyMaterializationResult key);\n");
                 output.push_str("extern void phpc_native_value_operation_result_free(phpc_NativeValueOperationResult result);\n");
@@ -40906,6 +40921,67 @@ impl CGenerator {
         Ok(())
     }
 
+    fn emit_variadic_argument_array_append_reference_materialized(
+        &mut self,
+        array: &str,
+        reference_handle: &str,
+        cleanup_after_use: &[String],
+        failure_cleanup: &str,
+    ) {
+        self.uses_native_reference_helpers = true;
+        let diagnostic = self.next_native_name("variadic_ref_diagnostic");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        let append_failure_cleanup = format!(
+            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); {diagnostic}.ptr = NULL; }} {}phpc_native_array_free({array}); {failure_cleanup}",
+            c_cleanup_sequence(cleanup_after_use)
+        );
+        let error_exit = self.native_error_exit(&append_failure_cleanup);
+        self.body.push(format!(
+            "if (!phpc_native_array_append_reference_with_diagnostic({array}, {reference_handle}, &{diagnostic})) {{ {error_exit} }}"
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body.extend(cleanup_after_use.iter().cloned());
+    }
+
+    fn emit_variadic_argument_array_insert_named_reference_materialized(
+        &mut self,
+        array: &str,
+        name: &str,
+        reference_handle: &str,
+        cleanup_after_use: &[String],
+        failure_cleanup: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        self.uses_native_reference_helpers = true;
+        let array_failure_cleanup = format!("phpc_native_array_free({array}); {failure_cleanup}");
+        let key_value =
+            self.emit_native_value_for_cvalue(CValue::String(name.to_string()), span)?;
+        let key_cleanup = format!("phpc_native_value_free({key_value});");
+        let key = self.next_native_name("named_variadic_key");
+        self.body.push(format!(
+            "phpc_NativeArrayKeyMaterializationResult {key} = phpc_native_value_to_array_key({key_value});"
+        ));
+        self.body.push(key_cleanup);
+        let diagnostic = self.next_native_name("named_variadic_ref_diagnostic");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        let insert_failure_cleanup = format!(
+            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); {diagnostic}.ptr = NULL; }} phpc_native_array_key_materialization_result_free({key}); {}{array_failure_cleanup}",
+            c_cleanup_sequence(cleanup_after_use)
+        );
+        let error_exit = self.native_error_exit(&insert_failure_cleanup);
+        self.body.push(format!(
+            "if (!phpc_native_array_insert_key_reference_with_diagnostic({array}, {key}, {reference_handle}, &{diagnostic})) {{ {error_exit} }}"
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body.push(format!(
+            "phpc_native_array_key_materialization_result_free({key});"
+        ));
+        self.body.extend(cleanup_after_use.iter().cloned());
+        Ok(())
+    }
+
     fn materialize_variadic_argument_array_from_normalized_entries(
         &mut self,
         param: &FunctionParam,
@@ -40917,13 +40993,6 @@ impl CGenerator {
         failure_cleanup: &str,
         span: Span,
     ) -> CompileResult<CNativeValueMaterialization> {
-        if variadic.entry_passing_mode == CallArgumentPassingMode::Reference {
-            return Err(self.unsupported(
-                span,
-                "unsupported named argument binding for native call lowering: by-reference variadic collection is not implemented",
-            ));
-        }
-
         let pending_cleanup =
             Self::pending_evaluated_call_argument_cleanup(evaluated, consumed, None);
         let array =
@@ -40936,41 +41005,77 @@ impl CGenerator {
                 Some(source_index),
             );
             let entry_failure_cleanup = format!("{pending_cleanup}{failure_cleanup}");
-            let Some(CNativeEvaluatedCallArgument::Value {
-                handle,
-                cleanup_after_use,
-                ..
-            }) = evaluated[source_index].as_ref()
-            else {
-                return Err(self.unsupported(
-                    span,
-                    "unsupported named argument binding for native call lowering: variadic source slot did not produce a value",
-                ));
-            };
-            let value = CNativeValueMaterialization {
-                handle: handle.clone(),
-                cleanup_after_use: cleanup_after_use.clone(),
-            };
-            match &entry.key {
-                CallArgumentVariadicKey::NextInteger => {
-                    self.emit_variadic_argument_array_append(
-                        &array,
-                        param,
-                        value,
-                        callable_name,
-                        &entry_failure_cleanup,
-                    );
+            match variadic.entry_passing_mode {
+                CallArgumentPassingMode::Value => {
+                    let Some(CNativeEvaluatedCallArgument::Value {
+                        handle,
+                        cleanup_after_use,
+                        ..
+                    }) = evaluated[source_index].as_ref()
+                    else {
+                        return Err(self.unsupported(
+                            span,
+                            "unsupported named argument binding for native call lowering: variadic source slot did not produce a value",
+                        ));
+                    };
+                    let value = CNativeValueMaterialization {
+                        handle: handle.clone(),
+                        cleanup_after_use: cleanup_after_use.clone(),
+                    };
+                    match &entry.key {
+                        CallArgumentVariadicKey::NextInteger => {
+                            self.emit_variadic_argument_array_append(
+                                &array,
+                                param,
+                                value,
+                                callable_name,
+                                &entry_failure_cleanup,
+                            );
+                        }
+                        CallArgumentVariadicKey::Named(name) => {
+                            self.emit_variadic_argument_array_insert_named_materialized(
+                                &array,
+                                param,
+                                name,
+                                value,
+                                callable_name,
+                                &entry_failure_cleanup,
+                                call_argument_expr(&args[source_index]).span(),
+                            )?;
+                        }
+                    }
                 }
-                CallArgumentVariadicKey::Named(name) => {
-                    self.emit_variadic_argument_array_insert_named_materialized(
-                        &array,
-                        param,
-                        name,
-                        value,
-                        callable_name,
-                        &entry_failure_cleanup,
-                        call_argument_expr(&args[source_index]).span(),
-                    )?;
+                CallArgumentPassingMode::Reference => {
+                    let Some(CNativeEvaluatedCallArgument::Reference {
+                        handle,
+                        cleanup_after_use,
+                    }) = evaluated[source_index].as_ref()
+                    else {
+                        return Err(self.unsupported(
+                            span,
+                            "unsupported named argument binding for native call lowering: by-reference variadic source slot did not produce a reference",
+                        ));
+                    };
+                    match &entry.key {
+                        CallArgumentVariadicKey::NextInteger => {
+                            self.emit_variadic_argument_array_append_reference_materialized(
+                                &array,
+                                handle,
+                                cleanup_after_use,
+                                &entry_failure_cleanup,
+                            );
+                        }
+                        CallArgumentVariadicKey::Named(name) => {
+                            self.emit_variadic_argument_array_insert_named_reference_materialized(
+                                &array,
+                                name,
+                                handle,
+                                cleanup_after_use,
+                                &entry_failure_cleanup,
+                                call_argument_expr(&args[source_index]).span(),
+                            )?;
+                        }
+                    }
                 }
             }
             consumed[source_index] = true;

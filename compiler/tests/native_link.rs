@@ -24657,6 +24657,33 @@ const NATIVE_SPREAD_BYREF_VARIADIC_UNPACK_SOURCE: &str = concat!(
     "echo \"done\";\n",
 );
 
+const NATIVE_DIRECT_BYREF_VARIADIC_ARGUMENT_SOURCE: &str = concat!(
+    "<?php\n",
+    "function direct_ref_variadic(&...$values) {\n",
+    "    $values[0] = $values[0] . \"!\";\n",
+    "    $values[\"name\"] = $values[\"name\"] . \"?\";\n",
+    "    return $values[0] . \":\" . $values[\"name\"];\n",
+    "}\n",
+    "class DirectByRefVariadicBox {\n",
+    "    public static function stat($head, &...$values) {\n",
+    "        $values[0] = $values[0] . \"#\";\n",
+    "        $values[\"name\"] = $values[\"name\"] . \"%\";\n",
+    "        return $head . \":\" . $values[0] . \":\" . $values[\"name\"];\n",
+    "    }\n",
+    "    public function inst(&...$values) {\n",
+    "        $values[0] = $values[0] . \"I\";\n",
+    "        $values[\"name\"] = $values[\"name\"] . \"i\";\n",
+    "        return $values[0] . \":\" . $values[\"name\"];\n",
+    "    }\n",
+    "}\n",
+    "$first = \"A\";\n",
+    "$named = \"N\";\n",
+    "echo direct_ref_variadic($first, name: $named), \"|\", $first, \":\", $named, \"|\";\n",
+    "echo DirectByRefVariadicBox::stat(\"H\", $first, name: $named), \"|\", $first, \":\", $named, \"|\";\n",
+    "$box = new DirectByRefVariadicBox();\n",
+    "echo $box->inst($first, name: $named), \"|\", $first, \":\", $named;\n",
+);
+
 const NATIVE_SPREAD_CALLABLE_FAMILY_BYREF_UNPACK_SOURCE: &str = concat!(
     "<?php\n",
     "class SpreadCallableFamilyByRefBox {\n",
@@ -25564,6 +25591,42 @@ fn native_executable_c_source_lowers_named_user_function_arguments_through_share
     assert!(
         !source.contains("named argument lowering is only implemented"),
         "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_direct_by_reference_variadic_arguments_through_reference_array_collector(
+) {
+    let program = parse(NATIVE_DIRECT_BYREF_VARIADIC_ARGUMENT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_array_append_reference_with_diagnostic")
+            && body.contains("phpc_native_array_insert_key_reference_with_diagnostic")
+            && body.contains("phpc_native_call_arguments_push_value_and_free")
+            && body.contains(
+                "phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments"
+            )
+            && !body.contains("by-reference variadic collection is not implemented"),
+        "direct by-reference variadic arguments should collect source references into array-valued frame slots across function and method calls:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_blocks_value_backed_direct_by_reference_variadic_arguments() {
+    let program = parse(concat!(
+        "<?php\n",
+        "function direct_ref_variadic_blocker(&...$values) { return 1; }\n",
+        "echo direct_ref_variadic_blocker(\"literal\");\n",
+    ))
+    .unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert!(
+        error.message.contains("by-reference argument binding"),
+        "{}",
+        error.message
     );
 }
 
@@ -28156,6 +28219,37 @@ fn emit_exe_links_and_runs_by_reference_variadic_unpack_program() {
     assert_eq!(
         run.stdout,
         b"directD:named|directD:named|staticS:names|staticS:names|objectO:nameo|objectO:nameo|done"
+    );
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_direct_by_reference_variadic_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "direct_by_reference_variadic_arguments",
+        NATIVE_DIRECT_BYREF_VARIADIC_ARGUMENT_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native direct by-reference variadic executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"A!:N?|A!:N?|H:A!#:N?%|A!#:N?%|A!#I:N?%i|A!#I:N?%i"
     );
     assert_eq!(run.stderr, b"");
 
