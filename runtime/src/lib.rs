@@ -1516,9 +1516,27 @@ enum NativeTrimMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct NativeCallableBuiltinSignature {
     required_arg_count: usize,
+    fixed_param_names: &'static [&'static str],
     fixed_param_by_reference: &'static [bool],
+    fixed_param_defaults: &'static [Option<NativeCallableBuiltinDefaultValue>],
     accepts_variadic_args: bool,
     returns_by_reference: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeCallableBuiltinDefaultValue {
+    Int(i64),
+    String(&'static str),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct NativeCallableSourceSignature {
+    parameter_names: Vec<String>,
+    parameter_required: Vec<u8>,
+    parameter_by_reference: Vec<u8>,
+    parameter_defaults: Vec<Value>,
+    variadic_parameter_name: Option<String>,
+    variadic_by_reference: bool,
 }
 
 impl NativeCallableBuiltin {
@@ -1574,30 +1592,52 @@ impl NativeCallableBuiltin {
         const BY_VALUE_2: &[bool] = &[false, false];
         const BY_REF_1: &[bool] = &[true];
         const BY_REF_THEN_VALUE: &[bool] = &[true, false];
+        const PARAM_ARRAY: &[&str] = &["array"];
+        const PARAM_ARRAY_FLAGS: &[&str] = &["array", "flags"];
+        const PARAM_STRING: &[&str] = &["string"];
+        const PARAM_VALUE: &[&str] = &["value"];
+        const PARAM_HAYSTACK_NEEDLE: &[&str] = &["haystack", "needle"];
+        const PARAM_STRING_CHARACTERS: &[&str] = &["string", "characters"];
+        const DEFAULTS_NONE_1: &[Option<NativeCallableBuiltinDefaultValue>] = &[None];
+        const DEFAULTS_NONE_2: &[Option<NativeCallableBuiltinDefaultValue>] = &[None, None];
+        const DEFAULTS_SORT_FLAGS: &[Option<NativeCallableBuiltinDefaultValue>] =
+            &[None, Some(NativeCallableBuiltinDefaultValue::Int(0))];
+        const DEFAULTS_TRIM_CHARACTERS: &[Option<NativeCallableBuiltinDefaultValue>] = &[
+            None,
+            Some(NativeCallableBuiltinDefaultValue::String(" \n\r\t\x0b\0")),
+        ];
 
         match self {
             Self::StringPredicate(_) => NativeCallableBuiltinSignature {
                 required_arg_count: 2,
+                fixed_param_names: PARAM_HAYSTACK_NEEDLE,
                 fixed_param_by_reference: BY_VALUE_2,
+                fixed_param_defaults: DEFAULTS_NONE_2,
                 accepts_variadic_args: false,
                 returns_by_reference: false,
             },
             Self::StringTrim(_) => NativeCallableBuiltinSignature {
                 required_arg_count: 1,
+                fixed_param_names: PARAM_STRING_CHARACTERS,
                 fixed_param_by_reference: BY_VALUE_2,
+                fixed_param_defaults: DEFAULTS_TRIM_CHARACTERS,
                 accepts_variadic_args: false,
                 returns_by_reference: false,
             },
             Self::ArraySort(NativeArraySortOperation::Sort)
             | Self::ArraySort(NativeArraySortOperation::Rsort) => NativeCallableBuiltinSignature {
                 required_arg_count: 1,
+                fixed_param_names: PARAM_ARRAY_FLAGS,
                 fixed_param_by_reference: BY_REF_THEN_VALUE,
+                fixed_param_defaults: DEFAULTS_SORT_FLAGS,
                 accepts_variadic_args: false,
                 returns_by_reference: false,
             },
             Self::ArraySort(_) => NativeCallableBuiltinSignature {
                 required_arg_count: usize::MAX,
+                fixed_param_names: &[],
                 fixed_param_by_reference: &[],
+                fixed_param_defaults: &[],
                 accepts_variadic_args: false,
                 returns_by_reference: false,
             },
@@ -1605,7 +1645,9 @@ impl NativeCallableBuiltin {
             | Self::ArrayMutation(NativeArrayMutationOperation::Unshift) => {
                 NativeCallableBuiltinSignature {
                     required_arg_count: 2,
+                    fixed_param_names: PARAM_ARRAY,
                     fixed_param_by_reference: BY_REF_1,
+                    fixed_param_defaults: DEFAULTS_NONE_1,
                     accepts_variadic_args: true,
                     returns_by_reference: false,
                 }
@@ -1614,7 +1656,9 @@ impl NativeCallableBuiltin {
             | Self::ArrayMutation(NativeArrayMutationOperation::Shift) => {
                 NativeCallableBuiltinSignature {
                     required_arg_count: 1,
+                    fixed_param_names: PARAM_ARRAY,
                     fixed_param_by_reference: BY_REF_1,
+                    fixed_param_defaults: DEFAULTS_NONE_1,
                     accepts_variadic_args: false,
                     returns_by_reference: false,
                 }
@@ -1625,7 +1669,12 @@ impl NativeCallableBuiltin {
             | Self::TypeName(_)
             | Self::TypePredicate(_) => NativeCallableBuiltinSignature {
                 required_arg_count: 1,
+                fixed_param_names: match self {
+                    Self::StringLength | Self::StringResult(_) => PARAM_STRING,
+                    _ => PARAM_VALUE,
+                },
                 fixed_param_by_reference: BY_VALUE_1,
+                fixed_param_defaults: DEFAULTS_NONE_1,
                 accepts_variadic_args: false,
                 returns_by_reference: false,
             },
@@ -1638,9 +1687,53 @@ impl NativeCallableBuiltinSignature {
         self.fixed_param_by_reference.len()
     }
 
+    fn metadata_is_complete(self) -> bool {
+        self.fixed_param_names.len() == self.fixed_param_by_reference.len()
+            && self.fixed_param_defaults.len() == self.fixed_param_by_reference.len()
+    }
+
     fn accepts_arg_count(self, arg_count: usize) -> bool {
         arg_count >= self.required_arg_count
             && (self.accepts_variadic_args || arg_count <= self.fixed_param_count())
+    }
+
+    fn source_signature(self) -> Option<NativeCallableSourceSignature> {
+        if !self.metadata_is_complete() {
+            return None;
+        }
+        let parameter_names = self
+            .fixed_param_names
+            .iter()
+            .map(|name| (*name).to_string())
+            .collect::<Vec<_>>();
+        let parameter_required = self
+            .fixed_param_defaults
+            .iter()
+            .map(|default| u8::from(default.is_none()))
+            .collect::<Vec<_>>();
+        let parameter_defaults = self
+            .fixed_param_defaults
+            .iter()
+            .map(|default| match default {
+                Some(NativeCallableBuiltinDefaultValue::Int(value)) => Value::Int(*value),
+                Some(NativeCallableBuiltinDefaultValue::String(value)) => {
+                    Value::String((*value).to_string())
+                }
+                None => Value::Null,
+            })
+            .collect::<Vec<_>>();
+        Some(NativeCallableSourceSignature {
+            parameter_names,
+            parameter_required,
+            parameter_by_reference: self
+                .fixed_param_by_reference
+                .iter()
+                .map(|by_reference| u8::from(*by_reference))
+                .collect(),
+            parameter_defaults,
+            variadic_parameter_name: self.accepts_variadic_args.then(|| "values".to_string()),
+            variadic_by_reference: false,
+        })
     }
 }
 
@@ -1652,6 +1745,7 @@ struct NativeCallableDescriptor {
     visibility: NativeCallableVisibility,
     is_static: bool,
     magic_signature_status: NativeCallableMagicSignatureStatus,
+    source_signature: Option<NativeCallableSourceSignature>,
     callback: NativeCallableFrameCallback,
 }
 
@@ -8765,6 +8859,7 @@ pub unsafe extern "C" fn phpc_native_callable_table_register_visibility_staticne
         visibility,
         is_static,
         magic_signature_status,
+        source_signature: None,
         callback,
     });
     true
@@ -8804,6 +8899,121 @@ pub unsafe extern "C" fn phpc_native_callable_table_register_visibility_staticne
         visibility,
         is_static,
         magic_signature_status,
+        source_signature: None,
+        callback,
+    });
+    true
+}
+
+unsafe fn native_callable_source_signature_from_abi(
+    parameter_names: *const NativeStringHandle,
+    parameter_required: *const u8,
+    parameter_by_reference: *const u8,
+    parameter_defaults: *const NativeValueHandle,
+    fixed_count: usize,
+    variadic_parameter_name: NativeStringHandle,
+    has_variadic: bool,
+    variadic_by_reference: bool,
+) -> Result<NativeCallableSourceSignature, String> {
+    let names = unsafe { native_parameter_name_slice(parameter_names, fixed_count)? };
+    let required = unsafe {
+        native_u8_metadata_slice(parameter_required, fixed_count, "required-flag")?.to_vec()
+    };
+    let by_reference = unsafe {
+        native_u8_metadata_slice(parameter_by_reference, fixed_count, "by-reference-flag")?.to_vec()
+    };
+    let defaults = unsafe { native_default_value_slice(parameter_defaults, fixed_count)? };
+    let mut default_values = Vec::with_capacity(fixed_count);
+    for index in 0..fixed_count {
+        if required[index] != 0 {
+            default_values.push(Value::Null);
+            continue;
+        }
+        let default = unsafe { defaults[index].as_ref() }.cloned().ok_or_else(|| {
+            format!(
+                "native callable source-call signature registration failed: default value for parameter ${} is null",
+                names[index]
+            )
+        })?;
+        default_values.push(default);
+    }
+    let variadic_name = if has_variadic {
+        Some(unsafe { native_string_handle_to_string(variadic_parameter_name) }.ok_or_else(
+            || {
+                "native callable source-call signature registration failed: variadic parameter name is null or not UTF-8"
+                    .to_string()
+            },
+        )?)
+    } else {
+        None
+    };
+    Ok(NativeCallableSourceSignature {
+        parameter_names: names,
+        parameter_required: required,
+        parameter_by_reference: by_reference,
+        parameter_defaults: default_values,
+        variadic_parameter_name: variadic_name,
+        variadic_by_reference,
+    })
+}
+
+/// # Safety
+///
+/// `table` must be a callable-table handle. `scope` may be null for function
+/// callables; non-function callables require a UTF-8 scope and name handle.
+/// Metadata handles are borrowed for the duration of the call.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_table_register_visibility_staticness_magic_signature_source_signature_frame_callback(
+    mut table: NativeCallableTableHandle,
+    kind: NativeCallableKind,
+    scope: NativeStringHandle,
+    name: NativeStringHandle,
+    visibility: NativeCallableVisibility,
+    is_static: bool,
+    magic_signature_status: NativeCallableMagicSignatureStatus,
+    callback: NativeCallableFrameCallback,
+    parameter_names: *const NativeStringHandle,
+    parameter_required: *const u8,
+    parameter_by_reference: *const u8,
+    parameter_defaults: *const NativeValueHandle,
+    fixed_count: usize,
+    variadic_parameter_name: NativeStringHandle,
+    has_variadic: bool,
+    variadic_by_reference: bool,
+) -> bool {
+    let Some(table) = (unsafe { table.as_mut() }) else {
+        return false;
+    };
+    let Some(name) = (unsafe { native_string_handle_to_string(name) }) else {
+        return false;
+    };
+    let scope = unsafe { native_string_handle_to_string(scope) };
+    if !matches!(kind, NativeCallableKind::Function) && scope.is_none() {
+        return false;
+    }
+    let Ok(source_signature) = (unsafe {
+        native_callable_source_signature_from_abi(
+            parameter_names,
+            parameter_required,
+            parameter_by_reference,
+            parameter_defaults,
+            fixed_count,
+            variadic_parameter_name,
+            has_variadic,
+            variadic_by_reference,
+        )
+    }) else {
+        return false;
+    };
+
+    table.register(NativeCallableDescriptor {
+        kind,
+        scope,
+        name,
+        visibility,
+        is_static,
+        magic_signature_status,
+        source_signature: Some(source_signature),
         callback,
     });
     true
@@ -8863,6 +9073,71 @@ pub unsafe extern "C" fn phpc_native_callable_table_register_visibility_staticne
     };
     unsafe { phpc_native_string_free(scope) };
     unsafe { phpc_native_string_free(name) };
+    registered
+}
+
+/// # Safety
+///
+/// Same as
+/// `phpc_native_callable_table_register_visibility_staticness_magic_signature_source_signature_frame_callback`,
+/// and always consumes `scope`, `name`, parameter-name handles, default-value
+/// handles, and `variadic_parameter_name`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_table_register_visibility_staticness_magic_signature_source_signature_frame_callback_and_free(
+    table: NativeCallableTableHandle,
+    kind: NativeCallableKind,
+    scope: NativeStringHandle,
+    name: NativeStringHandle,
+    visibility: NativeCallableVisibility,
+    is_static: bool,
+    magic_signature_status: NativeCallableMagicSignatureStatus,
+    callback: NativeCallableFrameCallback,
+    parameter_names: *const NativeStringHandle,
+    parameter_required: *const u8,
+    parameter_by_reference: *const u8,
+    parameter_defaults: *const NativeValueHandle,
+    fixed_count: usize,
+    variadic_parameter_name: NativeStringHandle,
+    has_variadic: bool,
+    variadic_by_reference: bool,
+) -> bool {
+    let registered = unsafe {
+        phpc_native_callable_table_register_visibility_staticness_magic_signature_source_signature_frame_callback(
+            table,
+            kind,
+            scope,
+            name,
+            visibility,
+            is_static,
+            magic_signature_status,
+            callback,
+            parameter_names,
+            parameter_required,
+            parameter_by_reference,
+            parameter_defaults,
+            fixed_count,
+            variadic_parameter_name,
+            has_variadic,
+            variadic_by_reference,
+        )
+    };
+    unsafe { phpc_native_string_free(scope) };
+    unsafe { phpc_native_string_free(name) };
+    if fixed_count != 0 && !parameter_names.is_null() {
+        let names = unsafe { std::slice::from_raw_parts(parameter_names, fixed_count) };
+        for name in names {
+            unsafe { phpc_native_string_free(*name) };
+        }
+    }
+    if fixed_count != 0 && !parameter_defaults.is_null() {
+        let defaults = unsafe { std::slice::from_raw_parts(parameter_defaults, fixed_count) };
+        for default in defaults {
+            unsafe { phpc_native_value_free(*default) };
+        }
+    }
+    if has_variadic {
+        unsafe { phpc_native_string_free(variadic_parameter_name) };
+    }
     registered
 }
 
@@ -9782,6 +10057,40 @@ fn native_callable_value_lookup(
     }
 }
 
+fn native_callable_value_source_signature(
+    dispatch: &NativeCallableValueDispatch,
+) -> Result<NativeCallableSourceSignature, String> {
+    match dispatch {
+        NativeCallableValueDispatch::Builtin(builtin) => {
+            builtin.signature().source_signature().ok_or_else(|| {
+                format!(
+                    "native callable source-call signature lookup failed: runtime builtin {} has no materialized argument signature metadata",
+                    builtin.name()
+                )
+            })
+        }
+        NativeCallableValueDispatch::Table { callable, .. } => callable
+            .descriptor
+            .source_signature
+            .clone()
+            .ok_or_else(|| {
+                let scope = callable
+                    .called_scope
+                    .as_deref()
+                    .or(callable.descriptor.scope.as_deref())
+                    .unwrap_or("<global>");
+                format!(
+                    "native callable source-call signature lookup failed: registered callable {}::{} has no runtime materialized argument signature metadata",
+                    scope, callable.descriptor.name
+                )
+            }),
+        NativeCallableValueDispatch::DescriptorClosure(_) => Err(
+            "native callable source-call signature lookup failed: descriptor-backed closure values do not publish runtime parameter names/defaults for materialized argument finalization"
+                .to_string(),
+        ),
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn phpc_native_callable_value_null() -> NativeCallableValueHandle {
     NativeCallableValueHandle::null()
@@ -9859,6 +10168,80 @@ pub unsafe extern "C" fn phpc_native_callable_lookup_value_or_closure_with_conte
         Err(message) => {
             unsafe { native_store_diagnostic_message(diagnostic, message) };
             NativeCallableValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `callable` must be a callable-value dispatch handle returned by runtime
+/// lookup. `entries` must be a materialized call-argument handle. The returned
+/// call-arguments handle owns cloned/finalized slots and must be freed by the
+/// caller. `diagnostic` may be null or point to a diagnostic slot owned by the
+/// caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_callable_value_finalize_materialized_arguments_with_diagnostic(
+    callable: NativeCallableValueHandle,
+    entries: NativeMaterializedCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeCallArgumentsHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let Some(dispatch) = (unsafe { callable.as_ref() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native callable source-call signature lookup failed: callable-value handle is null",
+            )
+        };
+        return NativeCallArgumentsHandle::null();
+    };
+    let Some(entries) = (unsafe { entries.as_ref() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native callable source-call signature lookup failed: materialized entries handle is null",
+            )
+        };
+        return NativeCallArgumentsHandle::null();
+    };
+
+    let result = native_callable_value_source_signature(dispatch).and_then(|signature| {
+        let parameter_names = signature.parameter_names;
+        let parameter_required = signature.parameter_required;
+        let parameter_by_reference = signature.parameter_by_reference;
+        let parameter_defaults = signature.parameter_defaults;
+        let variadic_parameter_name = signature.variadic_parameter_name;
+        let has_variadic = variadic_parameter_name.is_some();
+        let variadic_by_reference = signature.variadic_by_reference;
+        let defaults = parameter_defaults
+            .iter()
+            .cloned()
+            .map(NativeValueHandle::from_value)
+            .collect::<Vec<_>>();
+        let finalized = unsafe {
+            native_materialized_call_arguments_finalize(
+                entries,
+                parameter_names,
+                &parameter_required,
+                &parameter_by_reference,
+                &defaults,
+                variadic_parameter_name,
+                has_variadic,
+                variadic_by_reference,
+            )
+        };
+        for default in defaults {
+            unsafe { phpc_native_value_free(default) };
+        }
+        finalized
+    });
+
+    match result {
+        Ok(handle) => handle,
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeCallArgumentsHandle::null()
         }
     }
 }
@@ -39660,6 +40043,140 @@ mod tests {
         unsafe { phpc_native_string_free(first) };
     }
 
+    #[test]
+    fn native_callable_value_finalizes_materialized_builtin_arguments_from_runtime_signature() {
+        let callable_value = NativeValueHandle::from_value(Value::String("trim".to_string()));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let callable = unsafe {
+            phpc_native_callable_lookup_value_or_closure_with_context_diagnostic(
+                NativeCallableTableHandle::null(),
+                callable_value,
+                NativeStringHandle::null(),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!callable.is_null());
+
+        let materialized = phpc_native_materialized_call_arguments_new();
+        let string_name = native_string_for_test("string");
+        assert!(unsafe {
+            phpc_native_materialized_call_arguments_push_named_value_and_free(
+                materialized,
+                string_name,
+                NativeValueHandle::from_value(Value::String(" \twp\n".to_string())),
+            )
+        });
+
+        let finalized = unsafe {
+            phpc_native_callable_value_finalize_materialized_arguments_with_diagnostic(
+                callable,
+                materialized,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!finalized.is_null());
+        assert_eq!(unsafe { phpc_native_call_arguments_len(finalized) }, 2);
+        assert_eq!(
+            unsafe { call_argument_string_for_test(finalized, 0) },
+            " \twp\n"
+        );
+        assert_eq!(
+            unsafe { call_argument_string_for_test(finalized, 1) },
+            " \n\r\t\x0b\0"
+        );
+
+        unsafe { phpc_native_call_arguments_free(finalized) };
+        unsafe { phpc_native_materialized_call_arguments_free(materialized) };
+        unsafe { phpc_native_callable_value_free(callable) };
+        unsafe { phpc_native_value_free(callable_value) };
+    }
+
+    #[test]
+    fn native_callable_value_finalizes_materialized_table_descriptor_arguments_from_runtime_signature(
+    ) {
+        let table = phpc_native_callable_table_new();
+        let name = native_string_for_test("sum_default");
+        let first = native_string_for_test("left");
+        let second = native_string_for_test("right");
+        let parameter_names = [first, second];
+        let required = [1u8, 0u8];
+        let by_reference = [0u8, 0u8];
+        let defaults = [
+            NativeValueHandle::null(),
+            NativeValueHandle::from_value(Value::Int(9)),
+        ];
+        assert!(unsafe {
+            phpc_native_callable_table_register_visibility_staticness_magic_signature_source_signature_frame_callback_and_free(
+                table,
+                NativeCallableKind::Function,
+                NativeStringHandle::null(),
+                name,
+                NativeCallableVisibility::Public,
+                false,
+                NativeCallableMagicSignatureStatus::NotMagic,
+                native_sum_callback,
+                parameter_names.as_ptr(),
+                required.as_ptr(),
+                by_reference.as_ptr(),
+                defaults.as_ptr(),
+                parameter_names.len(),
+                NativeStringHandle::null(),
+                false,
+                false,
+            )
+        });
+
+        let callable_value =
+            NativeValueHandle::from_value(Value::String("sum_default".to_string()));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let callable = unsafe {
+            phpc_native_callable_lookup_value_or_closure_with_context_diagnostic(
+                table,
+                callable_value,
+                NativeStringHandle::null(),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!callable.is_null());
+
+        let materialized = phpc_native_materialized_call_arguments_new();
+        let left = native_string_for_test("left");
+        assert!(unsafe {
+            phpc_native_materialized_call_arguments_push_named_value_and_free(
+                materialized,
+                left,
+                NativeValueHandle::from_value(Value::Int(4)),
+            )
+        });
+        let finalized = unsafe {
+            phpc_native_callable_value_finalize_materialized_arguments_with_diagnostic(
+                callable,
+                materialized,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!finalized.is_null());
+        assert_eq!(unsafe { phpc_native_call_arguments_len(finalized) }, 2);
+        assert_eq!(
+            unsafe { int_from_value_for_test(phpc_native_call_arguments_read_value(finalized, 0)) },
+            4
+        );
+        assert_eq!(
+            unsafe { int_from_value_for_test(phpc_native_call_arguments_read_value(finalized, 1)) },
+            9
+        );
+
+        unsafe { phpc_native_call_arguments_free(finalized) };
+        unsafe { phpc_native_materialized_call_arguments_free(materialized) };
+        unsafe { phpc_native_callable_value_free(callable) };
+        unsafe { phpc_native_value_free(callable_value) };
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
     unsafe extern "C" fn native_sum_callback(
         frame: NativeCallFrameHandle,
     ) -> NativeCallResultHandle {
@@ -43358,7 +43875,9 @@ mod tests {
         let one_arg = NativeCallableBuiltin::StringLength.signature();
         assert_eq!(one_arg.required_arg_count, 1);
         assert_eq!(one_arg.fixed_param_count(), 1);
+        assert_eq!(one_arg.fixed_param_names, &["string"]);
         assert_eq!(one_arg.fixed_param_by_reference, &[false]);
+        assert_eq!(one_arg.fixed_param_defaults, &[None]);
         assert!(one_arg.accepts_arg_count(1));
         assert!(!one_arg.accepts_arg_count(0));
         assert!(!one_arg.accepts_arg_count(2));
@@ -43368,6 +43887,7 @@ mod tests {
             NativeCallableBuiltin::StringPredicate(NativeStringPredicate::Contains).signature();
         assert_eq!(two_arg.required_arg_count, 2);
         assert_eq!(two_arg.fixed_param_count(), 2);
+        assert_eq!(two_arg.fixed_param_names, &["haystack", "needle"]);
         assert_eq!(two_arg.fixed_param_by_reference, &[false, false]);
         assert!(two_arg.accepts_arg_count(2));
         assert!(!two_arg.accepts_arg_count(1));
@@ -43377,6 +43897,7 @@ mod tests {
         let trim = NativeCallableBuiltin::StringTrim(NativeTrimMode::Both).signature();
         assert_eq!(trim.required_arg_count, 1);
         assert_eq!(trim.fixed_param_count(), 2);
+        assert_eq!(trim.fixed_param_names, &["string", "characters"]);
         assert_eq!(trim.fixed_param_by_reference, &[false, false]);
         assert!(trim.accepts_arg_count(1));
         assert!(trim.accepts_arg_count(2));
@@ -43388,17 +43909,28 @@ mod tests {
             NativeCallableBuiltin::ArrayMutation(NativeArrayMutationOperation::Push).signature();
         assert_eq!(push.required_arg_count, 2);
         assert_eq!(push.fixed_param_count(), 1);
+        assert_eq!(push.fixed_param_names, &["array"]);
         assert_eq!(push.fixed_param_by_reference, &[true]);
         assert!(push.accepts_variadic_args);
         assert!(!push.accepts_arg_count(1));
         assert!(push.accepts_arg_count(2));
         assert!(push.accepts_arg_count(4));
         assert!(!push.returns_by_reference);
+        let push_source = push.source_signature().unwrap();
+        assert_eq!(push_source.parameter_names, vec!["array"]);
+        assert_eq!(push_source.parameter_required, vec![1]);
+        assert_eq!(push_source.parameter_by_reference, vec![1]);
+        assert_eq!(
+            push_source.variadic_parameter_name,
+            Some("values".to_string())
+        );
+        assert!(!push_source.variadic_by_reference);
 
         let pop =
             NativeCallableBuiltin::ArrayMutation(NativeArrayMutationOperation::Pop).signature();
         assert_eq!(pop.required_arg_count, 1);
         assert_eq!(pop.fixed_param_count(), 1);
+        assert_eq!(pop.fixed_param_names, &["array"]);
         assert_eq!(pop.fixed_param_by_reference, &[true]);
         assert!(pop.accepts_arg_count(1));
         assert!(!pop.accepts_arg_count(0));
@@ -43422,12 +43954,22 @@ mod tests {
         let sort = NativeCallableBuiltin::ArraySort(NativeArraySortOperation::Sort).signature();
         assert_eq!(sort.required_arg_count, 1);
         assert_eq!(sort.fixed_param_count(), 2);
+        assert_eq!(sort.fixed_param_names, &["array", "flags"]);
         assert_eq!(sort.fixed_param_by_reference, &[true, false]);
         assert!(sort.accepts_arg_count(1));
         assert!(sort.accepts_arg_count(2));
         assert!(!sort.accepts_arg_count(3));
         assert!(!sort.accepts_variadic_args);
         assert!(!sort.returns_by_reference);
+        let sort_source = sort.source_signature().unwrap();
+        assert_eq!(sort_source.parameter_names, vec!["array", "flags"]);
+        assert_eq!(sort_source.parameter_required, vec![1, 0]);
+        assert_eq!(sort_source.parameter_by_reference, vec![1, 0]);
+        assert_eq!(
+            sort_source.parameter_defaults,
+            vec![Value::Null, Value::Int(0)]
+        );
+        assert_eq!(sort_source.variadic_parameter_name, None);
 
         let rsort = NativeCallableBuiltin::ArraySort(NativeArraySortOperation::Rsort).signature();
         assert_eq!(rsort, sort);

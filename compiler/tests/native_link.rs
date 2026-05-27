@@ -24891,6 +24891,47 @@ const NATIVE_RUNTIME_BUILTIN_SORT_WRITEBACK_SOURCE: &str = concat!(
     "echo $rsort(...$args), \":\", $values[0], \":\", $values[1], \":\", $values[2];\n",
 );
 
+const NATIVE_UNKNOWN_RUNTIME_BUILTIN_CALLABLE_STRING_SPREAD_SOURCE: &str = concat!(
+    "<?php\n",
+    "function unknown_runtime_builtin_marker($label, $value) { echo $label; return $value; }\n",
+    "$fn = isset($_GET[\"fn\"]) ? $_GET[\"fn\"] : \"trim\";\n",
+    "echo $fn(...[\"string\" => unknown_runtime_builtin_marker(\"A\", \" \\twp\\n\")]), \"|\";\n",
+    "$_GET[\"fn\"] = \"strtoupper\";\n",
+    "$fn = isset($_GET[\"fn\"]) ? $_GET[\"fn\"] : \"trim\";\n",
+    "echo $fn(...[\"string\" => unknown_runtime_builtin_marker(\"B\", \"go\")]);\n",
+);
+
+const NATIVE_UNKNOWN_RUNTIME_BUILTIN_VARIADIC_WRITEBACK_SOURCE: &str = concat!(
+    "<?php\n",
+    "$items = [\"left\"];\n",
+    "$fn = isset($_GET[\"fn\"]) ? $_GET[\"fn\"] : \"array_push\";\n",
+    "$args = [];\n",
+    "$args[] =& $items;\n",
+    "$args[] = \"middle\";\n",
+    "$args[] = \"right\";\n",
+    "echo $fn(...$args), \":\", count($items), \":\", $items[0], \":\", $items[1], \":\", $items[2], \"|\";\n",
+    "$_GET[\"fn\"] = \"array_unshift\";\n",
+    "$fn = isset($_GET[\"fn\"]) ? $_GET[\"fn\"] : \"array_push\";\n",
+    "$args = [];\n",
+    "$args[] =& $items;\n",
+    "$args[] = \"zero\";\n",
+    "echo $fn(...$args), \":\", count($items), \":\", $items[0], \":\", $items[1], \":\", $items[2], \":\", $items[3];\n",
+);
+
+const NATIVE_UNKNOWN_RUNTIME_BUILTIN_SORT_WRITEBACK_SOURCE: &str = concat!(
+    "<?php\n",
+    "$values = [10, 1, 2];\n",
+    "$fn = isset($_GET[\"fn\"]) ? $_GET[\"fn\"] : \"sort\";\n",
+    "$args = [];\n",
+    "$args[] =& $values;\n",
+    "echo $fn(...$args), \":\", $values[0], \":\", $values[1], \":\", $values[2], \"|\";\n",
+    "$_GET[\"fn\"] = \"rsort\";\n",
+    "$fn = isset($_GET[\"fn\"]) ? $_GET[\"fn\"] : \"sort\";\n",
+    "$args = [];\n",
+    "$args[] =& $values;\n",
+    "echo $fn(...$args), \":\", $values[0], \":\", $values[1], \":\", $values[2];\n",
+);
+
 const NATIVE_LEADING_GLOBAL_FUNCTION_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "namespace App\\Demo;\n",
@@ -25262,6 +25303,29 @@ const NATIVE_RUNTIME_CALLABLE_VARIABLE_SPREAD_SOURCE: &str = concat!(
     "$objectCall = $_GET[\"left\"] ? new RuntimeCallableVariableSpreadLeft() : new RuntimeCallableVariableSpreadRight();\n",
     "echo $arrayCall(...[runtime_callable_variable_spread_marker(\"A\"), runtime_callable_variable_spread_marker(\"B\")], ...[runtime_callable_variable_spread_marker(\"C\"), \"name\" => runtime_callable_variable_spread_marker(\"N\")]), \"|\";\n",
     "echo $objectCall(...[runtime_callable_variable_spread_marker(\"X\"), runtime_callable_variable_spread_marker(\"Y\")], ...[runtime_callable_variable_spread_marker(\"Z\"), \"name\" => runtime_callable_variable_spread_marker(\"M\")]);\n",
+);
+
+const NATIVE_UNKNOWN_RUNTIME_GENERATED_CALLABLE_SPREAD_SOURCE: &str = concat!(
+    "<?php\n",
+    "function unknown_generated_marker($label, $value) { echo $label; return $value; }\n",
+    "function unknown_generated_join($first, $second = \"D\", ...$tail) {\n",
+    "    return \"F\" . $first . $second . ($tail[\"extra\"] ?? \"\") . ($tail[0] ?? \"\");\n",
+    "}\n",
+    "class UnknownGeneratedCallableBox {\n",
+    "    public static function stat($first, $second = \"S\", ...$tail) {\n",
+    "        return \"S\" . $first . $second . ($tail[\"extra\"] ?? \"\") . ($tail[0] ?? \"\");\n",
+    "    }\n",
+    "    public function inst($first, $second = \"I\", ...$tail) {\n",
+    "        return \"I\" . $first . $second . ($tail[\"extra\"] ?? \"\") . ($tail[0] ?? \"\");\n",
+    "    }\n",
+    "}\n",
+    "$fn = isset($_GET[\"fn\"]) ? $_GET[\"fn\"] : \"unknown_generated_join\";\n",
+    "echo $fn(...[\"second\" => unknown_generated_marker(\"A\", \"2\"), \"first\" => unknown_generated_marker(\"B\", \"1\"), \"extra\" => unknown_generated_marker(\"C\", \"E\")]), \"|\";\n",
+    "$method = isset($_GET[\"method\"]) ? $_GET[\"method\"] : \"UnknownGeneratedCallableBox::stat\";\n",
+    "echo $method(...[\"first\" => unknown_generated_marker(\"E\", \"3\"), \"extra\" => unknown_generated_marker(\"F\", \"Q\")]), \"|\";\n",
+    "$object = new UnknownGeneratedCallableBox();\n",
+    "$array = isset($_GET[\"array\"])? $_GET[\"array\"] : [$object, \"inst\"];\n",
+    "echo $array(...[unknown_generated_marker(\"G\", \"4\"), \"extra\" => unknown_generated_marker(\"H\", \"R\")]);\n",
 );
 
 const NATIVE_RUNTIME_CALLABLE_VARIABLE_BYREF_SPREAD_SOURCE: &str = concat!(
@@ -26237,6 +26301,28 @@ fn native_executable_c_source_lowers_runtime_builtin_byref_writeback_through_cal
 }
 
 #[test]
+fn native_executable_c_source_lowers_unknown_runtime_builtin_callable_string_spread_through_runtime_signature_lookup(
+) {
+    let program = parse(NATIVE_UNKNOWN_RUNTIME_BUILTIN_CALLABLE_STRING_SPREAD_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_callable_value_finalize_materialized_arguments_with_diagnostic")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "compile-time unknown runtime callable strings should finalize materialized entries from the runtime callable-value signature ABI before invocation:\n{source}"
+    );
+    assert!(
+        !source.contains("spread operands need a materialized-entry producer")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches")
+            && !body.contains("materialized_parameter_names"),
+        "unknown runtime callable strings should not use compile-time signature arrays, generated name ladders, or the old spread blocker:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_lowers_runtime_builtin_variadic_writeback_through_callable_arguments()
 {
     let program = parse(NATIVE_RUNTIME_BUILTIN_VARIADIC_WRITEBACK_SOURCE).unwrap();
@@ -26313,6 +26399,52 @@ fn native_executable_c_source_lowers_runtime_builtin_sort_writeback_through_call
             && !source.contains("ByReferenceArgumentWriteback")
             && !source.contains("phpc_native_value_dynamic_call_name_matches"),
         "runtime sort callables should avoid exact-name dynamic ladders and old blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_unknown_runtime_builtin_variadic_writeback_through_runtime_signature_lookup(
+) {
+    let program = parse(NATIVE_UNKNOWN_RUNTIME_BUILTIN_VARIADIC_WRITEBACK_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_callable_value_finalize_materialized_arguments_with_diagnostic")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "unknown runtime variadic builtin callables should use runtime signature lookup before invocation:\n{source}"
+    );
+    assert!(
+        !source.contains("unsupported runtime callable builtin families")
+            && !source.contains("ByReferenceArgumentWriteback")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches")
+            && !body.contains("materialized_parameter_names"),
+        "unknown runtime variadic builtin callables should avoid compile-time signature arrays, exact-name ladders, and old blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_unknown_runtime_builtin_sort_writeback_through_runtime_signature_lookup(
+) {
+    let program = parse(NATIVE_UNKNOWN_RUNTIME_BUILTIN_SORT_WRITEBACK_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_callable_value_finalize_materialized_arguments_with_diagnostic")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "unknown runtime sort callables should use runtime descriptor signature lookup before invocation:\n{source}"
+    );
+    assert!(
+        !source.contains("unsupported runtime callable builtin families")
+            && !source.contains("ByReferenceArgumentWriteback")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches")
+            && !body.contains("materialized_parameter_names"),
+        "unknown runtime sort callables should avoid compile-time signature arrays, exact-name ladders, and old blockers:\n{source}"
     );
 }
 
@@ -26510,6 +26642,28 @@ fn native_executable_c_source_lowers_runtime_callable_variable_spread_through_id
             && !source.contains("callable_array_matched")
             && !source.contains("callable_object_matched"),
         "runtime-held callable variable spread should not hit old spread blockers or legacy ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_unknown_generated_callables_through_runtime_descriptor_signatures(
+) {
+    let program = parse(NATIVE_UNKNOWN_RUNTIME_GENERATED_CALLABLE_SPREAD_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_callable_table_register_visibility_staticness_magic_signature_source_signature_frame_callback_and_free")
+            && body.contains("phpc_native_callable_value_finalize_materialized_arguments_with_diagnostic")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "compile-time unknown generated function, static method, and callable-array method values should publish runtime descriptor signatures and finalize materialized entries through callable-value dispatch:\n{source}"
+    );
+    assert!(
+        !source.contains("spread operands need a materialized-entry producer")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches"),
+        "unknown generated callable spread should not use the old spread blocker or exact string dispatch ladders:\n{source}"
     );
 }
 
@@ -29160,6 +29314,34 @@ fn emit_exe_links_and_runs_runtime_callable_variable_spread_argument_program() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_unknown_generated_callable_spread_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "unknown_generated_callable_spread_arguments",
+        NATIVE_UNKNOWN_RUNTIME_GENERATED_CALLABLE_SPREAD_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native unknown generated callable spread executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ABCF12E|EFS3SQ|GHI4IR");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
 fn emit_exe_links_and_runs_runtime_callable_variable_byref_spread_argument_program() {
     if !has_cc() {
         return;
@@ -30258,6 +30440,34 @@ fn emit_exe_links_and_runs_runtime_builtin_byref_writeback_program() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_unknown_runtime_builtin_callable_string_spread_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "unknown_runtime_builtin_callable_string_spread_arguments",
+        NATIVE_UNKNOWN_RUNTIME_BUILTIN_CALLABLE_STRING_SPREAD_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native unknown runtime builtin callable-string spread executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"Awp|BGO");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
 fn emit_exe_links_and_runs_runtime_builtin_variadic_writeback_program() {
     if !has_cc() {
         return;
@@ -30332,6 +30542,67 @@ fn emit_exe_links_and_runs_runtime_builtin_sort_writeback_program() {
 
     let run = Command::new(&output_path).output().unwrap_or_else(|error| {
         panic!("failed to run native runtime builtin sort writeback executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"1:1:2:10|1:10:2:1");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_unknown_runtime_builtin_variadic_writeback_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "unknown_runtime_builtin_variadic_writeback_arguments",
+        NATIVE_UNKNOWN_RUNTIME_BUILTIN_VARIADIC_WRITEBACK_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native unknown runtime builtin variadic writeback executable: {error}"
+        )
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"3:3:left:middle:right|4:4:zero:left:middle:right"
+    );
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_unknown_runtime_builtin_sort_writeback_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "unknown_runtime_builtin_sort_writeback_arguments",
+        NATIVE_UNKNOWN_RUNTIME_BUILTIN_SORT_WRITEBACK_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native unknown runtime builtin sort writeback executable: {error}")
     });
 
     assert!(

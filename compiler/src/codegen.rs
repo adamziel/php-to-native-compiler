@@ -16869,6 +16869,19 @@ struct CResolvedStaticProperty {
 }
 
 #[derive(Debug, Clone)]
+struct CNativeCallableSourceSignatureRegistration {
+    parameter_names_arg: String,
+    parameter_required_arg: String,
+    parameter_by_reference_arg: String,
+    parameter_defaults_arg: String,
+    fixed_count: usize,
+    variadic_parameter_name_arg: String,
+    has_variadic: bool,
+    variadic_by_reference: bool,
+    aux_cleanup_after_registration: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
 struct CDeclaredClassConstant {
     name: String,
     visibility: ClassVisibility,
@@ -23367,6 +23380,7 @@ impl CGenerator {
                 output.push_str("extern void phpc_native_callable_table_free(phpc_NativeCallableTableHandle handle);\n");
                 output.push_str("extern bool phpc_native_callable_table_register_visibility_staticness_frame_callback_and_free(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, uint8_t visibility, bool is_static, phpc_NativeCallableFrameCallback callback);\n");
                 output.push_str("extern bool phpc_native_callable_table_register_visibility_staticness_magic_signature_frame_callback_and_free(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, uint8_t visibility, bool is_static, uint8_t magic_signature_status, phpc_NativeCallableFrameCallback callback);\n");
+                output.push_str("extern bool phpc_native_callable_table_register_visibility_staticness_magic_signature_source_signature_frame_callback_and_free(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, uint8_t visibility, bool is_static, uint8_t magic_signature_status, phpc_NativeCallableFrameCallback callback, const phpc_NativeStringHandle *parameter_names, const uint8_t *parameter_required, const uint8_t *parameter_by_reference, const phpc_NativeValueHandle *parameter_defaults, size_t fixed_count, phpc_NativeStringHandle variadic_parameter_name, bool has_variadic, bool variadic_by_reference);\n");
                 output.push_str("extern bool phpc_native_callable_table_register_class_parent_and_free(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle class_name, phpc_NativeStringHandle parent_name);\n");
                 output.push_str("extern bool phpc_native_callable_table_register_allocatable_class_and_free(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle class_name);\n");
                 output.push_str("extern bool phpc_native_callable_table_can_allocate_class(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle class_name);\n");
@@ -23408,6 +23422,7 @@ impl CGenerator {
                 if self.uses_native_materialized_call_argument_helpers {
                     output.push_str("extern phpc_NativeMaterializedCallArgumentsHandle phpc_native_materialized_call_arguments_new(void);\n");
                     output.push_str("extern bool phpc_native_materialized_call_arguments_is_null(phpc_NativeMaterializedCallArgumentsHandle handle);\n");
+                    output.push_str("extern phpc_NativeCallArgumentsHandle phpc_native_callable_value_finalize_materialized_arguments_with_diagnostic(phpc_NativeCallableValueHandle callable, phpc_NativeMaterializedCallArgumentsHandle entries, phpc_NativeDiagnosticHandle *diagnostic);\n");
                     output.push_str("extern bool phpc_native_materialized_call_arguments_push_value_and_free(phpc_NativeMaterializedCallArgumentsHandle arguments, phpc_NativeValueHandle value);\n");
                     output.push_str("extern bool phpc_native_materialized_call_arguments_push_named_value_and_free(phpc_NativeMaterializedCallArgumentsHandle arguments, phpc_NativeStringHandle name, phpc_NativeValueHandle value);\n");
                     output.push_str("extern bool phpc_native_materialized_call_arguments_push_reference_and_free(phpc_NativeMaterializedCallArgumentsHandle arguments, phpc_NativeReferenceHandle reference);\n");
@@ -25875,6 +25890,107 @@ impl CGenerator {
         Ok(table)
     }
 
+    fn emit_native_callable_source_signature_registration(
+        &mut self,
+        params: &[FunctionParam],
+        failure_cleanup: &str,
+    ) -> CNativeCallableSourceSignatureRegistration {
+        let fixed_count = native_function_fixed_param_count(params);
+        let fixed_params = params.iter().take(fixed_count).collect::<Vec<_>>();
+        let mut pre_registration_cleanup = Vec::new();
+        let mut aux_cleanup_after_registration = Vec::new();
+        let mut parameter_names = Vec::new();
+        let mut parameter_required = Vec::new();
+        let mut parameter_by_reference = Vec::new();
+        let mut parameter_defaults = Vec::new();
+
+        for param in fixed_params {
+            let name = self.emit_native_static_text_source_call_string_operand(
+                "callable_signature_parameter_name",
+                &param.name,
+            );
+            pre_registration_cleanup.extend(name.cleanup_after_use.clone());
+            parameter_names.push(name.handle);
+            parameter_required.push(if param.default.is_none() { "1" } else { "0" }.to_string());
+            parameter_by_reference.push(if param.by_reference { "1" } else { "0" }.to_string());
+            if let Some(default) = &param.default {
+                let default_failure_cleanup = format!(
+                    "{}{failure_cleanup}",
+                    c_cleanup_sequence(&pre_registration_cleanup)
+                );
+                let value = self
+                    .materialize_native_value_result_operand(default, &default_failure_cleanup)
+                    .expect("generated callable descriptor default metadata must reuse validated native default materialization");
+                pre_registration_cleanup.extend(value.cleanup_after_use.clone());
+                aux_cleanup_after_registration
+                    .extend(native_value_aux_cleanup_after_consuming_handle(&value));
+                parameter_defaults.push(value.handle);
+            } else {
+                parameter_defaults.push("(phpc_NativeValueHandle){0}".to_string());
+            }
+        }
+
+        let (
+            parameter_names_arg,
+            parameter_required_arg,
+            parameter_by_reference_arg,
+            parameter_defaults_arg,
+        ) = if fixed_count == 0 {
+            (
+                "NULL".to_string(),
+                "NULL".to_string(),
+                "NULL".to_string(),
+                "NULL".to_string(),
+            )
+        } else {
+            let names = self.next_native_name("callable_signature_parameter_names");
+            let required = self.next_native_name("callable_signature_parameter_required");
+            let by_reference = self.next_native_name("callable_signature_parameter_by_reference");
+            let defaults = self.next_native_name("callable_signature_parameter_defaults");
+            self.body.push(format!(
+                "  phpc_NativeStringHandle {names}[{fixed_count}] = {{ {} }};",
+                parameter_names.join(", ")
+            ));
+            self.body.push(format!(
+                "  uint8_t {required}[{fixed_count}] = {{ {} }};",
+                parameter_required.join(", ")
+            ));
+            self.body.push(format!(
+                "  uint8_t {by_reference}[{fixed_count}] = {{ {} }};",
+                parameter_by_reference.join(", ")
+            ));
+            self.body.push(format!(
+                "  phpc_NativeValueHandle {defaults}[{fixed_count}] = {{ {} }};",
+                parameter_defaults.join(", ")
+            ));
+            (names, required, by_reference, defaults)
+        };
+
+        let (variadic_parameter_name_arg, has_variadic, variadic_by_reference) =
+            if let Some((_, param)) = native_function_variadic_param(params) {
+                let name = self.emit_native_static_text_source_call_string_operand(
+                    "callable_signature_variadic_parameter_name",
+                    &param.name,
+                );
+                pre_registration_cleanup.extend(name.cleanup_after_use.clone());
+                (name.handle, true, param.by_reference)
+            } else {
+                ("(phpc_NativeStringHandle){0}".to_string(), false, false)
+            };
+
+        CNativeCallableSourceSignatureRegistration {
+            parameter_names_arg,
+            parameter_required_arg,
+            parameter_by_reference_arg,
+            parameter_defaults_arg,
+            fixed_count,
+            variadic_parameter_name_arg,
+            has_variadic,
+            variadic_by_reference,
+            aux_cleanup_after_registration,
+        }
+    }
+
     fn ensure_native_callable_table(&mut self, failure_cleanup: &str) -> String {
         self.uses_native_string_helpers = true;
         self.uses_native_callable_helpers = true;
@@ -25913,13 +26029,29 @@ impl CGenerator {
             self.body.push(format!(
                 "  phpc_NativeStringHandle {name_handle} = phpc_native_string_from_bytes({name_bytes}, {name_len});"
             ));
+            let signature_cleanup =
+                format!("phpc_native_string_free({name_handle}); {failure_cleanup}");
+            let signature = self.emit_native_callable_source_signature_registration(
+                &function.decl.params,
+                &signature_cleanup,
+            );
             self.body.push(format!(
-                "  bool {registered} = phpc_native_callable_table_register_visibility_staticness_frame_callback_and_free({table}, PHPC_NATIVE_CALLABLE_KIND_FUNCTION, (phpc_NativeStringHandle){{0}}, {name_handle}, PHPC_NATIVE_CALLABLE_VISIBILITY_PUBLIC, false, {wrapper_name});"
+                "  bool {registered} = phpc_native_callable_table_register_visibility_staticness_magic_signature_source_signature_frame_callback_and_free({table}, PHPC_NATIVE_CALLABLE_KIND_FUNCTION, (phpc_NativeStringHandle){{0}}, {name_handle}, PHPC_NATIVE_CALLABLE_VISIBILITY_PUBLIC, false, PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_NOT_MAGIC, {wrapper_name}, {}, {}, {}, {}, {}, {}, {}, {});",
+                signature.parameter_names_arg,
+                signature.parameter_required_arg,
+                signature.parameter_by_reference_arg,
+                signature.parameter_defaults_arg,
+                signature.fixed_count,
+                signature.variadic_parameter_name_arg,
+                if signature.has_variadic { "true" } else { "false" },
+                if signature.variadic_by_reference { "true" } else { "false" },
             ));
             let registration_error_exit = self.native_error_exit(failure_cleanup);
+            let aux_cleanup = c_cleanup_sequence(&signature.aux_cleanup_after_registration);
             self.body.push(format!(
-                "  if (!{registered}) {{ {registration_error_exit} }}"
+                "  if (!{registered}) {{ {aux_cleanup}{registration_error_exit} }}"
             ));
+            self.body.extend(signature.aux_cleanup_after_registration);
         }
         let classes = self
             .declared_class_order
@@ -25999,18 +26131,35 @@ impl CGenerator {
                 self.body.push(format!(
                     "  phpc_NativeStringHandle {name_handle} = phpc_native_string_from_bytes({name_bytes}, {name_len});"
                 ));
+                let signature_cleanup = format!(
+                    "phpc_native_string_free({scope_handle}); phpc_native_string_free({name_handle}); {failure_cleanup}"
+                );
+                let signature = self.emit_native_callable_source_signature_registration(
+                    &method.decl.params,
+                    &signature_cleanup,
+                );
                 self.body.push(format!(
-                    "  bool {registered} = phpc_native_callable_table_register_visibility_staticness_magic_signature_frame_callback_and_free({table}, {}, {scope_handle}, {name_handle}, {visibility}, {is_static}, {magic_signature_status}, {wrapper_name});",
+                    "  bool {registered} = phpc_native_callable_table_register_visibility_staticness_magic_signature_source_signature_frame_callback_and_free({table}, {}, {scope_handle}, {name_handle}, {visibility}, {is_static}, {magic_signature_status}, {wrapper_name}, {}, {}, {}, {}, {}, {}, {}, {});",
                     if method.decl.name.eq_ignore_ascii_case("__construct") {
                         "PHPC_NATIVE_CALLABLE_KIND_CONSTRUCTOR"
                     } else {
                         "PHPC_NATIVE_CALLABLE_KIND_METHOD"
-                    }
+                    },
+                    signature.parameter_names_arg,
+                    signature.parameter_required_arg,
+                    signature.parameter_by_reference_arg,
+                    signature.parameter_defaults_arg,
+                    signature.fixed_count,
+                    signature.variadic_parameter_name_arg,
+                    if signature.has_variadic { "true" } else { "false" },
+                    if signature.variadic_by_reference { "true" } else { "false" },
                 ));
                 let registration_error_exit = self.native_error_exit(failure_cleanup);
+                let aux_cleanup = c_cleanup_sequence(&signature.aux_cleanup_after_registration);
                 self.body.push(format!(
-                    "  if (!{registered}) {{ {registration_error_exit} }}"
+                    "  if (!{registered}) {{ {aux_cleanup}{registration_error_exit} }}"
                 ));
+                self.body.extend(signature.aux_cleanup_after_registration);
             }
         }
         self.body.push("}".to_string());
@@ -40532,6 +40681,9 @@ impl CGenerator {
         } else {
             None
         };
+        let has_known_callable_identities = self
+            .native_callable_identities_for_cvalue(&callee_value)
+            .is_some();
         let callee = self.materialize_native_array_c_value_handle(callee_value, span)?;
         let callee_cleanup = c_cleanup_sequence(&callee.cleanup_after_use);
 
@@ -40597,6 +40749,15 @@ impl CGenerator {
                 span,
                 &callable_failure_cleanup,
                 contract,
+            )?
+        } else if (call_arguments_have_named(args) || call_arguments_have_spread(args))
+            && !has_known_callable_identities
+        {
+            self.emit_runtime_dynamic_materialized_source_call_arguments_handle(
+                "dynamic_callable_args",
+                &callable,
+                args,
+                &callable_failure_cleanup,
             )?
         } else {
             self.emit_native_source_call_arguments_handle(
@@ -41653,6 +41814,43 @@ impl CGenerator {
         self.body.extend(metadata_cleanup);
 
         let _ = span;
+        Ok(call_arguments)
+    }
+
+    fn emit_runtime_dynamic_materialized_source_call_arguments_handle(
+        &mut self,
+        prefix: &str,
+        callable: &str,
+        args: &[Expr],
+        owner_failure_cleanup: &str,
+    ) -> CompileResult<String> {
+        let (materialized, materialized_failure_cleanup) = self
+            .emit_materialized_call_argument_entries_handle(
+                None,
+                args,
+                owner_failure_cleanup,
+                NativeCallCallee::DynamicExpression,
+            )?;
+        let call_arguments = self.next_native_name(prefix);
+        let diagnostic = self.next_native_name("runtime_signature_finalize_diagnostic");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeCallArgumentsHandle {call_arguments} = phpc_native_callable_value_finalize_materialized_arguments_with_diagnostic({callable}, {materialized}, &{diagnostic});"
+        ));
+        let finalize_failure_cleanup = format!(
+            "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {diagnostic}.ptr = NULL; }} {materialized_failure_cleanup}"
+        );
+        let finalize_error_exit = self.native_error_exit(&finalize_failure_cleanup);
+        self.body.push(format!(
+            "if ({diagnostic}.ptr != NULL) {{ {finalize_error_exit} }}"
+        ));
+        self.body.push(format!(
+            "if (phpc_native_call_arguments_is_null({call_arguments})) {{ {finalize_error_exit} }}"
+        ));
+        self.body.push(format!(
+            "phpc_native_materialized_call_arguments_free({materialized});"
+        ));
         Ok(call_arguments)
     }
 
