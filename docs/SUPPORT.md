@@ -2852,10 +2852,13 @@
   while executing a method on the same declaring class. Protected methods are
   callable while executing a method on the same declaring class or a child
   class. Current method calls reuse the existing user-function
-  parameter/default/return subset. Missing direct instance method calls
-  dispatch to visible non-static `__call($name, $args)` when one is declared
-  or inherited, with `$args` materialized as a zero-indexed PHP array of the
-  evaluated positional arguments.
+  parameter/default/return subset. Missing or externally inaccessible direct
+  instance method calls dispatch to visible non-static
+  `__call($name, $args)` when one is declared or inherited, with `$args`
+  materialized from the evaluated call arguments. Positional arguments append
+  with zero-based integer keys and named arguments preserve their source-order
+  string keys. Malformed public `__call` metadata is rejected by the shared
+  runtime callable validator before magic `$args` packing.
 - bounded object string conversion through visible non-static `__toString()`
   for `echo $object`, `print $object`, `(string) $object`, binary
   concatenation, and concat compound assignment `.=` over the current

@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 12:21 CEST
+Updated: 2026-05-27 12:30 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,7 +19,23 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest accounted source capability: `ebabf95a` routes selected generated-C
+Latest accounted source capability: `6672a448` routes selected generated-C
+direct receiver calls with missing or externally inaccessible instance
+methods through the shared receiver lookup-plus-invoke boundary when public
+non-static `__call` metadata exists. Declared visible hits and class-context
+private calls still bind through declared method metadata first, direct
+fallback calls preserve source-order named `$args` keys through
+`NativeCallArgumentsHandle`, and malformed public `__call` signatures reject
+in the runtime callable metadata validator before magic `$args` packing.
+Named receiver/static magic, constructor reference results, static-property
+storage/reference/offset references, reference-returning ArrayAccess owner
+stacks, descriptor closures, malformed magic metadata, source-call
+references, exact imports, class constants, and class aliases remain green.
+Unknown receiver identities, non-public/static `__call`, broader callable
+object magic shapes, full `$args` reference/COW parity, traits/interfaces,
+autoload breadth, spread/unpack, exact PHP diagnostics, and LLVM/backend
+parity remain blocked. Recent source commit `ebabf95a` routes selected
+generated-C
 static-property array-offset reference sources through the shared
 static-property storage and lvalue/reference boundary. Literal class,
 object/class-string, `self`, `parent`, and declared method-frame `static`

@@ -4,6 +4,26 @@
 
 Implemented:
 
+- Added generated-C direct receiver `__call` fallback production through the
+  shared runtime receiver lookup-plus-invoke boundary. Direct receiver calls
+  with missing or externally inaccessible instance methods now dispatch to
+  public non-static receiver `__call` when compiler-known receiver facts prove
+  that metadata exists, while visible declared direct hits and class-context
+  private calls keep declared method precedence. Named direct receiver magic
+  calls preserve source-order `$args` keys through `NativeCallArgumentsHandle`,
+  and malformed public `__call` signatures reject in the shared runtime
+  callable metadata validator before magic argument packing. Focused primary
+  gates cover selector classification, generated-C and linked executable
+  direct receiver magic proofs, named direct fallback `$args`, malformed
+  direct receiver magic diagnostics, named receiver/static magic regressions,
+  static-property storage/reference/offset references, reference-returning
+  ArrayAccess owner stacks, constructors, descriptor closures, source-call
+  references, exact imports, class constants, class aliases, and
+  `cargo check -p phpc`. Unknown receiver identities, non-public/static
+  `__call`, traits/interfaces/effective method tables, aliases/autoload,
+  callable-object magic shapes, full `$args` reference/COW parity, spread,
+  exact PHP diagnostics, and LLVM IR/assembly parity remain unsupported.
+
 - Added generated-C static-property array-offset reference production through
   shared static-property storage and reference/lvalue ownership. Literal
   class, object/class-string, `self`, `parent`, and declared method-frame

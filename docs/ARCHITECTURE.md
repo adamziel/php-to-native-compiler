@@ -107,10 +107,13 @@ emitting PHP's indirect-modification notice. If public by-value
 `offsetGet()` or visible `__get()` returns a plain array that contains an
 `ArrayAccess` object at an intermediate selected bucket, keyed writes, append
 writes, and covered reference-source bindings forward the remaining path to
-that inner object while keeping the overloaded parent detached. Missing
-instance-method calls through `__call()` now enter a source-aware method path,
-so delegated `offsetGet()`/`__get()` returns can preserve copied-array source
-metadata instead of returning an untracked plain value.
+that inner object while keeping the overloaded parent detached. Missing or
+externally inaccessible instance-method calls through public non-static
+`__call()` now enter a source-aware method path, so delegated
+`offsetGet()`/`__get()` returns can preserve copied-array source metadata
+instead of returning an untracked plain value. The same shared receiver
+lookup-plus-invoke boundary carries source-order named magic `$args` metadata
+and rejects malformed `__call` signatures before magic argument packing.
 Statement-form reference assignment from by-value exact-bridge `ArrayAccess`
 offset sources follows PHP's indirect-modification notice/no-op behavior for
 direct object roots, visible direct property-held roots, bounded non-direct
