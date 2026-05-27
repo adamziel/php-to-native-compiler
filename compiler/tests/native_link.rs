@@ -749,6 +749,40 @@ const NATIVE_NAMED_DYNAMIC_MAGIC_SOURCE_CALL_SOURCE: &str = concat!(
     "echo $box->relay(), \"\\n\";\n",
 );
 
+const NATIVE_DIRECT_RECEIVER_MAGIC_SOURCE_CALL_SOURCE: &str = concat!(
+    "<?php\n",
+    "class DirectReceiverMagicBox {\n",
+    "    public function __call($name, $args) { return \"magic:\" . $name . \":\" . $args[0]; }\n",
+    "    public function known($value = \"ok\") { return \"known:\" . $value; }\n",
+    "    public function reveal() { return $this->hidden(\"D\"); }\n",
+    "    private function hidden($value) { return \"hidden:\" . $value; }\n",
+    "}\n",
+    "$box = new DirectReceiverMagicBox();\n",
+    "echo $box->known(\"A\"), \"|\";\n",
+    "echo $box->missing(\"B\"), \"|\";\n",
+    "echo $box->hidden(\"C\"), \"|\";\n",
+    "echo $box->reveal(), \"\\n\";\n",
+);
+
+const NATIVE_NAMED_DIRECT_RECEIVER_MAGIC_SOURCE_CALL_SOURCE: &str = concat!(
+    "<?php\n",
+    "class NamedDirectReceiverMagicBox {\n",
+    "    public function known($first, $second = \"D\") { return \"known:\" . $first . \":\" . $second; }\n",
+    "    private function hidden($first) { return \"hidden:\" . $first; }\n",
+    "    public function __call($name, $args) {\n",
+    "        $zero = array_key_exists(0, $args) ? $args[0] : \"-\";\n",
+    "        $first = array_key_exists(\"first\", $args) ? $args[\"first\"] : \"-\";\n",
+    "        $second = array_key_exists(\"second\", $args) ? $args[\"second\"] : \"-\";\n",
+    "        $tail = array_key_exists(\"tail\", $args) ? $args[\"tail\"] : \"-\";\n",
+    "        return \"magic:\" . $name . \":\" . $zero . \":\" . $first . \":\" . $second . \":\" . $tail;\n",
+    "    }\n",
+    "}\n",
+    "$box = new NamedDirectReceiverMagicBox();\n",
+    "echo $box->known(second: \"B\", first: \"A\"), \"|\";\n",
+    "echo $box->missing(\"P\", tail: \"T\"), \"|\";\n",
+    "echo $box->hidden(first: \"H\"), \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_STATIC_MAGIC_SOURCE_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "class StaticSourceCallMagicBox {\n",
@@ -806,6 +840,17 @@ const NATIVE_MALFORMED_MAGIC_SIGNATURE_SOURCE: &str = concat!(
     "$method = \"missing\";\n",
     "echo $box->{$method}(\"C\"), \"|\";\n",
     "echo MalformedStaticMagicSignatureBox::missing(\"D\"), \"\\n\";\n",
+);
+
+const NATIVE_DIRECT_RECEIVER_MALFORMED_MAGIC_SIGNATURE_SOURCE: &str = concat!(
+    "<?php\n",
+    "class MalformedDirectReceiverMagicSignatureBox {\n",
+    "    public function known($value) { return \"known:\" . $value; }\n",
+    "    public function __call($name) { return \"bad:\" . $name; }\n",
+    "}\n",
+    "$box = new MalformedDirectReceiverMagicSignatureBox();\n",
+    "echo $box->known(\"A\"), \"|\";\n",
+    "echo $box->missing(\"B\"), \"\\n\";\n",
 );
 
 const NATIVE_DECLARED_CLASS_STATIC_METHOD_SOURCE: &str = concat!(
@@ -3334,6 +3379,68 @@ fn emit_exe_links_and_runs_named_magic_dynamic_method_source_call_program() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_direct_receiver_magic_method_source_call_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "direct_receiver_magic_method_source_call",
+        NATIVE_DIRECT_RECEIVER_MAGIC_SOURCE_CALL_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run direct receiver magic method source-call executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"known:A|magic:missing:B|magic:hidden:C|hidden:D\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_named_direct_receiver_magic_method_source_call_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "named_direct_receiver_magic_method_source_call",
+        NATIVE_NAMED_DIRECT_RECEIVER_MAGIC_SOURCE_CALL_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run named direct receiver magic method source-call executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"known:A:B|magic:missing:P:-:-:T|magic:hidden:-:H:-:-\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn emit_exe_links_and_runs_magic_static_method_source_call_program() {
     if !has_cc() {
         return;
@@ -3447,6 +3554,38 @@ fn emit_exe_reports_malformed_magic_signature_before_magic_fallback() {
         let _ = fs::remove_file(source_path);
         let _ = fs::remove_file(output_path);
     }
+}
+
+#[test]
+fn emit_exe_reports_direct_receiver_malformed_magic_signature_before_magic_fallback() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "direct_receiver_malformed_magic_signature_source_call",
+        NATIVE_DIRECT_RECEIVER_MALFORMED_MAGIC_SIGNATURE_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run direct receiver malformed-magic-signature executable: {error}")
+    });
+
+    assert!(
+        !run.status.success(),
+        "direct receiver malformed __call should fail through the shared runtime diagnostic"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "known:A|");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains(
+            "Method MalformedDirectReceiverMagicSignatureBox::__call() must take exactly 2 arguments"
+        ) && !stderr.contains("native magic __call argument packing failed"),
+        "stderr should reject malformed __call metadata before runtime magic args packing:\n{stderr}"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
 }
 
 #[test]
@@ -6340,6 +6479,58 @@ fn native_executable_c_source_preserves_named_magic_dynamic_fallback_args_throug
 }
 
 #[test]
+fn native_executable_c_source_routes_direct_receiver_magic_methods_through_runtime_dispatch_boundary(
+) {
+    let program = parse(NATIVE_DIRECT_RECEIVER_MAGIC_SOURCE_CALL_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("receiver_method_source_call_args_")
+            && body.contains(
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+            )
+            && body.contains("PHPC_NATIVE_CALLABLE_ACCESS_OBJECT_RECEIVER")
+            && source.contains("PHPC_NATIVE_CALLABLE_ACCESS_CLASS_CONTEXT")
+            && source.contains("method_call_caller_scope_"),
+        "direct receiver calls with public __call fallback should use the shared runtime method dispatch boundary and preserve class-context visibility:\n{source}"
+    );
+    assert!(
+        source.contains("PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_VALID")
+            && !body.contains("method_dispatch_status")
+            && !body.contains("phpc_native_value_object_method_failure_with_diagnostic")
+            && !source.contains("method-call lowering rejects"),
+        "direct receiver magic fallback must not use generated method ladders or exact-shape object-method failure dispatch:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_preserves_named_direct_receiver_magic_fallback_args_through_source_order_metadata(
+) {
+    let program = parse(NATIVE_NAMED_DIRECT_RECEIVER_MAGIC_SOURCE_CALL_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("receiver_method_source_call_args_")
+            && body.contains(
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+            )
+            && source.matches("phpc_native_call_arguments_push_named_value_and_free")
+                .count()
+                >= 2
+            && source.contains("named_call_argument_"),
+        "named direct receiver magic fallback should preserve source-order string keys through shared NativeCallArguments metadata:\n{source}"
+    );
+    assert!(
+        !body.contains("method_dispatch_status")
+            && !source.contains("named argument lowering is only implemented")
+            && !source.contains("method-call lowering rejects"),
+        "named direct receiver magic fallback must avoid generated frame ladders and exact-shape blockers:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_magic_static_methods_through_runtime_dispatch_boundary() {
     let program = parse(NATIVE_DECLARED_STATIC_MAGIC_SOURCE_CALL_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -6444,9 +6635,31 @@ fn native_executable_c_source_publishes_magic_signature_metadata_through_callabl
         invalid.contains("PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_ARITY")
             && invalid.contains("PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_FIRST_PARAMETER_TYPE")
             && invalid.contains("PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_NOT_MAGIC")
+            && invalid.contains("receiver_method_source_call_args_")
             && !invalid.contains("dynamic_method_dispatch_status")
+            && !invalid.contains("method_dispatch_status")
             && !invalid.contains("static_method_status"),
         "malformed magic signatures should publish invalid metadata without reviving exact-shape dispatch:\n{invalid}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_direct_receiver_malformed_magic_signature_rejection_through_runtime_boundary(
+) {
+    let program = parse(NATIVE_DIRECT_RECEIVER_MALFORMED_MAGIC_SIGNATURE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_INVALID_ARITY")
+            && body.contains("receiver_method_source_call_args_")
+            && body.contains(
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+            )
+            && !body.contains("method_dispatch_status")
+            && !body.contains("phpc_native_value_object_method_failure_with_diagnostic")
+            && !source.contains("method-call lowering rejects"),
+        "direct receiver malformed __call signatures should route to shared lookup-plus-invoke diagnostics without generated dispatch ladders:\n{source}"
     );
 }
 

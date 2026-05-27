@@ -17731,10 +17731,17 @@ impl NativeMethodStaticSignatureFallbackContract {
 
     fn preserves_named_source_keys_for_magic_args(&self) -> bool {
         matches!(
-            self.availability,
-            NativeMethodStaticSignatureAvailability::RuntimeFallback(
-                NativeMethodStaticSignatureFallbackReason::MagicReceiverFallback
-                    | NativeMethodStaticSignatureFallbackReason::MagicStaticFallback
+            (self.family, &self.availability,),
+            (
+                NativeMethodStaticSignatureFamily::ReceiverMethod,
+                NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                    NativeMethodStaticSignatureFallbackReason::MagicReceiverFallback,
+                ),
+            ) | (
+                NativeMethodStaticSignatureFamily::StaticMethod,
+                NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                    NativeMethodStaticSignatureFallbackReason::MagicStaticFallback,
+                ),
             )
         )
     }
@@ -27993,7 +28000,7 @@ impl CGenerator {
                         method.visibility,
                         access_context,
                     ) && self
-                        .declared_class_public_magic_call_method_for_key(class_key)
+                        .declared_class_public_receiver_magic_call_method_for_key(class_key)
                         .is_some()
                     {
                         saw_magic_call = true;
@@ -28005,7 +28012,7 @@ impl CGenerator {
                     methods.push(method);
                 }
                 None if self
-                    .declared_class_public_magic_call_method_for_key(class_key)
+                    .declared_class_public_receiver_magic_call_method_for_key(class_key)
                     .is_some() =>
                 {
                     saw_magic_call = true;
@@ -28014,7 +28021,7 @@ impl CGenerator {
             }
         }
 
-        if saw_magic_call && methods.is_empty() {
+        if saw_magic_call {
             return Some(NativeMethodStaticSignatureFallbackContract {
                 family: NativeMethodStaticSignatureFamily::ReceiverMethod,
                 candidate_count: methods.len(),
@@ -28024,11 +28031,6 @@ impl CGenerator {
                 ),
                 argument_strategy: NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic,
             });
-        }
-        if saw_magic_call {
-            return Some(native_method_static_runtime_signature_fallback_contract(
-                NativeMethodStaticSignatureFamily::ReceiverMethod,
-            ));
         }
 
         let contract = native_method_static_signature_fallback_contract_from_methods(
@@ -39263,8 +39265,9 @@ impl CGenerator {
         method_name: &str,
         arg_count: usize,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        let caller_scope = self.active_declared_class_name.as_deref();
         let access_context = Self::current_declared_class_access_context(
-            self.active_declared_class_name.as_deref(),
+            caller_scope,
             NativeSourceCallAccessContext::ObjectReceiver,
         );
         let contract = self.receiver_method_source_call_signature_contract(
@@ -40624,6 +40627,14 @@ impl CGenerator {
             }
         }
         None
+    }
+
+    fn declared_class_public_receiver_magic_call_method_for_key(
+        &self,
+        class_key: &str,
+    ) -> Option<(CDeclaredClass, CDeclaredClassMethod)> {
+        self.declared_class_receiver_method_for_key(class_key, "__call")
+            .filter(|(_, method)| method.visibility == ClassVisibility::Public && !method.is_static)
     }
 
     fn declared_class_public_static_magic_call_method_for_key(
@@ -63718,6 +63729,131 @@ echo " 10" < "zeta";
             )
         );
         assert_eq!(runtime_dynamic.signature(), None);
+    }
+
+    #[test]
+    fn receiver_method_source_call_signature_contract_classifies_direct_magic_fallback() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "class DirectMagicSelector {\n",
+            "    public function known($value) { return $value; }\n",
+            "    private function hidden($value) { return $value; }\n",
+            "    public function __call($name, $args) { return $args; }\n",
+            "}\n",
+            "class MalformedDirectMagicSelector {\n",
+            "    public function __call($name) { return $name; }\n",
+            "}\n",
+            "class NoDirectMagicSelector {}\n",
+        ))
+        .expect("direct magic selector fixture should parse");
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .expect("direct magic selector classes should register");
+
+        let direct_receiver = Expr::New {
+            class_name: crate::ast::NewClassName::Named("DirectMagicSelector".to_string()),
+            args: vec![],
+            span: test_span(),
+        };
+        let declared = generator
+            .receiver_method_source_call_signature_contract(
+                &direct_receiver,
+                "known",
+                1,
+                NativeSourceCallAccessContext::ObjectReceiver,
+            )
+            .expect("declared direct receiver hit should have a source-call contract");
+        assert!(matches!(
+            declared.availability,
+            NativeMethodStaticSignatureAvailability::Known(_)
+        ));
+
+        let missing = generator
+            .receiver_method_source_call_signature_contract(
+                &direct_receiver,
+                "missing",
+                1,
+                NativeSourceCallAccessContext::ObjectReceiver,
+            )
+            .expect("missing direct receiver call should select receiver magic fallback");
+        assert_eq!(
+            missing.availability,
+            NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                NativeMethodStaticSignatureFallbackReason::MagicReceiverFallback,
+            )
+        );
+        assert!(missing.preserves_named_source_keys_for_magic_args());
+
+        let hidden_external = generator
+            .receiver_method_source_call_signature_contract(
+                &direct_receiver,
+                "hidden",
+                1,
+                NativeSourceCallAccessContext::ObjectReceiver,
+            )
+            .expect("inaccessible direct receiver call should select receiver magic fallback");
+        assert_eq!(
+            hidden_external.availability,
+            NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                NativeMethodStaticSignatureFallbackReason::MagicReceiverFallback,
+            )
+        );
+
+        let hidden_internal = generator
+            .receiver_method_source_call_signature_contract(
+                &direct_receiver,
+                "hidden",
+                1,
+                NativeSourceCallAccessContext::ClassContext {
+                    caller_scope: "DirectMagicSelector",
+                },
+            )
+            .expect("class-context private direct receiver call should stay a declared hit");
+        assert!(matches!(
+            hidden_internal.availability,
+            NativeMethodStaticSignatureAvailability::Known(_)
+        ));
+
+        let malformed_receiver = Expr::New {
+            class_name: crate::ast::NewClassName::Named("MalformedDirectMagicSelector".to_string()),
+            args: vec![],
+            span: test_span(),
+        };
+        let malformed = generator
+            .receiver_method_source_call_signature_contract(
+                &malformed_receiver,
+                "missing",
+                1,
+                NativeSourceCallAccessContext::ObjectReceiver,
+            )
+            .expect("malformed public non-static __call should still route to runtime rejection");
+        assert_eq!(
+            malformed.availability,
+            NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                NativeMethodStaticSignatureFallbackReason::MagicReceiverFallback,
+            )
+        );
+
+        let no_magic_receiver = Expr::New {
+            class_name: crate::ast::NewClassName::Named("NoDirectMagicSelector".to_string()),
+            args: vec![],
+            span: test_span(),
+        };
+        assert!(
+            generator
+                .receiver_method_source_call_signature_contract(
+                    &no_magic_receiver,
+                    "missing",
+                    1,
+                    NativeSourceCallAccessContext::ObjectReceiver,
+                )
+                .is_none(),
+            "missing direct receiver calls without __call must stay blocked"
+        );
     }
 
     #[test]
