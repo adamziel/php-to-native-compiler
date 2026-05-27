@@ -25287,6 +25287,699 @@ impl PhpObjectPropertyInitializer {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhpStaticPropertyReceiver {
+    Class(ClassId),
+    SelfClass,
+    ParentClass,
+    LateStaticClass,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PhpStaticPropertyAccessContext {
+    current_class_id: Option<ClassId>,
+    called_class_id: Option<ClassId>,
+}
+
+impl PhpStaticPropertyAccessContext {
+    pub fn external() -> Self {
+        Self::default()
+    }
+
+    pub fn class_context(current_class_id: ClassId) -> Self {
+        Self {
+            current_class_id: Some(current_class_id),
+            called_class_id: Some(current_class_id),
+        }
+    }
+
+    pub fn with_called_class(mut self, called_class_id: ClassId) -> Self {
+        self.called_class_id = Some(called_class_id);
+        self
+    }
+
+    pub fn current_class_id(self) -> Option<ClassId> {
+        self.current_class_id
+    }
+
+    pub fn called_class_id(self) -> Option<ClassId> {
+        self.called_class_id
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PhpStaticPropertyDefaults {
+    defaults: HashMap<(ClassId, String), Value>,
+}
+
+impl PhpStaticPropertyDefaults {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn len(&self) -> usize {
+        self.defaults.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.defaults.is_empty()
+    }
+
+    pub fn add(
+        &mut self,
+        classes: &PhpClassTable,
+        class_id: ClassId,
+        property_name: impl Into<String>,
+        value: Value,
+    ) -> RuntimeResult<()> {
+        let property_name = property_name.into();
+        let (class, property) =
+            declared_static_property_metadata(classes, class_id, &property_name)?;
+        if !property.is_static() {
+            return Err(RuntimeError::invalid_property_access(format!(
+                "static property default {}::${} targets a non-static property",
+                class.name(),
+                property_name
+            )));
+        }
+
+        let key = (class_id, property_name.clone());
+        if self.defaults.contains_key(&key) {
+            return Err(RuntimeError::invalid_property_access(format!(
+                "static property default for {}::${} is already registered",
+                class.name(),
+                property_name
+            )));
+        }
+
+        self.defaults.insert(key, value);
+        Ok(())
+    }
+
+    fn default_value(&self, declaring_class_id: ClassId, property_name: &str) -> Option<Value> {
+        self.defaults
+            .get(&(declaring_class_id, property_name.to_string()))
+            .cloned()
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PhpStaticPropertyStorage {
+    cells: HashMap<(ClassId, String), PhpStaticPropertyCell>,
+}
+
+impl PhpStaticPropertyStorage {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn from_class_table(
+        classes: &PhpClassTable,
+        defaults: &PhpStaticPropertyDefaults,
+    ) -> RuntimeResult<Self> {
+        let mut storage = Self::new();
+        storage.reset_from_class_table(classes, defaults)?;
+        Ok(storage)
+    }
+
+    pub fn len(&self) -> usize {
+        self.cells.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.cells.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.cells.clear();
+    }
+
+    pub fn reset_from_class_table(
+        &mut self,
+        classes: &PhpClassTable,
+        defaults: &PhpStaticPropertyDefaults,
+    ) -> RuntimeResult<()> {
+        self.cells.clear();
+
+        for class in classes.classes() {
+            for property in class
+                .properties()
+                .iter()
+                .filter(|property| property.is_static())
+            {
+                let default = defaults.default_value(class.id(), property.name());
+                let cell = PhpStaticPropertyCell::from_metadata(
+                    class.id(),
+                    class.name(),
+                    property,
+                    default,
+                )?;
+                self.cells
+                    .insert((class.id(), property.name().to_string()), cell);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn read(
+        &self,
+        classes: &PhpClassTable,
+        receiver: PhpStaticPropertyReceiver,
+        property_name: &str,
+        context: PhpStaticPropertyAccessContext,
+    ) -> RuntimeResult<Value> {
+        let cell = self.resolved_cell(classes, receiver, property_name, context)?;
+        cell.initialized_value_cloned()
+    }
+
+    pub fn read_for_isset(
+        &self,
+        classes: &PhpClassTable,
+        receiver: PhpStaticPropertyReceiver,
+        property_name: &str,
+        context: PhpStaticPropertyAccessContext,
+    ) -> RuntimeResult<Option<Value>> {
+        let (receiver_class_id, _) =
+            resolve_static_property_receiver(classes, receiver, property_name, context)?;
+        let Some((declaring_class_id, declaring_class_name, property)) =
+            resolve_static_property_metadata(classes, receiver_class_id, property_name)
+        else {
+            return Ok(None);
+        };
+
+        ensure_static_property_visible(
+            classes,
+            declaring_class_id,
+            &declaring_class_name,
+            property.name(),
+            property.visibility(),
+            context,
+        )?;
+
+        let Some(cell) = self
+            .cells
+            .get(&(declaring_class_id, property.name().to_string()))
+        else {
+            return Ok(None);
+        };
+        if !cell.is_initialized() {
+            return Ok(None);
+        }
+
+        let value = cell.value_cloned();
+        Ok((!matches!(value, Value::Null)).then_some(value))
+    }
+
+    pub fn write(
+        &mut self,
+        classes: &PhpClassTable,
+        receiver: PhpStaticPropertyReceiver,
+        property_name: &str,
+        value: Value,
+        context: PhpStaticPropertyAccessContext,
+    ) -> RuntimeResult<Value> {
+        self.write_with_object_type_resolver(
+            classes,
+            receiver,
+            property_name,
+            value,
+            context,
+            |object, type_name| object.is_instance_of_class_name(type_name),
+        )
+    }
+
+    pub fn write_with_object_type_resolver<F>(
+        &mut self,
+        classes: &PhpClassTable,
+        receiver: PhpStaticPropertyReceiver,
+        property_name: &str,
+        value: Value,
+        context: PhpStaticPropertyAccessContext,
+        object_type_resolver: F,
+    ) -> RuntimeResult<Value>
+    where
+        F: Fn(&PhpObject, &str) -> bool,
+    {
+        let cell = self.resolved_cell_mut(classes, receiver, property_name, context)?;
+        cell.set_value_with_object_type_resolver(value, &object_type_resolver)
+    }
+
+    pub fn reference_cell(
+        &mut self,
+        classes: &PhpClassTable,
+        receiver: PhpStaticPropertyReceiver,
+        property_name: &str,
+        context: PhpStaticPropertyAccessContext,
+    ) -> RuntimeResult<PhpReferenceCell> {
+        let cell = self.resolved_cell_mut(classes, receiver, property_name, context)?;
+        cell.reference_cell()
+    }
+
+    pub fn existing_reference_cell(
+        &mut self,
+        classes: &PhpClassTable,
+        receiver: PhpStaticPropertyReceiver,
+        property_name: &str,
+        context: PhpStaticPropertyAccessContext,
+    ) -> RuntimeResult<Option<PhpReferenceCell>> {
+        let cell = self.resolved_cell_mut(classes, receiver, property_name, context)?;
+        cell.existing_reference_cell()
+    }
+
+    fn resolved_cell(
+        &self,
+        classes: &PhpClassTable,
+        receiver: PhpStaticPropertyReceiver,
+        property_name: &str,
+        context: PhpStaticPropertyAccessContext,
+    ) -> RuntimeResult<&PhpStaticPropertyCell> {
+        let (declaring_class_id, declaring_class_name, property_name) =
+            resolve_static_property_storage_key(classes, receiver, property_name, context)?;
+        self.cells
+            .get(&(declaring_class_id, property_name.clone()))
+            .ok_or_else(|| {
+                uninitialized_static_storage_error(&declaring_class_name, &property_name)
+            })
+    }
+
+    fn resolved_cell_mut(
+        &mut self,
+        classes: &PhpClassTable,
+        receiver: PhpStaticPropertyReceiver,
+        property_name: &str,
+        context: PhpStaticPropertyAccessContext,
+    ) -> RuntimeResult<&mut PhpStaticPropertyCell> {
+        let (declaring_class_id, declaring_class_name, property_name) =
+            resolve_static_property_storage_key(classes, receiver, property_name, context)?;
+        self.cells
+            .get_mut(&(declaring_class_id, property_name.clone()))
+            .ok_or_else(|| {
+                uninitialized_static_storage_error(&declaring_class_name, &property_name)
+            })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PhpStaticPropertyCell {
+    declaring_class_id: ClassId,
+    declaring_class_name: String,
+    name: String,
+    visibility: Visibility,
+    type_decl: Option<String>,
+    storage: PhpStaticPropertyCellStorage,
+    initialized: bool,
+}
+
+impl PhpStaticPropertyCell {
+    fn from_metadata(
+        declaring_class_id: ClassId,
+        declaring_class_name: &str,
+        property: &PhpPropertyMetadata,
+        default: Option<Value>,
+    ) -> RuntimeResult<Self> {
+        let initialized = default.is_some() || property.type_decl().is_none();
+        let mut value = default.unwrap_or(Value::Null);
+        if initialized {
+            value = coerce_static_property_value(
+                property.type_decl(),
+                value,
+                declaring_class_name,
+                property.name(),
+            )?;
+        }
+
+        Ok(Self {
+            declaring_class_id,
+            declaring_class_name: declaring_class_name.to_string(),
+            name: property.name().to_string(),
+            visibility: property.visibility(),
+            type_decl: property.type_decl().map(str::to_string),
+            storage: PhpStaticPropertyCellStorage::Value(PhpValueCell::new(value)),
+            initialized,
+        })
+    }
+
+    pub fn declaring_class_id(&self) -> ClassId {
+        self.declaring_class_id
+    }
+
+    pub fn declaring_class_name(&self) -> &str {
+        &self.declaring_class_name
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn visibility(&self) -> Visibility {
+        self.visibility
+    }
+
+    pub fn is_initialized(&self) -> bool {
+        self.initialized
+    }
+
+    pub fn is_reference(&self) -> bool {
+        matches!(self.storage, PhpStaticPropertyCellStorage::Reference(_))
+    }
+
+    pub fn reference_cell_id(&self) -> Option<PhpReferenceCellId> {
+        match &self.storage {
+            PhpStaticPropertyCellStorage::Value(_) => None,
+            PhpStaticPropertyCellStorage::Reference(reference) => Some(reference.id()),
+        }
+    }
+
+    pub fn shares_reference_with(&self, other: &Self) -> bool {
+        match (&self.storage, &other.storage) {
+            (
+                PhpStaticPropertyCellStorage::Reference(left),
+                PhpStaticPropertyCellStorage::Reference(right),
+            ) => left.shares_reference_with(right),
+            _ => false,
+        }
+    }
+
+    fn value_cloned(&self) -> Value {
+        match &self.storage {
+            PhpStaticPropertyCellStorage::Value(cell) => cell.value_cloned(),
+            PhpStaticPropertyCellStorage::Reference(reference) => reference.value_cloned(),
+        }
+    }
+
+    fn initialized_value_cloned(&self) -> RuntimeResult<Value> {
+        if self.initialized {
+            Ok(self.value_cloned())
+        } else {
+            Err(RuntimeError::uninitialized_typed_property(
+                self.declaring_class_name.clone(),
+                self.name.clone(),
+            ))
+        }
+    }
+
+    fn set_value_with_object_type_resolver<F>(
+        &mut self,
+        value: Value,
+        object_type_resolver: &F,
+    ) -> RuntimeResult<Value>
+    where
+        F: Fn(&PhpObject, &str) -> bool,
+    {
+        let value = match &mut self.storage {
+            PhpStaticPropertyCellStorage::Value(cell) => {
+                let value = coerce_static_property_value_with_object_type_resolver(
+                    self.type_decl.as_deref(),
+                    value,
+                    &self.declaring_class_name,
+                    &self.name,
+                    object_type_resolver,
+                )?;
+                cell.set_value(value.clone());
+                value
+            }
+            PhpStaticPropertyCellStorage::Reference(reference) => {
+                let value = reference.coerce_value_for_write_with_object_type_resolver(
+                    value,
+                    object_type_resolver,
+                )?;
+                reference.set_value(value.clone());
+                value
+            }
+        };
+        self.initialized = true;
+        Ok(value)
+    }
+
+    fn reference_cell(&mut self) -> RuntimeResult<PhpReferenceCell> {
+        if !self.initialized {
+            return Err(RuntimeError::uninitialized_typed_property(
+                self.declaring_class_name.clone(),
+                self.name.clone(),
+            ));
+        }
+
+        match &self.storage {
+            PhpStaticPropertyCellStorage::Reference(reference) => {
+                reference.add_property_type_constraint(
+                    self.type_decl.as_deref(),
+                    &self.declaring_class_name,
+                    &self.name,
+                );
+                Ok(reference.clone())
+            }
+            PhpStaticPropertyCellStorage::Value(cell) => {
+                let reference = PhpReferenceCell::new(cell.value_cloned());
+                reference.add_property_type_constraint(
+                    self.type_decl.as_deref(),
+                    &self.declaring_class_name,
+                    &self.name,
+                );
+                self.storage = PhpStaticPropertyCellStorage::Reference(reference.clone());
+                Ok(reference)
+            }
+        }
+    }
+
+    fn existing_reference_cell(&self) -> RuntimeResult<Option<PhpReferenceCell>> {
+        if !self.initialized {
+            return Err(RuntimeError::uninitialized_typed_property(
+                self.declaring_class_name.clone(),
+                self.name.clone(),
+            ));
+        }
+
+        match &self.storage {
+            PhpStaticPropertyCellStorage::Value(_) => Ok(None),
+            PhpStaticPropertyCellStorage::Reference(reference) => Ok(Some(reference.clone())),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum PhpStaticPropertyCellStorage {
+    Value(PhpValueCell),
+    Reference(PhpReferenceCell),
+}
+
+fn declared_static_property_metadata<'a>(
+    classes: &'a PhpClassTable,
+    class_id: ClassId,
+    property_name: &str,
+) -> RuntimeResult<(&'a PhpClassMetadata, &'a PhpPropertyMetadata)> {
+    let class = classes.get(class_id).ok_or_else(|| {
+        RuntimeError::invalid_property_access(format!(
+            "static property class id #{} does not resolve",
+            class_id.index()
+        ))
+    })?;
+    let property = class
+        .property(property_name)
+        .ok_or_else(|| RuntimeError::undefined_property(class.name(), property_name))?;
+    Ok((class, property))
+}
+
+fn resolve_static_property_receiver(
+    classes: &PhpClassTable,
+    receiver: PhpStaticPropertyReceiver,
+    property_name: &str,
+    context: PhpStaticPropertyAccessContext,
+) -> RuntimeResult<(ClassId, String)> {
+    match receiver {
+        PhpStaticPropertyReceiver::Class(class_id) => classes
+            .get(class_id)
+            .map(|class| (class_id, class.name().to_string()))
+            .ok_or_else(|| {
+                RuntimeError::invalid_property_access(format!(
+                    "static property receiver class id #{} does not resolve",
+                    class_id.index()
+                ))
+            }),
+        PhpStaticPropertyReceiver::SelfClass => {
+            let Some(class_id) = context.current_class_id() else {
+                return Err(RuntimeError::unsupported_call(
+                    format!("self::${property_name}"),
+                    "self static property access requires class context",
+                ));
+            };
+            let class = classes.get(class_id).ok_or_else(|| {
+                RuntimeError::invalid_property_access(format!(
+                    "self static property class id #{} does not resolve",
+                    class_id.index()
+                ))
+            })?;
+            Ok((class_id, class.name().to_string()))
+        }
+        PhpStaticPropertyReceiver::ParentClass => {
+            let Some(class_id) = context.current_class_id() else {
+                return Err(RuntimeError::unsupported_call(
+                    format!("parent::${property_name}"),
+                    "parent static property access requires class context",
+                ));
+            };
+            let class = classes.get(class_id).ok_or_else(|| {
+                RuntimeError::invalid_property_access(format!(
+                    "parent static property class id #{} does not resolve",
+                    class_id.index()
+                ))
+            })?;
+            let Some(parent_id) = class.parent_id() else {
+                return Err(RuntimeError::unsupported_call(
+                    format!("parent::${property_name}"),
+                    "parent static property access requires a parent class",
+                ));
+            };
+            let parent = classes.get(parent_id).ok_or_else(|| {
+                RuntimeError::invalid_property_access(format!(
+                    "parent static property class id #{} does not resolve",
+                    parent_id.index()
+                ))
+            })?;
+            Ok((parent_id, parent.name().to_string()))
+        }
+        PhpStaticPropertyReceiver::LateStaticClass => {
+            let Some(class_id) = context.called_class_id() else {
+                return Err(RuntimeError::unsupported_call(
+                    format!("static::${property_name}"),
+                    "static property access requires called class context",
+                ));
+            };
+            let class = classes.get(class_id).ok_or_else(|| {
+                RuntimeError::invalid_property_access(format!(
+                    "late static property class id #{} does not resolve",
+                    class_id.index()
+                ))
+            })?;
+            Ok((class_id, class.name().to_string()))
+        }
+    }
+}
+
+fn resolve_static_property_storage_key(
+    classes: &PhpClassTable,
+    receiver: PhpStaticPropertyReceiver,
+    property_name: &str,
+    context: PhpStaticPropertyAccessContext,
+) -> RuntimeResult<(ClassId, String, String)> {
+    let (receiver_class_id, receiver_class_name) =
+        resolve_static_property_receiver(classes, receiver, property_name, context)?;
+    let (declaring_class_id, declaring_class_name, property) =
+        resolve_static_property_metadata(classes, receiver_class_id, property_name)
+            .ok_or_else(|| RuntimeError::undefined_property(receiver_class_name, property_name))?;
+
+    ensure_static_property_visible(
+        classes,
+        declaring_class_id,
+        &declaring_class_name,
+        property.name(),
+        property.visibility(),
+        context,
+    )?;
+
+    Ok((
+        declaring_class_id,
+        declaring_class_name,
+        property.name().to_string(),
+    ))
+}
+
+fn resolve_static_property_metadata<'a>(
+    classes: &'a PhpClassTable,
+    class_id: ClassId,
+    property_name: &str,
+) -> Option<(ClassId, String, &'a PhpPropertyMetadata)> {
+    let mut current = Some(class_id);
+    while let Some(current_id) = current {
+        let class = classes.get(current_id)?;
+        if let Some(property) = class.property(property_name) {
+            if property.is_static() {
+                return Some((current_id, class.name().to_string(), property));
+            }
+            return None;
+        }
+        current = class.parent_id();
+    }
+
+    None
+}
+
+fn ensure_static_property_visible(
+    classes: &PhpClassTable,
+    declaring_class_id: ClassId,
+    declaring_class_name: &str,
+    property_name: &str,
+    visibility: Visibility,
+    context: PhpStaticPropertyAccessContext,
+) -> RuntimeResult<()> {
+    match visibility {
+        Visibility::Public => Ok(()),
+        Visibility::Private if context.current_class_id() == Some(declaring_class_id) => Ok(()),
+        Visibility::Protected
+            if context.current_class_id().is_some_and(|current_id| {
+                current_id == declaring_class_id
+                    || classes.is_subclass_of(current_id, declaring_class_id)
+            }) =>
+        {
+            Ok(())
+        }
+        Visibility::Private => Err(RuntimeError::unsupported_call(
+            format!("{declaring_class_name}::${property_name}"),
+            "private static property is not visible from the current class context",
+        )),
+        Visibility::Protected => Err(RuntimeError::unsupported_call(
+            format!("{declaring_class_name}::${property_name}"),
+            "protected static property is not visible from the current class context",
+        )),
+    }
+}
+
+fn coerce_static_property_value(
+    type_decl: Option<&str>,
+    value: Value,
+    class_name: &str,
+    property_name: &str,
+) -> RuntimeResult<Value> {
+    coerce_static_property_value_with_object_type_resolver(
+        type_decl,
+        value,
+        class_name,
+        property_name,
+        &|object: &PhpObject, type_name: &str| object.is_instance_of_class_name(type_name),
+    )
+}
+
+fn coerce_static_property_value_with_object_type_resolver<F>(
+    type_decl: Option<&str>,
+    value: Value,
+    class_name: &str,
+    property_name: &str,
+    object_type_resolver: &F,
+) -> RuntimeResult<Value>
+where
+    F: Fn(&PhpObject, &str) -> bool,
+{
+    let Some(type_decl) = type_decl else {
+        return Ok(value);
+    };
+    coerce_property_value_with_object_type_resolver(
+        type_decl,
+        value,
+        class_name,
+        property_name,
+        object_type_resolver,
+    )
+}
+
+fn uninitialized_static_storage_error(
+    declaring_class_name: &str,
+    property_name: &str,
+) -> RuntimeError {
+    RuntimeError::invalid_property_access(format!(
+        "static property storage for {declaring_class_name}::${property_name} has not been initialized for this request"
+    ))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PhpMethodMetadata {
     name: String,
@@ -58032,6 +58725,471 @@ mod tests {
         assert_eq!(
             shape.instance_properties(),
             &["id".to_string(), "payload".to_string()]
+        );
+    }
+
+    #[test]
+    fn static_property_storage_initializes_per_request_defaults_and_resets() {
+        let mut classes = PhpClassTable::new();
+        let counter_id = classes.declare_class("Counter").unwrap();
+        let class = classes.get_mut(counter_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::static_property(
+                "count",
+                Visibility::Public,
+            ))
+            .unwrap();
+        class
+            .add_property(
+                PhpPropertyMetadata::static_property("typed", Visibility::Public)
+                    .with_type_decl(Some("int".to_string())),
+            )
+            .unwrap();
+        class
+            .add_property(PhpPropertyMetadata::static_property(
+                "untyped",
+                Visibility::Public,
+            ))
+            .unwrap();
+
+        let mut defaults = PhpStaticPropertyDefaults::new();
+        defaults
+            .add(&classes, counter_id, "count", Value::Int(1))
+            .unwrap();
+
+        let mut first = PhpStaticPropertyStorage::from_class_table(&classes, &defaults).unwrap();
+        let second = PhpStaticPropertyStorage::from_class_table(&classes, &defaults).unwrap();
+        let receiver = PhpStaticPropertyReceiver::Class(counter_id);
+
+        assert_eq!(first.len(), 3);
+        assert_eq!(
+            first
+                .read(
+                    &classes,
+                    receiver,
+                    "count",
+                    PhpStaticPropertyAccessContext::external()
+                )
+                .unwrap(),
+            Value::Int(1)
+        );
+        assert_eq!(
+            first
+                .read(
+                    &classes,
+                    receiver,
+                    "untyped",
+                    PhpStaticPropertyAccessContext::external()
+                )
+                .unwrap(),
+            Value::Null
+        );
+
+        let uninitialized = first
+            .read(
+                &classes,
+                receiver,
+                "typed",
+                PhpStaticPropertyAccessContext::external(),
+            )
+            .unwrap_err();
+        assert_eq!(
+            uninitialized.kind(),
+            &RuntimeErrorKind::UninitializedTypedProperty {
+                class_name: "Counter".to_string(),
+                property_name: "typed".to_string(),
+            }
+        );
+        assert_eq!(
+            first
+                .read_for_isset(
+                    &classes,
+                    receiver,
+                    "typed",
+                    PhpStaticPropertyAccessContext::external()
+                )
+                .unwrap(),
+            None
+        );
+
+        first
+            .write(
+                &classes,
+                receiver,
+                "count",
+                Value::Int(2),
+                PhpStaticPropertyAccessContext::external(),
+            )
+            .unwrap();
+        assert_eq!(
+            first
+                .read(
+                    &classes,
+                    receiver,
+                    "count",
+                    PhpStaticPropertyAccessContext::external()
+                )
+                .unwrap(),
+            Value::Int(2)
+        );
+        assert_eq!(
+            second
+                .read(
+                    &classes,
+                    receiver,
+                    "count",
+                    PhpStaticPropertyAccessContext::external()
+                )
+                .unwrap(),
+            Value::Int(1)
+        );
+
+        first.reset_from_class_table(&classes, &defaults).unwrap();
+        assert_eq!(
+            first
+                .read(
+                    &classes,
+                    receiver,
+                    "count",
+                    PhpStaticPropertyAccessContext::external()
+                )
+                .unwrap(),
+            Value::Int(1)
+        );
+
+        first.clear();
+        assert!(first.is_empty());
+        let cleanup_error = first
+            .read(
+                &classes,
+                receiver,
+                "count",
+                PhpStaticPropertyAccessContext::external(),
+            )
+            .unwrap_err();
+        assert_eq!(
+            cleanup_error.message(),
+            "invalid property access: static property storage for Counter::$count has not been initialized for this request"
+        );
+    }
+
+    #[test]
+    fn static_property_storage_resolves_visibility_shadowing_and_late_static_receiver() {
+        let mut classes = PhpClassTable::new();
+        let base_id = classes.declare_class("Base").unwrap();
+        let child_id = classes.declare_class("Child").unwrap();
+        classes.set_parent(child_id, base_id).unwrap();
+
+        {
+            let base = classes.get_mut(base_id).unwrap();
+            base.add_property(PhpPropertyMetadata::static_property(
+                "shared",
+                Visibility::Public,
+            ))
+            .unwrap();
+            base.add_property(PhpPropertyMetadata::static_property(
+                "guarded",
+                Visibility::Protected,
+            ))
+            .unwrap();
+            base.add_property(PhpPropertyMetadata::static_property(
+                "secret",
+                Visibility::Private,
+            ))
+            .unwrap();
+        }
+        {
+            let child = classes.get_mut(child_id).unwrap();
+            child
+                .add_property(PhpPropertyMetadata::static_property(
+                    "shared",
+                    Visibility::Private,
+                ))
+                .unwrap();
+            child
+                .add_property(PhpPropertyMetadata::static_property(
+                    "late",
+                    Visibility::Public,
+                ))
+                .unwrap();
+        }
+
+        let mut defaults = PhpStaticPropertyDefaults::new();
+        defaults
+            .add(
+                &classes,
+                base_id,
+                "shared",
+                Value::String("base".to_string()),
+            )
+            .unwrap();
+        defaults
+            .add(
+                &classes,
+                child_id,
+                "shared",
+                Value::String("child".to_string()),
+            )
+            .unwrap();
+        defaults
+            .add(
+                &classes,
+                base_id,
+                "guarded",
+                Value::String("guarded".to_string()),
+            )
+            .unwrap();
+        defaults
+            .add(
+                &classes,
+                base_id,
+                "secret",
+                Value::String("secret".to_string()),
+            )
+            .unwrap();
+        defaults
+            .add(
+                &classes,
+                child_id,
+                "late",
+                Value::String("late-child".to_string()),
+            )
+            .unwrap();
+        let storage = PhpStaticPropertyStorage::from_class_table(&classes, &defaults).unwrap();
+
+        let external_private = storage
+            .read(
+                &classes,
+                PhpStaticPropertyReceiver::Class(child_id),
+                "shared",
+                PhpStaticPropertyAccessContext::external(),
+            )
+            .unwrap_err();
+        assert_eq!(
+            external_private.message(),
+            "unsupported call Child::$shared: private static property is not visible from the current class context"
+        );
+
+        assert_eq!(
+            storage
+                .read(
+                    &classes,
+                    PhpStaticPropertyReceiver::Class(child_id),
+                    "shared",
+                    PhpStaticPropertyAccessContext::class_context(child_id)
+                )
+                .unwrap(),
+            Value::String("child".to_string())
+        );
+        assert_eq!(
+            storage
+                .read(
+                    &classes,
+                    PhpStaticPropertyReceiver::Class(base_id),
+                    "shared",
+                    PhpStaticPropertyAccessContext::external()
+                )
+                .unwrap(),
+            Value::String("base".to_string())
+        );
+        assert_eq!(
+            storage
+                .read(
+                    &classes,
+                    PhpStaticPropertyReceiver::ParentClass,
+                    "shared",
+                    PhpStaticPropertyAccessContext::class_context(child_id)
+                )
+                .unwrap(),
+            Value::String("base".to_string())
+        );
+
+        let protected_external = storage
+            .read(
+                &classes,
+                PhpStaticPropertyReceiver::Class(child_id),
+                "guarded",
+                PhpStaticPropertyAccessContext::external(),
+            )
+            .unwrap_err();
+        assert_eq!(
+            protected_external.message(),
+            "unsupported call Base::$guarded: protected static property is not visible from the current class context"
+        );
+        assert_eq!(
+            storage
+                .read(
+                    &classes,
+                    PhpStaticPropertyReceiver::Class(child_id),
+                    "guarded",
+                    PhpStaticPropertyAccessContext::class_context(child_id)
+                )
+                .unwrap(),
+            Value::String("guarded".to_string())
+        );
+
+        assert_eq!(
+            storage
+                .read(
+                    &classes,
+                    PhpStaticPropertyReceiver::LateStaticClass,
+                    "late",
+                    PhpStaticPropertyAccessContext::class_context(base_id)
+                        .with_called_class(child_id)
+                )
+                .unwrap(),
+            Value::String("late-child".to_string())
+        );
+
+        let hidden_late_static = storage
+            .read(
+                &classes,
+                PhpStaticPropertyReceiver::LateStaticClass,
+                "shared",
+                PhpStaticPropertyAccessContext::class_context(base_id).with_called_class(child_id),
+            )
+            .unwrap_err();
+        assert_eq!(
+            hidden_late_static.message(),
+            "unsupported call Child::$shared: private static property is not visible from the current class context"
+        );
+    }
+
+    #[test]
+    fn static_property_storage_preserves_reference_identity_and_type_constraints() {
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Counter").unwrap();
+        classes
+            .get_mut(class_id)
+            .unwrap()
+            .add_property(
+                PhpPropertyMetadata::static_property("count", Visibility::Public)
+                    .with_type_decl(Some("int".to_string())),
+            )
+            .unwrap();
+
+        let mut defaults = PhpStaticPropertyDefaults::new();
+        defaults
+            .add(&classes, class_id, "count", Value::Int(1))
+            .unwrap();
+        let mut storage = PhpStaticPropertyStorage::from_class_table(&classes, &defaults).unwrap();
+        let receiver = PhpStaticPropertyReceiver::Class(class_id);
+
+        let first_ref = storage
+            .reference_cell(
+                &classes,
+                receiver,
+                "count",
+                PhpStaticPropertyAccessContext::external(),
+            )
+            .unwrap();
+        let second_ref = storage
+            .reference_cell(
+                &classes,
+                receiver,
+                "count",
+                PhpStaticPropertyAccessContext::external(),
+            )
+            .unwrap();
+        assert!(first_ref.shares_reference_with(&second_ref));
+        assert_eq!(first_ref.id(), second_ref.id());
+
+        first_ref.set_value(Value::Int(5));
+        assert_eq!(
+            storage
+                .read(
+                    &classes,
+                    receiver,
+                    "count",
+                    PhpStaticPropertyAccessContext::external()
+                )
+                .unwrap(),
+            Value::Int(5)
+        );
+
+        let coerced = storage
+            .write(
+                &classes,
+                receiver,
+                "count",
+                Value::String("6".to_string()),
+                PhpStaticPropertyAccessContext::external(),
+            )
+            .unwrap();
+        assert_eq!(coerced, Value::Int(6));
+        assert_eq!(first_ref.value_cloned(), Value::Int(6));
+
+        let type_error = storage
+            .write(
+                &classes,
+                receiver,
+                "count",
+                Value::Array(PhpArray::new()),
+                PhpStaticPropertyAccessContext::external(),
+            )
+            .unwrap_err();
+        assert_eq!(
+            type_error.message(),
+            "invalid property access: typed property Counter::$count expects int, got array"
+        );
+    }
+
+    #[test]
+    fn static_property_defaults_reject_conflicts_and_bad_default_types() {
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("Bag").unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("item", Visibility::Public))
+            .unwrap();
+        class
+            .add_property(PhpPropertyMetadata::static_property(
+                "next",
+                Visibility::Public,
+            ))
+            .unwrap();
+        class
+            .add_property(
+                PhpPropertyMetadata::static_property("typed", Visibility::Public)
+                    .with_type_decl(Some("int".to_string())),
+            )
+            .unwrap();
+
+        let mut defaults = PhpStaticPropertyDefaults::new();
+        defaults
+            .add(&classes, class_id, "next", Value::Int(1))
+            .unwrap();
+
+        let duplicate = defaults
+            .add(&classes, class_id, "next", Value::Int(2))
+            .unwrap_err();
+        assert_eq!(
+            duplicate.message(),
+            "invalid property access: static property default for Bag::$next is already registered"
+        );
+
+        let non_static = defaults
+            .add(&classes, class_id, "item", Value::String("x".to_string()))
+            .unwrap_err();
+        assert_eq!(
+            non_static.message(),
+            "invalid property access: static property default Bag::$item targets a non-static property"
+        );
+
+        let missing = defaults
+            .add(&classes, class_id, "missing", Value::Null)
+            .unwrap_err();
+        assert_eq!(missing.message(), "undefined property Bag::$missing");
+
+        let mut bad_defaults = PhpStaticPropertyDefaults::new();
+        bad_defaults
+            .add(&classes, class_id, "typed", Value::Array(PhpArray::new()))
+            .unwrap();
+        let bad_default =
+            PhpStaticPropertyStorage::from_class_table(&classes, &bad_defaults).unwrap_err();
+        assert_eq!(
+            bad_default.message(),
+            "invalid property access: typed property Bag::$typed expects int, got array"
         );
     }
 
