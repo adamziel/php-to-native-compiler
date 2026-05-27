@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added generated-C static-property `isset()` and `empty()` production through
+  the shared static-property lvalue/storage boundary. Literal class,
+  object/class-string, `self`, `parent`, and declared method-frame `static`
+  receivers now use runtime read-for-isset probes that return an owned present
+  non-null value or a null handle for missing, uninitialized, or null storage,
+  while preserving invalid receiver, scope, and visibility diagnostics.
+  `empty()` reuses the same probe and evaluates PHP truthiness only when a
+  value is present. Focused runtime, generated-C, and linked-executable tests
+  cover supported receivers plus missing/null/falsey behavior and preserve
+  static-property mutation, object static-property receiver, nested
+  `ArrayAccess`, constructor, descriptor closure, magic static,
+  source-call reference, exact import, and class-alias filters. Computed
+  static-property names, top-level `static::$prop`, references, `unset`,
+  `??=`, array-offset mutation, magic/static overloading, traits/interfaces,
+  autoload breadth, broad references/COW, and LLVM IR/assembly parity remain
+  unsupported.
+
 - Added generated-C direct root `ArrayAccess` append-with-keyed-suffix
   production for shapes such as `$bag[]["leaf"] = $value`. Compiler-known
   direct ArrayAccess roots now materialize suffix keys before RHS evaluation,
