@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 15:51 CEST
+Updated: 2026-05-27 16:02 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,17 +19,27 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **90%** `[##################--]`
 
-Latest accounted source capability: `15b8f029` composes selected trait
-properties and trait constants through `trait_semantics` before declared class
-metadata emission. Compatible duplicate trait instance properties, static
-properties, and public parser-supported constants now become ordinary declared
-class metadata and reuse object allocation defaults, static-property storage,
-class-constant lookup, trait method frames, and shared conflict diagnostics,
-including nested trait property conflicts. Unsupported trait member forms,
-unsupported initializer expressions, autoload-discovered traits, dynamic
-include timing, destructor execution, broad visibility/reference/COW parity,
-and LLVM/ASM parity remain blocked instead of gaining trait-specific access
-ladders.
+Latest accounted source capability: `1c0b8707` preserves real
+reference-backed array slots when materialized spread/unpack arguments are
+finalized for direct user-function calls. Unpacked array entries whose source
+slot is a `PhpReferenceCell` now flow into `NativeCallArgumentSlot::Reference`
+instead of being cloned as values, so `...$args` can satisfy a by-reference
+parameter and mutate the original cell through the existing native reference
+handle and finalizer machinery. Value-backed unpack entries still reject
+by-reference parameters, and callable-array/object spread, descriptor-closure
+spread, runtime callable-string spread, by-reference variadic unpack, broad
+COW parity, and LLVM/ASM parity remain blocked.
+
+Recent source commit `15b8f029` composes selected trait properties and trait
+constants through `trait_semantics` before declared class metadata emission.
+Compatible duplicate trait instance properties, static properties, and public
+parser-supported constants now become ordinary declared class metadata and
+reuse object allocation defaults, static-property storage, class-constant
+lookup, trait method frames, and shared conflict diagnostics, including nested
+trait property conflicts. Unsupported trait member forms, unsupported
+initializer expressions, autoload-discovered traits, dynamic include timing,
+destructor execution, broad visibility/reference/COW parity, and LLVM/ASM
+parity remain blocked instead of gaining trait-specific access ladders.
 
 Recent source commit `aed8d3e7` routes selected
 descriptor-backed closure spread calls through preserved closure parameter
