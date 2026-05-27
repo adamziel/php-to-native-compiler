@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 20:35 CEST
+Updated: 2026-05-27 20:42 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,17 +19,35 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `b0727428` exposes request-local
-`spl_autoload_functions()` snapshots from the generated-C SPL registry. The
-runtime stores both normalized callable dispatch and the original callback
-value, so snapshots preserve callback form and equality across strings, static
-method arrays, array callables, invokable objects, and descriptor closures.
-Generated C lowers `spl_autoload_functions()` through the registry snapshot ABI
-without adding callback-name fixtures, one-file source loading, class-prefix
-maps, or docs-only substitution. Arbitrary runtime source loading, Composer/PSR
-adapters, precise filesystem autoload parity, comparator callbacks, broader
-callable object/array families, full by-reference/COW parity, and LLVM/ASM
-parity remain blocked.
+Latest accounted source capability: `f1386f82` feeds finite callable-array and
+invokable-object declared-method identities into the centralized source-call
+contract policy. Compatible mixed callable families can now combine generated
+functions, selected runtime builtins, descriptor closures, callable arrays, and
+callable objects when all candidates publish matching arity, by-reference,
+return-reference, default, variadic, and parameter-name metadata. Interface-only
+callable array/object shapes still use the existing fallback metadata because
+interface methods do not yet have finite callable identities. Runtime-only
+callable values, unsupported external/core callables, comparator callbacks,
+broader magic fallbacks, full by-reference/COW parity, and LLVM/ASM parity
+remain blocked.
+
+Recent source commit `f1386f82` advances callable-array/object source-call
+contracts without adding fixture-name, one-class, generated-C substring, or
+branch-shape production lowering. Concrete callable arrays such as
+`[ClassName::class, "method"]` and `[$object, "method"]`, plus known public
+non-static `__invoke` callable objects, now prefer identity-derived finite
+contracts through `callable_value_source_call_contract_from_identities` before
+falling back to the older object/array metadata helpers. Focused gates covered
+compile checking, the central callable array/object identity unit, generated-C
+source proof, linked mixed callable execution, heterogeneous metadata blocking,
+callable object named/reference argument regression, callable array named
+argument regression, SPL autoload function snapshot regression, formatting, and
+diff checks. Interface-only callable contracts, runtime-only callable values,
+unsupported external/core callables, comparator callbacks, broader magic
+fallbacks, broad reference/COW parity, and LLVM/ASM parity remain blocked.
+Primary gate log:
+`state/logs/phpc-primary-callable-object-array-contracts-95d7f363-20260527.gates.log`
+sha256 `0add93b5f36227c00df8a12929928d6302861cc6eb047aa9373a75837165de9c`.
 
 Recent source commit `b0727428` advances generated-C
 `spl_autoload_functions()` semantics without adding runtime PHP parsing or
