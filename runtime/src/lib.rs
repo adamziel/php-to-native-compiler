@@ -84,6 +84,16 @@ pub enum NativeClassMetadataOperation {
     PropertyExists = 2,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeClassMetadataValueOperation {
+    ParentClass = 0,
+    ClassParents = 1,
+    DeclaredClasses = 2,
+    ClassMethods = 3,
+    ClassVars = 4,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TextOnlySurface {
     FunctionName,
@@ -28803,6 +28813,296 @@ fn native_core_class_canonical_name_bytes(classes: &PhpClassTable, name: &[u8]) 
         .map(|class| class.name().as_bytes().to_vec())
 }
 
+fn native_class_canonical_name_bytes(classes: &PhpClassTable, name: &[u8]) -> Option<Vec<u8>> {
+    native_core_class_canonical_name_bytes(classes, name)
+        .or_else(|| native_user_class_canonical_name_bytes(name))
+}
+
+fn native_user_class_names_bytes() -> Vec<Vec<u8>> {
+    NATIVE_USER_CLASSES.with(|classes| {
+        classes
+            .borrow()
+            .iter()
+            .map(|class| class.name.clone())
+            .collect()
+    })
+}
+
+fn native_class_parent_name_bytes(classes: &PhpClassTable, class_name: &[u8]) -> Option<Vec<u8>> {
+    if let Some(class) = classes.lookup_class_bytes(class_name) {
+        return class
+            .parent_id()
+            .and_then(|parent_id| classes.get(parent_id))
+            .map(|parent| parent.name().as_bytes().to_vec());
+    }
+
+    let class = native_user_class_metadata_bytes(class_name)?;
+    let parent = class.parent?;
+    native_class_canonical_name_bytes(classes, &parent).or(Some(parent))
+}
+
+fn native_class_parent_chain_bytes(
+    classes: &PhpClassTable,
+    class_name: &[u8],
+) -> RuntimeResult<Vec<Vec<u8>>> {
+    let Some(mut current) = native_class_canonical_name_bytes(classes, class_name) else {
+        return Err(RuntimeError::unsupported_call(
+            "class metadata",
+            "class name must resolve to a declared class",
+        ));
+    };
+
+    let mut parents = Vec::new();
+    let mut visited = HashSet::new();
+    while let Some(parent) = native_class_parent_name_bytes(classes, &current) {
+        let lookup_key = native_class_metadata_lookup_key(&parent);
+        if !visited.insert(lookup_key) {
+            break;
+        }
+        parents.push(parent.clone());
+        current = parent;
+    }
+
+    Ok(parents)
+}
+
+fn native_metadata_string_value(bytes: Vec<u8>, context: &'static str) -> RuntimeResult<Value> {
+    String::from_utf8(bytes)
+        .map(Value::String)
+        .map_err(|_| RuntimeError::unsupported_call(context, "metadata names must be UTF-8"))
+}
+
+fn native_metadata_array_key(bytes: &[u8], context: &'static str) -> RuntimeResult<String> {
+    String::from_utf8(bytes.to_vec())
+        .map_err(|_| RuntimeError::unsupported_call(context, "metadata array keys must be UTF-8"))
+}
+
+fn native_metadata_list_array(
+    names: impl IntoIterator<Item = Vec<u8>>,
+    context: &'static str,
+) -> RuntimeResult<PhpArray> {
+    let mut array = PhpArray::new();
+    for name in names {
+        array.append(native_metadata_string_value(name, context)?)?;
+    }
+    Ok(array)
+}
+
+fn native_class_public_method_names_bytes(
+    classes: &PhpClassTable,
+    class_name: &[u8],
+) -> RuntimeResult<Vec<Vec<u8>>> {
+    let Some(mut current) = native_class_canonical_name_bytes(classes, class_name) else {
+        return Err(RuntimeError::unsupported_call(
+            "get_class_methods()",
+            "class name must resolve to a declared class",
+        ));
+    };
+
+    let mut names = Vec::new();
+    let mut visited_classes = HashSet::new();
+    let mut visited_methods = HashSet::new();
+    loop {
+        let class_key = native_class_metadata_lookup_key(&current);
+        if !visited_classes.insert(class_key) {
+            break;
+        }
+
+        if let Some(class) = classes.lookup_class_bytes(&current) {
+            for method in class.methods() {
+                if method.visibility() != Visibility::Public {
+                    continue;
+                }
+                let name = method.name().as_bytes();
+                let lookup_key = native_class_metadata_lookup_key(name);
+                if visited_methods.insert(lookup_key) {
+                    names.push(name.to_vec());
+                }
+            }
+        } else if let Some(class) = native_user_class_metadata_bytes(&current) {
+            for method in class.methods {
+                if method.visibility != Visibility::Public {
+                    continue;
+                }
+                if visited_methods.insert(method.lookup_key.clone()) {
+                    names.push(method.name);
+                }
+            }
+        } else {
+            break;
+        }
+
+        let Some(parent) = native_class_parent_name_bytes(classes, &current) else {
+            break;
+        };
+        current = parent;
+    }
+
+    Ok(names)
+}
+
+fn native_class_public_property_names_bytes(
+    classes: &PhpClassTable,
+    class_name: &[u8],
+) -> RuntimeResult<Vec<Vec<u8>>> {
+    let Some(mut current) = native_class_canonical_name_bytes(classes, class_name) else {
+        return Err(RuntimeError::unsupported_call(
+            "get_class_vars()",
+            "class name must resolve to a declared class",
+        ));
+    };
+
+    let mut names = Vec::new();
+    let mut visited_classes = HashSet::new();
+    let mut visited_properties = HashSet::new();
+    loop {
+        let class_key = native_class_metadata_lookup_key(&current);
+        if !visited_classes.insert(class_key) {
+            break;
+        }
+
+        if let Some(class) = classes.lookup_class_bytes(&current) {
+            for property in class.properties() {
+                if property.visibility() != Visibility::Public {
+                    continue;
+                }
+                let name = property.name().as_bytes();
+                if visited_properties.insert(name.to_vec()) {
+                    names.push(name.to_vec());
+                }
+            }
+        } else if let Some(class) = native_user_class_metadata_bytes(&current) {
+            for property in class.properties {
+                if property.visibility != Visibility::Public {
+                    continue;
+                }
+                if visited_properties.insert(property.name.clone()) {
+                    names.push(property.name);
+                }
+            }
+        } else {
+            break;
+        }
+
+        let Some(parent) = native_class_parent_name_bytes(classes, &current) else {
+            break;
+        };
+        current = parent;
+    }
+
+    Ok(names)
+}
+
+unsafe fn native_value_class_metadata_value(
+    subject: NativeValueHandle,
+    operation: u8,
+) -> RuntimeResult<Value> {
+    let classes = PhpClassTable::with_core_classes();
+    match operation {
+        tag if tag == NativeClassMetadataValueOperation::ParentClass as u8 => {
+            let class_name = unsafe {
+                native_value_metadata_object_or_class_name_bytes_argument(
+                    subject,
+                    "get_parent_class()",
+                )
+            }?;
+            let Some(_) = native_class_canonical_name_bytes(&classes, &class_name) else {
+                return Err(RuntimeError::unsupported_call(
+                    "get_parent_class()",
+                    "class name must resolve to a declared class",
+                ));
+            };
+            Ok(native_class_parent_name_bytes(&classes, &class_name)
+                .map(|parent| native_metadata_string_value(parent, "get_parent_class()"))
+                .transpose()?
+                .unwrap_or(Value::Bool(false)))
+        }
+        tag if tag == NativeClassMetadataValueOperation::ClassParents as u8 => {
+            let class_name = unsafe {
+                native_value_metadata_object_or_class_name_bytes_argument(
+                    subject,
+                    "class_parents()",
+                )
+            }?;
+            let parents = native_class_parent_chain_bytes(&classes, &class_name)?;
+            let mut array = PhpArray::new();
+            for parent in parents {
+                let key = native_metadata_array_key(&parent, "class_parents()")?;
+                array.insert(
+                    key,
+                    native_metadata_string_value(parent, "class_parents()")?,
+                );
+            }
+            Ok(Value::Array(array))
+        }
+        tag if tag == NativeClassMetadataValueOperation::DeclaredClasses as u8 => {
+            let mut names = classes
+                .classes()
+                .iter()
+                .map(|class| class.name().as_bytes().to_vec())
+                .collect::<Vec<_>>();
+            names.extend(native_user_class_names_bytes());
+            Ok(Value::Array(native_metadata_list_array(
+                names,
+                "get_declared_classes()",
+            )?))
+        }
+        tag if tag == NativeClassMetadataValueOperation::ClassMethods as u8 => {
+            let class_name = unsafe {
+                native_value_metadata_object_or_class_name_bytes_argument(
+                    subject,
+                    "get_class_methods()",
+                )
+            }?;
+            let methods = native_class_public_method_names_bytes(&classes, &class_name)?;
+            Ok(Value::Array(native_metadata_list_array(
+                methods,
+                "get_class_methods()",
+            )?))
+        }
+        tag if tag == NativeClassMetadataValueOperation::ClassVars as u8 => {
+            let class_name = unsafe {
+                native_value_metadata_object_or_class_name_bytes_argument(
+                    subject,
+                    "get_class_vars()",
+                )
+            }?;
+            let properties = native_class_public_property_names_bytes(&classes, &class_name)?;
+            let mut array = PhpArray::new();
+            for property in properties {
+                let key = native_metadata_array_key(&property, "get_class_vars()")?;
+                array.insert(key, Value::Null);
+            }
+            Ok(Value::Array(array))
+        }
+        _ => Err(RuntimeError::invalid_string_conversion(
+            "native class metadata value failed: unsupported operation tag",
+        )),
+    }
+}
+
+/// # Safety
+///
+/// `subject` must be null only for `DeclaredClasses`; otherwise it must be a
+/// value handle returned by the runtime ABI and not yet freed. Returned values
+/// are owned by the caller and must be freed with `phpc_native_value_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_class_metadata_value_with_diagnostic(
+    subject: NativeValueHandle,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe { native_value_class_metadata_value(subject, operation) } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
 fn native_user_class_has_member_bytes(
     class_name: &[u8],
     member: &[u8],
@@ -34698,6 +34998,140 @@ mod tests {
 
         unsafe { phpc_native_value_free(property) };
         unsafe { phpc_native_value_free(method) };
+        unsafe { phpc_native_value_free(child) };
+        native_user_classes_reset_for_test();
+    }
+
+    #[test]
+    fn native_user_class_metadata_registry_feeds_value_metadata_surfaces() {
+        native_user_classes_reset_for_test();
+        assert!(native_declare_user_class_bytes_result(b"ValueMetaBase"));
+        assert!(native_declare_user_class_method_bytes_result(
+            b"ValueMetaBase",
+            b"baseRun",
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+            false,
+        )
+        .expect("parent method metadata should declare"));
+        assert!(native_declare_user_class_method_bytes_result(
+            b"ValueMetaBase",
+            b"hiddenBase",
+            NATIVE_DECLARED_CLASS_PROPERTY_PROTECTED,
+            false,
+        )
+        .expect("protected parent method metadata should declare"));
+        assert!(native_declare_user_class_property_bytes_result(
+            b"ValueMetaBase",
+            b"baseSlot",
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+        )
+        .expect("parent property metadata should declare"));
+        assert!(native_declare_user_class_bytes_result(b"ValueMetaChild"));
+        assert!(native_declare_user_class_parent_bytes_result(
+            b"ValueMetaChild",
+            b"ValueMetaBase",
+        ));
+        assert!(native_declare_user_class_method_bytes_result(
+            b"ValueMetaChild",
+            b"run",
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+            false,
+        )
+        .expect("child method metadata should declare"));
+        assert!(native_declare_user_class_property_bytes_result(
+            b"ValueMetaChild",
+            b"childSlot",
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+        )
+        .expect("child property metadata should declare"));
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let child = NativeValueHandle::from_value(Value::String("ValueMetaChild".to_string()));
+        let parent = unsafe {
+            phpc_native_value_class_metadata_value_with_diagnostic(
+                child,
+                NativeClassMetadataValueOperation::ParentClass as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { parent.as_ref() },
+            Some(&Value::String("ValueMetaBase".to_string()))
+        );
+
+        let parents = unsafe {
+            phpc_native_value_class_metadata_value_with_diagnostic(
+                child,
+                NativeClassMetadataValueOperation::ClassParents as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let Some(Value::Array(parent_array)) = (unsafe { parents.as_ref() }) else {
+            panic!("class_parents() should return an array");
+        };
+        assert_eq!(
+            parent_array.get("ValueMetaBase"),
+            Some(&Value::String("ValueMetaBase".to_string()))
+        );
+
+        let methods = unsafe {
+            phpc_native_value_class_metadata_value_with_diagnostic(
+                child,
+                NativeClassMetadataValueOperation::ClassMethods as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let Some(Value::Array(method_array)) = (unsafe { methods.as_ref() }) else {
+            panic!("get_class_methods() should return an array");
+        };
+        assert_eq!(method_array.get(0), Some(&Value::String("run".to_string())));
+        assert_eq!(
+            method_array.get(1),
+            Some(&Value::String("baseRun".to_string()))
+        );
+        assert!(!method_array
+            .entries()
+            .iter()
+            .any(|entry| entry.value() == &Value::String("hiddenBase".to_string())));
+
+        let vars = unsafe {
+            phpc_native_value_class_metadata_value_with_diagnostic(
+                child,
+                NativeClassMetadataValueOperation::ClassVars as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let Some(Value::Array(var_array)) = (unsafe { vars.as_ref() }) else {
+            panic!("get_class_vars() should return an array");
+        };
+        assert_eq!(var_array.get("childSlot"), Some(&Value::Null));
+        assert_eq!(var_array.get("baseSlot"), Some(&Value::Null));
+
+        let declared = unsafe {
+            phpc_native_value_class_metadata_value_with_diagnostic(
+                NativeValueHandle::null(),
+                NativeClassMetadataValueOperation::DeclaredClasses as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let Some(Value::Array(declared_array)) = (unsafe { declared.as_ref() }) else {
+            panic!("get_declared_classes() should return an array");
+        };
+        assert!(declared_array
+            .entries()
+            .iter()
+            .any(|entry| entry.value() == &Value::String("ValueMetaChild".to_string())));
+
+        unsafe { phpc_native_value_free(declared) };
+        unsafe { phpc_native_value_free(vars) };
+        unsafe { phpc_native_value_free(methods) };
+        unsafe { phpc_native_value_free(parents) };
+        unsafe { phpc_native_value_free(parent) };
         unsafe { phpc_native_value_free(child) };
         native_user_classes_reset_for_test();
     }

@@ -985,6 +985,11 @@ enum NativeObjectMetadataCallKind {
     MetadataExists,
     MemberMetadataExists,
     RelationshipMetadata,
+    ParentClassValue,
+    ClassParentsValue,
+    DeclaredClassesValue,
+    ClassMethodsValue,
+    ClassVarsValue,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1457,14 +1462,20 @@ impl<'a> NativeObjectMetadataCallOperation<'a> {
 
 impl NativeObjectMetadataCallKind {
     fn from_builtin(name: &str) -> Option<Self> {
-        if is_native_metadata_exists_builtin(name) {
-            Some(Self::MetadataExists)
-        } else if is_native_member_metadata_exists_builtin(name) {
-            Some(Self::MemberMetadataExists)
-        } else if is_native_relationship_metadata_builtin(name) {
-            Some(Self::RelationshipMetadata)
-        } else {
-            None
+        match name.to_ascii_lowercase().as_str() {
+            name if is_native_metadata_exists_builtin(name) => Some(Self::MetadataExists),
+            name if is_native_member_metadata_exists_builtin(name) => {
+                Some(Self::MemberMetadataExists)
+            }
+            name if is_native_relationship_metadata_builtin(name) => {
+                Some(Self::RelationshipMetadata)
+            }
+            "get_parent_class" => Some(Self::ParentClassValue),
+            "class_parents" => Some(Self::ClassParentsValue),
+            "get_declared_classes" => Some(Self::DeclaredClassesValue),
+            "get_class_methods" => Some(Self::ClassMethodsValue),
+            "get_class_vars" => Some(Self::ClassVarsValue),
+            _ => None,
         }
     }
 
@@ -1473,6 +1484,9 @@ impl NativeObjectMetadataCallKind {
             Self::MetadataExists => (1..=2).contains(&arity),
             Self::MemberMetadataExists => arity == 2,
             Self::RelationshipMetadata => (2..=3).contains(&arity),
+            Self::ParentClassValue | Self::ClassMethodsValue | Self::ClassVarsValue => arity == 1,
+            Self::ClassParentsValue => (1..=2).contains(&arity),
+            Self::DeclaredClassesValue => arity == 0,
         }
     }
 }
@@ -11577,6 +11591,16 @@ impl LlvmGenerator {
                     ),
                 NativeObjectMetadataCallKind::RelationshipMetadata => self
                     .emit_native_relationship_metadata_call(metadata_call.args, metadata_call.span),
+                NativeObjectMetadataCallKind::ParentClassValue
+                | NativeObjectMetadataCallKind::ClassParentsValue
+                | NativeObjectMetadataCallKind::DeclaredClassesValue
+                | NativeObjectMetadataCallKind::ClassMethodsValue
+                | NativeObjectMetadataCallKind::ClassVarsValue => Err(self
+                    .unsupported_direct_named_call(
+                        metadata_call.args,
+                        metadata_call.span,
+                        LLVM_OBJECT_METADATA_REJECTION,
+                    )),
             };
         }
 
@@ -15494,6 +15518,7 @@ struct CGenerator {
     uses_native_object_instantiation_helpers: bool,
     uses_native_user_class_declaration: bool,
     uses_native_class_metadata_exists: bool,
+    uses_native_class_metadata_value: bool,
     uses_native_object_property_helpers: bool,
     uses_native_conversion_source_helpers: bool,
     uses_native_offset_read_source: bool,
@@ -18015,6 +18040,7 @@ impl CGenerator {
             branch.uses_native_object_instantiation_helpers;
         self.uses_native_user_class_declaration |= branch.uses_native_user_class_declaration;
         self.uses_native_class_metadata_exists |= branch.uses_native_class_metadata_exists;
+        self.uses_native_class_metadata_value |= branch.uses_native_class_metadata_value;
         self.uses_native_object_property_helpers |= branch.uses_native_object_property_helpers;
         self.uses_native_conversion_source_helpers |= branch.uses_native_conversion_source_helpers;
         self.uses_native_offset_read_source |= branch.uses_native_offset_read_source;
@@ -18059,6 +18085,7 @@ impl CGenerator {
             || self.uses_native_object_instantiation_helpers
             || self.uses_native_user_class_declaration
             || self.uses_native_class_metadata_exists
+            || self.uses_native_class_metadata_value
             || self.uses_native_object_property_helpers
             || self.uses_native_conversion_source_helpers
             || self.uses_native_offset_read_source
@@ -19925,6 +19952,7 @@ impl CGenerator {
                 || self.uses_native_diagnostic_result_consumers
                 || self.uses_native_user_class_declaration
                 || self.uses_native_class_metadata_exists
+                || self.uses_native_class_metadata_value
             {
                 output.push_str("#include <stdbool.h>\n");
             }
@@ -20489,6 +20517,9 @@ impl CGenerator {
             }
             if self.uses_native_class_metadata_exists {
                 output.push_str("extern bool phpc_native_value_class_metadata_exists_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle member, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            }
+            if self.uses_native_class_metadata_value {
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_class_metadata_value_with_diagnostic(phpc_NativeValueHandle subject, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_object_property_helpers {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_public_property_operation_with_diagnostic(phpc_NativeValueHandle object, const uint8_t *property_name, size_t property_name_len, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -29873,9 +29904,9 @@ impl CGenerator {
             Expr::Call { name, args, span } if is_native_type_introspection_builtin(name) => {
                 self.emit_native_type_introspection_call(name, args, *span)
             }
-            Expr::Call { name, args, span } if is_object_metadata_builtin(name) => Err(
-                self.unsupported_direct_named_call(args, *span, ASSEMBLY_OBJECT_METADATA_REJECTION)
-            ),
+            Expr::Call { name, args, span } if is_object_metadata_builtin(name) => {
+                self.emit_native_object_metadata_call(name, args, *span)
+            }
             Expr::Call { name, args, span } if native_array_key_exists_builtin(name, args) => {
                 self.emit_native_array_key_exists_call(args, *span, "")
             }
@@ -38774,6 +38805,16 @@ impl CGenerator {
                     ),
                 NativeObjectMetadataCallKind::RelationshipMetadata => self
                     .emit_native_relationship_metadata_call(metadata_call.args, metadata_call.span),
+                NativeObjectMetadataCallKind::ParentClassValue
+                | NativeObjectMetadataCallKind::ClassParentsValue
+                | NativeObjectMetadataCallKind::DeclaredClassesValue
+                | NativeObjectMetadataCallKind::ClassMethodsValue
+                | NativeObjectMetadataCallKind::ClassVarsValue => self
+                    .emit_native_class_metadata_value_call(
+                        metadata_call.kind,
+                        metadata_call.args,
+                        metadata_call.span,
+                    ),
             };
         }
 
@@ -38937,6 +38978,53 @@ impl CGenerator {
         )?)
     }
 
+    fn emit_native_object_metadata_call(
+        &mut self,
+        builtin_name: &str,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<CValue> {
+        let Some(metadata_call) =
+            NativeObjectMetadataCallOperation::from_builtin(builtin_name, args, span)
+        else {
+            return Err(self.unsupported_direct_named_call(
+                args,
+                span,
+                ASSEMBLY_OBJECT_METADATA_REJECTION,
+            ));
+        };
+        if let Some(failure) = metadata_call.preflight_failure() {
+            return Err(failure.diagnostic(NativeCallBackend::Assembly));
+        }
+
+        match metadata_call.kind {
+            NativeObjectMetadataCallKind::MetadataExists => self.emit_native_metadata_exists_call(
+                metadata_call.name,
+                metadata_call.args,
+                metadata_call.span,
+            ),
+            NativeObjectMetadataCallKind::MemberMetadataExists => self
+                .emit_native_member_metadata_exists_call(
+                    metadata_call.name,
+                    metadata_call.args,
+                    metadata_call.span,
+                ),
+            NativeObjectMetadataCallKind::RelationshipMetadata => {
+                self.emit_native_relationship_metadata_call(metadata_call.args, metadata_call.span)
+            }
+            NativeObjectMetadataCallKind::ParentClassValue
+            | NativeObjectMetadataCallKind::ClassParentsValue
+            | NativeObjectMetadataCallKind::DeclaredClassesValue
+            | NativeObjectMetadataCallKind::ClassMethodsValue
+            | NativeObjectMetadataCallKind::ClassVarsValue => self
+                .emit_native_class_metadata_value_call(
+                    metadata_call.kind,
+                    metadata_call.args,
+                    metadata_call.span,
+                ),
+        }
+    }
+
     fn emit_native_member_metadata_exists_call(
         &mut self,
         builtin_name: &str,
@@ -39000,6 +39088,66 @@ impl CGenerator {
         self.body
             .push(format!("phpc_native_value_free({subject});"));
         Ok(CValue::BoolExpr(result))
+    }
+
+    fn emit_native_class_metadata_value_call(
+        &mut self,
+        kind: NativeObjectMetadataCallKind,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<CValue> {
+        let (subject, cleanup) =
+            if matches!(kind, NativeObjectMetadataCallKind::DeclaredClassesValue) {
+                ("(phpc_NativeValueHandle){0}".to_string(), Vec::new())
+            } else {
+                let subject = self.emit_expr(&args[0])?;
+                if !matches!(
+                    subject,
+                    CValue::String(_)
+                        | CValue::StringExpr(_)
+                        | CValue::NativeValueHandle(_)
+                        | CValue::NativeReferenceHandle(_)
+                ) {
+                    return Err(self.unsupported_direct_call(
+                        span,
+                        NativeCallBlocker::ArgumentEvaluationCleanup,
+                    ));
+                }
+                let subject = self.emit_native_value_for_cvalue(subject, span)?;
+                (
+                    subject.clone(),
+                    vec![format!("phpc_native_value_free({subject});")],
+                )
+            };
+
+        if matches!(kind, NativeObjectMetadataCallKind::ClassParentsValue) {
+            if let Some(autoload) = args.get(1) {
+                let autoload = self.emit_expr(autoload)?;
+                if !matches!(autoload, CValue::Bool(_) | CValue::BoolExpr(_)) {
+                    return Err(self.unsupported_direct_call(
+                        span,
+                        NativeCallBlocker::ArgumentEvaluationCleanup,
+                    ));
+                }
+            }
+        }
+
+        self.uses_native_class_metadata_value = true;
+        let diagnostic = self.next_native_name("class_metadata_value_diagnostic");
+        let result = self.next_native_name("class_metadata_value");
+        let operation = native_class_metadata_value_operation_tag(kind)
+            .expect("value metadata kind should have an operation tag");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_value_class_metadata_value_with_diagnostic({subject}, {operation}, &{diagnostic});"
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        for cleanup in cleanup {
+            self.body.push(cleanup);
+        }
+        self.retain_native_value_cleanup_handle(&result);
+        Ok(CValue::NativeValueHandle(result))
     }
 
     fn emit_native_relationship_metadata_call(
@@ -46114,6 +46262,19 @@ fn native_class_metadata_exists_operation_tag(name: &str) -> Option<&'static str
         "class_exists" => Some("0"),
         "method_exists" => Some("1"),
         "property_exists" => Some("2"),
+        _ => None,
+    }
+}
+
+fn native_class_metadata_value_operation_tag(
+    kind: NativeObjectMetadataCallKind,
+) -> Option<&'static str> {
+    match kind {
+        NativeObjectMetadataCallKind::ParentClassValue => Some("0"),
+        NativeObjectMetadataCallKind::ClassParentsValue => Some("1"),
+        NativeObjectMetadataCallKind::DeclaredClassesValue => Some("2"),
+        NativeObjectMetadataCallKind::ClassMethodsValue => Some("3"),
+        NativeObjectMetadataCallKind::ClassVarsValue => Some("4"),
         _ => None,
     }
 }

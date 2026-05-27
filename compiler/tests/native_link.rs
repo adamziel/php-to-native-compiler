@@ -2750,6 +2750,29 @@ fn native_executable_c_source_declares_user_class_metadata_for_shared_metadata_s
 }
 
 #[test]
+fn native_executable_c_source_routes_value_metadata_consumers_through_runtime_registry() {
+    let program = parse(concat!(
+        "<?php\n",
+        "class UserBase { public $baseSlot; public function baseRun() { } }\n",
+        "class UserChild extends UserBase { public $childSlot; public function run() { } }\n",
+        "echo get_parent_class(\"UserChild\");\n",
+        "$parents = class_parents(\"UserChild\", false);\n",
+        "$methods = get_class_methods(\"UserChild\");\n",
+        "$vars = get_class_vars(\"UserChild\");\n",
+        "$declared = get_declared_classes();\n",
+        "echo in_array(\"run\", $methods) ? \"1\" : \"0\";\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_declare_user_class_bytes")
+            && source.contains("phpc_native_value_class_metadata_value_with_diagnostic"),
+        "value-returning class metadata consumers should use the shared runtime registry:\n{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_user_class_metadata_registry_program() {
     if !has_cc() {
         return;
@@ -2781,6 +2804,63 @@ fn emit_exe_links_and_runs_user_class_metadata_registry_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(String::from_utf8_lossy(&run.stdout), "1|1|1|0\n");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_user_class_value_metadata_registry_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class UserBase { public $baseSlot; public function baseRun() { } }\n",
+        "class UserChild extends UserBase { public $childSlot; public static function ChildStatic() { } public function run() { } }\n",
+        "echo get_parent_class(\"UserChild\");\n",
+        "echo \"|\";\n",
+        "$parents = class_parents(\"UserChild\", false);\n",
+        "echo array_key_exists(\"UserBase\", $parents) ? \"parent\" : \"missing-parent\";\n",
+        "echo \"|\";\n",
+        "$methods = get_class_methods(\"UserChild\");\n",
+        "echo in_array(\"run\", $methods) ? \"run\" : \"missing-run\";\n",
+        "echo \"|\";\n",
+        "echo in_array(\"baseRun\", $methods) ? \"base\" : \"missing-base\";\n",
+        "echo \"|\";\n",
+        "echo in_array(\"missingRun\", $methods) ? \"unexpected\" : \"missing-filtered\";\n",
+        "echo \"|\";\n",
+        "$vars = get_class_vars(\"UserChild\");\n",
+        "echo array_key_exists(\"childSlot\", $vars) ? \"childSlot\" : \"missing-childSlot\";\n",
+        "echo \"|\";\n",
+        "echo array_key_exists(\"baseSlot\", $vars) ? \"baseSlot\" : \"missing-baseSlot\";\n",
+        "echo \"|\";\n",
+        "$declared = get_declared_classes();\n",
+        "echo in_array(\"UserChild\", $declared) ? \"declared\" : \"missing-declared\";\n",
+        "echo \"|\";\n",
+        "echo in_array(\"stdClass\", $declared) ? \"core-declared\" : \"missing-core\";\n",
+        "echo \"|\";\n",
+        "$coreMethods = get_class_methods(\"ReflectionClass\");\n",
+        "echo in_array(\"getName\", $coreMethods) ? \"core-method\" : \"missing-core-method\";\n",
+        "echo \"\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("user_class_value_metadata_registry", source);
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run user class value metadata registry executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "UserBase|parent|run|base|missing-filtered|childSlot|baseSlot|declared|core-declared|core-method\n"
+    );
 
     let _ = fs::remove_file(source_path);
     let _ = fs::remove_file(output_path);
