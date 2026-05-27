@@ -2005,6 +2005,7 @@ fn llvm_expr_call_results_are_lowerable(expr: &Expr, allow_scalar_results: bool)
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
         | Expr::ObjectClassNameConstant { target, .. }
+        | Expr::DynamicObjectStaticProperty { target, .. }
         | Expr::InstanceOf { expr: target, .. } => {
             llvm_expr_call_results_are_lowerable(target, allow_scalar_results)
         }
@@ -2079,9 +2080,13 @@ fn llvm_expr_call_results_are_lowerable(expr: &Expr, allow_scalar_results: bool)
         | Expr::ParentClassConstant { .. }
         | Expr::LateStaticClassConstant { .. }
         | Expr::StaticProperty { .. }
+        | Expr::DynamicStaticProperty { .. }
         | Expr::SelfStaticProperty { .. }
+        | Expr::DynamicSelfStaticProperty { .. }
         | Expr::ParentStaticProperty { .. }
-        | Expr::LateStaticProperty { .. } => true,
+        | Expr::DynamicParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. }
+        | Expr::DynamicLateStaticProperty { .. } => true,
     }
 }
 
@@ -2238,9 +2243,14 @@ fn llvm_assign_target_call_results_are_lowerable(
         | AssignTarget::List { .. }
         | AssignTarget::Property { .. }
         | AssignTarget::StaticProperty { .. }
+        | AssignTarget::DynamicStaticProperty { .. }
         | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::DynamicSelfStaticProperty { .. }
         | AssignTarget::ParentStaticProperty { .. }
-        | AssignTarget::LateStaticProperty { .. } => true,
+        | AssignTarget::DynamicParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. }
+        | AssignTarget::DynamicObjectStaticProperty { .. }
+        | AssignTarget::DynamicLateStaticProperty { .. } => true,
     }
 }
 
@@ -2291,6 +2301,7 @@ fn native_expr_call_result_operation(
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
         | Expr::ObjectClassNameConstant { target, .. }
+        | Expr::DynamicObjectStaticProperty { target, .. }
         | Expr::InstanceOf { expr: target, .. } => {
             native_expr_call_result_operation(target, blocker)
         }
@@ -2355,9 +2366,13 @@ fn native_expr_call_result_operation(
         | Expr::ParentClassConstant { .. }
         | Expr::LateStaticClassConstant { .. }
         | Expr::StaticProperty { .. }
+        | Expr::DynamicStaticProperty { .. }
         | Expr::SelfStaticProperty { .. }
+        | Expr::DynamicSelfStaticProperty { .. }
         | Expr::ParentStaticProperty { .. }
-        | Expr::LateStaticProperty { .. } => None,
+        | Expr::DynamicParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. }
+        | Expr::DynamicLateStaticProperty { .. } => None,
     }
 }
 
@@ -3012,6 +3027,7 @@ fn native_conditional_rhs_needs_cleanup_boundary(expr: &Expr) -> bool {
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
         | Expr::ObjectClassNameConstant { target, .. }
+        | Expr::DynamicObjectStaticProperty { target, .. }
         | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
@@ -3066,9 +3082,13 @@ fn native_conditional_rhs_needs_cleanup_boundary(expr: &Expr) -> bool {
         | Expr::ParentClassConstant { .. }
         | Expr::LateStaticClassConstant { .. }
         | Expr::StaticProperty { .. }
+        | Expr::DynamicStaticProperty { .. }
         | Expr::SelfStaticProperty { .. }
+        | Expr::DynamicSelfStaticProperty { .. }
         | Expr::ParentStaticProperty { .. }
+        | Expr::DynamicParentStaticProperty { .. }
         | Expr::LateStaticProperty { .. }
+        | Expr::DynamicLateStaticProperty { .. }
         | Expr::MethodCall { .. }
         | Expr::DynamicMethodCall { .. }
         | Expr::ParentMethodCall { .. }
@@ -4284,9 +4304,14 @@ fn assign_target_contains_exit_construct(target: &AssignTarget) -> bool {
         | AssignTarget::List { .. }
         | AssignTarget::Property { .. }
         | AssignTarget::StaticProperty { .. }
+        | AssignTarget::DynamicStaticProperty { .. }
         | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::DynamicSelfStaticProperty { .. }
         | AssignTarget::ParentStaticProperty { .. }
-        | AssignTarget::LateStaticProperty { .. } => false,
+        | AssignTarget::DynamicParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. }
+        | AssignTarget::DynamicObjectStaticProperty { .. }
+        | AssignTarget::DynamicLateStaticProperty { .. } => false,
     }
 }
 
@@ -4437,9 +4462,14 @@ where
         | AssignTarget::List { .. }
         | AssignTarget::Property { .. }
         | AssignTarget::StaticProperty { .. }
+        | AssignTarget::DynamicStaticProperty { .. }
         | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::DynamicSelfStaticProperty { .. }
         | AssignTarget::ParentStaticProperty { .. }
-        | AssignTarget::LateStaticProperty { .. } => false,
+        | AssignTarget::DynamicParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. }
+        | AssignTarget::DynamicObjectStaticProperty { .. }
+        | AssignTarget::DynamicLateStaticProperty { .. } => false,
     }
 }
 
@@ -4581,6 +4611,7 @@ fn expr_contains_exit_construct(expr: &Expr) -> bool {
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
         | Expr::ObjectClassNameConstant { target, .. }
+        | Expr::DynamicObjectStaticProperty { target, .. }
         | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
@@ -4640,9 +4671,13 @@ fn expr_contains_exit_construct(expr: &Expr) -> bool {
         | Expr::ParentClassConstant { .. }
         | Expr::LateStaticClassConstant { .. }
         | Expr::StaticProperty { .. }
+        | Expr::DynamicStaticProperty { .. }
         | Expr::SelfStaticProperty { .. }
+        | Expr::DynamicSelfStaticProperty { .. }
         | Expr::ParentStaticProperty { .. }
+        | Expr::DynamicParentStaticProperty { .. }
         | Expr::LateStaticProperty { .. }
+        | Expr::DynamicLateStaticProperty { .. }
         | Expr::Closure { .. } => false,
     }
 }
@@ -5282,9 +5317,14 @@ fn collect_direct_call_names_from_assign_target(target: &AssignTarget, names: &m
         | AssignTarget::List { .. }
         | AssignTarget::Property { .. }
         | AssignTarget::StaticProperty { .. }
+        | AssignTarget::DynamicStaticProperty { .. }
         | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::DynamicSelfStaticProperty { .. }
         | AssignTarget::ParentStaticProperty { .. }
-        | AssignTarget::LateStaticProperty { .. } => {}
+        | AssignTarget::DynamicParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. }
+        | AssignTarget::DynamicObjectStaticProperty { .. }
+        | AssignTarget::DynamicLateStaticProperty { .. } => {}
     }
 }
 
@@ -5393,6 +5433,7 @@ fn collect_direct_call_names_from_expr(expr: &Expr, names: &mut Vec<String>) {
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
         | Expr::ObjectClassNameConstant { target, .. }
+        | Expr::DynamicObjectStaticProperty { target, .. }
         | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
@@ -5462,9 +5503,13 @@ fn collect_direct_call_names_from_expr(expr: &Expr, names: &mut Vec<String>) {
         | Expr::ParentClassConstant { .. }
         | Expr::LateStaticClassConstant { .. }
         | Expr::StaticProperty { .. }
+        | Expr::DynamicStaticProperty { .. }
         | Expr::SelfStaticProperty { .. }
+        | Expr::DynamicSelfStaticProperty { .. }
         | Expr::ParentStaticProperty { .. }
-        | Expr::LateStaticProperty { .. } => {}
+        | Expr::DynamicParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. }
+        | Expr::DynamicLateStaticProperty { .. } => {}
     }
 }
 
@@ -5814,9 +5859,14 @@ fn collect_native_arrow_capture_candidates_from_assign_target(
             }
         }
         AssignTarget::StaticProperty { .. }
+        | AssignTarget::DynamicStaticProperty { .. }
         | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::DynamicSelfStaticProperty { .. }
         | AssignTarget::ParentStaticProperty { .. }
-        | AssignTarget::LateStaticProperty { .. } => {}
+        | AssignTarget::DynamicParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. }
+        | AssignTarget::DynamicObjectStaticProperty { .. }
+        | AssignTarget::DynamicLateStaticProperty { .. } => {}
     }
 }
 
@@ -6131,6 +6181,7 @@ fn collect_native_arrow_capture_candidates_from_expr(
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
         | Expr::ObjectClassNameConstant { target, .. }
+        | Expr::DynamicObjectStaticProperty { target, .. }
         | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
@@ -6225,9 +6276,13 @@ fn collect_native_arrow_capture_candidates_from_expr(
         | Expr::ParentClassConstant { .. }
         | Expr::LateStaticClassConstant { .. }
         | Expr::StaticProperty { .. }
+        | Expr::DynamicStaticProperty { .. }
         | Expr::SelfStaticProperty { .. }
+        | Expr::DynamicSelfStaticProperty { .. }
         | Expr::ParentStaticProperty { .. }
-        | Expr::LateStaticProperty { .. } => {}
+        | Expr::DynamicParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. }
+        | Expr::DynamicLateStaticProperty { .. } => {}
     }
 }
 
@@ -6295,6 +6350,7 @@ fn native_expr_contains_call_result(expr: &Expr) -> bool {
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
         | Expr::ObjectClassNameConstant { target, .. }
+        | Expr::DynamicObjectStaticProperty { target, .. }
         | Expr::InstanceOf { expr: target, .. } => native_expr_contains_call_result(target),
         Expr::DynamicProperty {
             target, property, ..
@@ -6359,9 +6415,13 @@ fn native_expr_contains_call_result(expr: &Expr) -> bool {
         | Expr::ParentClassConstant { .. }
         | Expr::LateStaticClassConstant { .. }
         | Expr::StaticProperty { .. }
+        | Expr::DynamicStaticProperty { .. }
         | Expr::SelfStaticProperty { .. }
+        | Expr::DynamicSelfStaticProperty { .. }
         | Expr::ParentStaticProperty { .. }
-        | Expr::LateStaticProperty { .. } => false,
+        | Expr::DynamicParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. }
+        | Expr::DynamicLateStaticProperty { .. } => false,
     }
 }
 
@@ -6465,9 +6525,14 @@ fn native_assign_target_contains_call_result(target: &AssignTarget) -> bool {
         | AssignTarget::List { .. }
         | AssignTarget::Property { .. }
         | AssignTarget::StaticProperty { .. }
+        | AssignTarget::DynamicStaticProperty { .. }
         | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::DynamicSelfStaticProperty { .. }
         | AssignTarget::ParentStaticProperty { .. }
-        | AssignTarget::LateStaticProperty { .. } => false,
+        | AssignTarget::DynamicParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. }
+        | AssignTarget::DynamicObjectStaticProperty { .. }
+        | AssignTarget::DynamicLateStaticProperty { .. } => false,
     }
 }
 
@@ -6613,7 +6678,10 @@ fn native_reference_expr_call_callee(expr: &Expr) -> Option<NativeCallCallee> {
         | Expr::AppendIndex { target, .. }
         | Expr::Property { target, .. }
         | Expr::DynamicProperty { target, .. }
-        | Expr::ObjectStaticProperty { target, .. } => native_reference_expr_call_callee(target),
+        | Expr::ObjectStaticProperty { target, .. }
+        | Expr::DynamicObjectStaticProperty { target, .. } => {
+            native_reference_expr_call_callee(target)
+        }
         _ => None,
     }
 }
@@ -6639,7 +6707,8 @@ fn native_assignment_target_call_result_callee(target: &AssignTarget) -> Option<
         | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { holder, .. } => {
             native_reference_expr_call_callee(holder)
         }
-        AssignTarget::ObjectStaticProperty { target, .. } => {
+        AssignTarget::ObjectStaticProperty { target, .. }
+        | AssignTarget::DynamicObjectStaticProperty { target, .. } => {
             native_reference_expr_call_callee(target)
         }
         AssignTarget::Variable { .. }
@@ -6654,11 +6723,15 @@ fn native_assignment_target_call_result_callee(target: &AssignTarget) -> Option<
         | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
         | AssignTarget::DynamicProperty { .. }
         | AssignTarget::StaticProperty { .. }
+        | AssignTarget::DynamicStaticProperty { .. }
         | AssignTarget::StaticPropertyArrayIndex { .. }
         | AssignTarget::StaticPropertyArrayAppend { .. }
         | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::DynamicSelfStaticProperty { .. }
         | AssignTarget::ParentStaticProperty { .. }
-        | AssignTarget::LateStaticProperty { .. } => None,
+        | AssignTarget::DynamicParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. }
+        | AssignTarget::DynamicLateStaticProperty { .. } => None,
     }
 }
 
@@ -6803,16 +6876,21 @@ fn native_assignment_target_lvalue_operands(target: &AssignTarget) -> Vec<(&Expr
         AssignTarget::DynamicProperty { property, .. } => {
             operands.push((property, property_tag));
         }
-        AssignTarget::ObjectStaticProperty { target, .. } => {
+        AssignTarget::ObjectStaticProperty { target, .. }
+        | AssignTarget::DynamicObjectStaticProperty { target, .. } => {
             operands.push((target, receiver_tag));
         }
         AssignTarget::Variable { .. }
         | AssignTarget::List { .. }
         | AssignTarget::Property { .. }
         | AssignTarget::StaticProperty { .. }
+        | AssignTarget::DynamicStaticProperty { .. }
         | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::DynamicSelfStaticProperty { .. }
         | AssignTarget::ParentStaticProperty { .. }
-        | AssignTarget::LateStaticProperty { .. } => {}
+        | AssignTarget::DynamicParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. }
+        | AssignTarget::DynamicLateStaticProperty { .. } => {}
     }
     operands
 }
@@ -7356,6 +7434,7 @@ fn expr_contains_globals_access(expr: &Expr) -> bool {
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
         | Expr::ObjectClassNameConstant { target, .. }
+        | Expr::DynamicObjectStaticProperty { target, .. }
         | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
@@ -7413,9 +7492,13 @@ fn expr_contains_globals_access(expr: &Expr) -> bool {
         | Expr::ParentClassConstant { .. }
         | Expr::LateStaticClassConstant { .. }
         | Expr::StaticProperty { .. }
+        | Expr::DynamicStaticProperty { .. }
         | Expr::SelfStaticProperty { .. }
+        | Expr::DynamicSelfStaticProperty { .. }
         | Expr::ParentStaticProperty { .. }
+        | Expr::DynamicParentStaticProperty { .. }
         | Expr::LateStaticProperty { .. }
+        | Expr::DynamicLateStaticProperty { .. }
         | Expr::Closure { .. } => false,
     }
 }
@@ -7534,9 +7617,14 @@ fn assign_target_contains_globals_access(target: &AssignTarget) -> bool {
         AssignTarget::List { .. }
         | AssignTarget::Property { .. }
         | AssignTarget::StaticProperty { .. }
+        | AssignTarget::DynamicStaticProperty { .. }
         | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::DynamicSelfStaticProperty { .. }
         | AssignTarget::ParentStaticProperty { .. }
-        | AssignTarget::LateStaticProperty { .. } => false,
+        | AssignTarget::DynamicParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. }
+        | AssignTarget::DynamicObjectStaticProperty { .. }
+        | AssignTarget::DynamicLateStaticProperty { .. } => false,
     }
 }
 
@@ -7849,6 +7937,7 @@ fn expr_contains_request_state_access(expr: &Expr) -> bool {
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
         | Expr::ObjectClassNameConstant { target, .. }
+        | Expr::DynamicObjectStaticProperty { target, .. }
         | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
@@ -7915,9 +8004,13 @@ fn expr_contains_request_state_access(expr: &Expr) -> bool {
         | Expr::ParentClassConstant { .. }
         | Expr::LateStaticClassConstant { .. }
         | Expr::StaticProperty { .. }
+        | Expr::DynamicStaticProperty { .. }
         | Expr::SelfStaticProperty { .. }
+        | Expr::DynamicSelfStaticProperty { .. }
         | Expr::ParentStaticProperty { .. }
+        | Expr::DynamicParentStaticProperty { .. }
         | Expr::LateStaticProperty { .. }
+        | Expr::DynamicLateStaticProperty { .. }
         | Expr::Closure { .. } => false,
     }
 }
@@ -8037,9 +8130,14 @@ fn assign_target_contains_request_state_access(target: &AssignTarget) -> bool {
         AssignTarget::List { .. }
         | AssignTarget::Property { .. }
         | AssignTarget::StaticProperty { .. }
+        | AssignTarget::DynamicStaticProperty { .. }
         | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::DynamicSelfStaticProperty { .. }
         | AssignTarget::ParentStaticProperty { .. }
-        | AssignTarget::LateStaticProperty { .. } => false,
+        | AssignTarget::DynamicParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. }
+        | AssignTarget::DynamicObjectStaticProperty { .. }
+        | AssignTarget::DynamicLateStaticProperty { .. } => false,
     }
 }
 
@@ -8415,11 +8513,16 @@ fn request_assign_target_array_key_consumer_access(
         | AssignTarget::NonDirectProperty { .. }
         | AssignTarget::NonDirectDynamicProperty { .. }
         | AssignTarget::ObjectStaticProperty { .. }
+        | AssignTarget::DynamicObjectStaticProperty { .. }
         | AssignTarget::DynamicProperty { .. }
         | AssignTarget::StaticProperty { .. }
+        | AssignTarget::DynamicStaticProperty { .. }
         | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::DynamicSelfStaticProperty { .. }
         | AssignTarget::ParentStaticProperty { .. }
-        | AssignTarget::LateStaticProperty { .. } => None,
+        | AssignTarget::DynamicParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. }
+        | AssignTarget::DynamicLateStaticProperty { .. } => None,
     }
 }
 
@@ -8654,10 +8757,15 @@ fn is_static_member_assign_target(target: &AssignTarget) -> bool {
     matches!(
         target,
         AssignTarget::StaticProperty { .. }
+            | AssignTarget::DynamicStaticProperty { .. }
             | AssignTarget::ObjectStaticProperty { .. }
+            | AssignTarget::DynamicObjectStaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
+            | AssignTarget::DynamicSelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
+            | AssignTarget::DynamicParentStaticProperty { .. }
             | AssignTarget::LateStaticProperty { .. }
+            | AssignTarget::DynamicLateStaticProperty { .. }
     )
 }
 
@@ -9065,10 +9173,15 @@ fn native_non_local_assignment_owner_boundary(
             | AssignTarget::NonDirectProperty { .. }
             | AssignTarget::NonDirectDynamicProperty { .. }
             | AssignTarget::StaticProperty { .. }
+            | AssignTarget::DynamicStaticProperty { .. }
             | AssignTarget::ObjectStaticProperty { .. }
+            | AssignTarget::DynamicObjectStaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
+            | AssignTarget::DynamicSelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
+            | AssignTarget::DynamicParentStaticProperty { .. }
             | AssignTarget::LateStaticProperty { .. }
+            | AssignTarget::DynamicLateStaticProperty { .. }
     )
     .then(|| NativeNonLocalOwnerBoundary::assignment(target.span()))
 }
@@ -9142,10 +9255,15 @@ fn is_object_offset_expr(expr: &Expr) -> bool {
             | Expr::New { .. }
             | Expr::Clone { .. }
             | Expr::ObjectStaticProperty { .. }
+            | Expr::DynamicObjectStaticProperty { .. }
             | Expr::StaticProperty { .. }
+            | Expr::DynamicStaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
+            | Expr::DynamicSelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
+            | Expr::DynamicParentStaticProperty { .. }
             | Expr::LateStaticProperty { .. }
+            | Expr::DynamicLateStaticProperty { .. }
     )
 }
 
@@ -10636,7 +10754,12 @@ impl LlvmGenerator {
             | Expr::StaticProperty { span, .. }
             | Expr::SelfStaticProperty { span, .. }
             | Expr::ParentStaticProperty { span, .. }
-            | Expr::LateStaticProperty { span, .. } => {
+            | Expr::LateStaticProperty { span, .. }
+            | Expr::DynamicStaticProperty { span, .. }
+            | Expr::DynamicObjectStaticProperty { span, .. }
+            | Expr::DynamicSelfStaticProperty { span, .. }
+            | Expr::DynamicParentStaticProperty { span, .. }
+            | Expr::DynamicLateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_STATIC_MEMBER_REJECTION))
             }
             Expr::Array { span, .. } => {
@@ -12531,7 +12654,12 @@ impl LlvmGenerator {
             | AssignTarget::ObjectStaticProperty { span, .. }
             | AssignTarget::SelfStaticProperty { span, .. }
             | AssignTarget::ParentStaticProperty { span, .. }
-            | AssignTarget::LateStaticProperty { span, .. } => {
+            | AssignTarget::LateStaticProperty { span, .. }
+            | AssignTarget::DynamicStaticProperty { span, .. }
+            | AssignTarget::DynamicObjectStaticProperty { span, .. }
+            | AssignTarget::DynamicSelfStaticProperty { span, .. }
+            | AssignTarget::DynamicParentStaticProperty { span, .. }
+            | AssignTarget::DynamicLateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, LLVM_STATIC_MEMBER_REJECTION))
             }
         }
@@ -16119,6 +16247,25 @@ enum CObjectPropertyOperand<'a> {
     Dynamic(&'a Expr),
 }
 
+#[derive(Clone, Copy)]
+enum CStaticPropertyNameOperand<'a> {
+    Literal(&'a str),
+    Dynamic(&'a Expr),
+}
+
+impl<'a> CStaticPropertyNameOperand<'a> {
+    fn literal(self) -> Option<&'a str> {
+        match self {
+            Self::Literal(name) => Some(name),
+            Self::Dynamic(_) => None,
+        }
+    }
+
+    fn is_dynamic(self) -> bool {
+        matches!(self, Self::Dynamic(_))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct CNativeObjectPropertyFactKey {
     object: String,
@@ -18240,9 +18387,14 @@ fn collect_loop_assigned_direct_variables_from_assign_target(
         AssignTarget::List { .. }
         | AssignTarget::Property { .. }
         | AssignTarget::StaticProperty { .. }
+        | AssignTarget::DynamicStaticProperty { .. }
         | AssignTarget::SelfStaticProperty { .. }
+        | AssignTarget::DynamicSelfStaticProperty { .. }
         | AssignTarget::ParentStaticProperty { .. }
-        | AssignTarget::LateStaticProperty { .. } => {}
+        | AssignTarget::DynamicParentStaticProperty { .. }
+        | AssignTarget::LateStaticProperty { .. }
+        | AssignTarget::DynamicObjectStaticProperty { .. }
+        | AssignTarget::DynamicLateStaticProperty { .. } => {}
         AssignTarget::ArrayIndex { index, .. } => {
             if let Some(index) = index {
                 collect_loop_assigned_direct_variables_from_expr(index, names);
@@ -18423,7 +18575,8 @@ fn collect_loop_assigned_direct_variables_from_expr(expr: &Expr, names: &mut BTr
         Expr::Property { target, .. }
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
-        | Expr::ObjectClassNameConstant { target, .. } => {
+        | Expr::ObjectClassNameConstant { target, .. }
+        | Expr::DynamicObjectStaticProperty { target, .. } => {
             collect_loop_assigned_direct_variables_from_expr(target, names);
         }
         Expr::MethodCall { target, args, .. } => {
@@ -18530,9 +18683,13 @@ fn collect_loop_assigned_direct_variables_from_expr(expr: &Expr, names: &mut BTr
         | Expr::ParentClassConstant { .. }
         | Expr::LateStaticClassConstant { .. }
         | Expr::StaticProperty { .. }
+        | Expr::DynamicStaticProperty { .. }
         | Expr::SelfStaticProperty { .. }
+        | Expr::DynamicSelfStaticProperty { .. }
         | Expr::ParentStaticProperty { .. }
-        | Expr::LateStaticProperty { .. } => {}
+        | Expr::DynamicParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. }
+        | Expr::DynamicLateStaticProperty { .. } => {}
     }
 }
 
@@ -22401,6 +22558,7 @@ impl CGenerator {
                 output.push_str("extern bool phpc_native_static_property_storage_register_default_value_and_free(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_static_property_storage_reset_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeStringHandle phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free(phpc_NativeStaticPropertyStorageHandle storage, phpc_NativeValueHandle receiver, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeStringHandle phpc_native_static_property_name_from_value_with_diagnostic_and_free(phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_read_class_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_read_isset_class_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_write_class_with_diagnostic_and_free(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -24130,10 +24288,15 @@ impl CGenerator {
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. }
             | AssignTarget::StaticProperty { .. }
+            | AssignTarget::DynamicStaticProperty { .. }
             | AssignTarget::ObjectStaticProperty { .. }
+            | AssignTarget::DynamicObjectStaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
+            | AssignTarget::DynamicSelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
-            | AssignTarget::LateStaticProperty { .. } => Ok(None),
+            | AssignTarget::DynamicParentStaticProperty { .. }
+            | AssignTarget::LateStaticProperty { .. }
+            | AssignTarget::DynamicLateStaticProperty { .. } => Ok(None),
         }
     }
 
@@ -28934,10 +29097,15 @@ impl CGenerator {
                 CObjectPropertyOperand::Dynamic(property),
             ),
             Expr::StaticProperty { .. }
+            | Expr::DynamicStaticProperty { .. }
             | Expr::ObjectStaticProperty { .. }
+            | Expr::DynamicObjectStaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
+            | Expr::DynamicSelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
-            | Expr::LateStaticProperty { .. } => {
+            | Expr::DynamicParentStaticProperty { .. }
+            | Expr::LateStaticProperty { .. }
+            | Expr::DynamicLateStaticProperty { .. } => {
                 Self::static_property_lvalue_target_from_expr(expr)
                     .and_then(|target| self.static_property_fact_key_for_assign_target(&target))
                     .and_then(|key| self.native_static_property_value_facts.get(&key).cloned())
@@ -29466,10 +29634,15 @@ impl CGenerator {
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. }
             | AssignTarget::StaticProperty { .. }
+            | AssignTarget::DynamicStaticProperty { .. }
             | AssignTarget::ObjectStaticProperty { .. }
+            | AssignTarget::DynamicObjectStaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
+            | AssignTarget::DynamicSelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
-            | AssignTarget::LateStaticProperty { .. } => Ok(None),
+            | AssignTarget::DynamicParentStaticProperty { .. }
+            | AssignTarget::LateStaticProperty { .. }
+            | AssignTarget::DynamicLateStaticProperty { .. } => Ok(None),
         }
     }
 
@@ -35004,6 +35177,42 @@ impl CGenerator {
         self.materialize_static_property_lvalue_target_with_options(target, failure_cleanup, true)
     }
 
+    fn materialize_static_property_name_operand(
+        &mut self,
+        property: CStaticPropertyNameOperand<'_>,
+        failure_cleanup: &str,
+    ) -> CompileResult<(String, String, Vec<String>)> {
+        match property {
+            CStaticPropertyNameOperand::Literal(property) => {
+                let (bytes, len) =
+                    self.emit_call_type_static_bytes("static_property_lvalue_name_bytes", property);
+                Ok((bytes, len, Vec::new()))
+            }
+            CStaticPropertyNameOperand::Dynamic(expr) => {
+                self.uses_native_string_helpers = true;
+                self.uses_native_static_property_helpers = true;
+                let value = self.materialize_native_value_result_operand(expr, failure_cleanup)?;
+                let diagnostic = self.next_native_name("static_property_name_diagnostic");
+                let name = self.next_native_name("static_property_name");
+                self.body
+                    .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+                self.body.push(format!(
+                    "phpc_NativeStringHandle {name} = phpc_native_static_property_name_from_value_with_diagnostic_and_free({}, &{diagnostic});",
+                    value.handle
+                ));
+                self.emit_report_native_diagnostic(&diagnostic);
+                let error_exit = self.native_error_exit(failure_cleanup);
+                self.body
+                    .push(format!("if ({name}.ptr == NULL) {{ {error_exit} }}"));
+                Ok((
+                    format!("phpc_native_string_bytes({name})"),
+                    format!("phpc_native_string_len({name})"),
+                    vec![format!("phpc_native_string_free({name});")],
+                ))
+            }
+        }
+    }
+
     fn materialize_static_property_lvalue_target_with_options(
         &mut self,
         target: &AssignTarget,
@@ -35012,15 +35221,26 @@ impl CGenerator {
     ) -> CompileResult<Option<CStaticPropertyLvalueTarget>> {
         match target {
             AssignTarget::StaticProperty {
-                class_name,
-                property,
-                span,
+                class_name, span, ..
+            }
+            | AssignTarget::DynamicStaticProperty {
+                class_name, span, ..
             } => {
-                let resolved = if let Some(resolved) =
-                    self.resolve_declared_static_property(class_name, property)
+                let property_name = match target {
+                    AssignTarget::StaticProperty { property, .. } => {
+                        CStaticPropertyNameOperand::Literal(property)
+                    }
+                    AssignTarget::DynamicStaticProperty { property, .. } => {
+                        CStaticPropertyNameOperand::Dynamic(property)
+                    }
+                    _ => unreachable!("class static-property target already matched"),
+                };
+                let resolved = if let Some(resolved) = property_name
+                    .literal()
+                    .and_then(|name| self.resolve_declared_static_property(class_name, name))
                 {
                     resolved
-                } else if allow_missing_literal_property {
+                } else if allow_missing_literal_property || property_name.is_dynamic() {
                     let Some(receiver_class_name) =
                         self.resolve_declared_static_property_receiver(class_name)
                     else {
@@ -35028,7 +35248,7 @@ impl CGenerator {
                     };
                     CResolvedStaticProperty {
                         receiver_class_name,
-                        name: property.clone(),
+                        name: property_name.literal().unwrap_or("").to_string(),
                     }
                 } else {
                     return Ok(None);
@@ -35038,10 +35258,19 @@ impl CGenerator {
                     "static_property_receiver_name_bytes",
                     &resolved.receiver_class_name,
                 );
-                let (property_bytes, property_len) = self.emit_call_type_static_bytes(
-                    "static_property_lvalue_name_bytes",
-                    &resolved.name,
-                );
+                let literal_name = resolved.name.as_str();
+                let property_name = property_name
+                    .literal()
+                    .map(CStaticPropertyNameOperand::Literal)
+                    .unwrap_or(property_name);
+                let (property_bytes, property_len, cleanup_after_use) = self
+                    .materialize_static_property_name_operand(
+                        property_name
+                            .literal()
+                            .map(|_| CStaticPropertyNameOperand::Literal(literal_name))
+                            .unwrap_or(property_name),
+                        failure_cleanup,
+                    )?;
                 Ok(Some(CStaticPropertyLvalueTarget {
                     storage,
                     receiver: CStaticPropertyLvalueReceiver::Class {
@@ -35050,21 +35279,40 @@ impl CGenerator {
                     },
                     property_bytes,
                     property_len,
-                    cleanup_after_use: Vec::new(),
+                    cleanup_after_use,
                 }))
             }
-            AssignTarget::SelfStaticProperty { property, span }
-            | AssignTarget::ParentStaticProperty { property, span }
-            | AssignTarget::LateStaticProperty { property, span } => {
+            AssignTarget::SelfStaticProperty { span, .. }
+            | AssignTarget::ParentStaticProperty { span, .. }
+            | AssignTarget::LateStaticProperty { span, .. }
+            | AssignTarget::DynamicSelfStaticProperty { span, .. }
+            | AssignTarget::DynamicParentStaticProperty { span, .. }
+            | AssignTarget::DynamicLateStaticProperty { span, .. } => {
                 let receiver = match target {
-                    AssignTarget::SelfStaticProperty { .. } => {
+                    AssignTarget::SelfStaticProperty { .. }
+                    | AssignTarget::DynamicSelfStaticProperty { .. } => {
                         CRelativeStaticPropertyReceiver::SelfClass
                     }
-                    AssignTarget::ParentStaticProperty { .. } => {
+                    AssignTarget::ParentStaticProperty { .. }
+                    | AssignTarget::DynamicParentStaticProperty { .. } => {
                         CRelativeStaticPropertyReceiver::ParentClass
                     }
-                    AssignTarget::LateStaticProperty { .. } => {
+                    AssignTarget::LateStaticProperty { .. }
+                    | AssignTarget::DynamicLateStaticProperty { .. } => {
                         CRelativeStaticPropertyReceiver::LateStaticClass
+                    }
+                    _ => unreachable!("relative static-property target already matched"),
+                };
+                let property_name = match target {
+                    AssignTarget::SelfStaticProperty { property, .. }
+                    | AssignTarget::ParentStaticProperty { property, .. }
+                    | AssignTarget::LateStaticProperty { property, .. } => {
+                        CStaticPropertyNameOperand::Literal(property)
+                    }
+                    AssignTarget::DynamicSelfStaticProperty { property, .. }
+                    | AssignTarget::DynamicParentStaticProperty { property, .. }
+                    | AssignTarget::DynamicLateStaticProperty { property, .. } => {
+                        CStaticPropertyNameOperand::Dynamic(property)
                     }
                     _ => unreachable!("relative static-property target already matched"),
                 };
@@ -35081,8 +35329,8 @@ impl CGenerator {
                     "static_property_current_class_name_bytes",
                     &current_class_name,
                 );
-                let (property_bytes, property_len) =
-                    self.emit_call_type_static_bytes("static_property_lvalue_name_bytes", property);
+                let (property_bytes, property_len, cleanup_after_use) =
+                    self.materialize_static_property_name_operand(property_name, failure_cleanup)?;
                 Ok(Some(CStaticPropertyLvalueTarget {
                     storage,
                     receiver: CStaticPropertyLvalueReceiver::Relative {
@@ -35094,14 +35342,28 @@ impl CGenerator {
                     },
                     property_bytes,
                     property_len,
-                    cleanup_after_use: Vec::new(),
+                    cleanup_after_use,
                 }))
             }
             AssignTarget::ObjectStaticProperty {
                 target: receiver_expr,
-                property,
                 span,
+                ..
+            }
+            | AssignTarget::DynamicObjectStaticProperty {
+                target: receiver_expr,
+                span,
+                ..
             } => {
+                let property_name = match target {
+                    AssignTarget::ObjectStaticProperty { property, .. } => {
+                        CStaticPropertyNameOperand::Literal(property)
+                    }
+                    AssignTarget::DynamicObjectStaticProperty { property, .. } => {
+                        CStaticPropertyNameOperand::Dynamic(property)
+                    }
+                    _ => unreachable!("object static-property target already matched"),
+                };
                 let receiver =
                     self.materialize_native_value_result_operand(receiver_expr, failure_cleanup)?;
                 let receiver_cleanup = c_cleanup_sequence(&receiver.cleanup_after_use);
@@ -35114,8 +35376,13 @@ impl CGenerator {
                     receiver,
                     failure_cleanup,
                 );
-                let (property_bytes, property_len) =
-                    self.emit_call_type_static_bytes("static_property_lvalue_name_bytes", property);
+                let scope_cleanup = c_cleanup_sequence(&scope.cleanup_after_use);
+                let (property_bytes, property_len, mut cleanup_after_use) = self
+                    .materialize_static_property_name_operand(
+                        property_name,
+                        &format!("{scope_cleanup}{failure_cleanup}"),
+                    )?;
+                cleanup_after_use.extend(scope.cleanup_after_use);
                 Ok(Some(CStaticPropertyLvalueTarget {
                     storage,
                     receiver: CStaticPropertyLvalueReceiver::Class {
@@ -35124,7 +35391,7 @@ impl CGenerator {
                     },
                     property_bytes,
                     property_len,
-                    cleanup_after_use: scope.cleanup_after_use,
+                    cleanup_after_use,
                 }))
             }
             _ => Ok(None),
@@ -35142,6 +35409,15 @@ impl CGenerator {
                 property: property.clone(),
                 span: *span,
             }),
+            Expr::DynamicStaticProperty {
+                class_name,
+                property,
+                span,
+            } => Some(AssignTarget::DynamicStaticProperty {
+                class_name: class_name.clone(),
+                property: property.as_ref().clone(),
+                span: *span,
+            }),
             Expr::ObjectStaticProperty {
                 target,
                 property,
@@ -35151,13 +35427,34 @@ impl CGenerator {
                 property: property.clone(),
                 span: *span,
             }),
+            Expr::DynamicObjectStaticProperty {
+                target,
+                property,
+                span,
+            } => Some(AssignTarget::DynamicObjectStaticProperty {
+                target: target.as_ref().clone(),
+                property: property.as_ref().clone(),
+                span: *span,
+            }),
             Expr::SelfStaticProperty { property, span } => Some(AssignTarget::SelfStaticProperty {
                 property: property.clone(),
                 span: *span,
             }),
+            Expr::DynamicSelfStaticProperty { property, span } => {
+                Some(AssignTarget::DynamicSelfStaticProperty {
+                    property: property.as_ref().clone(),
+                    span: *span,
+                })
+            }
             Expr::ParentStaticProperty { property, span } => {
                 Some(AssignTarget::ParentStaticProperty {
                     property: property.clone(),
+                    span: *span,
+                })
+            }
+            Expr::DynamicParentStaticProperty { property, span } => {
+                Some(AssignTarget::DynamicParentStaticProperty {
+                    property: property.as_ref().clone(),
                     span: *span,
                 })
             }
@@ -35165,6 +35462,12 @@ impl CGenerator {
                 property: property.clone(),
                 span: *span,
             }),
+            Expr::DynamicLateStaticProperty { property, span } => {
+                Some(AssignTarget::DynamicLateStaticProperty {
+                    property: property.as_ref().clone(),
+                    span: *span,
+                })
+            }
             _ => None,
         }
     }
@@ -36304,6 +36607,22 @@ impl CGenerator {
                     return Ok(CValue::NativeValueHandle(value.handle));
                 }
                 Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
+            }
+            Expr::DynamicStaticProperty { .. }
+            | Expr::DynamicObjectStaticProperty { .. }
+            | Expr::DynamicSelfStaticProperty { .. }
+            | Expr::DynamicParentStaticProperty { .. }
+            | Expr::DynamicLateStaticProperty { .. } => {
+                let Some(target) = Self::static_property_lvalue_target_from_expr(expr) else {
+                    return Err(self.unsupported(expr.span(), ASSEMBLY_STATIC_MEMBER_REJECTION));
+                };
+                if let Some(target) = self.materialize_static_property_lvalue_target(&target, "")? {
+                    let value = self.emit_static_property_lvalue_read(&target, "");
+                    self.body.extend(target.cleanup_after_use);
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
+                Err(self.unsupported(expr.span(), ASSEMBLY_STATIC_MEMBER_REJECTION))
             }
             Expr::Array { items, span } => {
                 if let Some(operation) = native_value_operand_call_result_operation(expr) {
@@ -41332,6 +41651,7 @@ impl CGenerator {
             | Expr::ObjectStaticClassConstant { target, .. }
             | Expr::ObjectStaticProperty { target, .. }
             | Expr::ObjectClassNameConstant { target, .. }
+            | Expr::DynamicObjectStaticProperty { target, .. }
             | Expr::InstanceOf { expr: target, .. }
             | Expr::Clone { expr: target, .. }
             | Expr::Unary { expr: target, .. }
@@ -41408,9 +41728,13 @@ impl CGenerator {
             | Expr::ParentClassConstant { .. }
             | Expr::LateStaticClassConstant { .. }
             | Expr::StaticProperty { .. }
+            | Expr::DynamicStaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
+            | Expr::DynamicSelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
-            | Expr::LateStaticProperty { .. } => false,
+            | Expr::DynamicParentStaticProperty { .. }
+            | Expr::LateStaticProperty { .. }
+            | Expr::DynamicLateStaticProperty { .. } => false,
         }
     }
 
@@ -49475,7 +49799,12 @@ impl CGenerator {
             | AssignTarget::ObjectStaticProperty { span, .. }
             | AssignTarget::SelfStaticProperty { span, .. }
             | AssignTarget::ParentStaticProperty { span, .. }
-            | AssignTarget::LateStaticProperty { span, .. } => {
+            | AssignTarget::LateStaticProperty { span, .. }
+            | AssignTarget::DynamicStaticProperty { span, .. }
+            | AssignTarget::DynamicObjectStaticProperty { span, .. }
+            | AssignTarget::DynamicSelfStaticProperty { span, .. }
+            | AssignTarget::DynamicParentStaticProperty { span, .. }
+            | AssignTarget::DynamicLateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
             }
         }
@@ -52357,6 +52686,26 @@ impl CGenerator {
             return self
                 .materialize_object_class_name_constant_expr(target, failure_cleanup)
                 .map(Some);
+        }
+        if matches!(
+            expr,
+            Expr::DynamicStaticProperty { .. }
+                | Expr::DynamicObjectStaticProperty { .. }
+                | Expr::DynamicSelfStaticProperty { .. }
+                | Expr::DynamicParentStaticProperty { .. }
+                | Expr::DynamicLateStaticProperty { .. }
+        ) {
+            let Some(target) = Self::static_property_lvalue_target_from_expr(expr) else {
+                return Ok(None);
+            };
+            let Some(target) =
+                self.materialize_static_property_lvalue_target(&target, failure_cleanup)?
+            else {
+                return Ok(None);
+            };
+            let value = self.emit_static_property_lvalue_read(&target, failure_cleanup);
+            self.body.extend(target.cleanup_after_use);
+            return Ok(Some(value));
         }
         match expr {
             Expr::SelfStaticProperty { property, span } => {
@@ -56544,6 +56893,7 @@ fn native_foreach_expr_may_mutate_storage(expr: &Expr) -> bool {
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
         | Expr::ObjectClassNameConstant { target, .. }
+        | Expr::DynamicObjectStaticProperty { target, .. }
         | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
@@ -56619,9 +56969,13 @@ fn native_foreach_expr_may_mutate_storage(expr: &Expr) -> bool {
         | Expr::ParentClassConstant { .. }
         | Expr::LateStaticClassConstant { .. }
         | Expr::StaticProperty { .. }
+        | Expr::DynamicStaticProperty { .. }
         | Expr::SelfStaticProperty { .. }
+        | Expr::DynamicSelfStaticProperty { .. }
         | Expr::ParentStaticProperty { .. }
-        | Expr::LateStaticProperty { .. } => false,
+        | Expr::DynamicParentStaticProperty { .. }
+        | Expr::LateStaticProperty { .. }
+        | Expr::DynamicLateStaticProperty { .. } => false,
     }
 }
 
@@ -58367,7 +58721,7 @@ fn format_float_literal(value: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{ArrayItem, FunctionParam, StaticLocalDeclarator};
+    use crate::ast::{ArrayItem, AssignTarget, FunctionParam, StaticLocalDeclarator};
 
     #[test]
     fn native_comparison_abi_opcodes_follow_runtime_contract() {
@@ -59784,6 +60138,71 @@ mod tests {
 
     fn variable(name: &str, column: usize) -> Expr {
         Expr::Variable(name.to_string(), span(column))
+    }
+
+    #[test]
+    fn static_property_computed_name_lvalues_normalize_names_over_shared_storage() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "class ComputedNameUnitBox {\n",
+            "    public static $slot = \"seed\";\n",
+            "}\n",
+        ))
+        .unwrap();
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .unwrap();
+
+        let class_target = AssignTarget::DynamicStaticProperty {
+            class_name: "ComputedNameUnitBox".to_string(),
+            property: Expr::String("slot".to_string(), span(10)),
+            span: span(9),
+        };
+        let class_lvalue = generator
+            .materialize_static_property_lvalue_target_with_options(&class_target, "", true)
+            .unwrap()
+            .expect("dynamic named static property should materialize through shared storage");
+        assert!(matches!(
+            class_lvalue.receiver,
+            CStaticPropertyLvalueReceiver::Class { .. }
+        ));
+        assert!(class_lvalue
+            .property_bytes
+            .contains("phpc_native_string_bytes(static_property_name_"));
+        assert!(class_lvalue
+            .cleanup_after_use
+            .iter()
+            .any(|cleanup| cleanup.contains("phpc_native_string_free(static_property_name_")));
+
+        generator.active_declared_class_name = Some("ComputedNameUnitBox".to_string());
+        let self_target = AssignTarget::DynamicSelfStaticProperty {
+            property: Expr::String("slot".to_string(), span(20)),
+            span: span(19),
+        };
+        let self_lvalue = generator
+            .materialize_static_property_lvalue_target_with_options(&self_target, "", true)
+            .unwrap()
+            .expect("dynamic self static property should materialize through shared storage");
+        assert!(matches!(
+            self_lvalue.receiver,
+            CStaticPropertyLvalueReceiver::Relative {
+                receiver: CRelativeStaticPropertyReceiver::SelfClass,
+                ..
+            }
+        ));
+        assert_eq!(class_lvalue.storage, self_lvalue.storage);
+        assert!(!class_lvalue.storage.is_empty());
+
+        let body = generator.body.join("\n");
+        assert_eq!(
+            body.matches("phpc_native_static_property_name_from_value_with_diagnostic_and_free")
+                .count(),
+            2
+        );
     }
 
     #[test]

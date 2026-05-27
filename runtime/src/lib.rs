@@ -28462,6 +28462,42 @@ pub unsafe extern "C" fn phpc_native_static_property_scope_from_receiver_with_di
     }
 }
 
+/// # Safety
+///
+/// `value` and `diagnostic` must be valid according to the runtime ABI. The
+/// value is always consumed. Returns an owned UTF-8 property-name string for
+/// computed static-property access.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_property_name_from_value_with_diagnostic_and_free(
+    value: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeStringHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| -> RuntimeResult<NativeStringHandle> {
+        let bytes = unsafe { native_value_to_string_bytes(value) }?;
+        if bytes.is_empty() {
+            return Err(RuntimeError::invalid_property_access(
+                "dynamic static property name cannot be empty".to_string(),
+            ));
+        }
+        String::from_utf8(bytes.clone()).map_err(|_| {
+            RuntimeError::invalid_property_access(
+                "dynamic static property name must be valid UTF-8".to_string(),
+            )
+        })?;
+        Ok(NativeStringHandle::from_vec(bytes))
+    })();
+    unsafe { phpc_native_value_free(value) };
+
+    match result {
+        Ok(name) => name,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeStringHandle::null()
+        }
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn phpc_native_static_property_storage_new() -> NativeStaticPropertyStorageHandle {
     NativeStaticPropertyStorageHandle::new()

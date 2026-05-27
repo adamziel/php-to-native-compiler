@@ -633,6 +633,29 @@ const NATIVE_DECLARED_CLASS_PROPERTY_UNSET_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_STATIC_PROPERTY_COMPUTED_NAME_SOURCE: &str = concat!(
+    "<?php\n",
+    "class StaticComputedNameBox {\n",
+    "    public static $left = \"L\";\n",
+    "    public static $right = \"R0\";\n",
+    "    public static $selfSlot = \"S0\";\n",
+    "    public static function selfBits($readName, $writeName) {\n",
+    "        self::${$writeName} = \"S1\";\n",
+    "        return self::${$readName} . \":\" . self::${$writeName};\n",
+    "    }\n",
+    "}\n",
+    "$read = \"left\";\n",
+    "$write = \"right\";\n",
+    "$selfRead = \"left\";\n",
+    "$selfWrite = \"selfSlot\";\n",
+    "$object = new StaticComputedNameBox();\n",
+    "echo StaticComputedNameBox::${$read}, \"|\";\n",
+    "StaticComputedNameBox::${$write} = \"R1\";\n",
+    "echo StaticComputedNameBox::${$write}, \"|\";\n",
+    "echo $object::${$read}, \"|\";\n",
+    "echo StaticComputedNameBox::selfBits($selfRead, $selfWrite), \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_INSTANCEOF_SOURCE: &str = concat!(
     "<?php\n",
     "class Box {}\n",
@@ -2742,6 +2765,34 @@ fn emit_exe_static_property_unset_preserves_runtime_diagnostics() {
         let _ = fs::remove_file(source_path);
         let _ = fs::remove_file(output_path);
     }
+}
+
+#[test]
+fn emit_exe_links_and_runs_static_property_computed_name_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "static_property_computed_name",
+        NATIVE_STATIC_PROPERTY_COMPUTED_NAME_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run static-property computed-name executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"L|R1|L|L:S1\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
 }
 
 #[test]
@@ -6031,6 +6082,10 @@ fn native_executable_c_source_keeps_unsupported_static_property_dynamic_shapes_b
                 "take(StaticOffsetReferenceBlocked::$bag[\"k\"][\"leaf\"]);\n",
             ),
         ),
+        (
+            "computed late-static property outside class context",
+            "<?php\nclass Counter { public static $count = 1; }\n$name = \"count\";\necho static::${$name};\n",
+        ),
     ] {
         let program = parse(source).unwrap();
         let error = match emit_native_executable_c_source(&program) {
@@ -6047,6 +6102,36 @@ fn native_executable_c_source_keeps_unsupported_static_property_dynamic_shapes_b
             "{label} should remain behind an explicit static-property boundary, got {error:?}"
         );
     }
+}
+
+#[test]
+fn native_executable_c_source_routes_static_property_computed_names_through_shared_storage() {
+    let program = parse(NATIVE_STATIC_PROPERTY_COMPUTED_NAME_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    for required in [
+        "phpc_native_static_property_name_from_value_with_diagnostic_and_free",
+        "phpc_native_static_property_read_class_with_diagnostic",
+        "phpc_native_static_property_write_class_with_diagnostic_and_free",
+        "phpc_native_static_property_read_relative_with_diagnostic",
+        "phpc_native_static_property_write_relative_with_diagnostic_and_free",
+        "phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free",
+        "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_SELF",
+    ] {
+        assert!(source.contains(required), "missing {required}:\n{source}");
+    }
+    assert!(
+        body.matches("phpc_native_static_property_name_from_value_with_diagnostic_and_free")
+            .count()
+            >= 4,
+        "computed static-property names should normalize once at the shared static-property lvalue boundary:\n{source}"
+    );
+    assert!(
+        !source.contains("static-member lowering rejects")
+            && !source.contains("static_property_name_ladder"),
+        "computed names must not use generated literal-name ladders or rejection detours:\n{source}"
+    );
 }
 
 #[test]

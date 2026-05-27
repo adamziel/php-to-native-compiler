@@ -382,21 +382,43 @@ pub enum AssignTarget {
         property: String,
         span: Span,
     },
+    DynamicObjectStaticProperty {
+        target: Expr,
+        property: Expr,
+        span: Span,
+    },
     StaticProperty {
         class_name: String,
         property: String,
+        span: Span,
+    },
+    DynamicStaticProperty {
+        class_name: String,
+        property: Expr,
         span: Span,
     },
     SelfStaticProperty {
         property: String,
         span: Span,
     },
+    DynamicSelfStaticProperty {
+        property: Expr,
+        span: Span,
+    },
     ParentStaticProperty {
         property: String,
         span: Span,
     },
+    DynamicParentStaticProperty {
+        property: Expr,
+        span: Span,
+    },
     LateStaticProperty {
         property: String,
+        span: Span,
+    },
+    DynamicLateStaticProperty {
+        property: Expr,
         span: Span,
     },
 }
@@ -680,10 +702,15 @@ impl AssignTarget {
             | AssignTarget::StaticPropertyArrayAppend { span, .. }
             | AssignTarget::DynamicProperty { span, .. }
             | AssignTarget::ObjectStaticProperty { span, .. }
+            | AssignTarget::DynamicObjectStaticProperty { span, .. }
             | AssignTarget::StaticProperty { span, .. }
+            | AssignTarget::DynamicStaticProperty { span, .. }
             | AssignTarget::SelfStaticProperty { span, .. }
+            | AssignTarget::DynamicSelfStaticProperty { span, .. }
             | AssignTarget::ParentStaticProperty { span, .. }
+            | AssignTarget::DynamicParentStaticProperty { span, .. }
             | AssignTarget::LateStaticProperty { span, .. } => *span,
+            AssignTarget::DynamicLateStaticProperty { span, .. } => *span,
         }
     }
 }
@@ -968,21 +995,43 @@ pub enum Expr {
         property: String,
         span: Span,
     },
+    DynamicStaticProperty {
+        class_name: String,
+        property: Box<Expr>,
+        span: Span,
+    },
     ObjectStaticProperty {
         target: Box<Expr>,
         property: String,
+        span: Span,
+    },
+    DynamicObjectStaticProperty {
+        target: Box<Expr>,
+        property: Box<Expr>,
         span: Span,
     },
     SelfStaticProperty {
         property: String,
         span: Span,
     },
+    DynamicSelfStaticProperty {
+        property: Box<Expr>,
+        span: Span,
+    },
     ParentStaticProperty {
         property: String,
         span: Span,
     },
+    DynamicParentStaticProperty {
+        property: Box<Expr>,
+        span: Span,
+    },
     LateStaticProperty {
         property: String,
+        span: Span,
+    },
+    DynamicLateStaticProperty {
+        property: Box<Expr>,
         span: Span,
     },
     MethodCall {
@@ -1201,10 +1250,15 @@ impl Expr {
             | Expr::Property { span, .. }
             | Expr::DynamicProperty { span, .. }
             | Expr::StaticProperty { span, .. }
+            | Expr::DynamicStaticProperty { span, .. }
             | Expr::ObjectStaticProperty { span, .. }
+            | Expr::DynamicObjectStaticProperty { span, .. }
             | Expr::SelfStaticProperty { span, .. }
+            | Expr::DynamicSelfStaticProperty { span, .. }
             | Expr::ParentStaticProperty { span, .. }
+            | Expr::DynamicParentStaticProperty { span, .. }
             | Expr::LateStaticProperty { span, .. }
+            | Expr::DynamicLateStaticProperty { span, .. }
             | Expr::MethodCall { span, .. }
             | Expr::DynamicMethodCall { span, .. }
             | Expr::ParentMethodCall { span, .. }

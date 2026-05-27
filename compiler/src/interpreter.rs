@@ -14296,6 +14296,34 @@ impl Interpreter {
             Expr::LateStaticProperty { property, span } => {
                 self.evaluate_late_static_property(property, *span)
             }
+            Expr::DynamicStaticProperty {
+                class_name,
+                property,
+                span,
+            } => {
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                self.evaluate_named_static_property(class_name, &property, *span)
+            }
+            Expr::DynamicObjectStaticProperty {
+                target,
+                property,
+                span,
+            } => {
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                self.evaluate_object_static_property(target, &property, *span, scope)
+            }
+            Expr::DynamicSelfStaticProperty { property, span } => {
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                self.evaluate_self_static_property(&property, *span)
+            }
+            Expr::DynamicParentStaticProperty { property, span } => {
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                self.evaluate_parent_static_property(&property, *span)
+            }
+            Expr::DynamicLateStaticProperty { property, span } => {
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                self.evaluate_late_static_property(&property, *span)
+            }
             Expr::NamedArgument { span, .. } => Err(runtime_error(
                 *span,
                 RuntimeError::unsupported_call(
@@ -24127,6 +24155,15 @@ impl Interpreter {
                 let value = self.evaluate(expr, scope)?;
                 self.write_object_static_property(target, property, value, *span, scope)
             }
+            AssignTarget::DynamicObjectStaticProperty {
+                target,
+                property,
+                span,
+            } => {
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                let value = self.evaluate(expr, scope)?;
+                self.write_object_static_property(target, &property, value, *span, scope)
+            }
             AssignTarget::StaticPropertyArrayIndex { span, .. }
             | AssignTarget::StaticPropertyArrayAppend { span, .. } => Err(runtime_error(
                 *span,
@@ -24143,17 +24180,41 @@ impl Interpreter {
                 let value = self.evaluate(expr, scope)?;
                 self.write_named_static_property(class_name, property, value, *span)
             }
+            AssignTarget::DynamicStaticProperty {
+                class_name,
+                property,
+                span,
+            } => {
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                let value = self.evaluate(expr, scope)?;
+                self.write_named_static_property(class_name, &property, value, *span)
+            }
             AssignTarget::SelfStaticProperty { property, span } => {
                 let value = self.evaluate(expr, scope)?;
                 self.write_self_static_property(property, value, *span)
+            }
+            AssignTarget::DynamicSelfStaticProperty { property, span } => {
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                let value = self.evaluate(expr, scope)?;
+                self.write_self_static_property(&property, value, *span)
             }
             AssignTarget::ParentStaticProperty { property, span } => {
                 let value = self.evaluate(expr, scope)?;
                 self.write_parent_static_property(property, value, *span)
             }
+            AssignTarget::DynamicParentStaticProperty { property, span } => {
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                let value = self.evaluate(expr, scope)?;
+                self.write_parent_static_property(&property, value, *span)
+            }
             AssignTarget::LateStaticProperty { property, span } => {
                 let value = self.evaluate(expr, scope)?;
                 self.write_late_static_property(property, value, *span)
+            }
+            AssignTarget::DynamicLateStaticProperty { property, span } => {
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                let value = self.evaluate(expr, scope)?;
+                self.write_late_static_property(&property, value, *span)
             }
         }
     }
@@ -27133,7 +27194,8 @@ impl Interpreter {
                 };
                 self.read_compound_assignment_left(&target, span, scope)
             }
-            AssignTarget::ObjectStaticProperty { .. } => Err(runtime_error(
+            AssignTarget::ObjectStaticProperty { .. }
+            | AssignTarget::DynamicObjectStaticProperty { .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "compound assignment",
@@ -27141,9 +27203,13 @@ impl Interpreter {
                 ),
             )),
             AssignTarget::StaticProperty { .. }
+            | AssignTarget::DynamicStaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
+            | AssignTarget::DynamicSelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
-            | AssignTarget::LateStaticProperty { .. } => {
+            | AssignTarget::DynamicParentStaticProperty { .. }
+            | AssignTarget::LateStaticProperty { .. }
+            | AssignTarget::DynamicLateStaticProperty { .. } => {
                 let (declaring_class_id, property, value) =
                     self.read_static_property_target(target, span)?;
                 Ok((
@@ -27629,7 +27695,8 @@ impl Interpreter {
                     "dynamic property targets are not implemented",
                 ),
             )),
-            AssignTarget::ObjectStaticProperty { .. } => Err(runtime_error(
+            AssignTarget::ObjectStaticProperty { .. }
+            | AssignTarget::DynamicObjectStaticProperty { .. } => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
                     "increment/decrement",
@@ -27637,9 +27704,13 @@ impl Interpreter {
                 ),
             )),
             AssignTarget::StaticProperty { .. }
+            | AssignTarget::DynamicStaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
+            | AssignTarget::DynamicSelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
-            | AssignTarget::LateStaticProperty { .. } => {
+            | AssignTarget::DynamicParentStaticProperty { .. }
+            | AssignTarget::LateStaticProperty { .. }
+            | AssignTarget::DynamicLateStaticProperty { .. } => {
                 let (declaring_class_id, property, value) =
                     self.read_static_property_target(target, span)?;
                 Ok((
@@ -27935,6 +28006,13 @@ impl Interpreter {
                     "dynamic static property targets are not implemented",
                 ),
             )),
+            AssignTarget::DynamicObjectStaticProperty { span, .. } => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call(
+                    "??=",
+                    "dynamic static property targets are not implemented",
+                ),
+            )),
             AssignTarget::StaticProperty { span, .. }
             | AssignTarget::SelfStaticProperty { span, .. }
             | AssignTarget::ParentStaticProperty { span, .. }
@@ -27958,6 +28036,43 @@ impl Interpreter {
                     );
                 }
                 Ok(value)
+            }
+            AssignTarget::DynamicStaticProperty {
+                class_name,
+                property,
+                span,
+            } => {
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                let target = AssignTarget::StaticProperty {
+                    class_name: class_name.clone(),
+                    property,
+                    span: *span,
+                };
+                self.evaluate_null_coalesce_assignment(&target, expr, scope)
+            }
+            AssignTarget::DynamicSelfStaticProperty { property, span } => {
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                let target = AssignTarget::SelfStaticProperty {
+                    property,
+                    span: *span,
+                };
+                self.evaluate_null_coalesce_assignment(&target, expr, scope)
+            }
+            AssignTarget::DynamicParentStaticProperty { property, span } => {
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                let target = AssignTarget::ParentStaticProperty {
+                    property,
+                    span: *span,
+                };
+                self.evaluate_null_coalesce_assignment(&target, expr, scope)
+            }
+            AssignTarget::DynamicLateStaticProperty { property, span } => {
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                let target = AssignTarget::LateStaticProperty {
+                    property,
+                    span: *span,
+                };
+                self.evaluate_null_coalesce_assignment(&target, expr, scope)
             }
         }
     }
@@ -51883,10 +51998,15 @@ impl Interpreter {
                     .ok_or_else(|| runtime_error(*variable_span, RuntimeError::undefined_variable(name)))
             }
             Expr::StaticProperty { .. }
+            | Expr::DynamicStaticProperty { .. }
             | Expr::ObjectStaticProperty { .. }
+            | Expr::DynamicObjectStaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
+            | Expr::DynamicSelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
-            | Expr::LateStaticProperty { .. } => {
+            | Expr::DynamicParentStaticProperty { .. }
+            | Expr::LateStaticProperty { .. }
+            | Expr::DynamicLateStaticProperty { .. } => {
                 let cell = self.static_property_reference_cell_from_expr(value, span, scope)?;
                 Ok(ReferenceReturnLocalBinding::Cell(cell))
             }
@@ -62587,10 +62707,15 @@ impl Interpreter {
         loop {
             match current {
                 Expr::StaticProperty { .. }
+                | Expr::DynamicStaticProperty { .. }
                 | Expr::ObjectStaticProperty { .. }
+                | Expr::DynamicObjectStaticProperty { .. }
                 | Expr::SelfStaticProperty { .. }
+                | Expr::DynamicSelfStaticProperty { .. }
                 | Expr::ParentStaticProperty { .. }
-                | Expr::LateStaticProperty { .. } => {
+                | Expr::DynamicParentStaticProperty { .. }
+                | Expr::LateStaticProperty { .. }
+                | Expr::DynamicLateStaticProperty { .. } => {
                     indices.reverse();
                     return Some((current, indices));
                 }

@@ -2900,10 +2900,15 @@ impl Parser {
                     | AssignTarget::ArrayIndex { index: Some(_), .. }
                     | AssignTarget::Property { .. }
                     | AssignTarget::ObjectStaticProperty { .. }
+                    | AssignTarget::DynamicObjectStaticProperty { .. }
                     | AssignTarget::StaticProperty { .. }
+                    | AssignTarget::DynamicStaticProperty { .. }
                     | AssignTarget::SelfStaticProperty { .. }
+                    | AssignTarget::DynamicSelfStaticProperty { .. }
                     | AssignTarget::ParentStaticProperty { .. }
+                    | AssignTarget::DynamicParentStaticProperty { .. }
                     | AssignTarget::LateStaticProperty { .. }
+                    | AssignTarget::DynamicLateStaticProperty { .. }
             ) {
                 self.current = saved;
                 return Ok(None);
@@ -3059,10 +3064,15 @@ impl Parser {
                     | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
                     | AssignTarget::Property { .. }
                     | AssignTarget::StaticProperty { .. }
+                    | AssignTarget::DynamicStaticProperty { .. }
                     | AssignTarget::SelfStaticProperty { .. }
+                    | AssignTarget::DynamicSelfStaticProperty { .. }
                     | AssignTarget::ParentStaticProperty { .. }
+                    | AssignTarget::DynamicParentStaticProperty { .. }
                     | AssignTarget::LateStaticProperty { .. }
-                    | AssignTarget::ObjectStaticProperty { .. } => {}
+                    | AssignTarget::DynamicLateStaticProperty { .. }
+                    | AssignTarget::ObjectStaticProperty { .. }
+                    | AssignTarget::DynamicObjectStaticProperty { .. } => {}
                     AssignTarget::NestedArrayAppend { .. }
                     | AssignTarget::StaticPropertyArrayAppend { .. }
                     | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
@@ -3323,10 +3333,17 @@ impl Parser {
                 Ok(ReferenceSource::Property { expr, span })
             }
             Expr::StaticProperty { .. }
+            | Expr::DynamicStaticProperty { .. }
             | Expr::ObjectStaticProperty { .. }
+            | Expr::DynamicObjectStaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
+            | Expr::DynamicSelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
-            | Expr::LateStaticProperty { .. } => Ok(ReferenceSource::StaticProperty { expr, span }),
+            | Expr::DynamicParentStaticProperty { .. }
+            | Expr::LateStaticProperty { .. }
+            | Expr::DynamicLateStaticProperty { .. } => {
+                Ok(ReferenceSource::StaticProperty { expr, span })
+            }
             Expr::Call { .. }
             | Expr::DynamicCall { .. }
             | Expr::MethodCall { .. }
@@ -3701,10 +3718,15 @@ impl Parser {
             | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::Property { .. }
             | AssignTarget::ObjectStaticProperty { .. }
+            | AssignTarget::DynamicObjectStaticProperty { .. }
             | AssignTarget::StaticProperty { .. }
+            | AssignTarget::DynamicStaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
+            | AssignTarget::DynamicSelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
-            | AssignTarget::LateStaticProperty { .. } => Ok(()),
+            | AssignTarget::DynamicParentStaticProperty { .. }
+            | AssignTarget::LateStaticProperty { .. }
+            | AssignTarget::DynamicLateStaticProperty { .. } => Ok(()),
             AssignTarget::List { .. }
             | AssignTarget::DynamicProperty { .. }
             | AssignTarget::NonDirectProperty { .. }
@@ -3736,10 +3758,15 @@ impl Parser {
             | AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::ObjectStaticProperty { .. }
+            | AssignTarget::DynamicObjectStaticProperty { .. }
             | AssignTarget::StaticProperty { .. }
+            | AssignTarget::DynamicStaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
+            | AssignTarget::DynamicSelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
-            | AssignTarget::LateStaticProperty { .. } => Ok(()),
+            | AssignTarget::DynamicParentStaticProperty { .. }
+            | AssignTarget::LateStaticProperty { .. }
+            | AssignTarget::DynamicLateStaticProperty { .. } => Ok(()),
             AssignTarget::NestedArrayAppend { suffix_indices, .. } if suffix_indices.is_empty() => {
                 Ok(())
             }
@@ -3824,15 +3851,22 @@ impl Parser {
             }
             Expr::AppendIndex { target, span } => match *target {
                 expr @ (Expr::StaticProperty { .. }
+                | Expr::DynamicStaticProperty { .. }
                 | Expr::ObjectStaticProperty { .. }
+                | Expr::DynamicObjectStaticProperty { .. }
                 | Expr::SelfStaticProperty { .. }
+                | Expr::DynamicSelfStaticProperty { .. }
                 | Expr::ParentStaticProperty { .. }
-                | Expr::LateStaticProperty { .. }) => Ok(AssignTarget::StaticPropertyArrayAppend {
-                    expr,
-                    indices: Vec::new(),
-                    suffix_indices: Vec::new(),
-                    span,
-                }),
+                | Expr::DynamicParentStaticProperty { .. }
+                | Expr::LateStaticProperty { .. }
+                | Expr::DynamicLateStaticProperty { .. }) => {
+                    Ok(AssignTarget::StaticPropertyArrayAppend {
+                        expr,
+                        indices: Vec::new(),
+                        suffix_indices: Vec::new(),
+                        span,
+                    })
+                }
                 Expr::Variable(name, _) => Ok(AssignTarget::ArrayIndex {
                     name,
                     index: None,
@@ -3881,6 +3915,15 @@ impl Parser {
                 property,
                 span,
             }),
+            Expr::DynamicObjectStaticProperty {
+                target,
+                property,
+                span,
+            } => Ok(AssignTarget::DynamicObjectStaticProperty {
+                target: *target,
+                property: *property,
+                span,
+            }),
             Expr::StaticProperty {
                 class_name,
                 property,
@@ -3890,14 +3933,41 @@ impl Parser {
                 property,
                 span,
             }),
+            Expr::DynamicStaticProperty {
+                class_name,
+                property,
+                span,
+            } => Ok(AssignTarget::DynamicStaticProperty {
+                class_name,
+                property: *property,
+                span,
+            }),
             Expr::SelfStaticProperty { property, span } => {
                 Ok(AssignTarget::SelfStaticProperty { property, span })
+            }
+            Expr::DynamicSelfStaticProperty { property, span } => {
+                Ok(AssignTarget::DynamicSelfStaticProperty {
+                    property: *property,
+                    span,
+                })
             }
             Expr::ParentStaticProperty { property, span } => {
                 Ok(AssignTarget::ParentStaticProperty { property, span })
             }
+            Expr::DynamicParentStaticProperty { property, span } => {
+                Ok(AssignTarget::DynamicParentStaticProperty {
+                    property: *property,
+                    span,
+                })
+            }
             Expr::LateStaticProperty { property, span } => {
                 Ok(AssignTarget::LateStaticProperty { property, span })
+            }
+            Expr::DynamicLateStaticProperty { property, span } => {
+                Ok(AssignTarget::DynamicLateStaticProperty {
+                    property: *property,
+                    span,
+                })
             }
             _ => Err(unsupported_increment_decrement_target_message()),
         }
@@ -4034,6 +4104,15 @@ impl Parser {
                 property,
                 span,
             }),
+            Expr::DynamicObjectStaticProperty {
+                target,
+                property,
+                span,
+            } => Ok(AssignTarget::DynamicObjectStaticProperty {
+                target: *target,
+                property: *property,
+                span,
+            }),
             Expr::StaticProperty {
                 class_name,
                 property,
@@ -4043,14 +4122,41 @@ impl Parser {
                 property,
                 span,
             }),
+            Expr::DynamicStaticProperty {
+                class_name,
+                property,
+                span,
+            } => Ok(AssignTarget::DynamicStaticProperty {
+                class_name,
+                property: *property,
+                span,
+            }),
             Expr::SelfStaticProperty { property, span } => {
                 Ok(AssignTarget::SelfStaticProperty { property, span })
+            }
+            Expr::DynamicSelfStaticProperty { property, span } => {
+                Ok(AssignTarget::DynamicSelfStaticProperty {
+                    property: *property,
+                    span,
+                })
             }
             Expr::ParentStaticProperty { property, span } => {
                 Ok(AssignTarget::ParentStaticProperty { property, span })
             }
+            Expr::DynamicParentStaticProperty { property, span } => {
+                Ok(AssignTarget::DynamicParentStaticProperty {
+                    property: *property,
+                    span,
+                })
+            }
             Expr::LateStaticProperty { property, span } => {
                 Ok(AssignTarget::LateStaticProperty { property, span })
+            }
+            Expr::DynamicLateStaticProperty { property, span } => {
+                Ok(AssignTarget::DynamicLateStaticProperty {
+                    property: *property,
+                    span,
+                })
             }
             _ => Err(unsupported_compound_assignment_target_message()),
         }
@@ -4198,10 +4304,15 @@ impl Parser {
                 if matches!(
                     target.as_ref(),
                     Expr::StaticProperty { .. }
+                        | Expr::DynamicStaticProperty { .. }
                         | Expr::ObjectStaticProperty { .. }
+                        | Expr::DynamicObjectStaticProperty { .. }
                         | Expr::SelfStaticProperty { .. }
+                        | Expr::DynamicSelfStaticProperty { .. }
                         | Expr::ParentStaticProperty { .. }
+                        | Expr::DynamicParentStaticProperty { .. }
                         | Expr::LateStaticProperty { .. }
+                        | Expr::DynamicLateStaticProperty { .. }
                 ) {
                     return Ok(AssignTarget::StaticPropertyArrayAppend {
                         expr: *target,
@@ -4316,6 +4427,15 @@ impl Parser {
                 property,
                 span,
             }),
+            Expr::DynamicObjectStaticProperty {
+                target,
+                property,
+                span,
+            } => Ok(AssignTarget::DynamicObjectStaticProperty {
+                target: *target,
+                property: *property,
+                span,
+            }),
             Expr::StaticProperty {
                 class_name,
                 property,
@@ -4325,14 +4445,41 @@ impl Parser {
                 property,
                 span,
             }),
+            Expr::DynamicStaticProperty {
+                class_name,
+                property,
+                span,
+            } => Ok(AssignTarget::DynamicStaticProperty {
+                class_name,
+                property: *property,
+                span,
+            }),
             Expr::SelfStaticProperty { property, span } => {
                 Ok(AssignTarget::SelfStaticProperty { property, span })
+            }
+            Expr::DynamicSelfStaticProperty { property, span } => {
+                Ok(AssignTarget::DynamicSelfStaticProperty {
+                    property: *property,
+                    span,
+                })
             }
             Expr::ParentStaticProperty { property, span } => {
                 Ok(AssignTarget::ParentStaticProperty { property, span })
             }
+            Expr::DynamicParentStaticProperty { property, span } => {
+                Ok(AssignTarget::DynamicParentStaticProperty {
+                    property: *property,
+                    span,
+                })
+            }
             Expr::LateStaticProperty { property, span } => {
                 Ok(AssignTarget::LateStaticProperty { property, span })
+            }
+            Expr::DynamicLateStaticProperty { property, span } => {
+                Ok(AssignTarget::DynamicLateStaticProperty {
+                    property: *property,
+                    span,
+                })
             }
             Expr::Array { .. } => Err(unsupported_array_destructuring_assignment_message()),
             _ => Err(unsupported_assignment_expression_target_message()),
@@ -4386,10 +4533,15 @@ impl Parser {
                 span,
             } => match target.as_ref() {
                 Expr::StaticProperty { .. }
+                | Expr::DynamicStaticProperty { .. }
                 | Expr::ObjectStaticProperty { .. }
+                | Expr::DynamicObjectStaticProperty { .. }
                 | Expr::SelfStaticProperty { .. }
+                | Expr::DynamicSelfStaticProperty { .. }
                 | Expr::ParentStaticProperty { .. }
-                | Expr::LateStaticProperty { .. } => {
+                | Expr::DynamicParentStaticProperty { .. }
+                | Expr::LateStaticProperty { .. }
+                | Expr::DynamicLateStaticProperty { .. } => {
                     Some(((**target).clone(), vec![(**index).clone()], *span))
                 }
                 Expr::Index { .. } => {
@@ -5651,6 +5803,17 @@ impl Parser {
                         };
                         continue;
                     }
+                    TokenKind::LBrace | TokenKind::Dollar => {
+                        let property =
+                            self.parse_computed_static_property_name_expr(operator_span)?;
+                        let span = expr.span();
+                        expr = Expr::DynamicObjectStaticProperty {
+                            target: Box::new(expr),
+                            property: Box::new(property),
+                            span,
+                        };
+                        continue;
+                    }
                     _ => {
                         return Err(self.error_at(
                             operator_span,
@@ -5701,6 +5864,10 @@ impl Parser {
                 span: token.span,
             }),
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
+            TokenKind::Dollar => Err(self.error_at(
+                token.span,
+                "unsupported variable variable: variable variables are not implemented",
+            )),
             TokenKind::LBracket => {
                 self.parse_array_literal(token.span, ArrayLiteralDelimiter::Short)
             }
@@ -6060,6 +6227,13 @@ impl Parser {
                         span: operator_span,
                     })
                 }
+                TokenKind::LBrace | TokenKind::Dollar => {
+                    let property = self.parse_computed_static_property_name_expr(operator_span)?;
+                    Ok(Expr::DynamicParentStaticProperty {
+                        property: Box::new(property),
+                        span: operator_span,
+                    })
+                }
                 TokenKind::Identifier(name) if name.eq_ignore_ascii_case("class") => {
                     self.advance();
                     Ok(Expr::ParentClassNameConstant {
@@ -6107,6 +6281,13 @@ impl Parser {
                     self.advance();
                     Ok(Expr::SelfStaticProperty {
                         property,
+                        span: operator_span,
+                    })
+                }
+                TokenKind::LBrace | TokenKind::Dollar => {
+                    let property = self.parse_computed_static_property_name_expr(operator_span)?;
+                    Ok(Expr::DynamicSelfStaticProperty {
+                        property: Box::new(property),
                         span: operator_span,
                     })
                 }
@@ -6160,6 +6341,13 @@ impl Parser {
                         span: operator_span,
                     })
                 }
+                TokenKind::LBrace | TokenKind::Dollar => {
+                    let property = self.parse_computed_static_property_name_expr(operator_span)?;
+                    Ok(Expr::DynamicLateStaticProperty {
+                        property: Box::new(property),
+                        span: operator_span,
+                    })
+                }
                 TokenKind::Identifier(name) if name.eq_ignore_ascii_case("class") => {
                     self.advance();
                     Ok(Expr::StaticClassNameConstant {
@@ -6209,6 +6397,16 @@ impl Parser {
                         .expect("named static receiver should exist")
                         .to_string(),
                     property,
+                    span: operator_span,
+                })
+            }
+            TokenKind::LBrace | TokenKind::Dollar => {
+                let property = self.parse_computed_static_property_name_expr(operator_span)?;
+                Ok(Expr::DynamicStaticProperty {
+                    class_name: receiver
+                        .expect("named static receiver should exist")
+                        .to_string(),
+                    property: Box::new(property),
                     span: operator_span,
                 })
             }
@@ -6535,10 +6733,15 @@ impl Parser {
             | Expr::ParentClassConstant { .. }
             | Expr::LateStaticClassConstant { .. }
             | Expr::StaticProperty { .. }
+            | Expr::DynamicStaticProperty { .. }
             | Expr::ObjectStaticProperty { .. }
+            | Expr::DynamicObjectStaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
+            | Expr::DynamicSelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
+            | Expr::DynamicParentStaticProperty { .. }
             | Expr::LateStaticProperty { .. }
+            | Expr::DynamicLateStaticProperty { .. }
             | Expr::Index { .. }
             | Expr::AppendIndex { .. }
             | Expr::Property { .. }
@@ -6622,10 +6825,15 @@ impl Parser {
             | Expr::ParentClassConstant { .. }
             | Expr::LateStaticClassConstant { .. }
             | Expr::StaticProperty { .. }
+            | Expr::DynamicStaticProperty { .. }
             | Expr::ObjectStaticProperty { .. }
+            | Expr::DynamicObjectStaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
+            | Expr::DynamicSelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
+            | Expr::DynamicParentStaticProperty { .. }
             | Expr::LateStaticProperty { .. }
+            | Expr::DynamicLateStaticProperty { .. }
             | Expr::Index { .. }
             | Expr::AppendIndex { .. }
             | Expr::Property { .. }
@@ -6753,7 +6961,8 @@ impl Parser {
             } => Self::expr_contains_assignment(target) || Self::expr_contains_assignment(property),
             Expr::ObjectStaticProperty { target, .. }
             | Expr::ObjectStaticClassConstant { target, .. }
-            | Expr::ObjectClassNameConstant { target, .. } => {
+            | Expr::ObjectClassNameConstant { target, .. }
+            | Expr::DynamicObjectStaticProperty { target, .. } => {
                 Self::expr_contains_assignment(target)
             }
             Expr::MethodCall { target, args, .. } => {
@@ -6844,9 +7053,13 @@ impl Parser {
             | Expr::ParentClassConstant { .. }
             | Expr::LateStaticClassConstant { .. }
             | Expr::StaticProperty { .. }
+            | Expr::DynamicStaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
+            | Expr::DynamicSelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
+            | Expr::DynamicParentStaticProperty { .. }
             | Expr::LateStaticProperty { .. }
+            | Expr::DynamicLateStaticProperty { .. }
             | Expr::IncrementDecrement { .. } => false,
         }
     }
@@ -6914,7 +7127,8 @@ impl Parser {
                         .any(Self::expr_contains_unsupported_assignment_rhs)
             }
             Expr::ObjectStaticProperty { target, .. }
-            | Expr::ObjectStaticClassConstant { target, .. } => {
+            | Expr::ObjectStaticClassConstant { target, .. }
+            | Expr::DynamicObjectStaticProperty { target, .. } => {
                 Self::expr_contains_unsupported_assignment_rhs(target)
             }
             Expr::ObjectClassNameConstant { target, .. } => {
@@ -6995,9 +7209,13 @@ impl Parser {
             | Expr::ParentClassConstant { .. }
             | Expr::LateStaticClassConstant { .. }
             | Expr::StaticProperty { .. }
+            | Expr::DynamicStaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
+            | Expr::DynamicSelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
+            | Expr::DynamicParentStaticProperty { .. }
             | Expr::LateStaticProperty { .. }
+            | Expr::DynamicLateStaticProperty { .. }
             | Expr::IncrementDecrement { .. } => false,
         }
     }
@@ -7027,7 +7245,10 @@ impl Parser {
             Expr::ObjectStaticMethodCall { target, .. } => Self::find_append_index_span(target),
             Expr::ObjectStaticProperty { target, .. }
             | Expr::ObjectStaticClassConstant { target, .. }
-            | Expr::ObjectClassNameConstant { target, .. } => Self::find_append_index_span(target),
+            | Expr::ObjectClassNameConstant { target, .. }
+            | Expr::DynamicObjectStaticProperty { target, .. } => {
+                Self::find_append_index_span(target)
+            }
             Expr::SelfMethodCall { .. } => None,
             Expr::LateStaticMethodCall { .. } => None,
             Expr::Call { .. } | Expr::New { .. } => None,
@@ -7088,9 +7309,13 @@ impl Parser {
             | Expr::ParentClassConstant { .. }
             | Expr::LateStaticClassConstant { .. }
             | Expr::StaticProperty { .. }
+            | Expr::DynamicStaticProperty { .. }
             | Expr::SelfStaticProperty { .. }
+            | Expr::DynamicSelfStaticProperty { .. }
             | Expr::ParentStaticProperty { .. }
+            | Expr::DynamicParentStaticProperty { .. }
             | Expr::LateStaticProperty { .. }
+            | Expr::DynamicLateStaticProperty { .. }
             | Expr::IncrementDecrement { .. } => None,
         }
     }
@@ -7124,7 +7349,26 @@ impl Parser {
         match token.kind {
             TokenKind::Variable(name) => Ok(Expr::Variable(name, token.span)),
             TokenKind::LBrace => {
-                let expr = self.parse_expression()?;
+                let expr = if self.check(|kind| matches!(kind, TokenKind::Dollar)) {
+                    let dollar = self.advance().clone();
+                    match self.advance().clone() {
+                        Token {
+                            kind: TokenKind::Variable(name),
+                            span,
+                        } => Expr::Variable(name, span),
+                        token => {
+                            return Err(self.error_at(
+                                dollar.span,
+                                format!(
+                                    "unsupported variable variable: expected variable after '$', found {}",
+                                    token_name(&token.kind)
+                                ),
+                            ));
+                        }
+                    }
+                } else {
+                    self.parse_expression()?
+                };
                 self.consume_keyword(
                     TokenKind::RBrace,
                     "expected '}' after dynamic property expression",
@@ -7132,6 +7376,45 @@ impl Parser {
                 Ok(expr)
             }
             _ => unreachable!("caller checked dynamic property variable"),
+        }
+    }
+
+    fn parse_computed_static_property_name_expr(
+        &mut self,
+        operator_span: Span,
+    ) -> CompileResult<Expr> {
+        if self.match_token(|kind| matches!(kind, TokenKind::Dollar)) {
+            self.consume_keyword(
+                TokenKind::LBrace,
+                "expected '{' after '$' in computed static property name",
+            )?;
+            let expr = if self.check(|kind| matches!(kind, TokenKind::Dollar)) {
+                let dollar = self.advance().clone();
+                match self.advance().clone() {
+                    Token {
+                        kind: TokenKind::Variable(name),
+                        span,
+                    } => Expr::Variable(name, span),
+                    token => {
+                        return Err(self.error_at(
+                            dollar.span,
+                            format!(
+                                "unsupported variable variable: expected variable after '$', found {}",
+                                token_name(&token.kind)
+                            ),
+                        ));
+                    }
+                }
+            } else {
+                self.parse_expression()?
+            };
+            self.consume_keyword(
+                TokenKind::RBrace,
+                "expected '}' after computed static property name",
+            )?;
+            Ok(expr)
+        } else {
+            self.parse_dynamic_property_name_expr(operator_span)
         }
     }
 
@@ -7611,6 +7894,7 @@ fn same_variant(left: &TokenKind, right: &TokenKind) -> bool {
 fn token_name(kind: &TokenKind) -> &'static str {
     match kind {
         TokenKind::Eof => "end of file",
+        TokenKind::Dollar => "$",
         TokenKind::Variable(_) => "variable",
         TokenKind::Identifier(_) => "identifier",
         TokenKind::Int(_) => "integer literal",
