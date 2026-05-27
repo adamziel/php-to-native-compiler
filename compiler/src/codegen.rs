@@ -24083,6 +24083,7 @@ impl CGenerator {
                 if self.uses_native_callable_helpers {
                     output.push_str("extern phpc_NativeValueHandle phpc_native_output_buffer_operation_with_callable_table_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle first, phpc_NativeValueHandle second, phpc_NativeValueHandle third, uint8_t argc, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 }
+                output.push_str("extern size_t phpc_native_output_buffer_unwind_stack_with_diagnostic(phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_spl_autoload_registry_helpers {
                 output.push_str("extern phpc_NativeSplAutoloadRegistryHandle phpc_native_spl_autoload_registry_new(void);\n");
@@ -24472,6 +24473,11 @@ impl CGenerator {
             output.push_str(
                 "  phpc_user_destructor_finalizers = (phpc_NativeRequestDestructorFinalizersHandle){0};\n",
             );
+        }
+        if self.uses_native_output_buffer_operation {
+            output.push_str("  ");
+            output.push_str(&self.native_output_buffer_unwind_cleanup_sequence());
+            output.push('\n');
         }
         if self.native_request_state_owned {
             if let Some(handle) = &self.native_request_state_handle {
@@ -62030,9 +62036,21 @@ impl CGenerator {
         self.native_error_exit_with_code(local_cleanup, "1")
     }
 
+    fn native_output_buffer_unwind_cleanup_sequence(&self) -> String {
+        if !self.uses_native_output_buffer_operation
+            || self.function_return_status.is_some()
+            || self.function_return_mode == CFunctionReturnMode::IncludeUnit
+        {
+            return String::new();
+        }
+
+        "{ phpc_NativeDiagnosticHandle phpc_output_buffer_unwind_diagnostic = {0}; phpc_native_output_buffer_unwind_stack_with_diagnostic(&phpc_output_buffer_unwind_diagnostic); if (phpc_output_buffer_unwind_diagnostic.ptr != NULL) { phpc_native_diagnostic_report(phpc_output_buffer_unwind_diagnostic); phpc_output_buffer_unwind_diagnostic.ptr = NULL; } }".to_string()
+    }
+
     fn native_scope_cleanup_sequence(&self, local_cleanup: &str) -> String {
         let mut cleanup = String::new();
         cleanup.push_str(local_cleanup);
+        cleanup.push_str(&self.native_output_buffer_unwind_cleanup_sequence());
         for handle in self.native_value_cleanup_handles.iter().rev() {
             cleanup.push_str(&format!(" phpc_native_value_free({handle});"));
         }

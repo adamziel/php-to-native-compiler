@@ -17363,19 +17363,14 @@ unsafe fn native_exit_value_result(handle: NativeValueHandle) -> NativeExitResul
             ),
         },
         Value::String(value) => {
-            let mut stdout = io::stdout();
-            match stdout
-                .write_all(value.as_bytes())
-                .and_then(|()| stdout.flush())
-            {
-                Ok(()) => NativeExitResult::ok(0),
+            match native_output_write_bytes(value.as_bytes()) {
+                Ok(_) => NativeExitResult::ok(0),
                 Err(_) => NativeExitResult::diagnostic("native exit failed: stdout write failed"),
             }
         }
         Value::BinaryString(value) => {
-            let mut stdout = io::stdout();
-            match stdout.write_all(value).and_then(|()| stdout.flush()) {
-                Ok(()) => NativeExitResult::ok(0),
+            match native_output_write_bytes(value) {
+                Ok(_) => NativeExitResult::ok(0),
                 Err(_) => NativeExitResult::diagnostic("native exit failed: stdout write failed"),
             }
         }
@@ -23997,12 +23992,12 @@ unsafe fn native_output_buffer_handler_result_bytes(
     handled
 }
 
-fn native_output_buffer_flush_bytes(
+fn native_output_buffer_flush_bytes_to_target(
     bytes: &[u8],
     handler: Option<&NativeCallableValueDispatch>,
     phase: i64,
     operation: NativeOutputBufferOperation,
-    skip_active: bool,
+    target: Option<usize>,
 ) -> RuntimeResult<usize> {
     let output = if let Some(handler) = handler {
         let handled =
@@ -24011,16 +24006,13 @@ fn native_output_buffer_flush_bytes(
     } else {
         bytes.to_vec()
     };
-    if skip_active {
-        native_output_flush_active_bytes(&output)
-    } else {
-        native_output_write_bytes(&output)
-    }
+    native_output_write_bytes_to_buffer_index(&output, target)
 }
 
 fn native_output_buffer_flush_active() -> RuntimeResult<Value> {
     NATIVE_OUTPUT_BUFFERS.with(|buffers| {
         let mut buffers = buffers.borrow_mut();
+        let target = buffers.len().checked_sub(2);
         let Some(buffer) = buffers.last_mut() else {
             return Ok(Value::Bool(false));
         };
@@ -24032,12 +24024,12 @@ fn native_output_buffer_flush_active() -> RuntimeResult<Value> {
         );
         buffer.handler_status.mark_processed();
         drop(buffers);
-        native_output_buffer_flush_bytes(
+        native_output_buffer_flush_bytes_to_target(
             &bytes,
             handler.as_ref(),
             phase,
             NativeOutputBufferOperation::Flush,
-            true,
+            target,
         )
         .map(|_| Value::Bool(true))
     })
@@ -24093,8 +24085,13 @@ fn native_output_buffer_status_value(level: usize, buffer: &NativeOutputBuffer) 
 
 fn native_output_buffer_pop_value(flush: bool) -> RuntimeResult<Value> {
     NATIVE_OUTPUT_BUFFERS.with(|buffers| {
-        let Some(buffer) = buffers.borrow_mut().pop() else {
-            return Ok(Value::Bool(false));
+        let (buffer, target) = {
+            let mut buffers = buffers.borrow_mut();
+            let target = buffers.len().checked_sub(2);
+            let Some(buffer) = buffers.pop() else {
+                return Ok(Value::Bool(false));
+            };
+            (buffer, target)
         };
         let bytes = buffer.bytes;
         if flush {
@@ -24102,12 +24099,12 @@ fn native_output_buffer_pop_value(flush: bool) -> RuntimeResult<Value> {
                 buffer.handler_status.started(),
                 NATIVE_OUTPUT_HANDLER_FINAL,
             );
-            native_output_buffer_flush_bytes(
+            native_output_buffer_flush_bytes_to_target(
                 &bytes,
                 buffer.handler.as_ref(),
                 phase,
                 NativeOutputBufferOperation::GetFlush,
-                false,
+                target,
             )?;
         }
         value_from_output_buffer_bytes(
@@ -24123,32 +24120,60 @@ fn native_output_buffer_pop_value(flush: bool) -> RuntimeResult<Value> {
 
 fn native_output_buffer_pop_bool(flush: bool) -> RuntimeResult<Value> {
     NATIVE_OUTPUT_BUFFERS.with(|buffers| {
-        let Some(buffer) = buffers.borrow_mut().pop() else {
-            return Ok(Value::Bool(false));
+        let (buffer, target) = {
+            let mut buffers = buffers.borrow_mut();
+            let target = buffers.len().checked_sub(2);
+            let Some(buffer) = buffers.pop() else {
+                return Ok(Value::Bool(false));
+            };
+            (buffer, target)
         };
         if flush {
             let phase = native_output_buffer_handler_phase(
                 buffer.handler_status.started(),
                 NATIVE_OUTPUT_HANDLER_FINAL,
             );
-            native_output_buffer_flush_bytes(
+            native_output_buffer_flush_bytes_to_target(
                 &buffer.bytes,
                 buffer.handler.as_ref(),
                 phase,
                 NativeOutputBufferOperation::EndFlush,
-                false,
+                target,
             )?;
         }
         Ok(Value::Bool(true))
     })
 }
 
-fn native_output_write_bytes(bytes: &[u8]) -> RuntimeResult<usize> {
-    native_output_write_bytes_to_buffer(bytes, false)
+fn native_output_buffer_unwind_stack() -> RuntimeResult<usize> {
+    let mut written = 0;
+    loop {
+        let next = NATIVE_OUTPUT_BUFFERS.with(|buffers| {
+            let mut buffers = buffers.borrow_mut();
+            let target = buffers.len().checked_sub(2);
+            let buffer = buffers.pop()?;
+            let phase = native_output_buffer_handler_phase(
+                buffer.handler_status.started(),
+                NATIVE_OUTPUT_HANDLER_FINAL,
+            );
+            Some((buffer.bytes, buffer.handler, phase, target))
+        });
+        let Some((bytes, handler, phase, target)) = next else {
+            break;
+        };
+        written += native_output_buffer_flush_bytes_to_target(
+            &bytes,
+            handler.as_ref(),
+            phase,
+            NativeOutputBufferOperation::EndFlush,
+            target,
+        )?;
+    }
+    Ok(written)
 }
 
-fn native_output_flush_active_bytes(bytes: &[u8]) -> RuntimeResult<usize> {
-    native_output_write_bytes_to_buffer(bytes, true)
+fn native_output_write_bytes(bytes: &[u8]) -> RuntimeResult<usize> {
+    native_output_write_bytes_to_buffer(bytes, false)
 }
 
 fn native_output_write_bytes_to_buffer(bytes: &[u8], skip_active: bool) -> RuntimeResult<usize> {
@@ -24447,6 +24472,26 @@ pub unsafe extern "C" fn phpc_native_output_buffer_operation_with_callable_table
         Err(error) => {
             unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
             NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `diagnostic` may be null; when non-null, it must point to writable storage
+/// for one `NativeDiagnosticHandle`. On handler invocation or output-write
+/// failure the helper stores a diagnostic handle that the caller owns and must
+/// release with `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_output_buffer_unwind_stack_with_diagnostic(
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> usize {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    match native_output_buffer_unwind_stack() {
+        Ok(written) => written,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            0
         }
     }
 }
@@ -41426,6 +41471,7 @@ mod tests {
         static SPL_AUTOLOAD_EVENTS_FOR_TEST: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
         static SPL_AUTOLOAD_REENTRANT_REGISTRY_FOR_TEST: RefCell<NativeSplAutoloadRegistryHandle> =
             const { RefCell::new(NativeSplAutoloadRegistryHandle::null()) };
+        static OUTPUT_BUFFER_EVENTS_FOR_TEST: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     }
 
     fn spl_autoload_events_for_test() -> Vec<String> {
@@ -41437,6 +41483,18 @@ mod tests {
         SPL_AUTOLOAD_REENTRANT_REGISTRY_FOR_TEST.with(|registry| {
             *registry.borrow_mut() = NativeSplAutoloadRegistryHandle::null();
         });
+    }
+
+    fn output_buffer_events_for_test() -> Vec<String> {
+        OUTPUT_BUFFER_EVENTS_FOR_TEST.with(|events| events.borrow().clone())
+    }
+
+    fn output_buffer_events_reset_for_test() {
+        OUTPUT_BUFFER_EVENTS_FOR_TEST.with(|events| events.borrow_mut().clear());
+    }
+
+    fn output_buffer_record_event_for_test(event: String) {
+        OUTPUT_BUFFER_EVENTS_FOR_TEST.with(|events| events.borrow_mut().push(event));
     }
 
     fn spl_autoload_record_event_for_test(label: &str, class_name: &[u8]) {
@@ -48877,6 +48935,148 @@ mod tests {
             unsafe { phpc_native_value_free(handle) };
         }
         unsafe { phpc_native_callable_table_free(table) };
+        native_clear_output_buffers();
+    }
+
+    #[test]
+    fn native_output_buffer_shutdown_unwind_drains_nested_handlers_in_final_order() {
+        unsafe extern "C" fn shutdown_phase_handler(
+            frame: NativeCallFrameHandle,
+        ) -> NativeCallResultHandle {
+            let buffer = unsafe { phpc_native_call_frame_read_value(frame, 0) };
+            let phase_handle = unsafe { phpc_native_call_frame_read_value(frame, 1) };
+            let bytes = unsafe { native_value_to_string_bytes(buffer) }
+                .expect("test handler should receive string-compatible buffer bytes");
+            let phase = match unsafe { phase_handle.as_ref() } {
+                Some(Value::Int(phase)) => *phase,
+                other => panic!("test handler should receive int phase, got {other:?}"),
+            };
+            unsafe { phpc_native_value_free(buffer) };
+            unsafe { phpc_native_value_free(phase_handle) };
+
+            let text = String::from_utf8_lossy(&bytes);
+            output_buffer_record_event_for_test(format!("{phase}:{text}"));
+            phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::String(
+                format!("<{phase}:{text}>"),
+            )))
+        }
+
+        fn call(
+            table: NativeCallableTableHandle,
+            operation: NativeOutputBufferOperation,
+            args: &[NativeValueHandle],
+            diagnostic: &mut NativeDiagnosticHandle,
+        ) -> NativeValueHandle {
+            let mut handles = [
+                NativeValueHandle::null(),
+                NativeValueHandle::null(),
+                NativeValueHandle::null(),
+            ];
+            for (index, arg) in args.iter().enumerate() {
+                handles[index] = *arg;
+            }
+            unsafe {
+                phpc_native_output_buffer_operation_with_callable_table_diagnostic(
+                    table,
+                    handles[0],
+                    handles[1],
+                    handles[2],
+                    args.len() as u8,
+                    operation as u8,
+                    diagnostic,
+                )
+            }
+        }
+
+        native_clear_output_buffers();
+        output_buffer_events_reset_for_test();
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "shutdown_phase_handler",
+                NativeCallableVisibility::Public,
+                shutdown_phase_handler,
+            );
+        }
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let handler =
+            NativeValueHandle::from_value(Value::String("shutdown_phase_handler".to_string()));
+        let outer = call(
+            table,
+            NativeOutputBufferOperation::Start,
+            &[handler],
+            &mut diagnostic,
+        );
+        assert_eq!(unsafe { outer.as_ref() }, Some(&Value::Bool(true)));
+        assert!(diagnostic.is_null());
+        let outer_byte = NativeValueHandle::from_value(Value::String("O".to_string()));
+        assert_eq!(
+            unsafe {
+                phpc_native_value_format_stdout_with_diagnostic(outer_byte, 0, &mut diagnostic)
+            },
+            1
+        );
+        assert!(diagnostic.is_null());
+
+        let inner_handler =
+            NativeValueHandle::from_value(Value::String("shutdown_phase_handler".to_string()));
+        let inner = call(
+            table,
+            NativeOutputBufferOperation::Start,
+            &[inner_handler],
+            &mut diagnostic,
+        );
+        assert_eq!(unsafe { inner.as_ref() }, Some(&Value::Bool(true)));
+        let inner_byte = NativeValueHandle::from_value(Value::String("I".to_string()));
+        assert_eq!(
+            unsafe {
+                phpc_native_value_format_stdout_with_diagnostic(inner_byte, 0, &mut diagnostic)
+            },
+            1
+        );
+        assert!(diagnostic.is_null());
+
+        let written =
+            unsafe { phpc_native_output_buffer_unwind_stack_with_diagnostic(&mut diagnostic) };
+        assert!(written > 0);
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            output_buffer_events_for_test(),
+            vec!["9:I".to_string(), "9:O<9:I>".to_string()]
+        );
+        NATIVE_OUTPUT_BUFFERS.with(|buffers| assert!(buffers.borrow().is_empty()));
+
+        for handle in [handler, outer, outer_byte, inner_handler, inner, inner_byte] {
+            unsafe { phpc_native_value_free(handle) };
+        }
+        unsafe { phpc_native_callable_table_free(table) };
+        native_clear_output_buffers();
+        output_buffer_events_reset_for_test();
+    }
+
+    #[test]
+    fn native_exit_string_writes_through_active_output_buffer() {
+        native_clear_output_buffers();
+        NATIVE_OUTPUT_BUFFERS.with(|buffers| {
+            buffers.borrow_mut().push(NativeOutputBuffer::default());
+        });
+        let result = unsafe {
+            phpc_native_exit_value_result_and_free(NativeValueHandle::from_value(Value::String(
+                "bye".to_string(),
+            )))
+        };
+        assert_eq!(result.status, NativeExitResultStatus::Ok);
+        assert_eq!(result.exit_code, 0);
+        NATIVE_OUTPUT_BUFFERS.with(|buffers| {
+            let buffers = buffers.borrow();
+            assert_eq!(
+                buffers.last().map(|buffer| buffer.bytes.as_slice()),
+                Some(&b"bye"[..])
+            );
+        });
         native_clear_output_buffers();
     }
 

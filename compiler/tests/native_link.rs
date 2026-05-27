@@ -226,6 +226,24 @@ const NATIVE_OUTPUT_BUFFER_STATUS_FLAGS_SOURCE: &str = concat!(
     "echo $ok === \"1\" ? \"status-flags-ok\\n\" : \"status-flags-fail\\n\";\n",
 );
 
+const NATIVE_OUTPUT_BUFFER_SHUTDOWN_UNWIND_SOURCE: &str = concat!(
+    "<?php\n",
+    "function shutdown_phase_handler($buffer, $phase) {\n",
+    "    return \"[\" . $phase . \":\" . strlen($buffer) . \":\" . $buffer . \"]\";\n",
+    "}\n",
+    "ob_start(\"shutdown_phase_handler\");\n",
+    "echo \"O\";\n",
+    "ob_start(\"shutdown_phase_handler\");\n",
+    "echo \"I\";\n",
+);
+
+const NATIVE_OUTPUT_BUFFER_EXIT_UNWIND_SOURCE: &str = concat!(
+    "<?php\n",
+    "ob_start();\n",
+    "echo \"A\";\n",
+    "exit(\"B\");\n",
+);
+
 const NATIVE_DIAGNOSTIC_RESULT_DISCARDED_EXPR_SOURCE: &str = concat!(
     "<?php\n",
     "1;\n",
@@ -2603,6 +2621,65 @@ fn emit_exe_links_and_runs_native_output_buffer_status_flag_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"status-flags-ok\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_output_buffer_shutdown_unwind_programs() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "native_output_buffer_shutdown_unwind",
+        NATIVE_OUTPUT_BUFFER_SHUTDOWN_UNWIND_SOURCE,
+    );
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native output-buffer shutdown executable: {error}")
+    });
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let stdout = String::from_utf8(run.stdout).expect("shutdown stdout should be UTF-8");
+    assert_eq!(stdout.matches("[9:").count(), 2, "{stdout}");
+    assert!(stdout.starts_with("[9:"), "{stdout}");
+    assert!(
+        stdout.contains("O[9:1:I]"),
+        "outer final handler should receive inner final handler output:\n{stdout}"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "native_output_buffer_exit_unwind",
+        NATIVE_OUTPUT_BUFFER_EXIT_UNWIND_SOURCE,
+    );
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native output-buffer exit executable: {error}")
+    });
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout.len(), 2, "stdout bytes: {:?}", run.stdout);
+    assert_eq!(
+        run.stdout[0], b'A',
+        "buffered body output should flush first"
+    );
+    assert_eq!(
+        run.stdout[1], b'B',
+        "exit string should write through the active buffer"
+    );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -5667,6 +5744,46 @@ fn native_executable_c_source_keeps_output_buffer_status_flags_in_runtime_stack(
             "generated C should not snapshot output-buffer status flag values:\n{source}"
         );
     }
+}
+
+#[test]
+fn native_executable_c_source_unwinds_output_buffers_at_shutdown_boundaries() {
+    let program = parse(NATIVE_OUTPUT_BUFFER_SHUTDOWN_UNWIND_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("extern size_t phpc_native_output_buffer_unwind_stack_with_diagnostic"),
+        "{source}"
+    );
+    let unwind_pos = body
+        .rfind("phpc_native_output_buffer_unwind_stack_with_diagnostic")
+        .unwrap_or_else(|| panic!("main should unwind output buffers before returning:\n{source}"));
+    let return_pos = body
+        .rfind("return 0;")
+        .unwrap_or_else(|| panic!("main should return normally:\n{source}"));
+    assert!(
+        unwind_pos < return_pos,
+        "output-buffer unwind must run before normal main return:\n{source}"
+    );
+    assert!(
+        !source.contains("O[9:1:I]"),
+        "generated C should not snapshot shutdown handler output:\n{source}"
+    );
+
+    let program = parse(NATIVE_OUTPUT_BUFFER_EXIT_UNWIND_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+    let unwind_pos = body
+        .find("phpc_native_output_buffer_unwind_stack_with_diagnostic")
+        .unwrap_or_else(|| panic!("early exit should unwind output buffers:\n{source}"));
+    let exit_return_pos = body
+        .find("return native_exit_result_")
+        .unwrap_or_else(|| panic!("exit should still return the runtime exit status:\n{source}"));
+    assert!(
+        unwind_pos < exit_return_pos,
+        "early exit cleanup should unwind output buffers before returning:\n{source}"
+    );
 }
 
 #[test]
