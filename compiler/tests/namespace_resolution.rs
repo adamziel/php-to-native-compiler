@@ -1,5 +1,8 @@
 use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
+use php_compiler::ast::{Expr, Stmt};
 use php_compiler::error::Phase;
 use php_compiler::{
     codegen::emit_native_executable_c_source, emit_asm_source, emit_ir_source, parse, run_source,
@@ -114,6 +117,47 @@ echo get_class($box);
 }
 
 #[test]
+fn parser_marks_unqualified_namespaced_function_calls_before_codegen_fallback() {
+    let program = parse(
+        r#"<?php
+namespace App\Demo;
+use function strlen as imported_strlen;
+echo strlen("abc"), "|", imported_strlen("abc"), "|", \strlen("abc");
+"#,
+    )
+    .unwrap();
+
+    let Stmt::Echo { exprs, .. } = &program.statements[2] else {
+        panic!("expected echo statement after namespace and function import");
+    };
+    let Expr::Call {
+        name: namespaced_name,
+        ..
+    } = &exprs[0]
+    else {
+        panic!("expected namespaced call");
+    };
+    let Expr::Call {
+        name: imported_name,
+        ..
+    } = &exprs[2]
+    else {
+        panic!("expected imported call");
+    };
+    let Expr::Call {
+        name: fully_qualified_name,
+        ..
+    } = &exprs[4]
+    else {
+        panic!("expected fully-qualified call");
+    };
+
+    assert_eq!(namespaced_name, "App\\Demo\\strlen");
+    assert_eq!(imported_name, "\\strlen");
+    assert_eq!(fully_qualified_name, "\\strlen");
+}
+
+#[test]
 fn unbracketed_namespace_resolves_function_declarations_and_unqualified_calls() {
     let execution = run_source(
         r#"<?php
@@ -137,6 +181,26 @@ echo function_exists("label") ? "yes" : "no";
         execution.stdout,
         "App\\Core\\label:Ada\nApp\\Core\\label:Grace\n3\nyes\nyes\nno"
     );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn unqualified_namespaced_calls_try_local_function_before_global_builtin_fallback() {
+    let execution = run_source(
+        r#"<?php
+namespace App\Demo;
+
+function strlen($value) {
+    return 91;
+}
+
+echo strlen("abc"), "|";
+echo strtolower("ABC");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "91|abc");
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -754,6 +818,87 @@ fn generated_c_lowers_imported_runtime_builtin_function_boundary() {
 }
 
 #[test]
+fn generated_c_lowers_namespaced_runtime_builtin_fallback_without_exact_import() {
+    let program = parse(
+        r#"<?php
+namespace App\Demo;
+echo strlen("abc"), "|", strtolower("ABC");
+"#,
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && source.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "namespaced builtin fallback should lower through runtime callable lookup/invoke:\n{source}"
+    );
+    assert!(
+        !source.contains(ASSEMBLY_FUNCTION_CALL_REJECTION),
+        "supported namespaced builtin fallback should not hit the function-call boundary:\n{source}"
+    );
+}
+
+#[test]
+fn generated_c_prefers_namespace_function_declaration_before_builtin_fallback() {
+    let program = parse(
+        r#"<?php
+namespace App\Demo;
+function strlen($value) {
+    return 91;
+}
+echo strlen("abc");
+"#,
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_user_function_0_app_demo_strlen"),
+        "namespace-local user function should be registered and lowered directly:\n{source}"
+    );
+    assert!(
+        !source.contains("dynamic_callable_lookup_diagnostic")
+            && !source.contains("dynamic_callable_value"),
+        "namespace-local user function should not fall through to builtin lookup:\n{source}"
+    );
+}
+
+#[test]
+fn generated_c_exe_runs_namespaced_builtin_fallback_and_local_shadow() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = namespace_resolution_fixture_dir("function-fallback-exe");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        &root,
+        r#"<?php
+namespace App\Demo;
+function strlen($value) {
+    return 91;
+}
+echo strlen("abc"), "|", strtolower("ABC"), "\n";
+"#,
+    )
+    .expect("write namespace function fallback executable fixture");
+
+    let output = compile_exe(&root, &output, "namespace function fallback executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run namespace function fallback executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "91|abc\n");
+}
+
+#[test]
 fn generated_c_rejects_qualified_imported_type_builtin_without_exact_user_function() {
     let program =
         parse("<?php\nuse function Vendor\\Missing\\is_int as imported_is_int;\necho imported_is_int(1);\n")
@@ -772,4 +917,43 @@ fn assembly_lowering_rejects_namespace_context_before_backend_execution() {
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_NAMESPACE_REJECTION);
+}
+
+fn namespace_resolution_fixture_dir(name: &str) -> PathBuf {
+    let mut dir = workspace_root().join("target/namespace-resolution");
+    dir.push(name);
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create namespace resolution fixture dir");
+    dir
+}
+
+fn compile_exe(root: &Path, output: &Path, label: &str) -> PathBuf {
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root())
+        .args([
+            "compile",
+            root.to_str().expect("root fixture path is UTF-8"),
+            "--emit-exe",
+            output.to_str().expect("output path is UTF-8"),
+        ])
+        .output()
+        .unwrap_or_else(|error| panic!("compile {label}: {error}"));
+    assert!(
+        compile.status.success(),
+        "{label} compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    output.to_path_buf()
+}
+
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("compiler has a workspace root")
+        .to_path_buf()
+}
+
+fn has_cc() -> bool {
+    Command::new("cc").arg("--version").output().is_ok()
 }
