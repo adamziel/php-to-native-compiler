@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 19:39 CEST
+Updated: 2026-05-27 19:36 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,13 +19,36 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `622f9479` publishes runtime callable
-source signatures for covered generated descriptors and runtime builtins so
-unknown callable named/spread calls can finalize materialized source arguments
-through the shared runtime callable-value ABI. Heterogeneous callable sets,
-descriptor-backed closure parameter/default metadata, broader callable
-object/array/external families, broad reference/COW parity, and LLVM/ASM parity
-remain blocked.
+Latest accounted source capability: `76497f73` dispatches selected
+generated-C output-buffer callbacks through the shared callable table and
+runtime callable-value ABI. `ob_start($handler, ...)` can now store a
+`NativeCallableValueDispatch` handler and invoke it on flush/final boundaries
+with buffer bytes and phase flags, while ordinary non-callback buffer
+operations keep the existing output-buffer ABI. Full PHP output-buffer parity,
+handler flags/mutability, shutdown/unwind ordering, broader callback families,
+reference/COW parity, and LLVM/ASM parity remain blocked.
+
+Recent source commit `76497f73` advances selected output-buffer callback
+dispatch without adding handler-name or fixture-shape lowering. Generated-C
+`ob_start($handler, ...)` now routes callback operands through the native
+callable table and `NativeCallableValueDispatch`; runtime output buffers store
+the optional callable dispatch and invoke it through
+`phpc_native_callable_value_invoke_value_with_diagnostic_and_free` at
+flush/final boundaries. Ordinary output-buffer operations continue through the
+non-callback runtime ABI. Focused gates covered runtime callback invocation,
+ordinary output-buffer helper regressions, generated-C callback ABI routing,
+linked callback execution, ordinary linked output-buffer regressions,
+cross-backend native runtime ABI proof, unknown-callable regression coverage,
+formatting, and diff checks. The primary gate also corrected a stale
+generated-C source assertion to the source-signature callable-table registration
+path introduced by `622f9479`. Full PHP output-buffer parity still needs
+chunk-size-triggered flushing, handler flags and mutability, precise
+warning/fatal ordering, shutdown/unwind flushing, binary-string breadth,
+SAPI interactions, `ob_list_handlers()` / `ob_get_status()` metadata, broader
+interpreter/LLVM/ASM callback parity, and broad reference/COW parity. Primary
+rerun gate log:
+`state/logs/phpc-primary-output-buffer-after-unknown-13eec3f0-20260527.rerun.gates.log`
+sha256 `469536493d6ecfeea99671c2de3a59a614d46529bda4b16d32348ab51df137f7`.
 
 Recent source commit `622f9479` advances selected unknown callable
 named/spread semantics without adding callable-name or fixture-shape lowering.
