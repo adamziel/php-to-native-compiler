@@ -6023,6 +6023,55 @@ fn emit_exe_links_and_runs_user_class_metadata_registry_program() {
 }
 
 #[test]
+fn emit_exe_filters_private_ancestor_property_metadata_without_method_regression() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class NativeVisibilityBase {\n",
+        "    public $basePublic;\n",
+        "    protected $baseProtected;\n",
+        "    private $basePrivate;\n",
+        "    private function basePrivateMethod() { }\n",
+        "}\n",
+        "class NativeVisibilityChild extends NativeVisibilityBase { private $childPrivate; }\n",
+        "echo property_exists(\"NativeVisibilityChild\", \"basePublic\") ? \"public\" : \"missing-public\";\n",
+        "echo \"|\";\n",
+        "echo property_exists(\"NativeVisibilityChild\", \"baseProtected\") ? \"protected\" : \"missing-protected\";\n",
+        "echo \"|\";\n",
+        "echo property_exists(\"NativeVisibilityChild\", \"basePrivate\") ? \"bad-private\" : \"private-parent:false\";\n",
+        "echo \"|\";\n",
+        "echo property_exists(\"NativeVisibilityBase\", \"basePrivate\") ? \"base-private:true\" : \"bad-base-private\";\n",
+        "echo \"|\";\n",
+        "echo property_exists(\"NativeVisibilityChild\", \"childPrivate\") ? \"child-private:true\" : \"bad-child-private\";\n",
+        "echo \"|\";\n",
+        "echo method_exists(\"NativeVisibilityChild\", \"basePrivateMethod\") ? \"method-private:true\" : \"bad-method-private\";\n",
+        "echo \"\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("private_ancestor_property_metadata", source);
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run private ancestor property metadata executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "public|protected|private-parent:false|base-private:true|child-private:true|method-private:true\n"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn emit_exe_links_and_runs_trait_composed_class_metadata_registry_program() {
     if !has_cc() {
         return;

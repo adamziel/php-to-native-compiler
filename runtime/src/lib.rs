@@ -38672,8 +38672,14 @@ fn native_user_class_has_member_bytes(
     let classes = PhpClassTable::with_core_classes();
     let mut current = native_class_canonical_name_bytes(&classes, class_name);
     let member_key = native_class_metadata_lookup_key(member);
+    let root_lookup = current
+        .as_deref()
+        .map(native_class_metadata_lookup_key)
+        .unwrap_or_default();
     let mut visited = HashSet::new();
     while let Some(class_name) = current {
+        let lookup = native_class_metadata_lookup_key(&class_name);
+        let is_root_class = lookup == root_lookup;
         if let Some(core_id) = classes.lookup_class_id_bytes(&class_name) {
             return match operation {
                 NativeClassMetadataOperation::MethodExists => classes
@@ -38683,13 +38689,14 @@ fn native_user_class_has_member_bytes(
                 NativeClassMetadataOperation::PropertyExists => classes
                     .get(core_id)
                     .and_then(|class| class.property_bytes(member))
-                    .is_some(),
+                    .is_some_and(|property| {
+                        is_root_class || property.visibility() != Visibility::Private
+                    }),
                 NativeClassMetadataOperation::ClassExists => true,
                 NativeClassMetadataOperation::TraitExists => false,
                 NativeClassMetadataOperation::InterfaceExists => false,
             };
         }
-        let lookup = native_class_metadata_lookup_key(&class_name);
         if !visited.insert(lookup) {
             return false;
         }
@@ -38701,10 +38708,12 @@ fn native_user_class_has_member_bytes(
                 .methods
                 .iter()
                 .any(|method| method.lookup_key == member_key),
-            NativeClassMetadataOperation::PropertyExists => class
-                .properties
-                .iter()
-                .any(|property| property.name.as_slice() == member),
+            NativeClassMetadataOperation::PropertyExists => {
+                class.properties.iter().any(|property| {
+                    property.name.as_slice() == member
+                        && (is_root_class || property.visibility != Visibility::Private)
+                })
+            }
             NativeClassMetadataOperation::ClassExists => true,
             NativeClassMetadataOperation::TraitExists => false,
             NativeClassMetadataOperation::InterfaceExists => false,
@@ -51631,6 +51640,129 @@ mod tests {
         unsafe { phpc_native_value_free(property) };
         unsafe { phpc_native_value_free(method) };
         unsafe { phpc_native_value_free(child) };
+        native_user_classes_reset_for_test();
+    }
+
+    #[test]
+    fn native_user_class_property_exists_filters_private_ancestor_properties_only() {
+        native_user_classes_reset_for_test();
+        assert!(native_declare_user_class_bytes_result(b"VisibilityBase"));
+        assert!(native_declare_user_class_method_bytes_result(
+            b"VisibilityBase",
+            b"basePrivateMethod",
+            NATIVE_DECLARED_CLASS_PROPERTY_PRIVATE,
+            false,
+        )
+        .expect("private parent method metadata should declare"));
+        assert!(native_declare_user_class_property_bytes_result(
+            b"VisibilityBase",
+            b"basePublic",
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+        )
+        .expect("public parent property metadata should declare"));
+        assert!(native_declare_user_class_property_bytes_result(
+            b"VisibilityBase",
+            b"baseProtected",
+            NATIVE_DECLARED_CLASS_PROPERTY_PROTECTED,
+        )
+        .expect("protected parent property metadata should declare"));
+        assert!(native_declare_user_class_property_bytes_result(
+            b"VisibilityBase",
+            b"basePrivate",
+            NATIVE_DECLARED_CLASS_PROPERTY_PRIVATE,
+        )
+        .expect("private parent property metadata should declare"));
+        assert!(native_declare_user_class_bytes_result(b"VisibilityChild"));
+        assert!(native_declare_user_class_parent_bytes_result(
+            b"VisibilityChild",
+            b"VisibilityBase",
+        ));
+        assert!(native_declare_user_class_property_bytes_result(
+            b"VisibilityChild",
+            b"childPrivate",
+            NATIVE_DECLARED_CLASS_PROPERTY_PRIVATE,
+        )
+        .expect("private child property metadata should declare"));
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let base = NativeValueHandle::from_value(Value::String("VisibilityBase".to_string()));
+        let child = NativeValueHandle::from_value(Value::String("VisibilityChild".to_string()));
+        let base_public = NativeValueHandle::from_value(Value::String("basePublic".to_string()));
+        let base_protected =
+            NativeValueHandle::from_value(Value::String("baseProtected".to_string()));
+        let base_private = NativeValueHandle::from_value(Value::String("basePrivate".to_string()));
+        let child_private =
+            NativeValueHandle::from_value(Value::String("childPrivate".to_string()));
+        let base_private_method =
+            NativeValueHandle::from_value(Value::String("basePrivateMethod".to_string()));
+
+        assert!(unsafe {
+            phpc_native_value_class_metadata_exists_with_diagnostic(
+                child,
+                base_public,
+                NativeClassMetadataOperation::PropertyExists as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        assert!(unsafe {
+            phpc_native_value_class_metadata_exists_with_diagnostic(
+                child,
+                base_protected,
+                NativeClassMetadataOperation::PropertyExists as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        assert!(!unsafe {
+            phpc_native_value_class_metadata_exists_with_diagnostic(
+                child,
+                base_private,
+                NativeClassMetadataOperation::PropertyExists as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        assert!(unsafe {
+            phpc_native_value_class_metadata_exists_with_diagnostic(
+                base,
+                base_private,
+                NativeClassMetadataOperation::PropertyExists as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        assert!(unsafe {
+            phpc_native_value_class_metadata_exists_with_diagnostic(
+                child,
+                child_private,
+                NativeClassMetadataOperation::PropertyExists as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        assert!(unsafe {
+            phpc_native_value_class_metadata_exists_with_diagnostic(
+                child,
+                base_private_method,
+                NativeClassMetadataOperation::MethodExists as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        unsafe { phpc_native_value_free(base_private_method) };
+        unsafe { phpc_native_value_free(child_private) };
+        unsafe { phpc_native_value_free(base_private) };
+        unsafe { phpc_native_value_free(base_protected) };
+        unsafe { phpc_native_value_free(base_public) };
+        unsafe { phpc_native_value_free(child) };
+        unsafe { phpc_native_value_free(base) };
         native_user_classes_reset_for_test();
     }
 
