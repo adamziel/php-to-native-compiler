@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 23:26 CEST
+Updated: 2026-05-27 23:29 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,16 +19,30 @@ Overall integrated-roadmap progress: **93%** `[##################--]`
 
 Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `5a5e0028` routes dynamic generated-C
-constructor class-name misses through the existing request-local SPL autoload
-registry before reporting an unknown/non-allocatable class. String class names
-now retry allocatable-scope lookup after autoload callbacks run, while object
-class-name construction, bad dynamic class-name diagnostics, and existing
-class-alias metadata paths stay on the shared runtime boundaries. Broader array
-COW/reference edges, foreach by-reference lifetime, include
-exception/diagnostic propagation, generated-frame `class_alias()` calls,
-visibility-context rules, remaining trait precedence parity, cleanup ordering,
-and non-C backend parity remain blocked.
+Latest accounted source capability: `ff6c0af4` binds direct declared static
+property reference-assignment targets through the shared static-property storage
+ABI. Generated C now accepts narrow `C::$prop =& $source` targets, binds the
+static property cell to the source reference, and keeps source writes and
+by-reference calls aliasing the same storage instead of falling through to
+generic reference-assignment rejection. Broader array COW/reference edges,
+foreach by-reference lifetime, include exception/diagnostic propagation,
+generated-frame `class_alias()` calls, visibility-context rules, remaining trait
+precedence parity, cleanup ordering, and non-C backend parity remain blocked.
+
+Recent source commit `ff6c0af4` advances static-property reference behavior
+without adding instance-property overlap, ArrayAccess overlap, request
+superglobal shortcuts, direct-array COW duplication, fake value-copy reference
+writeback, or source-shape production ladders. The runtime now exposes
+`phpc_native_static_property_bind_reference_class_with_diagnostic()`, and
+generated C routes direct declared static-property reference assignment targets
+through that ABI after a narrow parser admission for identifier-led
+`C::$prop =& ...` statements. Focused gates covered the runtime bind ABI,
+generated-C source proof, linked executable static-property aliasing through two
+owners, existing static-property reference and offset-reference paths,
+object-property reference-assignment adjacency, formatting, and diff checks.
+Primary gate log:
+`state/logs/phpc-primary-static-prop-ref-34fe4011-20260527.gates.log`
+sha256 `f66ba7559e112f7aabbd011a161171917bdeb99eab0efa089a90433ef3cdc1e5`.
 
 Recent source commit `5a5e0028` advances dynamic constructor autoload behavior
 without adding source-loader tables, callback-name ladders, class-name
