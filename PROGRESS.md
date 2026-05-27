@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 16:25 CEST
+Updated: 2026-05-27 16:32 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -15,20 +15,31 @@ changes the roadmap position.
 
 ## Executive Read
 
-Overall integrated-roadmap progress: **80%** `[################----]`
+Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **90%** `[##################--]`
 
-Latest accounted source capability: `0bb20ff7` routes selected
-descriptor-backed variadic closure spread calls through a finalized variadic
-slot in the closure-frame ABI. Materialized call-argument finalization now
-marks handles that contain a packed variadic collection; descriptor closure
-invocation forwards that final slot as the closure variadic argument instead
-of double-packing it, while ordinary non-finalized closure calls keep their
-existing surplus-argument packing path. Typed variadic descriptor closures
-remain blocked until finalized variadic collection entry coercion exists
-generally, and by-reference unpack, magic fallback, and unknown-signature
-callable spread remain outside this descriptor-only surface.
+Latest accounted source capability: `b8b29d93` routes bounded literal
+generated-C include/require execution through reusable include-unit functions.
+`phpc compile --emit-exe` now discovers literal included files as executable
+units, emits one canonical include function per bounded path, executes ordered
+top-level statements through the active root symbol table, returns tagged
+include results for normal completion, explicit included-file `return`, and
+duplicate `_once` truth, and tracks `_once` state by canonical path. Dynamic
+paths, include_path search, stream wrappers, missing include warning/false
+recovery, require fatal fidelity, cyclic include graphs, and LLVM/ASM parity
+remain blocked instead of gaining exact-shape include lowering.
+
+Recent source commit `0bb20ff7` routes selected descriptor-backed variadic
+closure spread calls through a finalized variadic slot in the closure-frame
+ABI. Materialized call-argument finalization now marks handles that contain a
+packed variadic collection; descriptor closure invocation forwards that final
+slot as the closure variadic argument instead of double-packing it, while
+ordinary non-finalized closure calls keep their existing surplus-argument
+packing path. Typed variadic descriptor closures remain blocked until
+finalized variadic collection entry coercion exists generally, and
+by-reference unpack, magic fallback, and unknown-signature callable spread
+remain outside this descriptor-only surface.
 
 Recent source commit `1d844d6d` registers generated declared
 interface value metadata for selected generated-C `get_declared_interfaces()`
