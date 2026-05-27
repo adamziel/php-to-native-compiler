@@ -17106,6 +17106,7 @@ struct CGenerator {
     uses_native_closure_helpers: bool,
     uses_native_output_buffer_operation: bool,
     uses_native_spl_autoload_registry_helpers: bool,
+    uses_native_request_shutdown_callbacks_helpers: bool,
     uses_native_include_unit_helpers: bool,
     uses_native_object_instantiation_helpers: bool,
     uses_native_user_class_declaration: bool,
@@ -17139,6 +17140,7 @@ struct CGenerator {
     route_direct_variables_through_symbol_table: bool,
     native_callable_table_handle: Option<String>,
     native_spl_autoload_registry_handle: Option<String>,
+    native_request_shutdown_callbacks_handle: Option<String>,
     native_destructor_finalizers_handle: Option<String>,
     loop_transfer_targets: Vec<CLoopTransferTarget>,
     active_finally_bodies: Vec<Vec<Stmt>>,
@@ -17372,6 +17374,7 @@ struct CGotoStateSnapshot {
     route_direct_variables_through_symbol_table: bool,
     native_callable_table_handle: Option<String>,
     native_spl_autoload_registry_handle: Option<String>,
+    native_request_shutdown_callbacks_handle: Option<String>,
     native_destructor_finalizers_handle: Option<String>,
 }
 
@@ -20436,6 +20439,8 @@ impl CGenerator {
             && self.route_direct_variables_through_symbol_table
                 == other.route_direct_variables_through_symbol_table
             && self.native_spl_autoload_registry_handle == other.native_spl_autoload_registry_handle
+            && self.native_request_shutdown_callbacks_handle
+                == other.native_request_shutdown_callbacks_handle
             && self.native_destructor_finalizers_handle == other.native_destructor_finalizers_handle
     }
 
@@ -20471,6 +20476,9 @@ impl CGenerator {
                 .route_direct_variables_through_symbol_table,
             native_callable_table_handle: self.native_callable_table_handle.clone(),
             native_spl_autoload_registry_handle: self.native_spl_autoload_registry_handle.clone(),
+            native_request_shutdown_callbacks_handle: self
+                .native_request_shutdown_callbacks_handle
+                .clone(),
             native_destructor_finalizers_handle: self.native_destructor_finalizers_handle.clone(),
         }
     }
@@ -20493,6 +20501,8 @@ impl CGenerator {
                 == other.route_direct_variables_through_symbol_table
             && self.native_callable_table_handle == other.native_callable_table_handle
             && self.native_spl_autoload_registry_handle == other.native_spl_autoload_registry_handle
+            && self.native_request_shutdown_callbacks_handle
+                == other.native_request_shutdown_callbacks_handle
             && self.native_destructor_finalizers_handle == other.native_destructor_finalizers_handle
     }
 
@@ -21060,6 +21070,8 @@ impl CGenerator {
         self.uses_native_output_buffer_operation |= branch.uses_native_output_buffer_operation;
         self.uses_native_spl_autoload_registry_helpers |=
             branch.uses_native_spl_autoload_registry_helpers;
+        self.uses_native_request_shutdown_callbacks_helpers |=
+            branch.uses_native_request_shutdown_callbacks_helpers;
         self.uses_native_include_unit_helpers |= branch.uses_native_include_unit_helpers;
         self.uses_native_text_membership_operation |= branch.uses_native_text_membership_operation;
         self.uses_native_object_instantiation_helpers |=
@@ -21113,6 +21125,7 @@ impl CGenerator {
             || self.uses_native_closure_helpers
             || self.uses_native_output_buffer_operation
             || self.uses_native_spl_autoload_registry_helpers
+            || self.uses_native_request_shutdown_callbacks_helpers
             || self.uses_native_include_unit_helpers
             || self.uses_native_object_instantiation_helpers
             || self.uses_native_user_class_declaration
@@ -24006,6 +24019,7 @@ impl CGenerator {
                 || self.uses_native_class_constant_helpers
                 || self.uses_native_static_property_helpers
                 || self.uses_native_spl_autoload_registry_helpers
+                || self.uses_native_request_shutdown_callbacks_helpers
                 || self.uses_native_include_unit_helpers
             {
                 output.push_str("#include <stdbool.h>\n");
@@ -24115,6 +24129,11 @@ impl CGenerator {
             if self.uses_native_spl_autoload_registry_helpers {
                 output.push_str(
                     "typedef struct { void *ptr; } phpc_NativeSplAutoloadRegistryHandle;\n",
+                );
+            }
+            if self.uses_native_request_shutdown_callbacks_helpers {
+                output.push_str(
+                    "typedef struct { void *ptr; } phpc_NativeRequestShutdownCallbacksHandle;\n",
                 );
             }
             if self.uses_native_static_property_helpers {
@@ -24687,6 +24706,13 @@ impl CGenerator {
                 output.push_str("extern bool phpc_native_spl_autoload_call_bytes_with_diagnostic(phpc_NativeSplAutoloadRegistryHandle registry, phpc_NativeCallableTableHandle table, const uint8_t *class_ptr, size_t class_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_spl_autoload_functions_value_with_diagnostic(phpc_NativeSplAutoloadRegistryHandle registry, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
+            if self.uses_native_request_shutdown_callbacks_helpers {
+                output.push_str("extern phpc_NativeRequestShutdownCallbacksHandle phpc_native_request_shutdown_callbacks_new(void);\n");
+                output.push_str("extern bool phpc_native_request_shutdown_callbacks_is_null(phpc_NativeRequestShutdownCallbacksHandle handle);\n");
+                output.push_str("extern void phpc_native_request_shutdown_callbacks_free(phpc_NativeRequestShutdownCallbacksHandle handle);\n");
+                output.push_str("extern bool phpc_native_request_shutdown_callbacks_register_callable_value_and_free(phpc_NativeRequestShutdownCallbacksHandle handle, phpc_NativeCallableValueHandle callable, const phpc_NativeValueHandle *arguments, size_t argument_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_request_shutdown_callbacks_run_with_callable_table(phpc_NativeRequestShutdownCallbacksHandle handle, phpc_NativeCallableTableHandle table, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            }
             if self.uses_native_object_instantiation_helpers {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_new_declared_class_with_diagnostic(size_t class_id, const uint8_t *class_name, size_t class_name_len, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, size_t property_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_new_declared_class_with_ancestors_and_diagnostic(size_t class_id, const uint8_t *class_name, size_t class_name_len, const size_t *property_declaring_class_ids, const uint8_t *const *property_declaring_class_names, const size_t *property_declaring_class_name_lens, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, size_t property_count, const uint8_t *const *ancestor_class_names, const size_t *ancestor_class_name_lens, size_t ancestor_class_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -24949,6 +24975,11 @@ impl CGenerator {
                 "static phpc_NativeSplAutoloadRegistryHandle phpc_user_spl_autoload_registry = {0};\n\n",
             );
         }
+        if self.uses_native_request_shutdown_callbacks_helpers {
+            output.push_str(
+                "static phpc_NativeRequestShutdownCallbacksHandle phpc_user_shutdown_callbacks = {0};\n\n",
+            );
+        }
         if self.uses_native_destructor_finalization_helpers {
             output.push_str(
                 "static phpc_NativeRequestDestructorFinalizersHandle phpc_user_destructor_finalizers = {0};\n\n",
@@ -25042,85 +25073,10 @@ impl CGenerator {
             output.push_str(line);
             output.push('\n');
         }
-        for handle in self.native_value_cleanup_handles.iter().rev() {
+        for line in self.native_request_cleanup_statements("") {
             output.push_str("  ");
-            output.push_str(&format!("phpc_native_value_free({handle});"));
+            output.push_str(&line);
             output.push('\n');
-        }
-        for handle in self.native_reference_cleanup_handles.iter().rev() {
-            output.push_str("  ");
-            output.push_str(&format!("phpc_native_reference_free({handle});"));
-            output.push('\n');
-        }
-        for buffer in self.owned_native_byte_buffers.iter().rev() {
-            output.push_str("  ");
-            output.push_str(&format!("phpc_native_byte_buffer_free({buffer});"));
-            output.push('\n');
-        }
-        for handle in self.array_cleanup_handles.iter().rev() {
-            output.push_str("  ");
-            output.push_str(&format!("phpc_native_array_free({handle});"));
-            output.push('\n');
-        }
-        if self.uses_native_destructor_finalization_helpers {
-            output.push_str(
-                "  phpc_native_request_destructor_finalizers_finalize_with_callable_table(phpc_user_destructor_finalizers, phpc_user_callable_table);\n",
-            );
-            output.push_str(
-                "  phpc_native_request_destructor_finalizers_free(phpc_user_destructor_finalizers);\n",
-            );
-            output.push_str(
-                "  phpc_user_destructor_finalizers = (phpc_NativeRequestDestructorFinalizersHandle){0};\n",
-            );
-        }
-        if self.uses_native_output_buffer_operation {
-            output.push_str("  ");
-            output.push_str(&self.native_output_buffer_unwind_cleanup_sequence());
-            output.push('\n');
-        }
-        if self.native_request_state_owned {
-            if let Some(handle) = &self.native_request_state_handle {
-                output.push_str("  ");
-                output.push_str(&format!("phpc_native_request_state_free({handle});"));
-                output.push('\n');
-            }
-        }
-        if self.native_static_property_storage_owned {
-            if let Some(handle) = &self.native_static_property_storage_handle {
-                output.push_str("  ");
-                output.push_str(&format!(
-                    "phpc_native_static_property_storage_free({handle});"
-                ));
-                output.push('\n');
-            }
-        }
-        if self.uses_native_static_property_helpers {
-            output.push_str(
-                "  phpc_native_static_property_storage_free(phpc_user_static_properties);\n",
-            );
-        }
-        if self.uses_native_class_constant_helpers {
-            output
-                .push_str("  phpc_native_class_constant_table_free(phpc_user_class_constants);\n");
-        }
-        if self.native_globals_symbol_table_owned {
-            if let Some(handle) = &self.native_globals_symbol_table_handle {
-                output.push_str("  ");
-                output.push_str(&format!("phpc_native_symbol_table_free({handle});"));
-                output.push('\n');
-            }
-        }
-        if self.uses_native_spl_autoload_registry_helpers {
-            output.push_str(
-                "  phpc_native_spl_autoload_registry_free(phpc_user_spl_autoload_registry);\n",
-            );
-            output.push_str(
-                "  phpc_user_spl_autoload_registry = (phpc_NativeSplAutoloadRegistryHandle){0};\n",
-            );
-        }
-        if self.uses_native_callable_helpers {
-            output.push_str("  phpc_native_callable_table_free(phpc_user_callable_table);\n");
-            output.push_str("  phpc_user_callable_table = (phpc_NativeCallableTableHandle){0};\n");
         }
         output.push_str("  return 0;\n");
         output.push_str("}\n");
@@ -27591,6 +27547,35 @@ impl CGenerator {
         ));
         self.body.push("}".to_string());
         Ok((registry, table))
+    }
+
+    fn ensure_native_request_shutdown_callbacks(
+        &mut self,
+        failure_cleanup: &str,
+        span: Span,
+    ) -> CompileResult<(String, String)> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_request_shutdown_callbacks_helpers = true;
+        let table = self.ensure_native_callable_table(failure_cleanup);
+        self.emit_native_callable_frame_environment_setup(failure_cleanup, span)?;
+        let handle = self
+            .native_request_shutdown_callbacks_handle
+            .clone()
+            .unwrap_or_else(|| "phpc_user_shutdown_callbacks".to_string());
+        self.native_request_shutdown_callbacks_handle = Some(handle.clone());
+
+        self.body.push(format!(
+            "if (phpc_native_request_shutdown_callbacks_is_null({handle})) {{"
+        ));
+        self.body.push(format!(
+            "  {handle} = phpc_native_request_shutdown_callbacks_new();"
+        ));
+        let allocation_error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!(
+            "  if (phpc_native_request_shutdown_callbacks_is_null({handle})) {{ {allocation_error_exit} }}"
+        ));
+        self.body.push("}".to_string());
+        Ok((handle, table))
     }
 
     fn materialize_native_callable_value_handle_for_registration(
@@ -42671,6 +42656,10 @@ impl CGenerator {
                         self.materialize_call_user_func_array_builtin_call(args, *span, "")?;
                     self.retain_native_value_cleanup_handle(&value.handle);
                     Ok(CValue::NativeValueHandle(value.handle))
+                } else if self
+                    .direct_call_matches_global_builtin(name, "register_shutdown_function")
+                {
+                    self.emit_native_register_shutdown_function_call(args, *span, "")
                 } else if let Some(value) =
                     self.try_materialize_user_function_call(name, args, *span, "")?
                 {
@@ -60303,6 +60292,16 @@ impl CGenerator {
                         self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
                     );
                 }
+                if self.direct_call_matches_global_builtin(name, "register_shutdown_function") {
+                    let value = self.emit_native_register_shutdown_function_call(
+                        args,
+                        *span,
+                        failure_cleanup,
+                    )?;
+                    return self
+                        .materialize_native_array_c_value_handle(value, *span)
+                        .map(Some);
+                }
                 if self
                     .direct_call_runtime_builtin_fallback_signature(name)
                     .is_some()
@@ -63619,6 +63618,86 @@ impl CGenerator {
         Ok(CValue::NativeValueHandle(result))
     }
 
+    fn emit_native_register_shutdown_function_call(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        if args.is_empty() || call_arguments_have_named(args) || call_arguments_have_spread(args) {
+            return Err(self.unsupported_direct_named_call(
+                args,
+                span,
+                ASSEMBLY_FUNCTION_CALL_REJECTION,
+            ));
+        }
+
+        let (callback_expr, shutdown_arg_exprs) = args
+            .split_first()
+            .expect("register_shutdown_function arity checked above");
+        let (callbacks, _) =
+            self.ensure_native_request_shutdown_callbacks(failure_cleanup, span)?;
+        let callback = self.materialize_native_callable_value_handle_for_registration(
+            callback_expr,
+            failure_cleanup,
+        )?;
+        let mut pending_failure_cleanup = vec![format!(
+            "phpc_native_callable_value_free({});",
+            callback.handle
+        )];
+        pending_failure_cleanup.extend(callback.cleanup_after_use.clone());
+
+        let mut shutdown_arguments = Vec::new();
+        let mut shutdown_argument_cleanup = Vec::new();
+        for arg in shutdown_arg_exprs {
+            let argument_failure_cleanup = format!(
+                "{}{}{}",
+                c_cleanup_sequence(&shutdown_argument_cleanup),
+                c_cleanup_sequence(&pending_failure_cleanup),
+                failure_cleanup
+            );
+            let value =
+                self.materialize_native_value_result_operand(arg, &argument_failure_cleanup)?;
+            shutdown_argument_cleanup.extend(value.cleanup_after_use.clone());
+            shutdown_arguments.push(value.handle);
+        }
+
+        let (arguments_ptr, argument_count) = if shutdown_arguments.is_empty() {
+            ("NULL".to_string(), 0usize)
+        } else {
+            let arguments = self.next_native_name("shutdown_callback_arguments");
+            self.body.push(format!(
+                "phpc_NativeValueHandle {arguments}[{}] = {{ {} }};",
+                shutdown_arguments.len(),
+                shutdown_arguments.join(", ")
+            ));
+            (arguments, shutdown_arguments.len())
+        };
+
+        let diagnostic = self.next_native_name("shutdown_callback_register_diagnostic");
+        let registered = self.next_native_name("shutdown_callback_registered");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "bool {registered} = phpc_native_request_shutdown_callbacks_register_callable_value_and_free({callbacks}, {}, {arguments_ptr}, {argument_count}, &{diagnostic});",
+            callback.handle
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let cleanup_after_registration_failure = format!(
+            "{}{}",
+            c_cleanup_sequence(&shutdown_argument_cleanup),
+            c_cleanup_sequence(&callback.cleanup_after_use)
+        );
+        let error_exit = self.native_error_exit(&format!(
+            "{cleanup_after_registration_failure}{failure_cleanup}"
+        ));
+        self.body
+            .push(format!("if (!{registered}) {{ {error_exit} }}"));
+        self.body.extend(shutdown_argument_cleanup);
+        self.body.extend(callback.cleanup_after_use);
+        Ok(CValue::Null)
+    }
+
     fn emit_native_output_buffer_operation_result_handle(
         &mut self,
         operation: NativeOutputBufferOperation,
@@ -64149,74 +64228,127 @@ impl CGenerator {
         "{ phpc_NativeDiagnosticHandle phpc_output_buffer_unwind_diagnostic = {0}; phpc_native_output_buffer_unwind_stack_with_diagnostic(&phpc_output_buffer_unwind_diagnostic); if (phpc_output_buffer_unwind_diagnostic.ptr != NULL) { phpc_native_diagnostic_report(phpc_output_buffer_unwind_diagnostic); phpc_output_buffer_unwind_diagnostic.ptr = NULL; } }".to_string()
     }
 
-    fn native_scope_cleanup_sequence(&self, local_cleanup: &str) -> String {
-        let mut cleanup = String::new();
-        cleanup.push_str(local_cleanup);
+    fn native_request_shutdown_callbacks_run_cleanup_sequence(&self) -> String {
+        if !self.uses_native_request_shutdown_callbacks_helpers
+            || self.function_return_status.is_some()
+            || self.function_return_mode == CFunctionReturnMode::IncludeUnit
+        {
+            return String::new();
+        }
+
+        "{ phpc_NativeDiagnosticHandle phpc_shutdown_callback_diagnostic = {0}; phpc_native_request_shutdown_callbacks_run_with_callable_table(phpc_user_shutdown_callbacks, phpc_user_callable_table, &phpc_shutdown_callback_diagnostic); if (phpc_shutdown_callback_diagnostic.ptr != NULL) { phpc_native_diagnostic_report(phpc_shutdown_callback_diagnostic); phpc_shutdown_callback_diagnostic.ptr = NULL; } }".to_string()
+    }
+
+    fn native_request_cleanup_statements(&self, local_cleanup: &str) -> Vec<String> {
+        let mut cleanup = Vec::new();
+        if !local_cleanup.trim().is_empty() {
+            cleanup.push(local_cleanup.trim().to_string());
+        }
+        let shutdown_cleanup = self.native_request_shutdown_callbacks_run_cleanup_sequence();
+        if !shutdown_cleanup.is_empty() {
+            cleanup.push(shutdown_cleanup);
+        }
         for handle in self.native_value_cleanup_handles.iter().rev() {
-            cleanup.push_str(&format!(" phpc_native_value_free({handle});"));
+            cleanup.push(format!("phpc_native_value_free({handle});"));
         }
         for handle in self.native_reference_cleanup_handles.iter().rev() {
-            cleanup.push_str(&format!(" phpc_native_reference_free({handle});"));
+            cleanup.push(format!("phpc_native_reference_free({handle});"));
         }
         for buffer in self.owned_native_byte_buffers.iter().rev() {
-            cleanup.push_str(&format!(" phpc_native_byte_buffer_free({buffer});"));
+            cleanup.push(format!("phpc_native_byte_buffer_free({buffer});"));
         }
         for handle in self.array_cleanup_handles.iter().rev() {
-            cleanup.push_str(&format!(" phpc_native_array_free({handle});"));
+            cleanup.push(format!("phpc_native_array_free({handle});"));
         }
         if self.uses_native_destructor_finalization_helpers && self.function_return_status.is_none()
         {
-            cleanup.push_str(
-                " phpc_native_request_destructor_finalizers_finalize_with_callable_table(phpc_user_destructor_finalizers, phpc_user_callable_table);",
+            cleanup.push(
+                "phpc_native_request_destructor_finalizers_finalize_with_callable_table(phpc_user_destructor_finalizers, phpc_user_callable_table);".to_string(),
             );
-            cleanup.push_str(
-                " phpc_native_request_destructor_finalizers_free(phpc_user_destructor_finalizers);",
+            cleanup.push(
+                "phpc_native_request_destructor_finalizers_free(phpc_user_destructor_finalizers);"
+                    .to_string(),
             );
-            cleanup.push_str(
-                " phpc_user_destructor_finalizers = (phpc_NativeRequestDestructorFinalizersHandle){0};",
+            cleanup.push(
+                "phpc_user_destructor_finalizers = (phpc_NativeRequestDestructorFinalizersHandle){0};".to_string(),
             );
         }
-        cleanup.push_str(&self.native_output_buffer_unwind_cleanup_sequence());
+        let output_buffer_cleanup = self.native_output_buffer_unwind_cleanup_sequence();
+        if !output_buffer_cleanup.is_empty() {
+            cleanup.push(output_buffer_cleanup);
+        }
         if self.native_request_state_owned {
             if let Some(handle) = &self.native_request_state_handle {
-                cleanup.push_str(&format!(" phpc_native_request_state_free({handle});"));
+                cleanup.push(format!("phpc_native_request_state_free({handle});"));
             }
         }
         if self.native_static_property_storage_owned {
             if let Some(handle) = &self.native_static_property_storage_handle {
-                cleanup.push_str(&format!(
-                    " phpc_native_static_property_storage_free({handle});"
+                cleanup.push(format!(
+                    "phpc_native_static_property_storage_free({handle});"
                 ));
             }
+        }
+        if self.uses_native_static_property_helpers && self.function_return_status.is_none() {
+            cleanup.push(
+                "phpc_native_static_property_storage_free(phpc_user_static_properties);"
+                    .to_string(),
+            );
         }
         if self.native_class_constant_table_owned {
             if let Some(handle) = &self.native_class_constant_table_handle {
-                cleanup.push_str(&format!(
-                    " phpc_native_class_constant_table_free({handle});"
-                ));
+                cleanup.push(format!("phpc_native_class_constant_table_free({handle});"));
             }
         }
         if self.uses_native_class_constant_helpers && self.function_return_status.is_none() {
-            cleanup.push_str(" phpc_native_class_constant_table_free(phpc_user_class_constants);");
-            cleanup
-                .push_str(" phpc_user_class_constants = (phpc_NativeClassConstantTableHandle){0};");
+            cleanup.push(
+                "phpc_native_class_constant_table_free(phpc_user_class_constants);".to_string(),
+            );
+            cleanup.push(
+                "phpc_user_class_constants = (phpc_NativeClassConstantTableHandle){0};".to_string(),
+            );
         }
         if self.native_globals_symbol_table_owned {
             if let Some(handle) = &self.native_globals_symbol_table_handle {
-                cleanup.push_str(&format!(" phpc_native_symbol_table_free({handle});"));
+                cleanup.push(format!("phpc_native_symbol_table_free({handle});"));
             }
         }
         if self.uses_native_spl_autoload_registry_helpers && self.function_return_status.is_none() {
-            cleanup.push_str(
-                " phpc_native_spl_autoload_registry_free(phpc_user_spl_autoload_registry);",
+            cleanup.push(
+                "phpc_native_spl_autoload_registry_free(phpc_user_spl_autoload_registry);"
+                    .to_string(),
             );
-            cleanup.push_str(
-                " phpc_user_spl_autoload_registry = (phpc_NativeSplAutoloadRegistryHandle){0};",
+            cleanup.push(
+                "phpc_user_spl_autoload_registry = (phpc_NativeSplAutoloadRegistryHandle){0};"
+                    .to_string(),
+            );
+        }
+        if self.uses_native_request_shutdown_callbacks_helpers
+            && self.function_return_status.is_none()
+        {
+            cleanup.push(
+                "phpc_native_request_shutdown_callbacks_free(phpc_user_shutdown_callbacks);"
+                    .to_string(),
+            );
+            cleanup.push(
+                "phpc_user_shutdown_callbacks = (phpc_NativeRequestShutdownCallbacksHandle){0};"
+                    .to_string(),
             );
         }
         if self.uses_native_callable_helpers && self.function_return_status.is_none() {
-            cleanup.push_str(" phpc_native_callable_table_free(phpc_user_callable_table);");
-            cleanup.push_str(" phpc_user_callable_table = (phpc_NativeCallableTableHandle){0};");
+            cleanup.push("phpc_native_callable_table_free(phpc_user_callable_table);".to_string());
+            cleanup.push(
+                "phpc_user_callable_table = (phpc_NativeCallableTableHandle){0};".to_string(),
+            );
+        }
+        cleanup
+    }
+
+    fn native_scope_cleanup_sequence(&self, local_cleanup: &str) -> String {
+        let mut cleanup = String::new();
+        for statement in self.native_request_cleanup_statements(local_cleanup) {
+            cleanup.push(' ');
+            cleanup.push_str(&statement);
         }
         cleanup
     }

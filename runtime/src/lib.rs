@@ -317,6 +317,12 @@ pub struct NativeSplAutoloadRegistryHandle {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeRequestShutdownCallbacksHandle {
+    ptr: *mut NativeRequestShutdownCallbacks,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeCallArgumentsHandle {
     ptr: *mut NativeCallArguments,
 }
@@ -1498,6 +1504,19 @@ struct NativeSplAutoloadRegistry {
 struct NativeSplAutoloadCallback {
     dispatch: NativeCallableValueDispatch,
     value: Value,
+}
+
+#[derive(Debug)]
+struct NativeRequestShutdownCallbacks {
+    callbacks: Vec<NativeRequestShutdownCallback>,
+    running: bool,
+    completed: bool,
+}
+
+#[derive(Debug, Clone)]
+struct NativeRequestShutdownCallback {
+    dispatch: NativeCallableValueDispatch,
+    arguments: Vec<Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -4176,6 +4195,32 @@ impl NativeSplAutoloadRegistryHandle {
     }
 
     unsafe fn as_mut(&mut self) -> Option<&mut NativeSplAutoloadRegistry> {
+        unsafe { self.ptr.as_mut() }
+    }
+}
+
+impl NativeRequestShutdownCallbacksHandle {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    fn new() -> Self {
+        Self {
+            ptr: Box::into_raw(Box::new(NativeRequestShutdownCallbacks {
+                callbacks: Vec::new(),
+                running: false,
+                completed: false,
+            })),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+
+    unsafe fn as_mut(&mut self) -> Option<&mut NativeRequestShutdownCallbacks> {
         unsafe { self.ptr.as_mut() }
     }
 }
@@ -10722,6 +10767,229 @@ pub unsafe extern "C" fn phpc_native_spl_autoload_registry_free(
     }
 
     drop(unsafe { Box::from_raw(handle.ptr) });
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_request_shutdown_callbacks_null(
+) -> NativeRequestShutdownCallbacksHandle {
+    NativeRequestShutdownCallbacksHandle::null()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_request_shutdown_callbacks_new(
+) -> NativeRequestShutdownCallbacksHandle {
+    NativeRequestShutdownCallbacksHandle::new()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_request_shutdown_callbacks_is_null(
+    handle: NativeRequestShutdownCallbacksHandle,
+) -> bool {
+    handle.is_null()
+}
+
+/// # Safety
+///
+/// `handle` must be null or a request shutdown callbacks handle previously
+/// returned by the runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_shutdown_callbacks_free(
+    handle: NativeRequestShutdownCallbacksHandle,
+) {
+    if handle.ptr.is_null() {
+        return;
+    }
+
+    drop(unsafe { Box::from_raw(handle.ptr) });
+}
+
+unsafe fn native_request_shutdown_argument_values(
+    arguments: *const NativeValueHandle,
+    argument_count: usize,
+) -> RuntimeResult<Vec<Value>> {
+    if argument_count == 0 {
+        return Ok(Vec::new());
+    }
+    let Some(handles) = (unsafe { native_abi_slice(arguments, argument_count) }) else {
+        return Err(RuntimeError::unsupported_call(
+            "register_shutdown_function()",
+            format!("argument handle array is null for {argument_count} shutdown argument(s)"),
+        ));
+    };
+
+    let mut values = Vec::with_capacity(argument_count);
+    for (index, handle) in handles.iter().enumerate() {
+        let Some(value) = (unsafe { handle.as_ref() }) else {
+            return Err(RuntimeError::unsupported_call(
+                "register_shutdown_function()",
+                format!("shutdown argument {index} value handle is null"),
+            ));
+        };
+        values.push(value.clone());
+    }
+    Ok(values)
+}
+
+unsafe fn native_request_shutdown_callback_arguments(
+    callback: &NativeRequestShutdownCallback,
+) -> RuntimeResult<NativeCallArgumentsHandle> {
+    let arguments = NativeCallArgumentsHandle::new();
+    for value in &callback.arguments {
+        let value = NativeValueHandle::from_value(value.clone());
+        if !unsafe { phpc_native_call_arguments_push_value_and_free(arguments, value) } {
+            unsafe { phpc_native_call_arguments_free(arguments) };
+            return Err(RuntimeError::unsupported_call(
+                "register_shutdown_function()",
+                "shutdown callback argument materialization failed",
+            ));
+        }
+    }
+    Ok(arguments)
+}
+
+unsafe fn native_request_shutdown_callback_invoke(
+    callback: NativeRequestShutdownCallback,
+) -> RuntimeResult<()> {
+    let callable = NativeCallableValueHandle::from_dispatch(callback.dispatch.clone());
+    let arguments = unsafe { native_request_shutdown_callback_arguments(&callback) }?;
+    let mut diagnostic = NativeDiagnosticHandle::null();
+    unsafe {
+        phpc_native_callable_value_invoke_discard_with_diagnostic_and_free(
+            callable,
+            arguments,
+            &mut diagnostic,
+        )
+    };
+    unsafe { phpc_native_callable_value_free(callable) };
+    if !diagnostic.is_null() {
+        let message = unsafe { diagnostic.as_ref() }
+            .map(|diagnostic| diagnostic.message.clone())
+            .unwrap_or_else(|| "shutdown callback invocation failed".to_string());
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        return Err(RuntimeError::unsupported_call(
+            "register_shutdown_function()",
+            message,
+        ));
+    }
+    Ok(())
+}
+
+unsafe fn native_request_shutdown_callbacks_run(
+    mut handle: NativeRequestShutdownCallbacksHandle,
+) -> RuntimeResult<usize> {
+    {
+        let Some(callbacks) = (unsafe { handle.as_mut() }) else {
+            return Ok(0);
+        };
+        if callbacks.completed || callbacks.running {
+            return Ok(0);
+        }
+        callbacks.running = true;
+    }
+
+    let mut index = 0usize;
+    loop {
+        let next = {
+            let callbacks = unsafe { handle.as_mut() }.ok_or_else(|| {
+                RuntimeError::unsupported_call(
+                    "register_shutdown_function()",
+                    "native request shutdown callbacks handle is null",
+                )
+            })?;
+            if index >= callbacks.callbacks.len() {
+                callbacks.running = false;
+                callbacks.completed = true;
+                callbacks.callbacks.clear();
+                return Ok(index);
+            }
+            let callback = callbacks.callbacks[index].clone();
+            index += 1;
+            callback
+        };
+
+        if let Err(error) = unsafe { native_request_shutdown_callback_invoke(next) } {
+            if let Some(callbacks) = unsafe { handle.as_mut() } {
+                callbacks.running = false;
+                callbacks.completed = true;
+                callbacks.callbacks.clear();
+            }
+            return Err(error);
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be a request-local shutdown callback registry. `callable`
+/// must be a normalized callable-value dispatch handle returned by the runtime
+/// callable-value lookup ABI. This function consumes `callable` exactly once.
+/// `arguments` must be null when `argument_count` is zero, or point to
+/// `argument_count` initialized value handles that remain owned by the caller.
+/// The diagnostic slot may be null or owned by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_shutdown_callbacks_register_callable_value_and_free(
+    mut handle: NativeRequestShutdownCallbacksHandle,
+    callable: NativeCallableValueHandle,
+    arguments: *const NativeValueHandle,
+    argument_count: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result: RuntimeResult<()> = (|| {
+        let dispatch =
+            unsafe { native_callable_value_dispatch_take(callable) }.ok_or_else(|| {
+                RuntimeError::unsupported_call(
+                    "register_shutdown_function()",
+                    "callable dispatch handle is null",
+                )
+            })?;
+        let arguments =
+            unsafe { native_request_shutdown_argument_values(arguments, argument_count) }?;
+        let callbacks = unsafe { handle.as_mut() }.ok_or_else(|| {
+            RuntimeError::unsupported_call(
+                "register_shutdown_function()",
+                "native request shutdown callbacks handle is null",
+            )
+        })?;
+        if callbacks.completed && !callbacks.running {
+            return Ok(());
+        }
+        callbacks.callbacks.push(NativeRequestShutdownCallback {
+            dispatch,
+            arguments,
+        });
+        Ok(())
+    })();
+
+    match result {
+        Ok(()) => true,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be null or a request-local shutdown callback registry. The
+/// callable table is accepted to keep generated C cleanup adjacent to callable
+/// dispatch state. Registered callbacks already store normalized dispatch
+/// records. The diagnostic slot may be null or owned by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_shutdown_callbacks_run_with_callable_table(
+    handle: NativeRequestShutdownCallbacksHandle,
+    _table: NativeCallableTableHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    match unsafe { native_request_shutdown_callbacks_run(handle) } {
+        Ok(_) => true,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
 }
 
 unsafe fn native_spl_autoload_register_callback_value_and_free(
@@ -42299,6 +42567,17 @@ mod tests {
         result
     }
 
+    unsafe fn string_from_frame_for_test(frame: NativeCallFrameHandle, index: usize) -> String {
+        let value = unsafe { phpc_native_call_frame_read_value(frame, index) };
+        let result = match unsafe { value.as_ref() } {
+            Some(Value::String(value)) => value.clone(),
+            Some(Value::BinaryString(value)) => String::from_utf8_lossy(value).into_owned(),
+            other => panic!("expected string frame value, got {other:?}"),
+        };
+        unsafe { phpc_native_value_free(value) };
+        result
+    }
+
     unsafe fn int_from_value_for_test(handle: NativeValueHandle) -> i64 {
         let result = match unsafe { handle.as_ref() } {
             Some(Value::Int(value)) => *value,
@@ -42345,6 +42624,11 @@ mod tests {
         static SPL_AUTOLOAD_REENTRANT_REGISTRY_FOR_TEST: RefCell<NativeSplAutoloadRegistryHandle> =
             const { RefCell::new(NativeSplAutoloadRegistryHandle::null()) };
         static OUTPUT_BUFFER_EVENTS_FOR_TEST: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+        static SHUTDOWN_EVENTS_FOR_TEST: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+        static SHUTDOWN_REENTRANT_REGISTRY_FOR_TEST: RefCell<NativeRequestShutdownCallbacksHandle> =
+            const { RefCell::new(NativeRequestShutdownCallbacksHandle::null()) };
+        static SHUTDOWN_REENTRANT_TABLE_FOR_TEST: RefCell<NativeCallableTableHandle> =
+            const { RefCell::new(NativeCallableTableHandle::null()) };
     }
 
     fn spl_autoload_events_for_test() -> Vec<String> {
@@ -42368,6 +42652,24 @@ mod tests {
 
     fn output_buffer_record_event_for_test(event: String) {
         OUTPUT_BUFFER_EVENTS_FOR_TEST.with(|events| events.borrow_mut().push(event));
+    }
+
+    fn shutdown_events_for_test() -> Vec<String> {
+        SHUTDOWN_EVENTS_FOR_TEST.with(|events| events.borrow().clone())
+    }
+
+    fn shutdown_events_reset_for_test() {
+        SHUTDOWN_EVENTS_FOR_TEST.with(|events| events.borrow_mut().clear());
+        SHUTDOWN_REENTRANT_REGISTRY_FOR_TEST.with(|registry| {
+            *registry.borrow_mut() = NativeRequestShutdownCallbacksHandle::null();
+        });
+        SHUTDOWN_REENTRANT_TABLE_FOR_TEST.with(|table| {
+            *table.borrow_mut() = NativeCallableTableHandle::null();
+        });
+    }
+
+    fn shutdown_record_event_for_test(event: String) {
+        SHUTDOWN_EVENTS_FOR_TEST.with(|events| events.borrow_mut().push(event));
     }
 
     fn spl_autoload_record_event_for_test(label: &str, class_name: &[u8]) {
@@ -49613,6 +49915,117 @@ mod tests {
         unsafe { phpc_native_value_free(unused_value) };
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         native_clear_output_buffers();
+    }
+
+    #[test]
+    fn native_request_shutdown_callbacks_run_in_order_reach_nested_and_do_not_repeat() {
+        unsafe extern "C" fn first_shutdown(
+            frame: NativeCallFrameHandle,
+        ) -> NativeCallResultHandle {
+            let label = unsafe { string_from_frame_for_test(frame, 0) };
+            shutdown_record_event_for_test(format!("first:{label}"));
+
+            let registry = SHUTDOWN_REENTRANT_REGISTRY_FOR_TEST.with(|registry| *registry.borrow());
+            let table = SHUTDOWN_REENTRANT_TABLE_FOR_TEST.with(|table| *table.borrow());
+            let callable = unsafe {
+                normalized_callable_for_test(table, Value::String("second_shutdown".into()))
+            };
+            let argument = NativeValueHandle::from_value(Value::String("nested".to_string()));
+            let arguments = [argument];
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            assert!(unsafe {
+                phpc_native_request_shutdown_callbacks_register_callable_value_and_free(
+                    registry,
+                    callable,
+                    arguments.as_ptr(),
+                    arguments.len(),
+                    &mut diagnostic,
+                )
+            });
+            assert!(diagnostic.is_null());
+            unsafe { phpc_native_value_free(argument) };
+
+            phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Null))
+        }
+
+        unsafe extern "C" fn second_shutdown(
+            frame: NativeCallFrameHandle,
+        ) -> NativeCallResultHandle {
+            let label = unsafe { string_from_frame_for_test(frame, 0) };
+            shutdown_record_event_for_test(format!("second:{label}"));
+            phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Null))
+        }
+
+        shutdown_events_reset_for_test();
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "first_shutdown",
+                NativeCallableVisibility::Public,
+                first_shutdown,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "second_shutdown",
+                NativeCallableVisibility::Public,
+                second_shutdown,
+            );
+        }
+        let registry = phpc_native_request_shutdown_callbacks_new();
+        SHUTDOWN_REENTRANT_REGISTRY_FOR_TEST.with(|slot| *slot.borrow_mut() = registry);
+        SHUTDOWN_REENTRANT_TABLE_FOR_TEST.with(|slot| *slot.borrow_mut() = table);
+
+        let callable =
+            unsafe { normalized_callable_for_test(table, Value::String("first_shutdown".into())) };
+        let argument = NativeValueHandle::from_value(Value::String("outer".to_string()));
+        let arguments = [argument];
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        assert!(unsafe {
+            phpc_native_request_shutdown_callbacks_register_callable_value_and_free(
+                registry,
+                callable,
+                arguments.as_ptr(),
+                arguments.len(),
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        unsafe { phpc_native_value_free(argument) };
+
+        assert!(unsafe {
+            phpc_native_request_shutdown_callbacks_run_with_callable_table(
+                registry,
+                table,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            shutdown_events_for_test(),
+            vec!["first:outer".to_string(), "second:nested".to_string()]
+        );
+
+        assert!(unsafe {
+            phpc_native_request_shutdown_callbacks_run_with_callable_table(
+                registry,
+                table,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            shutdown_events_for_test(),
+            vec!["first:outer".to_string(), "second:nested".to_string()]
+        );
+
+        unsafe { phpc_native_request_shutdown_callbacks_free(registry) };
+        unsafe { phpc_native_callable_table_free(table) };
+        shutdown_events_reset_for_test();
     }
 
     #[test]

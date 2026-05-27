@@ -244,6 +244,57 @@ const NATIVE_OUTPUT_BUFFER_EXIT_UNWIND_SOURCE: &str = concat!(
     "exit(\"B\");\n",
 );
 
+const NATIVE_SHUTDOWN_CALLBACK_ORDER_SOURCE: &str = concat!(
+    "<?php\n",
+    "function first_shutdown($value) {\n",
+    "    echo \"first:\", $value, \"|\";\n",
+    "    register_shutdown_function(\"second_shutdown\", \"nested\");\n",
+    "}\n",
+    "function second_shutdown($value) {\n",
+    "    echo \"second:\", $value, \"|\";\n",
+    "}\n",
+    "register_shutdown_function(\"first_shutdown\", \"outer\");\n",
+    "echo \"body|\";\n",
+);
+
+const NATIVE_SHUTDOWN_OUTPUT_BUFFER_SOURCE: &str = concat!(
+    "<?php\n",
+    "function shutdown_phase_handler($buffer, $phase) {\n",
+    "    return \"[\" . $phase . \":\" . $buffer . \"]\";\n",
+    "}\n",
+    "function shutdown_echo($value) {\n",
+    "    echo \"shutdown:\", $value, \"|\";\n",
+    "}\n",
+    "ob_start(\"shutdown_phase_handler\");\n",
+    "register_shutdown_function(\"shutdown_echo\", \"normal\");\n",
+    "echo \"body|\";\n",
+);
+
+const NATIVE_SHUTDOWN_EXIT_OUTPUT_BUFFER_SOURCE: &str = concat!(
+    "<?php\n",
+    "function shutdown_phase_handler($buffer, $phase) {\n",
+    "    return \"[\" . $phase . \":\" . $buffer . \"]\";\n",
+    "}\n",
+    "function shutdown_echo() {\n",
+    "    echo \"shutdown|\";\n",
+    "}\n",
+    "ob_start(\"shutdown_phase_handler\");\n",
+    "register_shutdown_function(\"shutdown_echo\");\n",
+    "echo \"body|\";\n",
+    "exit(\"exit|\");\n",
+);
+
+const NATIVE_SHUTDOWN_DESTRUCTOR_ORDER_SOURCE: &str = concat!(
+    "<?php\n",
+    "class ShutdownDestructorBox {\n",
+    "    public function __destruct() { echo \"destruct|\"; }\n",
+    "}\n",
+    "function shutdown_marker() { echo \"shutdown|\"; }\n",
+    "$box = new ShutdownDestructorBox();\n",
+    "register_shutdown_function(\"shutdown_marker\");\n",
+    "echo \"body|\";\n",
+);
+
 const NATIVE_DIAGNOSTIC_RESULT_DISCARDED_EXPR_SOURCE: &str = concat!(
     "<?php\n",
     "1;\n",
@@ -2815,6 +2866,56 @@ fn emit_exe_links_and_runs_native_output_buffer_shutdown_unwind_programs() {
 
     let _ = fs::remove_file(source_path);
     let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_shutdown_callback_cleanup_programs() {
+    if !has_cc() {
+        return;
+    }
+
+    for (name, source, expected_stdout) in [
+        (
+            "native_shutdown_callback_order",
+            NATIVE_SHUTDOWN_CALLBACK_ORDER_SOURCE,
+            "body|first:outer|second:nested|",
+        ),
+        (
+            "native_shutdown_output_buffer",
+            NATIVE_SHUTDOWN_OUTPUT_BUFFER_SOURCE,
+            "[9:body|shutdown:normal|]",
+        ),
+        (
+            "native_shutdown_exit_output_buffer",
+            NATIVE_SHUTDOWN_EXIT_OUTPUT_BUFFER_SOURCE,
+            "[9:body|exit|shutdown|]",
+        ),
+        (
+            "native_shutdown_destructor_order",
+            NATIVE_SHUTDOWN_DESTRUCTOR_ORDER_SOURCE,
+            "body|shutdown|destruct|",
+        ),
+    ] {
+        let (source_path, output_path) = compile_native_link_fixture(name, source);
+        let run = Command::new(&output_path)
+            .output()
+            .unwrap_or_else(|error| panic!("failed to run {name} executable: {error}"));
+        assert!(
+            run.status.success(),
+            "{name} stdout:\n{}\n{name} stderr:\n{}",
+            String::from_utf8_lossy(&run.stdout),
+            String::from_utf8_lossy(&run.stderr)
+        );
+        assert_eq!(
+            String::from_utf8(run.stdout).expect("shutdown stdout should be UTF-8"),
+            expected_stdout,
+            "{name}"
+        );
+        assert_eq!(String::from_utf8_lossy(&run.stderr), "", "{name}");
+
+        let _ = fs::remove_file(source_path);
+        let _ = fs::remove_file(output_path);
+    }
 }
 
 #[test]
@@ -6269,6 +6370,70 @@ fn native_executable_c_source_unwinds_output_buffers_at_shutdown_boundaries() {
     assert!(
         unwind_pos < exit_return_pos,
         "early exit cleanup should unwind output buffers before returning:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_runs_shutdown_callbacks_before_destructors_and_output_buffers() {
+    let program = parse(NATIVE_SHUTDOWN_OUTPUT_BUFFER_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "extern bool phpc_native_request_shutdown_callbacks_register_callable_value_and_free"
+        ) && source.contains("phpc_native_request_shutdown_callbacks_run_with_callable_table"),
+        "generated C should route shutdown registration and cleanup through runtime ABI:\n{source}"
+    );
+    let shutdown_pos = body
+        .rfind("phpc_native_request_shutdown_callbacks_run_with_callable_table")
+        .unwrap_or_else(|| panic!("main should run shutdown callbacks before return:\n{source}"));
+    let unwind_pos = body
+        .rfind("phpc_native_output_buffer_unwind_stack_with_diagnostic")
+        .unwrap_or_else(|| panic!("main should unwind output buffers before return:\n{source}"));
+    assert!(
+        shutdown_pos < unwind_pos,
+        "shutdown callbacks must run before output-buffer unwind:\n{source}"
+    );
+    assert!(
+        !source.contains("[9:body|shutdown:normal|]"),
+        "generated C should not snapshot shutdown/output-buffer results:\n{source}"
+    );
+
+    let program = parse(NATIVE_SHUTDOWN_EXIT_OUTPUT_BUFFER_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+    let exit_return_pos = body
+        .find("return native_exit_result_")
+        .unwrap_or_else(|| panic!("exit should return runtime exit status:\n{source}"));
+    let exit_cleanup = &body[..exit_return_pos];
+    let shutdown_pos = exit_cleanup
+        .rfind("phpc_native_request_shutdown_callbacks_run_with_callable_table")
+        .unwrap_or_else(|| panic!("early exit should run shutdown callbacks:\n{source}"));
+    let unwind_pos = exit_cleanup
+        .rfind("phpc_native_output_buffer_unwind_stack_with_diagnostic")
+        .unwrap_or_else(|| panic!("early exit should unwind output buffers:\n{source}"));
+    assert!(
+        shutdown_pos < unwind_pos,
+        "early exit cleanup should run shutdown callbacks before output-buffer unwind:\n{source}"
+    );
+
+    let program = parse(NATIVE_SHUTDOWN_DESTRUCTOR_ORDER_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+    let shutdown_pos = body
+        .rfind("phpc_native_request_shutdown_callbacks_run_with_callable_table")
+        .unwrap_or_else(|| panic!("main should run shutdown callbacks:\n{source}"));
+    let destructor_pos = body
+        .rfind("phpc_native_request_destructor_finalizers_finalize_with_callable_table")
+        .unwrap_or_else(|| panic!("main should finalize request destructors:\n{source}"));
+    assert!(
+        shutdown_pos < destructor_pos,
+        "shutdown callbacks must precede request destructor finalizers:\n{source}"
+    );
+    assert!(
+        !source.contains("body|shutdown|destruct|"),
+        "generated C should not snapshot shutdown/destructor output:\n{source}"
     );
 }
 
