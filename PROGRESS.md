@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 18:42 CEST
+Updated: 2026-05-27 18:45 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,12 +19,30 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `5735906e` adds the next honest runtime
-include boundary for generated-C registry no-matches. Runtime path values that
-miss the generated include-unit registry now distinguish missing paths from
-existing undeclared PHP source: missing `include` warns and returns false,
-missing `require` warns then fatals with exit 255, and existing undeclared
-source reports an explicit native source-loader/parser ABI blocker instead of
+Latest accounted source capability: `cb323d8e` corrects selected magic
+fallback `$args` reference/COW behavior while carrying forward dynamic magic
+spread dispatch. Runtime magic packing now converts top-level reference call
+argument slots into PHP-style COW value array entries for `__call` and
+`__callStatic`, so writes to `$args[0]` or named `$args` entries inside magic
+methods do not mutate the caller reference, while nested references inside
+copied array values remain shared.
+
+Recent source commit `cb323d8e` integrates the dynamic magic method spread
+surface through the shared materialized source-call forwarding carrier and
+fixes magic `$args` mutation visibility at the runtime packer boundary.
+Focused gates cover runtime magic argument COW/reference helpers, magic byref
+spread, ordinary magic callable spread, dynamic magic method spread,
+by-reference variadic unpack regressions, direct by-reference variadics,
+formatting, and diff checks. Runtime-unknown dynamic method families outside
+the selected declared magic fallback contract, broader callable object/array
+families, full backend parity, and broad reference/COW parity remain blocked.
+
+Recent source commit `5735906e` adds the next honest runtime include boundary
+for generated-C registry no-matches. Runtime path values that miss the
+generated include-unit registry now distinguish missing paths from existing
+undeclared PHP source: missing `include` warns and returns false, missing
+`require` warns then fatals with exit 255, and existing undeclared source
+reports an explicit native source-loader/parser ABI blocker instead of
 pretending the file is missing.
 
 Recent source commit `5735906e` keeps arbitrary runtime PHP source loading
