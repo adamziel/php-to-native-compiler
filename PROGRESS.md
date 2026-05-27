@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 14:09 CEST
+Updated: 2026-05-27 14:16 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,7 +19,16 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest accounted source capability: `bf2aa181` routes selected generated-C
+Latest accounted source capability: `794af86c` routes selected generated-C
+object property overloading through reusable runtime property-magic helpers.
+Missing or externally inaccessible instance property reads, writes, `isset`,
+and `unset` now dispatch through public non-static `__get`, `__set`,
+`__isset`, and `__unset` callable metadata using the shared lookup/invoke and
+`NativeCallArgumentsHandle` boundaries, while visible declared public property
+access still wins first. Private/static/malformed magic metadata rejects before
+fallback, dynamic property names share the same mutation route, and
+property-reference/COW shapes remain blocked instead of inventing fake `__get`
+references. Recent source commit `bf2aa181` routes selected generated-C
 dynamic constructor class-name expressions through a shared runtime
 constructor-scope normalization boundary. Parenthesized `new (expr)(...)`
 class names can now consume class strings or object receivers, normalize
