@@ -355,13 +355,30 @@ const NATIVE_DECLARED_CLASS_CONSTRUCTOR_SOURCE: &str = concat!(
     "    public $code;\n",
     "    public function __construct($code) { $this->code = $code; }\n",
     "}\n",
+    "class Guarded {\n",
+    "    public $name;\n",
+    "    public $tag;\n",
+    "    public function __construct($skip = true, $value = \"run\") {\n",
+    "        $this->name = \"start\";\n",
+    "        if ($skip) {\n",
+    "            $this->name = \"SKIP\";\n",
+    "            return;\n",
+    "        }\n",
+    "        $this->name = strtoupper($value);\n",
+    "        $this->tag = $value;\n",
+    "    }\n",
+    "}\n",
     "$box = new Box();\n",
     "echo $box->name, \"|\";\n",
     "$named = new Box(\"Grace\");\n",
     "echo $named->label(), \"|\";\n",
     "$packet = new Packet(7);\n",
     "echo $packet->code, \"|\";\n",
-    "echo (new Box(\"Temp\"))->label(), \"\\n\";\n",
+    "echo (new Box(\"Temp\"))->label(), \"|\";\n",
+    "$guarded = new Guarded();\n",
+    "echo $guarded->name, \":\", empty($guarded->tag) ? \"none\" : $guarded->tag, \"|\";\n",
+    "$run = new Guarded(false, \"loop\");\n",
+    "echo $run->name, \":\", $run->tag, \"\\n\";\n",
 );
 
 const NATIVE_DECLARED_CLASS_DYNAMIC_CONSTRUCTOR_NEW_SOURCE: &str = concat!(
@@ -1832,7 +1849,7 @@ fn emit_exe_links_and_runs_declared_class_constructor_program() {
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(run.stdout, b"ADA|GRACE|7|TEMP\n");
+    assert_eq!(run.stdout, b"ADA|GRACE|7|TEMP|SKIP:none|LOOP:loop\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);

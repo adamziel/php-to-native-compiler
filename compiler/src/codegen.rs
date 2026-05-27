@@ -4513,8 +4513,8 @@ fn function_body_contains_native_frame_blocker(statements: &[Stmt]) -> bool {
         || statements.iter().any(stmt_contains_function_frame_blocker)
 }
 
-fn stmt_list_contains_return_statement(statements: &[Stmt]) -> bool {
-    statements.iter().any(stmt_contains_return_statement)
+fn stmt_list_contains_value_return_statement(statements: &[Stmt]) -> bool {
+    statements.iter().any(stmt_contains_value_return_statement)
 }
 
 fn stmt_list_always_returns(statements: &[Stmt]) -> bool {
@@ -4541,31 +4541,31 @@ fn stmt_always_returns(stmt: &Stmt) -> bool {
     }
 }
 
-fn stmt_contains_return_statement(stmt: &Stmt) -> bool {
+fn stmt_contains_value_return_statement(stmt: &Stmt) -> bool {
     match stmt {
-        Stmt::Return { .. } => true,
+        Stmt::Return { value, .. } => value.is_some(),
         Stmt::If {
             then_branch,
             else_branch,
             ..
         } => {
-            stmt_list_contains_return_statement(then_branch)
-                || stmt_list_contains_return_statement(else_branch)
+            stmt_list_contains_value_return_statement(then_branch)
+                || stmt_list_contains_value_return_statement(else_branch)
         }
         Stmt::While { body, .. } | Stmt::DoWhile { body, .. } | Stmt::Foreach { body, .. } => {
-            stmt_list_contains_return_statement(body)
+            stmt_list_contains_value_return_statement(body)
         }
-        Stmt::For { body, .. } => stmt_list_contains_return_statement(body),
+        Stmt::For { body, .. } => stmt_list_contains_value_return_statement(body),
         Stmt::Switch { cases, .. } => cases
             .iter()
-            .any(|case| stmt_list_contains_return_statement(&case.body)),
+            .any(|case| stmt_list_contains_value_return_statement(&case.body)),
         Stmt::Try {
             body, finally_body, ..
         } => {
-            stmt_list_contains_return_statement(body)
+            stmt_list_contains_value_return_statement(body)
                 || finally_body
                     .as_ref()
-                    .is_some_and(|body| stmt_list_contains_return_statement(body))
+                    .is_some_and(|body| stmt_list_contains_value_return_statement(body))
         }
         _ => false,
     }
@@ -18895,7 +18895,7 @@ impl CGenerator {
             || method.is_static
             || method.is_abstract
             || stmt_list_contains_global_import(&method.function.body)
-            || stmt_list_contains_return_statement(&method.function.body)
+            || stmt_list_contains_value_return_statement(&method.function.body)
             || method.function.is_nested
             || method.function.returns_by_reference
             || method.function.return_type.is_some()
