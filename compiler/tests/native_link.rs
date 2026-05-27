@@ -24784,6 +24784,51 @@ const NATIVE_TRAIT_MEMBER_METADATA_SOURCE: &str = concat!(
     "echo $box->describe(), \"|\", TraitMemberBox::$count;\n",
 );
 
+const NATIVE_DESTRUCTOR_FINALIZATION_SOURCE: &str = concat!(
+    "<?php\n",
+    "class NativeDestructorBox {\n",
+    "    public function __destruct() { echo \"|direct\"; }\n",
+    "}\n",
+    "trait NativeDestructorTrait {\n",
+    "    public function __destruct() { echo \"|trait:\" . $this->label; }\n",
+    "}\n",
+    "class NativeDestructorTraitBox {\n",
+    "    use NativeDestructorTrait;\n",
+    "    public $label = \"seed\";\n",
+    "}\n",
+    "$direct = new NativeDestructorBox();\n",
+    "$trait = new NativeDestructorTraitBox();\n",
+    "$trait->label = \"mutated\";\n",
+    "echo \"body\";\n",
+);
+
+const NATIVE_PROPERTY_OBSERVING_DESTRUCTOR_SOURCE: &str = concat!(
+    "<?php\n",
+    "class NativePropertyDestructorBox {\n",
+    "    public $label = \"seed\";\n",
+    "    public function __construct($label) { $this->label = $label; }\n",
+    "    public function rename($label) { $this->label = $label; }\n",
+    "    public function __destruct() { echo \"|destroy:\" . $this->label; }\n",
+    "}\n",
+    "$box = new NativePropertyDestructorBox(\"ctor\");\n",
+    "$box->rename(\"method\");\n",
+    "$box->label = \"final\";\n",
+    "echo \"body:\" . $box->label;\n",
+);
+
+const NATIVE_DESTRUCTOR_CLEANUP_ORDER_BLOCKED_SOURCE: &str = concat!(
+    "<?php\n",
+    "class NativeCleanupOrderDestructorBox {\n",
+    "    public function __destruct() { echo \"|destruct\"; }\n",
+    "}\n",
+    "try {\n",
+    "    new NativeCleanupOrderDestructorBox();\n",
+    "    echo \"body\";\n",
+    "} finally {\n",
+    "    echo \"|finally\";\n",
+    "}\n",
+);
+
 const NATIVE_INTERFACE_TYPED_METHOD_SOURCE_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "interface NativeInterfaceDispatchContract {\n",
@@ -25620,6 +25665,48 @@ fn native_executable_c_source_routes_trait_constructors_through_declared_frame_c
             && !body.contains("method_dispatch_status")
             && !body.contains("dynamic_method_dispatch_status"),
         "trait constructor execution must not fall back to blockers or generated dispatch ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_destructor_finalization_through_request_registry() {
+    let program = parse(NATIVE_DESTRUCTOR_FINALIZATION_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_NativeRequestDestructorFinalizersHandle")
+            && source.contains("phpc_native_request_destructor_finalizers_register_value")
+            && source.contains(
+                "phpc_native_request_destructor_finalizers_finalize_with_callable_table"
+            )
+            && source.contains("PHPC_NATIVE_CALLABLE_KIND_METHOD")
+            && source.contains("phpc_declared_method_"),
+        "destructor-bearing generated objects should register request-owned finalizers through declared method metadata:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_request_destructor_finalizers_register_value")
+            && body.contains(
+                "phpc_native_request_destructor_finalizers_finalize_with_callable_table"
+            )
+            && !source.contains("object-instantiation lowering rejects")
+            && !body.contains("method_dispatch_status"),
+        "destructor finalization should use the shared request registry and method frame path without fixture-specific calls:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_blocks_destructor_cleanup_order_inside_try_finally() {
+    let program = parse(NATIVE_DESTRUCTOR_CLEANUP_ORDER_BLOCKED_SOURCE).unwrap();
+    let error = emit_native_executable_c_source(&program)
+        .expect_err("destructor cleanup order inside try/finally should remain blocked");
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("destructor-observable cleanup")
+            || error.message.contains("try/catch/finally"),
+        "cleanup-order blocker should stay focused on destructor/finally ordering, got: {}",
+        error.message
     );
 }
 
@@ -27389,6 +27476,62 @@ fn emit_exe_links_and_runs_trait_member_metadata_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"trait:seed!:5|5");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_request_destructor_finalization_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "destructor_finalization",
+        NATIVE_DESTRUCTOR_FINALIZATION_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native destructor finalization executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"body|trait:mutated|direct");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_property_observing_destructor_finalization_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "property_observing_destructor_finalization",
+        NATIVE_PROPERTY_OBSERVING_DESTRUCTOR_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native property-observing destructor executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"body:final|destroy:final");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

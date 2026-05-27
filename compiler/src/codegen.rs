@@ -16206,6 +16206,7 @@ struct CGenerator {
     uses_native_exit_helpers: bool,
     uses_native_call_type_helpers: bool,
     uses_native_callable_helpers: bool,
+    uses_native_destructor_finalization_helpers: bool,
     uses_native_materialized_call_argument_helpers: bool,
     uses_native_arrayaccess_offset_read_helpers: bool,
     uses_native_arrayaccess_offset_write_helpers: bool,
@@ -16241,6 +16242,7 @@ struct CGenerator {
     native_globals_symbol_table_handle: Option<String>,
     native_globals_symbol_table_owned: bool,
     native_callable_table_handle: Option<String>,
+    native_destructor_finalizers_handle: Option<String>,
     loop_transfer_targets: Vec<CLoopTransferTarget>,
     active_finally_bodies: Vec<Vec<Stmt>>,
     user_functions: HashMap<String, CUserFunction>,
@@ -16421,6 +16423,7 @@ struct CGotoStateSnapshot {
     native_globals_symbol_table_handle: Option<String>,
     native_globals_symbol_table_owned: bool,
     native_callable_table_handle: Option<String>,
+    native_destructor_finalizers_handle: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -19295,6 +19298,7 @@ impl CGenerator {
             && self.native_class_constant_table_owned == other.native_class_constant_table_owned
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
             && self.native_globals_symbol_table_owned == other.native_globals_symbol_table_owned
+            && self.native_destructor_finalizers_handle == other.native_destructor_finalizers_handle
     }
 
     fn goto_state_snapshot(&self) -> CGotoStateSnapshot {
@@ -19329,6 +19333,7 @@ impl CGenerator {
             native_globals_symbol_table_handle: self.native_globals_symbol_table_handle.clone(),
             native_globals_symbol_table_owned: self.native_globals_symbol_table_owned,
             native_callable_table_handle: self.native_callable_table_handle.clone(),
+            native_destructor_finalizers_handle: self.native_destructor_finalizers_handle.clone(),
         }
     }
 
@@ -19349,6 +19354,7 @@ impl CGenerator {
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
             && self.native_globals_symbol_table_owned == other.native_globals_symbol_table_owned
             && self.native_callable_table_handle == other.native_callable_table_handle
+            && self.native_destructor_finalizers_handle == other.native_destructor_finalizers_handle
     }
 
     fn merge_scoped_branch_state(
@@ -19902,6 +19908,8 @@ impl CGenerator {
         self.uses_native_exit_helpers |= branch.uses_native_exit_helpers;
         self.uses_native_call_type_helpers |= branch.uses_native_call_type_helpers;
         self.uses_native_callable_helpers |= branch.uses_native_callable_helpers;
+        self.uses_native_destructor_finalization_helpers |=
+            branch.uses_native_destructor_finalization_helpers;
         self.uses_native_arrayaccess_offset_read_helpers |=
             branch.uses_native_arrayaccess_offset_read_helpers;
         self.uses_native_arrayaccess_offset_write_helpers |=
@@ -20291,6 +20299,28 @@ impl CGenerator {
             {
                 allocation_metadata.cleanup_risk =
                     CDeclaredClassCleanupRisk::destructor_observable();
+                if self.declared_class_method_is_request_finalizable_destructor(&method.method) {
+                    let key = Self::declared_method_key(&method.method.function.name);
+                    if !seen_methods.insert(key) {
+                        return Err(
+                            self.unsupported(method.method.span, ASSEMBLY_METHOD_CALL_REJECTION)
+                        );
+                    }
+                    let c_name = Self::c_declared_class_method_name(
+                        class_index,
+                        methods.len(),
+                        &class.name,
+                        &method.method.function.name,
+                    );
+                    methods.push(CDeclaredClassMethod {
+                        c_name,
+                        decl: method.method.function.clone(),
+                        visibility: method.method.visibility,
+                        is_static: method.method.is_static,
+                        return_facts: None,
+                        this_property_value_facts: HashMap::new(),
+                    });
+                }
                 effective_methods.push(CDeclaredClassEffectiveMethod {
                     declaring_trait_name: Some(method.declaring_trait_name),
                     decl: method.method.function,
@@ -20919,6 +20949,23 @@ impl CGenerator {
             return Err(self.unsupported(method.span, ASSEMBLY_METHOD_CALL_REJECTION));
         }
         Ok(())
+    }
+
+    fn declared_class_method_is_request_finalizable_destructor(
+        &self,
+        method: &ClassMethodDecl,
+    ) -> bool {
+        method.function.name.eq_ignore_ascii_case("__destruct")
+            && method.visibility == ClassVisibility::Public
+            && !method.is_static
+            && !method.is_abstract
+            && method.function.params.is_empty()
+            && !stmt_list_contains_global_import(&method.function.body)
+            && !method.function.is_nested
+            && !method.function.returns_by_reference
+            && method.function.return_type.is_none()
+            && !native_user_function_has_malformed_variadic_params(&method.function)
+            && !function_body_contains_native_frame_blocker(&method.function.body)
     }
 
     fn declared_class_property_visibility_tag(visibility: ClassVisibility) -> u8 {
@@ -22562,6 +22609,11 @@ impl CGenerator {
                 }
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallFrameHandle;\n");
                 output.push_str("typedef struct { void *ptr; } phpc_NativeCallResultHandle;\n");
+                if self.uses_native_destructor_finalization_helpers {
+                    output.push_str(
+                        "typedef struct { void *ptr; } phpc_NativeRequestDestructorFinalizersHandle;\n",
+                    );
+                }
                 output.push_str("typedef phpc_NativeCallResultHandle (*phpc_NativeCallableFrameCallback)(phpc_NativeCallFrameHandle);\n");
             }
             if self.uses_native_closure_helpers {
@@ -22866,6 +22918,13 @@ impl CGenerator {
                 output.push_str("extern bool phpc_native_callable_table_register_class_parent_and_free(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle class_name, phpc_NativeStringHandle parent_name);\n");
                 output.push_str("extern bool phpc_native_callable_table_register_allocatable_class_and_free(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle class_name);\n");
                 output.push_str("extern bool phpc_native_callable_table_can_allocate_class(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle class_name);\n");
+                if self.uses_native_destructor_finalization_helpers {
+                    output.push_str("extern phpc_NativeRequestDestructorFinalizersHandle phpc_native_request_destructor_finalizers_new(void);\n");
+                    output.push_str("extern _Bool phpc_native_request_destructor_finalizers_is_null(phpc_NativeRequestDestructorFinalizersHandle handle);\n");
+                    output.push_str("extern void phpc_native_request_destructor_finalizers_free(phpc_NativeRequestDestructorFinalizersHandle handle);\n");
+                    output.push_str("extern _Bool phpc_native_request_destructor_finalizers_register_value(phpc_NativeRequestDestructorFinalizersHandle handle, phpc_NativeValueHandle value);\n");
+                    output.push_str("extern _Bool phpc_native_request_destructor_finalizers_finalize_with_callable_table(phpc_NativeRequestDestructorFinalizersHandle handle, phpc_NativeCallableTableHandle table);\n");
+                }
                 output.push_str("extern phpc_NativeCallableHandle phpc_native_callable_lookup_with_diagnostic(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeCallableHandle phpc_native_callable_lookup_with_access_context_diagnostic(phpc_NativeCallableTableHandle table, uint8_t kind, phpc_NativeStringHandle scope, phpc_NativeStringHandle name, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeCallableHandle phpc_native_method_lookup_with_access_context_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle receiver, phpc_NativeValueHandle method, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -23324,6 +23383,11 @@ impl CGenerator {
             }
             output.push('\n');
         }
+        if self.uses_native_destructor_finalization_helpers {
+            output.push_str(
+                "static phpc_NativeRequestDestructorFinalizersHandle phpc_user_destructor_finalizers = {0};\n\n",
+            );
+        }
         if self.uses_native_static_property_helpers {
             output.push_str(
                 "static phpc_NativeStaticPropertyStorageHandle phpc_user_static_properties = {0};\n\n",
@@ -23420,6 +23484,17 @@ impl CGenerator {
             output.push_str("  ");
             output.push_str(&format!("phpc_native_array_free({handle});"));
             output.push('\n');
+        }
+        if self.uses_native_destructor_finalization_helpers {
+            output.push_str(
+                "  phpc_native_request_destructor_finalizers_finalize_with_callable_table(phpc_user_destructor_finalizers, phpc_user_callable_table);\n",
+            );
+            output.push_str(
+                "  phpc_native_request_destructor_finalizers_free(phpc_user_destructor_finalizers);\n",
+            );
+            output.push_str(
+                "  phpc_user_destructor_finalizers = (phpc_NativeRequestDestructorFinalizersHandle){0};\n",
+            );
         }
         if self.native_request_state_owned {
             if let Some(handle) = &self.native_request_state_handle {
@@ -24085,7 +24160,7 @@ impl CGenerator {
                 let Some(class) = self.declared_classes.get(&key).cloned() else {
                     return Ok(None);
                 };
-                if self.declared_class_requires_destructor_observable_cleanup_boundary(&key) {
+                if self.declared_class_has_unsupported_destructor_finalization(&key) {
                     return Err(self.unsupported_call_operation(
                         NativeCallOperation::constructor_value(
                             span,
@@ -24096,7 +24171,9 @@ impl CGenerator {
                 class
             }
             NewClassName::DynamicVariable(_) => {
-                if self.dynamic_declared_class_constructor_has_destructor_risk(class_name) {
+                if self.dynamic_declared_class_constructor_has_unsupported_destructor_finalization(
+                    class_name,
+                ) {
                     return Err(self.unsupported_call_operation(
                         NativeCallOperation::constructor_value(
                             span,
@@ -24112,7 +24189,9 @@ impl CGenerator {
                 );
             }
             NewClassName::DynamicExpression(_) => {
-                if self.dynamic_declared_class_constructor_has_destructor_risk(class_name) {
+                if self.dynamic_declared_class_constructor_has_unsupported_destructor_finalization(
+                    class_name,
+                ) {
                     return Err(self.unsupported_call_operation(
                         NativeCallOperation::constructor_value(
                             span,
@@ -24132,6 +24211,9 @@ impl CGenerator {
             }
         };
 
+        let should_register_destructor = self.declared_class_has_request_finalizable_destructor(
+            &Self::declared_class_key(&class.name),
+        );
         let constructor = self.declared_class_constructor_for_instantiation(&class);
         let value = if let Some((constructor_class, constructor)) = constructor {
             let value =
@@ -24161,6 +24243,9 @@ impl CGenerator {
             self.body.extend(constructor_args.cleanup_after_use);
             value
         };
+        if should_register_destructor {
+            self.emit_native_destructor_finalizer_registration(&value.handle, failure_cleanup);
+        }
 
         Ok(Some(value))
     }
@@ -24254,6 +24339,15 @@ impl CGenerator {
                         .push(format!("(void){};", constructor_args.handles));
                 }
                 self.body.extend(constructor_args.cleanup_after_use);
+            }
+            if self.declared_class_has_request_finalizable_destructor(&Self::declared_class_key(
+                &class.name,
+            )) {
+                let registration_failure_cleanup = format!("{dynamic_cleanup}{failure_cleanup}");
+                self.emit_native_destructor_finalizer_registration(
+                    &result,
+                    &registration_failure_cleanup,
+                );
             }
             self.body.push("}".to_string());
         }
@@ -25432,6 +25526,41 @@ impl CGenerator {
         }
         self.body.push("}".to_string());
         table
+    }
+
+    fn ensure_native_destructor_finalizers(&mut self, failure_cleanup: &str) -> String {
+        self.uses_native_callable_helpers = true;
+        self.uses_native_destructor_finalization_helpers = true;
+        let handle = self
+            .native_destructor_finalizers_handle
+            .clone()
+            .unwrap_or_else(|| "phpc_user_destructor_finalizers".to_string());
+        self.native_destructor_finalizers_handle = Some(handle.clone());
+
+        self.body.push(format!(
+            "if (phpc_native_request_destructor_finalizers_is_null({handle})) {{"
+        ));
+        self.body.push(format!(
+            "  {handle} = phpc_native_request_destructor_finalizers_new();"
+        ));
+        let allocation_error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!(
+            "  if (phpc_native_request_destructor_finalizers_is_null({handle})) {{ {allocation_error_exit} }}"
+        ));
+        self.body.push("}".to_string());
+        handle
+    }
+
+    fn emit_native_destructor_finalizer_registration(
+        &mut self,
+        value: &str,
+        failure_cleanup: &str,
+    ) {
+        let finalizers = self.ensure_native_destructor_finalizers(failure_cleanup);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!(
+            "if (!phpc_native_request_destructor_finalizers_register_value({finalizers}, {value})) {{ {error_exit} }}"
+        ));
     }
 
     fn materialize_globals_symbol_table(
@@ -42852,6 +42981,27 @@ impl CGenerator {
         })
     }
 
+    fn declared_method_is_request_finalizable_destructor(method: &CDeclaredClassMethod) -> bool {
+        method.decl.name.eq_ignore_ascii_case("__destruct")
+            && method.visibility == ClassVisibility::Public
+            && !method.is_static
+            && method.decl.params.is_empty()
+            && !method.decl.returns_by_reference
+            && method.decl.return_type.is_none()
+    }
+
+    fn declared_class_has_request_finalizable_destructor(&self, class_key: &str) -> bool {
+        self.declared_class_receiver_method_for_key(class_key, "__destruct")
+            .is_some_and(|(_, method)| {
+                Self::declared_method_is_request_finalizable_destructor(&method)
+            })
+    }
+
+    fn declared_class_has_unsupported_destructor_finalization(&self, class_key: &str) -> bool {
+        self.declared_class_requires_destructor_observable_cleanup_boundary(class_key)
+            && !self.declared_class_has_request_finalizable_destructor(class_key)
+    }
+
     fn dynamic_declared_class_known_keys_for_expr(&self, expr: &Expr) -> Option<HashSet<String>> {
         if let Some(facts) = self.native_value_facts_for_expr(expr) {
             if let Some(object) = facts.object {
@@ -42941,6 +43091,27 @@ impl CGenerator {
         known_keys
             .iter()
             .any(|key| self.declared_class_requires_destructor_observable_cleanup_boundary(key))
+    }
+
+    fn dynamic_declared_class_constructor_has_unsupported_destructor_finalization(
+        &self,
+        class_name: &NewClassName,
+    ) -> bool {
+        if !self
+            .declared_class_order
+            .iter()
+            .any(|key| self.declared_class_has_unsupported_destructor_finalization(key))
+        {
+            return false;
+        }
+
+        let Some(known_keys) = self.dynamic_declared_class_known_keys(class_name) else {
+            return true;
+        };
+
+        known_keys
+            .iter()
+            .any(|key| self.declared_class_has_unsupported_destructor_finalization(key))
     }
 
     fn new_class_name_requires_destructor_observable_cleanup_boundary(
@@ -57902,6 +58073,15 @@ impl CGenerator {
         }
         for handle in self.array_cleanup_handles.iter().rev() {
             cleanup.push_str(&format!(" phpc_native_array_free({handle});"));
+        }
+        if self.uses_native_destructor_finalization_helpers && self.function_return_status.is_none()
+        {
+            cleanup.push_str(
+                " phpc_native_request_destructor_finalizers_free(phpc_user_destructor_finalizers);",
+            );
+            cleanup.push_str(
+                " phpc_user_destructor_finalizers = (phpc_NativeRequestDestructorFinalizersHandle){0};",
+            );
         }
         if self.native_request_state_owned {
             if let Some(handle) = &self.native_request_state_handle {

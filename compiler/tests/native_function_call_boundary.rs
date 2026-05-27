@@ -944,7 +944,7 @@ new $name();
 }
 
 #[test]
-fn destructor_observable_allocation_across_call_contexts() {
+fn request_finalizable_destructor_allocation_across_call_contexts_registers_request_finalizers() {
     for source in [
         r#"<?php
 class DirectDestructor {
@@ -1009,10 +1009,17 @@ $sink->take(new MethodArgumentDestructor());
 "#,
     ] {
         let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
+        let generated = emit_native_executable_c_source(&program).unwrap();
 
-        assert_eq!(error.phase, Phase::Codegen);
-        assert_eq!(error.message, ASSEMBLY_OBJECT_INSTANTIATION_REJECTION);
+        assert!(
+            generated.contains("phpc_NativeRequestDestructorFinalizersHandle")
+                && generated.contains("phpc_native_request_destructor_finalizers_register_value")
+                && generated.contains(
+                    "phpc_native_request_destructor_finalizers_finalize_with_callable_table"
+                )
+                && !generated.contains(ASSEMBLY_OBJECT_INSTANTIATION_REJECTION),
+            "request-finalizable destructor allocation should use the shared request registry:\n{generated}"
+        );
     }
 }
 
@@ -1198,7 +1205,7 @@ echo $object->label;
 }
 
 #[test]
-fn trait_effective_method_metadata_marks_trait_destructors_before_allocation() {
+fn trait_effective_method_metadata_routes_trait_destructors_through_finalizers() {
     let source = r#"<?php
 trait DestructorTrait {
     public function __DESTRUCT() { echo "cleanup"; }
@@ -1209,10 +1216,18 @@ class UsesDestructorTrait {
 new UsesDestructorTrait();
 "#;
 
-    let error = emit_native_executable_c_source(&parse(source).unwrap()).unwrap_err();
+    let generated = emit_native_executable_c_source(&parse(source).unwrap()).unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, ASSEMBLY_OBJECT_INSTANTIATION_REJECTION);
+    assert!(
+        generated.contains("PHPC_NATIVE_CALLABLE_KIND_METHOD")
+            && generated.contains("phpc_NativeRequestDestructorFinalizersHandle")
+            && generated.contains("phpc_native_request_destructor_finalizers_register_value")
+            && generated.contains(
+                "phpc_native_request_destructor_finalizers_finalize_with_callable_table"
+            )
+            && !generated.contains(ASSEMBLY_OBJECT_INSTANTIATION_REJECTION),
+        "trait-provided public parameterless destructors should publish method metadata and finalize through the request registry:\n{generated}"
+    );
 }
 
 #[test]

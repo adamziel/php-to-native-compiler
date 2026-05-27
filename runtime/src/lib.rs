@@ -1262,6 +1262,12 @@ pub struct NativeRequestStateHandle {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeRequestDestructorFinalizersHandle {
+    ptr: *mut NativeRequestDestructorFinalizers,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeStaticPropertyStorageHandle {
     ptr: *mut NativeStaticPropertyStorage,
 }
@@ -1380,6 +1386,13 @@ struct NativeCallableTable {
     entries: HashMap<NativeCallableKey, NativeCallableDescriptor>,
     allocatable_classes: HashSet<String>,
     class_parents: HashMap<String, String>,
+}
+
+#[derive(Debug)]
+struct NativeRequestDestructorFinalizers {
+    objects: Vec<Value>,
+    registered_object_ids: HashSet<i64>,
+    finalized_object_ids: HashSet<i64>,
 }
 
 #[derive(Debug)]
@@ -3817,6 +3830,32 @@ impl NativeCallableTableHandle {
     }
 
     unsafe fn as_mut(&mut self) -> Option<&mut NativeCallableTable> {
+        unsafe { self.ptr.as_mut() }
+    }
+}
+
+impl NativeRequestDestructorFinalizersHandle {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    fn new() -> Self {
+        Self {
+            ptr: Box::into_raw(Box::new(NativeRequestDestructorFinalizers {
+                objects: Vec::new(),
+                registered_object_ids: HashSet::new(),
+                finalized_object_ids: HashSet::new(),
+            })),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+
+    unsafe fn as_mut(&mut self) -> Option<&mut NativeRequestDestructorFinalizers> {
         unsafe { self.ptr.as_mut() }
     }
 }
@@ -7926,6 +7965,121 @@ pub unsafe extern "C" fn phpc_native_callable_table_free(handle: NativeCallableT
     }
 
     drop(unsafe { Box::from_raw(handle.ptr) });
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_request_destructor_finalizers_null(
+) -> NativeRequestDestructorFinalizersHandle {
+    NativeRequestDestructorFinalizersHandle::null()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_request_destructor_finalizers_new(
+) -> NativeRequestDestructorFinalizersHandle {
+    NativeRequestDestructorFinalizersHandle::new()
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_request_destructor_finalizers_is_null(
+    handle: NativeRequestDestructorFinalizersHandle,
+) -> bool {
+    handle.is_null()
+}
+
+/// # Safety
+///
+/// `handle` must be null or a request-destructor finalizer handle previously
+/// returned by the runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_destructor_finalizers_free(
+    handle: NativeRequestDestructorFinalizersHandle,
+) {
+    if handle.ptr.is_null() {
+        return;
+    }
+
+    drop(unsafe { Box::from_raw(handle.ptr) });
+}
+
+/// # Safety
+///
+/// `handle` must be a request-destructor finalizer handle. `value` remains
+/// caller-owned; object values are cloned into the request-owned finalizer
+/// list and deduplicated by PHP object id.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_destructor_finalizers_register_value(
+    mut handle: NativeRequestDestructorFinalizersHandle,
+    value: NativeValueHandle,
+) -> bool {
+    let Some(finalizers) = (unsafe { handle.as_mut() }) else {
+        return false;
+    };
+    let Some(Value::Object(object)) = (unsafe { value.as_ref() }) else {
+        return false;
+    };
+    let object_id = object.id();
+    if finalizers.finalized_object_ids.contains(&object_id)
+        || finalizers.registered_object_ids.contains(&object_id)
+    {
+        return true;
+    }
+    finalizers.registered_object_ids.insert(object_id);
+    finalizers.objects.push(Value::Object(object.clone()));
+    true
+}
+
+/// # Safety
+///
+/// `handle` and `table` must be live handles. The callable table must remain
+/// valid while this helper drains the request-owned destructor list.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_request_destructor_finalizers_finalize_with_callable_table(
+    mut handle: NativeRequestDestructorFinalizersHandle,
+    table: NativeCallableTableHandle,
+) -> bool {
+    let Some(finalizers) = (unsafe { handle.as_mut() }) else {
+        return false;
+    };
+    let mut ok = true;
+    while let Some(value) = finalizers.objects.pop() {
+        let Value::Object(object) = value else {
+            continue;
+        };
+        let object_id = object.id();
+        finalizers.registered_object_ids.remove(&object_id);
+        if !finalizers.finalized_object_ids.insert(object_id) {
+            continue;
+        }
+
+        let receiver = NativeValueHandle::from_value(Value::Object(object));
+        let method = NativeValueHandle::from_value(Value::String("__destruct".to_string()));
+        let arguments = phpc_native_call_arguments_new();
+        if arguments.is_null() {
+            unsafe { phpc_native_value_free(receiver) };
+            unsafe { phpc_native_value_free(method) };
+            ok = false;
+            continue;
+        }
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let invoked = unsafe {
+            phpc_native_method_invoke_discard_with_access_context_diagnostic_and_free_receiver_method_arguments(
+                table,
+                receiver,
+                method,
+                NativeCallableAccessContextTag::External,
+                NativeStringHandle::null(),
+                arguments,
+                &mut diagnostic,
+            )
+        };
+        if !diagnostic.is_null() {
+            unsafe { phpc_native_diagnostic_report(diagnostic) };
+            ok = false;
+        }
+        ok &= invoked;
+    }
+    ok
 }
 
 /// # Safety
