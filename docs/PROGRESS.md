@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added generated-C static-property `??=` production through the shared
+  static-property lvalue/storage boundary. Literal class, object/class-string,
+  `self`, `parent`, and declared method-frame `static` receivers now probe
+  existing storage through the read-for-`isset` APIs, skip RHS evaluation for
+  present non-null storage, lazily write missing, uninitialized, or null
+  storage through typed/visibility static-property APIs, and preserve the
+  `??=` expression result. Focused primary gates cover runtime
+  static-property storage, generated-C static-property and mutation filters,
+  object static-property receivers, descriptor closures, magic static, nested
+  and property-held `ArrayAccess`, constructors, source-call references, exact
+  imports, and class aliases. Computed static-property names, top-level
+  `static::$prop`, references, `unset`, array-offset mutation,
+  magic/static-property overloading, traits/interfaces, autoload breadth,
+  broad references/COW, and LLVM IR/assembly parity remain unsupported.
+
 - Added generated-C static-property `isset()` and `empty()` production through
   the shared static-property lvalue/storage boundary. Literal class,
   object/class-string, `self`, `parent`, and declared method-frame `static`

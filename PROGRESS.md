@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 10:20 CEST
+Updated: 2026-05-27 10:34 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,20 +19,23 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest accounted source capability: `3d32236a` routes selected generated-C
-static-property `isset()` and `empty()` through the shared static-property
+Latest accounted source capability: `16e7dec5` routes selected generated-C
+static-property null-coalescing assignment through the shared static-property
 lvalue/storage boundary for literal class receivers, object/class-string
 receivers, `self`, `parent`, and declared method-frame `static` receivers.
-The supported path uses runtime read-for-isset probes that distinguish
-present non-null properties from missing, uninitialized, or null storage while
-preserving diagnostics for invalid receivers, visibility, and scope failures.
-Computed static-property names, top-level `static::$prop`, references,
-`unset`, `??=`, array-offset mutation, magic/static overloading,
-traits/interfaces, autoload breadth, broad references/COW, and LLVM/backend
-parity remain blocked. Recent source commit `8c922fa2` routes selected
-generated-C direct root ArrayAccess append-with-keyed-suffix assignments such as
-`$bag[]["leaf"] = $value` through a generalized root ArrayAccess owner
-boundary. The supported path materializes suffix keys before RHS evaluation,
+The supported path probes present non-null storage through the integrated
+read-for-`isset` APIs, lazily evaluates the RHS only for missing,
+uninitialized, or null storage, writes through typed/visibility static-property
+APIs, and preserves expression-result ownership. Computed static-property
+names, top-level `static::$prop`, references, `unset`, array-offset mutation,
+magic/static overloading, traits/interfaces, autoload breadth, broad
+references/COW, and LLVM/backend parity remain blocked. Recent source commit
+`3d32236a` routes selected generated-C static-property `isset()` and `empty()`
+through the same shared lvalue/storage boundary, preserving invalid receiver,
+scope, and visibility diagnostics. Recent source commit `8c922fa2` routes
+selected generated-C direct root ArrayAccess append-with-keyed-suffix
+assignments such as `$bag[]["leaf"] = $value` through a generalized root
+ArrayAccess owner boundary. The supported path materializes suffix keys before RHS evaluation,
 wraps the RHS through the shared appended-slot value boundary, calls
 `offsetSet(null, wrapped_value)` on the root ArrayAccess object, preserves
 assignment-expression result ownership separately from the appended slot value,
@@ -435,6 +438,7 @@ Current critical path to 100%:
 
 | Commit | Capability | Proof shape |
 | --- | --- | --- |
+| `16e7dec5` | Generated C now routes selected static-property `??=` through the shared static-property lvalue target for literal class, object/class-string, `self`, `parent`, and method-frame `static` receivers. Supported paths use read-for-`isset` probes, skip RHS evaluation for present non-null storage, lazily write missing/null/uninitialized storage through typed/visibility static-property APIs, and preserve expression-result ownership. Computed names, top-level `static::$prop`, references, `unset`, array-offset mutation, magic/static overloading, broader references/COW, and backend parity remain blocked. | Primary integration gates passed with `SUMMARY passes=15 failures=0`, covering fmt, diff checks, `cargo check -p phpc`, runtime static-property tests, static-property and static-property mutation native-link filters, object static-property receivers, descriptor closures, magic static, nested and property-held ArrayAccess, constructors, source-call references, exact imports, and class aliases. Gate log: `state/workers/logs/phpc-primary-static-property-nullcoalesce-r2-integration-20260527.gates.log` sha256 `ae3fba1e97863bcf7068e4298d0103d9fe5bafb35a6a9c6aa6205470f201a6f8`. |
 | `ba46f5e2` | Generated C now routes selected nested ArrayAccess `unset()` and append-with-keyed-suffix assignments through the generalized owner stack for direct-variable and visible property-held roots. Supported unset paths perform by-value `offsetGet()` descent, leaf `offsetUnset()`, reverse parent writeback, and root commit. Supported keyed append paths materialize suffix keys, wrap the RHS through the shared appended-slot value boundary, append at the leaf with `offsetSet(null, value)`, reverse-write parents, commit the root owner, and preserve assignment expression results separately from the appended value. Root keyed-suffix append without owner-stack descent, reference-returning `offsetGet()`, arbitrary alias/static roots, broader references/COW, cleanup/unwind breadth, spread/unpack, and backend parity remain blocked. | Primary integration gates passed with `SUMMARY passes=18 failures=0`, covering fmt, diff checks, nested owner-stack units, exact generated-C and linked executable proofs for nested unset and keyed-append suffix, nested ArrayAccess regressions, property-held ArrayAccess owners, descriptor closures, magic static calls, static-property and static-property mutation regressions, object static-property receivers, source-call references, exact imports, class aliases, and `cargo check -q -p phpc`. |
 | `1202542e` | Generated C now routes selected static-property plain assignment, compound assignment, and pre/post increment/decrement through a shared lvalue target for literal class, object/class-string, `self`, `parent`, and method-frame `static` receivers. The path reuses runtime static-property storage read/write APIs, derives object/class-string scope through the shared receiver-scope ABI, preserves compound and pre/post expression-result ownership, and lets parser object-static-property lvalues reach codegen for prefix/compound mutations. Computed names, top-level `static::$prop`, static-property references, `??=`, `unset`, `isset`, `empty`, array-offset mutation, magic/static overloading, broader references/COW, and backend parity remain blocked. | Primary integration gates passed with `SUMMARY passes=14 failures=0`, covering fmt, diff checks, runtime static-property tests, static-property native-link proofs, static-property mutation executable proof, object static-property receivers, descriptor closures, magic static calls, source-call references, nested ArrayAccess, property-held ArrayAccess, class aliases, and `cargo check -p php_runtime -p phpc`. |
 | `8a8d85ed` | Generated C now routes selected nested ArrayAccess null-coalescing assignments through the generalized owner stack for direct-variable and property-held roots. Supported paths probe the leaf with `offsetExists()`, read present leaves, lazily evaluate the RHS only for missing/null leaves, write mutated leaves with `offsetSet()`, reverse-write parents only on mutation branches, commit the root owner, and preserve the `??=` expression result. Nested unset, append-with-keyed-suffix, reference-returning `offsetGet()`, arbitrary alias/static roots, broader references/COW, cleanup/unwind breadth, and backend parity remain blocked. | Primary integration gates passed with `SUMMARY passes=14 failures=0`, covering fmt, diff checks, nested owner-stack units, exact generated-C and linked executable nested `??=` proofs, nested ArrayAccess regressions, property-held ArrayAccess owners, descriptor closures, magic static calls, static properties, source-call references, class aliases, and `cargo check -p phpc`. |
