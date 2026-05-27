@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 23:17 CEST
+Updated: 2026-05-27 23:20 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,15 +19,26 @@ Overall integrated-roadmap progress: **93%** `[##################--]`
 
 Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `c8cc77dc` rejects generated-C trait alias
-collisions where an alias would silently overwrite another effective trait
-method name. Trait composition now tracks composed method source identity, so
-alias-to-existing-method and visibility-changing same-name alias cases stop at a
-semantic blocker instead of publishing wrong native metadata or dispatch.
-Broader array COW/reference edges, foreach by-reference lifetime, include
-exception/diagnostic propagation, visibility-context rules, remaining
-trait precedence parity, cleanup ordering, and non-C backend parity remain
-blocked.
+Latest accounted source capability: `1318ffac` resolves class-like type
+declaration names through the existing namespace/import rules before publishing
+metadata. Imported aliases, namespace-relative type names, and leading global
+type names now store the same class keys that PHP resolves, while scalar and
+special type names remain unchanged. Broader array COW/reference edges, foreach
+by-reference lifetime, include exception/diagnostic propagation,
+visibility-context rules, remaining trait precedence parity, cleanup ordering,
+and non-C backend parity remain blocked.
+
+Recent source commit `1318ffac` advances namespace/class-name metadata without
+adding class-name production ladders, fixture shortcuts, or generated-C
+substring gates. The parser now resolves non-special type declaration names via
+`resolve_class_like_name()`, preserving scalar/special names such as `int`,
+`self`, `static`, `null`, and unions. Focused gates covered the namespace
+resolution suite, parser metadata proof for imported/local/global type names,
+linked generated-C static-property metadata execution for an imported class
+alias, adjacent native typed static-property metadata, formatting, and diff
+checks. Primary gate log:
+`state/logs/phpc-primary-namespace-types-f0453438-20260527.gates.log`
+sha256 `d47e5c2a7c13203c1e30154dd353e0b8f0d0c1cfdeb0de547a7ff1439b0dc033`.
 
 Recent source commit `c8cc77dc` advances trait conflict safety without adding
 method-name production ladders, one-trait fixture lowering, or generated-C
