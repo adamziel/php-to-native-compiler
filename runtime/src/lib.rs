@@ -19725,6 +19725,72 @@ pub unsafe extern "C" fn phpc_native_value_array_reference_for_path_with_diagnos
     }
 }
 
+/// # Safety
+///
+/// `reference` must be null or a reference handle previously returned by the
+/// runtime ABI and not yet freed. `offsets` must point to `offsets_len`
+/// readable `NativeValueHandle` values when `offsets_len` is nonzero.
+/// `diagnostic` may be null; when non-null, it must point to writable storage
+/// for one `NativeDiagnosticHandle`. On success the array stored inside the
+/// reference cell is updated in place and the returned nested reference handle
+/// aliases that updated cell.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_reference_array_path_reference_with_diagnostic(
+    reference: NativeReferenceHandle,
+    offsets: *const NativeValueHandle,
+    offsets_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeReferenceHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let keys = match unsafe {
+        native_value_offset_key_path_from_handles(
+            offsets,
+            offsets_len,
+            "native reference array path",
+        )
+    } {
+        Ok(keys) => keys,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            return NativeReferenceHandle::null();
+        }
+    };
+    if keys.is_empty() {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                RuntimeError::invalid_array_access(
+                    "native reference array path failed: offset path requires at least one key",
+                )
+                .message(),
+            )
+        };
+        return NativeReferenceHandle::null();
+    }
+
+    let Some(reference) = (unsafe { reference.as_ref() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                RuntimeError::invalid_array_access(
+                    "native reference array path failed: reference handle is null",
+                )
+                .message(),
+            )
+        };
+        return NativeReferenceHandle::null();
+    };
+
+    match reference_array_path_cell(&reference.cell, &keys, false) {
+        Ok(reference) => NativeReferenceHandle::from_cell(reference),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeReferenceHandle::null()
+        }
+    }
+}
+
 unsafe fn native_value_string_offset_operation_value(
     subject: NativeValueHandle,
     offset: NativeValueHandle,
@@ -66613,6 +66679,87 @@ mod tests {
         unsafe { phpc_native_value_free(direct) };
         unsafe { phpc_native_value_free(leaf_key) };
         unsafe { phpc_native_value_free(mid_key) };
+    }
+
+    #[test]
+    fn native_reference_array_path_reference_promotes_nested_cells_in_place() {
+        fn string_key(name: &str) -> NativeValueHandle {
+            NativeValueHandle::from_value(Value::String(name.to_string()))
+        }
+
+        fn string_value(value: &str) -> NativeValueHandle {
+            NativeValueHandle::from_value(Value::String(value.to_string()))
+        }
+
+        fn nested_string(root: &PhpReferenceCell, first: &str, second: &str) -> String {
+            let Value::Array(root_array) = root.value_cloned() else {
+                panic!("root reference should hold an array");
+            };
+            let Some(Value::Array(child)) = root_array.get_cloned(ArrayKey::String(first.into()))
+            else {
+                panic!("first path segment should hold an array");
+            };
+            let Some(Value::String(value)) = child.get_cloned(ArrayKey::String(second.into()))
+            else {
+                panic!("leaf path segment should hold a string");
+            };
+            value
+        }
+
+        let root = PhpReferenceCell::new(Value::Array(PhpArray::new()));
+        let root_handle = NativeReferenceHandle::from_cell(root.clone());
+        let mid_key = string_key("mid");
+        let leaf_key = string_key("leaf");
+        let path = [mid_key, leaf_key];
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let nested = unsafe {
+            phpc_native_reference_array_path_reference_with_diagnostic(
+                root_handle,
+                path.as_ptr(),
+                path.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(
+            diagnostic.is_null(),
+            "unexpected reference array path diagnostic: {}",
+            native_diagnostic_message_for_test(diagnostic)
+        );
+        assert!(!phpc_native_reference_is_null(nested));
+
+        let first = string_value("first");
+        assert!(unsafe { phpc_native_reference_set_value(nested, first) });
+        assert_eq!(nested_string(&root, "mid", "leaf"), "first");
+
+        let second = string_value("second");
+        assert!(unsafe { phpc_native_reference_set_value(nested, second) });
+        assert_eq!(nested_string(&root, "mid", "leaf"), "second");
+
+        let scalar_root = PhpReferenceCell::new(Value::Int(7));
+        let scalar_handle = NativeReferenceHandle::from_cell(scalar_root);
+        let failed = unsafe {
+            phpc_native_reference_array_path_reference_with_diagnostic(
+                scalar_handle,
+                path.as_ptr(),
+                path.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(phpc_native_reference_is_null(failed));
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "invalid array access: native reference path extraction failed: cannot create array path on int"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        unsafe { phpc_native_reference_free(scalar_handle) };
+        unsafe { phpc_native_value_free(second) };
+        unsafe { phpc_native_value_free(first) };
+        unsafe { phpc_native_reference_free(nested) };
+        unsafe { phpc_native_value_free(leaf_key) };
+        unsafe { phpc_native_value_free(mid_key) };
+        unsafe { phpc_native_reference_free(root_handle) };
     }
 
     #[test]

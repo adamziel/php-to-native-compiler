@@ -24713,6 +24713,7 @@ impl CGenerator {
                 output.push_str("extern bool phpc_native_value_array_key_exists_value_with_diagnostic(phpc_NativeValueHandle key, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 if self.uses_native_reference_helpers || self.uses_native_symbol_table_helpers {
                     output.push_str("extern bool phpc_native_reference_array_key_exists_value_with_diagnostic(phpc_NativeValueHandle key, phpc_NativeReferenceHandle reference, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                    output.push_str("extern phpc_NativeReferenceHandle phpc_native_reference_array_path_reference_with_diagnostic(phpc_NativeReferenceHandle reference, const phpc_NativeValueHandle *keys, size_t key_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 }
                 output.push_str("extern bool phpc_native_array_insert_key_value_with_diagnostic(phpc_NativeArrayHandle array, phpc_NativeArrayKeyMaterializationResult key, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 if self.uses_native_reference_helpers || self.uses_native_symbol_table_helpers {
@@ -27893,6 +27894,14 @@ impl CGenerator {
         {
             return Ok(reference);
         }
+        if let Some(reference) = self
+            .materialize_native_arrayaccess_nested_offset_get_reference_expr(
+                expr,
+                failure_cleanup,
+            )?
+        {
+            return Ok(reference);
+        }
 
         let Some(path) = self.c_reference_path_for_expr(expr) else {
             return Err(
@@ -28196,6 +28205,126 @@ impl CGenerator {
         Ok(reference)
     }
 
+    fn materialize_native_reference_array_path_reference(
+        &mut self,
+        root_reference: CNativeReferenceMaterialization,
+        indices: &[&Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeReferenceMaterialization> {
+        if indices.is_empty() {
+            return Err(self.unsupported(span, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION));
+        }
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_reference_helpers = true;
+
+        let root_reference_cleanup = c_cleanup_sequence(&root_reference.cleanup_after_use);
+        let key_failure_cleanup = format!("{root_reference_cleanup}{failure_cleanup}");
+        let keys = self.materialize_globals_symbol_path_keys(indices, &key_failure_cleanup)?;
+        let mut cleanup_after_use = keys.cleanup_after_use.clone();
+        cleanup_after_use.extend(root_reference.cleanup_after_use.clone());
+        let cleanup_sequence = c_cleanup_sequence(&cleanup_after_use);
+        let diagnostic = self.next_native_name("reference_array_path_diagnostic");
+        let reference = self.next_native_name("reference_array_path");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeReferenceHandle {reference} = phpc_native_reference_array_path_reference_with_diagnostic({}, {}, {}, &{diagnostic});",
+            root_reference.handle, keys.handles, keys.len
+        ));
+        let error_exit = self.native_error_exit(&format!(
+            "phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {cleanup_sequence}{failure_cleanup}"
+        ));
+        self.body
+            .push(format!("if ({reference}.ptr == NULL) {{ {error_exit} }}"));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.body.extend(cleanup_after_use);
+
+        Ok(CNativeReferenceMaterialization {
+            handle: reference.clone(),
+            cleanup_after_use: vec![format!("phpc_native_reference_free({reference});")],
+        })
+    }
+
+    fn materialize_native_arrayaccess_nested_offset_get_reference_from_owner(
+        &mut self,
+        source: CNativeValueOwnerSource,
+        indices: &[&Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeReferenceMaterialization>> {
+        if indices.len() < 2 {
+            return Ok(None);
+        }
+        if !self.native_arrayaccess_owner_source_offset_get_may_return_reference(&source) {
+            return Ok(None);
+        }
+        if source.facts().is_some_and(|facts| {
+            matches!(
+                self.native_arrayaccess_offset_get_intermediate_boundary(facts),
+                CNativeNestedArrayAccessIntermediateBoundary::ByValueArrayAccessObject { .. }
+                    | CNativeNestedArrayAccessIntermediateBoundary::ReferenceReturningOffsetGet {
+                        ..
+                    }
+            )
+        }) {
+            return Ok(None);
+        }
+
+        let root_reference = self.materialize_native_arrayaccess_offset_get_reference_from_owner(
+            source,
+            indices[0],
+            failure_cleanup,
+        )?;
+        self.materialize_native_reference_array_path_reference(
+            root_reference,
+            &indices[1..],
+            span,
+            failure_cleanup,
+        )
+        .map(Some)
+    }
+
+    fn native_arrayaccess_reference_root_owner_source(
+        &self,
+        root: &Expr,
+    ) -> Option<CNativeValueOwnerSource> {
+        match root {
+            Expr::Variable(name, span) => {
+                self.native_arrayaccess_variable_owner_source(name, *span)
+            }
+            Expr::Property { .. } | Expr::DynamicProperty { .. } => {
+                self.native_arrayaccess_object_property_owner_source_for_expr(root)
+            }
+            _ => None,
+        }
+    }
+
+    fn materialize_native_arrayaccess_nested_offset_get_reference_expr(
+        &mut self,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeReferenceMaterialization>> {
+        let Some((root, indices, span)) = array_index_expr_path(expr) else {
+            return Ok(None);
+        };
+        if indices.len() < 2 {
+            return Ok(None);
+        }
+        let Some(source) = self.native_arrayaccess_reference_root_owner_source(root) else {
+            return Ok(None);
+        };
+        self.materialize_native_arrayaccess_nested_offset_get_reference_from_owner(
+            source,
+            &indices,
+            span,
+            failure_cleanup,
+        )
+    }
+
     fn materialize_object_property_reference_source(
         &mut self,
         object: &Expr,
@@ -28215,6 +28344,22 @@ impl CGenerator {
                         index,
                         failure_cleanup,
                     );
+                }
+            }
+            if indices.len() >= 2 {
+                if let Some(source) =
+                    self.native_arrayaccess_object_property_owner_source(object, property, span)
+                {
+                    if let Some(reference) = self
+                        .materialize_native_arrayaccess_nested_offset_get_reference_from_owner(
+                            source,
+                            indices,
+                            span,
+                            failure_cleanup,
+                        )?
+                    {
+                        return Ok(reference);
+                    }
                 }
             }
         }
@@ -28558,8 +28703,29 @@ impl CGenerator {
                     return Ok(reference);
                 }
             }
+            ReferenceSource::NestedArrayIndex {
+                name,
+                indices,
+                span,
+            } => {
+                let index_refs = indices.iter().collect::<Vec<_>>();
+                if let Some(source) = self.native_arrayaccess_variable_owner_source(name, *span) {
+                    if let Some(reference) = self
+                        .materialize_native_arrayaccess_nested_offset_get_reference_from_owner(
+                            source,
+                            &index_refs,
+                            *span,
+                            failure_cleanup,
+                        )?
+                    {
+                        return Ok(reference);
+                    }
+                }
+            }
             ReferenceSource::ExpressionArrayIndex {
-                target, indices, ..
+                target,
+                indices,
+                span,
             } => {
                 if let [index] = indices.as_slice() {
                     if let Some(reference) = self
@@ -28570,6 +28736,23 @@ impl CGenerator {
                         )?
                     {
                         return Ok(reference);
+                    }
+                }
+                if indices.len() >= 2 {
+                    let index_refs = indices.iter().collect::<Vec<_>>();
+                    if let Some(source) =
+                        self.native_arrayaccess_reference_root_owner_source(target)
+                    {
+                        if let Some(reference) = self
+                            .materialize_native_arrayaccess_nested_offset_get_reference_from_owner(
+                                source,
+                                &index_refs,
+                                *span,
+                                failure_cleanup,
+                            )?
+                        {
+                            return Ok(reference);
+                        }
                     }
                 }
             }

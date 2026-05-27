@@ -765,6 +765,34 @@ const NATIVE_STATIC_PROPERTY_ARRAYACCESS_REFERENCE_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_ARRAYACCESS_NESTED_REFERENCE_SOURCE: &str = concat!(
+    "<?php\n",
+    "function nested_aa_ref_set(&$slot, $value) { $slot = $value; return $slot; }\n",
+    "function nested_aa_ref_get(&$slot) { return $slot; }\n",
+    "class NestedArrayAccessReferenceBag implements ArrayAccess {\n",
+    "    public $items;\n",
+    "    public function &offsetGet($offset) { return $this->items; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"bad-offsetSet\"; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class NestedArrayAccessReferenceHolder { public $bag; }\n",
+    "$bag = new NestedArrayAccessReferenceBag();\n",
+    "$bag->items = [\"slot\" => \"seed\"];\n",
+    "echo nested_aa_ref_set($bag[\"outer\"][\"slot\"], \"direct-arg\"), \":\";\n",
+    "$alias =& $bag[\"outer\"][\"made\"];\n",
+    "$alias = \"direct-alias\";\n",
+    "echo nested_aa_ref_get($bag[\"outer\"][\"slot\"]), \":\", nested_aa_ref_get($bag[\"outer\"][\"made\"]), \"|\";\n",
+    "$holder = new NestedArrayAccessReferenceHolder();\n",
+    "$propBag = new NestedArrayAccessReferenceBag();\n",
+    "$propBag->items = [\"slot\" => \"prop-seed\"];\n",
+    "$holder->bag = $propBag;\n",
+    "echo nested_aa_ref_set($holder->bag[\"outer\"][\"slot\"], \"prop-arg\"), \":\";\n",
+    "$propAlias =& $holder->bag[\"outer\"][\"made\"];\n",
+    "$propAlias = \"prop-alias\";\n",
+    "echo nested_aa_ref_get($holder->bag[\"outer\"][\"slot\"]), \":\", nested_aa_ref_get($holder->bag[\"outer\"][\"made\"]), \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_PROPERTY_UNSET_SOURCE: &str = concat!(
     "<?php\n",
     "class Box { public $name; public $peer; private $secret; }\n",
@@ -3320,6 +3348,65 @@ fn emit_exe_links_and_runs_static_property_arrayaccess_reference_program() {
     assert_eq!(
         run.stdout,
         b"lit-arg:lit-alias|object-arg:object-alias|class-arg:class-alias|self-arg:self-alias|parent-arg:parent-alias|late-arg:late-alias\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn native_executable_c_source_routes_nested_arrayaccess_references_through_reference_array_path() {
+    let program = parse(NATIVE_ARRAYACCESS_NESTED_REFERENCE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    for required in [
+        "phpc_native_value_arrayaccess_offset_get_reference_with_diagnostic",
+        "phpc_native_reference_array_path_reference_with_diagnostic",
+        "phpc_native_call_arguments_push_reference_and_free",
+    ] {
+        assert!(source.contains(required), "missing {required}:\n{source}");
+    }
+    assert!(
+        source
+            .matches("= phpc_native_reference_array_path_reference_with_diagnostic(")
+            .count()
+            >= 4,
+        "nested ArrayAccess reference consumers should use the reference-array path ABI for direct and property-held roots:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_reference_value_clone(arrayaccess_offset_get_reference")
+            && !source.contains(
+                "phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic"
+            ),
+        "nested ArrayAccess references must not clone returned references or fall back to offsetSet:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_nested_arrayaccess_reference_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "nested_arrayaccess_reference",
+        NATIVE_ARRAYACCESS_NESTED_REFERENCE_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run nested ArrayAccess reference executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"direct-arg:direct-arg:direct-alias|prop-arg:prop-arg:prop-alias\n"
     );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
