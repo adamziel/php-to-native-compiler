@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 21:21 CEST
+Updated: 2026-05-27 21:27 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,7 +19,30 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `c89fedc4` routes dynamic `instanceof`
+Latest accounted source capability: `dd391c36` routes reference-returning
+`ArrayAccess::offsetGet()` through the native reference-owner path for selected
+generated-C ArrayAccess subjects. Direct ArrayAccess index references and
+property-held ArrayAccess owners can now feed by-reference consumers and alias
+assignments through `phpc_native_value_arrayaccess_offset_get_reference...`
+instead of falling back to `offsetSet()` or cloned values. Broader nested owner
+shapes, unknown ArrayAccess facts, full COW/reference parity, and LLVM/ASM
+parity remain blocked.
+
+Recent source commit `dd391c36` advances ArrayAccess reference-source
+write-through without adding fake reference cloning, object-name ladders,
+fixture substring production, or `offsetSet()` substitution. Runtime tests
+prove `offsetGet()` can return a write-through reference, generated-C source
+tests prove direct and property-held ArrayAccess reference sources use the
+shared reference ABI and object-property owner path, and linked executable
+proof rejects accidental `offsetSet()` fallback by checking stdout. Focused
+gates covered runtime write-through, generated-C source proof, linked
+reference-source execution, existing ArrayAccess reference-owner and
+property-held owner regressions, compile checking, formatting, and diff
+checks. Primary gate log:
+`state/logs/phpc-primary-arrayaccess-refget-e66480ba-20260527.gates.log`
+sha256 `0da2d3eaf7b6d5fb4f93cea46fecad15f6f09d12efe9360d6ee1a4b41c80389d`.
+
+Recent source commit `c89fedc4` routes dynamic `instanceof`
 right-hand targets through generalized class-relationship metadata instead of
 rejecting `$class`, parenthesized expressions, or object targets at parse time.
 Parser and AST now represent `instanceof` operands as `NewClassName`,
