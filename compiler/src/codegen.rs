@@ -2155,7 +2155,8 @@ fn llvm_assign_target_call_results_are_lowerable(
             llvm_expr_call_results_are_lowerable(index, allow_scalar_results)
         }),
         AssignTarget::NestedArrayIndex { indices, .. }
-        | AssignTarget::ObjectPropertyArrayIndex { indices, .. } => indices
+        | AssignTarget::ObjectPropertyArrayIndex { indices, .. }
+        | AssignTarget::StaticPropertyArrayIndex { indices, .. } => indices
             .iter()
             .all(|index| llvm_expr_call_results_are_lowerable(index, allow_scalar_results)),
         AssignTarget::NestedArrayAppend {
@@ -2164,6 +2165,11 @@ fn llvm_assign_target_call_results_are_lowerable(
             ..
         }
         | AssignTarget::ObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::StaticPropertyArrayAppend {
             indices,
             suffix_indices,
             ..
@@ -4218,7 +4224,8 @@ fn assign_target_contains_exit_construct(target: &AssignTarget) -> bool {
             index.as_ref().is_some_and(expr_contains_exit_construct)
         }
         AssignTarget::NestedArrayIndex { indices, .. }
-        | AssignTarget::ObjectPropertyArrayIndex { indices, .. } => {
+        | AssignTarget::ObjectPropertyArrayIndex { indices, .. }
+        | AssignTarget::StaticPropertyArrayIndex { indices, .. } => {
             indices.iter().any(expr_contains_exit_construct)
         }
         AssignTarget::NestedArrayAppend {
@@ -4227,6 +4234,11 @@ fn assign_target_contains_exit_construct(target: &AssignTarget) -> bool {
             ..
         }
         | AssignTarget::ObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::StaticPropertyArrayAppend {
             indices,
             suffix_indices,
             ..
@@ -4303,7 +4315,8 @@ fn unset_target_contains_exit_construct(target: &UnsetTarget) -> bool {
             property: index, ..
         } => expr_contains_exit_construct(index),
         UnsetTarget::NestedArrayIndex { indices, .. }
-        | UnsetTarget::ObjectPropertyArrayIndex { indices, .. } => {
+        | UnsetTarget::ObjectPropertyArrayIndex { indices, .. }
+        | UnsetTarget::StaticPropertyArrayIndex { indices, .. } => {
             indices.iter().any(expr_contains_exit_construct)
         }
         UnsetTarget::DynamicObjectPropertyArrayIndex {
@@ -4369,7 +4382,8 @@ where
             optional_expr_contains_destructor_observable_cleanup(index.as_ref(), contains)
         }
         AssignTarget::NestedArrayIndex { indices, .. }
-        | AssignTarget::ObjectPropertyArrayIndex { indices, .. } => {
+        | AssignTarget::ObjectPropertyArrayIndex { indices, .. }
+        | AssignTarget::StaticPropertyArrayIndex { indices, .. } => {
             exprs_contain_destructor_observable_cleanup(indices, contains)
         }
         AssignTarget::NestedArrayAppend {
@@ -4378,6 +4392,11 @@ where
             ..
         }
         | AssignTarget::ObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::StaticPropertyArrayAppend {
             indices,
             suffix_indices,
             ..
@@ -4455,7 +4474,8 @@ where
             property: index, ..
         } => contains(index),
         UnsetTarget::NestedArrayIndex { indices, .. }
-        | UnsetTarget::ObjectPropertyArrayIndex { indices, .. } => {
+        | UnsetTarget::ObjectPropertyArrayIndex { indices, .. }
+        | UnsetTarget::StaticPropertyArrayIndex { indices, .. } => {
             exprs_contain_destructor_observable_cleanup(indices, contains)
         }
         UnsetTarget::DynamicObjectPropertyArrayIndex {
@@ -5188,7 +5208,8 @@ fn collect_direct_call_names_from_assign_target(target: &AssignTarget, names: &m
             }
         }
         AssignTarget::NestedArrayIndex { indices, .. }
-        | AssignTarget::ObjectPropertyArrayIndex { indices, .. } => {
+        | AssignTarget::ObjectPropertyArrayIndex { indices, .. }
+        | AssignTarget::StaticPropertyArrayIndex { indices, .. } => {
             for index in indices {
                 collect_direct_call_names_from_expr(index, names);
             }
@@ -5199,6 +5220,11 @@ fn collect_direct_call_names_from_assign_target(target: &AssignTarget, names: &m
             ..
         }
         | AssignTarget::ObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::StaticPropertyArrayAppend {
             indices,
             suffix_indices,
             ..
@@ -5284,7 +5310,8 @@ fn collect_direct_call_names_from_unset_target(target: &UnsetTarget, names: &mut
             property: index, ..
         } => collect_direct_call_names_from_expr(index, names),
         UnsetTarget::NestedArrayIndex { indices, .. }
-        | UnsetTarget::ObjectPropertyArrayIndex { indices, .. } => {
+        | UnsetTarget::ObjectPropertyArrayIndex { indices, .. }
+        | UnsetTarget::StaticPropertyArrayIndex { indices, .. } => {
             for index in indices {
                 collect_direct_call_names_from_expr(index, names);
             }
@@ -5674,6 +5701,12 @@ fn collect_native_arrow_capture_candidates_from_assign_target(
                 collect_native_arrow_capture_candidates_from_expr(index, captures);
             }
         }
+        AssignTarget::StaticPropertyArrayIndex { expr, indices, .. } => {
+            collect_native_arrow_capture_candidates_from_expr(expr, captures);
+            for index in indices {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
         AssignTarget::NestedArrayAppend {
             name,
             indices,
@@ -5688,6 +5721,17 @@ fn collect_native_arrow_capture_candidates_from_assign_target(
             ..
         } => {
             captures.push((name.clone(), *span));
+            for index in indices.iter().chain(suffix_indices.iter()) {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
+        AssignTarget::StaticPropertyArrayAppend {
+            expr,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            collect_native_arrow_capture_candidates_from_expr(expr, captures);
             for index in indices.iter().chain(suffix_indices.iter()) {
                 collect_native_arrow_capture_candidates_from_expr(index, captures);
             }
@@ -5811,6 +5855,12 @@ fn collect_native_arrow_capture_candidates_from_unset_target(
             ..
         } => {
             captures.push((name.clone(), *span));
+            for index in indices {
+                collect_native_arrow_capture_candidates_from_expr(index, captures);
+            }
+        }
+        UnsetTarget::StaticPropertyArrayIndex { expr, indices, .. } => {
+            collect_native_arrow_capture_candidates_from_expr(expr, captures);
             for index in indices {
                 collect_native_arrow_capture_candidates_from_expr(index, captures);
             }
@@ -6330,7 +6380,8 @@ fn native_assign_target_contains_call_result(target: &AssignTarget) -> bool {
             index.as_ref().is_some_and(native_expr_contains_call_result)
         }
         AssignTarget::NestedArrayIndex { indices, .. }
-        | AssignTarget::ObjectPropertyArrayIndex { indices, .. } => {
+        | AssignTarget::ObjectPropertyArrayIndex { indices, .. }
+        | AssignTarget::StaticPropertyArrayIndex { indices, .. } => {
             indices.iter().any(native_expr_contains_call_result)
         }
         AssignTarget::NestedArrayAppend {
@@ -6339,6 +6390,11 @@ fn native_assign_target_contains_call_result(target: &AssignTarget) -> bool {
             ..
         }
         | AssignTarget::ObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::StaticPropertyArrayAppend {
             indices,
             suffix_indices,
             ..
@@ -6607,6 +6663,8 @@ fn native_assignment_target_call_result_callee(target: &AssignTarget) -> Option<
         | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
         | AssignTarget::DynamicProperty { .. }
         | AssignTarget::StaticProperty { .. }
+        | AssignTarget::StaticPropertyArrayIndex { .. }
+        | AssignTarget::StaticPropertyArrayAppend { .. }
         | AssignTarget::SelfStaticProperty { .. }
         | AssignTarget::ParentStaticProperty { .. }
         | AssignTarget::LateStaticProperty { .. } => None,
@@ -6666,7 +6724,8 @@ fn native_assignment_target_lvalue_operands(target: &AssignTarget) -> Vec<(&Expr
             operands.extend(index.iter().map(|index| (index, key_tag)));
         }
         AssignTarget::NestedArrayIndex { indices, .. }
-        | AssignTarget::ObjectPropertyArrayIndex { indices, .. } => {
+        | AssignTarget::ObjectPropertyArrayIndex { indices, .. }
+        | AssignTarget::StaticPropertyArrayIndex { indices, .. } => {
             operands.extend(indices.iter().map(|index| (index, key_tag)));
         }
         AssignTarget::NestedArrayAppend {
@@ -6675,6 +6734,11 @@ fn native_assignment_target_lvalue_operands(target: &AssignTarget) -> Vec<(&Expr
             ..
         }
         | AssignTarget::ObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::StaticPropertyArrayAppend {
             indices,
             suffix_indices,
             ..
@@ -6766,7 +6830,8 @@ fn native_unset_target_call_operation(target: &UnsetTarget) -> Option<NativeCall
     match target {
         UnsetTarget::ArrayIndex { index, .. } => native_lvalue_operand_call_result_operation(index),
         UnsetTarget::NestedArrayIndex { indices, .. }
-        | UnsetTarget::ObjectPropertyArrayIndex { indices, .. } => {
+        | UnsetTarget::ObjectPropertyArrayIndex { indices, .. }
+        | UnsetTarget::StaticPropertyArrayIndex { indices, .. } => {
             native_expr_list_call_result_operation(indices)
         }
         UnsetTarget::NonDirectObjectPropertyArrayIndex {
@@ -7391,7 +7456,8 @@ fn assign_target_contains_globals_access(target: &AssignTarget) -> bool {
                 || index.as_ref().is_some_and(expr_contains_globals_access)
         }
         AssignTarget::NestedArrayIndex { indices, .. }
-        | AssignTarget::ObjectPropertyArrayIndex { indices, .. } => {
+        | AssignTarget::ObjectPropertyArrayIndex { indices, .. }
+        | AssignTarget::StaticPropertyArrayIndex { indices, .. } => {
             target_name_is_globals(target) || indices.iter().any(expr_contains_globals_access)
         }
         AssignTarget::NestedArrayAppend {
@@ -7400,6 +7466,11 @@ fn assign_target_contains_globals_access(target: &AssignTarget) -> bool {
             ..
         }
         | AssignTarget::ObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::StaticPropertyArrayAppend {
             indices,
             suffix_indices,
             ..
@@ -7569,7 +7640,8 @@ fn unset_target_contains_globals_access(target: &UnsetTarget) -> bool {
         UnsetTarget::DynamicObjectProperty {
             property: index, ..
         } => expr_contains_globals_access(index),
-        UnsetTarget::ObjectPropertyArrayIndex { indices, .. } => {
+        UnsetTarget::ObjectPropertyArrayIndex { indices, .. }
+        | UnsetTarget::StaticPropertyArrayIndex { indices, .. } => {
             indices.iter().any(expr_contains_globals_access)
         }
         UnsetTarget::DynamicObjectPropertyArrayIndex {
@@ -7891,10 +7963,16 @@ fn assign_target_contains_request_state_access(target: &AssignTarget) -> bool {
         AssignTarget::DynamicProperty { property, .. } => {
             expr_contains_request_state_access(property)
         }
-        AssignTarget::ObjectPropertyArrayIndex { indices, .. } => {
+        AssignTarget::ObjectPropertyArrayIndex { indices, .. }
+        | AssignTarget::StaticPropertyArrayIndex { indices, .. } => {
             indices.iter().any(expr_contains_request_state_access)
         }
         AssignTarget::ObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::StaticPropertyArrayAppend {
             indices,
             suffix_indices,
             ..
@@ -8087,7 +8165,8 @@ fn unset_target_contains_request_state_access(target: &UnsetTarget) -> bool {
         UnsetTarget::DynamicObjectProperty { property, .. } => {
             expr_contains_request_state_access(property)
         }
-        UnsetTarget::ObjectPropertyArrayIndex { indices, .. } => {
+        UnsetTarget::ObjectPropertyArrayIndex { indices, .. }
+        | UnsetTarget::StaticPropertyArrayIndex { indices, .. } => {
             indices.iter().any(expr_contains_request_state_access)
         }
         UnsetTarget::DynamicObjectPropertyArrayIndex {
@@ -8300,7 +8379,8 @@ fn request_assign_target_array_key_consumer_access(
         | AssignTarget::ObjectPropertyArrayIndex { indices, .. }
         | AssignTarget::DynamicObjectPropertyArrayIndex { indices, .. }
         | AssignTarget::NonDirectObjectPropertyArrayIndex { indices, .. }
-        | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { indices, .. } => {
+        | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { indices, .. }
+        | AssignTarget::StaticPropertyArrayIndex { indices, .. } => {
             request_array_key_consumer_access(indices)
         }
         AssignTarget::NestedArrayAppend {
@@ -8324,6 +8404,11 @@ fn request_assign_target_array_key_consumer_access(
             ..
         }
         | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::StaticPropertyArrayAppend {
             indices,
             suffix_indices,
             ..
@@ -8422,7 +8507,8 @@ fn request_stmt_array_key_consumer_access(stmt: &Stmt) -> Option<RequestArrayKey
             | UnsetTarget::ObjectPropertyArrayIndex { indices, .. }
             | UnsetTarget::DynamicObjectPropertyArrayIndex { indices, .. }
             | UnsetTarget::NonDirectObjectPropertyArrayIndex { indices, .. }
-            | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex { indices, .. } => {
+            | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex { indices, .. }
+            | UnsetTarget::StaticPropertyArrayIndex { indices, .. } => {
                 request_array_key_consumer_access(indices)
             }
             UnsetTarget::Variable { .. }
@@ -9005,6 +9091,7 @@ fn unset_target_span(target: &UnsetTarget) -> Span {
         | UnsetTarget::NonDirectObjectProperty { span, .. }
         | UnsetTarget::NonDirectDynamicObjectProperty { span, .. }
         | UnsetTarget::ObjectStaticProperty { span, .. }
+        | UnsetTarget::StaticPropertyArrayIndex { span, .. }
         | UnsetTarget::StaticProperty { span, .. }
         | UnsetTarget::SelfStaticProperty { span, .. }
         | UnsetTarget::ParentStaticProperty { span, .. }
@@ -12419,7 +12506,9 @@ impl LlvmGenerator {
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
             AssignTarget::NestedArrayIndex { span, .. }
-            | AssignTarget::NestedArrayAppend { span, .. } => {
+            | AssignTarget::NestedArrayAppend { span, .. }
+            | AssignTarget::StaticPropertyArrayIndex { span, .. }
+            | AssignTarget::StaticPropertyArrayAppend { span, .. } => {
                 Err(self.unsupported(*span, LLVM_ARRAY_REJECTION))
             }
             AssignTarget::ObjectPropertyArrayIndex { .. }
@@ -15918,6 +16007,7 @@ struct CGenerator {
     global_import_names: HashSet<String>,
     native_value_variable_facts: HashMap<String, CNativeValueFacts>,
     native_object_property_value_facts: HashMap<CNativeObjectPropertyFactKey, CNativeValueFacts>,
+    native_static_property_value_facts: HashMap<CStaticPropertyFactKey, CNativeValueFacts>,
     native_callable_variable_identities: HashMap<String, HashSet<CNativeCallableIdentity>>,
     native_reference_fact_slots: HashMap<String, usize>,
     native_reference_slot_facts: HashMap<usize, CNativeValueFacts>,
@@ -16035,6 +16125,12 @@ struct CNativeObjectPropertyFactKey {
     property: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct CStaticPropertyFactKey {
+    receiver: String,
+    property: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CNativeObjectPropertyFactTarget {
     Key(CNativeObjectPropertyFactKey),
@@ -16119,6 +16215,7 @@ struct CGotoStateSnapshot {
     global_import_names: HashSet<String>,
     native_value_variable_facts: HashMap<String, CNativeValueFacts>,
     native_object_property_value_facts: HashMap<CNativeObjectPropertyFactKey, CNativeValueFacts>,
+    native_static_property_value_facts: HashMap<CStaticPropertyFactKey, CNativeValueFacts>,
     native_callable_variable_identities: HashMap<String, HashSet<CNativeCallableIdentity>>,
     native_reference_fact_slots: HashMap<String, usize>,
     native_reference_slot_facts: HashMap<usize, CNativeValueFacts>,
@@ -16560,6 +16657,11 @@ enum CNativeValueOwnerSource {
         facts: Option<CNativeValueFacts>,
         fact_target: CNativeObjectPropertyFactTarget,
     },
+    StaticProperty {
+        target: AssignTarget,
+        facts: Option<CNativeValueFacts>,
+        fact_key: Option<CStaticPropertyFactKey>,
+    },
 }
 
 #[allow(dead_code)]
@@ -16568,6 +16670,7 @@ enum CNativeValueOwnerSourceKind {
     DirectVariable,
     ReferenceSlot,
     ObjectProperty,
+    StaticProperty,
 }
 
 impl CNativeValueOwnerSource {
@@ -16576,6 +16679,7 @@ impl CNativeValueOwnerSource {
             Self::DirectVariable { .. } => CNativeValueOwnerSourceKind::DirectVariable,
             Self::ReferenceSlot { .. } => CNativeValueOwnerSourceKind::ReferenceSlot,
             Self::ObjectProperty { .. } => CNativeValueOwnerSourceKind::ObjectProperty,
+            Self::StaticProperty { .. } => CNativeValueOwnerSourceKind::StaticProperty,
         }
     }
 
@@ -16583,7 +16687,8 @@ impl CNativeValueOwnerSource {
         match self {
             Self::DirectVariable { facts, .. }
             | Self::ReferenceSlot { facts, .. }
-            | Self::ObjectProperty { facts, .. } => facts.as_ref(),
+            | Self::ObjectProperty { facts, .. }
+            | Self::StaticProperty { facts, .. } => facts.as_ref(),
         }
     }
 }
@@ -16603,6 +16708,11 @@ enum CNativeValueOwnerCommit {
         facts: Option<CNativeValueFacts>,
         fact_target: CNativeObjectPropertyFactTarget,
         cleanup_after_use: Vec<String>,
+    },
+    StaticProperty {
+        target: CStaticPropertyLvalueTarget,
+        facts: Option<CNativeValueFacts>,
+        fact_key: Option<CStaticPropertyFactKey>,
     },
 }
 
@@ -16999,6 +17109,7 @@ impl CNativeValueOwnerCommit {
             Self::ObjectPropertyReferenceSlot {
                 cleanup_after_use, ..
             } => cleanup_after_use.clone(),
+            Self::StaticProperty { target, .. } => target.cleanup_after_use.clone(),
             Self::DirectVariable { .. } | Self::ReferenceSlot { .. } => Vec::new(),
         }
     }
@@ -18089,6 +18200,7 @@ fn collect_loop_assigned_direct_variables_from_assign_target(
             }
         }
         AssignTarget::NestedArrayIndex { indices, .. }
+        | AssignTarget::StaticPropertyArrayIndex { indices, .. }
         | AssignTarget::ObjectPropertyArrayIndex { indices, .. }
         | AssignTarget::ObjectPropertyArrayAppend { indices, .. } => {
             for index in indices {
@@ -18107,6 +18219,11 @@ fn collect_loop_assigned_direct_variables_from_assign_target(
             }
         }
         AssignTarget::NestedArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::StaticPropertyArrayAppend {
             indices,
             suffix_indices,
             ..
@@ -18184,6 +18301,7 @@ fn collect_loop_assigned_direct_variables_from_unset_target(
             collect_loop_assigned_direct_variables_from_expr(index, names);
         }
         UnsetTarget::NestedArrayIndex { indices, .. }
+        | UnsetTarget::StaticPropertyArrayIndex { indices, .. }
         | UnsetTarget::ObjectPropertyArrayIndex { indices, .. }
         | UnsetTarget::DynamicObjectPropertyArrayIndex { indices, .. } => {
             for index in indices {
@@ -18691,6 +18809,7 @@ impl CGenerator {
             && self.global_import_names == other.global_import_names
             && self.native_value_variable_facts == other.native_value_variable_facts
             && self.native_object_property_value_facts == other.native_object_property_value_facts
+            && self.native_static_property_value_facts == other.native_static_property_value_facts
             && self.native_callable_variable_identities == other.native_callable_variable_identities
             && self.native_reference_fact_slots == other.native_reference_fact_slots
             && self.native_reference_slot_facts == other.native_reference_slot_facts
@@ -18723,6 +18842,7 @@ impl CGenerator {
             global_import_names: self.global_import_names.clone(),
             native_value_variable_facts: self.native_value_variable_facts.clone(),
             native_object_property_value_facts: self.native_object_property_value_facts.clone(),
+            native_static_property_value_facts: self.native_static_property_value_facts.clone(),
             native_callable_variable_identities: self.native_callable_variable_identities.clone(),
             native_reference_fact_slots: self.native_reference_fact_slots.clone(),
             native_reference_slot_facts: self.native_reference_slot_facts.clone(),
@@ -18862,6 +18982,8 @@ impl CGenerator {
             else_branch,
             &self.variables,
         );
+        self.native_static_property_value_facts =
+            Self::join_native_static_property_value_facts(then_branch, else_branch);
         self.native_callable_variable_identities = Self::join_native_callable_variable_identities(
             then_branch,
             else_branch,
@@ -18911,6 +19033,25 @@ impl CGenerator {
                 continue;
             }
             let Some(else_facts) = else_branch.native_object_property_value_facts.get(key) else {
+                continue;
+            };
+            let Some(facts) = then_facts.intersection(else_facts) else {
+                continue;
+            };
+            if !facts.is_empty() {
+                joined.insert(key.clone(), facts);
+            }
+        }
+        joined
+    }
+
+    fn join_native_static_property_value_facts(
+        then_branch: &Self,
+        else_branch: &Self,
+    ) -> HashMap<CStaticPropertyFactKey, CNativeValueFacts> {
+        let mut joined = HashMap::new();
+        for (key, then_facts) in &then_branch.native_static_property_value_facts {
+            let Some(else_facts) = else_branch.native_static_property_value_facts.get(key) else {
                 continue;
             };
             let Some(facts) = then_facts.intersection(else_facts) else {
@@ -23707,6 +23848,8 @@ impl CGenerator {
             | AssignTarget::ArrayIndex { .. }
             | AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
+            | AssignTarget::StaticPropertyArrayIndex { .. }
+            | AssignTarget::StaticPropertyArrayAppend { .. }
             | AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
@@ -28356,8 +28499,100 @@ impl CGenerator {
                 target,
                 CObjectPropertyOperand::Dynamic(property),
             ),
+            Expr::StaticProperty { .. }
+            | Expr::ObjectStaticProperty { .. }
+            | Expr::SelfStaticProperty { .. }
+            | Expr::ParentStaticProperty { .. }
+            | Expr::LateStaticProperty { .. } => {
+                Self::static_property_lvalue_target_from_expr(expr)
+                    .and_then(|target| self.static_property_fact_key_for_assign_target(&target))
+                    .and_then(|key| self.native_static_property_value_facts.get(&key).cloned())
+            }
             _ => None,
         }
+    }
+
+    fn static_property_fact_key_for_assign_target(
+        &self,
+        target: &AssignTarget,
+    ) -> Option<CStaticPropertyFactKey> {
+        match target {
+            AssignTarget::StaticProperty {
+                class_name,
+                property,
+                ..
+            } => {
+                let receiver = self
+                    .resolve_declared_static_property_receiver(class_name)
+                    .unwrap_or_else(|| class_name.clone());
+                Some(CStaticPropertyFactKey {
+                    receiver: format!("class:{}", Self::declared_class_key(&receiver)),
+                    property: property.clone(),
+                })
+            }
+            AssignTarget::SelfStaticProperty { property, .. } => {
+                let receiver = self.active_declared_class_name.as_ref()?;
+                Some(CStaticPropertyFactKey {
+                    receiver: format!("class:{}", Self::declared_class_key(receiver)),
+                    property: property.clone(),
+                })
+            }
+            AssignTarget::ParentStaticProperty { property, .. } => {
+                let receiver = self.active_declared_parent_class_name.as_ref()?;
+                Some(CStaticPropertyFactKey {
+                    receiver: format!("class:{}", Self::declared_class_key(receiver)),
+                    property: property.clone(),
+                })
+            }
+            AssignTarget::LateStaticProperty { property, .. } => {
+                let receiver = self.active_declared_class_name.as_ref()?;
+                Some(CStaticPropertyFactKey {
+                    receiver: format!("late:{}", Self::declared_class_key(receiver)),
+                    property: property.clone(),
+                })
+            }
+            AssignTarget::ObjectStaticProperty {
+                target, property, ..
+            } => {
+                if let Some(class_name) = self.single_static_known_string_value_for_expr(target) {
+                    return Some(CStaticPropertyFactKey {
+                        receiver: format!("class:{}", Self::declared_class_key(&class_name)),
+                        property: property.clone(),
+                    });
+                }
+                let facts = self.native_value_facts_for_expr(target)?;
+                let object = facts.object.as_ref()?;
+                let mut keys = object.declared_class_keys.iter();
+                let class_key = keys.next()?;
+                if keys.next().is_some() {
+                    return None;
+                }
+                Some(CStaticPropertyFactKey {
+                    receiver: format!("class:{class_key}"),
+                    property: property.clone(),
+                })
+            }
+            _ => None,
+        }
+    }
+
+    fn native_static_property_owner_source_for_expr(
+        &self,
+        expr: &Expr,
+    ) -> Option<CNativeValueOwnerSource> {
+        let target = Self::static_property_lvalue_target_from_expr(expr)?;
+        let fact_key = self.static_property_fact_key_for_assign_target(&target);
+        let facts = fact_key
+            .as_ref()
+            .and_then(|key| self.native_static_property_value_facts.get(key).cloned());
+        facts
+            .as_ref()
+            .is_some_and(|facts| facts.has_definite_native_object_interface("ArrayAccess"))
+            .then_some(CNativeValueOwnerSource::StaticProperty {
+                target,
+                facts,
+                fact_key,
+            })
     }
 
     fn expr_has_definite_native_object_interface(&self, expr: &Expr, interface_name: &str) -> bool {
@@ -28594,7 +28829,8 @@ impl CGenerator {
         let facts = match source {
             CNativeValueOwnerSource::DirectVariable { facts, .. }
             | CNativeValueOwnerSource::ReferenceSlot { facts, .. }
-            | CNativeValueOwnerSource::ObjectProperty { facts, .. } => facts.as_ref(),
+            | CNativeValueOwnerSource::ObjectProperty { facts, .. }
+            | CNativeValueOwnerSource::StaticProperty { facts, .. } => facts.as_ref(),
         };
         if facts.is_some_and(|facts| {
             self.native_arrayaccess_offset_get_may_return_reference_from_facts(facts)
@@ -28610,7 +28846,8 @@ impl CGenerator {
                 property.borrowed(),
             ),
             CNativeValueOwnerSource::DirectVariable { .. }
-            | CNativeValueOwnerSource::ReferenceSlot { .. } => false,
+            | CNativeValueOwnerSource::ReferenceSlot { .. }
+            | CNativeValueOwnerSource::StaticProperty { .. } => false,
         }
     }
 
@@ -28621,7 +28858,8 @@ impl CGenerator {
         match commit {
             CNativeValueOwnerCommit::DirectVariable { facts, .. }
             | CNativeValueOwnerCommit::ReferenceSlot { facts, .. }
-            | CNativeValueOwnerCommit::ObjectPropertyReferenceSlot { facts, .. } => {
+            | CNativeValueOwnerCommit::ObjectPropertyReferenceSlot { facts, .. }
+            | CNativeValueOwnerCommit::StaticProperty { facts, .. } => {
                 *facts = replacement_facts;
             }
         }
@@ -28782,6 +29020,8 @@ impl CGenerator {
             | AssignTarget::ArrayIndex { .. }
             | AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
+            | AssignTarget::StaticPropertyArrayIndex { .. }
+            | AssignTarget::StaticPropertyArrayAppend { .. }
             | AssignTarget::NonDirectDynamicProperty { .. }
             | AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
@@ -29092,6 +29332,17 @@ impl CGenerator {
                 self.plan_native_nested_arrayaccess_owner_stack_from_source(&source, indices, *span)
                     .map(Some)
             }
+            AssignTarget::StaticPropertyArrayIndex {
+                expr,
+                indices,
+                span,
+            } if indices.len() >= 2 => {
+                let Some(source) = self.native_static_property_owner_source_for_expr(expr) else {
+                    return Ok(None);
+                };
+                self.plan_native_nested_arrayaccess_owner_stack_from_source(&source, indices, *span)
+                    .map(Some)
+            }
             _ => Ok(None),
         }
     }
@@ -29290,6 +29541,16 @@ impl CGenerator {
                 };
                 (source, indices.as_slice(), *span)
             }
+            AssignTarget::StaticPropertyArrayIndex {
+                expr,
+                indices,
+                span,
+            } if indices.len() >= 2 => {
+                let Some(source) = self.native_static_property_owner_source_for_expr(expr) else {
+                    return Ok(None);
+                };
+                (source, indices.as_slice(), *span)
+            }
             _ => return Ok(None),
         };
 
@@ -29355,6 +29616,17 @@ impl CGenerator {
                 };
                 (source, indices.as_slice(), suffix_indices.as_slice(), *span)
             }
+            AssignTarget::StaticPropertyArrayAppend {
+                expr,
+                indices,
+                suffix_indices,
+                span,
+            } if !indices.is_empty() => {
+                let Some(source) = self.native_static_property_owner_source_for_expr(expr) else {
+                    return Ok(None);
+                };
+                (source, indices.as_slice(), suffix_indices.as_slice(), *span)
+            }
             _ => return Ok(None),
         };
 
@@ -29414,6 +29686,16 @@ impl CGenerator {
                     CObjectPropertyOperand::Dynamic(property),
                     *span,
                 ) else {
+                    return Ok(None);
+                };
+                (source, indices.as_slice(), *span)
+            }
+            UnsetTarget::StaticPropertyArrayIndex {
+                expr,
+                indices,
+                span,
+            } if indices.len() >= 2 => {
+                let Some(source) = self.native_static_property_owner_source_for_expr(expr) else {
                     return Ok(None);
                 };
                 (source, indices.as_slice(), *span)
@@ -29504,6 +29786,17 @@ impl CGenerator {
                     suffix_offsets: suffix_indices.as_slice(),
                 })
             }
+            AssignTarget::StaticPropertyArrayAppend {
+                expr,
+                indices,
+                suffix_indices,
+                ..
+            } if indices.is_empty() && !suffix_indices.is_empty() => self
+                .native_static_property_owner_source_for_expr(expr)
+                .map(|source| CNativeArrayAccessRootAppendSuffixTarget {
+                    source,
+                    suffix_offsets: suffix_indices.as_slice(),
+                }),
             _ => None,
         }
     }
@@ -29773,6 +30066,26 @@ impl CGenerator {
                     },
                 })
             }
+            CNativeValueOwnerSource::StaticProperty {
+                target,
+                facts,
+                fact_key,
+            } => {
+                let Some(target) =
+                    self.materialize_static_property_lvalue_target(&target, failure_cleanup)?
+                else {
+                    return Err(self.unsupported(Span::new(0, 0), ASSEMBLY_ARRAY_ACCESS_REJECTION));
+                };
+                let subject = self.emit_static_property_lvalue_read(&target, failure_cleanup);
+                Ok(CNativeValueOwnerMaterialization {
+                    subject,
+                    commit: CNativeValueOwnerCommit::StaticProperty {
+                        target,
+                        facts,
+                        fact_key,
+                    },
+                })
+            }
         }
     }
 
@@ -29827,6 +30140,32 @@ impl CGenerator {
                 self.release_native_reference_fact_handle(&reference);
                 self.body
                     .push(format!("phpc_native_value_free({replacement});"));
+                Ok(())
+            }
+            CNativeValueOwnerCommit::StaticProperty {
+                target,
+                facts,
+                fact_key,
+            } => {
+                let result = self.emit_static_property_lvalue_write(
+                    &target,
+                    CNativeValueMaterialization {
+                        handle: replacement.to_string(),
+                        cleanup_after_use: Vec::new(),
+                    },
+                    failure_cleanup,
+                );
+                self.body.extend(result.cleanup_after_use);
+                if let Some(key) = fact_key {
+                    match facts.filter(|facts| !facts.is_empty()) {
+                        Some(facts) => {
+                            self.native_static_property_value_facts.insert(key, facts);
+                        }
+                        None => {
+                            self.native_static_property_value_facts.remove(&key);
+                        }
+                    }
+                }
                 Ok(())
             }
         }
@@ -34553,12 +34892,16 @@ impl CGenerator {
         target: &AssignTarget,
         failure_cleanup: &str,
     ) -> CompileResult<bool> {
+        let fact_key = self.static_property_fact_key_for_assign_target(target);
         let Some(target) =
             self.materialize_static_property_unset_lvalue_target(target, failure_cleanup)?
         else {
             return Ok(false);
         };
         self.emit_static_property_lvalue_unset(&target, failure_cleanup);
+        if let Some(key) = fact_key {
+            self.native_static_property_value_facts.remove(&key);
+        }
         self.body.extend(target.cleanup_after_use);
         Ok(true)
     }
@@ -34569,18 +34912,30 @@ impl CGenerator {
         expr: &Expr,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let Some(target) =
+        let fact_key = self.static_property_fact_key_for_assign_target(target);
+        let replacement_facts = self.native_value_facts_for_expr(expr);
+        let Some(lvalue) =
             self.materialize_static_property_lvalue_target(target, failure_cleanup)?
         else {
             return Ok(None);
         };
-        let target_cleanup = target.cleanup_sequence();
+        let target_cleanup = lvalue.cleanup_sequence();
         let replacement = self.materialize_native_value_result_operand(
             expr,
             &format!("{target_cleanup}{failure_cleanup}"),
         )?;
-        let result = self.emit_static_property_lvalue_write(&target, replacement, failure_cleanup);
-        self.body.extend(target.cleanup_after_use);
+        let result = self.emit_static_property_lvalue_write(&lvalue, replacement, failure_cleanup);
+        if let Some(key) = fact_key {
+            match replacement_facts.filter(|facts| !facts.is_empty()) {
+                Some(facts) => {
+                    self.native_static_property_value_facts.insert(key, facts);
+                }
+                None => {
+                    self.native_static_property_value_facts.remove(&key);
+                }
+            }
+        }
+        self.body.extend(lvalue.cleanup_after_use);
         Ok(Some(result))
     }
 
@@ -44924,20 +45279,24 @@ impl CGenerator {
                 UnsetTarget::ObjectPropertyArrayIndex { .. }
                 | UnsetTarget::DynamicObjectPropertyArrayIndex { .. }
                 | UnsetTarget::NonDirectObjectPropertyArrayIndex { .. }
-                | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex { .. } => {
+                | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
+                | UnsetTarget::StaticPropertyArrayIndex { .. } => {
                     if self.emit_native_nested_arrayaccess_offset_unset_for_target(target, "")? {
                         continue;
                     }
                     if self.emit_native_arrayaccess_offset_unset_for_target(target, "")? {
                         continue;
                     }
-                    let boundary =
+                    if let Some(boundary) =
                         native_object_array_access_unset_operation_result_from_target(target)
-                            .expect("object property array unset targets classify before lowering");
-                    return Err(self.unsupported(
-                        boundary.span,
-                        boundary.rejection(NativeCallBackend::Assembly),
-                    ));
+                    {
+                        return Err(self.unsupported(
+                            boundary.span,
+                            boundary.rejection(NativeCallBackend::Assembly),
+                        ));
+                    }
+                    return Err(self
+                        .unsupported(unset_target_span(target), ASSEMBLY_ARRAY_ACCESS_REJECTION));
                 }
                 UnsetTarget::StaticProperty { .. }
                 | UnsetTarget::ObjectStaticProperty { .. }
@@ -48270,6 +48629,10 @@ impl CGenerator {
                     }
                 }
                 Err(self.unsupported(*span, ASSEMBLY_ARRAY_REJECTION))
+            }
+            AssignTarget::StaticPropertyArrayIndex { span, .. }
+            | AssignTarget::StaticPropertyArrayAppend { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_ARRAY_ACCESS_REJECTION))
             }
             AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
@@ -52965,6 +53328,13 @@ impl CGenerator {
                 )
                 .map(|source| (source, &indices[0], *span))
             }
+            AssignTarget::StaticPropertyArrayIndex {
+                expr,
+                indices,
+                span,
+            } if indices.len() == 1 => self
+                .native_static_property_owner_source_for_expr(expr)
+                .map(|source| (source, &indices[0], *span)),
             _ => None,
         }
     }
@@ -53002,6 +53372,13 @@ impl CGenerator {
                 )
                 .map(|source| (source, &indices[0], *span))
             }
+            AssignTarget::StaticPropertyArrayIndex {
+                expr,
+                indices,
+                span,
+            } if indices.len() == 1 => self
+                .native_static_property_owner_source_for_expr(expr)
+                .map(|source| (source, &indices[0], *span)),
             _ => None,
         }
     }
@@ -53061,6 +53438,14 @@ impl CGenerator {
                     CNativeArrayAccessOffsetWriteOperation::Write,
                 ))
             }
+            AssignTarget::StaticPropertyArrayIndex { expr, indices, .. } if indices.len() == 1 => {
+                let source = self.native_static_property_owner_source_for_expr(expr)?;
+                Some((
+                    source,
+                    Some(&indices[0]),
+                    CNativeArrayAccessOffsetWriteOperation::Write,
+                ))
+            }
             AssignTarget::ObjectPropertyArrayAppend {
                 object,
                 property,
@@ -53089,6 +53474,15 @@ impl CGenerator {
                     CObjectPropertyOperand::Dynamic(property),
                     *span,
                 )?;
+                Some((source, None, CNativeArrayAccessOffsetWriteOperation::Append))
+            }
+            AssignTarget::StaticPropertyArrayAppend {
+                expr,
+                indices,
+                suffix_indices,
+                ..
+            } if indices.is_empty() && suffix_indices.is_empty() => {
+                let source = self.native_static_property_owner_source_for_expr(expr)?;
                 Some((source, None, CNativeArrayAccessOffsetWriteOperation::Append))
             }
             _ => None,
@@ -53127,6 +53521,10 @@ impl CGenerator {
                     *span,
                 )
                 .map(|source| (source, &indices[0]))
+            }
+            UnsetTarget::StaticPropertyArrayIndex { expr, indices, .. } if indices.len() == 1 => {
+                self.native_static_property_owner_source_for_expr(expr)
+                    .map(|source| (source, &indices[0]))
             }
             _ => None,
         }
@@ -58831,6 +59229,7 @@ mod tests {
             "    public function offsetSet($offset, $value) { return null; }\n",
             "    public function offsetUnset($offset) { return null; }\n",
             "}\n",
+            "class NestedStaticHolder { public static $bag; }\n",
         ))
         .unwrap();
         let mut generator = CGenerator {
@@ -58860,6 +59259,16 @@ mod tests {
         generator.native_object_property_value_facts.insert(
             CNativeObjectPropertyFactKey {
                 object: "holder".to_string(),
+                property: "bag".to_string(),
+            },
+            root_facts.clone(),
+        );
+        generator.native_static_property_value_facts.insert(
+            CStaticPropertyFactKey {
+                receiver: format!(
+                    "class:{}",
+                    CGenerator::declared_class_key("NestedStaticHolder")
+                ),
                 property: "bag".to_string(),
             },
             root_facts.clone(),
@@ -59018,6 +59427,29 @@ mod tests {
                 CNativeNestedArrayAccessCommitStep::RootOwnerCommit,
             ]
         );
+
+        let static_target = AssignTarget::StaticPropertyArrayIndex {
+            expr: Expr::StaticProperty {
+                class_name: "NestedStaticHolder".to_string(),
+                property: "bag".to_string(),
+                span: span(40),
+            },
+            indices: vec![
+                Expr::String("outer".to_string(), span(41)),
+                Expr::String("middle".to_string(), span(42)),
+                Expr::String("leaf".to_string(), span(43)),
+            ],
+            span: span(40),
+        };
+        let static_plan = generator
+            .plan_native_nested_arrayaccess_owner_stack_for_assign_target(&static_target)
+            .expect("static-property nested ArrayAccess planning should not hit a blocker")
+            .expect("static-property nested ArrayAccess should produce an owner-stack plan");
+        assert_eq!(
+            static_plan.root_kind,
+            CNativeValueOwnerSourceKind::StaticProperty
+        );
+        assert_eq!(static_plan.commit_order, plan.commit_order);
     }
 
     #[test]
@@ -59134,6 +59566,16 @@ mod tests {
             },
             root_facts.clone(),
         );
+        generator.native_static_property_value_facts.insert(
+            CStaticPropertyFactKey {
+                receiver: format!(
+                    "class:{}",
+                    CGenerator::declared_class_key("NestedStaticHolder")
+                ),
+                property: "bag".to_string(),
+            },
+            root_facts.clone(),
+        );
         let property_target = AssignTarget::ObjectPropertyArrayIndex {
             object: "holder".to_string(),
             property: "bag".to_string(),
@@ -59152,6 +59594,19 @@ mod tests {
                 Expr::String("leaf".to_string(), span(43)),
             ],
             span: span(40),
+        };
+        let static_target = AssignTarget::StaticPropertyArrayIndex {
+            expr: Expr::StaticProperty {
+                class_name: "NestedStaticHolder".to_string(),
+                property: "bag".to_string(),
+                span: span(45),
+            },
+            indices: vec![
+                Expr::String("outer".to_string(), span(46)),
+                Expr::String("middle".to_string(), span(47)),
+                Expr::String("leaf".to_string(), span(48)),
+            ],
+            span: span(45),
         };
 
         let property_context = generator
@@ -59173,6 +59628,17 @@ mod tests {
             CNativeValueOwnerSourceKind::DirectVariable
         );
         assert_eq!(direct_context.plan.frames.len(), 2);
+        let static_context = generator
+            .native_nested_arrayaccess_assignment_target_for_assign_target(&static_target)
+            .expect(
+                "static-property nested ArrayAccess should pass owner-stack production planning",
+            )
+            .expect("static-property nested ArrayAccess should produce a production context");
+        assert_eq!(
+            static_context.plan.root_kind,
+            CNativeValueOwnerSourceKind::StaticProperty
+        );
+        assert_eq!(static_context.plan.frames.len(), 2);
 
         assert!(
             generator
@@ -59214,6 +59680,32 @@ mod tests {
             unset_context.plan.commit_order,
             property_context.plan.commit_order
         );
+
+        let static_unset_target = UnsetTarget::StaticPropertyArrayIndex {
+            expr: Expr::StaticProperty {
+                class_name: "NestedStaticHolder".to_string(),
+                property: "bag".to_string(),
+                span: span(55),
+            },
+            indices: vec![
+                Expr::String("outer".to_string(), span(56)),
+                Expr::String("middle".to_string(), span(57)),
+                Expr::String("leaf".to_string(), span(58)),
+            ],
+            span: span(55),
+        };
+        let static_unset_context = generator
+            .native_nested_arrayaccess_unset_target_for_unset_target(&static_unset_target)
+            .expect("static-property nested ArrayAccess unset should pass owner-stack planning")
+            .expect("static-property nested ArrayAccess unset should produce a production context");
+        assert_eq!(
+            static_unset_context.plan.root_kind,
+            CNativeValueOwnerSourceKind::StaticProperty
+        );
+        assert_eq!(
+            static_unset_context.plan.commit_order,
+            property_context.plan.commit_order
+        );
     }
 
     #[test]
@@ -59229,6 +59721,16 @@ mod tests {
         generator.native_object_property_value_facts.insert(
             CNativeObjectPropertyFactKey {
                 object: "holder".to_string(),
+                property: "bag".to_string(),
+            },
+            root_facts.clone(),
+        );
+        generator.native_static_property_value_facts.insert(
+            CStaticPropertyFactKey {
+                receiver: format!(
+                    "class:{}",
+                    CGenerator::declared_class_key("NestedStaticHolder")
+                ),
                 property: "bag".to_string(),
             },
             root_facts,
@@ -59271,6 +59773,27 @@ mod tests {
             CNativeValueOwnerSourceKind::ObjectProperty
         );
         assert_eq!(property.suffix_offsets.len(), 1);
+
+        let static_target = AssignTarget::StaticPropertyArrayAppend {
+            expr: Expr::StaticProperty {
+                class_name: "NestedStaticHolder".to_string(),
+                property: "bag".to_string(),
+                span: span(80),
+            },
+            indices: Vec::new(),
+            suffix_indices: vec![Expr::String("leaf".to_string(), span(82))],
+            span: span(80),
+        };
+        let static_property = generator
+            .native_arrayaccess_root_append_suffix_target_for_assign_target(&static_target)
+            .expect(
+                "static-property root keyed append suffix should reuse the root owner boundary",
+            );
+        assert_eq!(
+            static_property.source.kind(),
+            CNativeValueOwnerSourceKind::StaticProperty
+        );
+        assert_eq!(static_property.suffix_offsets.len(), 1);
     }
 
     fn test_descriptor_closure_summary(

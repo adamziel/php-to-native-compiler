@@ -2498,6 +2498,7 @@ impl Parser {
                 | UnsetTarget::DynamicObjectPropertyArrayIndex { .. }
                 | UnsetTarget::NonDirectObjectPropertyArrayIndex { .. }
                 | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
+                | UnsetTarget::StaticPropertyArrayIndex { .. }
                 | UnsetTarget::NonDirectObjectProperty { .. }
                 | UnsetTarget::NonDirectDynamicObjectProperty { .. }
                 | UnsetTarget::ObjectStaticProperty { .. }) => Ok(Stmt::UnsetMany {
@@ -2758,6 +2759,42 @@ impl Parser {
             _ => return Err(self.error_at(member.span, unsupported_unset_message())),
         };
 
+        if self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+            let indices = self.parse_unset_indices_after_open_bracket()?;
+            self.ensure_unset_target_tail_is_done()?;
+            let expr = match receiver.as_deref() {
+                Some(receiver) if receiver.eq_ignore_ascii_case("self") => {
+                    Expr::SelfStaticProperty {
+                        property,
+                        span: operator_span,
+                    }
+                }
+                Some(receiver) if receiver.eq_ignore_ascii_case("parent") => {
+                    Expr::ParentStaticProperty {
+                        property,
+                        span: operator_span,
+                    }
+                }
+                Some(receiver) if receiver.eq_ignore_ascii_case("static") => {
+                    Expr::LateStaticProperty {
+                        property,
+                        span: operator_span,
+                    }
+                }
+                Some(class_name) => Expr::StaticProperty {
+                    class_name: class_name.to_string(),
+                    property,
+                    span: target_span,
+                },
+                None => return Err(self.error_at(target_span, unsupported_unset_message())),
+            };
+            return Ok(UnsetTarget::StaticPropertyArrayIndex {
+                expr,
+                indices,
+                span: target_span,
+            });
+        }
+
         if !self.check(|kind| matches!(kind, TokenKind::RParen | TokenKind::Comma)) {
             return Err(self.error_at(self.peek().span, unsupported_unset_message()));
         }
@@ -2801,6 +2838,20 @@ impl Parser {
             TokenKind::Variable(property) => property,
             _ => return Err(self.error_at(member.span, unsupported_unset_message())),
         };
+
+        if self.match_token(|kind| matches!(kind, TokenKind::LBracket)) {
+            let indices = self.parse_unset_indices_after_open_bracket()?;
+            self.ensure_unset_target_tail_is_done()?;
+            return Ok(UnsetTarget::StaticPropertyArrayIndex {
+                expr: Expr::ObjectStaticProperty {
+                    target: Box::new(target),
+                    property,
+                    span: target_span,
+                },
+                indices,
+                span: target_span,
+            });
+        }
 
         if !self.check(|kind| matches!(kind, TokenKind::RParen | TokenKind::Comma)) {
             return Err(self.error_at(self.peek().span, unsupported_unset_message()));
@@ -3003,6 +3054,7 @@ impl Parser {
                     | AssignTarget::List { .. }
                     | AssignTarget::ArrayIndex { index: Some(_), .. }
                     | AssignTarget::NestedArrayIndex { .. }
+                    | AssignTarget::StaticPropertyArrayIndex { .. }
                     | AssignTarget::ObjectPropertyArrayIndex { .. }
                     | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
                     | AssignTarget::Property { .. }
@@ -3012,6 +3064,7 @@ impl Parser {
                     | AssignTarget::LateStaticProperty { .. }
                     | AssignTarget::ObjectStaticProperty { .. } => {}
                     AssignTarget::NestedArrayAppend { .. }
+                    | AssignTarget::StaticPropertyArrayAppend { .. }
                     | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
                     | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
                     | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
@@ -3643,6 +3696,7 @@ impl Parser {
             AssignTarget::Variable { .. }
             | AssignTarget::ArrayIndex { index: Some(_), .. }
             | AssignTarget::NestedArrayIndex { .. }
+            | AssignTarget::StaticPropertyArrayIndex { .. }
             | AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::Property { .. }
@@ -3660,6 +3714,7 @@ impl Parser {
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
+            | AssignTarget::StaticPropertyArrayAppend { .. }
             | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
             | AssignTarget::NestedArrayAppend { .. }
             | AssignTarget::ArrayIndex { index: None, .. } => {
@@ -3675,6 +3730,7 @@ impl Parser {
             AssignTarget::Variable { .. }
             | AssignTarget::ArrayIndex { index: Some(_), .. }
             | AssignTarget::NestedArrayIndex { .. }
+            | AssignTarget::StaticPropertyArrayIndex { .. }
             | AssignTarget::ArrayIndex { index: None, .. }
             | AssignTarget::Property { .. }
             | AssignTarget::ObjectPropertyArrayIndex { .. }
@@ -3696,6 +3752,7 @@ impl Parser {
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
+            | AssignTarget::StaticPropertyArrayAppend { .. }
             | AssignTarget::DynamicObjectPropertyArrayAppend { .. }
             | AssignTarget::NestedArrayAppend { .. } => {
                 Err(unsupported_increment_decrement_target_message())
@@ -3739,6 +3796,15 @@ impl Parser {
                         span,
                     });
                 }
+                if let Some((expr, indices, span)) =
+                    Self::static_property_array_index_path_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::StaticPropertyArrayIndex {
+                        expr,
+                        indices,
+                        span,
+                    });
+                }
 
                 let (name, mut indices, span) = Self::array_index_path_from_expr(expr)
                     .ok_or(unsupported_increment_decrement_target_message())?;
@@ -3757,12 +3823,32 @@ impl Parser {
                 }
             }
             Expr::AppendIndex { target, span } => match *target {
+                expr @ (Expr::StaticProperty { .. }
+                | Expr::ObjectStaticProperty { .. }
+                | Expr::SelfStaticProperty { .. }
+                | Expr::ParentStaticProperty { .. }
+                | Expr::LateStaticProperty { .. }) => Ok(AssignTarget::StaticPropertyArrayAppend {
+                    expr,
+                    indices: Vec::new(),
+                    suffix_indices: Vec::new(),
+                    span,
+                }),
                 Expr::Variable(name, _) => Ok(AssignTarget::ArrayIndex {
                     name,
                     index: None,
                     span,
                 }),
                 nested @ Expr::Index { .. } => {
+                    if let Some((expr, indices, _)) =
+                        Self::static_property_array_index_path_from_expr(&nested)
+                    {
+                        return Ok(AssignTarget::StaticPropertyArrayAppend {
+                            expr,
+                            indices,
+                            suffix_indices: Vec::new(),
+                            span,
+                        });
+                    }
                     let (name, indices, _) = Self::array_index_path_from_expr(nested)
                         .ok_or(unsupported_increment_decrement_target_message())?;
                     Ok(AssignTarget::NestedArrayAppend {
@@ -3896,6 +3982,15 @@ impl Parser {
                     return Ok(AssignTarget::DynamicObjectPropertyArrayIndex {
                         object,
                         property,
+                        indices,
+                        span,
+                    });
+                }
+                if let Some((expr, indices, span)) =
+                    Self::static_property_array_index_path_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::StaticPropertyArrayIndex {
+                        expr,
                         indices,
                         span,
                     });
@@ -4064,6 +4159,15 @@ impl Parser {
                         span,
                     });
                 }
+                if let Some((expr, indices, span)) =
+                    Self::static_property_array_index_path_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::StaticPropertyArrayIndex {
+                        expr,
+                        indices,
+                        span,
+                    });
+                }
                 let (name, mut indices, span) = Self::array_index_path_from_expr(expr)
                     .ok_or(unsupported_assignment_expression_target_message())?;
                 if indices.len() == 1 {
@@ -4081,6 +4185,31 @@ impl Parser {
                 }
             }
             Expr::AppendIndex { target, span } => {
+                if let Some((expr, indices, _)) =
+                    Self::static_property_array_index_path_from_expr(target.as_ref())
+                {
+                    return Ok(AssignTarget::StaticPropertyArrayAppend {
+                        expr,
+                        indices,
+                        suffix_indices: Vec::new(),
+                        span,
+                    });
+                }
+                if matches!(
+                    target.as_ref(),
+                    Expr::StaticProperty { .. }
+                        | Expr::ObjectStaticProperty { .. }
+                        | Expr::SelfStaticProperty { .. }
+                        | Expr::ParentStaticProperty { .. }
+                        | Expr::LateStaticProperty { .. }
+                ) {
+                    return Ok(AssignTarget::StaticPropertyArrayAppend {
+                        expr: *target,
+                        indices: Vec::new(),
+                        suffix_indices: Vec::new(),
+                        span,
+                    });
+                }
                 if let Some((object, property, indices, _)) =
                     Self::dynamic_object_property_array_append_target_from_expr(target.as_ref())
                 {
@@ -4572,6 +4701,15 @@ impl Parser {
                     return Ok(AssignTarget::DynamicObjectPropertyArrayIndex {
                         object,
                         property,
+                        indices,
+                        span,
+                    });
+                }
+                if let Some((expr, indices, span)) =
+                    Self::static_property_array_index_path_from_expr(&expr)
+                {
+                    return Ok(AssignTarget::StaticPropertyArrayIndex {
+                        expr,
                         indices,
                         span,
                     });

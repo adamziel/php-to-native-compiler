@@ -17681,6 +17681,57 @@ const ARRAYACCESS_NESTED_KEYED_APPEND_SUFFIX_OWNER_STACK_SOURCE: &str = concat!(
     "echo ($holder->bag[\"pouter\"][\"pmiddle\"][][\"leaf\"] = \"P\");\n",
 );
 
+const ARRAYACCESS_STATIC_PROPERTY_OFFSET_MUTATION_SOURCE: &str = concat!(
+    "<?php\n",
+    "class StaticOffsetLeafBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"leaf-get:\", $offset, \";\"; if ($offset === \"num\") { return 4; } return \"K\"; }\n",
+    "    public function offsetExists($offset) { echo \"leaf-exists:\", $offset, \";\"; return $offset !== \"missing\"; }\n",
+    "    public function offsetSet($offset, $value) { echo \"leaf-set:\", $offset, \"=\", $value, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { echo \"leaf-unset:\", $offset, \";\"; return null; }\n",
+    "}\n",
+    "class StaticOffsetMiddleBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"middle-get:\", $offset, \";\"; return new StaticOffsetLeafBag(); }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"middle-set:\", $offset, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class StaticOffsetRootBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"root-get:\", $offset, \";\"; return new StaticOffsetMiddleBag(); }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"root-set:\", $offset, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class StaticOffsetHolder {\n",
+    "    public static $bag;\n",
+    "    public static function selfSurface() {\n",
+    "        self::$bag = new StaticOffsetRootBag();\n",
+    "        self::$bag[\"self\"][\"mid\"][\"slot\"] = \"S\";\n",
+    "        echo \"|\";\n",
+    "        self::$bag[\"self\"][\"mid\"][\"num\"] += 3;\n",
+    "        echo \"|\";\n",
+    "    }\n",
+    "    public static function lateSurface() {\n",
+    "        static::$bag = new StaticOffsetRootBag();\n",
+    "        static::$bag[\"late\"][\"mid\"][\"missing\"] ??= \"LS\";\n",
+    "        echo \"|\";\n",
+    "        unset(static::$bag[\"late\"][\"mid\"][\"gone\"]);\n",
+    "    }\n",
+    "}\n",
+    "class StaticOffsetChild extends StaticOffsetHolder { public static $bag; }\n",
+    "StaticOffsetHolder::$bag = new StaticOffsetRootBag();\n",
+    "echo (StaticOffsetHolder::$bag[\"lit\"][\"mid\"][\"slot\"] = \"L\"), \"|\";\n",
+    "StaticOffsetHolder::$bag[\"lit\"][\"mid\"][\"num\"] += 1;\n",
+    "echo \"|\";\n",
+    "$class = \"StaticOffsetChild\";\n",
+    "$class::$bag = new StaticOffsetRootBag();\n",
+    "echo ($class::$bag[\"cls\"][\"mid\"][\"missing\"] ??= \"C\"), \"|\";\n",
+    "$class::$bag = new StaticOffsetRootBag();\n",
+    "unset($class::$bag[\"clsUnset\"][\"mid\"][\"gone\"]);\n",
+    "echo \"|\";\n",
+    "StaticOffsetHolder::selfSurface();\n",
+    "StaticOffsetChild::lateSurface();\n",
+);
+
 const ARRAYACCESS_ROOT_KEYED_APPEND_SUFFIX_SOURCE: &str = concat!(
     "<?php\n",
     "class RootKeyedAppendBag implements ArrayAccess {\n",
@@ -18304,6 +18355,78 @@ fn emit_exe_links_and_runs_nested_arrayaccess_keyed_append_suffix_owner_stack_pr
     assert_eq!(
         run.stdout,
         b"root-get:outer;middle-set:=D;root-set:outer;D|root-get:pouter;middle-get:pmiddle;leaf-set:=P;middle-set:pmiddle;root-set:pouter;P"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_executable_c_source_routes_static_property_offset_mutations_through_owner_stack() {
+    let program = parse(ARRAYACCESS_STATIC_PROPERTY_OFFSET_MUTATION_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("static_property_lvalue_read_value_")
+            && source.contains("static_property_lvalue_write_value_")
+            && source.contains("phpc_native_static_property_read_class_with_diagnostic")
+            && source.contains("phpc_native_static_property_write_class_with_diagnostic_and_free")
+            && source.contains("phpc_native_static_property_read_relative_with_diagnostic")
+            && source.contains("phpc_native_static_property_write_relative_with_diagnostic_and_free")
+            && source.contains("phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free")
+            && source.contains("PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_SELF")
+            && source.contains("PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_LATE_STATIC")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_GET")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_EXISTS")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_SET")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_UNSET")
+            && source.contains("PHPC_NATIVE_VALUE_BINARY_ADD")
+            && source.matches("nested_arrayaccess_leaf_write").count() >= 2
+            && source
+                .matches("nested_arrayaccess_null_coalesce_leaf_write")
+                .count()
+                >= 2
+            && source.matches("nested_arrayaccess_leaf_unset").count() >= 2
+            && source.matches("nested_arrayaccess_root_commit").count() >= 6,
+        "static-property ArrayAccess offset assignment, RMW, ??=, and unset should share the static-property lvalue owner with nested owner-stack writeback:\n{source}"
+    );
+    assert!(
+        !source.contains("ArrayAccess lowering rejects")
+            && !source.contains("static-member lowering rejects")
+            && !source.contains("assembly mutation lowering rejects")
+            && !source.contains("non-local assignment lowering rejects"),
+        "static-property offset mutations must not fall through old exact-shape blockers:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_static_property_offset_mutation_owner_stack_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "static_property_offset_mutation_owner_stack",
+        ARRAYACCESS_STATIC_PROPERTY_OFFSET_MUTATION_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native static-property offset mutation executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"root-get:lit;middle-get:mid;leaf-set:slot=L;middle-set:mid;root-set:lit;L|root-get:lit;middle-get:mid;leaf-get:num;leaf-set:num=5;middle-set:mid;root-set:lit;|root-get:cls;middle-get:mid;leaf-exists:missing;leaf-set:missing=C;middle-set:mid;root-set:cls;C|root-get:clsUnset;middle-get:mid;leaf-unset:gone;middle-set:mid;root-set:clsUnset;|root-get:self;middle-get:mid;leaf-set:slot=S;middle-set:mid;root-set:self;|root-get:self;middle-get:mid;leaf-get:num;leaf-set:num=7;middle-set:mid;root-set:self;|root-get:late;middle-get:mid;leaf-exists:missing;leaf-set:missing=LS;middle-set:mid;root-set:late;|root-get:late;middle-get:mid;leaf-unset:gone;middle-set:mid;root-set:late;"
     );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 

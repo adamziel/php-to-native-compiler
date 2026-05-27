@@ -13395,6 +13395,13 @@ impl Interpreter {
             } => self.execute_unset_non_direct_dynamic_object_property_nested_array_index(
                 holder, property, indices, span, scope,
             ),
+            UnsetTarget::StaticPropertyArrayIndex { .. } => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "unset",
+                    "static-property array-offset targets are not implemented in the interpreter",
+                ),
+            )),
             UnsetTarget::ObjectStaticProperty {
                 target, property, ..
             } => self.execute_unset_object_static_property(target, property, span, scope),
@@ -24083,6 +24090,14 @@ impl Interpreter {
                 let value = self.evaluate(expr, scope)?;
                 self.write_object_static_property(target, property, value, *span, scope)
             }
+            AssignTarget::StaticPropertyArrayIndex { span, .. }
+            | AssignTarget::StaticPropertyArrayAppend { span, .. } => Err(runtime_error(
+                *span,
+                RuntimeError::unsupported_call(
+                    "assignment",
+                    "static-property array-offset targets are not implemented in the interpreter",
+                ),
+            )),
             AssignTarget::StaticProperty {
                 class_name,
                 property,
@@ -26842,6 +26857,8 @@ impl Interpreter {
             }
             AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
+            | AssignTarget::StaticPropertyArrayIndex { .. }
+            | AssignTarget::StaticPropertyArrayAppend { .. }
             | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayAppend { .. }
             | AssignTarget::ObjectPropertyArrayAppend { .. }
@@ -27452,6 +27469,8 @@ impl Interpreter {
             }
             AssignTarget::NestedArrayIndex { .. }
             | AssignTarget::NestedArrayAppend { .. }
+            | AssignTarget::StaticPropertyArrayIndex { .. }
+            | AssignTarget::StaticPropertyArrayAppend { .. }
             | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
@@ -27730,6 +27749,8 @@ impl Interpreter {
             )),
             AssignTarget::NestedArrayIndex { span, .. }
             | AssignTarget::NestedArrayAppend { span, .. }
+            | AssignTarget::StaticPropertyArrayIndex { span, .. }
+            | AssignTarget::StaticPropertyArrayAppend { span, .. }
             | AssignTarget::ObjectPropertyArrayIndex { span, .. }
             | AssignTarget::DynamicObjectPropertyArrayIndex { span, .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { span, .. }
