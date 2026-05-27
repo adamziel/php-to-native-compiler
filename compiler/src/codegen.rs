@@ -16259,6 +16259,7 @@ struct CResolvedStaticProperty {
 enum CRelativeStaticPropertyReceiver {
     SelfClass,
     ParentClass,
+    LateStaticClass,
 }
 
 impl CRelativeStaticPropertyReceiver {
@@ -16266,6 +16267,7 @@ impl CRelativeStaticPropertyReceiver {
         match self {
             Self::SelfClass => "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_SELF",
             Self::ParentClass => "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_PARENT",
+            Self::LateStaticClass => "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_LATE_STATIC",
         }
     }
 }
@@ -21365,6 +21367,12 @@ impl CGenerator {
             output.push_str("#define PHPC_NATIVE_VALUE_FORMAT_ECHO 0\n");
             output.push('\n');
             output.push_str("extern phpc_NativeStringHandle phpc_native_string_from_bytes(const uint8_t *ptr, size_t len);\n");
+            output.push_str(
+                "extern size_t phpc_native_string_len(phpc_NativeStringHandle string);\n",
+            );
+            output.push_str(
+                "extern const uint8_t *phpc_native_string_bytes(phpc_NativeStringHandle string);\n",
+            );
             output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_scalar(phpc_NativeScalarValue value);\n");
             output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_string_with_diagnostic(phpc_NativeStringHandle string, phpc_NativeDiagnosticHandle *diagnostic);\n");
             output.push_str("extern phpc_NativeValueHandle phpc_native_value_from_string_bytes_with_diagnostic(const uint8_t *ptr, size_t len, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -32454,6 +32462,11 @@ impl CGenerator {
         let Some(current_class_name) = self.active_declared_class_name.clone() else {
             return Ok(None);
         };
+        let Some((called_class_ptr, called_class_len)) =
+            self.relative_static_property_called_class_operands(receiver)
+        else {
+            return Ok(None);
+        };
         let handle = self.ensure_native_static_property_storage(failure_cleanup, span)?;
         let (current_class_bytes, current_class_len) = self.emit_call_type_static_bytes(
             "static_property_current_class_name_bytes",
@@ -32466,7 +32479,7 @@ impl CGenerator {
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
         self.body.push(format!(
-            "phpc_NativeValueHandle {value} = phpc_native_static_property_read_relative_with_diagnostic({handle}, {}, {current_class_bytes}, {current_class_len}, NULL, 0, {property_bytes}, {property_len}, &{diagnostic});",
+            "phpc_NativeValueHandle {value} = phpc_native_static_property_read_relative_with_diagnostic({handle}, {}, {current_class_bytes}, {current_class_len}, {called_class_ptr}, {called_class_len}, {property_bytes}, {property_len}, &{diagnostic});",
             receiver.abi_tag()
         ));
         self.emit_report_native_diagnostic(&diagnostic);
@@ -32477,6 +32490,26 @@ impl CGenerator {
             handle: value.clone(),
             cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
         }))
+    }
+
+    fn relative_static_property_called_class_operands(
+        &self,
+        receiver: CRelativeStaticPropertyReceiver,
+    ) -> Option<(String, String)> {
+        match receiver {
+            CRelativeStaticPropertyReceiver::SelfClass
+            | CRelativeStaticPropertyReceiver::ParentClass => {
+                Some(("NULL".to_string(), "0".to_string()))
+            }
+            CRelativeStaticPropertyReceiver::LateStaticClass => {
+                self.active_called_scope_handle.as_ref().map(|handle| {
+                    (
+                        format!("phpc_native_string_bytes({handle})"),
+                        format!("phpc_native_string_len({handle})"),
+                    )
+                })
+            }
+        }
     }
 
     fn materialize_declared_static_property_assignment_result_for_target(
@@ -32543,9 +32576,19 @@ impl CGenerator {
                 property.as_str(),
                 *span,
             ),
+            AssignTarget::LateStaticProperty { property, span } => (
+                CRelativeStaticPropertyReceiver::LateStaticClass,
+                property.as_str(),
+                *span,
+            ),
             _ => return Ok(None),
         };
         let Some(current_class_name) = self.active_declared_class_name.clone() else {
+            return Ok(None);
+        };
+        let Some((called_class_ptr, called_class_len)) =
+            self.relative_static_property_called_class_operands(receiver)
+        else {
             return Ok(None);
         };
         let handle = self.ensure_native_static_property_storage(failure_cleanup, span)?;
@@ -32564,7 +32607,7 @@ impl CGenerator {
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
         self.body.push(format!(
-            "phpc_NativeValueHandle {result} = phpc_native_static_property_write_relative_with_diagnostic_and_free({handle}, {}, {current_class_bytes}, {current_class_len}, NULL, 0, {property_bytes}, {property_len}, {}, &{diagnostic});",
+            "phpc_NativeValueHandle {result} = phpc_native_static_property_write_relative_with_diagnostic_and_free({handle}, {}, {current_class_bytes}, {current_class_len}, {called_class_ptr}, {called_class_len}, {property_bytes}, {property_len}, {}, &{diagnostic});",
             receiver.abi_tag(),
             replacement.handle
         ));
@@ -33146,7 +33189,16 @@ impl CGenerator {
                 }
                 Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
             }
-            Expr::LateStaticProperty { span, .. } => {
+            Expr::LateStaticProperty { property, span } => {
+                if let Some(value) = self.materialize_relative_static_property_read_expr(
+                    CRelativeStaticPropertyReceiver::LateStaticClass,
+                    property,
+                    *span,
+                    "",
+                )? {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
                 Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
             }
             Expr::Array { items, span } => {
@@ -47878,6 +47930,16 @@ impl CGenerator {
             Expr::ParentStaticProperty { property, span } => {
                 if let Some(value) = self.materialize_relative_static_property_read_expr(
                     CRelativeStaticPropertyReceiver::ParentClass,
+                    property,
+                    *span,
+                    failure_cleanup,
+                )? {
+                    return Ok(Some(value));
+                }
+            }
+            Expr::LateStaticProperty { property, span } => {
+                if let Some(value) = self.materialize_relative_static_property_read_expr(
+                    CRelativeStaticPropertyReceiver::LateStaticClass,
                     property,
                     *span,
                     failure_cleanup,

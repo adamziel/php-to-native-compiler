@@ -238,6 +238,25 @@ const NATIVE_SELF_PARENT_STATIC_PROPERTY_SOURCE: &str = concat!(
     "echo StaticPropertyMid::bump(\"go\"), \"|\", StaticPropertyLeaf::read(), \"\\n\";\n",
 );
 
+const NATIVE_LATE_STATIC_PROPERTY_SOURCE: &str = concat!(
+    "<?php\n",
+    "class LateStaticPropertyRoot {\n",
+    "    public static int $count = 1;\n",
+    "    public static $label = \"root\";\n",
+    "    public static function bump() {\n",
+    "        static::$count = static::$count + 4;\n",
+    "        return static::$label . \":\" . static::$count;\n",
+    "    }\n",
+    "    public static function rootCount() { return self::$count; }\n",
+    "}\n",
+    "class LateStaticPropertyLeaf extends LateStaticPropertyRoot {\n",
+    "    public static int $count = 10;\n",
+    "    public static $label = \"leaf\";\n",
+    "}\n",
+    "echo LateStaticPropertyRoot::bump(), \"|\", LateStaticPropertyLeaf::bump(), \"|\";\n",
+    "echo LateStaticPropertyRoot::rootCount(), \":\", LateStaticPropertyLeaf::bump(), \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_PROPERTY_UNSET_SOURCE: &str = concat!(
     "<?php\n",
     "class Box { public $name; public $peer; private $secret; }\n",
@@ -1834,6 +1853,32 @@ fn emit_exe_links_and_runs_self_parent_static_property_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"go:5:root|go:5\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_late_static_property_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("late_static_property", NATIVE_LATE_STATIC_PROPERTY_SOURCE);
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run late-static property executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"root:5|leaf:14|5:leaf:18\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -4021,6 +4066,41 @@ fn native_executable_c_source_routes_self_parent_static_properties_through_relat
 }
 
 #[test]
+fn native_executable_c_source_routes_late_static_properties_through_called_scope_storage() {
+    let program = parse(NATIVE_LATE_STATIC_PROPERTY_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    for required in [
+        "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_LATE_STATIC",
+        "phpc_NativeStringHandle phpc_called_scope",
+        "phpc_native_string_bytes(phpc_called_scope)",
+        "phpc_native_string_len(phpc_called_scope)",
+        "phpc_native_static_property_read_relative_with_diagnostic",
+        "phpc_native_static_property_write_relative_with_diagnostic_and_free",
+    ] {
+        assert!(source.contains(required), "missing {required}:\n{source}");
+    }
+    assert!(
+        source
+            .matches("phpc_native_static_property_read_relative_with_diagnostic")
+            .count()
+            >= 3,
+        "static::$prop reads should route through relative runtime storage with called scope:\n{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_static_property_write_relative_with_diagnostic_and_free")
+            .count()
+            >= 1,
+        "static::$prop writes should route through relative runtime storage with called scope:\n{source}"
+    );
+    assert!(
+        !source.contains("static-member lowering rejects"),
+        "supported static::$prop access should not fall back to static-member rejection:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_keeps_unsupported_static_property_dynamic_shapes_blocked() {
     for (label, source) in [
         (
@@ -4032,8 +4112,12 @@ fn native_executable_c_source_keeps_unsupported_static_property_dynamic_shapes_b
             "<?php\nclass Counter { public static $count = 1; }\necho self::$count;\n",
         ),
         (
-            "late-static property without called-class frame carrier",
-            "<?php\nclass Counter { public static $count = 1; public static function read() { return static::$count; } }\necho Counter::read();\n",
+            "late-static property outside class context",
+            "<?php\nclass Counter { public static $count = 1; }\necho static::$count;\n",
+        ),
+        (
+            "object static property receiver",
+            "<?php\nclass Counter { public static $count = 1; }\n$object = new Counter();\necho $object::$count;\n",
         ),
     ] {
         let program = parse(source).unwrap();
