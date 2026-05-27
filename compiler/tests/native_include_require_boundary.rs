@@ -1193,6 +1193,129 @@ fn emit_exe_links_and_runs_runtime_include_registry_canonical_path_lookup() {
 }
 
 #[test]
+fn native_executable_c_source_uses_included_function_source_dir_for_runtime_include_registry() {
+    let dir = include_discovery_fixture_dir("runtime-registry-included-function-c-source");
+    let lib = dir.join("lib");
+    fs::create_dir_all(&lib).expect("create included-function runtime registry lib dir");
+    fs::write(
+        lib.join("payload.php"),
+        "<?php\necho 'payload|';\n$payloadLocal = 'local';\nreturn 'payload-return';\n",
+    )
+    .expect("write included-function runtime registry payload");
+    fs::write(
+        lib.join("loader.php"),
+        concat!(
+            "<?php\n",
+            "function included_loader($name) {\n",
+            "    $value = include $name;\n",
+            "    echo $payloadLocal, '|', $value, \"\\n\";\n",
+            "}\n",
+        ),
+    )
+    .expect("write included-function runtime registry loader");
+    let root = dir.join("root.php");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "require_once __DIR__ . '/lib/payload.php';\n",
+            "require_once __DIR__ . '/lib/loader.php';\n",
+            "included_loader('payload.php');\n",
+        ),
+    )
+    .expect("write included-function runtime registry root");
+
+    let unit = executable_compilation_unit_with_literal_include_units(
+        &fs::read_to_string(&root).expect("read included-function runtime registry root"),
+        &root,
+        workspace_root(),
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source_for_include_units(&unit).unwrap();
+    let canonical_lib = fs::canonicalize(&lib).expect("canonicalize included-function lib dir");
+    let source_dir_bytes = c_byte_array_for_test(canonical_lib.to_string_lossy().as_bytes());
+
+    assert!(
+        source.contains("phpc_native_include_unit_registry_lookup_include_path")
+            && source.contains("phpc_NativeIncludeExecutionState include_execution_state_")
+            && source.contains("phpc_include_state->scope_symbols")
+            && source.contains(&format!("= {{{source_dir_bytes}}};")),
+        "runtime include in an included-file function should use that function's declaring directory and still execute include units through scoped include state:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_source_loader")
+            && !source.contains("phpc_runtime_source_loader")
+            && !source.contains("class_prefix")
+            && !source.contains("generated_source_table"),
+        "included-function runtime registry lookup must not synthesize a parser/source-loader path:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_included_function_runtime_registry_source_relative_include() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("runtime-registry-included-function-exe");
+    let lib = dir.join("lib");
+    fs::create_dir_all(&lib).expect("create included-function runtime registry exe lib dir");
+    fs::write(
+        lib.join("payload.php"),
+        "<?php\necho 'payload|';\n$payloadLocal = 'local';\nreturn 'payload-return';\n",
+    )
+    .expect("write included-function runtime registry exe payload");
+    fs::write(
+        lib.join("loader.php"),
+        concat!(
+            "<?php\n",
+            "function included_loader($name) {\n",
+            "    $value = include $name;\n",
+            "    echo $payloadLocal, '|', $value, \"\\n\";\n",
+            "}\n",
+        ),
+    )
+    .expect("write included-function runtime registry exe loader");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "require_once __DIR__ . '/lib/payload.php';\n",
+            "require_once __DIR__ . '/lib/loader.php';\n",
+            "included_loader('payload.php');\n",
+        ),
+    )
+    .expect("write included-function runtime registry exe root");
+
+    let output = compile_exe(
+        &root,
+        &output,
+        "included-function runtime registry source-relative executable",
+    );
+    let run = Command::new(&output)
+        .output()
+        .expect("run included-function runtime registry executable");
+
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "payload|payload|local|payload-return\n"
+    );
+    assert!(
+        String::from_utf8_lossy(&run.stderr).is_empty(),
+        "runtime registry should resolve the compiled payload from the included function's source directory without source-loader diagnostics:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+}
+
+#[test]
 fn native_executable_c_source_uses_runtime_include_no_match_diagnostic_boundary() {
     let dir = include_discovery_fixture_dir("runtime-no-match-c-source");
     fs::write(dir.join("declared.php"), "<?php\necho 'declared|';\n")
@@ -2143,4 +2266,12 @@ fn render_cli_snapshot(output: &Output) -> String {
     format!(
         "exit: {exit_code}\nstdout:\n{stdout}--- stdout end ---\nstderr:\n{stderr}--- stderr end ---\n"
     )
+}
+
+fn c_byte_array_for_test(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|byte| byte.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
 }

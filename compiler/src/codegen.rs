@@ -17392,6 +17392,7 @@ struct CGotoTransfer {
 struct CUserFunction {
     c_name: String,
     decl: FunctionDecl,
+    source_file: Option<PathBuf>,
     frame_environment: CFrameEnvironmentRequirement,
     return_facts: Option<CNativeValueFacts>,
 }
@@ -22281,7 +22282,11 @@ impl CGenerator {
         "PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_VALID"
     }
 
-    fn register_top_level_user_functions(&mut self, statements: &[Stmt]) -> CompileResult<()> {
+    fn register_top_level_user_functions_from_source(
+        &mut self,
+        statements: &[Stmt],
+        source_file: Option<PathBuf>,
+    ) -> CompileResult<()> {
         for stmt in statements {
             let Stmt::Function(function) = stmt else {
                 continue;
@@ -22302,13 +22307,26 @@ impl CGenerator {
                 CUserFunction {
                     c_name,
                     decl: function.clone(),
+                    source_file: source_file.clone(),
                     frame_environment: stmt_list_frame_environment_requirement(&function.body),
                     return_facts: None,
                 },
             );
         }
+        Ok(())
+    }
+
+    fn finalize_top_level_user_functions(&mut self) -> CompileResult<()> {
         self.propagate_user_function_frame_environment_requirements();
         self.accept_recursive_user_function_frames()
+    }
+
+    fn register_top_level_user_functions(&mut self, statements: &[Stmt]) -> CompileResult<()> {
+        self.register_top_level_user_functions_from_source(
+            statements,
+            self.active_source_file.clone(),
+        )?;
+        self.finalize_top_level_user_functions()
     }
 
     fn propagate_user_function_frame_environment_requirements(&mut self) {
@@ -22692,7 +22710,10 @@ impl CGenerator {
                 || function.frame_environment.include_scope_symbols,
             uses_native_request_state_helpers: function.frame_environment.request_state,
             uses_native_reference_helpers: function.decl.returns_by_reference,
-            active_source_file: self.active_source_file.clone(),
+            active_source_file: function
+                .source_file
+                .clone()
+                .or_else(|| self.active_source_file.clone()),
             include_root_file: self.include_root_file.clone(),
             include_units: self.include_units.clone(),
             include_unit_order: self.include_unit_order.clone(),
@@ -23926,7 +23947,22 @@ impl CGenerator {
         self.register_top_level_declared_traits(&declaration_statements)?;
         self.register_top_level_declared_interfaces(&declaration_statements)?;
         self.register_top_level_declared_classes(&declaration_statements)?;
-        self.register_top_level_user_functions(&declaration_statements)?;
+        self.register_top_level_user_functions_from_source(
+            &unit.program.statements,
+            Some(unit.root_file.clone()),
+        )?;
+        let include_units = self
+            .include_unit_order
+            .iter()
+            .filter_map(|path| self.include_units.get(path).cloned())
+            .collect::<Vec<_>>();
+        for include_unit in include_units {
+            self.register_top_level_user_functions_from_source(
+                &include_unit.program.statements,
+                Some(include_unit.path),
+            )?;
+        }
+        self.finalize_top_level_user_functions()?;
         self.emit_declared_class_method_definitions()?;
         self.emit_registered_user_function_definitions()?;
         self.emit_include_unit_definitions()?;
