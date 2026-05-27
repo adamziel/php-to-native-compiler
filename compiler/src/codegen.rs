@@ -51734,6 +51734,8 @@ impl CGenerator {
                 if is_request_superglobal_name(name) {
                     return self.emit_request_superglobal_root_assignment(name, expr);
                 }
+                let native_value_facts = self.native_value_facts_for_expr(expr);
+                let native_callable_identities = self.native_callable_identities_for_expr(expr);
                 if self.direct_variables_route_through_global_symbol_table()
                     && !is_globals_superglobal_name(name)
                 {
@@ -51742,15 +51744,24 @@ impl CGenerator {
                     } else {
                         self.known_strings.remove(name);
                     }
-                    return self.emit_symbol_table_variable_assignment(
-                        name,
-                        expr,
-                        target.span(),
-                        "",
-                    );
+                    let assignment =
+                        self.emit_symbol_table_variable_assignment(name, expr, target.span(), "");
+                    if assignment.is_ok() {
+                        match native_value_facts.filter(|facts| !facts.is_empty()) {
+                            Some(facts) => {
+                                self.native_value_variable_facts.insert(name.clone(), facts);
+                            }
+                            None => {
+                                self.native_value_variable_facts.remove(name);
+                            }
+                        }
+                        self.store_native_callable_variable_identities(
+                            name,
+                            native_callable_identities,
+                        );
+                    }
+                    return assignment;
                 }
-                let native_value_facts = self.native_value_facts_for_expr(expr);
-                let native_callable_identities = self.native_callable_identities_for_expr(expr);
                 if (self.uses_native_string_helpers || native_string_search_result_expr(expr))
                     && !self.mutable_scalar_slots.contains_key(name)
                 {

@@ -24556,6 +24556,13 @@ const NATIVE_SPREAD_BYREF_VARIADIC_UNPACK_SOURCE: &str = concat!(
     "$staticArgs[] =& $staticValue;\n",
     "$staticArgs[\"name\"] =& $staticName;\n",
     "echo [SpreadByRefVariadicCallableBox::class, \"stat\"](...$staticArgs), \"|\", $staticValue, \":\", $staticName, \"|\";\n",
+    "$objectValue = \"object\";\n",
+    "$objectName = \"name\";\n",
+    "$objectArgs = [];\n",
+    "$objectArgs[] =& $objectValue;\n",
+    "$objectArgs[\"name\"] =& $objectName;\n",
+    "$objectBox = new SpreadByRefVariadicCallableBox();\n",
+    "echo $objectBox(...$objectArgs), \"|\", $objectValue, \":\", $objectName, \"|\";\n",
     "echo \"done\";\n",
 );
 
@@ -25447,6 +25454,7 @@ fn native_executable_c_source_lowers_byref_variadic_unpack_through_materialized_
             && body.contains("true, true, &materialized_finalize_diagnostic_")
             && source.contains("phpc_NativeValueHandle arg_0")
             && source.contains("phpc_native_call_frame_read_value(phpc_call_frame, 0)")
+            && body.contains("phpc_NativeCallArgumentsHandle callable_object_invoke_args_")
             && body.contains("phpc_NativeCallArgumentsHandle dynamic_callable_args_"),
         "by-reference variadic unpack should reuse the materialized finalizer and array-valued variadic frame slot:\n{source}"
     );
@@ -27629,7 +27637,7 @@ fn emit_exe_links_and_runs_by_reference_variadic_unpack_program() {
     );
     assert_eq!(
         run.stdout,
-        b"directD:named|directD:named|staticS:names|staticS:names|done"
+        b"directD:named|directD:named|staticS:names|staticS:names|objectO:nameo|objectO:nameo|done"
     );
     assert_eq!(run.stderr, b"");
 
