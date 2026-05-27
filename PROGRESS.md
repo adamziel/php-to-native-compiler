@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 00:34 CEST
+Updated: 2026-05-28 00:44 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -18,11 +18,10 @@ Overall integrated-roadmap progress: **93%** `[##################--]`
 
 Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `bf8d2e0d` runs generated-C
-`register_shutdown_function()` callbacks during request cleanup, including
-nested callbacks registered during shutdown, and orders them before retained
-native value/reference cleanup, request destructor finalizers, and output-buffer
-unwind.
+Latest accounted source capability: `37dc8a85` runs active generated-C
+`finally` bodies before compile-time-known missing `require` / `require_once`
+fatal diagnostics and `255` exits, preserving warning-then-finally-then-fatal
+ordering for both statement and expression require forms.
 
 Current blockers remain concentrated in broader array COW/reference edges,
 remaining foreach/reference owner breadth, dynamic include/require cleanup
@@ -33,6 +32,7 @@ non-C backend parity, and exact PHP diagnostic/source-order behavior.
 
 | Commit | Compact capability | Focused proof anchor |
 | --- | --- | --- |
+| `37dc8a85` | Compile-time-known missing required include paths now run active `finally` bodies before fatal diagnostics and `255` exit through the existing generated-C terminal missing-include path. | Gate log `state/logs/phpc-primary-include-finally-missing-require-f9bcd680-20260528.gates.log`, sha256 `01d45a27884cbaa4b5a3efdffb5a85972f38a67997901f279003c23da95c2d2f`. |
 | `bf8d2e0d` | Generated-C request cleanup now runs native shutdown callbacks registered through `register_shutdown_function()`, preserves nested callback registration during the same shutdown pass, prevents repeated runs, and orders callbacks before destructors/output buffers. | Gate log `state/logs/phpc-primary-shutdown-callbacks-858eeea3-20260528.gates.log`, sha256 `2cfd21340dba95bc789ddb02b3e26a629cbd0df355c6d0099e55c6a7b435a9f9`. |
 | `3cb69e40` | Trait composition resolves unqualified multi-trait alias/visibility adaptations when a method has a unique declaring trait and rejects ambiguous adaptation targets. | Gate log `state/logs/phpc-primary-trait-precedence-f5d497c2-20260528.gates.log`, sha256 `e7db123153bf23c570c78b85686e6e2087c48d1365502156843faff8dd7f70b2`. |
 | `2168719d` | Generated-C `call_user_func_array()` preserves stored reference-backed array entries through the shared materialized argument bridge while value-backed by-reference copies still diagnose. | Gate log `state/logs/phpc-primary-callable-array-byref-19ad2463-20260528.gates.log`, sha256 `7a2af3bfa0c53335d49feaf39694ed476980b1327b3feb9aee66d2ef0d37cf97`. |
@@ -58,7 +58,7 @@ below. Use `git log --oneline` plus the referenced supervisor gate logs under
 | Strings and byte semantics | **60%** | `[############--------]` | Byte-backed values and selected byte-preserving string-array slots are integrated. Binary source bytes, byte-exact interpreter/session/debug output, `mb_str_split()`, request/global byte keys, and exact diagnostics remain open. |
 | Arrays, lvalues, references, COW | **85%** | `[#################---]` | Selected lvalue/reference-source extraction, ReferenceSlot owner facts, object-property owners, request-superglobal/reference call bridges, direct array assignment COW, by-reference foreach aliasing, and selected ArrayAccess/RMW/writeback paths are integrated. Arbitrary alias roots, broader foreach/reference owners, full reference-returning ArrayAccess breadth, closure callback fact transport, and backend parity remain open. |
 | Object model, classes, traits | **90%** | `[##################--]` | Generated-C user-class metadata, trait composition metadata, trait alias/static/visibility handling, unqualified adaptation resolution, instance/static typed property metadata, class aliases, autoload-selected constructor lookup, visibility context, and selected magic property access are integrated. Remaining gaps include full trait execution parity, interfaces, broader constructor/magic coverage, full autoload, dynamic receiver breadth, and exact metadata diagnostics. |
-| Cleanup, unwind, lifecycle | **35%** | `[#######-------------]` | Cleanup result carriers, cleanup frames, terminal cleanup transfer, output-buffer unwind, fatal destructor finalization, and generated-C shutdown callbacks are integrated for selected paths. Actual exceptions/Throwable, catch/finally propagation, dynamic include fatal cleanup, exact destructor/shutdown/output-buffer ordering, object lifetime cleanup, and backend cleanup parity remain open. |
+| Cleanup, unwind, lifecycle | **35%** | `[#######-------------]` | Cleanup result carriers, cleanup frames, terminal cleanup transfer, output-buffer unwind, fatal destructor finalization, generated-C shutdown callbacks, and missing-required-include active-finally replay are integrated for selected paths. Actual exceptions/Throwable, catch/finally propagation beyond this terminal include path, dynamic include fatal cleanup, exact destructor/shutdown/output-buffer ordering, object lifetime cleanup, and backend cleanup parity remain open. |
 
 ## Active Roadmap Items
 
@@ -67,7 +67,7 @@ below. Use `git log --oneline` plus the referenced supervisor gate logs under
 | Diagnostic-result carrier stack | **100%** `[####################]` | **60%** `[############--------]` | Runtime/result contracts, family consumers, cleanup report bridges, cleanup-frame producers, and terminal cleanup transfer are integrated; semantic production from throw/exit/default-return/control-flow/lvalue/reference families remains. |
 | Callable access and class metadata | **100%** `[####################]` | **65%** `[#############-------]` | Shared lookup/invoke, source-call carriers, selected method/static/default/variadic frames, class metadata, aliases, autoload-policy, magic read/write, and typed properties are integrated for selected paths; broader runtime callables, full fallback, spread, and visibility parity remain. |
 | ArrayAccess and ReferenceSlot owners | **100%** `[####################]` | **65%** `[#############-------]` | Direct/generated-object ArrayAccess, selected nested/property-held owners, object/static/request reference bridges, direct array COW, and by-reference foreach aliasing are integrated; arbitrary aliases, reference-return breadth, and broader owner families remain. |
-| Cleanup/unwind execution | **35%** `[#######-------------]` | **35%** `[#######-------------]` | Output-buffer shutdown, fatal destructor finalization, and shutdown callbacks now execute on selected generated-C cleanup paths; exception/finally semantics, dynamic include fatal cleanup, exact lifecycle ordering, and non-C backend parity remain. |
+| Cleanup/unwind execution | **35%** `[#######-------------]` | **35%** `[#######-------------]` | Output-buffer shutdown, fatal destructor finalization, shutdown callbacks, and missing-required-include active-finally replay now execute on selected generated-C cleanup paths; broader exception/finally semantics, dynamic include fatal cleanup, exact lifecycle ordering, and non-C backend parity remain. |
 | Backend parity | **45%** `[#########-----------]` | **45%** `[#########-----------]` | LLVM/ASM have selected class metadata, diagnostic-result, output operand, and cleanup bridge support. Current queued parity targets include LLVM reference write-through, LLVM output-buffer unwind, LLVM property metadata, LLVM include/require blockers, and LLVM callable reference membership. |
 
 ## Not Done
@@ -76,7 +76,7 @@ below. Use `git log --oneline` plus the referenced supervisor gate logs under
 - Dynamic ArrayAccess producers beyond known generated declared-class objects and selected generated-callable summaries.
 - Broader foreach iterable owners, especially reference-slot/local array combinations beyond the integrated direct alias case.
 - Dynamic and broader object/static-property shapes, broader static-property reference/`??=`/unset/isset/empty lowering, and full method/object execution outside selected generated-C islands.
-- Actual exception/Throwable propagation, catch matching/binding, `finally` transfer semantics, dynamic include/require fatal cleanup through active `finally`, exact destructor/shutdown/output-buffer ordering, and object lifetime cleanup.
+- Actual exception/Throwable propagation, catch matching/binding, broad `finally` transfer semantics, dynamic include/require fatal cleanup through active `finally`, exact destructor/shutdown/output-buffer ordering, and object lifetime cleanup.
 - Full SPL autoload, broader class-alias parity, function/const import discovery/fallback, namespace/function/const fallback, malformed magic signature parity, broader magic-call coverage, constructor allocation/execution breadth, spread arguments, unsupported named-call families, and return references.
 - Remaining semantic diagnostic-result operand migration for throw/exit/default-return terminals, cleanup production from real control flow, lvalue/reference/RMW/call-argument families, exact PHP diagnostics, source ordering, suppression/custom handlers, and backend parity across generated C, LLVM, and direct assembly.
 
@@ -85,7 +85,7 @@ below. Use `git log --oneline` plus the referenced supervisor gate logs under
 - `shutdown-r52` was integrated as `bf8d2e0d`; do not requeue older shutdown callback patches.
 - `exception-cleanup-r34` remains a focused comparison-abort cleanup candidate, but it must refresh around the shutdown integration because the old queue matrix reported conflicts with shutdown tests.
 - LLVM parity candidates that exact-applied at `858eeea3`: output-buffer unwind, property metadata, reference write-through, include/require blockers, and callable reference membership. Recheck after `bf8d2e0d` before integration.
-- Include/finally scout selected a narrow future lane: compile-time known missing `require` / `require_once` under active `finally`, emitted through `emit_missing_include_result` without recursive source-shape recognizers or branch-local finalizer insertion.
+- Include/finally missing-required-include active-finally replay is integrated for compile-time-known paths. Remaining include/finally work is dynamic runtime include/require misses and included-unit terminal transfers, without recursive source-shape recognizers or branch-local finalizer insertion.
 - Reject or hold: docs-only, tests-only, empty patches, stale source-activation/callable-array/trait artifacts already consumed, `exception-cleanup-r41` broad recursive require recognizers, and exact-shape production lowering.
 
 ## Verification Policy
