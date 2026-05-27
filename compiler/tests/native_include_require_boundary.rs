@@ -452,6 +452,93 @@ fn emit_exe_links_and_runs_include_once_return_value_and_duplicate_true() {
 }
 
 #[test]
+fn native_executable_c_source_uses_include_execution_state_for_function_scope() {
+    let dir = include_discovery_fixture_dir("execution-function-scope-c-source");
+    let root = dir.join("root.php");
+    fs::write(
+        dir.join("scope.php"),
+        "<?php\n$local = $prefix . 'included';\nreturn $local . ':return';\n",
+    )
+    .expect("write function-scope include fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "function load_scope($seed) {\n",
+            "    $prefix = $seed . ':';\n",
+            "    $value = include __DIR__ . '/scope.php';\n",
+            "    echo $local, '|', $value, \"\\n\";\n",
+            "}\n",
+            "load_scope('caller');\n",
+        ),
+    )
+    .expect("write function-scope root fixture");
+
+    let unit = executable_compilation_unit_with_literal_include_units(
+        &fs::read_to_string(&root).expect("read function-scope root fixture"),
+        &root,
+        workspace_root(),
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source_for_include_units(&unit).unwrap();
+
+    assert!(
+        source.contains(
+            "typedef struct { phpc_NativeSymbolTableHandle scope_symbols; } phpc_NativeIncludeExecutionState;"
+        ) && source.contains(
+            "static phpc_NativeIncludeResult phpc_include_unit_0(phpc_NativeIncludeExecutionState *phpc_include_state)"
+        ) && source.contains("phpc_include_state->scope_symbols")
+            && source.contains("phpc_NativeIncludeExecutionState include_execution_state_")
+            && !source.contains("phpc_include_unit_0(phpc_root_symbols)"),
+        "generated C should pass include execution state instead of a hard-coded root symbol table:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_function_scope_literal_include_unit_symbols_and_return() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("execution-function-scope-exe");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        dir.join("scope.php"),
+        "<?php\n$local = $prefix . 'included';\nreturn $local . ':return';\n",
+    )
+    .expect("write function-scope executable include fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "function load_scope($seed) {\n",
+            "    $prefix = $seed . ':';\n",
+            "    $value = include __DIR__ . '/scope.php';\n",
+            "    echo $local, '|', $value, \"\\n\";\n",
+            "}\n",
+            "load_scope('caller');\n",
+        ),
+    )
+    .expect("write function-scope executable root fixture");
+
+    let output = compile_exe(&root, &output, "function-scope include executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run function-scope include executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "caller:included|caller:included:return\n"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_literal_include_path_search_before_source_fallback() {
     if !has_cc() {
         return;

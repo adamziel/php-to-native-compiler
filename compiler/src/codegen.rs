@@ -4999,9 +4999,9 @@ fn stmt_list_contains_global_import(statements: &[Stmt]) -> bool {
 fn stmt_list_frame_environment_requirement(statements: &[Stmt]) -> CFrameEnvironmentRequirement {
     CFrameEnvironmentRequirement {
         root_symbols: stmt_list_contains_global_import(statements)
-            || stmt_list_contains_globals_access(statements)
-            || stmt_list_contains_include_or_require(statements),
+            || stmt_list_contains_globals_access(statements),
         request_state: stmt_list_contains_request_state_access(statements),
+        include_scope_symbols: stmt_list_contains_include_or_require(statements),
     }
 }
 
@@ -5012,21 +5012,83 @@ fn stmt_list_contains_include_or_require(statements: &[Stmt]) -> bool {
 fn stmt_contains_include_or_require(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Include { .. } | Stmt::Require { .. } => true,
+        Stmt::Echo { exprs, .. } => exprs.iter().any(expr_contains_include_or_require),
+        Stmt::Print { expr, .. } | Stmt::Expr { expr, .. } | Stmt::Throw { expr, .. } => {
+            expr_contains_include_or_require(expr)
+        }
+        Stmt::Assign { target, expr, .. }
+        | Stmt::CompoundAssign { target, expr, .. }
+        | Stmt::NullCoalesceAssign { target, expr, .. } => {
+            assign_target_contains_include_or_require(target)
+                || expr_contains_include_or_require(expr)
+        }
+        Stmt::ReferenceAssign { target, source, .. } => {
+            assign_target_contains_include_or_require(target)
+                || reference_source_contains_include_or_require(source)
+        }
+        Stmt::IncrementDecrement { target, .. } => {
+            assign_target_contains_include_or_require(target)
+        }
         Stmt::If {
+            condition,
             then_branch,
             else_branch,
             ..
         } => {
-            stmt_list_contains_include_or_require(then_branch)
+            expr_contains_include_or_require(condition)
+                || stmt_list_contains_include_or_require(then_branch)
                 || stmt_list_contains_include_or_require(else_branch)
         }
-        Stmt::While { body, .. } | Stmt::DoWhile { body, .. } | Stmt::Foreach { body, .. } => {
-            stmt_list_contains_include_or_require(body)
+        Stmt::While {
+            condition, body, ..
         }
-        Stmt::For { body, .. } => stmt_list_contains_include_or_require(body),
-        Stmt::Switch { cases, .. } => cases
+        | Stmt::DoWhile {
+            condition, body, ..
+        } => {
+            expr_contains_include_or_require(condition)
+                || stmt_list_contains_include_or_require(body)
+        }
+        Stmt::Foreach { iterable, body, .. } => {
+            expr_contains_include_or_require(iterable)
+                || stmt_list_contains_include_or_require(body)
+        }
+        Stmt::For {
+            initializers,
+            conditions,
+            increments,
+            body,
+            ..
+        } => {
+            initializers
+                .iter()
+                .chain(increments.iter())
+                .any(for_action_contains_include_or_require)
+                || conditions.iter().any(expr_contains_include_or_require)
+                || stmt_list_contains_include_or_require(body)
+        }
+        Stmt::Switch { value, cases, .. } => {
+            expr_contains_include_or_require(value)
+                || cases.iter().any(|case| {
+                    case.condition
+                        .as_ref()
+                        .is_some_and(expr_contains_include_or_require)
+                        || stmt_list_contains_include_or_require(&case.body)
+                })
+        }
+        Stmt::UnsetArrayIndex { index, .. } => expr_contains_include_or_require(index),
+        Stmt::UnsetNestedArrayIndex { indices, .. } => {
+            indices.iter().any(expr_contains_include_or_require)
+        }
+        Stmt::UnsetDynamicObjectProperty { property, .. } => {
+            expr_contains_include_or_require(property)
+        }
+        Stmt::UnsetMany { targets, .. } => {
+            targets.iter().any(unset_target_contains_include_or_require)
+        }
+        Stmt::ConstDeclaration { declarations, .. } => declarations
             .iter()
-            .any(|case| stmt_list_contains_include_or_require(&case.body)),
+            .any(|declaration| expr_contains_include_or_require(&declaration.value)),
+        Stmt::Return { value, .. } => value.as_ref().is_some_and(expr_contains_include_or_require),
         Stmt::Try {
             body,
             catches,
@@ -5041,7 +5103,325 @@ fn stmt_contains_include_or_require(stmt: &Stmt) -> bool {
                     .as_ref()
                     .is_some_and(|body| stmt_list_contains_include_or_require(body))
         }
+        Stmt::StaticLocal { declarations, .. } => declarations.iter().any(|declaration| {
+            declaration
+                .default
+                .as_ref()
+                .is_some_and(expr_contains_include_or_require)
+        }),
         _ => false,
+    }
+}
+
+fn expr_contains_include_or_require(expr: &Expr) -> bool {
+    match expr {
+        Expr::Include { .. } | Expr::Require { .. } => true,
+        Expr::InterpolatedString { parts, .. } => parts
+            .iter()
+            .any(interpolated_string_part_contains_include_or_require),
+        Expr::Call { args, .. }
+        | Expr::StaticMethodCall { args, .. }
+        | Expr::ParentMethodCall { args, .. }
+        | Expr::SelfMethodCall { args, .. }
+        | Expr::LateStaticMethodCall { args, .. }
+        | Expr::New { args, .. } => args.iter().any(expr_contains_include_or_require),
+        Expr::DynamicCall { callee, args, .. } => {
+            expr_contains_include_or_require(callee)
+                || args.iter().any(expr_contains_include_or_require)
+        }
+        Expr::MethodCall { target, args, .. }
+        | Expr::ObjectStaticMethodCall { target, args, .. } => {
+            expr_contains_include_or_require(target)
+                || args.iter().any(expr_contains_include_or_require)
+        }
+        Expr::DynamicMethodCall {
+            target,
+            method,
+            args,
+            ..
+        } => {
+            expr_contains_include_or_require(target)
+                || expr_contains_include_or_require(method)
+                || args.iter().any(expr_contains_include_or_require)
+        }
+        Expr::Array { items, .. } => items.iter().any(|item| {
+            item.key
+                .as_ref()
+                .is_some_and(expr_contains_include_or_require)
+                || expr_contains_include_or_require(&item.value)
+        }),
+        Expr::Index { target, index, .. } => {
+            expr_contains_include_or_require(target) || expr_contains_include_or_require(index)
+        }
+        Expr::AppendIndex { target, .. }
+        | Expr::Property { target, .. }
+        | Expr::ObjectStaticClassConstant { target, .. }
+        | Expr::ObjectStaticProperty { target, .. }
+        | Expr::ObjectClassNameConstant { target, .. }
+        | Expr::DynamicObjectStaticProperty { target, .. }
+        | Expr::Clone { expr: target, .. }
+        | Expr::Unary { expr: target, .. }
+        | Expr::ErrorControl { expr: target, .. }
+        | Expr::Cast { expr: target, .. } => expr_contains_include_or_require(target),
+        Expr::InstanceOf {
+            expr: target,
+            class_name,
+            ..
+        } => {
+            expr_contains_include_or_require(target)
+                || new_class_name_contains_include_or_require(class_name)
+        }
+        Expr::DynamicProperty {
+            target, property, ..
+        } => expr_contains_include_or_require(target) || expr_contains_include_or_require(property),
+        Expr::Binary { left, right, .. } => {
+            expr_contains_include_or_require(left) || expr_contains_include_or_require(right)
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            expr_contains_include_or_require(condition)
+                || expr_contains_include_or_require(if_true)
+                || expr_contains_include_or_require(if_false)
+        }
+        Expr::ShortTernary {
+            condition,
+            if_false,
+            ..
+        } => {
+            expr_contains_include_or_require(condition)
+                || expr_contains_include_or_require(if_false)
+        }
+        Expr::Assign { target, expr, .. }
+        | Expr::CompoundAssign { target, expr, .. }
+        | Expr::NullCoalesceAssign { target, expr, .. } => {
+            assign_target_contains_include_or_require(target)
+                || expr_contains_include_or_require(expr)
+        }
+        Expr::IncrementDecrement { target, .. } => {
+            assign_target_contains_include_or_require(target)
+        }
+        Expr::NamedArgument { expr, .. } | Expr::SpreadArgument { expr, .. } => {
+            expr_contains_include_or_require(expr)
+        }
+        _ => false,
+    }
+}
+
+fn new_class_name_contains_include_or_require(class_name: &NewClassName) -> bool {
+    match class_name {
+        NewClassName::DynamicExpression(expr) => expr_contains_include_or_require(expr),
+        NewClassName::DynamicVariable(_)
+        | NewClassName::Named(_)
+        | NewClassName::SelfClass
+        | NewClassName::ParentClass
+        | NewClassName::StaticClass => false,
+    }
+}
+
+fn interpolated_string_part_contains_include_or_require(_part: &InterpolatedStringPart) -> bool {
+    false
+}
+
+fn assign_target_contains_include_or_require(target: &AssignTarget) -> bool {
+    match target {
+        AssignTarget::ArrayIndex { index, .. } => {
+            index.as_ref().is_some_and(expr_contains_include_or_require)
+        }
+        AssignTarget::NestedArrayIndex { indices, .. }
+        | AssignTarget::ObjectPropertyArrayIndex { indices, .. }
+        | AssignTarget::StaticPropertyArrayIndex { indices, .. } => {
+            indices.iter().any(expr_contains_include_or_require)
+        }
+        AssignTarget::NestedArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::ObjectPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        }
+        | AssignTarget::StaticPropertyArrayAppend {
+            indices,
+            suffix_indices,
+            ..
+        } => indices
+            .iter()
+            .chain(suffix_indices.iter())
+            .any(expr_contains_include_or_require),
+        AssignTarget::NonDirectProperty { holder, .. }
+        | AssignTarget::NonDirectObjectPropertyArrayIndex { holder, .. }
+        | AssignTarget::NonDirectObjectPropertyArrayAppend { holder, .. } => {
+            expr_contains_include_or_require(holder)
+        }
+        AssignTarget::NonDirectDynamicProperty {
+            holder, property, ..
+        }
+        | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            holder, property, ..
+        } => expr_contains_include_or_require(holder) || expr_contains_include_or_require(property),
+        AssignTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => {
+            expr_contains_include_or_require(property)
+                || indices.iter().any(expr_contains_include_or_require)
+        }
+        AssignTarget::DynamicObjectPropertyArrayAppend {
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            expr_contains_include_or_require(property)
+                || indices
+                    .iter()
+                    .chain(suffix_indices.iter())
+                    .any(expr_contains_include_or_require)
+        }
+        AssignTarget::NonDirectDynamicObjectPropertyArrayAppend {
+            holder,
+            property,
+            indices,
+            suffix_indices,
+            ..
+        } => {
+            expr_contains_include_or_require(holder)
+                || expr_contains_include_or_require(property)
+                || indices
+                    .iter()
+                    .chain(suffix_indices.iter())
+                    .any(expr_contains_include_or_require)
+        }
+        AssignTarget::DynamicProperty { property, .. }
+        | AssignTarget::DynamicStaticProperty { property, .. }
+        | AssignTarget::DynamicSelfStaticProperty { property, .. }
+        | AssignTarget::DynamicParentStaticProperty { property, .. }
+        | AssignTarget::DynamicLateStaticProperty { property, .. } => {
+            expr_contains_include_or_require(property)
+        }
+        AssignTarget::ObjectStaticProperty { target, .. } => {
+            expr_contains_include_or_require(target)
+        }
+        AssignTarget::DynamicObjectStaticProperty {
+            target, property, ..
+        } => expr_contains_include_or_require(target) || expr_contains_include_or_require(property),
+        _ => false,
+    }
+}
+
+fn reference_source_contains_include_or_require(source: &ReferenceSource) -> bool {
+    match source {
+        ReferenceSource::ArrayIndex { index, .. } => expr_contains_include_or_require(index),
+        ReferenceSource::ObjectPropertyArrayIndex { index, .. } => {
+            expr_contains_include_or_require(index)
+        }
+        ReferenceSource::ArrayAppend { indices, .. }
+        | ReferenceSource::NestedArrayIndex { indices, .. }
+        | ReferenceSource::ObjectPropertyArrayAppend { indices, .. }
+        | ReferenceSource::ObjectPropertyNestedArrayIndex { indices, .. }
+        | ReferenceSource::StaticPropertyArrayIndex { indices, .. } => {
+            indices.iter().any(expr_contains_include_or_require)
+        }
+        ReferenceSource::DynamicObjectPropertyArrayIndex {
+            property, index, ..
+        } => expr_contains_include_or_require(property) || expr_contains_include_or_require(index),
+        ReferenceSource::DynamicObjectPropertyArrayAppend {
+            property, indices, ..
+        }
+        | ReferenceSource::DynamicObjectPropertyNestedArrayIndex {
+            property, indices, ..
+        }
+        | ReferenceSource::NonDirectDynamicObjectPropertyArrayAppend {
+            property, indices, ..
+        }
+        | ReferenceSource::NonDirectDynamicObjectPropertyNestedArrayIndex {
+            property,
+            indices,
+            ..
+        } => {
+            expr_contains_include_or_require(property)
+                || indices.iter().any(expr_contains_include_or_require)
+        }
+        ReferenceSource::NonDirectObjectPropertyArrayAppend {
+            holder, indices, ..
+        }
+        | ReferenceSource::NonDirectObjectPropertyNestedArrayIndex {
+            holder, indices, ..
+        }
+        | ReferenceSource::ExpressionArrayIndex {
+            target: holder,
+            indices,
+            ..
+        }
+        | ReferenceSource::ExpressionArrayAppend {
+            target: holder,
+            indices,
+            ..
+        } => {
+            expr_contains_include_or_require(holder)
+                || indices.iter().any(expr_contains_include_or_require)
+        }
+        ReferenceSource::Property { expr, .. }
+        | ReferenceSource::StaticProperty { expr, .. }
+        | ReferenceSource::MethodCall { expr, .. } => expr_contains_include_or_require(expr),
+        ReferenceSource::Variable { .. } => false,
+    }
+}
+
+fn unset_target_contains_include_or_require(target: &UnsetTarget) -> bool {
+    match target {
+        UnsetTarget::ArrayIndex { index, .. } => expr_contains_include_or_require(index),
+        UnsetTarget::NestedArrayIndex { indices, .. }
+        | UnsetTarget::ObjectPropertyArrayIndex { indices, .. }
+        | UnsetTarget::StaticPropertyArrayIndex { indices, .. } => {
+            indices.iter().any(expr_contains_include_or_require)
+        }
+        UnsetTarget::DynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        }
+        | UnsetTarget::NonDirectDynamicObjectPropertyArrayIndex {
+            property, indices, ..
+        } => {
+            expr_contains_include_or_require(property)
+                || indices.iter().any(expr_contains_include_or_require)
+        }
+        UnsetTarget::NonDirectObjectPropertyArrayIndex {
+            holder, indices, ..
+        } => {
+            expr_contains_include_or_require(holder)
+                || indices.iter().any(expr_contains_include_or_require)
+        }
+        UnsetTarget::DynamicObjectProperty { property, .. } => {
+            expr_contains_include_or_require(property)
+        }
+        UnsetTarget::NonDirectObjectProperty { holder, .. } => {
+            expr_contains_include_or_require(holder)
+        }
+        UnsetTarget::NonDirectDynamicObjectProperty {
+            holder, property, ..
+        } => expr_contains_include_or_require(holder) || expr_contains_include_or_require(property),
+        UnsetTarget::ObjectStaticProperty { target, .. } => {
+            expr_contains_include_or_require(target)
+        }
+        _ => false,
+    }
+}
+
+fn for_action_contains_include_or_require(action: &ForAction) -> bool {
+    match action {
+        ForAction::Assign { target, expr } | ForAction::CompoundAssign { target, expr, .. } => {
+            assign_target_contains_include_or_require(target)
+                || expr_contains_include_or_require(expr)
+        }
+        ForAction::IncrementDecrement { target, .. } => {
+            assign_target_contains_include_or_require(target)
+        }
+        ForAction::Expr { expr } => expr_contains_include_or_require(expr),
     }
 }
 
@@ -16687,6 +17067,7 @@ struct CGenerator {
     native_class_constant_table_owned: bool,
     native_globals_symbol_table_handle: Option<String>,
     native_globals_symbol_table_owned: bool,
+    route_direct_variables_through_symbol_table: bool,
     native_callable_table_handle: Option<String>,
     native_spl_autoload_registry_handle: Option<String>,
     native_destructor_finalizers_handle: Option<String>,
@@ -16921,6 +17302,7 @@ struct CGotoStateSnapshot {
     native_class_constant_table_owned: bool,
     native_globals_symbol_table_handle: Option<String>,
     native_globals_symbol_table_owned: bool,
+    route_direct_variables_through_symbol_table: bool,
     native_callable_table_handle: Option<String>,
     native_spl_autoload_registry_handle: Option<String>,
     native_destructor_finalizers_handle: Option<String>,
@@ -16951,10 +17333,11 @@ struct CUserFunction {
 struct CFrameEnvironmentRequirement {
     root_symbols: bool,
     request_state: bool,
+    include_scope_symbols: bool,
 }
 
 impl CFrameEnvironmentRequirement {
-    fn merge(&mut self, other: Self) -> bool {
+    fn merge_call_handoff(&mut self, other: Self) -> bool {
         let before = *self;
         self.root_symbols |= other.root_symbols;
         self.request_state |= other.request_state;
@@ -16962,7 +17345,7 @@ impl CFrameEnvironmentRequirement {
     }
 
     fn any(self) -> bool {
-        self.root_symbols || self.request_state
+        self.root_symbols || self.request_state || self.include_scope_symbols
     }
 }
 
@@ -19949,6 +20332,8 @@ impl CGenerator {
             && self.native_class_constant_table_owned == other.native_class_constant_table_owned
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
             && self.native_globals_symbol_table_owned == other.native_globals_symbol_table_owned
+            && self.route_direct_variables_through_symbol_table
+                == other.route_direct_variables_through_symbol_table
             && self.native_spl_autoload_registry_handle == other.native_spl_autoload_registry_handle
             && self.native_destructor_finalizers_handle == other.native_destructor_finalizers_handle
     }
@@ -19984,6 +20369,8 @@ impl CGenerator {
             native_class_constant_table_owned: self.native_class_constant_table_owned,
             native_globals_symbol_table_handle: self.native_globals_symbol_table_handle.clone(),
             native_globals_symbol_table_owned: self.native_globals_symbol_table_owned,
+            route_direct_variables_through_symbol_table: self
+                .route_direct_variables_through_symbol_table,
             native_callable_table_handle: self.native_callable_table_handle.clone(),
             native_spl_autoload_registry_handle: self.native_spl_autoload_registry_handle.clone(),
             native_destructor_finalizers_handle: self.native_destructor_finalizers_handle.clone(),
@@ -20006,6 +20393,8 @@ impl CGenerator {
             && self.native_class_constant_table_owned == other.native_class_constant_table_owned
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
             && self.native_globals_symbol_table_owned == other.native_globals_symbol_table_owned
+            && self.route_direct_variables_through_symbol_table
+                == other.route_direct_variables_through_symbol_table
             && self.native_callable_table_handle == other.native_callable_table_handle
             && self.native_spl_autoload_registry_handle == other.native_spl_autoload_registry_handle
             && self.native_destructor_finalizers_handle == other.native_destructor_finalizers_handle
@@ -21839,11 +22228,11 @@ impl CGenerator {
                 let mut required = CFrameEnvironmentRequirement::default();
                 for name in calls {
                     if let Some(callee) = self.direct_call_registered_user_function(&name) {
-                        required.merge(callee.frame_environment);
+                        required.merge_call_handoff(callee.frame_environment);
                     }
                 }
                 if let Some(function) = self.user_functions.get_mut(&key) {
-                    changed |= function.frame_environment.merge(required);
+                    changed |= function.frame_environment.merge_call_handoff(required);
                 }
             }
 
@@ -22204,7 +22593,8 @@ impl CGenerator {
                 .request_state
                 .then(|| "phpc_request_state".to_string()),
             native_request_state_owned: false,
-            uses_native_symbol_table_helpers: function.frame_environment.root_symbols,
+            uses_native_symbol_table_helpers: function.frame_environment.root_symbols
+                || function.frame_environment.include_scope_symbols,
             uses_native_request_state_helpers: function.frame_environment.request_state,
             uses_native_reference_helpers: function.decl.returns_by_reference,
             active_source_file: self.active_source_file.clone(),
@@ -22227,6 +22617,9 @@ impl CGenerator {
             "if (phpc_call_depth > PHPC_NATIVE_USER_FUNCTION_MAX_CALL_DEPTH) {{ fprintf(stderr, \"phpc native user-function call depth exceeded\\n\"); return {null_return}; }}"
         ));
         generator.bind_function_frame_parameters(&function.decl);
+        if function.frame_environment.include_scope_symbols {
+            generator.initialize_function_include_scope_symbols(function.decl.span)?;
+        }
 
         for statement in &function.decl.body {
             generator.emit_statement(statement)?;
@@ -22268,7 +22661,7 @@ impl CGenerator {
 
     fn c_include_unit_signature(c_name: &str) -> String {
         format!(
-            "static phpc_NativeIncludeResult {c_name}(phpc_NativeSymbolTableHandle phpc_root_symbols)"
+            "static phpc_NativeIncludeResult {c_name}(phpc_NativeIncludeExecutionState *phpc_include_state)"
         )
     }
 
@@ -22302,8 +22695,11 @@ impl CGenerator {
             function_return_mode: CFunctionReturnMode::IncludeUnit,
             next_static_data: self.next_static_data,
             next_native_temp: self.next_native_temp,
-            native_globals_symbol_table_handle: Some("phpc_root_symbols".to_string()),
+            native_globals_symbol_table_handle: Some(
+                "phpc_include_state->scope_symbols".to_string(),
+            ),
             native_globals_symbol_table_owned: false,
+            route_direct_variables_through_symbol_table: true,
             active_source_file: Some(unit.path.clone()),
             include_root_file: self.include_root_file.clone(),
             include_units: self.include_units.clone(),
@@ -23079,6 +23475,17 @@ impl CGenerator {
         }
     }
 
+    fn initialize_function_include_scope_symbols(&mut self, span: Span) -> CompileResult<()> {
+        if self.native_globals_symbol_table_handle.is_some() {
+            return Err(self.unsupported(span, ASSEMBLY_REQUIRE_REJECTION));
+        }
+        let table = self.emit_globals_symbol_table_from_current_variables("", span)?;
+        self.native_globals_symbol_table_handle = Some(table);
+        self.native_globals_symbol_table_owned = true;
+        self.route_direct_variables_through_symbol_table = true;
+        Ok(())
+    }
+
     fn bind_closure_frame_parameters(&mut self, params: &[FunctionParam]) -> CompileResult<()> {
         for (index, param) in params.iter().enumerate() {
             if param.is_variadic {
@@ -23590,7 +23997,7 @@ impl CGenerator {
                     "typedef struct { void *ptr; } phpc_NativeClassConstantTableHandle;\n",
                 );
             }
-            if self.uses_native_symbol_table_helpers {
+            if self.uses_native_symbol_table_helpers || self.uses_native_include_unit_helpers {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeSymbolTableHandle;\n");
             }
             if self.uses_native_string_helpers
@@ -23615,6 +24022,7 @@ impl CGenerator {
                 );
                 output.push_str("#define PHPC_NATIVE_INCLUDE_RUNTIME_NO_MATCH_UNSUPPORTED 3\n");
                 output.push_str("typedef struct { uint8_t tag; phpc_NativeValueHandle value; int32_t exit_code; } phpc_NativeIncludeResult;\n");
+                output.push_str("typedef struct { phpc_NativeSymbolTableHandle scope_symbols; } phpc_NativeIncludeExecutionState;\n");
                 output.push_str("typedef struct { const uint8_t *key_ptr; size_t key_len; size_t unit_index; } phpc_NativeIncludeUnitLookupEntry;\n");
                 output.push_str("typedef struct { uint8_t status; size_t unit_index; } phpc_NativeIncludeUnitLookupResult;\n");
                 output.push_str("typedef struct { uint8_t status; phpc_NativeByteBuffer resolved_path; phpc_NativeDiagnosticHandle warning; phpc_NativeDiagnosticHandle fatal; } phpc_NativeIncludeRuntimeNoMatchResult;\n");
@@ -29998,7 +30406,8 @@ impl CGenerator {
 
     fn direct_variables_route_through_global_symbol_table(&self) -> bool {
         (self.function_return_status.is_none()
-            || self.function_return_mode == CFunctionReturnMode::IncludeUnit)
+            || self.function_return_mode == CFunctionReturnMode::IncludeUnit
+            || self.route_direct_variables_through_symbol_table)
             && self.globals_symbol_table_is_active()
     }
 
@@ -36903,6 +37312,14 @@ impl CGenerator {
             .push(format!("if ({result}.exit_code != 0) {{ {exit} }}"));
     }
 
+    fn emit_include_execution_state(&mut self, symbol_table: &str) -> String {
+        let state = self.next_native_name("include_execution_state");
+        self.body.push(format!(
+            "phpc_NativeIncludeExecutionState {state} = {{ {symbol_table} }};"
+        ));
+        state
+    }
+
     fn emit_root_include_once_duplicate(
         &mut self,
         include_path: &Path,
@@ -36978,8 +37395,9 @@ impl CGenerator {
                 self.body.push("} else {".to_string());
                 self.body.push(format!("  {slot} = true;"));
                 let result = self.next_native_name("include_result");
+                let state = self.emit_include_execution_state(&table);
                 self.body.push(format!(
-                    "  phpc_NativeIncludeResult {result} = {}({table});",
+                    "  phpc_NativeIncludeResult {result} = {}(&{state});",
                     unit.c_name
                 ));
                 self.emit_include_result_exit_check(&result);
@@ -36991,8 +37409,9 @@ impl CGenerator {
             self.body.push(format!("if (!{slot}) {{"));
             self.body.push(format!("  {slot} = true;"));
             let result = self.next_native_name("include_result");
+            let state = self.emit_include_execution_state(&table);
             self.body.push(format!(
-                "  phpc_NativeIncludeResult {result} = {}({table});",
+                "  phpc_NativeIncludeResult {result} = {}(&{state});",
                 unit.c_name
             ));
             self.emit_include_result_exit_check(&result);
@@ -37010,8 +37429,9 @@ impl CGenerator {
         self.uses_native_symbol_table_helpers = true;
         let table = self.ensure_globals_symbol_table("", span)?;
         let result = self.next_native_name("include_result");
+        let state = self.emit_include_execution_state(&table);
         self.body.push(format!(
-            "phpc_NativeIncludeResult {result} = {}({table});",
+            "phpc_NativeIncludeResult {result} = {}(&{state});",
             unit.c_name
         ));
         self.emit_include_result_exit_check(&result);
@@ -66514,6 +66934,7 @@ mod tests {
             CFrameEnvironmentRequirement {
                 root_symbols: false,
                 request_state: true,
+                include_scope_symbols: false,
             }
         );
 
@@ -66531,6 +66952,7 @@ mod tests {
             CFrameEnvironmentRequirement {
                 root_symbols: true,
                 request_state: true,
+                include_scope_symbols: false,
             }
         );
 
@@ -66547,6 +66969,25 @@ mod tests {
             CFrameEnvironmentRequirement {
                 root_symbols: true,
                 request_state: false,
+                include_scope_symbols: false,
+            }
+        );
+
+        let local_include = crate::parse(
+            "<?php\nfunction load_local() { $value = include 'local.php'; return $value; }\n",
+        )
+        .unwrap();
+        let function = match &local_include.statements[0] {
+            Stmt::Function(function) => function,
+            _ => panic!("expected function declaration"),
+        };
+        let requirement = stmt_list_frame_environment_requirement(&function.body);
+        assert_eq!(
+            requirement,
+            CFrameEnvironmentRequirement {
+                root_symbols: false,
+                request_state: false,
+                include_scope_symbols: true,
             }
         );
     }
@@ -66574,6 +67015,7 @@ mod tests {
             CFrameEnvironmentRequirement {
                 root_symbols: false,
                 request_state: true,
+                include_scope_symbols: false,
             }
         );
     }
