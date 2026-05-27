@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 21:16 CEST
+Updated: 2026-05-27 21:21 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,7 +19,28 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `02aaa312` tracks live native
+Latest accounted source capability: `c89fedc4` routes dynamic `instanceof`
+right-hand targets through generalized class-relationship metadata instead of
+rejecting `$class`, parenthesized expressions, or object targets at parse time.
+Parser and AST now represent `instanceof` operands as `NewClassName`,
+interpreter execution resolves string/binary-string/object target values, and
+generated C uses a runtime dynamic relationship ABI for class/interface checks.
+Relative `self`/`parent`/`static` targets, arbitrary autoloaded runtime source
+activation, and LLVM dynamic right-hand lowering remain blocked.
+
+Recent source commit `c89fedc4` advances dynamic `instanceof` without adding
+text-membership tables, fixture class-name ladders, literal source recognizers,
+or generated-C substring-driven production logic. The integration resolved the
+post-LLVM-parity rebase by keeping LLVM named-target lowering on the existing
+relationship ABI while dynamic LLVM targets retain their explicit unsupported
+boundary. Focused gates covered parser operand modeling, interpreter dynamic
+string/object behavior, runtime dynamic relationship metadata, generated-C
+source proof, linked declared-class/interface execution, unsupported snapshot
+cleanup, compile checking, formatting, and diff checks. Primary gate log:
+`state/logs/phpc-primary-dynamic-instanceof-c31ef8ff-20260527.gates.log`
+sha256 `a50efcb2d43c7abfec62720a4ffba18b03a58bf4c0c0c43d26bcacfc363f148b`.
+
+Recent source commit `02aaa312` tracks live native
 output-buffer handler status flags instead of reporting bounded constants.
 Runtime output buffers now store handler type and requested flags on each live
 stack entry, mark started/processed state as writes, clean, flush, and chunk
