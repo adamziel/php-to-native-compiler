@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 17:44 CEST
+Updated: 2026-05-27 17:49 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,13 +19,30 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `d4906e18` selects generated-C
-`print_r(<native value>, $return)` return mode at runtime for generated native
-PHP values. The shared runtime formatter ABI now evaluates the return-mode
-operand by PHP truthiness, either returning an owned formatter string or
-writing formatter output and returning PHP `true`, while named/spread
-arguments, unsupported non-native operands, broad object formatting, output
-buffering, and LLVM/ASM parity remain blocked.
+Latest accounted source capability: `9a00643a` collects direct generated
+user-function and declared-method by-reference variadic arguments through the
+normalized call-argument plan. Reference-backed positional and named variadic
+entries now flow into an array-valued frame slot and preserve caller-visible
+mutation, while value-backed entries remain blocked where PHP requires a
+reference/variable.
+
+Recent source commit `9a00643a` routes direct function, static method, and
+instance method by-reference variadic collection through shared normalized
+call-argument and native array reference-slot helpers. The focused gates cover
+direct source and linked execution, reference-backed and value-backed spread
+behavior, runtime callable byref regressions, callable-family regressions, and
+runtime materialized/reference helpers. Typed/default by-reference variadics,
+descriptor-closure by-reference variadics, runtime builtins, magic fallback,
+unknown-signature callables, broad COW parity, and LLVM/ASM parity remain
+blocked.
+
+Recent source commit `d4906e18` selects generated-C `print_r(<native value>,
+$return)` return mode at runtime for generated native PHP values. The shared
+runtime formatter ABI now evaluates the return-mode operand by PHP truthiness,
+either returning an owned formatter string or writing formatter output and
+returning PHP `true`, while named/spread arguments, unsupported non-native
+operands, broad object formatting, output buffering, and LLVM/ASM parity
+remain blocked.
 
 Recent source commit `d4906e18` routes selected generated-C `print_r(<native
 value>, $return)` expression values through the shared native value formatter
