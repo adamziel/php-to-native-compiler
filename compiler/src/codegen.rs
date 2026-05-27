@@ -17564,6 +17564,7 @@ enum NativeMethodStaticSignatureFallbackReason {
     NoArityCompatibleDeclaredMethodMetadata,
     HeterogeneousDeclaredMethodMetadata,
     RuntimeDynamicMethodName,
+    MagicReceiverFallback,
     MagicStaticFallback,
 }
 
@@ -17612,13 +17613,13 @@ impl NativeMethodStaticSignatureFallbackContract {
     }
 
     fn preserves_named_source_keys_for_magic_args(&self) -> bool {
-        self.family == NativeMethodStaticSignatureFamily::StaticMethod
-            && matches!(
-                self.availability,
-                NativeMethodStaticSignatureAvailability::RuntimeFallback(
-                    NativeMethodStaticSignatureFallbackReason::MagicStaticFallback
-                )
+        matches!(
+            self.availability,
+            NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                NativeMethodStaticSignatureFallbackReason::MagicReceiverFallback
+                    | NativeMethodStaticSignatureFallbackReason::MagicStaticFallback
             )
+        )
     }
 }
 
@@ -27624,6 +27625,7 @@ impl CGenerator {
         target: &Expr,
         method_name: &str,
         arg_count: usize,
+        access_context: NativeSourceCallAccessContext<'_>,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
         let facts = self.native_value_facts_for_expr(target)?;
         let object = facts.object.as_ref()?;
@@ -27632,13 +27634,51 @@ impl CGenerator {
         }
 
         let mut methods = Vec::new();
+        let mut saw_magic_call = false;
         for class_key in &object.declared_class_keys {
-            let (_, method) =
-                self.declared_class_receiver_method_for_key(class_key, method_name)?;
-            if !native_method_static_source_call_arity_compatible(&method, arg_count) {
-                return None;
+            match self.declared_class_receiver_method_for_key(class_key, method_name) {
+                Some((class, method)) => {
+                    if !self.declared_class_member_visible_from_source_access(
+                        &class.name,
+                        method.visibility,
+                        access_context,
+                    ) && self
+                        .declared_class_public_magic_call_method_for_key(class_key)
+                        .is_some()
+                    {
+                        saw_magic_call = true;
+                        continue;
+                    }
+                    if !native_method_static_source_call_arity_compatible(&method, arg_count) {
+                        return None;
+                    }
+                    methods.push(method);
+                }
+                None if self
+                    .declared_class_public_magic_call_method_for_key(class_key)
+                    .is_some() =>
+                {
+                    saw_magic_call = true;
+                }
+                None => return None,
             }
-            methods.push(method);
+        }
+
+        if saw_magic_call && methods.is_empty() {
+            return Some(NativeMethodStaticSignatureFallbackContract {
+                family: NativeMethodStaticSignatureFamily::ReceiverMethod,
+                candidate_count: methods.len(),
+                arity_compatible_count: methods.len(),
+                availability: NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                    NativeMethodStaticSignatureFallbackReason::MagicReceiverFallback,
+                ),
+                argument_strategy: NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic,
+            });
+        }
+        if saw_magic_call {
+            return Some(native_method_static_runtime_signature_fallback_contract(
+                NativeMethodStaticSignatureFamily::ReceiverMethod,
+            ));
         }
 
         let contract = native_method_static_signature_fallback_contract_from_methods(
@@ -27658,21 +27698,12 @@ impl CGenerator {
         target: &Expr,
         method: &Expr,
         arg_count: usize,
+        access_context: NativeSourceCallAccessContext<'_>,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
         let facts = self.native_value_facts_for_expr(target)?;
         let object = facts.object.as_ref()?;
         if object.declared_class_keys.is_empty() {
             return None;
-        }
-
-        let mut saw_magic_call = false;
-        for class_key in &object.declared_class_keys {
-            if self
-                .declared_class_receiver_method_for_key(class_key, "__call")
-                .is_some()
-            {
-                saw_magic_call = true;
-            }
         }
 
         let Some(method_names) = self.static_known_string_values_for_expr(method) else {
@@ -27681,21 +27712,52 @@ impl CGenerator {
             ));
         };
         let mut methods = Vec::new();
+        let mut saw_magic_call = false;
         let mut saw_runtime_lookup_only_name = false;
 
         for class_key in &object.declared_class_keys {
             for method_name in method_names.values() {
-                if let Some((_, method)) =
+                if let Some((class, method)) =
                     self.declared_class_receiver_method_for_key(class_key, method_name)
                 {
+                    if !self.declared_class_member_visible_from_source_access(
+                        &class.name,
+                        method.visibility,
+                        access_context,
+                    ) && self
+                        .declared_class_public_magic_call_method_for_key(class_key)
+                        .is_some()
+                    {
+                        saw_magic_call = true;
+                        continue;
+                    }
                     if !native_method_static_source_call_arity_compatible(&method, arg_count) {
                         return None;
                     }
                     methods.push(method);
                     continue;
                 }
-                saw_runtime_lookup_only_name = true;
+                if self
+                    .declared_class_public_magic_call_method_for_key(class_key)
+                    .is_some()
+                {
+                    saw_magic_call = true;
+                } else {
+                    saw_runtime_lookup_only_name = true;
+                }
             }
+        }
+
+        if saw_magic_call && methods.is_empty() {
+            return Some(NativeMethodStaticSignatureFallbackContract {
+                family: NativeMethodStaticSignatureFamily::ReceiverMethod,
+                candidate_count: 0,
+                arity_compatible_count: 0,
+                availability: NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                    NativeMethodStaticSignatureFallbackReason::MagicReceiverFallback,
+                ),
+                argument_strategy: NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic,
+            });
         }
 
         if saw_magic_call || methods.is_empty() || saw_runtime_lookup_only_name {
@@ -38569,8 +38631,16 @@ impl CGenerator {
         method_name: &str,
         arg_count: usize,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
-        let contract =
-            self.receiver_method_source_call_signature_contract(target, method_name, arg_count)?;
+        let access_context = Self::current_declared_class_access_context(
+            self.active_declared_class_name.as_deref(),
+            NativeSourceCallAccessContext::ObjectReceiver,
+        );
+        let contract = self.receiver_method_source_call_signature_contract(
+            target,
+            method_name,
+            arg_count,
+            access_context,
+        )?;
         contract
             .signature()
             .is_some_and(|signature| signature.returns_by_reference)
@@ -39900,6 +39970,18 @@ impl CGenerator {
             })
     }
 
+    fn declared_class_public_magic_call_method_for_key(
+        &self,
+        class_key: &str,
+    ) -> Option<(CDeclaredClass, CDeclaredClassMethod)> {
+        self.declared_class_receiver_method_for_key(class_key, "__call")
+            .filter(|(_, method)| {
+                method.visibility == ClassVisibility::Public
+                    && !method.is_static
+                    && native_user_function_accepts_arg_count(&method.decl, 2)
+            })
+    }
+
     fn declared_class_static_method_candidates(
         &self,
         method_name: &str,
@@ -40316,9 +40398,17 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let Some(signature_contract) =
-            self.receiver_method_source_call_signature_contract(target, method_name, args.len())
-        else {
+        let caller_scope = self.active_declared_class_name.clone();
+        let access_context = Self::current_declared_class_access_context(
+            caller_scope.as_deref(),
+            NativeSourceCallAccessContext::ObjectReceiver,
+        );
+        let Some(signature_contract) = self.receiver_method_source_call_signature_contract(
+            target,
+            method_name,
+            args.len(),
+            access_context,
+        ) else {
             return Ok(None);
         };
 
@@ -40330,11 +40420,6 @@ impl CGenerator {
         )?;
         let method_cleanup = c_cleanup_sequence(&method.cleanup_after_use);
         let target_failure_cleanup = format!("{method_cleanup}{receiver_cleanup}{failure_cleanup}");
-        let caller_scope = self.active_declared_class_name.clone();
-        let access_context = Self::current_declared_class_access_context(
-            caller_scope.as_deref(),
-            NativeSourceCallAccessContext::ObjectReceiver,
-        );
         let target = self.emit_native_receiver_method_source_call_target_operands(
             receiver,
             method,
@@ -40388,10 +40473,16 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let caller_scope = self.active_declared_class_name.clone();
+        let access_context = Self::current_declared_class_access_context(
+            caller_scope.as_deref(),
+            NativeSourceCallAccessContext::ObjectReceiver,
+        );
         let Some(signature_contract) = self.receiver_dynamic_method_source_call_signature_contract(
             target,
             method_expr,
             args.len(),
+            access_context,
         ) else {
             return Ok(None);
         };
@@ -40403,11 +40494,6 @@ impl CGenerator {
             self.materialize_native_value_result_operand(method_expr, &method_failure_cleanup)?;
         let method_cleanup = c_cleanup_sequence(&method.cleanup_after_use);
         let target_failure_cleanup = format!("{method_cleanup}{receiver_cleanup}{failure_cleanup}");
-        let caller_scope = self.active_declared_class_name.clone();
-        let access_context = Self::current_declared_class_access_context(
-            caller_scope.as_deref(),
-            NativeSourceCallAccessContext::ObjectReceiver,
-        );
         let target = self.emit_native_receiver_method_source_call_target_operands(
             receiver,
             method,

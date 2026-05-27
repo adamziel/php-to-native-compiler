@@ -36019,6 +36019,69 @@ mod tests {
     }
 
     #[test]
+    fn native_magic_call_arguments_preserve_source_named_keys() {
+        let arguments = phpc_native_call_arguments_new();
+        assert!(unsafe {
+            phpc_native_call_arguments_push_value_and_free(
+                arguments,
+                NativeValueHandle::from_value(Value::String("pos".to_string())),
+            )
+        });
+
+        let first_name = native_string_for_test("first");
+        assert!(unsafe {
+            phpc_native_call_arguments_push_named_value_and_free(
+                arguments,
+                first_name,
+                NativeValueHandle::from_value(Value::String("A".to_string())),
+            )
+        });
+        unsafe { phpc_native_string_free(first_name) };
+
+        let second_name = native_string_for_test("second");
+        assert!(unsafe {
+            phpc_native_call_arguments_push_named_value_and_free(
+                arguments,
+                second_name,
+                NativeValueHandle::from_value(Value::String("B".to_string())),
+            )
+        });
+        unsafe { phpc_native_string_free(second_name) };
+
+        let magic_arguments = {
+            let arguments_ref = unsafe { arguments.as_ref() }.expect("call arguments");
+            native_magic_call_arguments_from_method_and_arguments("missing", arguments_ref)
+                .expect("magic arguments should pack")
+        };
+        let method = unsafe { phpc_native_call_arguments_read_value(magic_arguments, 0) };
+        assert_eq!(
+            unsafe { method.as_ref() },
+            Some(&Value::String("missing".to_string()))
+        );
+        unsafe { phpc_native_value_free(method) };
+
+        let args = unsafe { phpc_native_call_arguments_read_value(magic_arguments, 1) };
+        let Some(Value::Array(array)) = (unsafe { args.as_ref() }) else {
+            panic!("expected packed magic argument array");
+        };
+        assert_eq!(
+            array.get_cloned(ArrayKey::Int(0)),
+            Some(Value::String("pos".to_string()))
+        );
+        assert_eq!(
+            array.get_cloned(ArrayKey::String("first".to_string())),
+            Some(Value::String("A".to_string()))
+        );
+        assert_eq!(
+            array.get_cloned(ArrayKey::String("second".to_string())),
+            Some(Value::String("B".to_string()))
+        );
+        unsafe { phpc_native_value_free(args) };
+        unsafe { phpc_native_call_arguments_free(magic_arguments) };
+        unsafe { phpc_native_call_arguments_free(arguments) };
+    }
+
+    #[test]
     fn native_call_result_null_consumers_clear_stale_diagnostics_across_result_modes() {
         let mut value_diagnostic =
             NativeDiagnosticHandle::from_message("stale value result diagnostic");
