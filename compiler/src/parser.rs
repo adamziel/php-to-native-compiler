@@ -5614,10 +5614,22 @@ impl Parser {
                         continue;
                     }
                     TokenKind::Identifier(name) if name.eq_ignore_ascii_case("class") => {
-                        return Err(self.error_at(
-                            operator_span,
-                            "unsupported object static class-name constant: object receiver ::class is not implemented",
-                        ));
+                        self.advance();
+                        let span = expr.span();
+                        expr = Expr::ObjectClassNameConstant {
+                            target: Box::new(expr),
+                            span,
+                        };
+                        continue;
+                    }
+                    TokenKind::Class => {
+                        self.advance();
+                        let span = expr.span();
+                        expr = Expr::ObjectClassNameConstant {
+                            target: Box::new(expr),
+                            span,
+                        };
+                        continue;
                     }
                     TokenKind::Identifier(constant) => {
                         self.advance();
@@ -5628,12 +5640,6 @@ impl Parser {
                             span,
                         };
                         continue;
-                    }
-                    TokenKind::Class => {
-                        return Err(self.error_at(
-                            operator_span,
-                            "unsupported object static class-name constant: object receiver ::class is not implemented",
-                        ));
                     }
                     TokenKind::Variable(property) => {
                         self.advance();
@@ -6523,6 +6529,7 @@ impl Parser {
             | Expr::SelfClassNameConstant { .. }
             | Expr::ParentClassNameConstant { .. }
             | Expr::StaticClassNameConstant { .. }
+            | Expr::ObjectClassNameConstant { .. }
             | Expr::ClassConstant { .. }
             | Expr::ObjectStaticClassConstant { .. }
             | Expr::ParentClassConstant { .. }
@@ -6610,6 +6617,7 @@ impl Parser {
             | Expr::ParentClassNameConstant { .. }
             | Expr::StaticClassNameConstant { .. }
             | Expr::ObjectStaticClassConstant { .. }
+            | Expr::ObjectClassNameConstant { .. }
             | Expr::SelfClassConstant { .. }
             | Expr::ParentClassConstant { .. }
             | Expr::LateStaticClassConstant { .. }
@@ -6744,7 +6752,8 @@ impl Parser {
                 target, property, ..
             } => Self::expr_contains_assignment(target) || Self::expr_contains_assignment(property),
             Expr::ObjectStaticProperty { target, .. }
-            | Expr::ObjectStaticClassConstant { target, .. } => {
+            | Expr::ObjectStaticClassConstant { target, .. }
+            | Expr::ObjectClassNameConstant { target, .. } => {
                 Self::expr_contains_assignment(target)
             }
             Expr::MethodCall { target, args, .. } => {
@@ -6908,6 +6917,9 @@ impl Parser {
             | Expr::ObjectStaticClassConstant { target, .. } => {
                 Self::expr_contains_unsupported_assignment_rhs(target)
             }
+            Expr::ObjectClassNameConstant { target, .. } => {
+                Self::expr_contains_unsupported_assignment_rhs(target)
+            }
             Expr::SelfMethodCall { args, .. } => args
                 .iter()
                 .any(Self::expr_contains_unsupported_assignment_rhs),
@@ -7014,9 +7026,8 @@ impl Parser {
             Expr::StaticMethodCall { .. } => None,
             Expr::ObjectStaticMethodCall { target, .. } => Self::find_append_index_span(target),
             Expr::ObjectStaticProperty { target, .. }
-            | Expr::ObjectStaticClassConstant { target, .. } => {
-                Self::find_append_index_span(target)
-            }
+            | Expr::ObjectStaticClassConstant { target, .. }
+            | Expr::ObjectClassNameConstant { target, .. } => Self::find_append_index_span(target),
             Expr::SelfMethodCall { .. } => None,
             Expr::LateStaticMethodCall { .. } => None,
             Expr::Call { .. } | Expr::New { .. } => None,

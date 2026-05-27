@@ -33523,6 +33523,27 @@ fn native_class_canonical_name_bytes(classes: &PhpClassTable, name: &[u8]) -> Op
         .or_else(|| native_user_class_canonical_name_for_lookup_key(&lookup_key))
 }
 
+fn native_no_autoload_class_name_bytes(name: &[u8]) -> Vec<u8> {
+    let name = name.strip_prefix(b"\\").unwrap_or(name);
+    let classes = PhpClassTable::with_core_classes();
+    native_class_canonical_name_bytes(&classes, name).unwrap_or_else(|| name.to_vec())
+}
+
+fn native_class_name_from_receiver_no_autoload(value: &Value) -> RuntimeResult<Vec<u8>> {
+    match value {
+        Value::Object(object) => Ok(object.class_name().as_bytes().to_vec()),
+        Value::String(class_name) => Ok(native_no_autoload_class_name_bytes(class_name.as_bytes())),
+        Value::BinaryString(class_name) => Ok(native_no_autoload_class_name_bytes(class_name)),
+        other => Err(RuntimeError::unsupported_call(
+            "dynamic class-name receiver",
+            format!(
+                "dynamic class-name receiver must be object or class string, got {}",
+                other.type_name()
+            ),
+        )),
+    }
+}
+
 fn native_user_class_names_bytes() -> Vec<Vec<u8>> {
     NATIVE_USER_CLASSES.with(|classes| {
         classes
@@ -34031,6 +34052,39 @@ pub unsafe extern "C" fn phpc_native_value_class_metadata_exists_with_autoload_p
         Err(error) => {
             unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
             false
+        }
+    }
+}
+
+/// # Safety
+///
+/// `receiver` must be null or a value handle previously returned by the
+/// runtime ABI and not yet freed. The receiver is always consumed. This helper
+/// normalizes object and class-string receivers without invoking class lookup
+/// autoload hooks; known generated-native aliases are resolved from existing
+/// metadata only.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_class_name_from_receiver_no_autoload_with_diagnostic_and_free(
+    receiver: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeStringHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let receiver_value = unsafe { receiver.as_ref() }.ok_or_else(|| {
+            RuntimeError::unsupported_call(
+                "dynamic class-name receiver",
+                "dynamic class-name receiver handle is null",
+            )
+        })?;
+        native_class_name_from_receiver_no_autoload(receiver_value)
+    })();
+    unsafe { phpc_native_value_free(receiver) };
+
+    match result {
+        Ok(class_name) => NativeStringHandle::from_vec(class_name),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeStringHandle::null()
         }
     }
 }
@@ -41359,6 +41413,88 @@ mod tests {
         unsafe { phpc_native_value_free(inherited_method) };
         unsafe { phpc_native_value_free(parent) };
         unsafe { phpc_native_value_free(alias) };
+        native_user_classes_reset_for_test();
+    }
+
+    #[test]
+    fn native_class_name_receiver_no_autoload_normalizes_objects_strings_aliases_and_errors() {
+        native_user_classes_reset_for_test();
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        assert!(unsafe {
+            phpc_native_declare_user_class_bytes(
+                b"NoAutoloadName".as_ptr(),
+                b"NoAutoloadName".len(),
+            )
+        });
+        assert!(unsafe {
+            phpc_native_declare_user_class_alias_bytes_with_diagnostic(
+                b"NoAutoloadName".as_ptr(),
+                b"NoAutoloadName".len(),
+                b"NoAutoloadAlias".as_ptr(),
+                b"NoAutoloadAlias".len(),
+                false,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("NoAutoloadName").unwrap();
+        let object_name = unsafe {
+            phpc_native_class_name_from_receiver_no_autoload_with_diagnostic_and_free(
+                NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+                    classes.get(class_id).unwrap(),
+                ))),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { native_string_handle_to_string(object_name) }.as_deref(),
+            Some("NoAutoloadName")
+        );
+        unsafe { phpc_native_string_free(object_name) };
+
+        let alias_name = unsafe {
+            phpc_native_class_name_from_receiver_no_autoload_with_diagnostic_and_free(
+                NativeValueHandle::from_value(Value::String("NoAutoloadAlias".to_string())),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { native_string_handle_to_string(alias_name) }.as_deref(),
+            Some("NoAutoloadName")
+        );
+        unsafe { phpc_native_string_free(alias_name) };
+
+        let missing_name = unsafe {
+            phpc_native_class_name_from_receiver_no_autoload_with_diagnostic_and_free(
+                NativeValueHandle::from_value(Value::String("MissingNoAutoloadName".to_string())),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { native_string_handle_to_string(missing_name) }.as_deref(),
+            Some("MissingNoAutoloadName")
+        );
+        unsafe { phpc_native_string_free(missing_name) };
+
+        let invalid_name = unsafe {
+            phpc_native_class_name_from_receiver_no_autoload_with_diagnostic_and_free(
+                NativeValueHandle::from_value(Value::Int(5)),
+                &mut diagnostic,
+            )
+        };
+        assert!(invalid_name.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "unsupported call dynamic class-name receiver: dynamic class-name receiver must be object or class string, got int"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
         native_user_classes_reset_for_test();
     }
 

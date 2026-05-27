@@ -2004,6 +2004,7 @@ fn llvm_expr_call_results_are_lowerable(expr: &Expr, allow_scalar_results: bool)
         | Expr::Property { target, .. }
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
+        | Expr::ObjectClassNameConstant { target, .. }
         | Expr::InstanceOf { expr: target, .. } => {
             llvm_expr_call_results_are_lowerable(target, allow_scalar_results)
         }
@@ -2289,6 +2290,7 @@ fn native_expr_call_result_operation(
         | Expr::Property { target, .. }
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
+        | Expr::ObjectClassNameConstant { target, .. }
         | Expr::InstanceOf { expr: target, .. } => {
             native_expr_call_result_operation(target, blocker)
         }
@@ -3009,6 +3011,7 @@ fn native_conditional_rhs_needs_cleanup_boundary(expr: &Expr) -> bool {
         | Expr::Property { target, .. }
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
+        | Expr::ObjectClassNameConstant { target, .. }
         | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
@@ -4577,6 +4580,7 @@ fn expr_contains_exit_construct(expr: &Expr) -> bool {
         | Expr::Property { target, .. }
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
+        | Expr::ObjectClassNameConstant { target, .. }
         | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
@@ -5388,6 +5392,7 @@ fn collect_direct_call_names_from_expr(expr: &Expr, names: &mut Vec<String>) {
         | Expr::Property { target, .. }
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
+        | Expr::ObjectClassNameConstant { target, .. }
         | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
@@ -6125,6 +6130,7 @@ fn collect_native_arrow_capture_candidates_from_expr(
         | Expr::Property { target, .. }
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
+        | Expr::ObjectClassNameConstant { target, .. }
         | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
@@ -6288,6 +6294,7 @@ fn native_expr_contains_call_result(expr: &Expr) -> bool {
         | Expr::Property { target, .. }
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
+        | Expr::ObjectClassNameConstant { target, .. }
         | Expr::InstanceOf { expr: target, .. } => native_expr_contains_call_result(target),
         Expr::DynamicProperty {
             target, property, ..
@@ -7347,6 +7354,7 @@ fn expr_contains_globals_access(expr: &Expr) -> bool {
         | Expr::Property { target, .. }
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
+        | Expr::ObjectClassNameConstant { target, .. }
         | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
@@ -7839,6 +7847,7 @@ fn expr_contains_request_state_access(expr: &Expr) -> bool {
         | Expr::Property { target, .. }
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
+        | Expr::ObjectClassNameConstant { target, .. }
         | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
@@ -10614,7 +10623,8 @@ impl LlvmGenerator {
             Expr::ClassNameConstant { span, .. }
             | Expr::SelfClassNameConstant { span }
             | Expr::ParentClassNameConstant { span }
-            | Expr::StaticClassNameConstant { span } => {
+            | Expr::StaticClassNameConstant { span }
+            | Expr::ObjectClassNameConstant { span, .. } => {
                 Err(self.unsupported(*span, LLVM_CLASS_NAME_CONSTANT_REJECTION))
             }
             Expr::ClassConstant { span, .. }
@@ -18411,7 +18421,8 @@ fn collect_loop_assigned_direct_variables_from_expr(expr: &Expr, names: &mut BTr
         }
         Expr::Property { target, .. }
         | Expr::ObjectStaticClassConstant { target, .. }
-        | Expr::ObjectStaticProperty { target, .. } => {
+        | Expr::ObjectStaticProperty { target, .. }
+        | Expr::ObjectClassNameConstant { target, .. } => {
             collect_loop_assigned_direct_variables_from_expr(target, names);
         }
         Expr::MethodCall { target, args, .. } => {
@@ -22367,6 +22378,7 @@ impl CGenerator {
             }
             if self.uses_native_class_metadata_value {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_class_metadata_value_with_diagnostic(phpc_NativeValueHandle subject, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeStringHandle phpc_native_class_name_from_receiver_no_autoload_with_diagnostic_and_free(phpc_NativeValueHandle receiver, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_object_property_helpers {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_object_public_property_operation_with_diagnostic(phpc_NativeValueHandle object, const uint8_t *property_name, size_t property_name_len, phpc_NativeValueHandle replacement, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -34605,6 +34617,47 @@ impl CGenerator {
         Ok(Some(CValue::NativeValueHandle(value)))
     }
 
+    fn materialize_object_class_name_constant_expr(
+        &mut self,
+        target: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        let receiver = self.materialize_native_value_result_operand(target, failure_cleanup)?;
+        self.uses_native_class_metadata_value = true;
+        let diagnostic = self.next_native_name("dynamic_class_name_diagnostic");
+        let class_name = self.next_native_name("dynamic_class_name_value");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeStringHandle {class_name} = phpc_native_class_name_from_receiver_no_autoload_with_diagnostic_and_free({}, &{diagnostic});",
+            receiver.handle
+        ));
+        self.body
+            .extend(native_value_aux_cleanup_after_consuming_handle(&receiver));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({class_name}.ptr == NULL) {{ {error_exit} }}"));
+        let value = self.next_native_name("dynamic_class_name_native_value");
+        let value_diagnostic = self.next_native_name("dynamic_class_name_value_diagnostic");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {value_diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value} = phpc_native_value_from_string_with_diagnostic({class_name}, &{value_diagnostic});"
+        ));
+        let class_name_cleanup = format!("phpc_native_string_free({class_name});");
+        self.emit_report_native_diagnostic(&value_diagnostic);
+        let error_exit = self.native_error_exit(&format!("{class_name_cleanup}{failure_cleanup}"));
+        self.body
+            .push(format!("if ({value}.ptr == NULL) {{ {error_exit} }}"));
+        self.body.push(class_name_cleanup);
+        Ok(CNativeValueMaterialization {
+            handle: value.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
+        })
+    }
+
     fn ensure_native_static_property_storage(
         &mut self,
         failure_cleanup: &str,
@@ -36126,6 +36179,11 @@ impl CGenerator {
                     return Ok(value);
                 }
                 Err(self.unsupported(*span, ASSEMBLY_CLASS_NAME_CONSTANT_REJECTION))
+            }
+            Expr::ObjectClassNameConstant { target, .. } => {
+                let value = self.materialize_object_class_name_constant_expr(target, "")?;
+                self.retain_native_value_cleanup_handle(&value.handle);
+                Ok(CValue::NativeValueHandle(value.handle))
             }
             Expr::ClassConstant {
                 class_name,
@@ -41132,6 +41190,7 @@ impl CGenerator {
             | Expr::Property { target, .. }
             | Expr::ObjectStaticClassConstant { target, .. }
             | Expr::ObjectStaticProperty { target, .. }
+            | Expr::ObjectClassNameConstant { target, .. }
             | Expr::InstanceOf { expr: target, .. }
             | Expr::Clone { expr: target, .. }
             | Expr::Unary { expr: target, .. }
@@ -52153,6 +52212,11 @@ impl CGenerator {
                 )
                 .map(Some);
         }
+        if let Expr::ObjectClassNameConstant { target, .. } = expr {
+            return self
+                .materialize_object_class_name_constant_expr(target, failure_cleanup)
+                .map(Some);
+        }
         match expr {
             Expr::SelfStaticProperty { property, span } => {
                 if let Some(value) = self.materialize_relative_static_property_read_expr(
@@ -56337,6 +56401,7 @@ fn native_foreach_expr_may_mutate_storage(expr: &Expr) -> bool {
         | Expr::Property { target, .. }
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
+        | Expr::ObjectClassNameConstant { target, .. }
         | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }

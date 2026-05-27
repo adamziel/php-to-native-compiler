@@ -5815,13 +5815,89 @@ fn native_executable_reports_dynamic_class_constant_missing_class_and_constant()
 }
 
 #[test]
-fn native_executable_keeps_dynamic_class_name_constant_receivers_blocked() {
-    let error = parse("<?php\n$class = \"DynamicConstBlocked\";\necho $class::class;\n")
-        .expect_err("dynamic receiver ::class remains blocked");
-    assert_eq!(
-        error.message,
-        "unsupported object static class-name constant: object receiver ::class is not implemented"
+fn native_executable_c_source_routes_dynamic_class_name_receivers_through_no_autoload_boundary() {
+    let program = parse(
+        "<?php\nclass DynamicClassNameSource {}\nclass_alias(\"DynamicClassNameSource\", \"DynamicClassNameAlias\", false);\n$object = new DynamicClassNameSource();\n$name = \"DynamicClassNameAlias\";\n$missing = \"MissingDynamicClassName\";\necho $object::class, \"|\", $name::class, \"|\", $missing::class;\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "phpc_native_class_name_from_receiver_no_autoload_with_diagnostic_and_free"
+        ),
+        "dynamic ::class should route through the shared no-autoload class-name receiver ABI:\n{source}"
     );
+    assert!(
+        body.matches("phpc_native_class_name_from_receiver_no_autoload_with_diagnostic_and_free")
+            .count()
+            >= 3,
+        "object, alias string, and missing string receivers should share the same no-autoload boundary:\n{source}"
+    );
+    assert!(
+        !source.contains("object receiver ::class is not implemented")
+            && !source.contains("class-name constant lowering rejects"),
+        "supported dynamic ::class receivers should not fall through old blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_runs_dynamic_class_name_receivers_without_autoload_lookup() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = "<?php\nclass DynamicClassNameRun {}\nclass_alias(\"DynamicClassNameRun\", \"DynamicClassNameAliasRun\", false);\n$object = new DynamicClassNameRun();\n$name = \"DynamicClassNameAliasRun\";\n$missing = \"MissingDynamicClassNameRun\";\necho $object::class, \"|\", $name::class, \"|\", $missing::class;\n";
+    let (source_path, output_path) =
+        compile_native_link_fixture("dynamic_class_name_receivers", source);
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run dynamic class-name executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "DynamicClassNameRun|DynamicClassNameRun|MissingDynamicClassNameRun"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn native_executable_reports_dynamic_class_name_receiver_type_boundary() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = "<?php\n$bad = 5;\necho $bad::class;\n";
+    let (source_path, output_path) =
+        compile_native_link_fixture("dynamic_class_name_receiver_type_boundary", source);
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run dynamic class-name receiver boundary executable");
+    assert!(
+        !run.status.success(),
+        "unsupported receiver should fail:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&run.stderr)
+            .contains("dynamic class-name receiver must be object or class string, got int"),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
 }
 
 #[test]

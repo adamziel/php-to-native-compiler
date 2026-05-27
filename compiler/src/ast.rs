@@ -914,6 +914,10 @@ pub enum Expr {
     StaticClassNameConstant {
         span: Span,
     },
+    ObjectClassNameConstant {
+        target: Box<Expr>,
+        span: Span,
+    },
     ClassConstant {
         class_name: String,
         constant: String,
@@ -1185,6 +1189,7 @@ impl Expr {
             | Expr::SelfClassNameConstant { span }
             | Expr::ParentClassNameConstant { span }
             | Expr::StaticClassNameConstant { span }
+            | Expr::ObjectClassNameConstant { span, .. }
             | Expr::ClassConstant { span, .. }
             | Expr::ObjectStaticClassConstant { span, .. }
             | Expr::SelfClassConstant { span, .. }

@@ -14207,6 +14207,37 @@ impl Interpreter {
             Expr::StaticClassNameConstant { span } => {
                 self.evaluate_static_class_name_constant(*span)
             }
+            Expr::ObjectClassNameConstant { target, span } => {
+                let value = self.evaluate(target, scope)?;
+                match value {
+                    Value::Object(object) => Ok(Value::String(object.class_name().to_string())),
+                    Value::String(class_name) => Ok(Value::String(
+                        self.classes
+                            .lookup_class(&class_name)
+                            .map(|class| class.name().to_string())
+                            .unwrap_or(class_name),
+                    )),
+                    Value::BinaryString(class_name) => {
+                        let class_name = class_name.strip_prefix(b"\\").unwrap_or(&class_name);
+                        Ok(Value::BinaryString(
+                            self.classes
+                                .lookup_class_bytes(class_name)
+                                .map(|class| class.name().as_bytes().to_vec())
+                                .unwrap_or_else(|| class_name.to_vec()),
+                        ))
+                    }
+                    other => Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            "dynamic class-name receiver",
+                            format!(
+                                "dynamic class-name receiver must be object or class string, got {}",
+                                other.type_name()
+                            ),
+                        ),
+                    )),
+                }
+            }
             Expr::ClassConstant {
                 class_name,
                 constant,
