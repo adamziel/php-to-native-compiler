@@ -17943,7 +17943,6 @@ enum CNativeBuiltinSignatureSourceCallSupport {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CNativeBuiltinSignatureBlocker {
     MissingRuntimeCallableFamily,
-    ByReferenceArgumentWriteback,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61813,6 +61812,8 @@ fn native_dynamic_callable_builtin_canonical_name(name: &str) -> Option<&'static
         "trim" => Some("trim"),
         "ltrim" => Some("ltrim"),
         "rtrim" => Some("rtrim"),
+        "sort" => Some("sort"),
+        "rsort" => Some("rsort"),
         "array_push" => Some("array_push"),
         "array_pop" => Some("array_pop"),
         "array_shift" => Some("array_shift"),
@@ -61858,9 +61859,7 @@ const NATIVE_BUILTIN_DEFAULTS_TRIM_CHARACTERS: &[Option<CNativeBuiltinDefaultVal
 ];
 
 fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignature> {
-    use CNativeBuiltinSignatureBlocker::{
-        ByReferenceArgumentWriteback, MissingRuntimeCallableFamily,
-    };
+    use CNativeBuiltinSignatureBlocker::MissingRuntimeCallableFamily;
     use CNativeBuiltinSignatureSourceCallSupport::{Blocked, RuntimeCallableValue};
 
     let signature = match name.to_ascii_lowercase().as_str() {
@@ -61964,8 +61963,11 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             returns_by_reference: false,
             source_call_support: Blocked(MissingRuntimeCallableFamily),
         },
-        "sort" => CNativeBuiltinSignature {
-            canonical_name: "sort",
+        "sort" | "rsort" => CNativeBuiltinSignature {
+            canonical_name: match name.to_ascii_lowercase().as_str() {
+                "rsort" => "rsort",
+                _ => "sort",
+            },
             required_arg_count: 1,
             fixed_param_names: NATIVE_BUILTIN_PARAM_ARRAY_FLAGS,
             fixed_param_by_reference: NATIVE_BUILTIN_BY_REF_THEN_VALUE_DEFAULT,
@@ -61974,7 +61976,7 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             variadic_param_name: None,
             variadic_param_by_reference: false,
             returns_by_reference: false,
-            source_call_support: Blocked(ByReferenceArgumentWriteback),
+            source_call_support: RuntimeCallableValue,
         },
         "array_push" | "array_unshift" => CNativeBuiltinSignature {
             canonical_name: match name.to_ascii_lowercase().as_str() {
@@ -68869,19 +68871,34 @@ echo " 10" < "zeta";
         );
 
         let sort = native_builtin_signature_for_name("sort")
-            .expect("sort should be mapped as a blocked native builtin signature");
+            .expect("sort should be mapped as a runtime sorting builtin signature");
+        assert_eq!(sort.canonical_name, "sort");
         assert_eq!(sort.required_arg_count, 1);
+        assert_eq!(sort.fixed_param_names, &["array", "flags"]);
         assert_eq!(sort.fixed_param_by_reference, &[true, false]);
+        assert_eq!(
+            sort.fixed_param_defaults,
+            &[None, Some(CNativeBuiltinDefaultValue::Int(0))]
+        );
         assert!(sort.required_arg_count < sort.fixed_param_count());
         assert!(sort.accepts_arg_count(1));
         assert!(sort.accepts_arg_count(2));
         assert!(!sort.accepts_arg_count(3));
         assert_eq!(
             sort.source_call_support,
-            CNativeBuiltinSignatureSourceCallSupport::Blocked(
-                CNativeBuiltinSignatureBlocker::ByReferenceArgumentWriteback,
-            )
+            CNativeBuiltinSignatureSourceCallSupport::RuntimeCallableValue
         );
+
+        let rsort = native_builtin_signature_for_name("rsort")
+            .expect("rsort should share runtime sorting builtin metadata");
+        assert_eq!(rsort.canonical_name, "rsort");
+        assert_eq!(rsort.fixed_param_names, sort.fixed_param_names);
+        assert_eq!(
+            rsort.fixed_param_by_reference,
+            sort.fixed_param_by_reference
+        );
+        assert_eq!(rsort.fixed_param_defaults, sort.fixed_param_defaults);
+        assert_eq!(rsort.source_call_support, sort.source_call_support);
 
         let push = native_builtin_signature_for_name("array_push")
             .expect("array_push should be mapped as a runtime variadic mutation signature");
@@ -69006,11 +69023,19 @@ echo " 10" < "zeta";
                 .is_none(),
             "arity-incompatible runtime builtin signatures must not be faked"
         );
-        assert!(
-            generator
-                .callable_string_signature_for_expr(&Expr::String("sort".to_string(), span(7)), 1,)
-                .is_none(),
-            "blocked by-reference builtin signatures must not opt into runtime source calls"
+        let sort_signature = generator
+            .callable_string_signature_for_expr(&Expr::String("sort".to_string(), span(7)), 1)
+            .expect("runtime sort builtin signatures should feed source-call binding");
+        assert_eq!(sort_signature.fixed_param_by_reference, vec![true, false]);
+        let sort_or_rsort = Expr::Ternary {
+            condition: Box::new(Expr::Bool(true, span(7))),
+            if_true: Box::new(Expr::String("sort".to_string(), span(7))),
+            if_false: Box::new(Expr::String("rsort".to_string(), span(7))),
+            span: span(7),
+        };
+        assert_eq!(
+            generator.callable_string_signature_for_expr(&sort_or_rsort, 2),
+            Some(sort_signature)
         );
         let pop_signature = generator
             .callable_string_signature_for_expr(&Expr::String("array_pop".to_string(), span(7)), 1)

@@ -24508,6 +24508,17 @@ const NATIVE_IMPORTED_BUILTIN_VARIADIC_WRITEBACK_SOURCE: &str = concat!(
     "echo $count, \":\", $items[5], \":\", $items[6];\n",
 );
 
+const NATIVE_RUNTIME_BUILTIN_SORT_WRITEBACK_SOURCE: &str = concat!(
+    "<?php\n",
+    "$values = [10, 1, 2];\n",
+    "$sort = \"sort\";\n",
+    "echo $sort($values, 1), \":\", $values[0], \":\", $values[1], \":\", $values[2], \"|\";\n",
+    "$args = [];\n",
+    "$args[] =& $values;\n",
+    "$rsort = \"rsort\";\n",
+    "echo $rsort(...$args), \":\", $values[0], \":\", $values[1], \":\", $values[2];\n",
+);
+
 const NATIVE_DYNAMIC_BUILTIN_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "$len = \"strlen\";\n",
@@ -25867,6 +25878,33 @@ fn native_executable_c_source_lowers_imported_builtin_variadic_writeback_through
             && !source.contains("ByReferenceArgumentWriteback")
             && !source.contains("phpc_native_value_dynamic_call_name_matches"),
         "imported direct variadic by-reference builtins should not use old exact imported split blockers or generated name ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_runtime_builtin_sort_writeback_through_callable_arguments() {
+    let program = parse(NATIVE_RUNTIME_BUILTIN_SORT_WRITEBACK_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_call_arguments_push_reference_and_free")
+            && body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && body.contains("uint8_t materialized_parameter_by_reference_")
+            && body.contains("= { 1, 0 };")
+            && body.contains("materialized_parameter_defaults")
+            && body.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "runtime sort callables should use reference call slots, defaulted flag metadata, materialized spread finalization, and callable-value invocation:\n{source}"
+    );
+    assert!(
+        !source.contains("spread operands need a materialized-entry producer")
+            && !source.contains("unsupported runtime callable builtin families")
+            && !source.contains("ByReferenceArgumentWriteback")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches"),
+        "runtime sort callables should avoid exact-name dynamic ladders and old blockers:\n{source}"
     );
 }
 
@@ -29701,6 +29739,34 @@ fn emit_exe_links_and_runs_imported_builtin_variadic_writeback_program() {
         run.stdout,
         b"A3:left:middle:nested|5:zero:start:left:middle:nested|7:right:tail"
     );
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_runtime_builtin_sort_writeback_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "runtime_builtin_sort_writeback_arguments",
+        NATIVE_RUNTIME_BUILTIN_SORT_WRITEBACK_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native runtime builtin sort writeback executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"1:1:2:10|1:10:2:1");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
