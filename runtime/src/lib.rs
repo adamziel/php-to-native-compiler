@@ -4809,6 +4809,29 @@ pub unsafe extern "C" fn phpc_native_value_dynamic_call_name_matches(
 ///
 /// `handle` must be null or a value handle previously returned by the runtime
 /// ABI and not yet freed. `name_ptr..name_ptr+name_len` must either be a valid
+/// byte slice or be null with a zero length. Class-name matching follows PHP's
+/// ASCII case-insensitive class lookup and ignores one leading namespace
+/// separator on either side.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_dynamic_class_name_matches(
+    handle: NativeValueHandle,
+    name_ptr: *const u8,
+    name_len: usize,
+) -> bool {
+    let Some(name) = (unsafe { native_abi_bytes(name_ptr, name_len) }) else {
+        return false;
+    };
+    let Some(Value::String(class_name)) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    native_class_metadata_lookup_key(class_name.as_bytes())
+        == native_class_metadata_lookup_key(name)
+}
+
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. `name_ptr..name_ptr+name_len` must either be a valid
 /// byte slice or be null with a zero length. Dynamic method-name matching
 /// normalizes PHP scalar operands before generated method lookup.
 #[no_mangle]
@@ -25539,15 +25562,15 @@ impl PhpObject {
     }
 
     pub fn is_instance_of_class_name(&self, class_name: &str) -> bool {
-        self.class_name.eq_ignore_ascii_case(class_name)
+        class_names_eq_ignore_ascii_case(&self.class_name, class_name)
             || self
                 .ancestor_class_names
                 .iter()
-                .any(|ancestor| ancestor.eq_ignore_ascii_case(class_name))
+                .any(|ancestor| class_names_eq_ignore_ascii_case(ancestor, class_name))
             || self
                 .interface_names
                 .iter()
-                .any(|interface| interface.eq_ignore_ascii_case(class_name))
+                .any(|interface| class_names_eq_ignore_ascii_case(interface, class_name))
     }
 
     fn php_equality_checked_with_context(
@@ -26662,7 +26685,13 @@ fn is_php_integer_array_key(value: &str) -> bool {
 }
 
 fn normalize_class_lookup_name(name: &str) -> String {
-    name.to_ascii_lowercase()
+    name.strip_prefix('\\').unwrap_or(name).to_ascii_lowercase()
+}
+
+fn class_names_eq_ignore_ascii_case(left: &str, right: &str) -> bool {
+    left.strip_prefix('\\')
+        .unwrap_or(left)
+        .eq_ignore_ascii_case(right.strip_prefix('\\').unwrap_or(right))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -29457,6 +29486,40 @@ pub unsafe extern "C" fn phpc_native_value_class_metadata_exists_with_diagnostic
     unsafe { native_clear_diagnostic_slot(diagnostic) };
 
     match unsafe { native_value_class_metadata_exists(subject, member, operation) } {
+        Ok(result) => result,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// `subject` and `member` must be null or value handles returned by the
+/// runtime ABI and not yet freed. The diagnostic slot is overwritten on
+/// metadata argument errors, unsupported operations, or a missing class lookup
+/// that would need generated-native autoload side effects.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic(
+    subject: NativeValueHandle,
+    member: NativeValueHandle,
+    operation: u8,
+    autoload: bool,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe { native_value_class_metadata_exists(subject, member, operation) } {
+        Ok(false) if autoload && operation == NativeClassMetadataOperation::ClassExists as u8 => {
+            unsafe {
+                native_store_diagnostic_message(
+                    diagnostic,
+                    "class_exists(): generated-native autoload for missing classes is not implemented",
+                )
+            };
+            false
+        }
         Ok(result) => result,
         Err(error) => {
             unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
@@ -35305,6 +35368,59 @@ mod tests {
     }
 
     #[test]
+    fn native_class_metadata_autoload_policy_reports_missing_class_boundary() {
+        native_user_classes_reset_for_test();
+        assert!(native_declare_user_class_bytes_result(b"LoadedClass"));
+
+        let loaded = NativeValueHandle::from_value(Value::String("LoadedClass".to_string()));
+        let missing = NativeValueHandle::from_value(Value::String("MissingClass".to_string()));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        assert!(unsafe {
+            phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic(
+                loaded,
+                NativeValueHandle::null(),
+                NativeClassMetadataOperation::ClassExists as u8,
+                true,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        assert!(!unsafe {
+            phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic(
+                missing,
+                NativeValueHandle::null(),
+                NativeClassMetadataOperation::ClassExists as u8,
+                false,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        assert!(!unsafe {
+            phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic(
+                missing,
+                NativeValueHandle::null(),
+                NativeClassMetadataOperation::ClassExists as u8,
+                true,
+                &mut diagnostic,
+            )
+        });
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "class_exists(): generated-native autoload for missing classes is not implemented"
+            )
+        );
+
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(loaded) };
+        unsafe { phpc_native_value_free(missing) };
+        native_user_classes_reset_for_test();
+    }
+
+    #[test]
     fn native_object_method_failure_reports_receiver_and_method_families() {
         let class_name = b"NativeBox";
         let method_name = b"store";
@@ -37439,6 +37555,36 @@ mod tests {
         );
         unsafe { phpc_native_diagnostic_free(type_diagnostic) };
         unsafe { phpc_native_value_free(non_string) };
+    }
+
+    #[test]
+    fn native_dynamic_class_lookup_normalizes_leading_namespace_separator() {
+        let class_name =
+            NativeValueHandle::from_value(Value::String("\\App\\Core\\Service".to_string()));
+
+        assert!(unsafe {
+            phpc_native_value_dynamic_class_name_matches(
+                class_name,
+                b"App\\Core\\Service".as_ptr(),
+                b"App\\Core\\Service".len(),
+            )
+        });
+        assert!(unsafe {
+            phpc_native_value_dynamic_class_name_matches(
+                class_name,
+                b"\\app\\core\\service".as_ptr(),
+                b"\\app\\core\\service".len(),
+            )
+        });
+        assert!(!unsafe {
+            phpc_native_value_dynamic_class_name_matches(
+                class_name,
+                b"App\\Core\\Other".as_ptr(),
+                b"App\\Core\\Other".len(),
+            )
+        });
+
+        unsafe { phpc_native_value_free(class_name) };
     }
 
     #[test]

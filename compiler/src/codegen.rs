@@ -149,7 +149,6 @@ const ASSEMBLY_TRAIT_REJECTION: &str = "assembly trait lowering rejects trait de
 const LLVM_ENUM_REJECTION: &str = "LLVM enum lowering rejects enum declarations until native class/enum tables, enum case objects, backed enum values, interface implementation, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current enum metadata behavior";
 const ASSEMBLY_ENUM_REJECTION: &str = "assembly enum lowering rejects enum declarations until native class/enum tables, enum case objects, backed enum values, interface implementation, relationship queries, autoload interaction, and exact native error behavior exist; phpc run handles current enum metadata behavior";
 const LLVM_NAMESPACE_REJECTION: &str = "LLVM namespace lowering rejects namespace declarations, namespace-qualified names, namespace imports, and namespace-aware name resolution until native symbol tables, namespace context, aliases/imports, fallback function/constant lookup, class/autoload lookup, and exact native error behavior exist; phpc run handles current namespace behavior";
-const ASSEMBLY_NAMESPACE_REJECTION: &str = "assembly namespace lowering rejects namespace declarations, namespace-qualified names, namespace imports, and namespace-aware name resolution until native symbol tables, namespace context, aliases/imports, fallback function/constant lookup, class/autoload lookup, and exact native error behavior exist; phpc run handles current namespace behavior";
 const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
 const ASSEMBLY_ARRAY_REJECTION: &str = "assembly array lowering rejects unsupported arrays, unsupported array indexing forms, unsupported array assignment forms, unsupported foreach array iteration forms, unsupported array offset unset forms, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; generated-native C routes lowerable direct array offset writes, appends, unsets, and by-value foreach over tracked native array owners through shared native ABIs";
 const ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION: &str = "native executable by-reference foreach lowering rejects this by-reference iteration form; generated C currently supports array and nested-array lvalue owners with compact value-reference assignment bodies through phpc_native_array_lvalue_owner_foreach_value_reference_result(), while temporary iterable owners, arbitrary body mutation, lingering post-loop reference binding, symbol-table/request owners, references/copy-on-write parity, and exact cleanup ownership remain unsupported; phpc run handles current by-reference foreach behavior";
@@ -10431,7 +10430,7 @@ impl LlvmGenerator {
                 self.emit_is_callable_call(args, *span)
             }
             Expr::Call { name, args, span } if is_native_type_introspection_builtin(name) => {
-                self.emit_native_type_introspection_call(name, args, *span)
+                self.emit_native_type_introspection_call(php_unqualified_name(name), args, *span)
             }
             Expr::Call { name, args, span } if is_object_metadata_builtin(name) => {
                 Err(self.unsupported_direct_named_call(args, *span, LLVM_OBJECT_METADATA_REJECTION))
@@ -11598,8 +11597,9 @@ impl LlvmGenerator {
         args: &[Expr],
         span: Span,
     ) -> CompileResult<IrValue> {
+        let builtin_name = php_unqualified_name(name);
         if let Some(metadata_call) =
-            NativeObjectMetadataCallOperation::from_builtin(name, args, span)
+            NativeObjectMetadataCallOperation::from_builtin(builtin_name, args, span)
         {
             if let Some(failure) = metadata_call.preflight_failure() {
                 return Err(failure.diagnostic(NativeCallBackend::Llvm));
@@ -11639,7 +11639,7 @@ impl LlvmGenerator {
         }
 
         let value = self.emit_expr(&args[0])?;
-        if name.eq_ignore_ascii_case("extension_loaded") {
+        if builtin_name.eq_ignore_ascii_case("extension_loaded") {
             return self.emit_native_text_membership_bool(
                 value,
                 NativeTextSurface::ExtensionName,
@@ -11650,10 +11650,10 @@ impl LlvmGenerator {
             );
         }
         if let IrValue::NativeReference(reference) = value {
-            if let Some(predicate_tag) = native_value_type_predicate_tag(name) {
+            if let Some(predicate_tag) = native_value_type_predicate_tag(builtin_name) {
                 return Ok(self.emit_native_reference_type_predicate(reference, predicate_tag));
             }
-            if let Some(type_name_tag) = native_value_type_name_tag(name) {
+            if let Some(type_name_tag) = native_value_type_name_tag(builtin_name) {
                 return Ok(IrValue::NativeValue(
                     self.emit_native_reference_type_name(reference, type_name_tag),
                 ));
@@ -11665,7 +11665,7 @@ impl LlvmGenerator {
         if matches!(value, IrValue::NativeValue(_)) {
             return Err(self.unsupported_direct_call(span, NativeCallBlocker::ReturnValueOwnership));
         }
-        match name.to_ascii_lowercase().as_str() {
+        match builtin_name.to_ascii_lowercase().as_str() {
             "gettype" => Ok(IrValue::String(llvm_gettype_name(&value).to_string())),
             "get_debug_type" => Ok(IrValue::String(llvm_debug_type_name(&value).to_string())),
             "is_null" => Ok(IrValue::Bool(matches!(value, IrValue::Null))),
@@ -18334,11 +18334,19 @@ impl CGenerator {
     }
 
     fn declared_class_key(name: &str) -> String {
-        name.to_ascii_lowercase()
+        name.strip_prefix('\\').unwrap_or(name).to_ascii_lowercase()
     }
 
     fn declared_method_key(name: &str) -> String {
         name.to_ascii_lowercase()
+    }
+
+    fn c_bool_expr(value: CValue) -> Option<String> {
+        match value {
+            CValue::Bool(value) => Some(if value { "true" } else { "false" }.to_string()),
+            CValue::BoolExpr(value) | CValue::ComparisonDecision(value) => Some(value),
+            _ => None,
+        }
     }
 
     fn register_top_level_declared_classes(&mut self, statements: &[Stmt]) -> CompileResult<()> {
@@ -20588,6 +20596,7 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeCallableArrayParts phpc_native_value_callable_array_parts(phpc_NativeValueHandle value);\n");
                 output.push_str("extern void phpc_native_callable_array_parts_free(phpc_NativeCallableArrayParts parts);\n");
                 output.push_str("extern _Bool phpc_native_value_dynamic_call_name_matches(phpc_NativeValueHandle value, const uint8_t *name_ptr, size_t name_len);\n");
+                output.push_str("extern _Bool phpc_native_value_dynamic_class_name_matches(phpc_NativeValueHandle value, const uint8_t *name_ptr, size_t name_len);\n");
                 output.push_str("extern void phpc_native_value_dynamic_call_failure_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *reason_ptr, size_t reason_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_closure_helpers {
@@ -20620,6 +20629,7 @@ impl CGenerator {
             }
             if self.uses_native_class_metadata_exists {
                 output.push_str("extern bool phpc_native_value_class_metadata_exists_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle member, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle member, uint8_t operation, bool autoload, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_class_metadata_value {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_class_metadata_value_with_diagnostic(phpc_NativeValueHandle subject, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -21431,7 +21441,7 @@ impl CGenerator {
             let (candidate_name, candidate_name_len) =
                 self.emit_call_type_static_bytes("declared_class_match_name_bytes", &class.name);
             self.body.push(format!(
-                "if (!{matched} && phpc_native_value_dynamic_call_name_matches({}, {candidate_name}, {candidate_name_len})) {{",
+                "if (!{matched} && phpc_native_value_dynamic_class_name_matches({}, {candidate_name}, {candidate_name_len})) {{",
                 class_name_value.handle
             ));
             self.body.push(format!("{matched} = 1;"));
@@ -29349,9 +29359,7 @@ impl CGenerator {
         }
 
         match stmt {
-            Stmt::Namespace { span, .. } | Stmt::Use { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_NAMESPACE_REJECTION))
-            }
+            Stmt::Namespace { .. } | Stmt::Use { .. } => Ok(()),
             Stmt::Echo { exprs, .. } => {
                 for (index, expr) in exprs.iter().enumerate() {
                     match self.emit_native_diagnostic_result_output_expr_statement(expr) {
@@ -29802,8 +29810,8 @@ impl CGenerator {
             Expr::GlobalConstant { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION))
             }
-            Expr::ClassNameConstant { span, .. }
-            | Expr::SelfClassNameConstant { span }
+            Expr::ClassNameConstant { class_name, .. } => Ok(CValue::String(class_name.clone())),
+            Expr::SelfClassNameConstant { span }
             | Expr::ParentClassNameConstant { span }
             | Expr::StaticClassNameConstant { span } => {
                 Err(self.unsupported(*span, ASSEMBLY_CLASS_NAME_CONSTANT_REJECTION))
@@ -30151,8 +30159,14 @@ impl CGenerator {
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("is_callable") => {
                 self.emit_is_callable_call(args, *span)
             }
-            Expr::Call { name, args, span } if is_native_type_introspection_builtin(name) => {
-                self.emit_native_type_introspection_call(name, args, *span)
+            Expr::Call { name, args, span }
+                if is_native_type_introspection_builtin(name)
+                    && !(name.contains('\\')
+                        && self
+                            .user_functions
+                            .contains_key(&Self::user_function_key(name))) =>
+            {
+                self.emit_native_type_introspection_call(php_unqualified_name(name), args, *span)
             }
             Expr::Call { name, args, span } if is_object_metadata_builtin(name) => {
                 self.emit_native_object_metadata_call(name, args, *span)
@@ -39178,8 +39192,9 @@ impl CGenerator {
         args: &[Expr],
         span: Span,
     ) -> CompileResult<CValue> {
+        let builtin_name = php_unqualified_name(name);
         if args.len() == 1 {
-            if let Some(predicate_tag) = native_value_type_predicate_tag(name) {
+            if let Some(predicate_tag) = native_value_type_predicate_tag(builtin_name) {
                 if self.expression_can_reach_native_reference_slot(&args[0]) {
                     let value =
                         self.materialize_native_value_reference_slot_operand(&args[0], "")?;
@@ -39189,7 +39204,7 @@ impl CGenerator {
                     return Ok(self.emit_native_value_type_predicate(value, predicate_tag));
                 }
             }
-            if let Some(type_name_tag) = native_value_type_name_tag(name) {
+            if let Some(type_name_tag) = native_value_type_name_tag(builtin_name) {
                 if self.expression_can_reach_native_reference_slot(&args[0]) {
                     let value =
                         self.materialize_native_value_reference_slot_operand(&args[0], "")?;
@@ -39208,7 +39223,7 @@ impl CGenerator {
         }
 
         if let Some(metadata_call) =
-            NativeObjectMetadataCallOperation::from_builtin(name, args, span)
+            NativeObjectMetadataCallOperation::from_builtin(builtin_name, args, span)
         {
             if let Some(failure) = metadata_call.preflight_failure() {
                 return Err(failure.diagnostic(NativeCallBackend::Assembly));
@@ -39252,7 +39267,7 @@ impl CGenerator {
         }
 
         let value = self.emit_expr(&args[0])?;
-        if let Some(predicate_tag) = native_value_type_predicate_tag(name) {
+        if let Some(predicate_tag) = native_value_type_predicate_tag(builtin_name) {
             if matches!(
                 &value,
                 CValue::NativeValueHandle(_) | CValue::NativeReferenceHandle(_)
@@ -39268,7 +39283,7 @@ impl CGenerator {
                 return Ok(self.emit_native_value_type_predicate_slot(value, predicate_tag));
             }
         }
-        if let Some(type_name_tag) = native_value_type_name_tag(name) {
+        if let Some(type_name_tag) = native_value_type_name_tag(builtin_name) {
             if matches!(
                 &value,
                 CValue::NativeValueHandle(_) | CValue::NativeReferenceHandle(_)
@@ -39291,7 +39306,7 @@ impl CGenerator {
             &value,
             CValue::NativeValueHandle(_) | CValue::NativeReferenceHandle(_)
         ) {
-            if name.eq_ignore_ascii_case("extension_loaded") {
+            if builtin_name.eq_ignore_ascii_case("extension_loaded") {
                 let candidates = native_text_membership_candidates(COMPAT_LOADED_EXTENSION_NAMES);
                 return self.emit_native_text_membership_bool(
                     value,
@@ -39305,7 +39320,7 @@ impl CGenerator {
             }
             return Err(self.unsupported_direct_call(span, NativeCallBlocker::ReturnValueOwnership));
         }
-        match name.to_ascii_lowercase().as_str() {
+        match builtin_name.to_ascii_lowercase().as_str() {
             "gettype" => Ok(CValue::String(c_gettype_name(&value).to_string())),
             "get_debug_type" => Ok(CValue::String(c_debug_type_name(&value).to_string())),
             "is_null" => Ok(CValue::Bool(matches!(value, CValue::Null))),
@@ -39364,6 +39379,7 @@ impl CGenerator {
         args: &[Expr],
         span: Span,
     ) -> CompileResult<CValue> {
+        let builtin_name = php_unqualified_name(builtin_name);
         if !(1..=2).contains(&args.len()) {
             return Err(
                 self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
@@ -39380,23 +39396,25 @@ impl CGenerator {
             return Err(self.unsupported(span, ASSEMBLY_OBJECT_METADATA_REJECTION));
         }
 
-        if let Some(autoload) = args.get(1) {
-            let autoload = self.emit_expr(autoload)?;
-            if !matches!(autoload, CValue::Bool(_) | CValue::BoolExpr(_)) {
-                return Err(self
-                    .unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup));
-            }
-        }
-
         if !builtin_name.eq_ignore_ascii_case("class_exists") {
             return Ok(CValue::Bool(false));
         }
+
+        let autoload = if let Some(autoload) = args.get(1) {
+            let autoload = self.emit_expr(autoload)?;
+            Self::c_bool_expr(autoload).ok_or_else(|| {
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            })?
+        } else {
+            "true".to_string()
+        };
 
         Ok(self.emit_native_class_metadata_exists_value(
             name,
             None,
             native_class_metadata_exists_operation_tag(builtin_name)
                 .expect("class_exists operation tag is defined"),
+            Some(autoload),
             span,
         )?)
     }
@@ -39479,6 +39497,7 @@ impl CGenerator {
             object_or_class,
             Some(member),
             operation,
+            None,
             span,
         )?)
     }
@@ -39488,6 +39507,7 @@ impl CGenerator {
         subject: CValue,
         member: Option<CValue>,
         operation: &'static str,
+        autoload: Option<String>,
         span: Span,
     ) -> CompileResult<CValue> {
         self.uses_native_string_helpers = true;
@@ -39501,11 +39521,28 @@ impl CGenerator {
         let result = self.next_native_name("class_metadata_exists");
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
-        self.body.push(format!(
-            "bool {result} = phpc_native_value_class_metadata_exists_with_diagnostic({subject}, {member}, {operation}, &{diagnostic});"
-        ));
-        self.emit_report_native_diagnostic(&diagnostic);
-        if member != "(phpc_NativeValueHandle){0}" {
+        let member_needs_free = member != "(phpc_NativeValueHandle){0}";
+        let mut diagnostic_cleanup = String::new();
+        if member_needs_free {
+            diagnostic_cleanup.push_str(&format!("phpc_native_value_free({member});"));
+        }
+        diagnostic_cleanup.push_str(&format!("phpc_native_value_free({subject});"));
+        if let Some(autoload) = autoload {
+            self.body.push(format!(
+                "bool {result} = phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic({subject}, {member}, {operation}, {autoload}, &{diagnostic});"
+            ));
+            let report_call = c_diagnostic_report_call(&diagnostic);
+            let error_exit = self.native_error_exit(&diagnostic_cleanup);
+            self.body.push(format!(
+                "if ({diagnostic}.ptr != NULL) {{ {report_call} {diagnostic}.ptr = NULL; {error_exit} }}"
+            ));
+        } else {
+            self.body.push(format!(
+                "bool {result} = phpc_native_value_class_metadata_exists_with_diagnostic({subject}, {member}, {operation}, &{diagnostic});"
+            ));
+            self.emit_report_native_diagnostic(&diagnostic);
+        }
+        if member_needs_free {
             self.body.push(format!("phpc_native_value_free({member});"));
         }
         self.body
@@ -46664,7 +46701,7 @@ fn is_array_builtin(name: &str) -> bool {
 
 fn is_native_type_introspection_builtin(name: &str) -> bool {
     matches!(
-        name.to_ascii_lowercase().as_str(),
+        php_unqualified_name(name).to_ascii_lowercase().as_str(),
         "gettype"
             | "is_null"
             | "is_bool"
@@ -46699,20 +46736,20 @@ fn is_exit_construct_name(name: &str) -> bool {
 
 fn is_native_metadata_exists_builtin(name: &str) -> bool {
     matches!(
-        name.to_ascii_lowercase().as_str(),
+        php_unqualified_name(name).to_ascii_lowercase().as_str(),
         "class_exists" | "interface_exists" | "trait_exists" | "enum_exists"
     )
 }
 
 fn is_native_member_metadata_exists_builtin(name: &str) -> bool {
     matches!(
-        name.to_ascii_lowercase().as_str(),
+        php_unqualified_name(name).to_ascii_lowercase().as_str(),
         "property_exists" | "method_exists"
     )
 }
 
 fn native_class_metadata_exists_operation_tag(name: &str) -> Option<&'static str> {
-    match name.to_ascii_lowercase().as_str() {
+    match php_unqualified_name(name).to_ascii_lowercase().as_str() {
         "class_exists" => Some("0"),
         "method_exists" => Some("1"),
         "property_exists" => Some("2"),
@@ -46735,9 +46772,13 @@ fn native_class_metadata_value_operation_tag(
 
 fn is_native_relationship_metadata_builtin(name: &str) -> bool {
     matches!(
-        name.to_ascii_lowercase().as_str(),
+        php_unqualified_name(name).to_ascii_lowercase().as_str(),
         "is_a" | "is_subclass_of"
     )
+}
+
+fn php_unqualified_name(name: &str) -> &str {
+    name.rsplit('\\').next().unwrap_or(name)
 }
 
 fn is_builtin_class_name(name: &str) -> bool {

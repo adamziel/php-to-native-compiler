@@ -117,7 +117,7 @@ const NATIVE_DECLARED_CLASS_OBJECT_SOURCE: &str = concat!(
     "$box = new Box();\n",
     "echo class_exists(\"Box\") ? \"Y\" : \"N\";\n",
     "echo class_exists(\"packet\") ? \"Y\" : \"N\";\n",
-    "echo class_exists(\"Missing\") ? \"Y\" : \"N\";\n",
+    "echo class_exists(\"Missing\", false) ? \"Y\" : \"N\";\n",
     "echo \"|\";\n",
     "echo is_object($box) ? \"object\" : \"not\";\n",
     "echo \":\";\n",
@@ -2997,6 +2997,146 @@ fn emit_exe_links_and_runs_user_class_value_metadata_registry_program() {
 }
 
 #[test]
+fn native_executable_c_source_lowers_namespace_alias_class_policy_boundary() {
+    let program = parse(concat!(
+        "<?php\n",
+        "namespace App\\Core;\n",
+        "use App\\Core\\Service as ImportedService;\n",
+        "class Base { public $baseSlot; }\n",
+        "class Service extends Base { public $name; public static function label($value) { return $value . \"!\"; } }\n",
+        "$class = \"\\\\App\\\\Core\\\\Service\";\n",
+        "$service = new ImportedService();\n",
+        "$dynamic = new $class();\n",
+        "echo ImportedService::class;\n",
+        "echo $service instanceof Base ? \"B\" : \"-\";\n",
+        "echo $dynamic instanceof ImportedService ? \"S\" : \"-\";\n",
+        "echo ImportedService::label(\"go\");\n",
+        "echo class_exists(ImportedService::class) ? \"Y\" : \"N\";\n",
+        "echo class_exists(\"Missing\", false) ? \"Y\" : \"N\";\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_declare_user_class_bytes")
+            && source.contains("phpc_native_value_new_declared_class_with_relationships_and_diagnostic")
+            && source.contains("phpc_native_value_dynamic_class_name_matches")
+            && source.contains("phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic"),
+        "namespace/import class policy should lower through generated-C class metadata and class-name helpers:\n{source}"
+    );
+    assert!(
+        !source.contains("namespace lowering rejects")
+            && !source.contains("class-name constant lowering rejects")
+            && !source.contains("object-instantiation lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_namespace_alias_class_policy_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "namespace App\\Core;\n",
+        "use App\\Core\\Service as ImportedService;\n",
+        "class Base { public $baseSlot; }\n",
+        "class Service extends Base { public $name; public static function label($value) { return $value . \"!\"; } }\n",
+        "$class = \"\\\\App\\\\Core\\\\Service\";\n",
+        "$service = new ImportedService();\n",
+        "$dynamic = new $class();\n",
+        "echo ImportedService::class, \"|\";\n",
+        "echo $service instanceof Base ? \"B\" : \"-\";\n",
+        "echo $dynamic instanceof ImportedService ? \"S\" : \"-\";\n",
+        "echo \"|\";\n",
+        "echo ImportedService::label(\"go\"), \"|\";\n",
+        "echo class_exists(ImportedService::class) ? \"Y\" : \"N\";\n",
+        "echo class_exists(\"Missing\", false) ? \"Y\" : \"N\";\n",
+        "echo \"\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("namespace_alias_class_policy", source);
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run namespace alias class-policy executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "App\\Core\\Service|BS|go!|YN\n"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_namespaced_class_exists_user_function_takes_exact_precedence() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "namespace App\\Core;\n",
+        "function class_exists($name) { return \"local:\" . $name; }\n",
+        "echo class_exists(\"Widget\"), \"\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("namespaced_class_exists_exact_user_function", source);
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run namespaced class_exists exact user function executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "local:Widget\n");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_class_exists_missing_default_reports_autoload_boundary() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = "<?php\nclass Loaded {}\necho class_exists(\"Missing\");\n";
+    let (source_path, output_path) =
+        compile_native_link_fixture("class_exists_missing_autoload_boundary", source);
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run class_exists autoload-boundary executable");
+    assert!(
+        !run.status.success(),
+        "class_exists missing should report autoload boundary"
+    );
+    assert!(
+        String::from_utf8_lossy(&run.stderr).contains(
+            "class_exists(): generated-native autoload for missing classes is not implemented"
+        ),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn native_executable_c_source_routes_dynamic_declared_class_new_through_declared_allocation_helpers(
 ) {
     let program = parse(NATIVE_DECLARED_CLASS_DYNAMIC_NEW_SOURCE).unwrap();
@@ -3012,8 +3152,8 @@ fn native_executable_c_source_routes_dynamic_declared_class_new_through_declared
         "dynamic new should keep declared-child allocation on the ancestor-aware allocation helper:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_value_dynamic_call_name_matches"),
-        "dynamic new should materialize class-name values and match generated declared-class candidates through the shared dynamic-name helper:\n{source}"
+        source.contains("phpc_native_value_dynamic_class_name_matches"),
+        "dynamic new should materialize class-name values and match generated declared-class candidates through the shared class-name helper:\n{source}"
     );
     assert!(
         body.matches("phpc_NativeValueHandle constructor_arg_values_")
@@ -3645,8 +3785,8 @@ fn native_executable_c_source_routes_dynamic_declared_constructors_through_frame
     let body = main_body(&source);
 
     assert!(
-        source.contains("phpc_native_value_dynamic_call_name_matches"),
-        "dynamic class-name new should match generated declared-class candidates through the shared dynamic-name helper:\n{source}"
+        source.contains("phpc_native_value_dynamic_class_name_matches"),
+        "dynamic class-name new should match generated declared-class candidates through the shared class-name helper:\n{source}"
     );
     assert!(
         body.matches("constructor_status").count() >= 4
