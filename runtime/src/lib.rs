@@ -564,6 +564,7 @@ const NATIVE_VALUE_ARRAY_QUERY_FILL_KEYS: u8 = 7;
 const NATIVE_VALUE_ARRAY_QUERY_COMBINE: u8 = 8;
 const NATIVE_VALUE_ARRAY_QUERY_CHANGE_KEY_CASE: u8 = 9;
 const NATIVE_VALUE_ARRAY_QUERY_COLUMN: u8 = 10;
+const NATIVE_VALUE_ARRAY_QUERY_COUNT: u8 = 11;
 const NATIVE_ARRAY_QUERY_STRICT: u8 = 1;
 const NATIVE_REFERENCE_PREDICATE_ISSET: u8 = 0;
 const NATIVE_REFERENCE_PREDICATE_EMPTY: u8 = 1;
@@ -617,6 +618,7 @@ enum NativeValueArrayCallbackOperation {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeValueArrayQueryOperation {
+    Count,
     KeysMatching,
     Contains,
     Search,
@@ -827,6 +829,7 @@ impl NativeValueArrayCallbackOperation {
 impl NativeValueArrayQueryOperation {
     fn from_tag(operation: u8) -> Result<Self, RuntimeError> {
         match operation {
+            NATIVE_VALUE_ARRAY_QUERY_COUNT => Ok(Self::Count),
             NATIVE_VALUE_ARRAY_QUERY_KEYS_MATCHING => Ok(Self::KeysMatching),
             NATIVE_VALUE_ARRAY_QUERY_CONTAINS => Ok(Self::Contains),
             NATIVE_VALUE_ARRAY_QUERY_SEARCH => Ok(Self::Search),
@@ -846,6 +849,7 @@ impl NativeValueArrayQueryOperation {
 
     fn callable(self) -> &'static str {
         match self {
+            Self::Count => "count()",
             Self::KeysMatching => "array_keys()",
             Self::Contains => "in_array()",
             Self::Search => "array_search()",
@@ -862,6 +866,7 @@ impl NativeValueArrayQueryOperation {
 
     fn array_argument_label(self) -> &'static str {
         match self {
+            Self::Count => "argument",
             Self::Column => "first argument",
             Self::KeysMatching
             | Self::Contains
@@ -884,7 +889,12 @@ impl NativeValueArrayQueryOperation {
             | Self::FillKeys
             | Self::Combine
             | Self::Column => 1,
-            Self::Flip | Self::CountValues | Self::Sum | Self::Product | Self::ChangeKeyCase => 0,
+            Self::Count
+            | Self::Flip
+            | Self::CountValues
+            | Self::Sum
+            | Self::Product
+            | Self::ChangeKeyCase => 0,
         }
     }
 
@@ -897,7 +907,7 @@ impl NativeValueArrayQueryOperation {
             | Self::Combine
             | Self::ChangeKeyCase => 1,
             Self::Column => 2,
-            Self::Flip | Self::CountValues | Self::Sum | Self::Product => 0,
+            Self::Count | Self::Flip | Self::CountValues | Self::Sum | Self::Product => 0,
         }
     }
 
@@ -19091,6 +19101,7 @@ unsafe fn native_value_array_query_operands_operation_value(
     }
 
     match operation {
+        NativeValueArrayQueryOperation::Count => Ok(Value::Int(array.len() as i64)),
         NativeValueArrayQueryOperation::KeysMatching => {
             let search = unsafe { native_value_array_query_operand(operation, operands, 0)? };
             let keys = if strict {
@@ -60309,6 +60320,18 @@ mod tests {
         let index_one = phpc_native_value_from_scalar(phpc_native_int(1));
         let mut diagnostic = NativeDiagnosticHandle::null();
 
+        let count = unsafe {
+            phpc_native_value_array_query_operation_with_diagnostic(
+                array_handle,
+                NativeValueHandle::null(),
+                0,
+                NATIVE_VALUE_ARRAY_QUERY_COUNT,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(native_value_echo_bytes_for_test(count), b"4");
+
         let loose_keys = unsafe {
             phpc_native_value_array_query_operation_with_diagnostic(
                 array_handle,
@@ -60740,6 +60763,7 @@ mod tests {
         unsafe { phpc_native_value_free(loose_second) };
         unsafe { phpc_native_value_free(loose_first) };
         unsafe { phpc_native_value_free(loose_keys) };
+        unsafe { phpc_native_value_free(count) };
         unsafe { phpc_native_value_free(index_one) };
         unsafe { phpc_native_value_free(index_zero) };
         unsafe { phpc_native_value_free(empty_string) };

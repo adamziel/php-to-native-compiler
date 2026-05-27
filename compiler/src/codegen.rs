@@ -2712,6 +2712,7 @@ enum NativeValueArrayCallbackBuiltin {
 
 #[derive(Clone, Copy)]
 enum NativeValueArrayQueryBuiltin {
+    Count,
     KeysMatching,
     Contains,
     Search,
@@ -2767,6 +2768,7 @@ impl NativeValueArrayCallbackBuiltin {
 impl NativeValueArrayQueryBuiltin {
     fn operation_tag(self) -> &'static str {
         match self {
+            Self::Count => "PHPC_NATIVE_VALUE_ARRAY_QUERY_COUNT",
             Self::KeysMatching => "PHPC_NATIVE_VALUE_ARRAY_QUERY_KEYS_MATCHING",
             Self::Contains => "PHPC_NATIVE_VALUE_ARRAY_QUERY_CONTAINS",
             Self::Search => "PHPC_NATIVE_VALUE_ARRAY_QUERY_SEARCH",
@@ -2830,6 +2832,7 @@ fn native_value_array_query_builtin(
     args: &[Expr],
 ) -> Option<NativeValueArrayQueryBuiltin> {
     match name.to_ascii_lowercase().as_str() {
+        "count" if args.len() == 1 => Some(NativeValueArrayQueryBuiltin::Count),
         "array_keys" if (2..=3).contains(&args.len()) => {
             Some(NativeValueArrayQueryBuiltin::KeysMatching)
         }
@@ -23070,6 +23073,7 @@ impl CGenerator {
                     output.push_str("#define PHPC_NATIVE_VALUE_ARRAY_QUERY_COMBINE 8\n");
                     output.push_str("#define PHPC_NATIVE_VALUE_ARRAY_QUERY_CHANGE_KEY_CASE 9\n");
                     output.push_str("#define PHPC_NATIVE_VALUE_ARRAY_QUERY_COLUMN 10\n");
+                    output.push_str("#define PHPC_NATIVE_VALUE_ARRAY_QUERY_COUNT 11\n");
                     output.push_str("#define PHPC_NATIVE_ARRAY_QUERY_STRICT 1\n");
                 }
                 output.push_str("#define PHPC_NATIVE_VALUE_OPERATION_OK 0\n");
@@ -47505,7 +47509,8 @@ impl CGenerator {
             NativeValueArrayQueryBuiltin::Flip
             | NativeValueArrayQueryBuiltin::CountValues
             | NativeValueArrayQueryBuiltin::Sum
-            | NativeValueArrayQueryBuiltin::Product => {
+            | NativeValueArrayQueryBuiltin::Product
+            | NativeValueArrayQueryBuiltin::Count => {
                 let [subject] = args else {
                     return Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION));
                 };

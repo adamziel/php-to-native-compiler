@@ -26171,6 +26171,80 @@ fn emit_exe_links_and_runs_interface_runtime_registry_value_metadata_program() {
     let _ = fs::remove_file(output_path);
 }
 
+const NATIVE_INTERFACE_METADATA_ARRAY_CONSUMERS_SOURCE: &str = concat!(
+    "<?php\n",
+    "interface NativeInterfaceMetadataConsumerRoot {}\n",
+    "interface NativeInterfaceMetadataConsumerChild extends NativeInterfaceMetadataConsumerRoot {}\n",
+    "interface NativeInterfaceMetadataConsumerPeer {}\n",
+    "class NativeInterfaceMetadataConsumerBase implements NativeInterfaceMetadataConsumerPeer {}\n",
+    "class NativeInterfaceMetadataConsumerService extends NativeInterfaceMetadataConsumerBase implements NativeInterfaceMetadataConsumerChild {}\n",
+    "$declared = get_declared_interfaces();\n",
+    "echo count($declared);\n",
+    "echo \"|\";\n",
+    "echo in_array(\"NativeInterfaceMetadataConsumerChild\", $declared, true) ? \"has-child\" : \"missing-child\";\n",
+    "echo \"|\";\n",
+    "$implements = class_implements(\"nativeinterfacemetadataconsumerservice\", false);\n",
+    "echo count($implements);\n",
+    "echo \"|\";\n",
+    "echo in_array(\"NativeInterfaceMetadataConsumerPeer\", $implements, true) ? \"has-peer\" : \"missing-peer\";\n",
+    "echo \"|\";\n",
+    "echo array_search(\"NativeInterfaceMetadataConsumerChild\", $implements, true);\n",
+    "echo \"\\n\";\n",
+);
+
+const NATIVE_INTERFACE_METADATA_ARRAY_CONSUMERS_STDOUT: &str =
+    "3|has-child|3|has-peer|NativeInterfaceMetadataConsumerChild\n";
+
+#[test]
+fn native_executable_c_source_routes_interface_metadata_array_consumers_through_value_query_boundary(
+) {
+    let program = parse(NATIVE_INTERFACE_METADATA_ARRAY_CONSUMERS_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_value_array_query_operation_with_diagnostic")
+            && body.contains("PHPC_NATIVE_VALUE_ARRAY_QUERY_COUNT")
+            && body.contains("PHPC_NATIVE_VALUE_ARRAY_QUERY_CONTAINS")
+            && body.contains("PHPC_NATIVE_VALUE_ARRAY_QUERY_SEARCH")
+            && body.contains("phpc_native_value_class_metadata_value_with_diagnostic"),
+        "metadata arrays should flow into the shared native value array query consumer boundary:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_array_len("),
+        "count() over metadata arrays should not use the native array-handle-only ABI:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_interface_metadata_array_consumer_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "interface_metadata_array_consumers",
+        NATIVE_INTERFACE_METADATA_ARRAY_CONSUMERS_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run interface metadata array consumer executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        NATIVE_INTERFACE_METADATA_ARRAY_CONSUMERS_STDOUT
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
 #[test]
 fn native_executable_c_source_blocks_unknown_named_dynamic_method_fallback_until_declared_hit_shape_is_known(
 ) {
