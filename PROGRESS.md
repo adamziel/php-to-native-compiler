@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 15:01 CEST
+Updated: 2026-05-27 15:09 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -29,6 +29,16 @@ metadata boundary. Dynamic paths, side-effecting includes, runtime include
 timing, include return values, `_once` runtime de-duplication, include_path and
 stream wrappers, autoload discovery, and LLVM/ASM parity remain blocked behind
 explicit diagnostics.
+
+Recent source correction `f72c212e` stabilizes native assembly callable
+fallback generation. Generated C native-runtime headers now always declare
+`phpc_NativeScalarValue` when native-runtime prototypes are emitted, fixing
+cc-fallback paths whose unconditional scalar-value prototypes previously
+depended on a conditional typedef. The callable native-assembly filter and
+compact native callable lookup-table IR filter pass on primary. This also
+refreshes focused callable lookup assembly summaries to account for valid
+`printf` output from folded lookup-result fixtures and does not move the coarse
+progress bars.
 
 Recent source commit `a7dcd288` routes selected generated-C interface method
 dispatch through shared metadata and source-call boundaries. Declared user
