@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 23:54 CEST
+Updated: 2026-05-27 23:58 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,13 +19,13 @@ Overall integrated-roadmap progress: **93%** `[##################--]`
 
 Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `8231006f` routes method-frame object
-property access through runtime class-context checks. Generated C now preserves
-private/protected declared property visibility for method frames without
-metadata filtering ladders or public-only shortcuts.
+Latest accounted source capability: `b245b45f` preserves PHP's direct
+by-reference `foreach` post-loop alias for generated C. Non-empty direct array
+lvalue loops leave the loop variable bound to the last iterated slot, while
+empty-loop behavior preserves the previous variable value.
 
 Current blockers remain concentrated in broader array COW/reference edges,
-foreach by-reference lifetime, include exception/diagnostic propagation,
+remaining foreach/reference owner breadth, include exception/diagnostic propagation,
 generated-frame `class_alias()` calls, remaining trait precedence parity,
 cleanup ordering, non-C backend parity, and exact PHP diagnostic/source-order
 behavior.
@@ -34,6 +34,7 @@ Recent primary source ledger:
 
 | Commit | Compact capability | Focused proof |
 | --- | --- | --- |
+| `b245b45f` | Generated-C direct by-reference `foreach` now preserves the non-empty loop-variable alias to the last iterated array slot and keeps empty-loop prior-value behavior. | Native-link foreach source/link suite, interpreter by-reference foreach source-of-truth suite, fmt, diff. Gate log: `state/logs/phpc-primary-foreach-alias-8acb08f6-20260527.gates.log` sha256 `ef9d80d906f5ce0f688ba54667a595b6abc014aaedfb0c9fa6309686a443f3d5`. |
 | `8231006f` | Method-frame object-property reads/writes/inspection now carry caller class context into the runtime property ABI, preserving private/protected visibility for declared properties. | Runtime context ABI, callable-table context lookup, generated-C source proof, linked private `$this` assignment, private ancestor metadata regression, declared property/class-method regressions, corrected nonzero filters, fmt, diff. Gate log: `state/logs/phpc-primary-visibility-context-5c0ba5af-20260527.gates.log` sha256 `35eac2413cf3379d7db9063fbfa986df007e803cc007f4e740b08d4b7796ba71`. |
 | `e95e5101` | Dynamic-name object-property writes now route through the shared magic-aware mutation boundary for valid `__set()` methods. | Generated-C source proof, linked executable `__set` proof, adjacent magic runtime, malformed metadata, reference-source blockers, fmt, diff. Gate log: `state/logs/phpc-primary-magic-set-31da596f-20260527.gates.log` sha256 `f03a9a7dc46f73134b3eaff7c568d8206b088079c6de3a353bcb69c5253449e0`. |
 | `ff6c0af4` | Direct declared static-property reference assignment now binds real static storage reference cells. | Runtime ABI, generated-C source, linked executable aliasing, static-property reference/offset adjacency, object-property reference adjacency, fmt, diff. Gate log: `state/logs/phpc-primary-static-prop-ref-34fe4011-20260527.gates.log` sha256 `f66ba7559e112f7aabbd011a161171917bdeb99eab0efa089a90433ef3cdc1e5`. |
