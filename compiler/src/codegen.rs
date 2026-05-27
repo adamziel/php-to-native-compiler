@@ -1008,6 +1008,8 @@ enum NativeObjectMetadataCallKind {
     ParentClassValue,
     ClassParentsValue,
     DeclaredClassesValue,
+    DeclaredInterfacesValue,
+    ClassImplementsValue,
     ClassMethodsValue,
     ClassVarsValue,
 }
@@ -1521,6 +1523,8 @@ impl NativeObjectMetadataCallKind {
             "get_parent_class" => Some(Self::ParentClassValue),
             "class_parents" => Some(Self::ClassParentsValue),
             "get_declared_classes" => Some(Self::DeclaredClassesValue),
+            "get_declared_interfaces" => Some(Self::DeclaredInterfacesValue),
+            "class_implements" => Some(Self::ClassImplementsValue),
             "get_class_methods" => Some(Self::ClassMethodsValue),
             "get_class_vars" => Some(Self::ClassVarsValue),
             _ => None,
@@ -1533,8 +1537,8 @@ impl NativeObjectMetadataCallKind {
             Self::MemberMetadataExists => arity == 2,
             Self::RelationshipMetadata => (2..=3).contains(&arity),
             Self::ParentClassValue | Self::ClassMethodsValue | Self::ClassVarsValue => arity == 1,
-            Self::ClassParentsValue => (1..=2).contains(&arity),
-            Self::DeclaredClassesValue => arity == 0,
+            Self::ClassParentsValue | Self::ClassImplementsValue => (1..=2).contains(&arity),
+            Self::DeclaredClassesValue | Self::DeclaredInterfacesValue => arity == 0,
         }
     }
 }
@@ -12195,6 +12199,8 @@ impl LlvmGenerator {
                 NativeObjectMetadataCallKind::ParentClassValue
                 | NativeObjectMetadataCallKind::ClassParentsValue
                 | NativeObjectMetadataCallKind::DeclaredClassesValue
+                | NativeObjectMetadataCallKind::DeclaredInterfacesValue
+                | NativeObjectMetadataCallKind::ClassImplementsValue
                 | NativeObjectMetadataCallKind::ClassMethodsValue
                 | NativeObjectMetadataCallKind::ClassVarsValue => Err(self
                     .unsupported_direct_named_call(
@@ -23173,6 +23179,8 @@ impl CGenerator {
             }
             if self.uses_native_user_class_declaration {
                 output.push_str("extern bool phpc_native_declare_user_class_bytes(const uint8_t *ptr, size_t len);\n");
+                output.push_str("extern bool phpc_native_declare_user_interface_bytes(const uint8_t *ptr, size_t len);\n");
+                output.push_str("extern bool phpc_native_declare_user_class_interface_bytes(const uint8_t *class_ptr, size_t class_len, const uint8_t *interface_ptr, size_t interface_len);\n");
                 output.push_str("extern bool phpc_native_declare_user_class_parent_bytes(const uint8_t *class_ptr, size_t class_len, const uint8_t *parent_ptr, size_t parent_len);\n");
                 output.push_str("extern bool phpc_native_declare_user_class_method_bytes(const uint8_t *class_ptr, size_t class_len, const uint8_t *method_ptr, size_t method_len, uint8_t visibility, bool is_static);\n");
                 output.push_str("extern bool phpc_native_declare_user_class_property_bytes(const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, uint8_t visibility, bool is_static);\n");
@@ -35312,7 +35320,30 @@ impl CGenerator {
         Ok(())
     }
 
-    fn emit_native_user_class_declaration(&mut self, class: &ClassDecl) {
+    fn emit_native_user_interface_declaration(&mut self, interface: &InterfaceDecl) {
+        self.uses_native_string_helpers = true;
+        self.uses_native_user_class_declaration = true;
+
+        let interface_index = self.next_static_data;
+        self.next_static_data += 1;
+        let interface_data = format!("phpc_user_interface_name_{interface_index}");
+        self.static_data.push(format!(
+            "static const uint8_t {interface_data}[] = {{{}}};",
+            c_byte_array(interface.name.as_bytes())
+        ));
+        let declared = format!("user_interface_declared_{interface_index}");
+        self.body.push(format!(
+            "bool {declared} = phpc_native_declare_user_interface_bytes({interface_data}, (size_t){});",
+            interface.name.len()
+        ));
+        self.body.push(format!("(void){declared};"));
+    }
+
+    fn emit_native_user_class_declaration(
+        &mut self,
+        class: &ClassDecl,
+        declared_class: &CDeclaredClass,
+    ) {
         self.uses_native_string_helpers = true;
         self.uses_native_user_class_declaration = true;
 
@@ -35343,6 +35374,23 @@ impl CGenerator {
                 "bool {declared} = phpc_native_declare_user_class_parent_bytes({class_data}, (size_t){}, {parent_data}, (size_t){});",
                 class.name.len(),
                 parent.len()
+            ));
+            self.body.push(format!("(void){declared};"));
+        }
+
+        for interface in &declared_class.interface_names {
+            let interface_index = self.next_static_data;
+            self.next_static_data += 1;
+            let interface_data = format!("phpc_user_class_interface_name_{interface_index}");
+            self.static_data.push(format!(
+                "static const uint8_t {interface_data}[] = {{{}}};",
+                c_byte_array(interface.as_bytes())
+            ));
+            let declared = format!("user_class_interface_declared_{interface_index}");
+            self.body.push(format!(
+                "bool {declared} = phpc_native_declare_user_class_interface_bytes({class_data}, (size_t){}, {interface_data}, (size_t){});",
+                class.name.len(),
+                interface.len()
             ));
             self.body.push(format!("(void){declared};"));
         }
@@ -37262,6 +37310,7 @@ impl CGenerator {
             Stmt::Interface(interface) => {
                 let key = Self::declared_interface_key(&interface.name);
                 if self.declared_interfaces.contains_key(&key) {
+                    self.emit_native_user_interface_declaration(interface);
                     Ok(())
                 } else {
                     Err(self.unsupported(interface.span, ASSEMBLY_INTERFACE_REJECTION))
@@ -37282,7 +37331,12 @@ impl CGenerator {
                 }
                 let key = Self::declared_class_key(&class.name);
                 if self.declared_classes.contains_key(&key) && !class.is_nested {
-                    self.emit_native_user_class_declaration(class);
+                    let declared_class = self
+                        .declared_classes
+                        .get(&key)
+                        .expect("registered class key has metadata")
+                        .clone();
+                    self.emit_native_user_class_declaration(class, &declared_class);
                     Ok(())
                 } else {
                     Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION))
@@ -50293,6 +50347,8 @@ impl CGenerator {
                 NativeObjectMetadataCallKind::ParentClassValue
                 | NativeObjectMetadataCallKind::ClassParentsValue
                 | NativeObjectMetadataCallKind::DeclaredClassesValue
+                | NativeObjectMetadataCallKind::DeclaredInterfacesValue
+                | NativeObjectMetadataCallKind::ClassImplementsValue
                 | NativeObjectMetadataCallKind::ClassMethodsValue
                 | NativeObjectMetadataCallKind::ClassVarsValue => self
                     .emit_native_class_metadata_value_call(
@@ -50546,6 +50602,8 @@ impl CGenerator {
             NativeObjectMetadataCallKind::ParentClassValue
             | NativeObjectMetadataCallKind::ClassParentsValue
             | NativeObjectMetadataCallKind::DeclaredClassesValue
+            | NativeObjectMetadataCallKind::DeclaredInterfacesValue
+            | NativeObjectMetadataCallKind::ClassImplementsValue
             | NativeObjectMetadataCallKind::ClassMethodsValue
             | NativeObjectMetadataCallKind::ClassVarsValue => self
                 .emit_native_class_metadata_value_call(
@@ -50646,31 +50704,36 @@ impl CGenerator {
         args: &[Expr],
         span: Span,
     ) -> CompileResult<CValue> {
-        let (subject, cleanup) =
-            if matches!(kind, NativeObjectMetadataCallKind::DeclaredClassesValue) {
-                ("(phpc_NativeValueHandle){0}".to_string(), Vec::new())
-            } else {
-                let subject = self.emit_expr(&args[0])?;
-                if !matches!(
-                    subject,
-                    CValue::String(_)
-                        | CValue::StringExpr(_)
-                        | CValue::NativeValueHandle(_)
-                        | CValue::NativeReferenceHandle(_)
-                ) {
-                    return Err(self.unsupported_direct_call(
-                        span,
-                        NativeCallBlocker::ArgumentEvaluationCleanup,
-                    ));
-                }
-                let subject = self.emit_native_value_for_cvalue(subject, span)?;
-                (
-                    subject.clone(),
-                    vec![format!("phpc_native_value_free({subject});")],
-                )
-            };
+        let (subject, cleanup) = if matches!(
+            kind,
+            NativeObjectMetadataCallKind::DeclaredClassesValue
+                | NativeObjectMetadataCallKind::DeclaredInterfacesValue
+        ) {
+            ("(phpc_NativeValueHandle){0}".to_string(), Vec::new())
+        } else {
+            let subject = self.emit_expr(&args[0])?;
+            if !matches!(
+                subject,
+                CValue::String(_)
+                    | CValue::StringExpr(_)
+                    | CValue::NativeValueHandle(_)
+                    | CValue::NativeReferenceHandle(_)
+            ) {
+                return Err(self
+                    .unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup));
+            }
+            let subject = self.emit_native_value_for_cvalue(subject, span)?;
+            (
+                subject.clone(),
+                vec![format!("phpc_native_value_free({subject});")],
+            )
+        };
 
-        if matches!(kind, NativeObjectMetadataCallKind::ClassParentsValue) {
+        if matches!(
+            kind,
+            NativeObjectMetadataCallKind::ClassParentsValue
+                | NativeObjectMetadataCallKind::ClassImplementsValue
+        ) {
             if let Some(autoload) = args.get(1) {
                 let autoload = self.emit_expr(autoload)?;
                 if !matches!(autoload, CValue::Bool(_) | CValue::BoolExpr(_)) {
@@ -59216,6 +59279,8 @@ fn native_class_metadata_value_operation_tag(
         NativeObjectMetadataCallKind::DeclaredClassesValue => Some("2"),
         NativeObjectMetadataCallKind::ClassMethodsValue => Some("3"),
         NativeObjectMetadataCallKind::ClassVarsValue => Some("4"),
+        NativeObjectMetadataCallKind::DeclaredInterfacesValue => Some("5"),
+        NativeObjectMetadataCallKind::ClassImplementsValue => Some("6"),
         _ => None,
     }
 }

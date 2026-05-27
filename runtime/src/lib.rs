@@ -168,6 +168,8 @@ pub enum NativeClassMetadataValueOperation {
     DeclaredClasses = 2,
     ClassMethods = 3,
     ClassVars = 4,
+    DeclaredInterfaces = 5,
+    ClassImplements = 6,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34165,9 +34167,51 @@ fn native_declare_user_class_bytes_result(bytes: &[u8]) -> bool {
             name: bytes.to_vec(),
             lookup_key,
             parent: None,
+            interfaces: Vec::new(),
             methods: Vec::new(),
             properties: Vec::new(),
         });
+        true
+    })
+}
+
+fn native_declare_user_interface_bytes_result(bytes: &[u8]) -> bool {
+    let lookup_key = native_class_metadata_lookup_key(bytes);
+    NATIVE_USER_INTERFACES.with(|interfaces| {
+        let mut interfaces = interfaces.borrow_mut();
+        if interfaces
+            .iter()
+            .any(|interface| interface.lookup_key == lookup_key)
+        {
+            return false;
+        }
+        interfaces.push(NativeUserInterfaceMetadata {
+            name: bytes.to_vec(),
+            lookup_key,
+        });
+        true
+    })
+}
+
+fn native_declare_user_class_interface_bytes_result(class: &[u8], interface: &[u8]) -> bool {
+    let class_key = native_class_metadata_lookup_key(class);
+    let interface_key = native_class_metadata_lookup_key(interface);
+    NATIVE_USER_CLASSES.with(|classes| {
+        let mut classes = classes.borrow_mut();
+        let Some(class) = classes
+            .iter_mut()
+            .find(|class| class.lookup_key == class_key)
+        else {
+            return false;
+        };
+        if class
+            .interfaces
+            .iter()
+            .any(|candidate| native_class_metadata_lookup_key(candidate) == interface_key)
+        {
+            return false;
+        }
+        class.interfaces.push(interface.to_vec());
         true
     })
 }
@@ -34182,6 +34226,44 @@ pub unsafe extern "C" fn phpc_native_declare_user_class_bytes(ptr: *const u8, le
     let result: Result<bool, ()> = (|| unsafe {
         let bytes = native_abi_bytes(ptr, len).ok_or(())?;
         Ok(native_declare_user_class_bytes_result(bytes))
+    })();
+    result.unwrap_or(false)
+}
+
+/// # Safety
+///
+/// `ptr` follows the same pointer/length rules as
+/// `phpc_native_declare_user_class_bytes`. The declared name is stored in the
+/// generated userland interface metadata registry.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_declare_user_interface_bytes(
+    ptr: *const u8,
+    len: usize,
+) -> bool {
+    let result: Result<bool, ()> = (|| unsafe {
+        let bytes = native_abi_bytes(ptr, len).ok_or(())?;
+        Ok(native_declare_user_interface_bytes_result(bytes))
+    })();
+    result.unwrap_or(false)
+}
+
+/// # Safety
+///
+/// Class and interface pointers follow the same pointer/length rules as
+/// `phpc_native_declare_user_class_bytes`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_declare_user_class_interface_bytes(
+    class_ptr: *const u8,
+    class_len: usize,
+    interface_ptr: *const u8,
+    interface_len: usize,
+) -> bool {
+    let result: Result<bool, ()> = (|| unsafe {
+        let class = native_abi_bytes(class_ptr, class_len).ok_or(())?;
+        let interface = native_abi_bytes(interface_ptr, interface_len).ok_or(())?;
+        Ok(native_declare_user_class_interface_bytes_result(
+            class, interface,
+        ))
     })();
     result.unwrap_or(false)
 }
@@ -34432,6 +34514,7 @@ fn native_user_class_metadata_bytes(class_name: &[u8]) -> Option<NativeUserClass
 fn native_user_classes_reset_for_test() {
     NATIVE_USER_CLASSES.with(|classes| classes.borrow_mut().clear());
     NATIVE_USER_CLASS_ALIASES.with(|aliases| aliases.borrow_mut().clear());
+    NATIVE_USER_INTERFACES.with(|interfaces| interfaces.borrow_mut().clear());
 }
 
 fn native_core_class_canonical_name_bytes(classes: &PhpClassTable, name: &[u8]) -> Option<Vec<u8>> {
@@ -34477,6 +34560,28 @@ fn native_user_class_names_bytes() -> Vec<Vec<u8>> {
     })
 }
 
+fn native_user_interface_names_bytes() -> Vec<Vec<u8>> {
+    NATIVE_USER_INTERFACES.with(|interfaces| {
+        interfaces
+            .borrow()
+            .iter()
+            .map(|interface| interface.name.clone())
+            .collect()
+    })
+}
+
+fn native_user_class_interface_names_bytes(class_name: &[u8]) -> Option<Vec<Vec<u8>>> {
+    let class_name = native_user_class_canonical_name_bytes(class_name)?;
+    let class_key = native_class_metadata_lookup_key(&class_name);
+    NATIVE_USER_CLASSES.with(|classes| {
+        classes
+            .borrow()
+            .iter()
+            .find(|class| class.lookup_key == class_key)
+            .map(|class| class.interfaces.clone())
+    })
+}
+
 fn native_class_parent_name_bytes(classes: &PhpClassTable, class_name: &[u8]) -> Option<Vec<u8>> {
     if let Some(class) = classes.lookup_class_bytes(class_name) {
         return class
@@ -34513,6 +34618,48 @@ fn native_class_parent_chain_bytes(
     }
 
     Ok(parents)
+}
+
+fn native_class_implements_interface_names_bytes(
+    classes: &PhpClassTable,
+    class_name: &[u8],
+) -> RuntimeResult<Option<Vec<Vec<u8>>>> {
+    let Some(class_name) = native_class_canonical_name_bytes(classes, class_name) else {
+        return Ok(None);
+    };
+
+    let mut names = Vec::new();
+    let mut seen = HashSet::new();
+    let mut current = Some(class_name);
+    while let Some(class_name) = current {
+        if let Some(class) = classes.lookup_class_bytes(&class_name) {
+            for interface in class.interfaces() {
+                let key = native_class_metadata_lookup_key(interface.as_bytes());
+                if seen.insert(key) {
+                    names.push(interface.as_bytes().to_vec());
+                }
+            }
+            current = class
+                .parent_id()
+                .and_then(|parent_id| classes.get(parent_id))
+                .map(|parent| parent.name().as_bytes().to_vec());
+            continue;
+        }
+
+        if let Some(interfaces) = native_user_class_interface_names_bytes(&class_name) {
+            for interface in interfaces {
+                let key = native_class_metadata_lookup_key(&interface);
+                if seen.insert(key) {
+                    names.push(interface);
+                }
+            }
+            current = native_class_parent_name_bytes(classes, &class_name);
+        } else {
+            current = None;
+        }
+    }
+
+    Ok(Some(names))
 }
 
 fn native_metadata_string_value(bytes: Vec<u8>, context: &'static str) -> RuntimeResult<Value> {
@@ -34721,6 +34868,34 @@ unsafe fn native_value_class_metadata_value(
             for property in properties {
                 let key = native_metadata_array_key(&property, "get_class_vars()")?;
                 array.insert(key, Value::Null);
+            }
+            Ok(Value::Array(array))
+        }
+        tag if tag == NativeClassMetadataValueOperation::DeclaredInterfaces as u8 => {
+            Ok(Value::Array(native_metadata_list_array(
+                native_user_interface_names_bytes(),
+                "get_declared_interfaces()",
+            )?))
+        }
+        tag if tag == NativeClassMetadataValueOperation::ClassImplements as u8 => {
+            let class_name = unsafe {
+                native_value_metadata_object_or_class_name_bytes_argument(
+                    subject,
+                    "class_implements()",
+                )
+            }?;
+            let Some(interfaces) =
+                native_class_implements_interface_names_bytes(&classes, &class_name)?
+            else {
+                return Ok(Value::Bool(false));
+            };
+            let mut array = PhpArray::new();
+            for interface in interfaces {
+                let key = native_metadata_array_key(&interface, "class_implements()")?;
+                array.insert(
+                    key,
+                    native_metadata_string_value(interface, "class_implements()")?,
+                );
             }
             Ok(Value::Array(array))
         }
@@ -37245,8 +37420,15 @@ struct NativeUserClassMetadata {
     name: Vec<u8>,
     lookup_key: Vec<u8>,
     parent: Option<Vec<u8>>,
+    interfaces: Vec<Vec<u8>>,
     methods: Vec<NativeUserClassMethodMetadata>,
     properties: Vec<NativeUserClassPropertyMetadata>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeUserInterfaceMetadata {
+    name: Vec<u8>,
+    lookup_key: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37273,6 +37455,7 @@ thread_local! {
     static NATIVE_OUTPUT_BUFFERS: RefCell<Vec<NativeOutputBuffer>> = RefCell::new(Vec::new());
     static NATIVE_USER_CLASSES: RefCell<Vec<NativeUserClassMetadata>> = RefCell::new(Vec::new());
     static NATIVE_USER_CLASS_ALIASES: RefCell<Vec<NativeUserClassAliasMetadata>> = RefCell::new(Vec::new());
+    static NATIVE_USER_INTERFACES: RefCell<Vec<NativeUserInterfaceMetadata>> = RefCell::new(Vec::new());
 }
 
 #[cfg(test)]
@@ -44142,6 +44325,94 @@ mod tests {
         unsafe { phpc_native_value_free(parents) };
         unsafe { phpc_native_value_free(parent) };
         unsafe { phpc_native_value_free(child) };
+        native_user_classes_reset_for_test();
+    }
+
+    #[test]
+    fn native_user_interface_registry_feeds_interface_value_metadata_surfaces() {
+        native_user_classes_reset_for_test();
+        assert!(native_declare_user_interface_bytes_result(b"RegistryRoot"));
+        assert!(native_declare_user_interface_bytes_result(b"RegistryChild"));
+        assert!(native_declare_user_class_bytes_result(b"RegistryBase"));
+        assert!(native_declare_user_class_interface_bytes_result(
+            b"RegistryBase",
+            b"RegistryRoot",
+        ));
+        assert!(native_declare_user_class_bytes_result(b"RegistryService"));
+        assert!(native_declare_user_class_parent_bytes_result(
+            b"RegistryService",
+            b"RegistryBase",
+        ));
+        assert!(native_declare_user_class_interface_bytes_result(
+            b"RegistryService",
+            b"RegistryRoot",
+        ));
+        assert!(native_declare_user_class_interface_bytes_result(
+            b"RegistryService",
+            b"RegistryChild",
+        ));
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let declared = unsafe {
+            phpc_native_value_class_metadata_value_with_diagnostic(
+                NativeValueHandle::null(),
+                NativeClassMetadataValueOperation::DeclaredInterfaces as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let Some(Value::Array(declared_array)) = (unsafe { declared.as_ref() }) else {
+            panic!("get_declared_interfaces() should return an array");
+        };
+        assert_eq!(
+            declared_array.get(0),
+            Some(&Value::String("RegistryRoot".to_string()))
+        );
+        assert_eq!(
+            declared_array.get(1),
+            Some(&Value::String("RegistryChild".to_string()))
+        );
+
+        let service = NativeValueHandle::from_value(Value::String("registryservice".to_string()));
+        let implements = unsafe {
+            phpc_native_value_class_metadata_value_with_diagnostic(
+                service,
+                NativeClassMetadataValueOperation::ClassImplements as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let Some(Value::Array(implements_array)) = (unsafe { implements.as_ref() }) else {
+            panic!("class_implements() should return an array");
+        };
+        assert_eq!(
+            implements_array.get("RegistryRoot"),
+            Some(&Value::String("RegistryRoot".to_string()))
+        );
+        assert_eq!(
+            implements_array.get("RegistryChild"),
+            Some(&Value::String("RegistryChild".to_string()))
+        );
+
+        let missing = NativeValueHandle::from_value(Value::String("MissingRegistry".to_string()));
+        let missing_result = unsafe {
+            phpc_native_value_class_metadata_value_with_diagnostic(
+                missing,
+                NativeClassMetadataValueOperation::ClassImplements as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { missing_result.as_ref() },
+            Some(&Value::Bool(false))
+        );
+
+        unsafe { phpc_native_value_free(missing_result) };
+        unsafe { phpc_native_value_free(missing) };
+        unsafe { phpc_native_value_free(implements) };
+        unsafe { phpc_native_value_free(service) };
+        unsafe { phpc_native_value_free(declared) };
         native_user_classes_reset_for_test();
     }
 

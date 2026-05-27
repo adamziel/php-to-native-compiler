@@ -25888,6 +25888,80 @@ fn emit_exe_links_and_runs_declared_interface_exists_no_autoload_program() {
     let _ = fs::remove_file(output_path);
 }
 
+const NATIVE_INTERFACE_RUNTIME_REGISTRY_SOURCE: &str = concat!(
+    "<?php\n",
+    "interface NativeInterfaceRegistryRoot {}\n",
+    "interface NativeInterfaceRegistryChild extends NativeInterfaceRegistryRoot {}\n",
+    "interface NativeInterfaceRegistryPeer {}\n",
+    "class NativeInterfaceRegistryBase implements NativeInterfaceRegistryPeer {}\n",
+    "class NativeInterfaceRegistryService extends NativeInterfaceRegistryBase implements NativeInterfaceRegistryChild {}\n",
+    "$declared = get_declared_interfaces();\n",
+    "echo gettype($declared);\n",
+    "$byName = class_implements(\"nativeinterfaceregistryservice\", false);\n",
+    "echo \"|\";\n",
+    "echo gettype($byName);\n",
+    "$service = new NativeInterfaceRegistryService();\n",
+    "$byObject = class_implements($service);\n",
+    "echo \"|\";\n",
+    "echo gettype($byObject);\n",
+    "echo \"|\";\n",
+    "$missing = class_implements(\"MissingNativeInterfaceRegistry\", false);\n",
+    "echo gettype($missing);\n",
+    "echo \"\\n\";\n",
+);
+
+const NATIVE_INTERFACE_RUNTIME_REGISTRY_STDOUT: &str = concat!("array|array|array|boolean\n",);
+
+#[test]
+fn native_executable_c_source_routes_interface_value_metadata_through_runtime_registries() {
+    let program = parse(NATIVE_INTERFACE_RUNTIME_REGISTRY_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_declare_user_interface_bytes")
+            && body.contains("phpc_native_declare_user_class_interface_bytes")
+            && body.contains("phpc_native_value_class_metadata_value_with_diagnostic")
+            && source.contains("phpc_user_interface_name_")
+            && source.contains("phpc_user_class_interface_name_"),
+        "get_declared_interfaces() and class_implements() should use shared runtime metadata registries:\n{source}"
+    );
+    assert!(
+        !source.contains("object/class lowering rejects")
+            && !source.contains("interface lowering rejects interface declarations"),
+        "interface value metadata should not fall back to blockers:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_interface_runtime_registry_value_metadata_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "interface_runtime_registry_value_metadata",
+        NATIVE_INTERFACE_RUNTIME_REGISTRY_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run interface runtime registry executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        NATIVE_INTERFACE_RUNTIME_REGISTRY_STDOUT
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
 #[test]
 fn native_executable_c_source_blocks_unknown_named_dynamic_method_fallback_until_declared_hit_shape_is_known(
 ) {
