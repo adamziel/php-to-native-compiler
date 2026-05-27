@@ -17135,6 +17135,11 @@ struct CNativeNestedArrayAccessAppendTarget<'a> {
     plan: CNativeNestedArrayAccessAppendPlan,
 }
 
+struct CNativeArrayAccessRootAppendSuffixTarget<'a> {
+    source: CNativeValueOwnerSource,
+    suffix_offsets: &'a [Expr],
+}
+
 struct CNativeNestedArrayAccessUnsetTarget<'a> {
     source: CNativeValueOwnerSource,
     offsets: &'a [Expr],
@@ -29082,6 +29087,62 @@ impl CGenerator {
                         (!suffix_indices.is_empty()).then_some(*span)
                     }
                 }),
+            _ => None,
+        }
+    }
+
+    fn native_arrayaccess_root_append_suffix_target_for_assign_target<'a>(
+        &self,
+        target: &'a AssignTarget,
+    ) -> Option<CNativeArrayAccessRootAppendSuffixTarget<'a>> {
+        match target {
+            AssignTarget::NestedArrayAppend {
+                name,
+                indices,
+                suffix_indices,
+                span,
+            } if indices.is_empty() && !suffix_indices.is_empty() => self
+                .native_arrayaccess_variable_owner_source(name, *span)
+                .map(|source| CNativeArrayAccessRootAppendSuffixTarget {
+                    source,
+                    suffix_offsets: suffix_indices.as_slice(),
+                }),
+            AssignTarget::ObjectPropertyArrayAppend {
+                object,
+                property,
+                indices,
+                suffix_indices,
+                span,
+            } if indices.is_empty() && !suffix_indices.is_empty() => {
+                let object = Expr::Variable(object.clone(), *span);
+                self.native_arrayaccess_object_property_owner_source(
+                    &object,
+                    CObjectPropertyOperand::Literal(property),
+                    *span,
+                )
+                .map(|source| CNativeArrayAccessRootAppendSuffixTarget {
+                    source,
+                    suffix_offsets: suffix_indices.as_slice(),
+                })
+            }
+            AssignTarget::DynamicObjectPropertyArrayAppend {
+                object,
+                property,
+                indices,
+                suffix_indices,
+                span,
+            } if indices.is_empty() && !suffix_indices.is_empty() => {
+                let object = Expr::Variable(object.clone(), *span);
+                self.native_arrayaccess_object_property_owner_source(
+                    &object,
+                    CObjectPropertyOperand::Dynamic(property),
+                    *span,
+                )
+                .map(|source| CNativeArrayAccessRootAppendSuffixTarget {
+                    source,
+                    suffix_offsets: suffix_indices.as_slice(),
+                })
+            }
             _ => None,
         }
     }
@@ -51741,6 +51802,64 @@ impl CGenerator {
             return Ok(true);
         }
 
+        if let Some(target) =
+            self.native_arrayaccess_root_append_suffix_target_for_assign_target(target)
+        {
+            let Some(replacement_expr) = replacement_expr else {
+                return Err(self.unsupported(
+                    target.suffix_offsets[0].span(),
+                    ASSEMBLY_ARRAY_ACCESS_REJECTION,
+                ));
+            };
+            self.uses_native_string_helpers = true;
+            self.uses_native_callable_helpers = true;
+            self.uses_native_arrayaccess_offset_write_helpers = true;
+
+            let owner = self.materialize_native_value_owner(target.source, failure_cleanup)?;
+            let owner_cleanup = c_cleanup_sequence(&owner.cleanup_after_abort());
+            let suffix_offsets = target.suffix_offsets.iter().collect::<Vec<_>>();
+            let suffix_keys = self.materialize_native_array_key_suffix(
+                &suffix_offsets,
+                &format!("{owner_cleanup}{failure_cleanup}"),
+            )?;
+            drop(suffix_offsets);
+            let suffix_cleanup_steps = suffix_keys
+                .iter()
+                .flat_map(|key| key.cleanup_after_use.clone())
+                .collect::<Vec<_>>();
+            let replacement_failure_cleanup = format!(
+                "{}{owner_cleanup}{failure_cleanup}",
+                c_cleanup_sequence(&suffix_cleanup_steps)
+            );
+            self.body
+                .push("/* arrayaccess_root_keyed_append_suffix_keys_materialized */".to_string());
+            let replacement = self.materialize_native_value_result_operand(
+                replacement_expr,
+                &replacement_failure_cleanup,
+            )?;
+            self.body
+                .push("/* arrayaccess_root_keyed_append_rhs_materialized */".to_string());
+            let replacement = self.materialize_native_appended_slot_value(
+                suffix_keys,
+                replacement,
+                &format!("{owner_cleanup}{failure_cleanup}"),
+            );
+            let append_offset = CNativeValueMaterialization {
+                handle: "(phpc_NativeValueHandle){0}".to_string(),
+                cleanup_after_use: Vec::new(),
+            };
+            self.body
+                .push("/* arrayaccess_root_keyed_append */".to_string());
+            self.emit_native_arrayaccess_offset_write_operation_for_owner(
+                owner,
+                append_offset,
+                replacement,
+                CNativeArrayAccessOffsetWriteOperation::Append,
+                failure_cleanup,
+            )?;
+            return Ok(true);
+        }
+
         let Some((source, index, operation)) =
             self.native_arrayaccess_write_owner_source_for_assign_target(target, target.span())
         else {
@@ -51918,6 +52037,55 @@ impl CGenerator {
             self.emit_native_nested_arrayaccess_write_context(
                 context,
                 replacement,
+                failure_cleanup,
+            )?;
+            return Ok(Some(replacement_value));
+        }
+
+        if let Some(target) =
+            self.native_arrayaccess_root_append_suffix_target_for_assign_target(target)
+        {
+            let owner = self.materialize_native_value_owner(target.source, failure_cleanup)?;
+            let owner_cleanup = c_cleanup_sequence(&owner.cleanup_after_abort());
+            let suffix_offsets = target.suffix_offsets.iter().collect::<Vec<_>>();
+            let suffix_keys = self.materialize_native_array_key_suffix(
+                &suffix_offsets,
+                &format!("{owner_cleanup}{failure_cleanup}"),
+            )?;
+            drop(suffix_offsets);
+            let suffix_cleanup_steps = suffix_keys
+                .iter()
+                .flat_map(|key| key.cleanup_after_use.clone())
+                .collect::<Vec<_>>();
+            let replacement_failure_cleanup = format!(
+                "{}{owner_cleanup}{failure_cleanup}",
+                c_cleanup_sequence(&suffix_cleanup_steps)
+            );
+            self.body
+                .push("/* arrayaccess_root_keyed_append_suffix_keys_materialized */".to_string());
+            let (replacement_value, replacement) = self
+                .materialize_assignment_expression_replacement_value(
+                    replacement_expr,
+                    &replacement_failure_cleanup,
+                )?;
+            self.body
+                .push("/* arrayaccess_root_keyed_append_rhs_materialized */".to_string());
+            let replacement = self.materialize_native_appended_slot_value(
+                suffix_keys,
+                replacement,
+                &format!("{owner_cleanup}{failure_cleanup}"),
+            );
+            let append_offset = CNativeValueMaterialization {
+                handle: "(phpc_NativeValueHandle){0}".to_string(),
+                cleanup_after_use: Vec::new(),
+            };
+            self.body
+                .push("/* arrayaccess_root_keyed_append */".to_string());
+            self.emit_native_arrayaccess_offset_write_operation_for_owner(
+                owner,
+                append_offset,
+                replacement,
+                CNativeArrayAccessOffsetWriteOperation::Append,
                 failure_cleanup,
             )?;
             return Ok(Some(replacement_value));
@@ -57640,6 +57808,63 @@ mod tests {
             unset_context.plan.commit_order,
             property_context.plan.commit_order
         );
+    }
+
+    #[test]
+    fn native_arrayaccess_root_keyed_append_suffix_selects_direct_root_owner_boundary() {
+        let (mut generator, root_facts) = nested_arrayaccess_owner_stack_generator();
+        generator
+            .native_value_variable_facts
+            .insert("root".to_string(), root_facts.clone());
+        generator.variables.insert(
+            "root".to_string(),
+            CValue::NativeValueHandle("root_value".to_string()),
+        );
+        generator.native_object_property_value_facts.insert(
+            CNativeObjectPropertyFactKey {
+                object: "holder".to_string(),
+                property: "bag".to_string(),
+            },
+            root_facts,
+        );
+
+        let direct_target = AssignTarget::NestedArrayAppend {
+            name: "root".to_string(),
+            indices: Vec::new(),
+            suffix_indices: vec![Expr::String("leaf".to_string(), span(62))],
+            span: span(60),
+        };
+        let direct = generator
+            .native_arrayaccess_root_append_suffix_target_for_assign_target(&direct_target)
+            .expect("direct root keyed append suffix should select the root owner boundary");
+        assert_eq!(
+            direct.source.kind(),
+            CNativeValueOwnerSourceKind::DirectVariable
+        );
+        assert_eq!(direct.suffix_offsets.len(), 1);
+        assert!(
+            generator
+                .native_nested_arrayaccess_append_target_for_assign_target(&direct_target)
+                .expect("root keyed append suffix should not hit owner-stack blockers")
+                .is_none(),
+            "root keyed append suffix must not fake a nested owner-stack frame"
+        );
+
+        let property_target = AssignTarget::ObjectPropertyArrayAppend {
+            object: "holder".to_string(),
+            property: "bag".to_string(),
+            indices: Vec::new(),
+            suffix_indices: vec![Expr::String("leaf".to_string(), span(72))],
+            span: span(70),
+        };
+        let property = generator
+            .native_arrayaccess_root_append_suffix_target_for_assign_target(&property_target)
+            .expect("property-held root keyed append suffix should reuse the root owner boundary");
+        assert_eq!(
+            property.source.kind(),
+            CNativeValueOwnerSourceKind::ObjectProperty
+        );
+        assert_eq!(property.suffix_offsets.len(), 1);
     }
 
     fn test_descriptor_closure_summary(

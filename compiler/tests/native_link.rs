@@ -16704,6 +16704,20 @@ const ARRAYACCESS_NESTED_KEYED_APPEND_SUFFIX_OWNER_STACK_SOURCE: &str = concat!(
     "echo ($holder->bag[\"pouter\"][\"pmiddle\"][][\"leaf\"] = \"P\");\n",
 );
 
+const ARRAYACCESS_ROOT_KEYED_APPEND_SUFFIX_SOURCE: &str = concat!(
+    "<?php\n",
+    "class RootKeyedAppendBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"bad-get;\"; return null; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"set:\", $offset, \"=\", $value[\"leaf\"], \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "function root_keyed_append_rhs($value) { echo \"rhs:\", $value, \";\"; return $value; }\n",
+    "$leaf = \"leaf\";\n",
+    "$bag = new RootKeyedAppendBag();\n",
+    "echo ($bag[][$leaf] = root_keyed_append_rhs(\"D\"));\n",
+);
+
 #[test]
 fn native_executable_c_source_routes_arrayaccess_reference_slot_owners_through_value_owner_boundary(
 ) {
@@ -17314,6 +17328,65 @@ fn emit_exe_links_and_runs_nested_arrayaccess_keyed_append_suffix_owner_stack_pr
         run.stdout,
         b"root-get:outer;middle-set:=D;root-set:outer;D|root-get:pouter;middle-get:pmiddle;leaf-set:=P;middle-set:pmiddle;root-set:pouter;P"
     );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_executable_c_source_routes_arrayaccess_root_keyed_append_suffix_owner_boundary() {
+    let program = parse(ARRAYACCESS_ROOT_KEYED_APPEND_SUFFIX_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let suffix_keys = source
+        .find("/* arrayaccess_root_keyed_append_suffix_keys_materialized */")
+        .expect("root keyed append suffix key materialization proof marker missing");
+    let rhs = source
+        .find("/* arrayaccess_root_keyed_append_rhs_materialized */")
+        .expect("root keyed append RHS materialization proof marker missing");
+    let append = source
+        .find("/* arrayaccess_root_keyed_append */")
+        .expect("root keyed append call proof marker missing");
+
+    assert!(
+        suffix_keys < rhs
+            && rhs < append
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_APPEND")
+            && source.contains("phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic")
+            && source.contains("phpc_native_array_insert_key_value_with_diagnostic")
+            && source.contains("appended_slot_suffix_array")
+            && !source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_GET")
+            && !source.contains("nested_arrayaccess_parent_writeback")
+            && !source.contains("nested_arrayaccess_root_commit"),
+        "root ArrayAccess keyed append suffix should materialize suffix keys, wrap the appended slot value, call offsetSet(null, value), and avoid nested descent/writeback:\n{source}"
+    );
+    assert!(
+        !source.contains("ArrayAccess lowering rejects")
+            && !source.contains("assembly mutation lowering rejects"),
+        "root ArrayAccess keyed append suffix production must not fall back to rejection paths:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_arrayaccess_root_keyed_append_suffix_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "arrayaccess_root_keyed_append_suffix_production",
+        ARRAYACCESS_ROOT_KEYED_APPEND_SUFFIX_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native root ArrayAccess keyed append suffix executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"rhs:D;set:=D;D");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(&source_path);
