@@ -23830,7 +23830,7 @@ impl CGenerator {
                 output.push_str("extern void phpc_native_class_constant_table_free(phpc_NativeClassConstantTableHandle table);\n");
             }
             if self.uses_native_object_instanceof_helpers {
-                output.push_str("extern _Bool phpc_native_value_instanceof_class_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *class_name, size_t class_name_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern _Bool phpc_native_value_class_relationship_matches_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *target_name, size_t target_name_len, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_object_method_helpers {
                 output.push_str("extern void phpc_native_value_object_method_failure_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *method_name, size_t method_name_len, const uint8_t *reason, size_t reason_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -25894,7 +25894,7 @@ impl CGenerator {
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
         self.body.push(format!(
-            "_Bool {result} = phpc_native_value_instanceof_class_with_diagnostic({}, {class_name}, {class_name_len}, &{diagnostic});",
+            "_Bool {result} = phpc_native_value_class_relationship_matches_with_diagnostic({}, {class_name}, {class_name_len}, 0, &{diagnostic});",
             value.handle
         ));
         let cleanup = c_cleanup_sequence(&value.cleanup_after_use);
@@ -43532,7 +43532,7 @@ impl CGenerator {
                 "      phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"
             ));
             self.body.push(format!(
-                "      _Bool {class_match} = phpc_native_value_instanceof_class_with_diagnostic({parts}.target, {class_name}, {class_name_len}, &{diagnostic});"
+                "      _Bool {class_match} = phpc_native_value_class_relationship_matches_with_diagnostic({parts}.target, {class_name}, {class_name_len}, 0, &{diagnostic});"
             ));
             let parts_cleanup = format!("phpc_native_callable_array_parts_free({parts});");
             let class_failure_cleanup = format!(
@@ -43669,7 +43669,7 @@ impl CGenerator {
                 "    phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"
             ));
             self.body.push(format!(
-                "    _Bool {class_match} = phpc_native_value_instanceof_class_with_diagnostic({callee_handle}, {class_name}, {class_name_len}, &{diagnostic});"
+                "    _Bool {class_match} = phpc_native_value_class_relationship_matches_with_diagnostic({callee_handle}, {class_name}, {class_name_len}, 0, &{diagnostic});"
             ));
             let class_failure_cleanup = format!(
                 "phpc_native_diagnostic_report({diagnostic}); {}{}",
@@ -46545,7 +46545,7 @@ impl CGenerator {
             self.body
                 .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
             self.body.push(format!(
-                "_Bool {class_match} = phpc_native_value_instanceof_class_with_diagnostic({}, {class_name}, {class_name_len}, &{diagnostic});",
+                "_Bool {class_match} = phpc_native_value_class_relationship_matches_with_diagnostic({}, {class_name}, {class_name_len}, 0, &{diagnostic});",
                 receiver.handle
             ));
             let class_failure_cleanup = format!(
@@ -46681,7 +46681,7 @@ impl CGenerator {
             self.body
                 .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
             self.body.push(format!(
-                "_Bool {class_match} = phpc_native_value_instanceof_class_with_diagnostic({}, {class_name}, {class_name_len}, &{diagnostic});",
+                "_Bool {class_match} = phpc_native_value_class_relationship_matches_with_diagnostic({}, {class_name}, {class_name_len}, 0, &{diagnostic});",
                 receiver.handle
             ));
             let class_failure_cleanup =
@@ -46800,7 +46800,7 @@ impl CGenerator {
             self.body
                 .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
             self.body.push(format!(
-                "_Bool {class_match} = phpc_native_value_instanceof_class_with_diagnostic({}, {class_name}, {class_name_len}, &{diagnostic});",
+                "_Bool {class_match} = phpc_native_value_class_relationship_matches_with_diagnostic({}, {class_name}, {class_name_len}, 0, &{diagnostic});",
                 receiver.handle
             ));
             let class_failure_cleanup = format!(

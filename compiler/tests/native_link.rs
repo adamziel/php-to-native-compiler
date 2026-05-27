@@ -713,14 +713,19 @@ const NATIVE_STATIC_PROPERTY_COMPUTED_NAME_SOURCE: &str = concat!(
 
 const NATIVE_DECLARED_CLASS_INSTANCEOF_SOURCE: &str = concat!(
     "<?php\n",
-    "class Box {}\n",
-    "class Packet {}\n",
+    "interface Contract {}\n",
+    "interface RootContract {}\n",
+    "interface ChildContract extends RootContract {}\n",
+    "class Box implements Contract {}\n",
+    "class Packet implements ChildContract {}\n",
     "$box = new Box();\n",
     "echo $box instanceof Box ? \"Y\" : \"N\";\n",
     "echo $box instanceof box ? \"Y\" : \"N\";\n",
     "echo $box instanceof Packet ? \"Y\" : \"N\";\n",
     "echo (new Packet()) instanceof Packet ? \"Y\" : \"N\";\n",
     "echo 7 instanceof Box ? \"Y\" : \"N\";\n",
+    "echo $box instanceof Contract ? \"Y\" : \"N\";\n",
+    "echo (new Packet()) instanceof RootContract ? \"Y\" : \"N\";\n",
     "echo \"\\n\";\n",
 );
 
@@ -3269,7 +3274,7 @@ fn emit_exe_links_and_runs_declared_class_instanceof_program() {
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(run.stdout, b"YYNYN\n");
+    assert_eq!(run.stdout, b"YYNYNYY\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -6160,7 +6165,7 @@ fn native_executable_c_source_routes_dynamic_declared_class_new_through_declared
     assert!(
         source.contains("phpc_native_value_type_predicate")
             && source.contains("phpc_native_value_type_name_result")
-            && source.contains("phpc_native_value_instanceof_class_with_diagnostic")
+            && source.contains("phpc_native_value_class_relationship_matches_with_diagnostic")
             && source.contains("phpc_native_value_object_public_property_operation_with_diagnostic"),
         "new-expression results should compose with native value, class-relation, and property consumers:\n{source}"
     );
@@ -7442,14 +7447,21 @@ fn native_executable_c_source_routes_declared_instanceof_through_runtime_abi() {
     let body = main_body(&source);
 
     assert!(
-        source.contains("phpc_native_value_instanceof_class_with_diagnostic"),
+        source.contains("phpc_native_value_class_relationship_matches_with_diagnostic"),
         "{source}"
     );
     assert!(
-        body.matches("phpc_native_value_instanceof_class_with_diagnostic")
+        body.matches("phpc_native_value_class_relationship_matches_with_diagnostic")
             .count()
-            >= 5,
-        "named instanceof expressions should share the object-class relation ABI:\n{source}"
+            >= 7,
+        "named instanceof expressions should share the class-like relationship ABI:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_declare_user_interface_bytes")
+            && source.contains("phpc_native_declare_user_class_interface_bytes")
+            && !source.contains("phpc_native_text_membership_with_reference_slot_with_diagnostic")
+            && !source.contains("phpc_native_text_membership_candidates"),
+        "interface instanceof checks should flow through class-like metadata declarations, not text membership:\n{source}"
     );
     assert!(!source.contains("instanceof lowering rejects"), "{source}");
 }
@@ -7466,7 +7478,7 @@ fn native_executable_c_source_routes_declared_methods_through_frame_dispatch() {
         "{source}"
     );
     assert!(
-        body.contains("phpc_native_value_instanceof_class_with_diagnostic"),
+        body.contains("phpc_native_value_class_relationship_matches_with_diagnostic"),
         "receiver class checks should use the shared object/class ABI:\n{source}"
     );
     assert!(
@@ -7543,7 +7555,7 @@ fn native_executable_c_source_routes_declared_static_methods_through_frame_dispa
     assert!(
         body.contains("static_method_status")
             && body.contains("phpc_declared_method_")
-            && !body.contains("phpc_native_value_instanceof_class_with_diagnostic"),
+            && !body.contains("phpc_native_value_class_relationship_matches_with_diagnostic"),
         "named static calls should dispatch directly through declared static frames without receiver class checks:\n{source}"
     );
     assert!(!source.contains("method-call lowering rejects"), "{source}");
@@ -7558,7 +7570,7 @@ fn native_executable_c_source_invokes_dynamic_instance_methods_through_runtime_n
     assert!(
         body.contains("dynamic_method_dispatch_status")
             && body.contains("phpc_native_value_dynamic_method_name_matches")
-            && body.contains("phpc_native_value_instanceof_class_with_diagnostic")
+            && body.contains("phpc_native_value_class_relationship_matches_with_diagnostic")
             && body.contains("phpc_declared_method_")
             && source.contains("phpc_NativeValueHandle phpc_this"),
         "dynamic instance calls should compare runtime method names, verify receiver classes, and call declared instance frames:\n{source}"
@@ -8086,7 +8098,7 @@ fn native_executable_c_source_invokes_object_static_methods_through_source_call_
     );
     assert!(
         !body.contains("object_static_method_status")
-            && !body.contains("phpc_native_value_instanceof_class_with_diagnostic"),
+            && !body.contains("phpc_native_value_class_relationship_matches_with_diagnostic"),
         "object static source-call production should not fall back to the generated class-check frame ladder:\n{source}"
     );
     assert!(!source.contains("method-call lowering rejects"), "{source}");
@@ -8479,7 +8491,7 @@ fn native_executable_c_source_routes_dynamic_declared_constructors_through_frame
         source.contains("phpc_native_value_object_property_mutation_operation_with_diagnostic")
             && source.contains("phpc_native_value_object_public_property_operation_with_diagnostic")
             && source.contains("phpc_native_value_type_name_result")
-            && source.contains("phpc_native_value_instanceof_class_with_diagnostic"),
+            && source.contains("phpc_native_value_class_relationship_matches_with_diagnostic"),
         "dynamic constructor results should compose with property writes/reads, debug type, and ancestor checks:\n{source}"
     );
     assert!(
@@ -8650,7 +8662,7 @@ fn native_executable_c_source_routes_declared_inheritance_through_ancestor_metad
         "inherited declared objects should allocate through relationship-aware object metadata:\n{source}"
     );
     assert!(
-        body.matches("phpc_native_value_instanceof_class_with_diagnostic")
+        body.matches("phpc_native_value_class_relationship_matches_with_diagnostic")
             .count()
             >= 5,
         "inherited instanceof, instance methods, and dynamic methods should share class-relation checks:\n{source}"

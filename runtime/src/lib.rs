@@ -178,6 +178,21 @@ pub enum NativeClassMetadataValueOperation {
     ClassUses = 8,
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeClassRelationshipOperation {
+    InstanceOf = 0,
+}
+
+impl NativeClassRelationshipOperation {
+    fn from_tag(tag: u8) -> Option<Self> {
+        match tag {
+            0 => Some(Self::InstanceOf),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TextOnlySurface {
     FunctionName,
@@ -37051,6 +37066,29 @@ fn native_user_interface_canonical_name_bytes(name: &[u8]) -> Option<Vec<u8>> {
     native_user_interface_canonical_name_for_lookup_key(&lookup_key)
 }
 
+fn native_core_interface_canonical_name_bytes(name: &[u8]) -> Option<Vec<u8>> {
+    const CORE_INTERFACES: &[&[u8]] = &[
+        b"Traversable",
+        b"IteratorAggregate",
+        b"Iterator",
+        b"Serializable",
+        b"ArrayAccess",
+        b"Countable",
+        b"Stringable",
+    ];
+
+    let lookup_key = native_class_metadata_lookup_key(name);
+    CORE_INTERFACES
+        .iter()
+        .find(|interface| native_class_metadata_lookup_key(interface) == lookup_key)
+        .map(|interface| interface.to_vec())
+}
+
+fn native_interface_canonical_name_bytes(name: &[u8]) -> Option<Vec<u8>> {
+    native_user_interface_canonical_name_bytes(name)
+        .or_else(|| native_core_interface_canonical_name_bytes(name))
+}
+
 fn native_user_trait_names_bytes() -> Vec<Vec<u8>> {
     NATIVE_USER_TRAITS.with(|traits| {
         traits
@@ -37862,6 +37900,59 @@ fn native_class_public_property_names_bytes(
     Ok(names)
 }
 
+fn native_class_relationship_instanceof_bytes(
+    classes: &PhpClassTable,
+    subject_class_name: &[u8],
+    target_name: &[u8],
+) -> bool {
+    let Some(subject_class_name) = native_class_canonical_name_bytes(classes, subject_class_name)
+    else {
+        return false;
+    };
+
+    if let Some(target_class_name) = native_class_canonical_name_bytes(classes, target_name) {
+        let target_key = native_class_metadata_lookup_key(&target_class_name);
+        let mut current = Some(subject_class_name.clone());
+        let mut visited = HashSet::new();
+        while let Some(class_name) = current {
+            let class_key = native_class_metadata_lookup_key(&class_name);
+            if class_key == target_key {
+                return true;
+            }
+            if !visited.insert(class_key) {
+                return false;
+            }
+            current = native_class_parent_name_bytes(classes, &class_name);
+        }
+    }
+
+    let Some(target_interface_name) = native_interface_canonical_name_bytes(target_name) else {
+        return false;
+    };
+    let target_key = native_class_metadata_lookup_key(&target_interface_name);
+    native_class_implements_interface_names_bytes(classes, &subject_class_name)
+        .ok()
+        .flatten()
+        .is_some_and(|interfaces| {
+            interfaces
+                .iter()
+                .any(|interface| native_class_metadata_lookup_key(interface) == target_key)
+        })
+}
+
+fn native_class_relationship_matches_bytes(
+    classes: &PhpClassTable,
+    subject_class_name: &[u8],
+    target_name: &[u8],
+    operation: NativeClassRelationshipOperation,
+) -> bool {
+    match operation {
+        NativeClassRelationshipOperation::InstanceOf => {
+            native_class_relationship_instanceof_bytes(classes, subject_class_name, target_name)
+        }
+    }
+}
+
 unsafe fn native_value_class_metadata_value(
     subject: NativeValueHandle,
     operation: u8,
@@ -38485,18 +38576,22 @@ pub unsafe extern "C" fn phpc_native_value_object_property_operation_with_magic_
 /// # Safety
 ///
 /// `value` must be null or a value handle previously returned by the runtime
-/// ABI and not yet freed. `class_name` must be null only when `class_name_len`
-/// is zero.
+/// ABI and not yet freed. `target_name` must be null only when
+/// `target_name_len` is zero. The operation tag selects a class-like
+/// relationship predicate.
 #[no_mangle]
-pub unsafe extern "C" fn phpc_native_value_instanceof_class_with_diagnostic(
+pub unsafe extern "C" fn phpc_native_value_class_relationship_matches_with_diagnostic(
     value: NativeValueHandle,
-    class_name: *const u8,
-    class_name_len: usize,
+    target_name: *const u8,
+    target_name_len: usize,
+    operation: u8,
     diagnostic: *mut NativeDiagnosticHandle,
 ) -> bool {
     unsafe { native_clear_diagnostic_slot(diagnostic) };
 
-    match unsafe { native_value_instanceof_class(value, class_name, class_name_len) } {
+    match unsafe {
+        native_value_class_relationship_matches(value, target_name, target_name_len, operation)
+    } {
         Ok(result) => result,
         Err(message) => {
             unsafe { native_store_diagnostic_message(diagnostic, message) };
@@ -38505,22 +38600,70 @@ pub unsafe extern "C" fn phpc_native_value_instanceof_class_with_diagnostic(
     }
 }
 
-unsafe fn native_value_instanceof_class(
+unsafe fn native_value_class_relationship_matches(
+    value: NativeValueHandle,
+    target_name: *const u8,
+    target_name_len: usize,
+    operation: u8,
+) -> Result<bool, String> {
+    let target_name = unsafe {
+        native_abi_utf8(
+            target_name,
+            target_name_len,
+            "class relationship target name",
+        )
+    }
+    .map_err(|error| error.message().to_string())?;
+    if target_name.is_empty() {
+        return Err(
+            "native class relationship operation requires a non-empty target name".to_string(),
+        );
+    }
+    let operation = NativeClassRelationshipOperation::from_tag(operation).ok_or_else(|| {
+        "native class relationship operation received unsupported operation tag".to_string()
+    })?;
+
+    let Some(Value::Object(object)) = (unsafe { value.as_ref() }) else {
+        return Ok(false);
+    };
+    let classes = PhpClassTable::with_core_classes();
+    if native_class_relationship_matches_bytes(
+        &classes,
+        object.class_name().as_bytes(),
+        target_name.as_bytes(),
+        operation,
+    ) {
+        return Ok(true);
+    }
+
+    Ok(
+        matches!(operation, NativeClassRelationshipOperation::InstanceOf)
+            && object.is_instance_of_class_name(target_name),
+    )
+}
+
+/// # Safety
+///
+/// Compatibility wrapper for generated code emitted before the generalized
+/// class-relationship ABI. `value` must be null or a value handle previously
+/// returned by the runtime ABI and not yet freed. `class_name` must be null
+/// only when `class_name_len` is zero.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_instanceof_class_with_diagnostic(
     value: NativeValueHandle,
     class_name: *const u8,
     class_name_len: usize,
-) -> Result<bool, String> {
-    let class_name =
-        unsafe { native_abi_utf8(class_name, class_name_len, "instanceof class name") }
-            .map_err(|error| error.message().to_string())?;
-    if class_name.is_empty() {
-        return Err("native instanceof operation requires a non-empty class name".to_string());
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe {
+        phpc_native_value_class_relationship_matches_with_diagnostic(
+            value,
+            class_name,
+            class_name_len,
+            NativeClassRelationshipOperation::InstanceOf as u8,
+            diagnostic,
+        )
     }
-
-    Ok(matches!(
-        unsafe { value.as_ref() },
-        Some(Value::Object(object)) if object.is_instance_of_class_name(class_name)
-    ))
 }
 
 /// # Safety
@@ -49842,8 +49985,25 @@ mod tests {
     }
 
     #[test]
-    fn native_value_instanceof_class_checks_object_class_names() {
-        let box_class = b"NativeBox";
+    fn native_class_relationship_instanceof_uses_class_like_metadata_registry() {
+        native_user_classes_reset_for_test();
+        assert!(native_declare_user_interface_bytes_result(
+            b"NativeContract"
+        ));
+        assert!(native_declare_user_class_bytes_result(b"NativeBase"));
+        assert!(native_declare_user_class_bytes_result(b"NativeChild"));
+        assert!(native_declare_user_class_parent_bytes_result(
+            b"NativeChild",
+            b"NativeBase",
+        ));
+        assert!(native_declare_user_class_interface_bytes_result(
+            b"NativeChild",
+            b"NativeContract",
+        ));
+
+        let child_class = b"NativeChild";
+        let base_class = b"nativebase";
+        let interface_name = b"NativeContract";
         let packet_class = b"Packet";
         let property_id = b"id";
         let property_names = [property_id.as_ptr()];
@@ -49854,8 +50014,8 @@ mod tests {
         let object = unsafe {
             phpc_native_value_new_declared_class_with_diagnostic(
                 31,
-                box_class.as_ptr(),
-                box_class.len(),
+                child_class.as_ptr(),
+                child_class.len(),
                 property_names.as_ptr(),
                 property_name_lens.as_ptr(),
                 property_visibilities.as_ptr(),
@@ -49866,31 +50026,44 @@ mod tests {
         assert!(diagnostic.is_null());
 
         assert!(unsafe {
-            phpc_native_value_instanceof_class_with_diagnostic(
+            phpc_native_value_class_relationship_matches_with_diagnostic(
                 object,
-                box_class.as_ptr(),
-                box_class.len(),
+                child_class.as_ptr(),
+                child_class.len(),
+                NativeClassRelationshipOperation::InstanceOf as u8,
                 &mut diagnostic,
             )
         });
         assert!(diagnostic.is_null());
 
-        let lowercase_box = b"nativebox";
         assert!(unsafe {
-            phpc_native_value_instanceof_class_with_diagnostic(
+            phpc_native_value_class_relationship_matches_with_diagnostic(
                 object,
-                lowercase_box.as_ptr(),
-                lowercase_box.len(),
+                base_class.as_ptr(),
+                base_class.len(),
+                NativeClassRelationshipOperation::InstanceOf as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        assert!(unsafe {
+            phpc_native_value_class_relationship_matches_with_diagnostic(
+                object,
+                interface_name.as_ptr(),
+                interface_name.len(),
+                NativeClassRelationshipOperation::InstanceOf as u8,
                 &mut diagnostic,
             )
         });
         assert!(diagnostic.is_null());
 
         assert!(!unsafe {
-            phpc_native_value_instanceof_class_with_diagnostic(
+            phpc_native_value_class_relationship_matches_with_diagnostic(
                 object,
                 packet_class.as_ptr(),
                 packet_class.len(),
+                NativeClassRelationshipOperation::InstanceOf as u8,
                 &mut diagnostic,
             )
         });
@@ -49898,30 +50071,34 @@ mod tests {
 
         let scalar = NativeValueHandle::from_value(Value::Int(7));
         assert!(!unsafe {
-            phpc_native_value_instanceof_class_with_diagnostic(
+            phpc_native_value_class_relationship_matches_with_diagnostic(
                 scalar,
-                box_class.as_ptr(),
-                box_class.len(),
+                child_class.as_ptr(),
+                child_class.len(),
+                NativeClassRelationshipOperation::InstanceOf as u8,
                 &mut diagnostic,
             )
         });
         assert!(diagnostic.is_null());
 
         assert!(!unsafe {
-            phpc_native_value_instanceof_class_with_diagnostic(
+            phpc_native_value_class_relationship_matches_with_diagnostic(
                 object,
                 std::ptr::null(),
                 1,
+                NativeClassRelationshipOperation::InstanceOf as u8,
                 &mut diagnostic,
             )
         });
         assert!(
-            native_diagnostic_message_for_test(diagnostic).contains("instanceof class name"),
-            "diagnostic should reject invalid class-name ABI"
+            native_diagnostic_message_for_test(diagnostic)
+                .contains("class relationship target name"),
+            "diagnostic should reject invalid relationship target ABI"
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(scalar) };
         unsafe { phpc_native_value_free(object) };
+        native_user_classes_reset_for_test();
     }
 
     #[test]
