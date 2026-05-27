@@ -2801,6 +2801,10 @@ impl NativeArraySortBuiltin {
             Self::Uksort => "PHPC_NATIVE_ARRAY_LVALUE_SORT_UKSORT",
         }
     }
+
+    fn uses_comparator(self) -> bool {
+        matches!(self, Self::Usort | Self::Uasort | Self::Uksort)
+    }
 }
 
 impl NativeArrayMutationBuiltin {
@@ -23914,6 +23918,9 @@ impl CGenerator {
                     output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_lvalue_owner_value_operation_result(phpc_NativeArrayLvalueOwner owner, const phpc_NativeArrayPathSegment *segments, size_t segment_count, uint8_t family, uint8_t operation, uint8_t op, uint8_t position, phpc_NativeValueHandle value);\n");
                     output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_lvalue_owner_pointer_result(phpc_NativeArrayLvalueOwner owner, const phpc_NativeArrayPathSegment *segments, size_t segment_count, uint8_t operation);\n");
                     output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_lvalue_owner_sort_result(phpc_NativeArrayLvalueOwner owner, const phpc_NativeArrayPathSegment *segments, size_t segment_count, uint8_t operation, const phpc_NativeValueHandle *operands, size_t operand_count);\n");
+                    if self.uses_native_callable_helpers {
+                        output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_lvalue_owner_callable_sort_result(phpc_NativeArrayLvalueOwner owner, const phpc_NativeArrayPathSegment *segments, size_t segment_count, uint8_t operation, phpc_NativeCallableValueHandle callable);\n");
+                    }
                     output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_array_lvalue_owner_array_mutation_result(phpc_NativeArrayLvalueOwner owner, const phpc_NativeArrayPathSegment *segments, size_t segment_count, uint8_t operation, const phpc_NativeValueHandle *operands, size_t operand_count);\n");
                     output.push_str("extern phpc_NativeArrayLvalueResult phpc_native_value_array_callback_result(uint8_t operation, const phpc_NativeValueHandle *values, size_t value_count);\n");
                     output.push_str("extern phpc_NativeValueHandle phpc_native_value_array_query_operation_with_diagnostic(phpc_NativeValueHandle handle, phpc_NativeValueHandle operand, uint8_t flags, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -49401,6 +49408,51 @@ impl CGenerator {
             (path.path, path.len, path.cleanup_after_use)
         };
 
+        if builtin.uses_comparator() {
+            let Some(callback_expr) = operand_exprs.first() else {
+                return Err(self.unsupported_direct_named_call(
+                    args,
+                    span,
+                    ASSEMBLY_FUNCTION_CALL_REJECTION,
+                ));
+            };
+            let callback_failure_cleanup =
+                format!("{}{}", c_cleanup_sequence(&path_cleanup), failure_cleanup);
+            let callback = self.materialize_native_callable_value_handle_for_registration(
+                callback_expr,
+                &callback_failure_cleanup,
+            )?;
+            let callback_value_cleanup = c_cleanup_sequence(&callback.cleanup_after_use);
+            let owner = self.next_native_name("array_sort_owner");
+            let result = self.next_native_name("array_sort_result");
+            let operation = builtin.operation_tag();
+            self.body.push(format!(
+                "phpc_NativeArrayLvalueOwner {owner} = phpc_native_array_lvalue_owner_array({handle});"
+            ));
+            self.body.push(format!(
+                "phpc_NativeArrayLvalueResult {result} = phpc_native_array_lvalue_owner_callable_sort_result({owner}, {path_arg}, {path_len}, {operation}, {});",
+                callback.handle
+            ));
+            let cleanup = format!(
+                "phpc_native_callable_value_free({}); {}{}{}",
+                callback.handle,
+                callback_value_cleanup,
+                c_cleanup_sequence(&path_cleanup),
+                failure_cleanup
+            );
+            self.emit_native_array_lvalue_result_check(&result, &cleanup);
+            self.body
+                .push(format!("phpc_native_array_lvalue_result_free({result});"));
+            self.body.push(format!(
+                "phpc_native_callable_value_free({});",
+                callback.handle
+            ));
+            self.body.extend(callback.cleanup_after_use);
+            self.body.extend(path_cleanup);
+
+            return Ok(CValue::Bool(true));
+        }
+
         let mut operands = Vec::new();
         let mut operand_cleanup = Vec::new();
         for operand in operand_exprs {
@@ -63271,6 +63323,9 @@ fn native_dynamic_callable_builtin_canonical_name(name: &str) -> Option<&'static
         "krsort" => Some("krsort"),
         "natsort" => Some("natsort"),
         "natcasesort" => Some("natcasesort"),
+        "usort" => Some("usort"),
+        "uasort" => Some("uasort"),
+        "uksort" => Some("uksort"),
         "array_push" => Some("array_push"),
         "array_pop" => Some("array_pop"),
         "array_shift" => Some("array_shift"),
@@ -63304,6 +63359,7 @@ const NATIVE_BUILTIN_PARAM_STRING: &[&str] = &["string"];
 const NATIVE_BUILTIN_PARAM_VALUE: &[&str] = &["value"];
 const NATIVE_BUILTIN_PARAM_HAYSTACK_NEEDLE: &[&str] = &["haystack", "needle"];
 const NATIVE_BUILTIN_PARAM_ARRAY_FLAGS: &[&str] = &["array", "flags"];
+const NATIVE_BUILTIN_PARAM_ARRAY_CALLBACK: &[&str] = &["array", "callback"];
 const NATIVE_BUILTIN_PARAM_ARRAY: &[&str] = &["array"];
 const NATIVE_BUILTIN_PARAM_STRING_CHARACTERS: &[&str] = &["string", "characters"];
 const NATIVE_BUILTIN_DEFAULTS_NONE_1: &[Option<CNativeBuiltinDefaultValue>] = &[None];
@@ -63448,6 +63504,22 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             fixed_param_names: NATIVE_BUILTIN_PARAM_ARRAY,
             fixed_param_by_reference: NATIVE_BUILTIN_BY_REF_1,
             fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
+            accepts_variadic_args: false,
+            variadic_param_name: None,
+            variadic_param_by_reference: false,
+            returns_by_reference: false,
+            source_call_support: RuntimeCallableValue,
+        },
+        "usort" | "uasort" | "uksort" => CNativeBuiltinSignature {
+            canonical_name: match name.to_ascii_lowercase().as_str() {
+                "uksort" => "uksort",
+                "uasort" => "uasort",
+                _ => "usort",
+            },
+            required_arg_count: 2,
+            fixed_param_names: NATIVE_BUILTIN_PARAM_ARRAY_CALLBACK,
+            fixed_param_by_reference: NATIVE_BUILTIN_BY_REF_THEN_VALUE_DEFAULT,
+            fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_2,
             accepts_variadic_args: false,
             variadic_param_name: None,
             variadic_param_by_reference: false,
@@ -70497,6 +70569,38 @@ echo " 10" < "zeta";
         );
         assert_eq!(natcasesort.source_call_support, natsort.source_call_support);
 
+        let usort = native_builtin_signature_for_name("usort")
+            .expect("usort should expose runtime comparator sorting metadata");
+        assert_eq!(usort.canonical_name, "usort");
+        assert_eq!(usort.required_arg_count, 2);
+        assert_eq!(usort.fixed_param_names, &["array", "callback"]);
+        assert_eq!(usort.fixed_param_by_reference, &[true, false]);
+        assert_eq!(usort.fixed_param_defaults, &[None, None]);
+        assert_eq!(
+            usort.source_call_support,
+            CNativeBuiltinSignatureSourceCallSupport::RuntimeCallableValue
+        );
+        let uasort = native_builtin_signature_for_name("uasort")
+            .expect("uasort should share runtime comparator sorting metadata");
+        assert_eq!(uasort.canonical_name, "uasort");
+        assert_eq!(uasort.fixed_param_names, usort.fixed_param_names);
+        assert_eq!(
+            uasort.fixed_param_by_reference,
+            usort.fixed_param_by_reference
+        );
+        assert_eq!(uasort.fixed_param_defaults, usort.fixed_param_defaults);
+        assert_eq!(uasort.source_call_support, usort.source_call_support);
+        let uksort = native_builtin_signature_for_name("uksort")
+            .expect("uksort should share runtime comparator sorting metadata");
+        assert_eq!(uksort.canonical_name, "uksort");
+        assert_eq!(uksort.fixed_param_names, usort.fixed_param_names);
+        assert_eq!(
+            uksort.fixed_param_by_reference,
+            usort.fixed_param_by_reference
+        );
+        assert_eq!(uksort.fixed_param_defaults, usort.fixed_param_defaults);
+        assert_eq!(uksort.source_call_support, usort.source_call_support);
+
         let push = native_builtin_signature_for_name("array_push")
             .expect("array_push should be mapped as a runtime variadic mutation signature");
         assert_eq!(push.required_arg_count, 2);
@@ -70676,6 +70780,20 @@ echo " 10" < "zeta";
         assert_eq!(
             generator.callable_string_signature_for_expr(&natural_or_case, 1),
             Some(natural_sort_signature)
+        );
+        let usort_signature = generator
+            .callable_string_signature_for_expr(&Expr::String("usort".to_string(), span(7)), 2)
+            .expect("runtime comparator sort builtin signatures should feed source-call binding");
+        assert_eq!(usort_signature.fixed_param_by_reference, vec![true, false]);
+        let uasort_or_uksort = Expr::Ternary {
+            condition: Box::new(Expr::Bool(true, span(7))),
+            if_true: Box::new(Expr::String("uasort".to_string(), span(7))),
+            if_false: Box::new(Expr::String("uksort".to_string(), span(7))),
+            span: span(7),
+        };
+        assert_eq!(
+            generator.callable_string_signature_for_expr(&uasort_or_uksort, 2),
+            Some(usort_signature)
         );
         let pop_signature = generator
             .callable_string_signature_for_expr(&Expr::String("array_pop".to_string(), span(7)), 1)

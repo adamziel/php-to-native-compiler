@@ -4887,6 +4887,39 @@ fn native_executable_c_source_routes_array_sort_builtins_through_lvalue_owner_re
 }
 
 #[test]
+fn native_executable_c_source_routes_comparator_sort_builtins_through_callable_lvalue_results() {
+    let program = parse(NATIVE_COMPARATOR_SORT_CALLBACK_WRITEBACK_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_array_lvalue_owner_callable_sort_result"),
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic"),
+        "{source}"
+    );
+    for tag in [
+        "PHPC_NATIVE_ARRAY_LVALUE_SORT_USORT",
+        "PHPC_NATIVE_ARRAY_LVALUE_SORT_UASORT",
+        "PHPC_NATIVE_ARRAY_LVALUE_SORT_UKSORT",
+    ] {
+        assert!(source.contains(tag), "{tag}\n\n{source}");
+    }
+    assert!(
+        body.matches("phpc_native_array_lvalue_owner_callable_sort_result")
+            .count()
+            >= 3,
+        "{source}"
+    );
+    assert!(
+        !source.contains("array_sort_operands_"),
+        "comparator callbacks should use callable-value dispatch, not value operand arrays:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_array_mutation_builtins_through_lvalue_owner_results() {
     let program = parse(
         "<?php\n$items = [1, 2];\n$box = [\"items\" => [\"a\", \"b\"], \"head\" => 9];\narray_push($items, $box[\"value\"] = 3, $box[\"fallback\"] ??= 4);\narray_pop($box[\"items\"]);\narray_shift($box[\"items\"]);\narray_unshift($box[\"items\"], $box[\"head\"] += 1);\n",
@@ -25508,6 +25541,20 @@ const NATIVE_RUNTIME_BUILTIN_SORT_WRITEBACK_SOURCE: &str = concat!(
     "echo print_r($case, true);\n",
 );
 
+const NATIVE_COMPARATOR_SORT_CALLBACK_WRITEBACK_SOURCE: &str = concat!(
+    "<?php\n",
+    "function cmp_int($left, $right) { return $left - $right; }\n",
+    "$values = [3, 1, 2];\n",
+    "echo usort($values, \"cmp_int\"), \":\", $values[0], \":\", $values[1], \":\", $values[2], \"|\";\n",
+    "$assoc = [\"c\" => 3, \"a\" => 1, \"b\" => 2];\n",
+    "echo uasort($assoc, \"cmp_int\"), \":\";\n",
+    "foreach ($assoc as $key => $value) { echo $key, \"=\", $value, \";\"; }\n",
+    "echo \"|\";\n",
+    "$keyed = [3 => \"third\", 1 => \"first\", 2 => \"second\"];\n",
+    "echo uksort($keyed, \"cmp_int\"), \":\";\n",
+    "foreach ($keyed as $key => $value) { echo $key, \"=\", $value, \";\"; }\n",
+);
+
 const NATIVE_UNKNOWN_RUNTIME_BUILTIN_CALLABLE_STRING_SPREAD_SOURCE: &str = concat!(
     "<?php\n",
     "function unknown_runtime_builtin_marker($label, $value) { echo $label; return $value; }\n",
@@ -31386,6 +31433,37 @@ fn emit_exe_links_and_runs_runtime_builtin_sort_writeback_program() {
     assert_eq!(
         run.stdout,
         b"1:1:2:10|1:10:2:1|1:b10:b2|1:b2:b10|1:Array\n(\n    [a] => 2\n    [b] => 1\n)\n|1:Array\n(\n    [b] => 1\n    [a] => 2\n)\n|1:Array\n(\n    [x] => img01\n    [y] => img2\n    [z] => img10\n)\n|1:Array\n(\n    [first] => img1\n    [low] => img2\n    [up] => Img12\n)\n"
+    );
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_comparator_sort_callback_writeback_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "comparator_sort_callback_writeback_arguments",
+        NATIVE_COMPARATOR_SORT_CALLBACK_WRITEBACK_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native comparator sort callback writeback executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"1:1:2:3|1:a=1;b=2;c=3;|1:1=first;2=second;3=third;"
     );
     assert_eq!(run.stderr, b"");
 

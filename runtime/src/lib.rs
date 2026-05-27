@@ -804,18 +804,22 @@ impl NativeArraySortOperation {
         matches!(self, Self::Natsort | Self::Natcasesort)
     }
 
+    fn uses_comparator_sort(self) -> bool {
+        matches!(self, Self::Usort | Self::Uasort | Self::Uksort)
+    }
+
     fn uses_comparator_free_sort(self) -> bool {
         self.uses_mode_sort() || self.uses_natural_sort()
     }
 
     fn sorts_keys(self) -> bool {
-        matches!(self, Self::Ksort | Self::Krsort)
+        matches!(self, Self::Ksort | Self::Krsort | Self::Uksort)
     }
 
     fn preserves_keys(self) -> bool {
         matches!(
             self,
-            Self::Asort | Self::Arsort | Self::Ksort | Self::Krsort
+            Self::Asort | Self::Arsort | Self::Ksort | Self::Krsort | Self::Uasort | Self::Uksort
         )
     }
 
@@ -834,6 +838,9 @@ impl NativeArraySortOperation {
                 | Self::Krsort
                 | Self::Natsort
                 | Self::Natcasesort
+                | Self::Usort
+                | Self::Uasort
+                | Self::Uksort
         )
     }
 }
@@ -1614,7 +1621,9 @@ impl NativeCallableBuiltin {
             Self::ArraySort(NativeArraySortOperation::Krsort) => "krsort",
             Self::ArraySort(NativeArraySortOperation::Natsort) => "natsort",
             Self::ArraySort(NativeArraySortOperation::Natcasesort) => "natcasesort",
-            Self::ArraySort(_) => "array-sort",
+            Self::ArraySort(NativeArraySortOperation::Usort) => "usort",
+            Self::ArraySort(NativeArraySortOperation::Uasort) => "uasort",
+            Self::ArraySort(NativeArraySortOperation::Uksort) => "uksort",
             Self::ArrayMutation(NativeArrayMutationOperation::Push) => "array_push",
             Self::ArrayMutation(NativeArrayMutationOperation::Pop) => "array_pop",
             Self::ArrayMutation(NativeArrayMutationOperation::Shift) => "array_shift",
@@ -1648,6 +1657,7 @@ impl NativeCallableBuiltin {
         const BY_REF_THEN_VALUE: &[bool] = &[true, false];
         const PARAM_ARRAY: &[&str] = &["array"];
         const PARAM_ARRAY_FLAGS: &[&str] = &["array", "flags"];
+        const PARAM_ARRAY_CALLBACK: &[&str] = &["array", "callback"];
         const PARAM_STRING: &[&str] = &["string"];
         const PARAM_VALUE: &[&str] = &["value"];
         const PARAM_HAYSTACK_NEEDLE: &[&str] = &["haystack", "needle"];
@@ -1687,6 +1697,19 @@ impl NativeCallableBuiltin {
                     fixed_param_names: PARAM_ARRAY,
                     fixed_param_by_reference: BY_REF_1,
                     fixed_param_defaults: DEFAULTS_NONE_1,
+                    accepts_variadic_args: false,
+                    returns_by_reference: false,
+                }
+            }
+            Self::ArraySort(operation)
+                if operation.supports_runtime_callable_writeback()
+                    && operation.uses_comparator_sort() =>
+            {
+                NativeCallableBuiltinSignature {
+                    required_arg_count: 2,
+                    fixed_param_names: PARAM_ARRAY_CALLBACK,
+                    fixed_param_by_reference: BY_REF_THEN_VALUE,
+                    fixed_param_defaults: DEFAULTS_NONE_2,
                     accepts_variadic_args: false,
                     returns_by_reference: false,
                 }
@@ -9912,6 +9935,15 @@ fn native_callable_builtin_for_function_name(name: &str) -> Option<NativeCallabl
         "natcasesort" => Some(NativeCallableBuiltin::ArraySort(
             NativeArraySortOperation::Natcasesort,
         )),
+        "usort" => Some(NativeCallableBuiltin::ArraySort(
+            NativeArraySortOperation::Usort,
+        )),
+        "uasort" => Some(NativeCallableBuiltin::ArraySort(
+            NativeArraySortOperation::Uasort,
+        )),
+        "uksort" => Some(NativeCallableBuiltin::ArraySort(
+            NativeArraySortOperation::Uksort,
+        )),
         "array_push" => Some(NativeCallableBuiltin::ArrayMutation(
             NativeArrayMutationOperation::Push,
         )),
@@ -13609,6 +13641,67 @@ unsafe fn native_callable_array_sort_value(
             ));
         }
 
+        if operation.uses_comparator_sort() {
+            let Some(callback) = operands.first().copied() else {
+                return Err(format!(
+                    "native callable builtin invocation failed: {} missing comparator callback argument",
+                    operation.label()
+                ));
+            };
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let callable = unsafe {
+                phpc_native_callable_lookup_value_or_closure_with_context_diagnostic(
+                    NativeCallableTableHandle::null(),
+                    callback,
+                    NativeStringHandle::null(),
+                    &mut diagnostic,
+                )
+            };
+            if !diagnostic.is_null() {
+                let message = unsafe { diagnostic.as_ref() }
+                    .map(|diagnostic| diagnostic.message.clone())
+                    .unwrap_or_else(|| "comparator callback lookup failed".to_string());
+                unsafe { phpc_native_diagnostic_free(diagnostic) };
+                return Err(format!(
+                    "native callable builtin invocation failed: {} comparator callback lookup failed: {message}",
+                    operation.label()
+                ));
+            }
+            let Some(dispatch) = (unsafe { callable.as_ref() }).cloned() else {
+                return Err(format!(
+                    "native callable builtin invocation failed: {} comparator callback dispatch handle is null",
+                    operation.label()
+                ));
+            };
+            unsafe { phpc_native_callable_value_free(callable) };
+
+            let mut value = reference.cell.value_cloned();
+            let result = native_array_sort_value_path_result(
+                &mut value,
+                &[],
+                operation,
+                NativeArraySortCriteria::Comparator {
+                    dispatch: &dispatch,
+                    diagnostic: &mut diagnostic,
+                },
+            );
+            let return_value = unsafe {
+                native_array_lvalue_result_into_value(
+                    result,
+                    format!(
+                        "native callable builtin invocation failed: {} sorting returned no value",
+                        operation.label()
+                    ),
+                )?
+            };
+            let value = reference
+                .cell
+                .coerce_value_for_write(value)
+                .map_err(|error| error.message().to_string())?;
+            reference.cell.set_value(value);
+            return Ok(return_value);
+        }
+
         let mode = match unsafe {
             native_array_sort_mode_from_operands(
                 operation,
@@ -13635,7 +13728,12 @@ unsafe fn native_callable_array_sort_value(
         };
 
         let mut value = reference.cell.value_cloned();
-        let result = native_array_sort_value_path_result(&mut value, &[], operation, mode);
+        let result = native_array_sort_value_path_result(
+            &mut value,
+            &[],
+            operation,
+            NativeArraySortCriteria::Mode(mode),
+        );
         let return_value = unsafe {
             native_array_lvalue_result_into_value(
                 result,
@@ -21089,7 +21187,84 @@ pub unsafe extern "C" fn phpc_native_array_lvalue_owner_sort_result(
             Err(result) => return result,
         };
 
-    native_array_sort_array_path_result(&mut array.value, &path, operation, mode)
+    native_array_sort_array_path_result(
+        &mut array.value,
+        &path,
+        operation,
+        NativeArraySortCriteria::Mode(mode),
+    )
+}
+
+/// # Safety
+///
+/// The owner, callable handle, and each key handle inside `segments` must be
+/// null or handles previously returned by the runtime ABI and not yet freed.
+/// `segments` must be null when `segment_count` is zero, or point to
+/// `segment_count` initialized key-only path segments. The callable handle is
+/// borrowed; the returned result owns any value/diagnostic handles it carries.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_array_lvalue_owner_callable_sort_result(
+    mut owner: NativeArrayLvalueOwner,
+    segments: *const NativeArrayPathSegment,
+    segment_count: usize,
+    operation: u8,
+    callable: NativeCallableValueHandle,
+) -> NativeArrayLvalueResult {
+    let operation = match NativeArraySortOperation::from_tag(operation) {
+        Ok(operation) => operation,
+        Err(result) => return result,
+    };
+
+    if !operation.uses_comparator_sort() {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+            format!(
+                "native array {}() callable sort ABI received a non-comparator operation",
+                operation.label()
+            ),
+        );
+    }
+
+    let Some(dispatch) = (unsafe { callable.as_ref() }) else {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_UNSUPPORTED,
+            format!(
+                "native array {}() comparator callback dispatch handle is null",
+                operation.label()
+            ),
+        );
+    };
+
+    if owner.tag != NATIVE_ARRAY_LVALUE_OWNER_ARRAY {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+            "array lvalue sort owner is not a native array handle",
+        );
+    }
+
+    let Some(array) = (unsafe { owner.array.as_mut() }) else {
+        return NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+            "array lvalue sort root is not a live native array handle",
+        );
+    };
+
+    let path =
+        match unsafe { native_array_lvalue_optional_path_from_segments(segments, segment_count) } {
+            Ok(path) => path,
+            Err(result) => return result,
+        };
+
+    let mut diagnostic = NativeDiagnosticHandle::null();
+    native_array_sort_array_path_result(
+        &mut array.value,
+        &path,
+        operation,
+        NativeArraySortCriteria::Comparator {
+            dispatch,
+            diagnostic: &mut diagnostic,
+        },
+    )
 }
 
 /// # Safety
@@ -22493,10 +22668,10 @@ fn native_array_sort_array_path_result(
     array: &mut PhpArray,
     path: &[NativeArrayLvaluePathElement],
     operation: NativeArraySortOperation,
-    mode: Option<NativeArraySortMode>,
+    criteria: NativeArraySortCriteria<'_>,
 ) -> NativeArrayLvalueResult {
     let Some((segment, rest)) = path.split_first() else {
-        return native_array_sort_array_result(array, operation, mode);
+        return native_array_sort_array_result(array, operation, criteria);
     };
 
     match segment {
@@ -22507,8 +22682,10 @@ fn native_array_sort_array_path_result(
                     RuntimeError::undefined_array_key(key.diagnostic_key()).message(),
                 );
             };
-            let result = native_array_sort_value_path_result(&mut value, rest, operation, mode);
-            if result.tag == NATIVE_ARRAY_LVALUE_OK && operation.uses_comparator_free_sort() {
+            let result = native_array_sort_value_path_result(&mut value, rest, operation, criteria);
+            if result.tag == NATIVE_ARRAY_LVALUE_OK
+                && (operation.uses_comparator_free_sort() || operation.uses_comparator_sort())
+            {
                 array.insert(key.clone(), value);
             }
             result
@@ -22527,11 +22704,11 @@ fn native_array_sort_value_path_result(
     value: &mut Value,
     path: &[NativeArrayLvaluePathElement],
     operation: NativeArraySortOperation,
-    mode: Option<NativeArraySortMode>,
+    criteria: NativeArraySortCriteria<'_>,
 ) -> NativeArrayLvalueResult {
     if path.is_empty() {
         return match value {
-            Value::Array(array) => native_array_sort_array_result(array, operation, mode),
+            Value::Array(array) => native_array_sort_array_result(array, operation, criteria),
             Value::Object(_) | Value::Closure(_) => {
                 native_array_sort_object_array_access_blocker_result(operation)
             }
@@ -22541,7 +22718,9 @@ fn native_array_sort_value_path_result(
     }
 
     match value {
-        Value::Array(array) => native_array_sort_array_path_result(array, path, operation, mode),
+        Value::Array(array) => {
+            native_array_sort_array_path_result(array, path, operation, criteria)
+        }
         Value::Object(_) | Value::Closure(_) => {
             native_array_sort_object_array_access_blocker_result(operation)
         }
@@ -22553,7 +22732,7 @@ fn native_array_sort_value_path_result(
 fn native_array_sort_array_result(
     array: &mut PhpArray,
     operation: NativeArraySortOperation,
-    mode: Option<NativeArraySortMode>,
+    criteria: NativeArraySortCriteria<'_>,
 ) -> NativeArrayLvalueResult {
     let callable = operation.callable();
     if operation.uses_natural_sort() {
@@ -22570,19 +22749,35 @@ fn native_array_sort_array_result(
         };
     }
 
-    let Some(mode) = mode else {
-        return native_array_sort_blocker_result(operation);
-    };
-
-    let result = if operation.sorts_keys() {
-        array.sort_keys_for_native(callable, mode, operation.reverses_order())
-    } else {
-        array.sort_values_for_native(
-            callable,
-            mode,
-            operation.preserves_keys(),
-            operation.reverses_order(),
-        )
+    let result = match criteria {
+        NativeArraySortCriteria::Mode(Some(mode)) if operation.uses_mode_sort() => {
+            if operation.sorts_keys() {
+                array.sort_keys_for_native(callable, mode, operation.reverses_order())
+            } else {
+                array.sort_values_for_native(
+                    callable,
+                    mode,
+                    operation.preserves_keys(),
+                    operation.reverses_order(),
+                )
+            }
+        }
+        NativeArraySortCriteria::Comparator {
+            dispatch,
+            diagnostic,
+        } if operation.uses_comparator_sort() => {
+            if operation.sorts_keys() {
+                array.sort_keys_with_comparator_for_native(callable, dispatch, diagnostic)
+            } else {
+                array.sort_values_with_comparator_for_native(
+                    callable,
+                    dispatch,
+                    operation.preserves_keys(),
+                    diagnostic,
+                )
+            }
+        }
+        _ => return native_array_sort_blocker_result(operation),
     };
 
     match result {
@@ -27823,6 +28018,53 @@ impl PhpArray {
         Ok(())
     }
 
+    fn sort_values_with_comparator_for_native(
+        &mut self,
+        callable: &'static str,
+        comparator: &NativeCallableValueDispatch,
+        preserve_keys: bool,
+        diagnostic: *mut NativeDiagnosticHandle,
+    ) -> RuntimeResult<()> {
+        let entries = self.sorted_entries_by(|left, right| {
+            array_sort_comparator_entry_ordering(
+                callable, comparator, left, right, false, diagnostic,
+            )
+        })?;
+        self.entries = if preserve_keys {
+            entries
+        } else {
+            entries
+                .into_iter()
+                .enumerate()
+                .map(|(index, entry)| {
+                    let key = i64::try_from(index).expect("array length fits in i64");
+                    ArrayEntry::from_slot(ArrayKey::Int(key), entry.slot)
+                })
+                .collect()
+        };
+        if !preserve_keys {
+            self.next_auto_index = i64::try_from(self.entries.len()).expect("array length fits");
+            self.auto_index_exhausted = false;
+        }
+        self.cursor = 0;
+        Ok(())
+    }
+
+    fn sort_keys_with_comparator_for_native(
+        &mut self,
+        callable: &'static str,
+        comparator: &NativeCallableValueDispatch,
+        diagnostic: *mut NativeDiagnosticHandle,
+    ) -> RuntimeResult<()> {
+        self.entries = self.sorted_entries_by(|left, right| {
+            array_sort_comparator_entry_ordering(
+                callable, comparator, left, right, true, diagnostic,
+            )
+        })?;
+        self.cursor = 0;
+        Ok(())
+    }
+
     fn sort_keys_for_native(
         &mut self,
         callable: &'static str,
@@ -28794,6 +29036,15 @@ enum NativeArraySortMode {
     String,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum NativeArraySortCriteria<'a> {
+    Mode(Option<NativeArraySortMode>),
+    Comparator {
+        dispatch: &'a NativeCallableValueDispatch,
+        diagnostic: *mut NativeDiagnosticHandle,
+    },
+}
+
 fn array_key_to_value(key: &ArrayKey) -> Value {
     match key {
         ArrayKey::Int(value) => Value::Int(*value),
@@ -28998,6 +29249,102 @@ fn array_sort_key_ordering(
             Ok(compare_binary_strings(&left, &right).unwrap_or(Ordering::Equal))
         }
     }
+}
+
+fn array_sort_comparator_entry_ordering(
+    callable: &'static str,
+    comparator: &NativeCallableValueDispatch,
+    left: &ArrayEntry,
+    right: &ArrayEntry,
+    compare_keys: bool,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> RuntimeResult<Ordering> {
+    let (left, right) = if compare_keys {
+        (
+            array_key_to_value(&left.key),
+            array_key_to_value(&right.key),
+        )
+    } else {
+        (left.value_cloned(), right.value_cloned())
+    };
+    unsafe { array_sort_comparator_value_ordering(callable, comparator, left, right, diagnostic) }
+}
+
+unsafe fn array_sort_comparator_value_ordering(
+    callable: &'static str,
+    comparator: &NativeCallableValueDispatch,
+    left: Value,
+    right: Value,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> RuntimeResult<Ordering> {
+    let arguments = phpc_native_call_arguments_new();
+    if unsafe {
+        !phpc_native_call_arguments_push_value_and_free(
+            arguments,
+            NativeValueHandle::from_value(left),
+        )
+    } {
+        unsafe { phpc_native_call_arguments_free(arguments) };
+        return Err(RuntimeError::unsupported_call(
+            callable,
+            "failed to materialize first comparator argument",
+        ));
+    }
+    if unsafe {
+        !phpc_native_call_arguments_push_value_and_free(
+            arguments,
+            NativeValueHandle::from_value(right),
+        )
+    } {
+        unsafe { phpc_native_call_arguments_free(arguments) };
+        return Err(RuntimeError::unsupported_call(
+            callable,
+            "failed to materialize second comparator argument",
+        ));
+    }
+
+    let callable_handle = NativeCallableValueHandle::from_dispatch(comparator.clone());
+    let result = unsafe {
+        phpc_native_callable_value_invoke_value_with_diagnostic_and_free(
+            callable_handle,
+            arguments,
+            diagnostic,
+        )
+    };
+    unsafe { phpc_native_callable_value_free(callable_handle) };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        let message = unsafe { (*diagnostic).as_ref() }
+            .map(|diagnostic| diagnostic.message.clone())
+            .unwrap_or_else(|| "comparator callback failed".to_string());
+        let handle = unsafe { *diagnostic };
+        unsafe { *diagnostic = NativeDiagnosticHandle::null() };
+        unsafe { phpc_native_diagnostic_free(handle) };
+        return Err(RuntimeError::unsupported_call(
+            callable,
+            format!("comparator callback failed: {message}"),
+        ));
+    }
+
+    let ordering = match unsafe { result.as_ref() } {
+        Some(value) => match php_value_to_int_argument(value) {
+            Ok(value) if value < 0 => Ok(Ordering::Less),
+            Ok(0) => Ok(Ordering::Equal),
+            Ok(_) => Ok(Ordering::Greater),
+            Err(error) => Err(RuntimeError::unsupported_call(
+                callable,
+                format!(
+                    "comparator callback return value is not an int-compatible scalar: {}",
+                    error.message()
+                ),
+            )),
+        },
+        None => Err(RuntimeError::unsupported_call(
+            callable,
+            "comparator callback returned a null value handle",
+        )),
+    };
+    unsafe { phpc_native_value_free(result) };
+    ordering
 }
 
 fn php_regular_value_ordering(
@@ -41916,6 +42263,14 @@ mod tests {
         phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Int(left + right)))
     }
 
+    unsafe extern "C" fn native_int_compare_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        let left = unsafe { int_from_frame_for_test(frame, 0) };
+        let right = unsafe { int_from_frame_for_test(frame, 1) };
+        phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Int(left - right)))
+    }
+
     unsafe extern "C" fn native_autoload_record_function_callback(
         frame: NativeCallFrameHandle,
     ) -> NativeCallResultHandle {
@@ -46355,6 +46710,23 @@ mod tests {
         let natcasesort =
             NativeCallableBuiltin::ArraySort(NativeArraySortOperation::Natcasesort).signature();
         assert_eq!(natcasesort, natsort);
+
+        let usort = NativeCallableBuiltin::ArraySort(NativeArraySortOperation::Usort).signature();
+        assert_eq!(usort.required_arg_count, 2);
+        assert_eq!(usort.fixed_param_count(), 2);
+        assert_eq!(usort.fixed_param_names, &["array", "callback"]);
+        assert_eq!(usort.fixed_param_by_reference, &[true, false]);
+        assert!(usort.accepts_arg_count(2));
+        assert!(!usort.accepts_arg_count(1));
+        assert!(!usort.accepts_arg_count(3));
+        let usort_source = usort.source_signature().unwrap();
+        assert_eq!(usort_source.parameter_names, vec!["array", "callback"]);
+        assert_eq!(usort_source.parameter_required, vec![1, 1]);
+        assert_eq!(usort_source.parameter_by_reference, vec![1, 0]);
+        let uasort = NativeCallableBuiltin::ArraySort(NativeArraySortOperation::Uasort).signature();
+        assert_eq!(uasort, usort);
+        let uksort = NativeCallableBuiltin::ArraySort(NativeArraySortOperation::Uksort).signature();
+        assert_eq!(uksort, usort);
     }
 
     #[test]
@@ -66375,6 +66747,140 @@ mod tests {
         unsafe { phpc_native_value_free(direct_key) };
         unsafe { phpc_native_array_free(natural_bad_handle) };
         unsafe { phpc_native_array_free(handle) };
+    }
+
+    #[test]
+    fn native_array_lvalue_callable_sort_result_invokes_comparator_and_writes_back_family() {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "cmp_int",
+                NativeCallableVisibility::Public,
+                native_int_compare_callback,
+            );
+        }
+        let callable_value = NativeValueHandle::from_value(Value::String("cmp_int".to_string()));
+        let (comparator, diagnostic) =
+            unsafe { lookup_callable_value_for_test(table, callable_value, None) };
+        assert!(diagnostic.is_null());
+        assert!(!comparator.is_null());
+
+        let values_key = NativeValueHandle::from_value(Value::String("values".to_string()));
+        let assoc_key = NativeValueHandle::from_value(Value::String("assoc".to_string()));
+        let keyed_key = NativeValueHandle::from_value(Value::String("keyed".to_string()));
+        let values_path = [NativeArrayPathSegment {
+            tag: NATIVE_ARRAY_PATH_KEY,
+            key: values_key,
+        }];
+        let assoc_path = [NativeArrayPathSegment {
+            tag: NATIVE_ARRAY_PATH_KEY,
+            key: assoc_key,
+        }];
+        let keyed_path = [NativeArrayPathSegment {
+            tag: NATIVE_ARRAY_PATH_KEY,
+            key: keyed_key,
+        }];
+
+        let mut values = PhpArray::new();
+        values.append(Value::Int(3)).unwrap();
+        values.append(Value::Int(1)).unwrap();
+        values.append(Value::Int(2)).unwrap();
+
+        let mut assoc = PhpArray::new();
+        assoc.insert("c", Value::Int(3));
+        assoc.insert("a", Value::Int(1));
+        assoc.insert("b", Value::Int(2));
+
+        let mut keyed = PhpArray::new();
+        keyed.insert(3, Value::String("third".to_string()));
+        keyed.insert(1, Value::String("first".to_string()));
+        keyed.insert(2, Value::String("second".to_string()));
+
+        let mut root = PhpArray::new();
+        root.insert("values", Value::Array(values));
+        root.insert("assoc", Value::Array(assoc));
+        root.insert("keyed", Value::Array(keyed));
+
+        let handle = NativeArrayHandle::from_array(root);
+        let owner = phpc_native_array_lvalue_owner_array(handle);
+        for (operation, path) in [
+            (NATIVE_ARRAY_LVALUE_SORT_USORT, values_path.as_slice()),
+            (NATIVE_ARRAY_LVALUE_SORT_UASORT, assoc_path.as_slice()),
+            (NATIVE_ARRAY_LVALUE_SORT_UKSORT, keyed_path.as_slice()),
+        ] {
+            let result = unsafe {
+                phpc_native_array_lvalue_owner_callable_sort_result(
+                    owner,
+                    path.as_ptr(),
+                    path.len(),
+                    operation,
+                    comparator,
+                )
+            };
+            assert_eq!(result.tag, NATIVE_ARRAY_LVALUE_OK);
+            assert_eq!(native_value_echo_bytes_for_test(result.value), b"1");
+            unsafe { phpc_native_array_lvalue_result_free(result) };
+        }
+
+        let root = unsafe { handle.as_ref() }.expect("array handle survives comparator sort");
+        let Value::Array(values) = root.value.get("values").expect("values array remains") else {
+            panic!("usort should leave an array");
+        };
+        assert_eq!(
+            values
+                .entries()
+                .iter()
+                .map(|entry| (entry.key.clone(), entry.value_cloned()))
+                .collect::<Vec<_>>(),
+            vec![
+                (ArrayKey::Int(0), Value::Int(1)),
+                (ArrayKey::Int(1), Value::Int(2)),
+                (ArrayKey::Int(2), Value::Int(3)),
+            ]
+        );
+
+        let Value::Array(assoc) = root.value.get("assoc").expect("assoc array remains") else {
+            panic!("uasort should leave an array");
+        };
+        assert_eq!(
+            assoc
+                .entries()
+                .iter()
+                .map(|entry| (entry.key.clone(), entry.value_cloned()))
+                .collect::<Vec<_>>(),
+            vec![
+                (ArrayKey::String("a".to_string()), Value::Int(1)),
+                (ArrayKey::String("b".to_string()), Value::Int(2)),
+                (ArrayKey::String("c".to_string()), Value::Int(3)),
+            ]
+        );
+
+        let Value::Array(keyed) = root.value.get("keyed").expect("keyed array remains") else {
+            panic!("uksort should leave an array");
+        };
+        assert_eq!(
+            keyed
+                .entries()
+                .iter()
+                .map(|entry| (entry.key.clone(), entry.value_cloned()))
+                .collect::<Vec<_>>(),
+            vec![
+                (ArrayKey::Int(1), Value::String("first".to_string())),
+                (ArrayKey::Int(2), Value::String("second".to_string())),
+                (ArrayKey::Int(3), Value::String("third".to_string())),
+            ]
+        );
+
+        unsafe { phpc_native_callable_value_free(comparator) };
+        unsafe { phpc_native_value_free(callable_value) };
+        unsafe { phpc_native_value_free(values_key) };
+        unsafe { phpc_native_value_free(assoc_key) };
+        unsafe { phpc_native_value_free(keyed_key) };
+        unsafe { phpc_native_array_free(handle) };
+        unsafe { phpc_native_callable_table_free(table) };
     }
 
     #[test]
