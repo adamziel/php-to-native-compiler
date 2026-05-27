@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 17:01 CEST
+Updated: 2026-05-27 17:03 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,10 +19,20 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `8a02fbbf` prints selected generated
-runtime metadata arrays through the shared native value formatter. Discarded
-generated-C `print_r(<native value array>)` now routes through the runtime
-formatter ABI, recursively walks `PhpArray` entries, and covers
+Latest accounted source capability: `eb66ad39` preserves selected callable
+object identity facts after root-symbol-table writes, so runtime-held
+callable objects can still use the shared callable-object source-call plan.
+Generated-C programs that assign an invokable object to a global-backed
+variable can now call `$object(...$args)` through the materialized
+by-reference variadic finalizer and mutate the original reference-backed
+unpacked slots. Non-spread by-reference variadic collectors, runtime
+builtins, magic fallback, unknown signatures, broad COW parity, and LLVM/ASM
+parity remain blocked.
+
+Recent source commit `8a02fbbf` prints selected generated runtime metadata
+arrays through the shared native value formatter. Discarded generated-C
+`print_r(<native value array>)` now routes through the runtime formatter ABI,
+recursively walks `PhpArray` entries, and covers
 `print_r(get_declared_interfaces())` plus
 `print_r(class_implements(...))` without per-fixture array traversal. String
 return mode, non-discarded `print_r()` expression values, core/external
@@ -62,9 +72,9 @@ finalizer can now build a finalized by-reference variadic array from unpacked
 reference slots for generated user functions and method-backed callable arrays,
 so mutations to `$values[0]` or named variadic entries are visible through the
 caller's original cells. Value-backed unpack entries still reject
-by-reference variadic parameters, and callable-object by-reference variadic
-spread, non-spread by-reference variadics, runtime builtins, magic fallback,
-unknown signatures, broad COW parity, and LLVM/ASM parity remain blocked.
+by-reference variadic parameters, and non-spread by-reference variadics,
+runtime builtins, magic fallback, unknown signatures, broad COW parity, and
+LLVM/ASM parity remain blocked.
 
 Recent source commit `e7d22c9c` coerces selected typed variadic
 descriptor-closure spread entries through a reusable variadic collection
