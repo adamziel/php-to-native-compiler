@@ -13790,6 +13790,8 @@ const VALUE_OFFSET_MUTATION_ARRAY_WRITE_SOURCE: &str = "<?php\n$items = [\"seed\
 
 const ARRAY_LVALUE_NESTED_WRITE_SOURCE: &str = "<?php\n$outer = \"outer\";\n$inner = \"inner\";\n$items = [$outer => [$inner => \"old\", \"stay\" => \"S\"], \"root\" => \"R\"];\n$value = \"new\";\n$items[$outer][$inner] = $value;\n$items[$outer][\"added\"] = \"A\" . \"B\";\necho isset($items[$outer][$inner]) ? 1 : 0;\necho \"|\";\necho empty($items[$outer][\"added\"]) ? 1 : 0;\necho \"|\";\necho isset($items[$outer][\"stay\"]) ? 1 : 0;\necho \"|\", $items[\"root\"];\n";
 
+const DIRECT_ARRAY_COPY_NESTED_WRITE_COW_SOURCE: &str = "<?php\n$items = [\"outer\" => [\"leaf\" => \"source\", \"stay\" => \"stay\"], \"root\" => \"root\"];\n$copy = $items;\n$copy[\"outer\"][\"leaf\"] = \"copy\";\n$copy[\"outer\"][\"added\"] = \"new\";\necho $items[\"outer\"][\"leaf\"], \"|\", $copy[\"outer\"][\"leaf\"], \"|\";\necho isset($items[\"outer\"][\"added\"]) ? 1 : 0;\necho \"|\";\necho isset($copy[\"outer\"][\"added\"]) ? 1 : 0;\necho \"|\", $items[\"root\"];\n";
+
 const ARRAY_LVALUE_NESTED_APPEND_SOURCE: &str = "<?php\n$outer = \"outer\";\n$leaf = \"leaf\";\n$items = [$outer => [\"stay\" => \"S\"], \"root\" => \"R\"];\n$value = \"new\";\n$items[$outer][] = $value;\n$items[\"created\"][] = \"C\";\n$items[][$leaf] = \"Z\";\necho isset($items[$outer][0]) ? 1 : 0;\necho \"|\";\necho empty($items[\"created\"][0]) ? 1 : 0;\necho \"|\";\necho isset($items[0][$leaf]) ? 1 : 0;\necho \"|\", $items[\"root\"];\n";
 
 const ARRAY_LVALUE_NESTED_ASSIGNMENT_EXPR_SOURCE: &str = "<?php\n$outer = \"outer\";\n$leaf = \"leaf\";\n$items = [$outer => [\"stay\" => \"S\"]];\necho ($items[$outer][$leaf] = \"A\"), \"|\";\necho ($items[$outer][] = \"B\"), \"|\";\necho ($items[][$leaf] = \"C\"), \"|\";\necho isset($items[$outer][$leaf]) ? 1 : 0;\necho \"|\";\necho empty($items[$outer][0]) ? 1 : 0;\necho \"|\";\necho isset($items[0][$leaf]) ? 1 : 0;\necho \"|\";\necho isset($items[$outer][\"stay\"]) ? 1 : 0;\n";
@@ -14920,6 +14922,27 @@ fn native_executable_c_source_routes_nested_array_writes_through_lvalue_owner_op
     assert!(
         !body.contains("array_offset_write_diagnostic_"),
         "nested writes should not fall back to the direct value-offset write path:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_clones_direct_array_variable_copies_before_nested_writes() {
+    let program = parse(DIRECT_ARRAY_COPY_NESTED_WRITE_COW_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_NativeValueHandle array_cow_clone_value_"),
+        "direct array variable copies should first materialize an owned array value clone source:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_NativeArrayHandle array_cow_clone_")
+            && body.contains(" = phpc_native_value_array_clone(array_cow_clone_value_"),
+        "direct array variable copies should store a distinct array handle for later lvalue writes:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_array_lvalue_owner_array(array_cow_clone_"),
+        "nested writes to the copied variable should target the cloned array handle:\n{source}"
     );
 }
 
@@ -19190,6 +19213,34 @@ fn emit_exe_links_and_runs_nested_array_lvalue_write_program() {
 
     assert!(run.status.success(), "native executable failed");
     assert_eq!(run.stdout, b"1|0|1|R");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_direct_array_copy_nested_write_cow_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "direct_array_copy_nested_write_cow",
+        DIRECT_ARRAY_COPY_NESTED_WRITE_COW_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native direct array COW executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"source|copy|0|1|root");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

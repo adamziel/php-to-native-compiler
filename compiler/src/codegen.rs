@@ -35135,6 +35135,36 @@ impl CGenerator {
         cloned
     }
 
+    fn clone_native_array_handle_for_direct_variable_assignment(&mut self, handle: &str) -> String {
+        self.uses_native_array_helpers = true;
+        let value = self.next_native_name("array_cow_clone_value");
+        let cloned = self.next_native_name("array_cow_clone");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value} = phpc_native_value_from_array({handle});"
+        ));
+        self.body.push(format!(
+            "phpc_NativeArrayHandle {cloned} = phpc_native_value_array_clone({value});"
+        ));
+        self.body.push(format!("phpc_native_value_free({value});"));
+        self.array_cleanup_handles.push(cloned.clone());
+        cloned
+    }
+
+    fn value_for_direct_variable_assignment_storage(
+        &mut self,
+        value: CValue,
+        expr: &Expr,
+    ) -> CValue {
+        if matches!(expr, Expr::Variable(_, _)) {
+            if let CValue::ArrayHandle(handle) = value {
+                return CValue::ArrayHandle(
+                    self.clone_native_array_handle_for_direct_variable_assignment(&handle),
+                );
+            }
+        }
+        value
+    }
+
     fn clone_native_reference_value_handle(&mut self, reference: &str) -> String {
         self.uses_native_string_helpers = true;
         self.uses_native_array_helpers = true;
@@ -49556,6 +49586,7 @@ impl CGenerator {
                     failure_cleanup,
                 ),
             value => {
+                let value = self.value_for_direct_variable_assignment_storage(value, expr);
                 self.store_variable_value(name, value.clone());
                 value
             }
@@ -56266,6 +56297,7 @@ impl CGenerator {
                     self.record_constructor_this_property_facts_for_variable(name, expr);
                     return result;
                 }
+                let value = self.value_for_direct_variable_assignment_storage(value, expr);
                 self.store_variable_value_with_native_value_facts(name, value, native_value_facts);
                 self.record_constructor_this_property_facts_for_variable(name, expr);
                 if let Some(identities) = native_callable_identities {
