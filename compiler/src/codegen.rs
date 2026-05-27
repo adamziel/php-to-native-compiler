@@ -63583,7 +63583,6 @@ impl CGenerator {
     fn native_scope_cleanup_sequence(&self, local_cleanup: &str) -> String {
         let mut cleanup = String::new();
         cleanup.push_str(local_cleanup);
-        cleanup.push_str(&self.native_output_buffer_unwind_cleanup_sequence());
         for handle in self.native_value_cleanup_handles.iter().rev() {
             cleanup.push_str(&format!(" phpc_native_value_free({handle});"));
         }
@@ -63599,12 +63598,16 @@ impl CGenerator {
         if self.uses_native_destructor_finalization_helpers && self.function_return_status.is_none()
         {
             cleanup.push_str(
+                " phpc_native_request_destructor_finalizers_finalize_with_callable_table(phpc_user_destructor_finalizers, phpc_user_callable_table);",
+            );
+            cleanup.push_str(
                 " phpc_native_request_destructor_finalizers_free(phpc_user_destructor_finalizers);",
             );
             cleanup.push_str(
                 " phpc_user_destructor_finalizers = (phpc_NativeRequestDestructorFinalizersHandle){0};",
             );
         }
+        cleanup.push_str(&self.native_output_buffer_unwind_cleanup_sequence());
         if self.native_request_state_owned {
             if let Some(handle) = &self.native_request_state_handle {
                 cleanup.push_str(&format!(" phpc_native_request_state_free({handle});"));

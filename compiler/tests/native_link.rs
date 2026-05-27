@@ -27481,6 +27481,18 @@ const NATIVE_PROPERTY_OBSERVING_DESTRUCTOR_SOURCE: &str = concat!(
     "echo \"body:\" . $box->label;\n",
 );
 
+const NATIVE_DESTRUCTOR_FATAL_CLEANUP_SOURCE: &str = concat!(
+    "<?php\n",
+    "class NativeFatalCleanupDestructorBox {\n",
+    "    public function __destruct() { echo \"|fatal-destruct\"; }\n",
+    "}\n",
+    "$box = new NativeFatalCleanupDestructorBox();\n",
+    "$call = isset($_GET[\"call\"]) ? $_GET[\"call\"] : \"missing_native_destructor_cleanup\";\n",
+    "echo \"body\";\n",
+    "$call();\n",
+    "echo \"|after\";\n",
+);
+
 const NATIVE_DESTRUCTOR_CLEANUP_ORDER_BLOCKED_SOURCE: &str = concat!(
     "<?php\n",
     "class NativeCleanupOrderDestructorBox {\n",
@@ -31893,6 +31905,35 @@ fn emit_exe_links_and_runs_property_observing_destructor_finalization_program() 
     );
     assert_eq!(run.stdout, b"body:final|destroy:final");
     assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_finalizes_request_destructors_before_runtime_error_exit() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "destructor_fatal_cleanup",
+        NATIVE_DESTRUCTOR_FATAL_CLEANUP_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native fatal destructor cleanup executable: {error}")
+    });
+
+    assert!(!run.status.success(), "runtime dynamic call should fail");
+    assert_eq!(run.stdout, b"body|fatal-destruct");
+    assert!(
+        String::from_utf8_lossy(&run.stderr).contains(
+            "native callable lookup failed: Function missing_native_destructor_cleanup is not registered"
+        ),
+        "stderr should contain runtime dynamic call failure, got:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&source_path);
