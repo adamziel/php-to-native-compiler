@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 17:18 CEST
+Updated: 2026-05-27 17:23 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,17 +19,24 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `2841e79a` preserves selected
-runtime-held callable array/object identity metadata when direct variables are
-routed through root-symbol-table by-reference activity. The shared
-symbol-table metadata path now records native value facts and callable
-identities across materialized writes and unsets, so generated-C
-`$cb(...$args)` calls can still derive by-reference parameter metadata and
-mutate the caller's original unpacked reference slots for static-method,
-instance-method, and invokable-object callable variables. Unknown or
-heterogeneous runtime callable arrays/objects, runtime builtin writeback,
-magic fallback, broad unknown signatures, broad COW parity, and LLVM/ASM
-parity remain blocked.
+Latest accounted source capability: `3ae68adb` forwards selected magic
+fallback spread call sources through the shared materialized call-argument
+carrier. Generated-C programs that call missing methods with spread or named
+arguments can now clone value/reference materialized entries into
+`NativeCallArgumentsHandle` in source order, preserve source keys for magic
+`$args` packing, and dispatch through the existing runtime magic method
+boundary. Runtime-unknown dynamic method-name magic spread, by-reference
+unpack through magic `$args` as full PHP parity, broad unknown signatures,
+broad COW parity, and LLVM/ASM parity remain blocked.
+
+Recent source commit `3ae68adb` adds a reusable runtime helper that forwards
+materialized value/reference call-argument entries into an existing
+`NativeCallArgumentsHandle`. Magic fallback spread lowering now shares the
+same materialized-entry producer as ordinary finalized calls, then forwards
+source-order entries into the runtime magic carrier before invoking
+`__call`/`__callStatic`. The focused source and linked proofs cover magic
+spread dispatch while preserving callable-family, runtime callable, descriptor
+closure, builtin callable, and by-reference spread regressions.
 
 Recent source commit `2841e79a` folds callable-variable by-reference fact
 preservation into the reusable symbol-table metadata helpers. Runtime-held
