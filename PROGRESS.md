@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 18:27 CEST
+Updated: 2026-05-27 18:36 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,13 +19,31 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `40b33bcd` routes selected runtime
-callable sorting builtins `sort()` and `rsort()` through the shared
-materialized call-argument and runtime callable builtin writeback path. Builtin
-signature metadata now exposes a by-reference `$array` owner plus defaulted
-by-value `$flags`, callable string canonicalization recognizes the selected
-sort family, and runtime invocation mutates the caller-visible array through
-the existing native array sort lvalue semantics.
+Latest accounted source capability: `792f9d3f` accepts leading-global
+fully-qualified direct function calls such as `\strlen(...)`,
+`\array_push(...)`, and `\App\Demo\local_value(...)` inside namespaces. The
+parser preserves the leading global qualifier, namespace resolution keeps it
+out of namespace-relative fallback, and generated-C execution routes selected
+global builtins plus generated user functions through the shared exact callable
+lookup/invocation paths instead of adding a one-builtin parser branch.
+
+Recent source commit `792f9d3f` removes the parser boundary for selected
+literal leading-global PHP function-call syntax. Focused gates cover parser
+boundaries, namespace-resolution behavior, generated-C source proof, linked
+execution over a generated user function and selected builtins, imported
+builtin variadic writeback regressions, sort writeback regressions, formatting,
+and diff checks. Namespace-relative `namespace\foo()` and namespace-qualified
+`App\foo()` syntax without a leading global slash, broader unsupported
+callable families, object/ArrayAccess/resource mutation operands, broad
+COW/reference parity, and LLVM/ASM parity remain blocked.
+
+Recent source commit `40b33bcd` routes selected runtime callable sorting
+builtins `sort()` and `rsort()` through the shared materialized call-argument
+and runtime callable builtin writeback path. Builtin signature metadata now
+exposes a by-reference `$array` owner plus defaulted by-value `$flags`,
+callable string canonicalization recognizes the selected sort family, and
+runtime invocation mutates the caller-visible array through the existing native
+array sort lvalue semantics.
 
 Recent source commit `40b33bcd` advances selected sorting writeback without
 adding source-shape lowering. Runtime callable strings and spread calls for
@@ -68,20 +86,19 @@ materialization consults fixed parameter metadata to push ordinary or named
 by-reference parameters as references before spread finalization. The focused
 gates cover imported alias source/link execution, runtime callable builtin
 writeback regressions, callable spread regressions, and by-reference variadic
-regressions. Literal leading-global `\foo()` parsing in namespaces,
-object/ArrayAccess/resource mutation operands, broader sorting families and comparators/flags,
-unknown or heterogeneous callable builtin families, magic fallback, broad COW
-parity, and LLVM/ASM parity remain blocked.
+regressions. Namespace-relative and namespace-qualified function syntax,
+object/ArrayAccess/resource mutation operands, broader sorting families and
+comparators/flags, unknown or heterogeneous callable builtin families, magic
+fallback, broad COW parity, and LLVM/ASM parity remain blocked.
 
 Recent source commit `e297477b` adds the selected runtime callable builtin
 variadic writeback family for `array_push()` and `array_unshift()`. Builtin
 signature metadata now exposes the shared by-reference `$array` parameter and
 variadic `$values` tail, and runtime invocation mutates the referenced owner
 through the existing array mutation semantics rather than a generated-C shape
-path. Broader sorting families, object/ArrayAccess/resource mutation operands, exact
-literal leading-global builtin namespace syntax, unknown or heterogeneous
-callable families, magic fallback, broad COW parity, and LLVM/ASM parity remain
-blocked.
+path. Broader sorting families, object/ArrayAccess/resource mutation operands,
+namespace-relative function syntax, unknown or heterogeneous callable families,
+magic fallback, broad COW parity, and LLVM/ASM parity remain blocked.
 
 Recent source commit `9a00643a` collects direct generated user-function and
 declared-method by-reference variadic arguments through the normalized
