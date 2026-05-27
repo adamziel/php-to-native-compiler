@@ -368,6 +368,41 @@ echo interface_exists("LoadedContract") ? "interface" : "missing-interface";
 }
 
 #[test]
+fn enum_exists_invokes_string_autoload_callbacks_for_enum_misses() {
+    let fixture_dir =
+        std::env::temp_dir().join(format!("phpc-autoload-enum-{}", std::process::id()));
+    fs::create_dir_all(&fixture_dir).unwrap();
+    let include_path = fixture_dir.join("LoadedMode.inc");
+    fs::write(&include_path, "<?php\nenum LoadedMode { case Front; }\n").unwrap();
+
+    let source = r#"<?php
+function LoadEnum($name) {
+    echo "load:", $name, "\n";
+    require_once __DIR__ . "/" . $name . ".inc";
+}
+
+spl_autoload_register("LoadEnum");
+
+echo enum_exists("LoadedMode", false) ? "false-loaded\n" : "false-skip\n";
+echo enum_exists("LoadedMode") ? "enum-loaded\n" : "enum-missing\n";
+echo enum_exists("LoadedMode", false) ? "enum-present\n" : "enum-lost\n";
+echo class_exists("LoadedMode", false) ? "class-like-enum" : "not-class-like";
+"#;
+
+    let execution =
+        run_source_with_source_file(source, fixture_dir.join("main.php").display().to_string())
+            .unwrap();
+    assert_eq!(
+        execution.stdout,
+        "false-skip\nload:LoadedMode\nenum-loaded\nenum-present\nclass-like-enum"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let _ = fs::remove_file(include_path);
+    let _ = fs::remove_dir(fixture_dir);
+}
+
+#[test]
 fn new_expressions_invoke_string_autoload_callbacks() {
     let fixture_dir = std::env::temp_dir().join(format!(
         "phpc-autoload-new-expression-{}",

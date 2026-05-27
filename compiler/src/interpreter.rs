@@ -616,6 +616,7 @@ enum AutoloadKind {
     Class,
     Interface,
     Trait,
+    Enum,
     Any,
 }
 
@@ -46866,6 +46867,7 @@ impl Interpreter {
                         .contains_key(&name.to_ascii_lowercase())
             }
             AutoloadKind::Trait => self.trait_lookup.contains_key(&name.to_ascii_lowercase()),
+            AutoloadKind::Enum => self.enum_lookup.contains_key(&name.to_ascii_lowercase()),
             AutoloadKind::Any => {
                 self.class_like_exists(name, AutoloadKind::Class)
                     || self.class_like_exists(name, AutoloadKind::Interface)
@@ -60645,16 +60647,22 @@ impl Interpreter {
             },
             "enum_exists" => match args.as_slice() {
                 [Value::String(enum_name)] => Ok(Value::Bool(
-                    self.enum_lookup
-                        .contains_key(&enum_name.to_ascii_lowercase()),
+                    self.class_like_exists_with_autoload(
+                        enum_name,
+                        AutoloadKind::Enum,
+                        true,
+                        span,
+                    )?,
                 )),
                 [Value::String(enum_name), autoload] => {
-                    let _autoload =
+                    let autoload =
                         metadata_exists_autoload_flag("enum_exists()", autoload, span)?;
-                    Ok(Value::Bool(
-                        self.enum_lookup
-                            .contains_key(&enum_name.to_ascii_lowercase()),
-                    ))
+                    Ok(Value::Bool(self.class_like_exists_with_autoload(
+                        enum_name,
+                        AutoloadKind::Enum,
+                        autoload,
+                        span,
+                    )?))
                 }
                 [other] => Err(runtime_error(
                     span,
