@@ -26246,6 +26246,88 @@ fn emit_exe_links_and_runs_interface_metadata_array_consumer_program() {
 }
 
 #[test]
+fn native_executable_c_source_routes_declared_trait_introspection_through_runtime_registry() {
+    let program = parse(concat!(
+        "<?php\n",
+        "trait NativeTraitRegistryDirect {}\n",
+        "trait NativeTraitRegistryOther {}\n",
+        "class NativeTraitRegistryPlugin { use NativeTraitRegistryDirect, NativeTraitRegistryOther; }\n",
+        "$name = \"nativetraitregistryother\";\n",
+        "echo trait_exists(\"NativeTraitRegistryDirect\", false) ? \"T\" : \"M\";\n",
+        "echo trait_exists($name, false) ? \"D\" : \"N\";\n",
+        "$declared = get_declared_traits();\n",
+        "$uses = class_uses(\"NativeTraitRegistryPlugin\", false);\n",
+        "echo in_array(\"NativeTraitRegistryDirect\", $declared, true) ? \"R\" : \"X\";\n",
+        "echo array_key_exists(\"NativeTraitRegistryOther\", $uses) ? \"U\" : \"Y\";\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_declare_user_trait_bytes")
+            && source.contains("phpc_native_declare_user_class_trait_bytes")
+            && source.contains("phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic")
+            && source.contains("phpc_native_value_class_metadata_value_with_diagnostic")
+            && !source.contains("phpc_native_text_membership_candidates"),
+        "declared trait introspection should use shared runtime metadata registries without generated-C candidate arrays:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_declared_trait_introspection_registry_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "trait DirectTrait {}\n",
+        "trait OtherTrait {}\n",
+        "trait ParentTrait {}\n",
+        "class BasePlugin { use ParentTrait; }\n",
+        "class Plugin extends BasePlugin { use DirectTrait, OtherTrait; }\n",
+        "$plugin = new Plugin();\n",
+        "$name = \"othertrait\";\n",
+        "echo trait_exists(\"DirectTrait\", false) ? \"T\" : \"M\";\n",
+        "echo \"|\";\n",
+        "echo trait_exists($name, false) ? \"D\" : \"N\";\n",
+        "echo \"|\";\n",
+        "$declared = get_declared_traits();\n",
+        "echo in_array(\"DirectTrait\", $declared, true) ? \"declared\" : \"missing-declared\";\n",
+        "echo \"|\";\n",
+        "$uses = class_uses($plugin);\n",
+        "echo array_key_exists(\"DirectTrait\", $uses) ? \"uses\" : \"missing-uses\";\n",
+        "echo \"|\";\n",
+        "echo array_key_exists(\"ParentTrait\", $uses) ? \"parent-present\" : \"parent-not-listed\";\n",
+        "echo \"|\";\n",
+        "$usesByName = class_uses(\"Plugin\", false);\n",
+        "echo array_key_exists(\"OtherTrait\", $usesByName) ? \"uses-name\" : \"missing-name\";\n",
+        "echo \"|\";\n",
+        "echo trait_exists(\"Missing\", false) ? \"missing-trait\" : \"no-autoload\";\n",
+        "echo \"\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("declared_trait_introspection_registry", source);
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run declared trait introspection registry executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "T|D|declared|uses|parent-not-listed|uses-name|no-autoload\n"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn native_executable_c_source_blocks_unknown_named_dynamic_method_fallback_until_declared_hit_shape_is_known(
 ) {
     let program = parse(concat!(

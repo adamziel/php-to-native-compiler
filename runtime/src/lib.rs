@@ -158,6 +158,7 @@ pub enum NativeClassMetadataOperation {
     ClassExists = 0,
     MethodExists = 1,
     PropertyExists = 2,
+    TraitExists = 3,
 }
 
 #[repr(u8)]
@@ -170,6 +171,8 @@ pub enum NativeClassMetadataValueOperation {
     ClassVars = 4,
     DeclaredInterfaces = 5,
     ClassImplements = 6,
+    DeclaredTraits = 7,
+    ClassUses = 8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34328,6 +34331,50 @@ fn native_class_lookup_key_for_name(classes: &PhpClassTable, name: &[u8]) -> Opt
         .then_some(target_lookup_key)
 }
 
+fn native_user_trait_canonical_name_for_lookup_key(lookup_key: &[u8]) -> Option<Vec<u8>> {
+    NATIVE_USER_TRAITS.with(|traits| {
+        traits
+            .borrow()
+            .iter()
+            .find(|trait_decl| trait_decl.lookup_key == lookup_key)
+            .map(|trait_decl| trait_decl.name.clone())
+    })
+}
+
+fn native_user_trait_canonical_name_bytes(name: &[u8]) -> Option<Vec<u8>> {
+    let lookup_key = native_class_metadata_lookup_key(name);
+    native_user_trait_canonical_name_for_lookup_key(&lookup_key)
+}
+
+fn native_user_trait_names_bytes() -> Vec<Vec<u8>> {
+    NATIVE_USER_TRAITS.with(|traits| {
+        traits
+            .borrow()
+            .iter()
+            .map(|trait_decl| trait_decl.name.clone())
+            .collect()
+    })
+}
+
+fn native_declare_user_trait_bytes_result(bytes: &[u8]) -> bool {
+    let lookup_key = native_class_metadata_lookup_key(bytes);
+    let core_classes = PhpClassTable::with_core_classes();
+    if native_class_lookup_key_exists_without_alias(&core_classes, &lookup_key)
+        || native_user_class_alias_target_lookup_key(&lookup_key).is_some()
+        || native_user_trait_canonical_name_for_lookup_key(&lookup_key).is_some()
+    {
+        return false;
+    }
+
+    NATIVE_USER_TRAITS.with(|traits| {
+        traits.borrow_mut().push(NativeUserTraitMetadata {
+            name: bytes.to_vec(),
+            lookup_key,
+        });
+        true
+    })
+}
+
 fn native_declare_user_class_bytes_result(bytes: &[u8]) -> bool {
     let lookup_key = native_class_metadata_lookup_key(bytes);
     let core_classes = PhpClassTable::with_core_classes();
@@ -34346,6 +34393,7 @@ fn native_declare_user_class_bytes_result(bytes: &[u8]) -> bool {
             interfaces: Vec::new(),
             methods: Vec::new(),
             properties: Vec::new(),
+            traits: Vec::new(),
         });
         true
     })
@@ -34392,6 +34440,29 @@ fn native_declare_user_class_interface_bytes_result(class: &[u8], interface: &[u
     })
 }
 
+fn native_declare_user_class_trait_bytes_result(class: &[u8], trait_name: &[u8]) -> bool {
+    let class_key = native_class_metadata_lookup_key(class);
+    let trait_key = native_class_metadata_lookup_key(trait_name);
+    NATIVE_USER_CLASSES.with(|classes| {
+        let mut classes = classes.borrow_mut();
+        let Some(class) = classes
+            .iter_mut()
+            .find(|class| class.lookup_key == class_key)
+        else {
+            return false;
+        };
+        if class
+            .traits
+            .iter()
+            .any(|candidate| native_class_metadata_lookup_key(candidate) == trait_key)
+        {
+            return true;
+        }
+        class.traits.push(trait_name.to_vec());
+        true
+    })
+}
+
 /// # Safety
 ///
 /// `ptr` must be null only when `len == 0`, or point to at least `len`
@@ -34425,6 +34496,20 @@ pub unsafe extern "C" fn phpc_native_declare_user_interface_bytes(
 
 /// # Safety
 ///
+/// `ptr` follows the same pointer/length rules as
+/// `phpc_native_declare_user_class_bytes`. The declared name is stored as PHP
+/// trait-name bytes for the generated userland metadata registry.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_declare_user_trait_bytes(ptr: *const u8, len: usize) -> bool {
+    let result: Result<bool, ()> = (|| unsafe {
+        let bytes = native_abi_bytes(ptr, len).ok_or(())?;
+        Ok(native_declare_user_trait_bytes_result(bytes))
+    })();
+    result.unwrap_or(false)
+}
+
+/// # Safety
+///
 /// Class and interface pointers follow the same pointer/length rules as
 /// `phpc_native_declare_user_class_bytes`.
 #[no_mangle]
@@ -34439,6 +34524,27 @@ pub unsafe extern "C" fn phpc_native_declare_user_class_interface_bytes(
         let interface = native_abi_bytes(interface_ptr, interface_len).ok_or(())?;
         Ok(native_declare_user_class_interface_bytes_result(
             class, interface,
+        ))
+    })();
+    result.unwrap_or(false)
+}
+
+/// # Safety
+///
+/// Class and trait pointers follow the same pointer/length rules as
+/// `phpc_native_declare_user_class_bytes`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_declare_user_class_trait_bytes(
+    class_ptr: *const u8,
+    class_len: usize,
+    trait_ptr: *const u8,
+    trait_len: usize,
+) -> bool {
+    let result: Result<bool, ()> = (|| unsafe {
+        let class = native_abi_bytes(class_ptr, class_len).ok_or(())?;
+        let trait_name = native_abi_bytes(trait_ptr, trait_len).ok_or(())?;
+        Ok(native_declare_user_class_trait_bytes_result(
+            class, trait_name,
         ))
     })();
     result.unwrap_or(false)
@@ -34691,6 +34797,7 @@ fn native_user_classes_reset_for_test() {
     NATIVE_USER_CLASSES.with(|classes| classes.borrow_mut().clear());
     NATIVE_USER_CLASS_ALIASES.with(|aliases| aliases.borrow_mut().clear());
     NATIVE_USER_INTERFACES.with(|interfaces| interfaces.borrow_mut().clear());
+    NATIVE_USER_TRAITS.with(|traits| traits.borrow_mut().clear());
 }
 
 fn native_core_class_canonical_name_bytes(classes: &PhpClassTable, name: &[u8]) -> Option<Vec<u8>> {
@@ -34756,6 +34863,11 @@ fn native_user_class_interface_names_bytes(class_name: &[u8]) -> Option<Vec<Vec<
             .find(|class| class.lookup_key == class_key)
             .map(|class| class.interfaces.clone())
     })
+}
+
+fn native_class_direct_trait_names_bytes(class_name: &[u8]) -> Option<Vec<Vec<u8>>> {
+    let class = native_user_class_metadata_bytes(class_name)?;
+    Some(class.traits)
 }
 
 fn native_class_parent_name_bytes(classes: &PhpClassTable, class_name: &[u8]) -> Option<Vec<u8>> {
@@ -35019,6 +35131,9 @@ unsafe fn native_value_class_metadata_value(
                 "get_declared_classes()",
             )?))
         }
+        tag if tag == NativeClassMetadataValueOperation::DeclaredTraits as u8 => Ok(Value::Array(
+            native_metadata_list_array(native_user_trait_names_bytes(), "get_declared_traits()")?,
+        )),
         tag if tag == NativeClassMetadataValueOperation::ClassMethods as u8 => {
             let class_name = unsafe {
                 native_value_metadata_object_or_class_name_bytes_argument(
@@ -35075,6 +35190,23 @@ unsafe fn native_value_class_metadata_value(
             }
             Ok(Value::Array(array))
         }
+        tag if tag == NativeClassMetadataValueOperation::ClassUses as u8 => {
+            let class_name = unsafe {
+                native_value_metadata_object_or_class_name_bytes_argument(subject, "class_uses()")
+            }?;
+            let Some(traits) = native_class_direct_trait_names_bytes(&class_name) else {
+                return Ok(Value::Bool(false));
+            };
+            let mut array = PhpArray::new();
+            for trait_name in traits {
+                let key = native_metadata_array_key(&trait_name, "class_uses()")?;
+                array.insert(
+                    key,
+                    native_metadata_string_value(trait_name, "class_uses()")?,
+                );
+            }
+            Ok(Value::Array(array))
+        }
         _ => Err(RuntimeError::invalid_string_conversion(
             "native class metadata value failed: unsupported operation tag",
         )),
@@ -35124,6 +35256,7 @@ fn native_user_class_has_member_bytes(
                     .and_then(|class| class.property_bytes(member))
                     .is_some(),
                 NativeClassMetadataOperation::ClassExists => true,
+                NativeClassMetadataOperation::TraitExists => false,
             };
         }
         let lookup = native_class_metadata_lookup_key(&class_name);
@@ -35143,6 +35276,7 @@ fn native_user_class_has_member_bytes(
                 .iter()
                 .any(|property| property.name.as_slice() == member),
             NativeClassMetadataOperation::ClassExists => true,
+            NativeClassMetadataOperation::TraitExists => false,
         };
         if found {
             return true;
@@ -35171,6 +35305,16 @@ unsafe fn native_value_class_metadata_exists(
                 )
             }?;
             Ok(native_class_canonical_name_bytes(&classes, &class_name).is_some())
+        }
+        tag if tag == NativeClassMetadataOperation::TraitExists as u8 => {
+            let trait_name = unsafe {
+                native_value_metadata_php_string_bytes_argument(
+                    subject,
+                    "trait_exists()",
+                    "trait name",
+                )
+            }?;
+            Ok(native_user_trait_canonical_name_bytes(&trait_name).is_some())
         }
         tag if tag == NativeClassMetadataOperation::MethodExists as u8 => {
             let class_name = unsafe {
@@ -35318,6 +35462,15 @@ pub unsafe extern "C" fn phpc_native_value_class_metadata_exists_with_autoload_p
                 native_store_diagnostic_message(
                     diagnostic,
                     "class_exists(): generated-native autoload for missing classes is not implemented",
+                )
+            };
+            false
+        }
+        Ok(false) if autoload && operation == NativeClassMetadataOperation::TraitExists as u8 => {
+            unsafe {
+                native_store_diagnostic_message(
+                    diagnostic,
+                    "trait_exists(): generated-native autoload for missing traits is not implemented",
                 )
             };
             false
@@ -37600,6 +37753,13 @@ struct NativeUserClassMetadata {
     interfaces: Vec<Vec<u8>>,
     methods: Vec<NativeUserClassMethodMetadata>,
     properties: Vec<NativeUserClassPropertyMetadata>,
+    traits: Vec<Vec<u8>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeUserTraitMetadata {
+    name: Vec<u8>,
+    lookup_key: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37633,6 +37793,7 @@ thread_local! {
     static NATIVE_USER_CLASSES: RefCell<Vec<NativeUserClassMetadata>> = RefCell::new(Vec::new());
     static NATIVE_USER_CLASS_ALIASES: RefCell<Vec<NativeUserClassAliasMetadata>> = RefCell::new(Vec::new());
     static NATIVE_USER_INTERFACES: RefCell<Vec<NativeUserInterfaceMetadata>> = RefCell::new(Vec::new());
+    static NATIVE_USER_TRAITS: RefCell<Vec<NativeUserTraitMetadata>> = RefCell::new(Vec::new());
 }
 
 #[cfg(test)]
