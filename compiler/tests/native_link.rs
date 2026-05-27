@@ -24465,6 +24465,31 @@ const NATIVE_RUNTIME_BUILTIN_TRIM_CALLABLE_STRING_SPREAD_SOURCE: &str = concat!(
     "echo $rtrim(...[\"string\" => runtime_builtin_trim_marker(\"J\", \"PAYLOADaz\"), \"characters\" => runtime_builtin_trim_marker(\"K\", \"a..z\")]);\n",
 );
 
+const NATIVE_RUNTIME_BUILTIN_BYREF_WRITEBACK_SOURCE: &str = concat!(
+    "<?php\n",
+    "$items = [\"left\", \"middle\", \"right\"];\n",
+    "$pop = \"array_pop\";\n",
+    "echo $pop($items), \":\", count($items), \":\", $items[0], \":\", $items[1], \"|\";\n",
+    "$args = [];\n",
+    "$args[] =& $items;\n",
+    "$shift = \"array_shift\";\n",
+    "echo $shift(...$args), \":\", count($items), \":\", $items[0];\n",
+);
+
+const NATIVE_RUNTIME_BUILTIN_VARIADIC_WRITEBACK_SOURCE: &str = concat!(
+    "<?php\n",
+    "$items = [\"left\"];\n",
+    "$push = \"array_push\";\n",
+    "$tail = [\"nested\"];\n",
+    "echo $push($items, \"middle\", $tail), \":\", count($items), \":\", $items[0], \":\", $items[1], \":\", $items[2][0], \"|\";\n",
+    "$args = [];\n",
+    "$args[] =& $items;\n",
+    "$args[] = \"zero\";\n",
+    "$args[] = \"start\";\n",
+    "$unshift = \"array_unshift\";\n",
+    "echo $unshift(...$args), \":\", count($items), \":\", $items[0], \":\", $items[1], \":\", $items[2], \":\", $items[3], \":\", $items[4][0];\n",
+);
+
 const NATIVE_DYNAMIC_BUILTIN_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "$len = \"strlen\";\n",
@@ -25745,6 +25770,58 @@ fn native_executable_c_source_lowers_runtime_builtin_callable_string_spread_trim
             && !source.contains("phpc_native_value_dynamic_call_name_matches")
             && !source.contains("unsupported runtime callable builtin families"),
         "trim-family callable-string spread should not use old spread blockers or generated name ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_runtime_builtin_byref_writeback_through_callable_arguments() {
+    let program = parse(NATIVE_RUNTIME_BUILTIN_BYREF_WRITEBACK_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_call_arguments_push_reference_and_free")
+            && body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && body.contains("uint8_t materialized_parameter_by_reference_")
+            && body.contains("= { 1 };")
+            && body.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "runtime by-reference builtin callables should use reference call slots, materialized spread finalization, and callable-value invocation:\n{source}"
+    );
+    assert!(
+        !source.contains("spread operands need a materialized-entry producer")
+            && !source.contains("unsupported runtime callable builtin families")
+            && !source.contains("ByReferenceArgumentWriteback")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches"),
+        "runtime by-reference builtin callables should avoid exact-name dynamic ladders and old blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_runtime_builtin_variadic_writeback_through_callable_arguments()
+{
+    let program = parse(NATIVE_RUNTIME_BUILTIN_VARIADIC_WRITEBACK_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_call_arguments_push_reference_and_free")
+            && body.contains("phpc_native_call_arguments_mark_finalized_variadic")
+            && body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && body.contains("materialized_variadic_parameter_name")
+            && body.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "runtime variadic by-reference builtin callables should use reference owner slots, explicit variadic call-argument metadata, materialized spread finalization, and callable-value invocation:\n{source}"
+    );
+    assert!(
+        !source.contains("unsupported runtime callable builtin families")
+            && !source.contains("ByReferenceArgumentWriteback")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches"),
+        "runtime variadic by-reference builtin callables should avoid exact-name dynamic ladders and old blockers:\n{source}"
     );
 }
 
@@ -29489,6 +29566,65 @@ fn emit_exe_links_and_runs_runtime_builtin_callable_string_spread_trim_default_a
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"Awp|BCwp/|DE/wp|FGalpha|HIpayload|JKPAYLOAD");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_runtime_builtin_byref_writeback_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "runtime_builtin_byref_writeback_arguments",
+        NATIVE_RUNTIME_BUILTIN_BYREF_WRITEBACK_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native runtime builtin byref writeback executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"right:2:left:middle|left:1:middle");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_runtime_builtin_variadic_writeback_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "runtime_builtin_variadic_writeback_arguments",
+        NATIVE_RUNTIME_BUILTIN_VARIADIC_WRITEBACK_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native runtime builtin variadic writeback executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"3:3:left:middle:nested|5:5:zero:start:left:middle:nested"
+    );
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

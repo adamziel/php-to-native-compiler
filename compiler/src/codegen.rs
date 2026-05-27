@@ -17924,6 +17924,8 @@ struct CNativeBuiltinSignature {
     fixed_param_by_reference: &'static [bool],
     fixed_param_defaults: &'static [Option<CNativeBuiltinDefaultValue>],
     accepts_variadic_args: bool,
+    variadic_param_name: Option<&'static str>,
+    variadic_param_by_reference: bool,
     returns_by_reference: bool,
     source_call_support: CNativeBuiltinSignatureSourceCallSupport,
 }
@@ -17936,6 +17938,7 @@ impl CNativeBuiltinSignature {
     fn metadata_is_complete(self) -> bool {
         self.fixed_param_names.len() == self.fixed_param_by_reference.len()
             && self.fixed_param_defaults.len() == self.fixed_param_by_reference.len()
+            && (!self.accepts_variadic_args || self.variadic_param_name.is_some())
     }
 
     fn accepts_arg_count(self, arg_count: usize) -> bool {
@@ -17973,11 +17976,8 @@ impl CNativeBuiltinSignature {
         arg_count: Option<usize>,
     ) -> Option<NativeMethodStaticSourceCallArgumentPlan> {
         self.source_call_signature_for_arg_count(arg_count)?;
-        if self.accepts_variadic_args {
-            return None;
-        }
         let span = Span::new(0, 0);
-        let params = self
+        let mut params = self
             .fixed_param_names
             .iter()
             .enumerate()
@@ -17990,6 +17990,16 @@ impl CNativeBuiltinSignature {
                 span,
             })
             .collect::<Vec<_>>();
+        if self.accepts_variadic_args {
+            params.push(FunctionParam {
+                name: self.variadic_param_name?.to_string(),
+                type_decl: None,
+                by_reference: self.variadic_param_by_reference,
+                is_variadic: true,
+                default: None,
+                span,
+            });
+        }
         Some(NativeMethodStaticSourceCallArgumentPlan { params })
     }
 }
@@ -23255,6 +23265,7 @@ impl CGenerator {
                 output.push_str("extern bool phpc_native_call_arguments_push_named_value_and_free(phpc_NativeCallArgumentsHandle arguments, phpc_NativeStringHandle name, phpc_NativeValueHandle value);\n");
                 output.push_str("extern bool phpc_native_call_arguments_push_reference_and_free(phpc_NativeCallArgumentsHandle arguments, phpc_NativeReferenceHandle reference);\n");
                 output.push_str("extern bool phpc_native_call_arguments_push_named_reference_and_free(phpc_NativeCallArgumentsHandle arguments, phpc_NativeStringHandle name, phpc_NativeReferenceHandle reference);\n");
+                output.push_str("extern bool phpc_native_call_arguments_mark_finalized_variadic(phpc_NativeCallArgumentsHandle arguments);\n");
                 output.push_str("extern void phpc_native_call_arguments_free(phpc_NativeCallArgumentsHandle handle);\n");
                 if self.uses_native_materialized_call_argument_helpers {
                     output.push_str("extern phpc_NativeMaterializedCallArgumentsHandle phpc_native_materialized_call_arguments_new(void);\n");
@@ -41292,6 +41303,12 @@ impl CGenerator {
                     &call_cleanup,
                     plan,
                 )?;
+                if plan.variadic_param().is_some() {
+                    let mark_error_exit = self.native_error_exit(&call_cleanup);
+                    self.body.push(format!(
+                        "if (!phpc_native_call_arguments_mark_finalized_variadic({call_arguments})) {{ {mark_error_exit} }}"
+                    ));
+                }
                 Ok(call_arguments)
             }
         }
@@ -61040,6 +61057,10 @@ fn native_dynamic_callable_builtin_canonical_name(name: &str) -> Option<&'static
         "trim" => Some("trim"),
         "ltrim" => Some("ltrim"),
         "rtrim" => Some("rtrim"),
+        "array_push" => Some("array_push"),
+        "array_pop" => Some("array_pop"),
+        "array_shift" => Some("array_shift"),
+        "array_unshift" => Some("array_unshift"),
         "strval" => Some("strval"),
         "boolval" => Some("boolval"),
         "floatval" | "doubleval" => Some("floatval"),
@@ -61062,6 +61083,7 @@ fn native_dynamic_callable_builtin_canonical_name(name: &str) -> Option<&'static
 
 const NATIVE_BUILTIN_BY_VALUE_1: &[bool] = &[false];
 const NATIVE_BUILTIN_BY_VALUE_2: &[bool] = &[false, false];
+const NATIVE_BUILTIN_BY_REF_1: &[bool] = &[true];
 const NATIVE_BUILTIN_BY_REF_THEN_VALUE_DEFAULT: &[bool] = &[true, false];
 const NATIVE_BUILTIN_BY_REF_VARIADIC: &[bool] = &[true];
 const NATIVE_BUILTIN_PARAM_STRING: &[&str] = &["string"];
@@ -61093,6 +61115,8 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
             fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
             accepts_variadic_args: false,
+            variadic_param_name: None,
+            variadic_param_by_reference: false,
             returns_by_reference: false,
             source_call_support: RuntimeCallableValue,
         },
@@ -61103,6 +61127,8 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
             fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
             accepts_variadic_args: false,
+            variadic_param_name: None,
+            variadic_param_by_reference: false,
             returns_by_reference: false,
             source_call_support: RuntimeCallableValue,
         },
@@ -61113,6 +61139,8 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
             fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
             accepts_variadic_args: false,
+            variadic_param_name: None,
+            variadic_param_by_reference: false,
             returns_by_reference: false,
             source_call_support: RuntimeCallableValue,
         },
@@ -61123,6 +61151,8 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
             fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
             accepts_variadic_args: false,
+            variadic_param_name: None,
+            variadic_param_by_reference: false,
             returns_by_reference: false,
             source_call_support: RuntimeCallableValue,
         },
@@ -61133,6 +61163,8 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
             fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
             accepts_variadic_args: false,
+            variadic_param_name: None,
+            variadic_param_by_reference: false,
             returns_by_reference: false,
             source_call_support: RuntimeCallableValue,
         },
@@ -61143,6 +61175,8 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
             fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
             accepts_variadic_args: false,
+            variadic_param_name: None,
+            variadic_param_by_reference: false,
             returns_by_reference: false,
             source_call_support: RuntimeCallableValue,
         },
@@ -61157,6 +61191,8 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_2,
             fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_2,
             accepts_variadic_args: false,
+            variadic_param_name: None,
+            variadic_param_by_reference: false,
             returns_by_reference: false,
             source_call_support: RuntimeCallableValue,
         },
@@ -61167,6 +61203,8 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
             fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
             accepts_variadic_args: false,
+            variadic_param_name: None,
+            variadic_param_by_reference: false,
             returns_by_reference: false,
             source_call_support: Blocked(MissingRuntimeCallableFamily),
         },
@@ -61177,18 +61215,40 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             fixed_param_by_reference: NATIVE_BUILTIN_BY_REF_THEN_VALUE_DEFAULT,
             fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_SORT_FLAGS,
             accepts_variadic_args: false,
+            variadic_param_name: None,
+            variadic_param_by_reference: false,
             returns_by_reference: false,
             source_call_support: Blocked(ByReferenceArgumentWriteback),
         },
-        "array_push" => CNativeBuiltinSignature {
-            canonical_name: "array_push",
+        "array_push" | "array_unshift" => CNativeBuiltinSignature {
+            canonical_name: match name.to_ascii_lowercase().as_str() {
+                "array_unshift" => "array_unshift",
+                _ => "array_push",
+            },
             required_arg_count: 2,
             fixed_param_names: NATIVE_BUILTIN_PARAM_ARRAY,
             fixed_param_by_reference: NATIVE_BUILTIN_BY_REF_VARIADIC,
             fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
             accepts_variadic_args: true,
+            variadic_param_name: Some("values"),
+            variadic_param_by_reference: false,
             returns_by_reference: false,
-            source_call_support: Blocked(ByReferenceArgumentWriteback),
+            source_call_support: RuntimeCallableValue,
+        },
+        "array_pop" | "array_shift" => CNativeBuiltinSignature {
+            canonical_name: match name.to_ascii_lowercase().as_str() {
+                "array_shift" => "array_shift",
+                _ => "array_pop",
+            },
+            required_arg_count: 1,
+            fixed_param_names: NATIVE_BUILTIN_PARAM_ARRAY,
+            fixed_param_by_reference: NATIVE_BUILTIN_BY_REF_1,
+            fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
+            accepts_variadic_args: false,
+            variadic_param_name: None,
+            variadic_param_by_reference: false,
+            returns_by_reference: false,
+            source_call_support: RuntimeCallableValue,
         },
         "trim" | "ltrim" | "rtrim" => CNativeBuiltinSignature {
             canonical_name: match name.to_ascii_lowercase().as_str() {
@@ -61201,6 +61261,8 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_2,
             fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_TRIM_CHARACTERS,
             accepts_variadic_args: false,
+            variadic_param_name: None,
+            variadic_param_by_reference: false,
             returns_by_reference: false,
             source_call_support: RuntimeCallableValue,
         },
@@ -68066,19 +68128,50 @@ echo " 10" < "zeta";
         );
 
         let push = native_builtin_signature_for_name("array_push")
-            .expect("array_push should be mapped as a blocked variadic signature");
+            .expect("array_push should be mapped as a runtime variadic mutation signature");
         assert_eq!(push.required_arg_count, 2);
+        assert_eq!(push.fixed_param_names, &["array"]);
         assert_eq!(push.fixed_param_by_reference, &[true]);
         assert!(push.accepts_variadic_args);
+        assert_eq!(push.variadic_param_name, Some("values"));
+        assert!(!push.variadic_param_by_reference);
         assert!(!push.accepts_arg_count(1));
         assert!(push.accepts_arg_count(2));
         assert!(push.accepts_arg_count(4));
         assert_eq!(
             push.source_call_support,
-            CNativeBuiltinSignatureSourceCallSupport::Blocked(
-                CNativeBuiltinSignatureBlocker::ByReferenceArgumentWriteback,
-            )
+            CNativeBuiltinSignatureSourceCallSupport::RuntimeCallableValue
         );
+        let unshift = native_builtin_signature_for_name("array_unshift")
+            .expect("array_unshift should share runtime variadic mutation metadata");
+        assert_eq!(unshift.canonical_name, "array_unshift");
+        assert_eq!(unshift.required_arg_count, push.required_arg_count);
+        assert_eq!(
+            unshift.fixed_param_by_reference,
+            push.fixed_param_by_reference
+        );
+        assert_eq!(unshift.variadic_param_name, push.variadic_param_name);
+        assert_eq!(unshift.source_call_support, push.source_call_support);
+
+        let pop = native_builtin_signature_for_name("array_pop")
+            .expect("array_pop should be mapped as a runtime by-reference mutation signature");
+        assert_eq!(pop.required_arg_count, 1);
+        assert_eq!(pop.fixed_param_names, &["array"]);
+        assert_eq!(pop.fixed_param_by_reference, &[true]);
+        assert!(pop.accepts_arg_count(1));
+        assert!(!pop.accepts_arg_count(0));
+        assert!(!pop.accepts_arg_count(2));
+        assert_eq!(
+            pop.source_call_support,
+            CNativeBuiltinSignatureSourceCallSupport::RuntimeCallableValue
+        );
+
+        let shift = native_builtin_signature_for_name("array_shift")
+            .expect("array_shift should share runtime by-reference mutation metadata");
+        assert_eq!(shift.canonical_name, "array_shift");
+        assert_eq!(shift.fixed_param_names, pop.fixed_param_names);
+        assert_eq!(shift.fixed_param_by_reference, pop.fixed_param_by_reference);
+        assert_eq!(shift.source_call_support, pop.source_call_support);
 
         let trim = native_builtin_signature_for_name("trim")
             .expect("trim should be mapped as a runtime default-arity signature");
@@ -68163,6 +68256,16 @@ echo " 10" < "zeta";
                 .is_none(),
             "blocked by-reference builtin signatures must not opt into runtime source calls"
         );
+        let pop_signature = generator
+            .callable_string_signature_for_expr(&Expr::String("array_pop".to_string(), span(7)), 1)
+            .expect("runtime by-reference builtin signatures should feed source-call binding");
+        assert_eq!(pop_signature.fixed_param_by_reference, vec![true]);
+        let push_signature = generator
+            .callable_string_signature_for_expr(&Expr::String("array_push".to_string(), span(7)), 3)
+            .expect(
+                "runtime variadic by-reference builtin signatures should feed source-call binding",
+            );
+        assert_eq!(push_signature.fixed_param_by_reference, vec![true]);
         assert!(
             generator
                 .callable_string_signature_for_expr(&Expr::String("count".to_string(), span(8)), 1,)
@@ -68228,6 +68331,28 @@ echo " 10" < "zeta";
             trim_plan.params[1].default.as_ref(),
             Some(Expr::String(value, _)) if value == " \n\r\t\x0b\0"
         ));
+
+        let push_contract = generator
+            .callable_value_source_call_signature_contract_for_args(
+                &Expr::String("array_unshift".to_string(), span(14)),
+                &spread_args,
+            )
+            .expect(
+                "variadic array mutation runtime builtin spread should produce parameter metadata",
+            );
+        let NativeMethodStaticSourceCallArgumentStrategy::Frame(push_plan) =
+            push_contract.argument_strategy
+        else {
+            panic!("array mutation runtime builtin spread should use builtin variadic metadata");
+        };
+        assert_eq!(
+            push_plan
+                .params
+                .iter()
+                .map(|param| (param.name.as_str(), param.by_reference, param.is_variadic))
+                .collect::<Vec<_>>(),
+            vec![("array", true, false), ("values", false, true)]
+        );
     }
 
     #[test]

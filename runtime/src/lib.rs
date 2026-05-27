@@ -1466,6 +1466,7 @@ enum NativeCallableBuiltin {
     StringPredicate(NativeStringPredicate),
     StringResult(NativeStringResultOperation),
     StringTrim(NativeTrimMode),
+    ArrayMutation(NativeArrayMutationOperation),
     Cast(u8),
     TypeName(u8),
     TypePredicate(u8),
@@ -1505,6 +1506,10 @@ impl NativeCallableBuiltin {
             Self::StringTrim(NativeTrimMode::Both) => "trim",
             Self::StringTrim(NativeTrimMode::Left) => "ltrim",
             Self::StringTrim(NativeTrimMode::Right) => "rtrim",
+            Self::ArrayMutation(NativeArrayMutationOperation::Push) => "array_push",
+            Self::ArrayMutation(NativeArrayMutationOperation::Pop) => "array_pop",
+            Self::ArrayMutation(NativeArrayMutationOperation::Shift) => "array_shift",
+            Self::ArrayMutation(NativeArrayMutationOperation::Unshift) => "array_unshift",
             Self::Cast(NATIVE_VALUE_CAST_STRING) => "strval",
             Self::Cast(NATIVE_VALUE_CAST_BOOL) => "boolval",
             Self::Cast(NATIVE_VALUE_CAST_FLOAT) => "floatval",
@@ -1530,6 +1535,7 @@ impl NativeCallableBuiltin {
     fn signature(self) -> NativeCallableBuiltinSignature {
         const BY_VALUE_1: &[bool] = &[false];
         const BY_VALUE_2: &[bool] = &[false, false];
+        const BY_REF_1: &[bool] = &[true];
 
         match self {
             Self::StringPredicate(_) => NativeCallableBuiltinSignature {
@@ -1544,6 +1550,24 @@ impl NativeCallableBuiltin {
                 accepts_variadic_args: false,
                 returns_by_reference: false,
             },
+            Self::ArrayMutation(NativeArrayMutationOperation::Push)
+            | Self::ArrayMutation(NativeArrayMutationOperation::Unshift) => {
+                NativeCallableBuiltinSignature {
+                    required_arg_count: 2,
+                    fixed_param_by_reference: BY_REF_1,
+                    accepts_variadic_args: true,
+                    returns_by_reference: false,
+                }
+            }
+            Self::ArrayMutation(NativeArrayMutationOperation::Pop)
+            | Self::ArrayMutation(NativeArrayMutationOperation::Shift) => {
+                NativeCallableBuiltinSignature {
+                    required_arg_count: 1,
+                    fixed_param_by_reference: BY_REF_1,
+                    accepts_variadic_args: false,
+                    returns_by_reference: false,
+                }
+            }
             Self::StringLength
             | Self::StringResult(_)
             | Self::Cast(_)
@@ -9119,6 +9143,18 @@ fn native_callable_builtin_for_function_name(name: &str) -> Option<NativeCallabl
         "trim" => Some(NativeCallableBuiltin::StringTrim(NativeTrimMode::Both)),
         "ltrim" => Some(NativeCallableBuiltin::StringTrim(NativeTrimMode::Left)),
         "rtrim" => Some(NativeCallableBuiltin::StringTrim(NativeTrimMode::Right)),
+        "array_push" => Some(NativeCallableBuiltin::ArrayMutation(
+            NativeArrayMutationOperation::Push,
+        )),
+        "array_pop" => Some(NativeCallableBuiltin::ArrayMutation(
+            NativeArrayMutationOperation::Pop,
+        )),
+        "array_shift" => Some(NativeCallableBuiltin::ArrayMutation(
+            NativeArrayMutationOperation::Shift,
+        )),
+        "array_unshift" => Some(NativeCallableBuiltin::ArrayMutation(
+            NativeArrayMutationOperation::Unshift,
+        )),
         "strval" => Some(NativeCallableBuiltin::Cast(NATIVE_VALUE_CAST_STRING)),
         "boolval" => Some(NativeCallableBuiltin::Cast(NATIVE_VALUE_CAST_BOOL)),
         "floatval" | "doubleval" => Some(NativeCallableBuiltin::Cast(NATIVE_VALUE_CAST_FLOAT)),
@@ -10223,6 +10259,22 @@ pub unsafe extern "C" fn phpc_native_call_arguments_read_reference(
         },
         Some(NativeCallArgumentSlot::Value(_)) | None => NativeReferenceHandle::null(),
     }
+}
+
+/// # Safety
+///
+/// `arguments` must be null or a call-arguments handle previously returned by
+/// the runtime ABI. The marker records that the final slot is a packed
+/// variadic collection produced by source-call argument binding.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_call_arguments_mark_finalized_variadic(
+    mut arguments: NativeCallArgumentsHandle,
+) -> bool {
+    let Some(arguments) = (unsafe { arguments.as_mut() }) else {
+        return false;
+    };
+    arguments.finalized_variadic = true;
+    true
 }
 
 /// # Safety
@@ -11719,10 +11771,183 @@ unsafe fn native_callable_trim_value(
     value_from_native_string_result_bytes(native_callable_trimmed_bytes(&subject, &mask, mode))
 }
 
+unsafe fn native_array_lvalue_result_into_value(
+    result: NativeArrayLvalueResult,
+    missing_value_message: impl Into<String>,
+) -> Result<Value, String> {
+    match result.tag {
+        NATIVE_ARRAY_LVALUE_OK => {
+            let value = unsafe { result.value.into_value() };
+            unsafe { phpc_native_diagnostic_free(result.diagnostic) };
+            value.ok_or_else(|| missing_value_message.into())
+        }
+        _ => {
+            let message = unsafe { result.diagnostic.as_ref() }
+                .map(|diagnostic| diagnostic.message.clone())
+                .unwrap_or_else(|| "native array lvalue operation failed".to_string());
+            unsafe { phpc_native_value_free(result.value) };
+            unsafe { phpc_native_diagnostic_free(result.diagnostic) };
+            Err(message)
+        }
+    }
+}
+
+unsafe fn native_callable_builtin_slot_value_cloned(
+    builtin_name: &str,
+    index: usize,
+    slot: NativeCallArgumentSlot,
+) -> Result<Value, String> {
+    match slot {
+        NativeCallArgumentSlot::Value(value) => {
+            unsafe { value.as_ref() }.cloned().ok_or_else(|| {
+                format!(
+                    "native callable builtin invocation failed: {builtin_name} argument {index} value slot is null"
+                )
+            })
+        }
+        NativeCallArgumentSlot::Reference(reference) => unsafe { reference.as_ref() }
+            .map(|reference| reference.cell.value_cloned())
+            .ok_or_else(|| {
+                format!(
+                    "native callable builtin invocation failed: {builtin_name} argument {index} reference slot is null"
+                )
+            }),
+    }
+}
+
+unsafe fn native_callable_array_mutation_operands(
+    operation: NativeArrayMutationOperation,
+    signature: NativeCallableBuiltinSignature,
+    arguments: &NativeCallArguments,
+) -> Result<Vec<Value>, String> {
+    let fixed_count = signature.fixed_param_count();
+    if arguments.finalized_variadic && signature.accepts_variadic_args {
+        if arguments.slots.len() != fixed_count + 1 {
+            return Err(format!(
+                "native callable builtin invocation failed: {} finalized variadic arguments expected {} fixed slot(s) plus one variadic collection, got {} slot(s)",
+                operation.label(),
+                fixed_count,
+                arguments.slots.len()
+            ));
+        }
+        let value = unsafe {
+            native_callable_builtin_slot_value_cloned(
+                operation.label(),
+                fixed_count,
+                arguments.slots[fixed_count],
+            )?
+        };
+        let Value::Array(array) = value else {
+            return Err(format!(
+                "native callable builtin invocation failed: {} finalized variadic slot must be array, got {}",
+                operation.label(),
+                value.type_name()
+            ));
+        };
+        return Ok(array
+            .entries()
+            .iter()
+            .map(|entry| entry.value_cloned())
+            .collect());
+    }
+
+    arguments
+        .slots
+        .iter()
+        .copied()
+        .enumerate()
+        .skip(fixed_count)
+        .map(|(index, slot)| unsafe {
+            native_callable_builtin_slot_value_cloned(operation.label(), index, slot)
+        })
+        .collect()
+}
+
+unsafe fn native_callable_array_mutation_value(
+    operation: NativeArrayMutationOperation,
+    arguments: NativeCallArgumentsHandle,
+) -> Result<Value, String> {
+    let Some(arguments_ref) = (unsafe { arguments.as_ref() }) else {
+        return Err(format!(
+            "native callable builtin invocation failed: {} arguments handle is null",
+            operation.label()
+        ));
+    };
+    let builtin = NativeCallableBuiltin::ArrayMutation(operation);
+    let signature = builtin.signature();
+    let actual = arguments_ref.slots.len();
+    if !signature.accepts_arg_count(actual) {
+        let expected = signature.required_arg_count;
+        return Err(format!(
+            "native callable builtin invocation failed: {} expected {expected} argument(s), got {actual}",
+            operation.label()
+        ));
+    }
+
+    let Some(slot) = arguments_ref.slots.first() else {
+        return Err(format!(
+            "native callable builtin invocation failed: {} missing array argument slot",
+            operation.label()
+        ));
+    };
+    let reference = match slot {
+        NativeCallArgumentSlot::Reference(reference) => reference,
+        NativeCallArgumentSlot::Value(_) => {
+            return Err(format!(
+                "unsupported call {}(): by-reference parameter $array requires reference materialization before runtime callable builtin invocation",
+                operation.label()
+            ))
+        }
+    };
+    let Some(reference) = (unsafe { reference.as_ref() }) else {
+        return Err(format!(
+            "native callable builtin invocation failed: {} array reference slot is null",
+            operation.label()
+        ));
+    };
+
+    let operands =
+        unsafe { native_callable_array_mutation_operands(operation, signature, arguments_ref) }?;
+    if !operation.operand_count_is_supported(operands.len()) {
+        return Err(format!(
+            "native callable builtin invocation failed: {} expected {} variadic operand(s), got {}",
+            operation.label(),
+            match operation {
+                NativeArrayMutationOperation::Push | NativeArrayMutationOperation::Unshift =>
+                    "at least 1",
+                NativeArrayMutationOperation::Pop | NativeArrayMutationOperation::Shift => "0",
+            },
+            operands.len()
+        ));
+    }
+
+    let mut value = reference.cell.value_cloned();
+    let result = native_array_mutation_value_path_result(&mut value, &[], operation, &operands);
+    let return_value = unsafe {
+        native_array_lvalue_result_into_value(
+            result,
+            format!(
+                "native callable builtin invocation failed: {} mutation returned no value",
+                operation.label()
+            ),
+        )?
+    };
+    let value = reference
+        .cell
+        .coerce_value_for_write(value)
+        .map_err(|error| error.message().to_string())?;
+    reference.cell.set_value(value);
+    Ok(return_value)
+}
+
 unsafe fn native_callable_builtin_invoke_value(
     builtin: NativeCallableBuiltin,
     arguments: NativeCallArgumentsHandle,
 ) -> Result<Value, String> {
+    if let NativeCallableBuiltin::ArrayMutation(operation) = builtin {
+        return unsafe { native_callable_array_mutation_value(operation, arguments) };
+    }
+
     let values = unsafe { native_callable_builtin_argument_values(builtin, arguments) }?;
     let result = match builtin {
         NativeCallableBuiltin::StringLength => {
@@ -11741,6 +11966,7 @@ unsafe fn native_callable_builtin_invoke_value(
             native_value_string_result_operation_value(values[0], 0, operation as u8)
         },
         NativeCallableBuiltin::StringTrim(mode) => unsafe { native_callable_trim_value(mode, &values) },
+        NativeCallableBuiltin::ArrayMutation(_) => unreachable!(),
         NativeCallableBuiltin::Cast(operation) => unsafe {
             native_value_cast_operation_value(values[0], operation)
         },
@@ -42438,6 +42664,378 @@ mod tests {
         assert!(!trim.accepts_arg_count(0));
         assert!(!trim.accepts_arg_count(3));
         assert!(!trim.returns_by_reference);
+
+        let push =
+            NativeCallableBuiltin::ArrayMutation(NativeArrayMutationOperation::Push).signature();
+        assert_eq!(push.required_arg_count, 2);
+        assert_eq!(push.fixed_param_count(), 1);
+        assert_eq!(push.fixed_param_by_reference, &[true]);
+        assert!(push.accepts_variadic_args);
+        assert!(!push.accepts_arg_count(1));
+        assert!(push.accepts_arg_count(2));
+        assert!(push.accepts_arg_count(4));
+        assert!(!push.returns_by_reference);
+
+        let pop =
+            NativeCallableBuiltin::ArrayMutation(NativeArrayMutationOperation::Pop).signature();
+        assert_eq!(pop.required_arg_count, 1);
+        assert_eq!(pop.fixed_param_count(), 1);
+        assert_eq!(pop.fixed_param_by_reference, &[true]);
+        assert!(pop.accepts_arg_count(1));
+        assert!(!pop.accepts_arg_count(0));
+        assert!(!pop.accepts_arg_count(2));
+        assert!(!pop.returns_by_reference);
+
+        let shift =
+            NativeCallableBuiltin::ArrayMutation(NativeArrayMutationOperation::Shift).signature();
+        assert_eq!(shift.fixed_param_by_reference, pop.fixed_param_by_reference);
+        assert!(shift.accepts_arg_count(1));
+
+        let unshift =
+            NativeCallableBuiltin::ArrayMutation(NativeArrayMutationOperation::Unshift).signature();
+        assert_eq!(unshift.required_arg_count, push.required_arg_count);
+        assert_eq!(
+            unshift.fixed_param_by_reference,
+            push.fixed_param_by_reference
+        );
+        assert!(unshift.accepts_variadic_args);
+    }
+
+    #[test]
+    fn native_callable_array_pop_shift_mutate_reference_arguments() {
+        let mut array = PhpArray::new();
+        array.append(Value::String("first".to_string())).unwrap();
+        array.append(Value::String("second".to_string())).unwrap();
+        array.append(Value::String("third".to_string())).unwrap();
+        let cell = PhpReferenceCell::new(Value::Array(array));
+
+        for (name, expected_return, expected_remaining) in [
+            (
+                "array_pop",
+                "third",
+                vec!["first".to_string(), "second".to_string()],
+            ),
+            ("array_shift", "first", vec!["second".to_string()]),
+        ] {
+            let callable_value = NativeValueHandle::from_value(Value::String(name.to_string()));
+            let (callable, diagnostic) = unsafe {
+                lookup_callable_value_for_test(
+                    NativeCallableTableHandle::null(),
+                    callable_value,
+                    None,
+                )
+            };
+            assert!(diagnostic.is_null());
+            assert!(!callable.is_null());
+
+            let arguments = phpc_native_call_arguments_new();
+            assert!(unsafe {
+                phpc_native_call_arguments_push_reference_and_free(
+                    arguments,
+                    NativeReferenceHandle::from_cell(cell.clone()),
+                )
+            });
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let value = unsafe {
+                phpc_native_callable_value_invoke_value_with_diagnostic_and_free(
+                    callable,
+                    arguments,
+                    &mut diagnostic,
+                )
+            };
+
+            assert!(diagnostic.is_null());
+            assert_eq!(
+                unsafe { value.as_ref() },
+                Some(&Value::String(expected_return.to_string()))
+            );
+            let Value::Array(updated) = cell.value_cloned() else {
+                panic!("{name} should leave the reference cell holding an array");
+            };
+            assert_eq!(
+                updated
+                    .entries()
+                    .iter()
+                    .map(|entry| entry.value_cloned())
+                    .collect::<Vec<_>>(),
+                expected_remaining
+                    .into_iter()
+                    .map(Value::String)
+                    .collect::<Vec<_>>()
+            );
+
+            unsafe { phpc_native_value_free(value) };
+            unsafe { phpc_native_callable_value_free(callable) };
+            unsafe { phpc_native_value_free(callable_value) };
+        }
+    }
+
+    #[test]
+    fn native_callable_array_mutation_uses_materialized_byref_slots_for_writeback() {
+        let mut array = PhpArray::new();
+        array.append(Value::String("front".to_string())).unwrap();
+        array.append(Value::String("back".to_string())).unwrap();
+        let cell = PhpReferenceCell::new(Value::Array(array));
+
+        let materialized = phpc_native_materialized_call_arguments_new();
+        let mut unpacked = PhpArray::new();
+        unpacked.append_reference(cell.clone()).unwrap();
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        assert!(unsafe {
+            phpc_native_materialized_call_arguments_unpack_array_value_and_free(
+                materialized,
+                NativeValueHandle::from_value(Value::Array(unpacked)),
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let names = [native_string_for_test("array")];
+        let required = [1];
+        let by_reference = [1];
+        let defaults = [NativeValueHandle::null()];
+        let finalized = unsafe {
+            phpc_native_materialized_call_arguments_finalize_with_diagnostic(
+                materialized,
+                names.as_ptr(),
+                required.as_ptr(),
+                by_reference.as_ptr(),
+                defaults.as_ptr(),
+                1,
+                NativeStringHandle::null(),
+                false,
+                false,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!finalized.is_null());
+
+        let callable_value =
+            NativeValueHandle::from_value(Value::String("array_shift".to_string()));
+        let (callable, lookup_diagnostic) = unsafe {
+            lookup_callable_value_for_test(NativeCallableTableHandle::null(), callable_value, None)
+        };
+        assert!(lookup_diagnostic.is_null());
+        assert!(!callable.is_null());
+
+        let shifted = unsafe {
+            phpc_native_callable_value_invoke_value_with_diagnostic_and_free(
+                callable,
+                finalized,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { shifted.as_ref() },
+            Some(&Value::String("front".to_string()))
+        );
+        let Value::Array(updated) = cell.value_cloned() else {
+            panic!("array_shift should write an array back through the materialized reference");
+        };
+        assert_eq!(updated.len(), 1);
+        assert_eq!(
+            updated.entries()[0].value(),
+            &Value::String("back".to_string())
+        );
+
+        unsafe { phpc_native_value_free(shifted) };
+        unsafe { phpc_native_callable_value_free(callable) };
+        unsafe { phpc_native_value_free(callable_value) };
+        unsafe { phpc_native_materialized_call_arguments_free(materialized) };
+        for name in names {
+            unsafe { phpc_native_string_free(name) };
+        }
+    }
+
+    #[test]
+    fn native_callable_array_push_unshift_mutate_reference_with_value_tail_operands() {
+        for (name, expected_len, expected_values) in [
+            (
+                "array_push",
+                4,
+                vec!["middle", "tail", "right", "last-array"],
+            ),
+            (
+                "array_unshift",
+                4,
+                vec!["right", "last-array", "middle", "tail"],
+            ),
+        ] {
+            let mut array = PhpArray::new();
+            array.append(Value::String("middle".to_string())).unwrap();
+            array.append(Value::String("tail".to_string())).unwrap();
+            let cell = PhpReferenceCell::new(Value::Array(array));
+
+            let mut nested = PhpArray::new();
+            nested
+                .append(Value::String("last-array".to_string()))
+                .unwrap();
+            let arguments = phpc_native_call_arguments_new();
+            assert!(unsafe {
+                phpc_native_call_arguments_push_reference_and_free(
+                    arguments,
+                    NativeReferenceHandle::from_cell(cell.clone()),
+                )
+            });
+            assert!(unsafe {
+                phpc_native_call_arguments_push_value_and_free(
+                    arguments,
+                    NativeValueHandle::from_value(Value::String("right".to_string())),
+                )
+            });
+            assert!(unsafe {
+                phpc_native_call_arguments_push_value_and_free(
+                    arguments,
+                    NativeValueHandle::from_value(Value::Array(nested)),
+                )
+            });
+
+            let callable_value = NativeValueHandle::from_value(Value::String(name.to_string()));
+            let (callable, lookup_diagnostic) = unsafe {
+                lookup_callable_value_for_test(
+                    NativeCallableTableHandle::null(),
+                    callable_value,
+                    None,
+                )
+            };
+            assert!(lookup_diagnostic.is_null());
+            assert!(!callable.is_null());
+
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            let value = unsafe {
+                phpc_native_callable_value_invoke_value_with_diagnostic_and_free(
+                    callable,
+                    arguments,
+                    &mut diagnostic,
+                )
+            };
+            assert!(diagnostic.is_null());
+            assert_eq!(unsafe { value.as_ref() }, Some(&Value::Int(expected_len)));
+
+            let Value::Array(updated) = cell.value_cloned() else {
+                panic!("{name} should leave the reference cell holding an array");
+            };
+            let observed = updated
+                .entries()
+                .iter()
+                .map(|entry| match entry.value_cloned() {
+                    Value::String(value) => value,
+                    Value::Array(array) => match array.entries()[0].value_cloned() {
+                        Value::String(value) => value,
+                        other => panic!("nested operand should remain a string, got {other:?}"),
+                    },
+                    other => panic!("unexpected array_push/array_unshift value {other:?}"),
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                observed,
+                expected_values
+                    .into_iter()
+                    .map(|value| value.to_string())
+                    .collect::<Vec<_>>()
+            );
+
+            unsafe { phpc_native_value_free(value) };
+            unsafe { phpc_native_callable_value_free(callable) };
+            unsafe { phpc_native_value_free(callable_value) };
+        }
+    }
+
+    #[test]
+    fn native_callable_array_push_unshift_expand_finalized_variadic_collections() {
+        for (name, expected_len, expected_values) in [
+            ("array_push", 3, vec!["base", "a", "b"]),
+            ("array_unshift", 3, vec!["a", "b", "base"]),
+        ] {
+            let mut array = PhpArray::new();
+            array.append(Value::String("base".to_string())).unwrap();
+            let cell = PhpReferenceCell::new(Value::Array(array));
+
+            let materialized = phpc_native_materialized_call_arguments_new();
+            let mut unpacked = PhpArray::new();
+            unpacked.append_reference(cell.clone()).unwrap();
+            unpacked.append(Value::String("a".to_string())).unwrap();
+            unpacked.append(Value::String("b".to_string())).unwrap();
+            let mut diagnostic = NativeDiagnosticHandle::null();
+            assert!(unsafe {
+                phpc_native_materialized_call_arguments_unpack_array_value_and_free(
+                    materialized,
+                    NativeValueHandle::from_value(Value::Array(unpacked)),
+                    &mut diagnostic,
+                )
+            });
+            assert!(diagnostic.is_null());
+
+            let names = [native_string_for_test("array")];
+            let variadic_name = native_string_for_test("values");
+            let required = [1];
+            let by_reference = [1];
+            let defaults = [NativeValueHandle::null()];
+            let finalized = unsafe {
+                phpc_native_materialized_call_arguments_finalize_with_diagnostic(
+                    materialized,
+                    names.as_ptr(),
+                    required.as_ptr(),
+                    by_reference.as_ptr(),
+                    defaults.as_ptr(),
+                    1,
+                    variadic_name,
+                    true,
+                    false,
+                    &mut diagnostic,
+                )
+            };
+            assert!(diagnostic.is_null());
+            assert!(!finalized.is_null());
+
+            let callable_value = NativeValueHandle::from_value(Value::String(name.to_string()));
+            let (callable, lookup_diagnostic) = unsafe {
+                lookup_callable_value_for_test(
+                    NativeCallableTableHandle::null(),
+                    callable_value,
+                    None,
+                )
+            };
+            assert!(lookup_diagnostic.is_null());
+            assert!(!callable.is_null());
+
+            let value = unsafe {
+                phpc_native_callable_value_invoke_value_with_diagnostic_and_free(
+                    callable,
+                    finalized,
+                    &mut diagnostic,
+                )
+            };
+            assert!(diagnostic.is_null());
+            assert_eq!(unsafe { value.as_ref() }, Some(&Value::Int(expected_len)));
+
+            let Value::Array(updated) = cell.value_cloned() else {
+                panic!("{name} should write an array through the finalized reference");
+            };
+            let observed = updated
+                .entries()
+                .iter()
+                .map(|entry| entry.value_cloned())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                observed,
+                expected_values
+                    .into_iter()
+                    .map(|value| Value::String(value.to_string()))
+                    .collect::<Vec<_>>()
+            );
+
+            unsafe { phpc_native_value_free(value) };
+            unsafe { phpc_native_callable_value_free(callable) };
+            unsafe { phpc_native_value_free(callable_value) };
+            unsafe { phpc_native_materialized_call_arguments_free(materialized) };
+            for name in names {
+                unsafe { phpc_native_string_free(name) };
+            }
+            unsafe { phpc_native_string_free(variadic_name) };
+        }
     }
 
     #[test]
