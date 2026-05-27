@@ -161,6 +161,7 @@ pub enum NativeClassMetadataOperation {
     MethodExists = 1,
     PropertyExists = 2,
     TraitExists = 3,
+    InterfaceExists = 4,
 }
 
 #[repr(u8)]
@@ -10414,6 +10415,9 @@ fn native_class_like_metadata_exists_bytes(class_name: &[u8], operation: u8) -> 
         }
         tag if tag == NativeClassMetadataOperation::TraitExists as u8 => {
             Some(native_user_trait_canonical_name_bytes(class_name).is_some())
+        }
+        tag if tag == NativeClassMetadataOperation::InterfaceExists as u8 => {
+            Some(native_user_interface_canonical_name_bytes(class_name).is_some())
         }
         _ => None,
     }
@@ -36639,6 +36643,21 @@ fn native_user_trait_canonical_name_bytes(name: &[u8]) -> Option<Vec<u8>> {
     native_user_trait_canonical_name_for_lookup_key(&lookup_key)
 }
 
+fn native_user_interface_canonical_name_for_lookup_key(lookup_key: &[u8]) -> Option<Vec<u8>> {
+    NATIVE_USER_INTERFACES.with(|interfaces| {
+        interfaces
+            .borrow()
+            .iter()
+            .find(|interface| interface.lookup_key == lookup_key)
+            .map(|interface| interface.name.clone())
+    })
+}
+
+fn native_user_interface_canonical_name_bytes(name: &[u8]) -> Option<Vec<u8>> {
+    let lookup_key = native_class_metadata_lookup_key(name);
+    native_user_interface_canonical_name_for_lookup_key(&lookup_key)
+}
+
 fn native_user_trait_names_bytes() -> Vec<Vec<u8>> {
     NATIVE_USER_TRAITS.with(|traits| {
         traits
@@ -37550,6 +37569,7 @@ fn native_user_class_has_member_bytes(
                     .is_some(),
                 NativeClassMetadataOperation::ClassExists => true,
                 NativeClassMetadataOperation::TraitExists => false,
+                NativeClassMetadataOperation::InterfaceExists => false,
             };
         }
         let lookup = native_class_metadata_lookup_key(&class_name);
@@ -37570,6 +37590,7 @@ fn native_user_class_has_member_bytes(
                 .any(|property| property.name.as_slice() == member),
             NativeClassMetadataOperation::ClassExists => true,
             NativeClassMetadataOperation::TraitExists => false,
+            NativeClassMetadataOperation::InterfaceExists => false,
         };
         if found {
             return true;
@@ -37608,6 +37629,16 @@ unsafe fn native_value_class_metadata_exists(
                 )
             }?;
             Ok(native_user_trait_canonical_name_bytes(&trait_name).is_some())
+        }
+        tag if tag == NativeClassMetadataOperation::InterfaceExists as u8 => {
+            let interface_name = unsafe {
+                native_value_metadata_php_string_bytes_argument(
+                    subject,
+                    "interface_exists()",
+                    "interface name",
+                )
+            }?;
+            Ok(native_user_interface_canonical_name_bytes(&interface_name).is_some())
         }
         tag if tag == NativeClassMetadataOperation::MethodExists as u8 => {
             let class_name = unsafe {
@@ -37768,6 +37799,17 @@ pub unsafe extern "C" fn phpc_native_value_class_metadata_exists_with_autoload_p
             };
             false
         }
+        Ok(false)
+            if autoload && operation == NativeClassMetadataOperation::InterfaceExists as u8 =>
+        {
+            unsafe {
+                native_store_diagnostic_message(
+                    diagnostic,
+                    "interface_exists(): generated-native autoload for missing interfaces is not implemented",
+                )
+            };
+            false
+        }
         Ok(result) => result,
         Err(error) => {
             unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
@@ -37793,6 +37835,13 @@ unsafe fn native_value_class_metadata_autoload_name_bytes(
                 subject,
                 "trait_exists()",
                 "trait name",
+            )?
+        })),
+        tag if tag == NativeClassMetadataOperation::InterfaceExists as u8 => Ok(Some(unsafe {
+            native_value_metadata_php_string_bytes_argument(
+                subject,
+                "interface_exists()",
+                "interface name",
             )?
         })),
         _ => Ok(None),
@@ -41242,6 +41291,15 @@ mod tests {
         let trait_name = unsafe { autoload_class_bytes_from_frame_for_test(frame) };
         spl_autoload_record_event_for_test("declare-trait", &trait_name);
         native_declare_user_trait_bytes_result(&trait_name);
+        phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Null))
+    }
+
+    unsafe extern "C" fn native_autoload_declare_interface_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        let interface_name = unsafe { autoload_class_bytes_from_frame_for_test(frame) };
+        spl_autoload_record_event_for_test("declare-interface", &interface_name);
+        native_declare_user_interface_bytes_result(&interface_name);
         phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Null))
     }
 
@@ -45117,7 +45175,8 @@ mod tests {
     }
 
     #[test]
-    fn native_class_metadata_autoload_registry_invokes_callbacks_for_class_and_trait_misses() {
+    fn native_class_metadata_autoload_registry_invokes_callbacks_for_class_trait_and_interface_misses(
+    ) {
         native_user_classes_reset_for_test();
         spl_autoload_events_reset_for_test();
         let registry = phpc_native_spl_autoload_registry_new();
@@ -45146,6 +45205,14 @@ mod tests {
                 "declare_trait",
                 NativeCallableVisibility::Public,
                 native_autoload_declare_trait_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "declare_interface",
+                NativeCallableVisibility::Public,
+                native_autoload_declare_interface_callback,
             );
             register_spl_autoload_callable_for_test(
                 registry,
@@ -45234,7 +45301,51 @@ mod tests {
             vec!["function:RuntimeTrait", "declare-trait:RuntimeTrait"]
         );
 
+        let unregister = unsafe {
+            normalized_callable_for_test(table, Value::String("declare_trait".to_string()))
+        };
+        assert!(unsafe {
+            phpc_native_spl_autoload_unregister_callable_value_and_free(
+                registry,
+                unregister,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
         unsafe {
+            register_spl_autoload_callable_for_test(
+                registry,
+                table,
+                Value::String("declare_interface".to_string()),
+                false,
+            );
+        }
+
+        spl_autoload_events_reset_for_test();
+        let interface_name =
+            NativeValueHandle::from_value(Value::String("RuntimeContract".to_string()));
+        assert!(unsafe {
+            phpc_native_value_class_metadata_exists_with_autoload_registry_and_diagnostic(
+                interface_name,
+                NativeValueHandle::null(),
+                NativeClassMetadataOperation::InterfaceExists as u8,
+                registry,
+                table,
+                true,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            spl_autoload_events_for_test(),
+            vec![
+                "function:RuntimeContract",
+                "declare-interface:RuntimeContract"
+            ]
+        );
+
+        unsafe {
+            phpc_native_value_free(interface_name);
             phpc_native_value_free(trait_name);
             phpc_native_value_free(class_name);
             phpc_native_spl_autoload_registry_free(registry);

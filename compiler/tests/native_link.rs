@@ -27372,10 +27372,32 @@ fn native_executable_c_source_routes_declared_interface_exists_through_metadata(
     let body = main_body(&source);
 
     assert!(
-        body.contains("phpc_native_text_membership_with_reference_slot_with_diagnostic")
-            && source.contains("NativeInterfaceExistsContract")
-            && !source.contains("phpc_native_value_class_metadata_exists_with_diagnostic"),
-        "declared interface_exists() should use generated interface metadata, not class metadata or hard-coded external interfaces:\n{source}"
+        body.contains("phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic")
+            && body.contains(", 4, false,")
+            && source.contains("phpc_native_declare_user_interface_bytes")
+            && !source.contains("phpc_native_text_membership_with_reference_slot_with_diagnostic")
+            && !source.contains("phpc_native_text_membership_candidates"),
+        "declared interface_exists() should use the shared runtime class-like metadata boundary, not generated-C text membership:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_interface_exists_autoload_to_policy_boundary() {
+    let program = parse(concat!(
+        "<?php\n",
+        "$name = \"MissingNativeInterfaceAutoload\";\n",
+        "echo interface_exists($name) ? \"I\" : \"M\";\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic")
+            && body.contains(", 4, true,")
+            && !source.contains("phpc_native_text_membership_with_reference_slot_with_diagnostic")
+            && !source.contains("phpc_native_text_membership_candidates"),
+        "autoload-enabled interface_exists() should use the shared metadata policy boundary until generated-C SPL registry state exists:\n{source}"
     );
 }
 
