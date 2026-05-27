@@ -15443,6 +15443,34 @@ const ARRAYACCESS_PROPERTY_HELD_INCREMENT_DIAGNOSTIC_SOURCE: &str = concat!(
     "echo \"after\";\n",
 );
 
+const ARRAYACCESS_NESTED_OWNER_STACK_PRODUCTION_SOURCE: &str = concat!(
+    "<?php\n",
+    "class NestedProductionLeafBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"leaf-get:\", $offset, \";\"; return 0; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"leaf-set:\", $offset, \"=\", $value, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class NestedProductionMiddleBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"middle-get:\", $offset, \";\"; return new NestedProductionLeafBag(); }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"middle-set:\", $offset, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class NestedProductionRootBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"root-get:\", $offset, \";\"; return new NestedProductionMiddleBag(); }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"root-set:\", $offset, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class NestedProductionHolder { public $bag; public function __construct() { $this->bag = new NestedProductionRootBag(); } }\n",
+    "$direct = new NestedProductionRootBag();\n",
+    "$direct[\"outer\"][\"middle\"][\"leaf\"] = \"D\";\n",
+    "echo \"|\";\n",
+    "$holder = new NestedProductionHolder();\n",
+    "$holder->bag[\"pouter\"][\"pmiddle\"][\"pleaf\"] = \"P\";\n",
+);
+
 #[test]
 fn native_executable_c_source_routes_arrayaccess_reference_slot_owners_through_value_owner_boundary(
 ) {
@@ -15602,6 +15630,172 @@ fn emit_exe_reports_property_held_arrayaccess_increment_conversion_diagnostic() 
 
     let _ = fs::remove_file(&source_path);
     let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_executable_c_source_routes_nested_arrayaccess_owner_stack_for_direct_and_property_roots()
+{
+    let program = parse(ARRAYACCESS_NESTED_OWNER_STACK_PRODUCTION_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_GET")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_SET")
+            && source
+                .matches("phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic")
+                .count()
+                >= 4
+            && source
+                .matches("phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic")
+                .count()
+                >= 6
+            && source.matches("nested_arrayaccess_leaf_write").count() >= 2
+            && source.matches("nested_arrayaccess_parent_writeback").count() >= 4
+            && source.matches("nested_arrayaccess_root_commit").count() >= 2
+            && source.contains("phpc_native_value_public_property_reference_with_diagnostic_and_free")
+            && source.contains("phpc_native_reference_set_value("),
+        "nested ArrayAccess assignment should emit offsetGet descent, leaf writes, reverse parent writebacks, and direct/property root commits:\n{source}"
+    );
+    assert!(
+        !source.contains("ArrayAccess lowering rejects")
+            && !source.contains("assembly mutation lowering rejects")
+            && !source.contains("non-local assignment lowering rejects"),
+        "nested ArrayAccess production must not fall back to rejection paths:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_nested_arrayaccess_owner_stack_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "nested_arrayaccess_owner_stack_production",
+        ARRAYACCESS_NESTED_OWNER_STACK_PRODUCTION_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native nested ArrayAccess executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(
+        run.stdout,
+        b"root-get:outer;middle-get:middle;leaf-set:leaf=D;middle-set:middle;root-set:outer;|root-get:pouter;middle-get:pmiddle;leaf-set:pleaf=P;middle-set:pmiddle;root-set:pouter;"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_executable_c_source_rejects_nested_arrayaccess_reference_returning_offsetget() {
+    let program = parse(concat!(
+        "<?php\n",
+        "class RefNestedProductionBag implements ArrayAccess {\n",
+        "    public function &offsetGet(&$offset) { return $offset; }\n",
+        "    public function offsetExists($offset) { return true; }\n",
+        "    public function offsetSet($offset, $value) { return null; }\n",
+        "    public function offsetUnset($offset) { return null; }\n",
+        "}\n",
+        "$bag = new RefNestedProductionBag();\n",
+        "$bag[\"outer\"][\"leaf\"] = \"blocked\";\n",
+    ))
+    .unwrap();
+    let error = emit_native_executable_c_source(&program)
+        .expect_err("reference-returning offsetGet must not be lowered by value");
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("ArrayAccess lowering rejects"),
+        "reference-returning offsetGet should stay blocked at the nested owner boundary: {error:?}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_rejects_nested_arrayaccess_non_assignment_mutations() {
+    let sources = [
+        (
+            "nested ArrayAccess null coalesce assignment",
+            concat!(
+                "<?php\n",
+                "class Bag implements ArrayAccess {\n",
+                "    public function offsetGet($offset) { return new Bag(); }\n",
+                "    public function offsetExists($offset) { return true; }\n",
+                "    public function offsetSet($offset, $value) { return null; }\n",
+                "    public function offsetUnset($offset) { return null; }\n",
+                "}\n",
+                "$bag = new Bag();\n",
+                "$bag[\"outer\"][\"leaf\"] ??= 1;\n",
+            ),
+        ),
+        (
+            "nested ArrayAccess append assignment",
+            concat!(
+                "<?php\n",
+                "class Bag implements ArrayAccess {\n",
+                "    public function offsetGet($offset) { return new Bag(); }\n",
+                "    public function offsetExists($offset) { return true; }\n",
+                "    public function offsetSet($offset, $value) { return null; }\n",
+                "    public function offsetUnset($offset) { return null; }\n",
+                "}\n",
+                "$bag = new Bag();\n",
+                "$bag[\"outer\"][] = 1;\n",
+            ),
+        ),
+        (
+            "nested ArrayAccess increment",
+            concat!(
+                "<?php\n",
+                "class Bag implements ArrayAccess {\n",
+                "    public function offsetGet($offset) { return new Bag(); }\n",
+                "    public function offsetExists($offset) { return true; }\n",
+                "    public function offsetSet($offset, $value) { return null; }\n",
+                "    public function offsetUnset($offset) { return null; }\n",
+                "}\n",
+                "$bag = new Bag();\n",
+                "$bag[\"outer\"][\"leaf\"]++;\n",
+            ),
+        ),
+        (
+            "property-held nested ArrayAccess decrement",
+            concat!(
+                "<?php\n",
+                "class Bag implements ArrayAccess {\n",
+                "    public function offsetGet($offset) { return new Bag(); }\n",
+                "    public function offsetExists($offset) { return true; }\n",
+                "    public function offsetSet($offset, $value) { return null; }\n",
+                "    public function offsetUnset($offset) { return null; }\n",
+                "}\n",
+                "class Box { public $bag; public function __construct() { $this->bag = new Bag(); } }\n",
+                "$box = new Box();\n",
+                "$box->bag[\"outer\"][\"leaf\"]--;\n",
+            ),
+        ),
+    ];
+
+    for (label, source) in sources {
+        let program = parse(source).unwrap_or_else(|error| {
+            panic!("{label} should parse before nested ArrayAccess blocker proof: {error:?}")
+        });
+        let error = emit_native_executable_c_source(&program)
+            .expect_err(&format!("{label} unexpectedly emitted generated C"));
+
+        assert_eq!(error.phase, Phase::Codegen, "{label}: {error:?}");
+        assert!(
+            error.message.contains("ArrayAccess lowering rejects")
+                || error.message.contains("mutation lowering rejects")
+                || error
+                    .message
+                    .contains("non-local assignment lowering rejects"),
+            "{label} should remain behind the ArrayAccess/mutation owner boundary, got {error:?}"
+        );
+    }
 }
 
 #[test]
