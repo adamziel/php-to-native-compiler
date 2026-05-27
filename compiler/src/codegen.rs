@@ -15772,6 +15772,7 @@ struct CGenerator {
     uses_native_class_metadata_exists: bool,
     uses_native_class_metadata_value: bool,
     uses_native_object_property_helpers: bool,
+    uses_native_static_property_helpers: bool,
     uses_native_conversion_source_helpers: bool,
     uses_native_offset_read_source: bool,
     uses_native_numeric_unary_source: bool,
@@ -15787,6 +15788,8 @@ struct CGenerator {
     native_reference_cleanup_handles: Vec<String>,
     native_request_state_handle: Option<String>,
     native_request_state_owned: bool,
+    native_static_property_storage_handle: Option<String>,
+    native_static_property_storage_owned: bool,
     native_globals_symbol_table_handle: Option<String>,
     native_globals_symbol_table_owned: bool,
     native_callable_table_handle: Option<String>,
@@ -15931,6 +15934,8 @@ struct CGotoStateSnapshot {
     native_reference_cleanup_handles: Vec<String>,
     native_request_state_handle: Option<String>,
     native_request_state_owned: bool,
+    native_static_property_storage_handle: Option<String>,
+    native_static_property_storage_owned: bool,
     native_globals_symbol_table_handle: Option<String>,
     native_globals_symbol_table_owned: bool,
     native_callable_table_handle: Option<String>,
@@ -15987,6 +15992,7 @@ struct CDeclaredClass {
     is_final: bool,
     allocation_metadata: CDeclaredClassAllocationMetadata,
     own_properties: Vec<CDeclaredClassProperty>,
+    own_static_properties: Vec<CDeclaredClassProperty>,
     properties: Vec<CDeclaredClassProperty>,
     constructor: Option<CDeclaredClassMethod>,
     methods: Vec<CDeclaredClassMethod>,
@@ -16205,7 +16211,16 @@ struct CDeclaredClassProperty {
     declaring_class_name: String,
     name: String,
     visibility: ClassVisibility,
+    is_static: bool,
+    type_decl: Option<String>,
+    default: Option<Expr>,
     span: Span,
+}
+
+#[derive(Debug, Clone)]
+struct CResolvedStaticProperty {
+    receiver_class_name: String,
+    name: String,
 }
 
 #[derive(Debug, Clone)]
@@ -18139,6 +18154,10 @@ impl CGenerator {
             && self.native_reference_cleanup_handles == other.native_reference_cleanup_handles
             && self.native_request_state_handle == other.native_request_state_handle
             && self.native_request_state_owned == other.native_request_state_owned
+            && self.native_static_property_storage_handle
+                == other.native_static_property_storage_handle
+            && self.native_static_property_storage_owned
+                == other.native_static_property_storage_owned
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
             && self.native_globals_symbol_table_owned == other.native_globals_symbol_table_owned
     }
@@ -18164,6 +18183,10 @@ impl CGenerator {
             native_reference_cleanup_handles: self.native_reference_cleanup_handles.clone(),
             native_request_state_handle: self.native_request_state_handle.clone(),
             native_request_state_owned: self.native_request_state_owned,
+            native_static_property_storage_handle: self
+                .native_static_property_storage_handle
+                .clone(),
+            native_static_property_storage_owned: self.native_static_property_storage_owned,
             native_globals_symbol_table_handle: self.native_globals_symbol_table_handle.clone(),
             native_globals_symbol_table_owned: self.native_globals_symbol_table_owned,
             native_callable_table_handle: self.native_callable_table_handle.clone(),
@@ -18178,6 +18201,10 @@ impl CGenerator {
             && self.native_reference_cleanup_handles == other.native_reference_cleanup_handles
             && self.native_request_state_handle == other.native_request_state_handle
             && self.native_request_state_owned == other.native_request_state_owned
+            && self.native_static_property_storage_handle
+                == other.native_static_property_storage_handle
+            && self.native_static_property_storage_owned
+                == other.native_static_property_storage_owned
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
             && self.native_globals_symbol_table_owned == other.native_globals_symbol_table_owned
             && self.native_callable_table_handle == other.native_callable_table_handle
@@ -18727,6 +18754,7 @@ impl CGenerator {
         self.uses_native_class_metadata_exists |= branch.uses_native_class_metadata_exists;
         self.uses_native_class_metadata_value |= branch.uses_native_class_metadata_value;
         self.uses_native_object_property_helpers |= branch.uses_native_object_property_helpers;
+        self.uses_native_static_property_helpers |= branch.uses_native_static_property_helpers;
         self.uses_native_conversion_source_helpers |= branch.uses_native_conversion_source_helpers;
         self.uses_native_offset_read_source |= branch.uses_native_offset_read_source;
         self.uses_native_numeric_unary_source |= branch.uses_native_numeric_unary_source;
@@ -18772,6 +18800,7 @@ impl CGenerator {
             || self.uses_native_class_metadata_exists
             || self.uses_native_class_metadata_value
             || self.uses_native_object_property_helpers
+            || self.uses_native_static_property_helpers
             || self.uses_native_conversion_source_helpers
             || self.uses_native_offset_read_source
             || self.uses_native_numeric_unary_source
@@ -18974,6 +19003,7 @@ impl CGenerator {
 
         let mut seen_properties = HashSet::new();
         let mut own_properties = Vec::new();
+        let mut own_static_properties = Vec::new();
         let mut constructor = None;
         let mut allocation_metadata = CDeclaredClassAllocationMetadata::cleanup_safe();
         let mut seen_methods = HashSet::new();
@@ -18981,10 +19011,25 @@ impl CGenerator {
         for member in &class.members {
             match member {
                 ClassMember::Property(property) => {
-                    if property.is_static
-                        || property.type_decl.is_some()
-                        || property.default.is_some()
-                    {
+                    if property.is_static {
+                        if !seen_properties.insert(property.name.clone()) {
+                            return Err(
+                                self.unsupported(property.span, ASSEMBLY_OBJECT_CLASS_REJECTION)
+                            );
+                        }
+                        own_static_properties.push(CDeclaredClassProperty {
+                            declaring_class_id: class_index,
+                            declaring_class_name: class.name.clone(),
+                            name: property.name.clone(),
+                            visibility: property.visibility,
+                            is_static: true,
+                            type_decl: property.type_decl.as_ref().map(|decl| decl.text.clone()),
+                            default: property.default.clone(),
+                            span: property.span,
+                        });
+                        continue;
+                    }
+                    if property.type_decl.is_some() || property.default.is_some() {
                         return Err(
                             self.unsupported(property.span, ASSEMBLY_OBJECT_CLASS_REJECTION)
                         );
@@ -18999,6 +19044,9 @@ impl CGenerator {
                         declaring_class_name: class.name.clone(),
                         name: property.name.clone(),
                         visibility: property.visibility,
+                        is_static: false,
+                        type_decl: None,
+                        default: None,
                         span: property.span,
                     });
                 }
@@ -19073,6 +19121,7 @@ impl CGenerator {
             allocation_metadata,
             properties: own_properties.clone(),
             own_properties,
+            own_static_properties,
             constructor,
             methods,
         })
@@ -20694,6 +20743,7 @@ impl CGenerator {
                 || self.uses_native_user_class_declaration
                 || self.uses_native_class_metadata_exists
                 || self.uses_native_class_metadata_value
+                || self.uses_native_static_property_helpers
             {
                 output.push_str("#include <stdbool.h>\n");
             }
@@ -20785,6 +20835,11 @@ impl CGenerator {
             }
             if self.uses_native_request_state_helpers {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeRequestStateHandle;\n");
+            }
+            if self.uses_native_static_property_helpers {
+                output.push_str(
+                    "typedef struct { void *ptr; } phpc_NativeStaticPropertyStorageHandle;\n",
+                );
             }
             if self.uses_native_symbol_table_helpers {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeSymbolTableHandle;\n");
@@ -21274,6 +21329,17 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_value_public_property_array_path_reference_with_diagnostic_and_free(phpc_NativeValueHandle object, phpc_NativeValueHandle property, const phpc_NativeValueHandle *keys, size_t len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_value_public_property_array_append_reference_with_diagnostic_and_free(phpc_NativeValueHandle object, phpc_NativeValueHandle property, const phpc_NativeValueHandle *keys, size_t len, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
+            if self.uses_native_static_property_helpers {
+                output.push_str("extern phpc_NativeStaticPropertyStorageHandle phpc_native_static_property_storage_new(void);\n");
+                output.push_str("extern bool phpc_native_static_property_storage_declare_class_bytes(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_static_property_storage_declare_class_parent_bytes(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *parent_ptr, size_t parent_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_static_property_storage_declare_property_bytes(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, uint8_t visibility, bool is_static, const uint8_t *type_ptr, size_t type_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_static_property_storage_register_default_value_and_free(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_static_property_storage_reset_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_read_class_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_write_class_with_diagnostic_and_free(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern void phpc_native_static_property_storage_free(phpc_NativeStaticPropertyStorageHandle storage);\n");
+            }
             if self.uses_native_object_instanceof_helpers {
                 output.push_str("extern _Bool phpc_native_value_instanceof_class_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *class_name, size_t class_name_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
@@ -21508,6 +21574,15 @@ impl CGenerator {
             if let Some(handle) = &self.native_request_state_handle {
                 output.push_str("  ");
                 output.push_str(&format!("phpc_native_request_state_free({handle});"));
+                output.push('\n');
+            }
+        }
+        if self.native_static_property_storage_owned {
+            if let Some(handle) = &self.native_static_property_storage_handle {
+                output.push_str("  ");
+                output.push_str(&format!(
+                    "phpc_native_static_property_storage_free({handle});"
+                ));
                 output.push('\n');
             }
         }
@@ -30637,6 +30712,329 @@ impl CGenerator {
         Ok(CValue::BoolExpr(result))
     }
 
+    fn resolve_declared_static_property(
+        &self,
+        class_name: &str,
+        property_name: &str,
+    ) -> Option<CResolvedStaticProperty> {
+        let receiver_key = Self::declared_class_key(class_name);
+        let receiver = self.declared_classes.get(&receiver_key)?;
+        if !receiver.interface_names.is_empty() {
+            return None;
+        }
+
+        let mut current_key = Some(receiver_key);
+        while let Some(class_key) = current_key {
+            let class = self.declared_classes.get(&class_key)?;
+            if class
+                .own_properties
+                .iter()
+                .any(|property| property.name == property_name)
+            {
+                return None;
+            }
+            if let Some(property) = class
+                .own_static_properties
+                .iter()
+                .find(|property| property.name == property_name)
+            {
+                return Some(CResolvedStaticProperty {
+                    receiver_class_name: receiver.name.clone(),
+                    name: property.name.clone(),
+                });
+            }
+            current_key = class.parent_key.clone();
+        }
+
+        None
+    }
+
+    fn ensure_native_static_property_storage(
+        &mut self,
+        failure_cleanup: &str,
+        span: Span,
+    ) -> CompileResult<String> {
+        if let Some(handle) = &self.native_static_property_storage_handle {
+            return Ok(handle.clone());
+        }
+
+        self.uses_native_static_property_helpers = true;
+        self.uses_native_string_helpers = true;
+        let handle = self.next_native_name("static_properties");
+        self.body.push(format!(
+            "phpc_NativeStaticPropertyStorageHandle {handle} = phpc_native_static_property_storage_new();"
+        ));
+        self.native_static_property_storage_handle = Some(handle.clone());
+        self.native_static_property_storage_owned = true;
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
+
+        self.emit_native_static_property_storage_metadata(&handle, failure_cleanup, span)?;
+        self.emit_native_static_property_storage_defaults(&handle, failure_cleanup)?;
+        self.emit_native_static_property_storage_reset(&handle, failure_cleanup);
+        Ok(handle)
+    }
+
+    fn emit_native_static_property_storage_metadata(
+        &mut self,
+        handle: &str,
+        failure_cleanup: &str,
+        _span: Span,
+    ) -> CompileResult<()> {
+        let classes = self
+            .declared_class_order
+            .iter()
+            .map(|key| {
+                self.declared_classes
+                    .get(key)
+                    .expect("declared class order key has metadata")
+                    .clone()
+            })
+            .collect::<Vec<_>>();
+
+        for class in &classes {
+            let (class_bytes, class_len) =
+                self.emit_call_type_static_bytes("static_property_class_name_bytes", &class.name);
+            let diagnostic = self.next_native_name("static_property_decl_diagnostic");
+            let ok = self.next_native_name("static_property_decl_ok");
+            self.body
+                .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+            self.body.push(format!(
+                "bool {ok} = phpc_native_static_property_storage_declare_class_bytes({handle}, {class_bytes}, {class_len}, &{diagnostic});"
+            ));
+            self.emit_report_native_diagnostic(&diagnostic);
+            let error_exit = self.native_error_exit(failure_cleanup);
+            self.body.push(format!("if (!{ok}) {{ {error_exit} }}"));
+        }
+
+        for class in &classes {
+            if let Some(parent_key) = &class.parent_key {
+                let parent_name = self
+                    .declared_classes
+                    .get(parent_key)
+                    .expect("declared parent class key has metadata")
+                    .name
+                    .clone();
+                let (class_bytes, class_len) = self
+                    .emit_call_type_static_bytes("static_property_class_name_bytes", &class.name);
+                let (parent_bytes, parent_len) = self
+                    .emit_call_type_static_bytes("static_property_parent_name_bytes", &parent_name);
+                let diagnostic = self.next_native_name("static_property_parent_diagnostic");
+                let ok = self.next_native_name("static_property_parent_ok");
+                self.body
+                    .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+                self.body.push(format!(
+                    "bool {ok} = phpc_native_static_property_storage_declare_class_parent_bytes({handle}, {class_bytes}, {class_len}, {parent_bytes}, {parent_len}, &{diagnostic});"
+                ));
+                self.emit_report_native_diagnostic(&diagnostic);
+                let error_exit = self.native_error_exit(failure_cleanup);
+                self.body.push(format!("if (!{ok}) {{ {error_exit} }}"));
+            }
+        }
+
+        for class in &classes {
+            for property in class
+                .own_properties
+                .iter()
+                .chain(class.own_static_properties.iter())
+            {
+                self.emit_native_static_property_storage_property_metadata(
+                    handle,
+                    &class.name,
+                    property,
+                    failure_cleanup,
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    fn emit_native_static_property_storage_property_metadata(
+        &mut self,
+        handle: &str,
+        class_name: &str,
+        property: &CDeclaredClassProperty,
+        failure_cleanup: &str,
+    ) {
+        let (class_bytes, class_len) =
+            self.emit_call_type_static_bytes("static_property_class_name_bytes", class_name);
+        let (property_bytes, property_len) =
+            self.emit_call_type_static_bytes("static_property_name_bytes", &property.name);
+        let (type_bytes, type_len) = property
+            .type_decl
+            .as_ref()
+            .map(|type_decl| {
+                self.emit_call_type_static_bytes("static_property_type_decl_bytes", type_decl)
+            })
+            .unwrap_or_else(|| ("NULL".to_string(), "0".to_string()));
+        let visibility = Self::declared_class_property_visibility_tag(property.visibility);
+        let is_static = if property.is_static { "true" } else { "false" };
+        let diagnostic = self.next_native_name("static_property_metadata_diagnostic");
+        let ok = self.next_native_name("static_property_metadata_ok");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "bool {ok} = phpc_native_static_property_storage_declare_property_bytes({handle}, {class_bytes}, {class_len}, {property_bytes}, {property_len}, (uint8_t){visibility}, {is_static}, {type_bytes}, {type_len}, &{diagnostic});"
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!("if (!{ok}) {{ {error_exit} }}"));
+    }
+
+    fn emit_native_static_property_storage_defaults(
+        &mut self,
+        handle: &str,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let default_properties = self
+            .declared_class_order
+            .iter()
+            .flat_map(|key| {
+                let class = self
+                    .declared_classes
+                    .get(key)
+                    .expect("declared class order key has metadata");
+                class
+                    .own_static_properties
+                    .iter()
+                    .filter_map(|property| {
+                        property.default.as_ref().map(|default| {
+                            (class.name.clone(), property.name.clone(), default.clone())
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
+        for (class_name, property_name, default) in default_properties {
+            let value = self.materialize_native_value_result_operand(&default, failure_cleanup)?;
+            let aux_cleanup = native_value_aux_cleanup_after_consuming_handle(&value);
+            let registration_failure_cleanup =
+                format!("{}{}", c_cleanup_sequence(&aux_cleanup), failure_cleanup);
+            let (class_bytes, class_len) =
+                self.emit_call_type_static_bytes("static_property_class_name_bytes", &class_name);
+            let (property_bytes, property_len) =
+                self.emit_call_type_static_bytes("static_property_name_bytes", &property_name);
+            let diagnostic = self.next_native_name("static_property_default_diagnostic");
+            let ok = self.next_native_name("static_property_default_ok");
+            self.body
+                .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+            self.body.push(format!(
+                "bool {ok} = phpc_native_static_property_storage_register_default_value_and_free({handle}, {class_bytes}, {class_len}, {property_bytes}, {property_len}, {}, &{diagnostic});",
+                value.handle
+            ));
+            self.emit_report_native_diagnostic(&diagnostic);
+            let error_exit = self.native_error_exit(&registration_failure_cleanup);
+            self.body.push(format!("if (!{ok}) {{ {error_exit} }}"));
+            self.body.extend(aux_cleanup);
+        }
+
+        Ok(())
+    }
+
+    fn emit_native_static_property_storage_reset(&mut self, handle: &str, failure_cleanup: &str) {
+        let diagnostic = self.next_native_name("static_property_reset_diagnostic");
+        let ok = self.next_native_name("static_property_reset_ok");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "bool {ok} = phpc_native_static_property_storage_reset_with_diagnostic({handle}, &{diagnostic});"
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!("if (!{ok}) {{ {error_exit} }}"));
+    }
+
+    fn materialize_declared_static_property_read_expr(
+        &mut self,
+        class_name: &str,
+        property_name: &str,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        if !self.uses_native_string_helpers {
+            return Ok(None);
+        }
+        let Some(resolved) = self.resolve_declared_static_property(class_name, property_name)
+        else {
+            return Ok(None);
+        };
+        let handle = self.ensure_native_static_property_storage(failure_cleanup, span)?;
+        let (class_bytes, class_len) = self.emit_call_type_static_bytes(
+            "static_property_receiver_name_bytes",
+            &resolved.receiver_class_name,
+        );
+        let (property_bytes, property_len) =
+            self.emit_call_type_static_bytes("static_property_read_name_bytes", &resolved.name);
+        let diagnostic = self.next_native_name("static_property_read_diagnostic");
+        let value = self.next_native_name("static_property_read_value");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value} = phpc_native_static_property_read_class_with_diagnostic({handle}, {class_bytes}, {class_len}, {property_bytes}, {property_len}, &{diagnostic});"
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({value}.ptr == NULL) {{ {error_exit} }}"));
+        Ok(Some(CNativeValueMaterialization {
+            handle: value.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
+        }))
+    }
+
+    fn materialize_declared_static_property_assignment_result_for_target(
+        &mut self,
+        target: &AssignTarget,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        if !self.uses_native_string_helpers {
+            return Ok(None);
+        }
+        let AssignTarget::StaticProperty {
+            class_name,
+            property,
+            span,
+        } = target
+        else {
+            return Ok(None);
+        };
+        let Some(resolved) = self.resolve_declared_static_property(class_name, property) else {
+            return Ok(None);
+        };
+        let handle = self.ensure_native_static_property_storage(failure_cleanup, *span)?;
+        let replacement = self.materialize_native_value_result_operand(expr, failure_cleanup)?;
+        let aux_cleanup = native_value_aux_cleanup_after_consuming_handle(&replacement);
+        let write_failure_cleanup =
+            format!("{}{}", c_cleanup_sequence(&aux_cleanup), failure_cleanup);
+        let (class_bytes, class_len) = self.emit_call_type_static_bytes(
+            "static_property_receiver_name_bytes",
+            &resolved.receiver_class_name,
+        );
+        let (property_bytes, property_len) =
+            self.emit_call_type_static_bytes("static_property_write_name_bytes", &resolved.name);
+        let diagnostic = self.next_native_name("static_property_write_diagnostic");
+        let result = self.next_native_name("static_property_write_value");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {result} = phpc_native_static_property_write_class_with_diagnostic_and_free({handle}, {class_bytes}, {class_len}, {property_bytes}, {property_len}, {}, &{diagnostic});",
+            replacement.handle
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let error_exit = self.native_error_exit(&write_failure_cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+        self.body.extend(aux_cleanup);
+        Ok(Some(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }))
+    }
+
     fn emit_statement(&mut self, stmt: &Stmt) -> CompileResult<()> {
         if !matches!(
             stmt,
@@ -31141,9 +31539,23 @@ impl CGenerator {
             Expr::ClassConstant { span, .. }
             | Expr::SelfClassConstant { span, .. }
             | Expr::ParentClassConstant { span, .. }
-            | Expr::LateStaticClassConstant { span, .. }
-            | Expr::StaticProperty { span, .. }
-            | Expr::SelfStaticProperty { span, .. }
+            | Expr::LateStaticClassConstant { span, .. } => {
+                Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
+            }
+            Expr::StaticProperty {
+                class_name,
+                property,
+                span,
+            } => {
+                if let Some(value) = self.materialize_declared_static_property_read_expr(
+                    class_name, property, *span, "",
+                )? {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
+                Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
+            }
+            Expr::SelfStaticProperty { span, .. }
             | Expr::ParentStaticProperty { span, .. }
             | Expr::LateStaticProperty { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
@@ -31699,6 +32111,14 @@ impl CGenerator {
                 }
                 if let Some(value) = self
                     .materialize_non_local_object_property_assignment_result_for_target(
+                        target, expr, "",
+                    )?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
+                if let Some(value) = self
+                    .materialize_declared_static_property_assignment_result_for_target(
                         target, expr, "",
                     )?
                 {
@@ -41974,6 +42394,12 @@ impl CGenerator {
             self.body.extend(value.cleanup_after_use);
             return Ok(());
         }
+        if let Some(value) = self
+            .materialize_declared_static_property_assignment_result_for_target(target, expr, "")?
+        {
+            self.body.extend(value.cleanup_after_use);
+            return Ok(());
+        }
         if let Some(boundary) = native_non_local_assignment_owner_boundary(target) {
             return Err(self.unsupported(
                 boundary.span,
@@ -45169,6 +45595,22 @@ impl CGenerator {
             )));
         }
 
+        if let Expr::StaticProperty {
+            class_name,
+            property,
+            span,
+        } = expr
+        {
+            if let Some(value) = self.materialize_declared_static_property_read_expr(
+                class_name,
+                property,
+                *span,
+                failure_cleanup,
+            )? {
+                return Ok(Some(value));
+            }
+        }
+
         if let Some(value) =
             self.try_materialize_request_superglobal_path_value_read_expr(expr, failure_cleanup)?
         {
@@ -48025,6 +48467,13 @@ impl CGenerator {
         if self.native_request_state_owned {
             if let Some(handle) = &self.native_request_state_handle {
                 cleanup.push_str(&format!(" phpc_native_request_state_free({handle});"));
+            }
+        }
+        if self.native_static_property_storage_owned {
+            if let Some(handle) = &self.native_static_property_storage_handle {
+                cleanup.push_str(&format!(
+                    " phpc_native_static_property_storage_free({handle});"
+                ));
             }
         }
         if self.native_globals_symbol_table_owned {

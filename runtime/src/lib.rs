@@ -1187,6 +1187,12 @@ pub struct NativeRequestStateHandle {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeStaticPropertyStorageHandle {
+    ptr: *mut NativeStaticPropertyStorage,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeRequestStateOperationResult {
     value: NativeValueHandle,
     array: NativeArrayHandle,
@@ -1305,6 +1311,13 @@ struct NativeCallable {
 struct NativeCallableLookup<'a> {
     descriptor: &'a NativeCallableDescriptor,
     called_scope: Option<String>,
+}
+
+#[derive(Debug)]
+struct NativeStaticPropertyStorage {
+    classes: PhpClassTable,
+    defaults: PhpStaticPropertyDefaults,
+    storage: PhpStaticPropertyStorage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3541,6 +3554,36 @@ impl NativeRequestStateHandle {
     }
 
     unsafe fn as_mut(&mut self) -> Option<&mut NativeRequestState> {
+        unsafe { self.ptr.as_mut() }
+    }
+}
+
+impl NativeStaticPropertyStorageHandle {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    fn new() -> Self {
+        Self {
+            ptr: Box::into_raw(Box::new(NativeStaticPropertyStorage {
+                classes: PhpClassTable::new(),
+                defaults: PhpStaticPropertyDefaults::new(),
+                storage: PhpStaticPropertyStorage::new(),
+            })),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+
+    unsafe fn as_ref(&self) -> Option<&NativeStaticPropertyStorage> {
+        unsafe { self.ptr.as_ref() }
+    }
+
+    unsafe fn as_mut(&mut self) -> Option<&mut NativeStaticPropertyStorage> {
         unsafe { self.ptr.as_mut() }
     }
 }
@@ -26093,6 +26136,418 @@ fn uninitialized_static_storage_error(
     RuntimeError::invalid_property_access(format!(
         "static property storage for {declaring_class_name}::${property_name} has not been initialized for this request"
     ))
+}
+
+unsafe fn native_static_property_utf8_argument(
+    ptr: *const u8,
+    len: usize,
+    label: &str,
+) -> RuntimeResult<String> {
+    let bytes = unsafe { native_abi_bytes(ptr, len) }.ok_or_else(|| {
+        RuntimeError::invalid_property_access(format!(
+            "native static-property storage received invalid {label} ABI"
+        ))
+    })?;
+    std::str::from_utf8(bytes).map(str::to_string).map_err(|_| {
+        RuntimeError::invalid_property_access(format!(
+            "native static-property storage requires UTF-8 {label}"
+        ))
+    })
+}
+
+unsafe fn native_static_property_optional_type_decl(
+    ptr: *const u8,
+    len: usize,
+) -> RuntimeResult<Option<String>> {
+    if len == 0 {
+        return Ok(None);
+    }
+    unsafe { native_static_property_utf8_argument(ptr, len, "property type declaration") }.map(Some)
+}
+
+unsafe fn native_static_property_take_value_and_free(
+    value: NativeValueHandle,
+    label: &str,
+) -> RuntimeResult<Value> {
+    let handle = value;
+    let Some(value_ref) = (unsafe { handle.as_ref() }) else {
+        unsafe { phpc_native_value_free(handle) };
+        return Err(RuntimeError::invalid_property_access(format!(
+            "native static-property storage received missing {label} value handle"
+        )));
+    };
+    let value = value_ref.clone();
+    unsafe { phpc_native_value_free(handle) };
+    Ok(value)
+}
+
+impl NativeStaticPropertyStorage {
+    fn declare_class(&mut self, class_name: String) -> RuntimeResult<()> {
+        self.classes.declare_class(class_name).map(|_| ())
+    }
+
+    fn declare_parent(&mut self, class_name: &str, parent_name: &str) -> RuntimeResult<()> {
+        let class_id = self
+            .classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| RuntimeError::undefined_class(class_name))?;
+        let parent_id = self
+            .classes
+            .lookup_class_id(parent_name)
+            .ok_or_else(|| RuntimeError::undefined_class(parent_name))?;
+        self.classes.set_parent(class_id, parent_id)
+    }
+
+    fn declare_property(
+        &mut self,
+        class_name: &str,
+        property_name: String,
+        visibility: Visibility,
+        is_static: bool,
+        type_decl: Option<String>,
+    ) -> RuntimeResult<()> {
+        let class_id = self
+            .classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| RuntimeError::undefined_class(class_name))?;
+        let class = self.classes.get_mut(class_id).ok_or_else(|| {
+            RuntimeError::invalid_property_access(format!(
+                "native static-property storage class {class_name} does not resolve"
+            ))
+        })?;
+        let property = if is_static {
+            PhpPropertyMetadata::static_property(property_name, visibility)
+        } else {
+            PhpPropertyMetadata::instance(property_name, visibility)
+        }
+        .with_type_decl(type_decl);
+        class.add_property(property)
+    }
+
+    fn register_default(
+        &mut self,
+        class_name: &str,
+        property_name: String,
+        value: Value,
+    ) -> RuntimeResult<()> {
+        let class_id = self
+            .classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| RuntimeError::undefined_class(class_name))?;
+        self.defaults
+            .add(&self.classes, class_id, property_name, value)
+    }
+
+    fn reset(&mut self) -> RuntimeResult<()> {
+        self.storage
+            .reset_from_class_table(&self.classes, &self.defaults)
+    }
+
+    fn read_class(&self, class_name: &str, property_name: &str) -> RuntimeResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| RuntimeError::undefined_class(class_name))?;
+        self.storage.read(
+            &self.classes,
+            PhpStaticPropertyReceiver::Class(class_id),
+            property_name,
+            PhpStaticPropertyAccessContext::external(),
+        )
+    }
+
+    fn write_class(
+        &mut self,
+        class_name: &str,
+        property_name: &str,
+        value: Value,
+    ) -> RuntimeResult<Value> {
+        let class_id = self
+            .classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| RuntimeError::undefined_class(class_name))?;
+        self.storage.write(
+            &self.classes,
+            PhpStaticPropertyReceiver::Class(class_id),
+            property_name,
+            value,
+            PhpStaticPropertyAccessContext::external(),
+        )
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_static_property_storage_new() -> NativeStaticPropertyStorageHandle {
+    NativeStaticPropertyStorageHandle::new()
+}
+
+/// # Safety
+///
+/// `handle` must be null or a static-property storage handle previously
+/// returned by the runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_property_storage_free(
+    handle: NativeStaticPropertyStorageHandle,
+) {
+    if handle.ptr.is_null() {
+        return;
+    }
+    drop(unsafe { Box::from_raw(handle.ptr) });
+}
+
+/// # Safety
+///
+/// `handle` must be a storage handle. Class bytes must be null only when
+/// their length is zero. The diagnostic slot is overwritten on failure.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_property_storage_declare_class_bytes(
+    mut handle: NativeStaticPropertyStorageHandle,
+    class_ptr: *const u8,
+    class_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let storage = unsafe { handle.as_mut() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native static-property storage handle is null".to_string(),
+            )
+        })?;
+        let class_name =
+            unsafe { native_static_property_utf8_argument(class_ptr, class_len, "class name") }?;
+        storage.declare_class(class_name)
+    })();
+    match result {
+        Ok(()) => true,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be a storage handle. Class and parent bytes follow the same
+/// pointer/length rules as static-property class declaration.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_property_storage_declare_class_parent_bytes(
+    mut handle: NativeStaticPropertyStorageHandle,
+    class_ptr: *const u8,
+    class_len: usize,
+    parent_ptr: *const u8,
+    parent_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let storage = unsafe { handle.as_mut() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native static-property storage handle is null".to_string(),
+            )
+        })?;
+        let class_name =
+            unsafe { native_static_property_utf8_argument(class_ptr, class_len, "class name") }?;
+        let parent_name = unsafe {
+            native_static_property_utf8_argument(parent_ptr, parent_len, "parent class name")
+        }?;
+        storage.declare_parent(&class_name, &parent_name)
+    })();
+    match result {
+        Ok(()) => true,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be a storage handle. Class, property, and optional type bytes
+/// follow the same pointer/length rules as static-property class declaration.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_property_storage_declare_property_bytes(
+    mut handle: NativeStaticPropertyStorageHandle,
+    class_ptr: *const u8,
+    class_len: usize,
+    property_ptr: *const u8,
+    property_len: usize,
+    visibility: u8,
+    is_static: bool,
+    type_ptr: *const u8,
+    type_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let storage = unsafe { handle.as_mut() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native static-property storage handle is null".to_string(),
+            )
+        })?;
+        let class_name =
+            unsafe { native_static_property_utf8_argument(class_ptr, class_len, "class name") }?;
+        let property_name = unsafe {
+            native_static_property_utf8_argument(property_ptr, property_len, "property name")
+        }?;
+        let visibility = native_declared_class_property_visibility(visibility).ok_or_else(|| {
+            RuntimeError::invalid_property_access(format!(
+                "native static-property storage received unsupported property visibility tag {visibility}"
+            ))
+        })?;
+        let type_decl = unsafe { native_static_property_optional_type_decl(type_ptr, type_len) }?;
+        storage.declare_property(&class_name, property_name, visibility, is_static, type_decl)
+    })();
+    match result {
+        Ok(()) => true,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be a storage handle. Class and property bytes follow the
+/// same pointer/length rules as static-property class declaration. `value` is
+/// always consumed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_property_storage_register_default_value_and_free(
+    mut handle: NativeStaticPropertyStorageHandle,
+    class_ptr: *const u8,
+    class_len: usize,
+    property_ptr: *const u8,
+    property_len: usize,
+    value: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let storage = unsafe { handle.as_mut() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native static-property storage handle is null".to_string(),
+            )
+        })?;
+        let class_name =
+            unsafe { native_static_property_utf8_argument(class_ptr, class_len, "class name") }?;
+        let property_name = unsafe {
+            native_static_property_utf8_argument(property_ptr, property_len, "property name")
+        }?;
+        let value = unsafe { native_static_property_take_value_and_free(value, "default") }?;
+        storage.register_default(&class_name, property_name, value)
+    })();
+    match result {
+        Ok(()) => true,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be a storage handle. The diagnostic slot is overwritten on
+/// reset/default/type errors.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_property_storage_reset_with_diagnostic(
+    mut handle: NativeStaticPropertyStorageHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let storage = unsafe { handle.as_mut() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native static-property storage handle is null".to_string(),
+            )
+        })?;
+        storage.reset()
+    })();
+    match result {
+        Ok(()) => true,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be a storage handle. Class and property bytes follow the
+/// same pointer/length rules as static-property class declaration. Returned
+/// values are owned by the caller and must be freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_property_read_class_with_diagnostic(
+    handle: NativeStaticPropertyStorageHandle,
+    class_ptr: *const u8,
+    class_len: usize,
+    property_ptr: *const u8,
+    property_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let storage = unsafe { handle.as_ref() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native static-property storage handle is null".to_string(),
+            )
+        })?;
+        let class_name =
+            unsafe { native_static_property_utf8_argument(class_ptr, class_len, "class name") }?;
+        let property_name = unsafe {
+            native_static_property_utf8_argument(property_ptr, property_len, "property name")
+        }?;
+        storage.read_class(&class_name, &property_name)
+    })();
+    match result {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be a storage handle. Class and property bytes follow the
+/// same pointer/length rules as static-property class declaration. `value` is
+/// always consumed. Returned values are owned by the caller and must be freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_property_write_class_with_diagnostic_and_free(
+    mut handle: NativeStaticPropertyStorageHandle,
+    class_ptr: *const u8,
+    class_len: usize,
+    property_ptr: *const u8,
+    property_len: usize,
+    value: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let storage = unsafe { handle.as_mut() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native static-property storage handle is null".to_string(),
+            )
+        })?;
+        let class_name =
+            unsafe { native_static_property_utf8_argument(class_ptr, class_len, "class name") }?;
+        let property_name = unsafe {
+            native_static_property_utf8_argument(property_ptr, property_len, "property name")
+        }?;
+        let value = unsafe { native_static_property_take_value_and_free(value, "write") }?;
+        storage.write_class(&class_name, &property_name, value)
+    })();
+    match result {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59370,6 +59825,122 @@ mod tests {
             cleanup_error.message(),
             "invalid property access: static property storage for Counter::$count has not been initialized for this request"
         );
+    }
+
+    #[test]
+    fn static_property_native_abi_declares_defaults_resets_and_type_checks() {
+        let class = b"Counter";
+        let property = b"count";
+        let type_decl = b"int";
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let storage = phpc_native_static_property_storage_new();
+        assert!(!storage.is_null());
+
+        assert!(unsafe {
+            phpc_native_static_property_storage_declare_class_bytes(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert!(unsafe {
+            phpc_native_static_property_storage_declare_property_bytes(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                property.as_ptr(),
+                property.len(),
+                NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+                true,
+                type_decl.as_ptr(),
+                type_decl.len(),
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert!(unsafe {
+            phpc_native_static_property_storage_register_default_value_and_free(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                property.as_ptr(),
+                property.len(),
+                phpc_native_value_from_scalar(phpc_native_int(2)),
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert!(unsafe {
+            phpc_native_static_property_storage_reset_with_diagnostic(storage, &mut diagnostic)
+        });
+        assert!(diagnostic.is_null());
+
+        let read = unsafe {
+            phpc_native_static_property_read_class_with_diagnostic(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                property.as_ptr(),
+                property.len(),
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(unsafe { read.as_ref() }.cloned(), Some(Value::Int(2)));
+        unsafe { phpc_native_value_free(read) };
+
+        let write = unsafe {
+            phpc_native_static_property_write_class_with_diagnostic_and_free(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                property.as_ptr(),
+                property.len(),
+                phpc_native_value_from_scalar(phpc_native_int(5)),
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(unsafe { write.as_ref() }.cloned(), Some(Value::Int(5)));
+        unsafe { phpc_native_value_free(write) };
+
+        assert!(unsafe {
+            phpc_native_static_property_storage_reset_with_diagnostic(storage, &mut diagnostic)
+        });
+        let reset_read = unsafe {
+            phpc_native_static_property_read_class_with_diagnostic(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                property.as_ptr(),
+                property.len(),
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(unsafe { reset_read.as_ref() }.cloned(), Some(Value::Int(2)));
+        unsafe { phpc_native_value_free(reset_read) };
+
+        let bad_write = unsafe {
+            phpc_native_static_property_write_class_with_diagnostic_and_free(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                property.as_ptr(),
+                property.len(),
+                NativeValueHandle::from_value(Value::Array(PhpArray::new())),
+                &mut diagnostic,
+            )
+        };
+        assert!(bad_write.is_null());
+        let diagnostic_message = unsafe { diagnostic.as_ref() }
+            .map(|diagnostic| diagnostic.message.clone())
+            .unwrap_or_default();
+        assert!(
+            diagnostic_message.contains("typed property Counter::$count expects int"),
+            "{diagnostic_message}"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_static_property_storage_free(storage) };
     }
 
     #[test]

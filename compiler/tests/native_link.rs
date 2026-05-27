@@ -190,6 +190,20 @@ const NATIVE_DECLARED_CLASS_PROPERTY_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_DECLARED_CLASS_STATIC_PROPERTY_SOURCE: &str = concat!(
+    "<?php\n",
+    "class Base { public static int $count = 2; }\n",
+    "class Counter extends Base { public static $label = \"ready\"; }\n",
+    "echo Counter::$count;\n",
+    "echo \":\";\n",
+    "echo (Counter::$count = 5);\n",
+    "echo \":\";\n",
+    "echo Base::$count;\n",
+    "echo \":\";\n",
+    "echo Counter::$label;\n",
+    "echo \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_PROPERTY_UNSET_SOURCE: &str = concat!(
     "<?php\n",
     "class Box { public $name; public $peer; private $secret; }\n",
@@ -1571,6 +1585,34 @@ fn emit_exe_links_and_runs_declared_object_property_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"EM|Ada:Ada:S:N|7\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_declared_static_property_storage_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "declared_static_property_storage",
+        NATIVE_DECLARED_CLASS_STATIC_PROPERTY_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run declared-static-property executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"2:5:5:ready\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -3469,6 +3511,73 @@ fn native_executable_c_source_routes_declared_object_properties_through_runtime_
         !source.contains("object-property lowering rejects"),
         "{source}"
     );
+}
+
+#[test]
+fn native_executable_c_source_routes_declared_static_property_reads_writes_through_runtime_storage()
+{
+    let program = parse(NATIVE_DECLARED_CLASS_STATIC_PROPERTY_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    for required in [
+        "phpc_NativeStaticPropertyStorageHandle",
+        "phpc_native_static_property_storage_new",
+        "phpc_native_static_property_storage_declare_class_bytes",
+        "phpc_native_static_property_storage_declare_class_parent_bytes",
+        "phpc_native_static_property_storage_declare_property_bytes",
+        "phpc_native_static_property_storage_register_default_value_and_free",
+        "phpc_native_static_property_storage_reset_with_diagnostic",
+        "phpc_native_static_property_read_class_with_diagnostic",
+        "phpc_native_static_property_write_class_with_diagnostic_and_free",
+        "phpc_native_static_property_storage_free",
+    ] {
+        assert!(source.contains(required), "missing {required}:\n{source}");
+    }
+    assert!(
+        body.matches("phpc_native_static_property_read_class_with_diagnostic")
+            .count()
+            >= 3,
+        "literal static-property reads should use runtime storage:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_static_property_write_class_with_diagnostic_and_free")
+            .count()
+            >= 1,
+        "literal static-property writes should use runtime storage:\n{source}"
+    );
+    assert!(
+        !body.contains("static-member lowering rejects"),
+        "supported literal declared static-property access should not fall back to static-member rejection:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_keeps_unsupported_static_property_dynamic_shapes_blocked() {
+    for (label, source) in [
+        (
+            "dynamic class name",
+            "<?php\nclass Counter { public static $count = 1; }\n$class = \"Counter\";\necho $class::$count;\n",
+        ),
+        (
+            "self static property outside class context",
+            "<?php\nclass Counter { public static $count = 1; }\necho self::$count;\n",
+        ),
+    ] {
+        let program = parse(source).unwrap();
+        let error = match emit_native_executable_c_source(&program) {
+            Ok(generated) => panic!("{label} unexpectedly emitted C:\n{generated}"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.phase, Phase::Codegen, "{label}: {error:?}");
+        assert!(
+            error.message.contains("static member")
+                || error.message.contains("static property")
+                || error.message.contains("object/class lowering rejects"),
+            "{label} should remain behind an explicit static-property boundary, got {error:?}"
+        );
+    }
 }
 
 #[test]
