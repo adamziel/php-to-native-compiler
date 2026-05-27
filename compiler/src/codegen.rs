@@ -1,13 +1,14 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::Write;
 use std::process::{Command, Stdio};
+use std::rc::Rc;
 
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, CatchClause, ClassDecl, ClassMember,
     ClassMethodDecl, ClassVisibility, ClosureCapture, CompoundAssignOp, ConstDeclarator, Expr,
     ForAction, FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition,
     InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart, NewClassName, Program,
-    ReferenceSource, Span, Stmt, SwitchCase, TypeDecl, UnaryOp, UnsetTarget,
+    ReferenceSource, Span, Stmt, SwitchCase, TraitDecl, TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::call_arguments::{
     normalize_call_arguments, CallArgument, CallArgumentNormalizationError, CallArgumentParameter,
@@ -15,6 +16,7 @@ use crate::call_arguments::{
     CallArgumentVariadicKey, NormalizedCallArguments,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
+use crate::trait_semantics;
 use php_runtime::{
     classify_php_numeric_string, is_php_truthy_string, php_primitive_arithmetic_result,
     php_strings_use_numeric_comparison, phpc_native_diagnostic_contains_severity,
@@ -16066,6 +16068,8 @@ struct CGenerator {
     user_functions: HashMap<String, CUserFunction>,
     user_function_order: Vec<String>,
     native_descriptor_closure_return_summaries: HashMap<String, CNativeDescriptorClosureSummary>,
+    declared_traits: HashMap<String, Rc<TraitDecl>>,
+    declared_trait_order: Vec<String>,
     declared_classes: HashMap<String, CDeclaredClass>,
     declared_class_order: Vec<String>,
     function_definitions: Vec<String>,
@@ -16276,6 +16280,7 @@ struct CDeclaredClass {
     properties: Vec<CDeclaredClassProperty>,
     constructor: Option<CDeclaredClassMethod>,
     methods: Vec<CDeclaredClassMethod>,
+    effective_methods: Vec<CDeclaredClassEffectiveMethod>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -16610,6 +16615,16 @@ struct CDeclaredClassMethod {
     is_static: bool,
     return_facts: Option<CNativeValueFacts>,
     this_property_value_facts: HashMap<String, CNativeValueFacts>,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+struct CDeclaredClassEffectiveMethod {
+    declaring_trait_name: Option<String>,
+    decl: FunctionDecl,
+    visibility: ClassVisibility,
+    is_static: bool,
+    span: Span,
 }
 
 enum CDirectVariableCompoundAssignmentOwner {
@@ -19698,6 +19713,22 @@ impl CGenerator {
         }
     }
 
+    fn register_top_level_declared_traits(&mut self, statements: &[Stmt]) -> CompileResult<()> {
+        for stmt in statements {
+            let Stmt::Trait(trait_decl) = stmt else {
+                continue;
+            };
+            let key = trait_semantics::trait_key(&trait_decl.name);
+            if self.declared_traits.contains_key(&key) {
+                return Err(self.unsupported(trait_decl.span, ASSEMBLY_TRAIT_REJECTION));
+            }
+            self.declared_trait_order.push(key.clone());
+            self.declared_traits
+                .insert(key, Rc::new(trait_decl.clone()));
+        }
+        Ok(())
+    }
+
     fn register_top_level_declared_classes(&mut self, statements: &[Stmt]) -> CompileResult<()> {
         if !self.uses_native_string_helpers {
             return Ok(());
@@ -19730,9 +19761,22 @@ impl CGenerator {
         class_index: usize,
     ) -> CompileResult<CDeclaredClass> {
         let interface_names = self.validate_declared_class_interface_names(class)?;
-        if class.is_nested || !class.trait_uses.is_empty() || class.is_abstract || class.is_readonly
-        {
+        if class.is_nested || class.is_abstract || class.is_readonly {
             return Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+        }
+
+        let trait_effective_methods =
+            trait_semantics::compose_class_effective_trait_methods(class, &self.declared_traits)
+                .map_err(|error| error.to_diagnostic(Phase::Codegen))?;
+        self.validate_declared_class_trait_method_metadata_scope(class)?;
+        if trait_effective_methods.iter().any(|method| {
+            method
+                .method
+                .function
+                .name
+                .eq_ignore_ascii_case("__construct")
+        }) {
+            return Err(self.unsupported(class.span, ASSEMBLY_OBJECT_INSTANTIATION_REJECTION));
         }
 
         let mut seen_properties = HashSet::new();
@@ -19744,6 +19788,25 @@ impl CGenerator {
         let mut allocation_metadata = CDeclaredClassAllocationMetadata::cleanup_safe();
         let mut seen_methods = HashSet::new();
         let mut methods = Vec::new();
+        let mut effective_methods = Vec::new();
+        for method in trait_effective_methods {
+            if method
+                .method
+                .function
+                .name
+                .eq_ignore_ascii_case("__destruct")
+            {
+                allocation_metadata.cleanup_risk =
+                    CDeclaredClassCleanupRisk::destructor_observable();
+            }
+            effective_methods.push(CDeclaredClassEffectiveMethod {
+                declaring_trait_name: Some(method.declaring_trait_name),
+                decl: method.method.function,
+                visibility: method.method.visibility,
+                is_static: method.method.is_static,
+                span: method.method.span,
+            });
+        }
         for member in &class.members {
             match member {
                 ClassMember::Property(property) => {
@@ -19842,6 +19905,13 @@ impl CGenerator {
                             return_facts: None,
                             this_property_value_facts: HashMap::new(),
                         });
+                        effective_methods.push(CDeclaredClassEffectiveMethod {
+                            declaring_trait_name: None,
+                            decl: method.function.clone(),
+                            visibility: method.visibility,
+                            is_static: method.is_static,
+                            span: method.span,
+                        });
                     }
                 }
                 ClassMember::Constant(constant) => {
@@ -19879,6 +19949,7 @@ impl CGenerator {
             own_constants,
             constructor,
             methods,
+            effective_methods,
         })
     }
 
@@ -19900,6 +19971,48 @@ impl CGenerator {
         Ok(interfaces)
     }
 
+    fn validate_declared_class_trait_method_metadata_scope(
+        &self,
+        class: &ClassDecl,
+    ) -> CompileResult<()> {
+        let mut path = HashSet::new();
+        for trait_use in &class.trait_uses {
+            let Some(trait_decl) = self
+                .declared_traits
+                .get(&trait_semantics::trait_key(&trait_use.name))
+            else {
+                return Err(self.unsupported(trait_use.span, ASSEMBLY_TRAIT_REJECTION));
+            };
+            self.validate_declared_trait_method_metadata_scope(trait_decl, &mut path)?;
+        }
+        Ok(())
+    }
+
+    fn validate_declared_trait_method_metadata_scope(
+        &self,
+        trait_decl: &TraitDecl,
+        path: &mut HashSet<String>,
+    ) -> CompileResult<()> {
+        let key = trait_semantics::trait_key(&trait_decl.name);
+        if !path.insert(key.clone()) {
+            return Err(self.unsupported(trait_decl.span, ASSEMBLY_TRAIT_REJECTION));
+        }
+        if !trait_decl.constants.is_empty() || !trait_decl.properties.is_empty() {
+            return Err(self.unsupported(trait_decl.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+        }
+        for trait_use in &trait_decl.trait_uses {
+            let Some(nested) = self
+                .declared_traits
+                .get(&trait_semantics::trait_key(&trait_use.name))
+            else {
+                return Err(self.unsupported(trait_use.span, ASSEMBLY_TRAIT_REJECTION));
+            };
+            self.validate_declared_trait_method_metadata_scope(nested, path)?;
+        }
+        path.remove(&key);
+        Ok(())
+    }
+
     fn resolve_declared_class_inheritance_metadata(&mut self) -> CompileResult<()> {
         let class_keys = self.declared_class_order.clone();
         for class_key in class_keys {
@@ -19910,6 +20023,7 @@ impl CGenerator {
             let mut inherited_properties = Vec::new();
             let mut inherited_property_slots = HashSet::new();
             let mut inherited_method_keys = HashSet::new();
+            let mut inherited_effective_methods = Vec::new();
             let mut inherited_cleanup_risk = CDeclaredClassCleanupRisk::none();
 
             for ancestor_key in ancestor_keys.iter().rev() {
@@ -19936,6 +20050,10 @@ impl CGenerator {
                 for method in &ancestor.methods {
                     inherited_method_keys.insert(Self::declared_method_key(&method.decl.name));
                 }
+                for method in &ancestor.effective_methods {
+                    inherited_method_keys.insert(Self::declared_method_key(&method.decl.name));
+                    inherited_effective_methods.push(method.clone());
+                }
             }
 
             let class = self
@@ -19953,6 +20071,11 @@ impl CGenerator {
                     return Err(self.unsupported(method.decl.span, ASSEMBLY_METHOD_CALL_REJECTION));
                 }
             }
+            for method in &class.effective_methods {
+                if inherited_method_keys.contains(&Self::declared_method_key(&method.decl.name)) {
+                    return Err(self.unsupported(method.span, ASSEMBLY_METHOD_CALL_REJECTION));
+                }
+            }
 
             let own_properties = class.own_properties.clone();
             let own_interface_names = class.interface_names.clone();
@@ -19960,6 +20083,7 @@ impl CGenerator {
                 .declared_classes
                 .get_mut(&class_key)
                 .expect("class key exists while applying inheritance");
+            let own_effective_methods = class.effective_methods.clone();
             class
                 .allocation_metadata
                 .cleanup_risk
@@ -19973,6 +20097,8 @@ impl CGenerator {
             class.interface_names = interface_names;
             class.properties = inherited_properties;
             class.properties.extend(own_properties);
+            class.effective_methods = inherited_effective_methods;
+            class.effective_methods.extend(own_effective_methods);
         }
 
         Ok(())
@@ -20535,6 +20661,8 @@ impl CGenerator {
             uses_native_value_clone: true,
             user_functions: self.user_functions.clone(),
             user_function_order: self.user_function_order.clone(),
+            declared_traits: self.declared_traits.clone(),
+            declared_trait_order: self.declared_trait_order.clone(),
             declared_classes: self.declared_classes.clone(),
             declared_class_order: self.declared_class_order.clone(),
             function_return_status: Some("phpc_call_status".to_string()),
@@ -21080,6 +21208,8 @@ impl CGenerator {
             uses_native_closure_helpers: true,
             user_functions: self.user_functions.clone(),
             user_function_order: self.user_function_order.clone(),
+            declared_traits: self.declared_traits.clone(),
+            declared_trait_order: self.declared_trait_order.clone(),
             declared_classes: self.declared_classes.clone(),
             declared_class_order: self.declared_class_order.clone(),
             function_return_status: Some("phpc_call_status".to_string()),
@@ -21179,6 +21309,8 @@ impl CGenerator {
             uses_native_value_clone: true,
             user_functions: self.user_functions.clone(),
             user_function_order: self.user_function_order.clone(),
+            declared_traits: self.declared_traits.clone(),
+            declared_trait_order: self.declared_trait_order.clone(),
             declared_classes: self.declared_classes.clone(),
             declared_class_order: self.declared_class_order.clone(),
             function_return_status: Some("phpc_call_status".to_string()),
@@ -21587,6 +21719,7 @@ impl CGenerator {
     }
 
     fn emit_program(&mut self, program: &Program) -> CompileResult<String> {
+        self.register_top_level_declared_traits(&program.statements)?;
         self.register_top_level_declared_classes(&program.statements)?;
         self.register_top_level_user_functions(&program.statements)?;
         self.emit_declared_class_method_definitions()?;
@@ -35739,7 +35872,12 @@ impl CGenerator {
                 Err(self.unsupported(interface.span, ASSEMBLY_INTERFACE_REJECTION))
             }
             Stmt::Trait(trait_decl) => {
-                Err(self.unsupported(trait_decl.span, ASSEMBLY_TRAIT_REJECTION))
+                let key = trait_semantics::trait_key(&trait_decl.name);
+                if self.declared_traits.contains_key(&key) {
+                    Ok(())
+                } else {
+                    Err(self.unsupported(trait_decl.span, ASSEMBLY_TRAIT_REJECTION))
+                }
             }
             Stmt::Enum(enum_decl) => Err(self.unsupported(enum_decl.span, ASSEMBLY_ENUM_REJECTION)),
             Stmt::Class(class) => {

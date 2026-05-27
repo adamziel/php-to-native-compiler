@@ -6,6 +6,7 @@ pub mod interpreter;
 pub mod lexer;
 pub mod parser;
 pub mod test_runner;
+pub mod trait_semantics;
 
 use ast::Program;
 use error::CompileResult;

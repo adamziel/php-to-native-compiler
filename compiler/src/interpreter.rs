@@ -28,6 +28,7 @@ use crate::ast::{
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::parser::parse_source;
+use crate::trait_semantics;
 
 pub const MAX_USER_FUNCTION_CALL_DEPTH: usize = 64;
 const SESSION_NOCACHE_HEADERS: [&str; 3] = [
@@ -36251,15 +36252,14 @@ impl Interpreter {
         &self,
         trait_decl: &TraitDecl,
     ) -> CompileResult<Vec<ClassMethodDecl>> {
-        let mut methods = trait_decl.methods.clone();
-        let direct_method_names = declared_trait_method_names(trait_decl);
-        methods.extend(composed_trait_methods_from_uses(
-            &trait_decl.trait_uses,
-            &self.trait_lookup,
-            &mut HashSet::new(),
-            &direct_method_names,
-        )?);
-        Ok(methods)
+        trait_semantics::compose_effective_trait_methods_for_trait(trait_decl, &self.trait_lookup)
+            .map(|methods| {
+                methods
+                    .into_iter()
+                    .map(|method| method.method)
+                    .collect::<Vec<_>>()
+            })
+            .map_err(|error| error.to_diagnostic(Phase::Runtime))
     }
 
     fn reflection_trait_trait_names(&self, trait_decl: &TraitDecl) -> Vec<String> {
@@ -64904,107 +64904,14 @@ fn composed_trait_methods(
     class: &ClassDecl,
     trait_lookup: &HashMap<String, Rc<TraitDecl>>,
 ) -> CompileResult<Vec<ClassMethodDecl>> {
-    let mut methods = Vec::new();
-    let mut composed_names: HashMap<String, String> = HashMap::new();
-    let class_method_names = declared_class_method_names(class);
-    let precedence_exclusions = trait_precedence_exclusions(class, trait_lookup)?;
-    for trait_use in &class.trait_uses {
-        let key = trait_use.name.to_ascii_lowercase();
-        let trait_decl = resolve_trait_use_decl(trait_use, trait_lookup)?;
-        let trait_methods =
-            composed_trait_methods_for_trait(trait_decl, trait_lookup, &mut HashSet::new())?;
-        let visibility_adaptations = trait_visibility_adaptations(trait_use, &trait_methods)?;
-        for method in &trait_methods {
-            let method_key = method.function.name.to_ascii_lowercase();
-            if precedence_exclusions.contains(&(key.clone(), method_key)) {
-                continue;
-            }
-            if class_method_names.contains(&method.function.name.to_ascii_lowercase()) {
-                continue;
-            }
-            let mut composed = method.clone();
-            if let Some(existing_trait) =
-                composed_names.get(&composed.function.name.to_ascii_lowercase())
-            {
-                if existing_trait.eq_ignore_ascii_case(&trait_decl.name) {
-                    continue;
-                }
-                return Err(runtime_error(
-                    composed.span,
-                    RuntimeError::unsupported_trait_use(format!(
-                        "trait method {}::{} conflicts with {}::{}; add an insteadof adaptation or class override",
-                        trait_decl.name,
-                        composed.function.name,
-                        existing_trait,
-                        composed.function.name
-                    )),
-                ));
-            }
-            if let Some(visibility) =
-                visibility_adaptations.get(&composed.function.name.to_ascii_lowercase())
-            {
-                composed.visibility = visibility.clone();
-            }
-            composed_names.insert(
-                composed.function.name.to_ascii_lowercase(),
-                trait_decl.name.clone(),
-            );
-            methods.push(composed);
-        }
-        for alias in &trait_use.aliases {
-            let Some(method) = trait_methods.iter().find(|method| {
-                method
-                    .function
-                    .name
-                    .eq_ignore_ascii_case(&alias.method_name)
-            }) else {
-                return Err(runtime_error(
-                    alias.span,
-                    RuntimeError::unsupported_trait_use(format!(
-                        "trait alias {}::{} targets a missing method",
-                        trait_decl.name, alias.method_name
-                    )),
-                ));
-            };
-            let mut aliased = method.clone();
-            aliased.function.name = alias.alias.clone();
-            aliased.visibility = alias.visibility;
-            aliased.span = alias.span;
-            if class_method_names.contains(&aliased.function.name.to_ascii_lowercase()) {
-                continue;
-            }
-            methods.push(aliased);
-        }
-    }
-    Ok(methods)
-}
-
-fn trait_visibility_adaptations(
-    trait_use: &TraitUseDecl,
-    trait_methods: &[ClassMethodDecl],
-) -> CompileResult<HashMap<String, ClassVisibility>> {
-    let mut adaptations = HashMap::new();
-    for adaptation in &trait_use.visibility_adaptations {
-        let Some(method) = trait_methods.iter().find(|method| {
-            method
-                .function
-                .name
-                .eq_ignore_ascii_case(&adaptation.method_name)
-        }) else {
-            return Err(runtime_error(
-                adaptation.span,
-                RuntimeError::unsupported_trait_use(format!(
-                    "trait visibility adaptation {}::{} targets a missing method",
-                    trait_use.name, adaptation.method_name
-                )),
-            ));
-        };
-        adaptations.insert(
-            method.function.name.to_ascii_lowercase(),
-            adaptation.visibility.clone(),
-        );
-    }
-    Ok(adaptations)
+    trait_semantics::compose_class_effective_trait_methods(class, trait_lookup)
+        .map(|methods| {
+            methods
+                .into_iter()
+                .map(|method| method.method)
+                .collect::<Vec<_>>()
+        })
+        .map_err(|error| error.to_diagnostic(Phase::Runtime))
 }
 
 fn composed_trait_constants_for_trait(
@@ -65070,117 +64977,6 @@ fn composed_trait_properties_for_trait(
     Ok(properties)
 }
 
-fn composed_trait_methods_for_trait(
-    trait_decl: &TraitDecl,
-    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
-    path: &mut HashSet<String>,
-) -> CompileResult<Vec<ClassMethodDecl>> {
-    let key = trait_decl.name.to_ascii_lowercase();
-    if !path.insert(key.clone()) {
-        return Err(runtime_error(
-            trait_decl.span,
-            RuntimeError::unsupported_trait_use(format!(
-                "recursive trait-body use involving {} is not implemented",
-                trait_decl.name
-            )),
-        ));
-    }
-
-    let mut methods = Vec::new();
-    let direct_method_names = declared_trait_method_names(trait_decl);
-    methods.extend(composed_trait_methods_from_uses(
-        &trait_decl.trait_uses,
-        trait_lookup,
-        path,
-        &direct_method_names,
-    )?);
-    methods.extend(trait_decl.methods.iter().cloned());
-
-    path.remove(&key);
-    Ok(methods)
-}
-
-fn composed_trait_methods_from_uses(
-    trait_uses: &[TraitUseDecl],
-    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
-    path: &mut HashSet<String>,
-    direct_method_names: &HashSet<String>,
-) -> CompileResult<Vec<ClassMethodDecl>> {
-    let mut methods = Vec::new();
-    let mut composed_names: HashMap<String, String> = HashMap::new();
-    let precedence_exclusions = trait_precedence_exclusions_for_uses(trait_uses, trait_lookup)?;
-
-    for trait_use in trait_uses {
-        let key = trait_use.name.to_ascii_lowercase();
-        let trait_decl = resolve_trait_use_decl(trait_use, trait_lookup)?;
-        let trait_methods = composed_trait_methods_for_trait(trait_decl, trait_lookup, path)?;
-        let visibility_adaptations = trait_visibility_adaptations(trait_use, &trait_methods)?;
-        for method in &trait_methods {
-            let method_key = method.function.name.to_ascii_lowercase();
-            if precedence_exclusions.contains(&(key.clone(), method_key.clone())) {
-                continue;
-            }
-            if direct_method_names.contains(&method_key) {
-                continue;
-            }
-            let mut composed = method.clone();
-            if let Some(existing_trait) =
-                composed_names.get(&composed.function.name.to_ascii_lowercase())
-            {
-                if existing_trait.eq_ignore_ascii_case(&trait_decl.name) {
-                    continue;
-                }
-                return Err(runtime_error(
-                    composed.span,
-                    RuntimeError::unsupported_trait_use(format!(
-                        "trait method {}::{} conflicts with {}::{}; add an insteadof adaptation or class override",
-                        trait_decl.name,
-                        composed.function.name,
-                        existing_trait,
-                        composed.function.name
-                    )),
-                ));
-            }
-            if let Some(visibility) =
-                visibility_adaptations.get(&composed.function.name.to_ascii_lowercase())
-            {
-                composed.visibility = visibility.clone();
-            }
-            composed_names.insert(
-                composed.function.name.to_ascii_lowercase(),
-                trait_decl.name.clone(),
-            );
-            methods.push(composed);
-        }
-        for alias in &trait_use.aliases {
-            let Some(method) = trait_methods.iter().find(|method| {
-                method
-                    .function
-                    .name
-                    .eq_ignore_ascii_case(&alias.method_name)
-            }) else {
-                return Err(runtime_error(
-                    alias.span,
-                    RuntimeError::unsupported_trait_use(format!(
-                        "trait alias {}::{} targets a missing method",
-                        trait_decl.name, alias.method_name
-                    )),
-                ));
-            };
-            let mut aliased = method.clone();
-            aliased.function.name = alias.alias.clone();
-            aliased.visibility = alias.visibility;
-            aliased.span = alias.span;
-            if direct_method_names.contains(&aliased.function.name.to_ascii_lowercase()) {
-                continue;
-            }
-            methods.push(aliased);
-        }
-    }
-
-    Ok(methods)
-}
-
 fn resolve_trait_use_decl<'a>(
     trait_use: &TraitUseDecl,
     trait_lookup: &'a HashMap<String, Rc<TraitDecl>>,
@@ -65194,19 +64990,6 @@ fn resolve_trait_use_decl<'a>(
     })
 }
 
-fn declared_class_method_names(class: &ClassDecl) -> HashSet<String> {
-    class
-        .members
-        .iter()
-        .filter_map(|member| {
-            let ClassMember::Method(method) = member else {
-                return None;
-            };
-            Some(method.function.name.to_ascii_lowercase())
-        })
-        .collect()
-}
-
 fn declared_class_properties(class: &ClassDecl) -> HashMap<String, ClassPropertyDecl> {
     class
         .members
@@ -65217,14 +65000,6 @@ fn declared_class_properties(class: &ClassDecl) -> HashMap<String, ClassProperty
             };
             Some((property.name.clone(), property.clone()))
         })
-        .collect()
-}
-
-fn declared_trait_method_names(trait_decl: &TraitDecl) -> HashSet<String> {
-    trait_decl
-        .methods
-        .iter()
-        .map(|method| method.function.name.to_ascii_lowercase())
         .collect()
 }
 
@@ -65301,72 +65076,6 @@ fn direct_class_trait_names(
         }
     }
     Ok(names)
-}
-
-fn trait_precedence_exclusions(
-    class: &ClassDecl,
-    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
-) -> CompileResult<HashSet<(String, String)>> {
-    trait_precedence_exclusions_for_uses(&class.trait_uses, trait_lookup)
-}
-
-fn trait_precedence_exclusions_for_uses(
-    trait_uses: &[TraitUseDecl],
-    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
-) -> CompileResult<HashSet<(String, String)>> {
-    let mut exclusions = HashSet::new();
-    for trait_use in trait_uses {
-        let winner_trait = resolve_trait_use_decl(trait_use, trait_lookup)?;
-        let winner_methods =
-            composed_trait_methods_for_trait(winner_trait, trait_lookup, &mut HashSet::new())?;
-        for precedence in &trait_use.precedences {
-            let Some(winner_method) = winner_methods.iter().find(|method| {
-                method
-                    .function
-                    .name
-                    .eq_ignore_ascii_case(&precedence.method_name)
-            }) else {
-                return Err(runtime_error(
-                    precedence.span,
-                    RuntimeError::unsupported_trait_use(format!(
-                        "trait precedence {}::{} targets a missing winning method",
-                        winner_trait.name, precedence.method_name
-                    )),
-                ));
-            };
-
-            let loser_key = precedence.loser_trait_name.to_ascii_lowercase();
-            let loser_trait_use = TraitUseDecl {
-                name: precedence.loser_trait_name.clone(),
-                aliases: Vec::new(),
-                visibility_adaptations: Vec::new(),
-                precedences: Vec::new(),
-                span: precedence.span,
-            };
-            let loser_trait = resolve_trait_use_decl(&loser_trait_use, trait_lookup)?;
-            let loser_methods =
-                composed_trait_methods_for_trait(loser_trait, trait_lookup, &mut HashSet::new())?;
-            if !loser_methods.iter().any(|method| {
-                method
-                    .function
-                    .name
-                    .eq_ignore_ascii_case(&winner_method.function.name)
-            }) {
-                return Err(runtime_error(
-                    precedence.span,
-                    RuntimeError::unsupported_trait_use(format!(
-                        "trait precedence {}::{} excludes missing loser method {}::{}",
-                        winner_trait.name,
-                        precedence.method_name,
-                        loser_trait.name,
-                        winner_method.function.name
-                    )),
-                ));
-            }
-            exclusions.insert((loser_key, winner_method.function.name.to_ascii_lowercase()));
-        }
-    }
-    Ok(exclusions)
 }
 
 fn expanded_class_interface_names(

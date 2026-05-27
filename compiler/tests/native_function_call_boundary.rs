@@ -19,6 +19,7 @@ const ASSEMBLY_CLOSURE_REJECTION: &str = "assembly closure lowering rejects clos
 const ASSEMBLY_FUNCTION_DECLARATION_REJECTION: &str = "assembly user-function lowering rejects function declarations outside the bounded generated-C frame subset, including nested functions, unsupported typed/default/variadic by-reference parameters, malformed variadic declarations, unsupported parameter or return type metadata, static locals, and unsupported body cleanup, until full native function symbol tables, stack-frame layout, complete callable lookup, return-value flow, and exact native error behavior exist; generated-native C lowers supported by-value fixed/default/variadic direct, supported direct and compiler-known single-target by-reference frames, finite known-string dynamic, and runtime string-valued dynamic user-function frames with bounded scalar/array type enforcement";
 const ASSEMBLY_CONDITIONAL_REJECTION: &str = "assembly conditional lowering rejects unsupported conditional expressions or operands until native PHP truthiness, null-aware lookup, branch side-effect ordering, and exact native error behavior exist; phpc run handles current conditional expression behavior";
 const ASSEMBLY_METHOD_CALL_REJECTION: &str = "assembly method-call lowering rejects method calls outside the bounded generated-C public declared instance/static method subset, including unsupported dynamic method-name dispatch, self::, parent::, static::, unsupported method declarations, unsupported receiver classes, visibility contexts, references/copy-on-write, and exact native method-call errors; generated-native C lowers supported public declared instance methods with $this frame binding, runtime string-valued dynamic public instance methods through declared-frame dispatch, supported named public static methods without $this, and supported object static-receiver calls through static source-call carriers";
+const ASSEMBLY_OBJECT_CLASS_REJECTION: &str = "assembly object/class lowering rejects class declarations outside the bounded generated-C declared-object subset, including inheritance metadata, unsupported constructor dispatch, unsupported public property and instance method forms, object metadata builtins, visibility contexts, references/copy-on-write, and exact native object errors; generated-native C lowers supported declared object allocation, public properties, named instanceof, public declared instance methods, and supported constructors";
 const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions outside the bounded generated-C declared-object constructor subset, including unsupported constructor declarations, non-public/static constructors, destructor-observable cleanup, visibility contexts, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors; generated-native C lowers supported named and runtime string-valued declared object allocation for destructor-free declared classes, constructorless argument evaluation, public constructors with $this frame binding, and explicit constructor value-return diagnostics";
 const ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION: &str = "assembly reference-assignment lowering rejects direct variable, array-offset, object-property, function-call, method-call, static-call, magic __get, and ArrayAccess reference sources or targets until native reference containers, alias-aware symbol tables, copy-on-write, object/property alias roots, and exact native error behavior exist; phpc run handles current bounded reference-assignment behavior";
 const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
@@ -1014,6 +1015,121 @@ $sink->take(new MethodArgumentDestructor());
         assert_eq!(error.phase, Phase::Codegen);
         assert_eq!(error.message, ASSEMBLY_OBJECT_INSTANTIATION_REJECTION);
     }
+}
+
+#[test]
+fn trait_effective_method_metadata_registers_traits_and_composes_class_methods() {
+    let source = r#"<?php
+trait BaseTrait {
+    public function baseMethod() { echo "base"; }
+    public function conflict() { echo "left"; }
+}
+trait LeftTrait {
+    use BaseTrait;
+    public function leftMethod() { echo "left"; }
+}
+trait RightTrait {
+    public function conflict() { echo "right"; }
+    public function rightMethod() { echo "right"; }
+}
+class TraitConsumer {
+    use LeftTrait, RightTrait {
+        LeftTrait::conflict insteadof RightTrait;
+        LeftTrait::baseMethod as protected renamedBase;
+        RightTrait::rightMethod as private renamedRight;
+    }
+}
+echo "metadata";
+"#;
+
+    let generated = emit_native_executable_c_source(&parse(source).unwrap()).unwrap();
+
+    assert!(
+        !generated.contains("trait lowering rejects")
+            && !generated.contains("object/class lowering rejects"),
+        "trait declarations and trait-using classes should register through metadata:\n{generated}"
+    );
+}
+
+#[test]
+fn trait_effective_method_metadata_reports_shared_conflicts_and_recursion() {
+    for source in [
+        r#"<?php
+trait FirstConflict { public function same() {} }
+trait SecondConflict { public function SAME() {} }
+class ConflictConsumer { use FirstConflict, SecondConflict; }
+"#,
+        r#"<?php
+trait RecursiveA { use RecursiveB; public function a() {} }
+trait RecursiveB { use RecursiveA; public function b() {} }
+class RecursiveConsumer { use RecursiveA; }
+"#,
+    ] {
+        let error = emit_native_executable_c_source(&parse(source).unwrap()).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert!(
+            error.message.contains("unsupported trait use"),
+            "trait composition diagnostics should come from the shared semantic helper: {error:?}"
+        );
+    }
+}
+
+#[test]
+fn trait_effective_method_metadata_rejects_unrepresented_trait_members() {
+    for source in [
+        r#"<?php
+trait PropertyTrait { public $value; }
+class UsesPropertyTrait { use PropertyTrait; }
+"#,
+        r#"<?php
+trait ConstantTrait { public const VALUE = 1; }
+trait NestedConstantTrait { use ConstantTrait; }
+class UsesNestedConstantTrait { use NestedConstantTrait; }
+"#,
+    ] {
+        let error = emit_native_executable_c_source(&parse(source).unwrap()).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, ASSEMBLY_OBJECT_CLASS_REJECTION);
+    }
+}
+
+#[test]
+fn trait_effective_method_metadata_does_not_enable_trait_method_execution() {
+    let source = r#"<?php
+trait ExecutableTrait {
+    public function traitMethod() { echo "trait"; }
+}
+class UsesExecutableTrait {
+    use ExecutableTrait;
+}
+$object = new UsesExecutableTrait();
+$object->traitMethod();
+"#;
+
+    let error = emit_native_executable_c_source(&parse(source).unwrap()).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, ASSEMBLY_METHOD_CALL_REJECTION);
+}
+
+#[test]
+fn trait_effective_method_metadata_marks_trait_destructors_before_allocation() {
+    let source = r#"<?php
+trait DestructorTrait {
+    public function __DESTRUCT() { echo "cleanup"; }
+}
+class UsesDestructorTrait {
+    use DestructorTrait;
+}
+new UsesDestructorTrait();
+"#;
+
+    let error = emit_native_executable_c_source(&parse(source).unwrap()).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, ASSEMBLY_OBJECT_INSTANTIATION_REJECTION);
 }
 
 #[test]
