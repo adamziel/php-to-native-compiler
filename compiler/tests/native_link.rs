@@ -21583,12 +21583,16 @@ fn native_executable_c_source_transfers_reference_return_source_calls_into_byref
     let source = concat!(
         "<?php\n",
         "class SourceCallAliasTransfer {\n",
+        "    public function &borrowInstance(&$slot) { return $slot; }\n",
         "    public static function &borrow(&$slot) { return $slot; }\n",
         "    public static function &borrowOther(&$slot) { return $slot; }\n",
         "}\n",
         "function source_call_consume(&$slot, $value) { $slot = $value; return $slot; }\n",
         "function source_call_pair($label, &$left, &$right) { $left = $label . \"-left\"; $right = $label . \"-right\"; return $left . \":\" . $right; }\n",
         "$slot = \"old\";\n",
+        "$box = new SourceCallAliasTransfer();\n",
+        "echo source_call_consume($box->borrowInstance($slot), \"method\"), \":\", $slot, \"|\";\n",
+        "echo source_call_consume(SourceCallAliasTransfer::borrow($slot), \"static\"), \":\", $slot, \"|\";\n",
         "$borrow = \"SourceCallAliasTransfer::borrow\";\n",
         "$other = \"SourceCallAliasTransfer::borrowOther\";\n",
         "echo source_call_consume($borrow($slot), \"direct\"), \":\", $slot, \"|\";\n",
@@ -21606,10 +21610,14 @@ fn native_executable_c_source_transfers_reference_return_source_calls_into_byref
 
     assert!(
         body.contains("source_reference_result")
+            && body.contains("source_reference_receiver_result")
+            && body.contains("source_reference_static_result")
+            && body.contains("phpc_native_method_invoke_reference_with_access_context_diagnostic_and_free_receiver_method_arguments")
+            && body.contains("phpc_native_static_method_invoke_reference_with_access_context_diagnostic_and_free_scope_method_arguments")
             && body.contains("phpc_native_callable_value_invoke_reference_with_diagnostic_and_free")
             && body.contains("phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments")
             && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
-        "source-call reference results should use reference carriers before entering direct and dynamic by-reference consumers:\n{source}"
+        "source-call reference results should use reference carriers across receiver-method, static-method, and dynamic consumers:\n{source}"
     );
     assert!(
         body.matches("phpc_native_call_arguments_push_reference_and_free")
@@ -21646,6 +21654,46 @@ fn native_executable_c_source_keeps_non_reference_scoped_callable_strings_on_ret
 }
 
 #[test]
+fn native_executable_c_source_keeps_by_value_produced_calls_on_alias_transfer_blocker() {
+    let program = parse(concat!(
+        "<?php\n",
+        "class SourceCallByValueProducedReject {\n",
+        "    public function value($slot) { return $slot; }\n",
+        "    public static function stat($slot) { return $slot; }\n",
+        "}\n",
+        "function source_call_value_produced($slot) { return $slot; }\n",
+        "function source_call_consume_reject(&$slot) { $slot = \"changed\"; }\n",
+        "$slot = \"value\";\n",
+        "$box = new SourceCallByValueProducedReject();\n",
+        "source_call_consume_reject(source_call_value_produced($slot));\n",
+        "source_call_consume_reject($box->value($slot));\n",
+        "source_call_consume_reject(SourceCallByValueProducedReject::stat($slot));\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.matches(
+            "phpc_native_call_frame_reference_parameter_alias_transfer_result_from_results_with_diagnostic",
+        )
+        .count()
+            >= 3,
+        "by-value produced calls should stay on the alias-transfer blocker path:\n{source}"
+    );
+    assert!(
+        !body.contains("source_reference_direct_result")
+            && !body.contains("user_function_reference_result")
+            && !body.contains("source_reference_receiver_result")
+            && !body.contains("source_reference_static_result")
+            && !body.contains("phpc_native_callable_lookup_invoke_reference_with_diagnostic_and_free_arguments")
+            && !body.contains("phpc_native_method_invoke_reference_with_access_context_diagnostic_and_free_receiver_method_arguments")
+            && !body.contains("phpc_native_static_method_invoke_reference_with_access_context_diagnostic_and_free_scope_method_arguments"),
+        "by-value produced calls must not be coerced into source-call reference carriers:\n{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_source_call_reference_alias_byref_argument_program() {
     if !has_cc() {
         return;
@@ -21654,12 +21702,16 @@ fn emit_exe_links_and_runs_source_call_reference_alias_byref_argument_program() 
     let source = concat!(
         "<?php\n",
         "class SourceCallAliasTransferRun {\n",
+        "    public function &borrowInstance(&$slot) { return $slot; }\n",
         "    public static function &borrow(&$slot) { return $slot; }\n",
         "    public static function &borrowOther(&$slot) { return $slot; }\n",
         "}\n",
         "function source_call_consume_run(&$slot, $value) { $slot = $value; return $slot; }\n",
         "function source_call_pair_run($label, &$left, &$right) { $left = $label . \"-left\"; $right = $label . \"-right\"; return $left . \":\" . $right; }\n",
         "$slot = \"old\";\n",
+        "$box = new SourceCallAliasTransferRun();\n",
+        "echo source_call_consume_run($box->borrowInstance($slot), \"method\"), \":\", $slot, \"|\";\n",
+        "echo source_call_consume_run(SourceCallAliasTransferRun::borrow($slot), \"static\"), \":\", $slot, \"|\";\n",
         "$borrow = \"SourceCallAliasTransferRun::borrow\";\n",
         "$other = \"SourceCallAliasTransferRun::borrowOther\";\n",
         "echo source_call_consume_run($borrow($slot), \"direct\"), \":\", $slot, \"|\";\n",
@@ -21686,7 +21738,7 @@ fn emit_exe_links_and_runs_source_call_reference_alias_byref_argument_program() 
     );
     assert_eq!(
         run.stdout,
-        b"direct:direct|dynamic:dynamic|pair-left:pair-right:pair-left:pair-right|dynpair-left:dynpair-right:dynpair-left:dynpair-right"
+        b"method:method|static:static|direct:direct|dynamic:dynamic|pair-left:pair-right:pair-left:pair-right|dynpair-left:dynpair-right:dynpair-left:dynpair-right"
     );
     assert_eq!(run.stderr, b"");
 
@@ -21707,10 +21759,9 @@ fn emit_exe_reports_source_call_reference_alias_argument_cleanup_failure() {
         "}\n",
         "function source_call_consume_failure(&$slot, $value) { $slot = $value; return $slot; }\n",
         "$slot = \"old\";\n",
-        "$borrow = \"SourceCallAliasTransferFailure::borrow\";\n",
         "$consume = \"source_call_consume_failure\";\n",
         "$missing = \"missing_source_call_alias_transfer\";\n",
-        "$consume($borrow($slot), $missing());\n",
+        "$consume(SourceCallAliasTransferFailure::borrow($slot), $missing());\n",
         "echo \"after\";\n",
     );
     let (source_path, output_path) =

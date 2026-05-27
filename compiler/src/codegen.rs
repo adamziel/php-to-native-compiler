@@ -33471,8 +33471,60 @@ impl CGenerator {
             Expr::DynamicCall { callee, args, .. } => self
                 .source_call_reference_signature_for_dynamic_call(callee, args)
                 .is_some(),
+            Expr::MethodCall {
+                target,
+                method,
+                args,
+                ..
+            } => self
+                .receiver_method_source_call_reference_signature_contract(
+                    target,
+                    method,
+                    args.len(),
+                )
+                .is_some(),
+            Expr::StaticMethodCall {
+                class_name,
+                method,
+                args,
+                ..
+            } => self
+                .static_method_source_call_reference_signature_contract(
+                    class_name,
+                    method,
+                    args.len(),
+                )
+                .is_some(),
             _ => false,
         }
+    }
+
+    fn receiver_method_source_call_reference_signature_contract(
+        &self,
+        target: &Expr,
+        method_name: &str,
+        arg_count: usize,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        let contract =
+            self.receiver_method_source_call_signature_contract(target, method_name, arg_count)?;
+        contract
+            .signature()
+            .is_some_and(|signature| signature.returns_by_reference)
+            .then_some(contract)
+    }
+
+    fn static_method_source_call_reference_signature_contract(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        arg_count: usize,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        let contract =
+            self.static_method_source_call_signature_contract(class_name, method_name, arg_count)?;
+        contract
+            .signature()
+            .is_some_and(|signature| signature.returns_by_reference)
+            .then_some(contract)
     }
 
     fn source_call_reference_signature_for_dynamic_call(
@@ -33507,31 +33559,69 @@ impl CGenerator {
         expr: &Expr,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeReferenceMaterialization>> {
-        if let Expr::Call { name, args, span } = expr {
-            let Some(function) = self
-                .user_functions
-                .get(&Self::user_function_key(name))
-                .cloned()
-            else {
-                return Ok(None);
-            };
-            if !function.decl.returns_by_reference {
-                return Ok(None);
-            }
-            return self
-                .materialize_direct_user_function_reference_call(
+        match expr {
+            Expr::Call { name, args, span } => {
+                let Some(function) = self
+                    .user_functions
+                    .get(&Self::user_function_key(name))
+                    .cloned()
+                else {
+                    return Ok(None);
+                };
+                if !function.decl.returns_by_reference {
+                    return Ok(None);
+                }
+                self.materialize_direct_user_function_reference_call(
                     &function,
                     args,
                     *span,
                     failure_cleanup,
                     NativeCallCallee::DirectNamed,
                 )
-                .map(Some);
+                .map(Some)
+            }
+            Expr::DynamicCall { callee, args, span } => self
+                .try_materialize_dynamic_source_call_reference_argument(
+                    callee,
+                    args,
+                    *span,
+                    failure_cleanup,
+                ),
+            Expr::MethodCall {
+                target,
+                method,
+                args,
+                span,
+            } => self.try_materialize_receiver_method_source_call_reference_argument(
+                target,
+                method,
+                args,
+                *span,
+                failure_cleanup,
+            ),
+            Expr::StaticMethodCall {
+                class_name,
+                method,
+                args,
+                span,
+            } => self.try_materialize_static_method_source_call_reference_argument(
+                class_name,
+                method,
+                args,
+                *span,
+                failure_cleanup,
+            ),
+            _ => Ok(None),
         }
+    }
 
-        let Expr::DynamicCall { callee, args, span } = expr else {
-            return Ok(None);
-        };
+    fn try_materialize_dynamic_source_call_reference_argument(
+        &mut self,
+        callee: &Expr,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeReferenceMaterialization>> {
         let Some(scoped_signature) =
             self.source_call_reference_signature_for_dynamic_call(callee, args)
         else {
@@ -33544,7 +33634,7 @@ impl CGenerator {
 
         let table = self.ensure_native_callable_table(failure_cleanup);
         let callee_value = self.emit_expr(callee)?;
-        let callee = self.materialize_native_array_c_value_handle(callee_value, *span)?;
+        let callee = self.materialize_native_array_c_value_handle(callee_value, span)?;
         let callee_cleanup = c_cleanup_sequence(&callee.cleanup_after_use);
 
         if self
@@ -33554,7 +33644,7 @@ impl CGenerator {
         {
             let symbol_table_failure_cleanup = format!("{callee_cleanup}{failure_cleanup}");
             let root_symbols =
-                self.ensure_globals_symbol_table(&symbol_table_failure_cleanup, *span)?;
+                self.ensure_globals_symbol_table(&symbol_table_failure_cleanup, span)?;
             self.body
                 .push(format!("phpc_user_callable_root_symbols = {root_symbols};"));
         }
@@ -33591,7 +33681,7 @@ impl CGenerator {
         let call_arguments = self.emit_native_source_call_arguments_handle(
             "source_reference_args",
             args,
-            *span,
+            span,
             &callable_failure_cleanup,
             NativeCallCallee::DynamicExpression,
             scoped_signature.as_ref(),
@@ -33604,7 +33694,7 @@ impl CGenerator {
         let carrier = self.native_source_call_carrier(
             NativeInvokeResultTarget::CallableValueHandle,
             NativeSourceCallResultConsumer::Reference,
-            *span,
+            span,
         )?;
         let emitted_reference = self
             .emit_native_source_call_carrier_invocation(
@@ -33632,6 +33722,155 @@ impl CGenerator {
         Ok(Some(CNativeReferenceMaterialization {
             handle: reference.clone(),
             cleanup_after_use: vec![format!("phpc_native_reference_free({reference});")],
+        }))
+    }
+
+    fn try_materialize_receiver_method_source_call_reference_argument(
+        &mut self,
+        target: &Expr,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeReferenceMaterialization>> {
+        let Some(signature_contract) = self
+            .receiver_method_source_call_reference_signature_contract(
+                target,
+                method_name,
+                args.len(),
+            )
+        else {
+            return Ok(None);
+        };
+
+        self.uses_native_reference_helpers = true;
+        let receiver = self.materialize_native_value_result_operand(target, failure_cleanup)?;
+        let receiver_cleanup = c_cleanup_sequence(&receiver.cleanup_after_use);
+        let method = self.materialize_native_array_c_value_handle(
+            CValue::String(method_name.to_string()),
+            span,
+        )?;
+        let method_cleanup = c_cleanup_sequence(&method.cleanup_after_use);
+        let target_failure_cleanup = format!("{method_cleanup}{receiver_cleanup}{failure_cleanup}");
+        let target = self.emit_native_receiver_method_source_call_target_operands(
+            receiver,
+            method,
+            NativeSourceCallAccessContext::ObjectReceiver,
+            &target_failure_cleanup,
+        );
+        let binding = self.emit_native_method_static_source_call_binding_operands(
+            "source_reference_receiver_args",
+            target,
+            args,
+            span,
+            failure_cleanup,
+            &signature_contract,
+        )?;
+
+        let invoke_diagnostic = self.next_native_name("source_reference_receiver_diagnostic");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {invoke_diagnostic} = {{0}};"
+        ));
+        let carrier = self.native_source_call_carrier(
+            NativeInvokeResultTarget::ReceiverMethodLookupWithAccessContext,
+            NativeSourceCallResultConsumer::Reference,
+            span,
+        )?;
+        let emitted_reference = self
+            .emit_native_source_call_carrier_invocation(
+                carrier,
+                &binding.target.args,
+                &binding.arguments,
+                &invoke_diagnostic,
+                "source_reference_receiver_result",
+            )
+            .expect(
+                "receiver-method reference source-call carrier must produce a reference handle",
+            );
+        self.body.extend(binding.target.cleanup_after_invocation);
+        self.emit_report_native_diagnostic(&invoke_diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!(
+            "if ({emitted_reference}.ptr == NULL) {{ {error_exit} }}"
+        ));
+
+        Ok(Some(CNativeReferenceMaterialization {
+            handle: emitted_reference.clone(),
+            cleanup_after_use: vec![format!("phpc_native_reference_free({emitted_reference});")],
+        }))
+    }
+
+    fn try_materialize_static_method_source_call_reference_argument(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeReferenceMaterialization>> {
+        let Some(signature_contract) = self.static_method_source_call_reference_signature_contract(
+            class_name,
+            method_name,
+            args.len(),
+        ) else {
+            return Ok(None);
+        };
+
+        self.uses_native_reference_helpers = true;
+        let scope = self.emit_native_static_text_source_call_string_operand(
+            "source_reference_static_scope",
+            class_name,
+        );
+        let scope_cleanup = c_cleanup_sequence(&scope.cleanup_after_use);
+        let method = self.materialize_native_array_c_value_handle(
+            CValue::String(method_name.to_string()),
+            span,
+        )?;
+        let method_cleanup = c_cleanup_sequence(&method.cleanup_after_use);
+        let target_failure_cleanup = format!("{method_cleanup}{scope_cleanup}{failure_cleanup}");
+        let target = self.emit_native_static_method_source_call_target_operands(
+            scope,
+            method,
+            NativeSourceCallAccessContext::Static,
+            &target_failure_cleanup,
+        );
+        let binding = self.emit_native_method_static_source_call_binding_operands(
+            "source_reference_static_args",
+            target,
+            args,
+            span,
+            failure_cleanup,
+            &signature_contract,
+        )?;
+
+        let invoke_diagnostic = self.next_native_name("source_reference_static_diagnostic");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {invoke_diagnostic} = {{0}};"
+        ));
+        let carrier = self.native_source_call_carrier(
+            NativeInvokeResultTarget::StaticMethodLookupWithAccessContext,
+            NativeSourceCallResultConsumer::Reference,
+            span,
+        )?;
+        let emitted_reference = self
+            .emit_native_source_call_carrier_invocation(
+                carrier,
+                &binding.target.args,
+                &binding.arguments,
+                &invoke_diagnostic,
+                "source_reference_static_result",
+            )
+            .expect("static-method reference source-call carrier must produce a reference handle");
+        self.body.extend(binding.target.cleanup_after_invocation);
+        self.emit_report_native_diagnostic(&invoke_diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!(
+            "if ({emitted_reference}.ptr == NULL) {{ {error_exit} }}"
+        ));
+
+        Ok(Some(CNativeReferenceMaterialization {
+            handle: emitted_reference.clone(),
+            cleanup_after_use: vec![format!("phpc_native_reference_free({emitted_reference});")],
         }))
     }
 
