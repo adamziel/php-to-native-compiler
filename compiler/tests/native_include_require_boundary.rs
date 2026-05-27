@@ -163,7 +163,7 @@ fn native_executable_c_source_uses_included_class_metadata_boundary() {
             && source.contains("phpc_native_declare_user_class_parent_bytes")
             && source.contains("phpc_native_declare_user_class_method_bytes")
             && source.contains("phpc_native_static_property_storage_declare_properties_and_defaults_bytes")
-            && source.contains("phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic")
+            && source.contains("phpc_native_value_class_metadata_exists_with_autoload_registry_and_diagnostic")
             && source.contains("phpc_native_class_constant_declare_constant_bytes_and_free"),
         "generated C should declare included class/method/property/constant metadata through shared runtime boundaries:\n{source}"
     );
@@ -184,7 +184,7 @@ fn native_executable_c_source_uses_included_trait_metadata_boundary_with_trait_e
 
     assert!(
         source.contains("phpc_native_declare_user_class_bytes")
-            && source.contains("phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic")
+            && source.contains("phpc_native_value_class_metadata_exists_with_autoload_registry_and_diagnostic")
             && source.contains(
                 "phpc_native_callable_table_register_visibility_staticness_magic_signature_frame_callback_and_free"
             )

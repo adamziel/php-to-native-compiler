@@ -4914,8 +4914,49 @@ fn stmt_list_contains_global_import(statements: &[Stmt]) -> bool {
 fn stmt_list_frame_environment_requirement(statements: &[Stmt]) -> CFrameEnvironmentRequirement {
     CFrameEnvironmentRequirement {
         root_symbols: stmt_list_contains_global_import(statements)
-            || stmt_list_contains_globals_access(statements),
+            || stmt_list_contains_globals_access(statements)
+            || stmt_list_contains_include_or_require(statements),
         request_state: stmt_list_contains_request_state_access(statements),
+    }
+}
+
+fn stmt_list_contains_include_or_require(statements: &[Stmt]) -> bool {
+    statements.iter().any(stmt_contains_include_or_require)
+}
+
+fn stmt_contains_include_or_require(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Include { .. } | Stmt::Require { .. } => true,
+        Stmt::If {
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            stmt_list_contains_include_or_require(then_branch)
+                || stmt_list_contains_include_or_require(else_branch)
+        }
+        Stmt::While { body, .. } | Stmt::DoWhile { body, .. } | Stmt::Foreach { body, .. } => {
+            stmt_list_contains_include_or_require(body)
+        }
+        Stmt::For { body, .. } => stmt_list_contains_include_or_require(body),
+        Stmt::Switch { cases, .. } => cases
+            .iter()
+            .any(|case| stmt_list_contains_include_or_require(&case.body)),
+        Stmt::Try {
+            body,
+            catches,
+            finally_body,
+            ..
+        } => {
+            stmt_list_contains_include_or_require(body)
+                || catches
+                    .iter()
+                    .any(|catch| stmt_list_contains_include_or_require(&catch.body))
+                || finally_body
+                    .as_ref()
+                    .is_some_and(|body| stmt_list_contains_include_or_require(body))
+        }
+        _ => false,
     }
 }
 
@@ -8792,6 +8833,13 @@ fn native_output_buffer_operation_for_call(name: &str) -> Option<NativeOutputBuf
         "ob_end_flush" => Some(NativeOutputBufferOperation::EndFlush),
         _ => None,
     }
+}
+
+fn is_native_spl_autoload_registry_builtin(name: &str) -> bool {
+    matches!(
+        php_unqualified_name(name).to_ascii_lowercase().as_str(),
+        "spl_autoload_register" | "spl_autoload_unregister" | "spl_autoload_call"
+    )
 }
 
 fn native_output_buffer_operation_result_prefix(
@@ -16307,6 +16355,7 @@ struct CGenerator {
     uses_native_dynamic_call_helpers: bool,
     uses_native_closure_helpers: bool,
     uses_native_output_buffer_operation: bool,
+    uses_native_spl_autoload_registry_helpers: bool,
     uses_native_include_unit_helpers: bool,
     uses_native_object_instantiation_helpers: bool,
     uses_native_user_class_declaration: bool,
@@ -16338,6 +16387,7 @@ struct CGenerator {
     native_globals_symbol_table_handle: Option<String>,
     native_globals_symbol_table_owned: bool,
     native_callable_table_handle: Option<String>,
+    native_spl_autoload_registry_handle: Option<String>,
     native_destructor_finalizers_handle: Option<String>,
     loop_transfer_targets: Vec<CLoopTransferTarget>,
     active_finally_bodies: Vec<Vec<Stmt>>,
@@ -16571,6 +16621,7 @@ struct CGotoStateSnapshot {
     native_globals_symbol_table_handle: Option<String>,
     native_globals_symbol_table_owned: bool,
     native_callable_table_handle: Option<String>,
+    native_spl_autoload_registry_handle: Option<String>,
     native_destructor_finalizers_handle: Option<String>,
 }
 
@@ -17481,6 +17532,11 @@ impl CNativeArrayLvalueTargetMaterialization {
 }
 
 struct CNativeValueMaterialization {
+    handle: String,
+    cleanup_after_use: Vec<String>,
+}
+
+struct CNativeCallableValueMaterialization {
     handle: String,
     cleanup_after_use: Vec<String>,
 }
@@ -19553,6 +19609,7 @@ impl CGenerator {
             && self.native_class_constant_table_owned == other.native_class_constant_table_owned
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
             && self.native_globals_symbol_table_owned == other.native_globals_symbol_table_owned
+            && self.native_spl_autoload_registry_handle == other.native_spl_autoload_registry_handle
             && self.native_destructor_finalizers_handle == other.native_destructor_finalizers_handle
     }
 
@@ -19588,6 +19645,7 @@ impl CGenerator {
             native_globals_symbol_table_handle: self.native_globals_symbol_table_handle.clone(),
             native_globals_symbol_table_owned: self.native_globals_symbol_table_owned,
             native_callable_table_handle: self.native_callable_table_handle.clone(),
+            native_spl_autoload_registry_handle: self.native_spl_autoload_registry_handle.clone(),
             native_destructor_finalizers_handle: self.native_destructor_finalizers_handle.clone(),
         }
     }
@@ -19609,6 +19667,7 @@ impl CGenerator {
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
             && self.native_globals_symbol_table_owned == other.native_globals_symbol_table_owned
             && self.native_callable_table_handle == other.native_callable_table_handle
+            && self.native_spl_autoload_registry_handle == other.native_spl_autoload_registry_handle
             && self.native_destructor_finalizers_handle == other.native_destructor_finalizers_handle
     }
 
@@ -20174,6 +20233,8 @@ impl CGenerator {
         self.uses_native_dynamic_call_helpers |= branch.uses_native_dynamic_call_helpers;
         self.uses_native_closure_helpers |= branch.uses_native_closure_helpers;
         self.uses_native_output_buffer_operation |= branch.uses_native_output_buffer_operation;
+        self.uses_native_spl_autoload_registry_helpers |=
+            branch.uses_native_spl_autoload_registry_helpers;
         self.uses_native_include_unit_helpers |= branch.uses_native_include_unit_helpers;
         self.uses_native_text_membership_operation |= branch.uses_native_text_membership_operation;
         self.uses_native_object_instantiation_helpers |=
@@ -20226,6 +20287,7 @@ impl CGenerator {
             || self.uses_native_dynamic_call_helpers
             || self.uses_native_closure_helpers
             || self.uses_native_output_buffer_operation
+            || self.uses_native_spl_autoload_registry_helpers
             || self.uses_native_include_unit_helpers
             || self.uses_native_object_instantiation_helpers
             || self.uses_native_user_class_declaration
@@ -23004,6 +23066,7 @@ impl CGenerator {
                 || self.uses_native_class_metadata_value
                 || self.uses_native_class_constant_helpers
                 || self.uses_native_static_property_helpers
+                || self.uses_native_spl_autoload_registry_helpers
                 || self.uses_native_include_unit_helpers
             {
                 output.push_str("#include <stdbool.h>\n");
@@ -23109,6 +23172,11 @@ impl CGenerator {
             }
             if self.uses_native_request_state_helpers {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeRequestStateHandle;\n");
+            }
+            if self.uses_native_spl_autoload_registry_helpers {
+                output.push_str(
+                    "typedef struct { void *ptr; } phpc_NativeSplAutoloadRegistryHandle;\n",
+                );
             }
             if self.uses_native_static_property_helpers {
                 output.push_str(
@@ -23660,6 +23728,14 @@ impl CGenerator {
                     output.push_str("extern phpc_NativeValueHandle phpc_native_output_buffer_operation_with_callable_table_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle first, phpc_NativeValueHandle second, phpc_NativeValueHandle third, uint8_t argc, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 }
             }
+            if self.uses_native_spl_autoload_registry_helpers {
+                output.push_str("extern phpc_NativeSplAutoloadRegistryHandle phpc_native_spl_autoload_registry_new(void);\n");
+                output.push_str("extern bool phpc_native_spl_autoload_registry_is_null(phpc_NativeSplAutoloadRegistryHandle handle);\n");
+                output.push_str("extern void phpc_native_spl_autoload_registry_free(phpc_NativeSplAutoloadRegistryHandle handle);\n");
+                output.push_str("extern bool phpc_native_spl_autoload_register_callable_value_and_free(phpc_NativeSplAutoloadRegistryHandle registry, phpc_NativeCallableValueHandle callable, bool prepend, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_spl_autoload_unregister_callable_value_and_free(phpc_NativeSplAutoloadRegistryHandle registry, phpc_NativeCallableValueHandle callable, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_spl_autoload_call_bytes_with_diagnostic(phpc_NativeSplAutoloadRegistryHandle registry, phpc_NativeCallableTableHandle table, const uint8_t *class_ptr, size_t class_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+            }
             if self.uses_native_object_instantiation_helpers {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_new_declared_class_with_diagnostic(size_t class_id, const uint8_t *class_name, size_t class_name_len, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, size_t property_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_new_declared_class_with_ancestors_and_diagnostic(size_t class_id, const uint8_t *class_name, size_t class_name_len, const size_t *property_declaring_class_ids, const uint8_t *const *property_declaring_class_names, const size_t *property_declaring_class_name_lens, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, size_t property_count, const uint8_t *const *ancestor_class_names, const size_t *ancestor_class_name_lens, size_t ancestor_class_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -23682,6 +23758,9 @@ impl CGenerator {
             if self.uses_native_class_metadata_exists {
                 output.push_str("extern bool phpc_native_value_class_metadata_exists_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle member, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle member, uint8_t operation, bool autoload, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                if self.uses_native_spl_autoload_registry_helpers {
+                    output.push_str("extern bool phpc_native_value_class_metadata_exists_with_autoload_registry_and_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle member, uint8_t operation, phpc_NativeSplAutoloadRegistryHandle registry, phpc_NativeCallableTableHandle table, bool autoload, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                }
             }
             if self.uses_native_class_metadata_value {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_class_metadata_value_with_diagnostic(phpc_NativeValueHandle subject, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -23896,6 +23975,11 @@ impl CGenerator {
             }
             output.push('\n');
         }
+        if self.uses_native_spl_autoload_registry_helpers {
+            output.push_str(
+                "static phpc_NativeSplAutoloadRegistryHandle phpc_user_spl_autoload_registry = {0};\n\n",
+            );
+        }
         if self.uses_native_destructor_finalization_helpers {
             output.push_str(
                 "static phpc_NativeRequestDestructorFinalizersHandle phpc_user_destructor_finalizers = {0};\n\n",
@@ -24051,6 +24135,14 @@ impl CGenerator {
                 output.push_str(&format!("phpc_native_symbol_table_free({handle});"));
                 output.push('\n');
             }
+        }
+        if self.uses_native_spl_autoload_registry_helpers {
+            output.push_str(
+                "  phpc_native_spl_autoload_registry_free(phpc_user_spl_autoload_registry);\n",
+            );
+            output.push_str(
+                "  phpc_user_spl_autoload_registry = (phpc_NativeSplAutoloadRegistryHandle){0};\n",
+            );
         }
         if self.uses_native_callable_helpers {
             output.push_str("  phpc_native_callable_table_free(phpc_user_callable_table);\n");
@@ -26189,6 +26281,97 @@ impl CGenerator {
         }
         self.body.push("}".to_string());
         table
+    }
+
+    fn emit_native_callable_frame_environment_setup(
+        &mut self,
+        failure_cleanup: &str,
+        span: Span,
+    ) -> CompileResult<()> {
+        if self
+            .user_functions
+            .values()
+            .any(|function| function.frame_environment.root_symbols)
+        {
+            let root_symbols = self.ensure_globals_symbol_table(failure_cleanup, span)?;
+            self.body
+                .push(format!("phpc_user_callable_root_symbols = {root_symbols};"));
+        }
+        if self
+            .user_functions
+            .values()
+            .any(|function| function.frame_environment.request_state)
+        {
+            let request_state = self.ensure_native_request_state_handle();
+            self.body.push(format!(
+                "phpc_user_callable_request_state = {request_state};"
+            ));
+        }
+        Ok(())
+    }
+
+    fn ensure_native_spl_autoload_registry(
+        &mut self,
+        failure_cleanup: &str,
+        span: Span,
+    ) -> CompileResult<(String, String)> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_spl_autoload_registry_helpers = true;
+        let table = self.ensure_native_callable_table(failure_cleanup);
+        self.emit_native_callable_frame_environment_setup(failure_cleanup, span)?;
+        let registry = self
+            .native_spl_autoload_registry_handle
+            .clone()
+            .unwrap_or_else(|| "phpc_user_spl_autoload_registry".to_string());
+        self.native_spl_autoload_registry_handle = Some(registry.clone());
+
+        self.body.push(format!(
+            "if (phpc_native_spl_autoload_registry_is_null({registry})) {{"
+        ));
+        self.body.push(format!(
+            "  {registry} = phpc_native_spl_autoload_registry_new();"
+        ));
+        let allocation_error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!(
+            "  if (phpc_native_spl_autoload_registry_is_null({registry})) {{ {allocation_error_exit} }}"
+        ));
+        self.body.push("}".to_string());
+        Ok((registry, table))
+    }
+
+    fn materialize_native_callable_value_handle_for_registration(
+        &mut self,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeCallableValueMaterialization> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_callable_helpers = true;
+        let value = self.materialize_native_value_result_operand(expr, failure_cleanup)?;
+        let value_cleanup = c_cleanup_sequence(&value.cleanup_after_use);
+        let table_failure_cleanup = format!("{value_cleanup}{failure_cleanup}");
+        let table = self.ensure_native_callable_table(&table_failure_cleanup);
+        self.emit_native_callable_frame_environment_setup(&table_failure_cleanup, expr.span())?;
+
+        let lookup_diagnostic = self.next_native_name("spl_autoload_callable_lookup_diagnostic");
+        let callable = self.next_native_name("spl_autoload_callable_value");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {lookup_diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "phpc_NativeCallableValueHandle {callable} = phpc_native_callable_lookup_value_or_closure_with_context_diagnostic({table}, {}, (phpc_NativeStringHandle){{0}}, &{lookup_diagnostic});",
+            value.handle
+        ));
+        self.emit_report_native_diagnostic(&lookup_diagnostic);
+        let lookup_error_exit =
+            self.native_error_exit(&format!("{value_cleanup}{failure_cleanup}"));
+        self.body.push(format!(
+            "if ({callable}.ptr == NULL) {{ {lookup_error_exit} }}"
+        ));
+
+        Ok(CNativeCallableValueMaterialization {
+            handle: callable,
+            cleanup_after_use: value.cleanup_after_use,
+        })
     }
 
     fn ensure_native_destructor_finalizers(&mut self, failure_cleanup: &str) -> String {
@@ -39881,6 +40064,9 @@ impl CGenerator {
                 self.retain_native_value_cleanup_handle(&value.handle);
                 Ok(CValue::NativeValueHandle(value.handle))
             }
+            Expr::Call { name, args, span } if is_native_spl_autoload_registry_builtin(name) => {
+                self.emit_native_spl_autoload_builtin_call(name, args, *span, "")
+            }
             Expr::Call { name, args, span }
                 if php_unqualified_name(name).eq_ignore_ascii_case("class_alias")
                     && !(name.contains('\\')
@@ -53097,14 +53283,23 @@ impl CGenerator {
         }
         diagnostic_cleanup.push_str(&format!("phpc_native_value_free({subject});"));
         if let Some(autoload) = autoload {
-            self.body.push(format!(
-                "bool {result} = phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic({subject}, {member}, {operation}, {autoload}, &{diagnostic});"
-            ));
-            let report_call = c_diagnostic_report_call(&diagnostic);
-            let error_exit = self.native_error_exit(&diagnostic_cleanup);
-            self.body.push(format!(
-                "if ({diagnostic}.ptr != NULL) {{ {report_call} {diagnostic}.ptr = NULL; {error_exit} }}"
-            ));
+            if autoload == "0" || autoload == "false" {
+                self.body.push(format!(
+                    "bool {result} = phpc_native_value_class_metadata_exists_with_diagnostic({subject}, {member}, {operation}, &{diagnostic});"
+                ));
+                self.emit_report_native_diagnostic(&diagnostic);
+            } else {
+                let (registry, table) =
+                    self.ensure_native_spl_autoload_registry(&diagnostic_cleanup, span)?;
+                self.body.push(format!(
+                    "bool {result} = phpc_native_value_class_metadata_exists_with_autoload_registry_and_diagnostic({subject}, {member}, {operation}, {registry}, {table}, {autoload}, &{diagnostic});"
+                ));
+                let report_call = c_diagnostic_report_call(&diagnostic);
+                let error_exit = self.native_error_exit(&diagnostic_cleanup);
+                self.body.push(format!(
+                    "if ({diagnostic}.ptr != NULL) {{ {report_call} {diagnostic}.ptr = NULL; {error_exit} }}"
+                ));
+            }
         } else {
             self.body.push(format!(
                 "bool {result} = phpc_native_value_class_metadata_exists_with_diagnostic({subject}, {member}, {operation}, &{diagnostic});"
@@ -57149,6 +57344,17 @@ impl CGenerator {
                         )
                         .map(Some);
                 }
+                if is_native_spl_autoload_registry_builtin(name) {
+                    let value = self.emit_native_spl_autoload_builtin_call(
+                        name,
+                        args,
+                        *span,
+                        failure_cleanup,
+                    )?;
+                    return self
+                        .materialize_native_array_c_value_handle(value, *span)
+                        .map(Some);
+                }
                 if let Some(builtin) = native_array_pointer_builtin(name, args) {
                     return self
                         .materialize_native_array_pointer_call(
@@ -60070,6 +60276,152 @@ impl CGenerator {
         ))
     }
 
+    fn emit_native_spl_autoload_builtin_call(
+        &mut self,
+        name: &str,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        let name = php_unqualified_name(name);
+        if name.eq_ignore_ascii_case("spl_autoload_register") {
+            return self.emit_native_spl_autoload_register_call(args, span, failure_cleanup);
+        }
+        if name.eq_ignore_ascii_case("spl_autoload_unregister") {
+            return self.emit_native_spl_autoload_unregister_call(args, span, failure_cleanup);
+        }
+        if name.eq_ignore_ascii_case("spl_autoload_call") {
+            return self.emit_native_spl_autoload_call_call(args, span, failure_cleanup);
+        }
+        Err(self.unsupported_direct_named_call(args, span, ASSEMBLY_FUNCTION_CALL_REJECTION))
+    }
+
+    fn emit_native_spl_autoload_register_call(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        if !(1..=3).contains(&args.len()) {
+            return Err(self.unsupported_direct_named_call(
+                args,
+                span,
+                ASSEMBLY_FUNCTION_CALL_REJECTION,
+            ));
+        }
+
+        if let Some(throw) = args.get(1) {
+            let throw = self.emit_expr(throw)?;
+            c_bool_operand(throw).ok_or_else(|| {
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            })?;
+        }
+        let prepend = if let Some(prepend) = args.get(2) {
+            let prepend = self.emit_expr(prepend)?;
+            c_bool_operand(prepend).ok_or_else(|| {
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            })?
+        } else {
+            "false".to_string()
+        };
+
+        let (registry, _) = self.ensure_native_spl_autoload_registry(failure_cleanup, span)?;
+        let callable = self
+            .materialize_native_callable_value_handle_for_registration(&args[0], failure_cleanup)?;
+        let callable_cleanup = c_cleanup_sequence(&callable.cleanup_after_use);
+        let diagnostic = self.next_native_name("spl_autoload_register_diagnostic");
+        let result = self.next_native_name("spl_autoload_register_result");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "bool {result} = phpc_native_spl_autoload_register_callable_value_and_free({registry}, {}, {prepend}, &{diagnostic});",
+            callable.handle
+        ));
+        let report_call = c_diagnostic_report_call(&diagnostic);
+        let error_exit = self.native_error_exit(&format!("{callable_cleanup}{failure_cleanup}"));
+        self.body.push(format!(
+            "if ({diagnostic}.ptr != NULL) {{ {report_call} {diagnostic}.ptr = NULL; {error_exit} }}"
+        ));
+        self.body.extend(callable.cleanup_after_use);
+        Ok(CValue::BoolExpr(result))
+    }
+
+    fn emit_native_spl_autoload_unregister_call(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        if args.len() != 1 {
+            return Err(self.unsupported_direct_named_call(
+                args,
+                span,
+                ASSEMBLY_FUNCTION_CALL_REJECTION,
+            ));
+        }
+
+        let (registry, _) = self.ensure_native_spl_autoload_registry(failure_cleanup, span)?;
+        let callable = self
+            .materialize_native_callable_value_handle_for_registration(&args[0], failure_cleanup)?;
+        let callable_cleanup = c_cleanup_sequence(&callable.cleanup_after_use);
+        let diagnostic = self.next_native_name("spl_autoload_unregister_diagnostic");
+        let result = self.next_native_name("spl_autoload_unregister_result");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "bool {result} = phpc_native_spl_autoload_unregister_callable_value_and_free({registry}, {}, &{diagnostic});",
+            callable.handle
+        ));
+        let report_call = c_diagnostic_report_call(&diagnostic);
+        let error_exit = self.native_error_exit(&format!("{callable_cleanup}{failure_cleanup}"));
+        self.body.push(format!(
+            "if ({diagnostic}.ptr != NULL) {{ {report_call} {diagnostic}.ptr = NULL; {error_exit} }}"
+        ));
+        self.body.extend(callable.cleanup_after_use);
+        Ok(CValue::BoolExpr(result))
+    }
+
+    fn emit_native_spl_autoload_call_call(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        if args.len() != 1 {
+            return Err(self.unsupported_direct_named_call(
+                args,
+                span,
+                ASSEMBLY_FUNCTION_CALL_REJECTION,
+            ));
+        }
+
+        let class_name = self.emit_expr(&args[0])?;
+        if !matches!(class_name, CValue::String(_) | CValue::StringExpr(_)) {
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
+        }
+        let Some(class_name_len) = self.c_string_value_byte_len_operand(&class_name) else {
+            return Err(self.unsupported(span, ASSEMBLY_FUNCTION_CALL_REJECTION));
+        };
+        let class_name_ptr = c_string_operand(class_name);
+        let (registry, table) = self.ensure_native_spl_autoload_registry(failure_cleanup, span)?;
+        let diagnostic = self.next_native_name("spl_autoload_call_diagnostic");
+        let result = self.next_native_name("spl_autoload_call_result");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "bool {result} = phpc_native_spl_autoload_call_bytes_with_diagnostic({registry}, {table}, (const uint8_t *)({class_name_ptr}), {class_name_len}, &{diagnostic});"
+        ));
+        let report_call = c_diagnostic_report_call(&diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!(
+            "if ({diagnostic}.ptr != NULL) {{ {report_call} {diagnostic}.ptr = NULL; {error_exit} }}"
+        ));
+        self.body.push(format!("(void){result};"));
+        Ok(CValue::Null)
+    }
+
     fn emit_native_output_buffer_operation_result_handle(
         &mut self,
         operation: NativeOutputBufferOperation,
@@ -60646,6 +60998,14 @@ impl CGenerator {
             if let Some(handle) = &self.native_globals_symbol_table_handle {
                 cleanup.push_str(&format!(" phpc_native_symbol_table_free({handle});"));
             }
+        }
+        if self.uses_native_spl_autoload_registry_helpers && self.function_return_status.is_none() {
+            cleanup.push_str(
+                " phpc_native_spl_autoload_registry_free(phpc_user_spl_autoload_registry);",
+            );
+            cleanup.push_str(
+                " phpc_user_spl_autoload_registry = (phpc_NativeSplAutoloadRegistryHandle){0};",
+            );
         }
         if self.uses_native_callable_helpers && self.function_return_status.is_none() {
             cleanup.push_str(" phpc_native_callable_table_free(phpc_user_callable_table);");

@@ -5678,7 +5678,7 @@ fn native_executable_c_source_lowers_namespace_alias_class_policy_boundary() {
         source.contains("phpc_native_declare_user_class_bytes")
             && source.contains("phpc_native_value_new_declared_class_with_relationships_and_diagnostic")
             && source.contains("phpc_native_constructor_scope_from_value_with_diagnostic")
-            && source.contains("phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic"),
+            && source.contains("phpc_native_value_class_metadata_exists_with_autoload_registry_and_diagnostic"),
         "namespace/import class policy should lower through generated-C class metadata and class-name helpers:\n{source}"
     );
     assert!(
@@ -5687,6 +5687,117 @@ fn native_executable_c_source_lowers_namespace_alias_class_policy_boundary() {
             && !source.contains("object-instantiation lowering rejects"),
         "{source}"
     );
+}
+
+#[test]
+fn native_executable_c_source_lowers_spl_autoload_register_through_callable_registry() {
+    let program = parse(concat!(
+        "<?php\n",
+        "function first_loader($name) { echo $name; }\n",
+        "function second_loader($name) { echo $name; }\n",
+        "$loader = \"first_loader\";\n",
+        "spl_autoload_register($loader);\n",
+        "spl_autoload_register(\"second_loader\", true, true);\n",
+        "spl_autoload_unregister($loader);\n",
+        "spl_autoload_call(\"MissingThing\");\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("static phpc_NativeSplAutoloadRegistryHandle phpc_user_spl_autoload_registry")
+            && source.contains("phpc_native_spl_autoload_registry_new")
+            && source.contains("phpc_native_spl_autoload_register_callable_value_and_free")
+            && source.contains("phpc_native_spl_autoload_unregister_callable_value_and_free")
+            && source.contains("phpc_native_spl_autoload_call_bytes_with_diagnostic")
+            && source.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic"),
+        "SPL autoload lowering should use one request registry and the shared callable-value lookup ABI:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic(")
+            .count()
+            >= 3,
+        "each register/unregister callback should be normalized through the callable-value lookup path:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_value_dynamic_call_name_matches")
+            && !body.contains("dynamic_user_function_matched_")
+            && !body.contains("spl_autoload_register_callback_"),
+        "SPL autoload lowering must not use generated callback-name match ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_class_and_trait_exists_autoload_to_registry() {
+    let program = parse(concat!(
+        "<?php\n",
+        "function loader($name) { echo $name; }\n",
+        "trait LocalTrait {}\n",
+        "spl_autoload_register(\"loader\");\n",
+        "$class = \"MissingClass\";\n",
+        "$trait = \"MissingTrait\";\n",
+        "echo class_exists($class, true);\n",
+        "echo trait_exists($trait, true);\n",
+        "echo class_exists($class, false);\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.matches(
+            "phpc_native_value_class_metadata_exists_with_autoload_registry_and_diagnostic("
+        )
+        .count()
+            >= 2,
+        "autoload-enabled class/trait metadata lookups should use the SPL registry-aware ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_class_metadata_exists_with_diagnostic(")
+            && !body.contains(
+                "phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic("
+            ),
+        "autoload=false should keep the no-autoload metadata path and avoid the old autoload blocker call:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_spl_autoload_registry_lowering_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function first_loader($name) { echo \"A:\", $name, \"\\n\"; }\n",
+        "function second_loader($name) { echo \"B:\", $name, \"\\n\"; }\n",
+        "spl_autoload_register(\"first_loader\");\n",
+        "spl_autoload_register(\"second_loader\", true, true);\n",
+        "spl_autoload_call(\"One\");\n",
+        "spl_autoload_unregister(\"second_loader\");\n",
+        "echo class_exists(\"Two\", true) ? \"Y\\n\" : \"N\\n\";\n",
+        "echo class_exists(\"Three\", false) ? \"Y\\n\" : \"N\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("spl_autoload_registry_lowering", source);
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run SPL autoload registry lowering executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "B:One\nA:One\nA:Two\nN\nN\n"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
 }
 
 #[test]
@@ -5802,7 +5913,7 @@ fn emit_exe_namespaced_class_exists_user_function_takes_exact_precedence() {
 }
 
 #[test]
-fn emit_exe_class_exists_missing_default_reports_autoload_boundary() {
+fn emit_exe_class_exists_missing_default_uses_empty_autoload_registry() {
     if !has_cc() {
         return;
     }
@@ -5815,16 +5926,12 @@ fn emit_exe_class_exists_missing_default_reports_autoload_boundary() {
         .output()
         .expect("run class_exists autoload-boundary executable");
     assert!(
-        !run.status.success(),
-        "class_exists missing should report autoload boundary"
-    );
-    assert!(
-        String::from_utf8_lossy(&run.stderr).contains(
-            "class_exists(): generated-native autoload for missing classes is not implemented"
-        ),
-        "stderr:\n{}",
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
     );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "");
 
     let _ = fs::remove_file(source_path);
     let _ = fs::remove_file(output_path);
@@ -27372,17 +27479,22 @@ fn native_executable_c_source_routes_declared_interface_exists_through_metadata(
     let body = main_body(&source);
 
     assert!(
-        body.contains("phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic")
-            && body.contains(", 4, false,")
+        body.contains("phpc_native_value_class_metadata_exists_with_diagnostic(")
+            && !body.contains(
+                "phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic("
+            )
+            && !body.contains(
+                "phpc_native_value_class_metadata_exists_with_autoload_registry_and_diagnostic("
+            )
             && source.contains("phpc_native_declare_user_interface_bytes")
             && !source.contains("phpc_native_text_membership_with_reference_slot_with_diagnostic")
             && !source.contains("phpc_native_text_membership_candidates"),
-        "declared interface_exists() should use the shared runtime class-like metadata boundary, not generated-C text membership:\n{source}"
+        "declared interface_exists(..., false) should use the no-autoload runtime metadata boundary, not generated-C text membership:\n{source}"
     );
 }
 
 #[test]
-fn native_executable_c_source_routes_interface_exists_autoload_to_policy_boundary() {
+fn native_executable_c_source_routes_interface_exists_autoload_to_registry_boundary() {
     let program = parse(concat!(
         "<?php\n",
         "$name = \"MissingNativeInterfaceAutoload\";\n",
@@ -27393,11 +27505,16 @@ fn native_executable_c_source_routes_interface_exists_autoload_to_policy_boundar
     let body = main_body(&source);
 
     assert!(
-        body.contains("phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic")
-            && body.contains(", 4, true,")
+        body.contains(
+            "phpc_native_value_class_metadata_exists_with_autoload_registry_and_diagnostic("
+        )
+            && body.contains(", 4, phpc_user_spl_autoload_registry, phpc_user_callable_table, true,")
+            && !body.contains(
+                "phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic("
+            )
             && !source.contains("phpc_native_text_membership_with_reference_slot_with_diagnostic")
             && !source.contains("phpc_native_text_membership_candidates"),
-        "autoload-enabled interface_exists() should use the shared metadata policy boundary until generated-C SPL registry state exists:\n{source}"
+        "autoload-enabled interface_exists() should use the generated-C SPL registry metadata boundary:\n{source}"
     );
 }
 
@@ -27613,7 +27730,7 @@ fn native_executable_c_source_routes_declared_trait_introspection_through_runtim
     assert!(
         source.contains("phpc_native_declare_user_trait_bytes")
             && source.contains("phpc_native_declare_user_class_trait_bytes")
-            && source.contains("phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic")
+            && source.contains("phpc_native_value_class_metadata_exists_with_diagnostic")
             && source.contains("phpc_native_value_class_metadata_value_with_diagnostic")
             && !source.contains("phpc_native_text_membership_candidates"),
         "declared trait introspection should use shared runtime metadata registries without generated-C candidate arrays:\n{source}"
