@@ -15806,6 +15806,8 @@ struct CGenerator {
     function_callable_name: Option<String>,
     function_return_type: Option<String>,
     constructor_value_return_diagnostic: bool,
+    active_declared_class_name: Option<String>,
+    active_declared_parent_class_name: Option<String>,
     generated_method_frame_this_property_assignment: bool,
 }
 
@@ -19242,7 +19244,7 @@ impl CGenerator {
         &self,
         method: &ClassMethodDecl,
     ) -> CompileResult<()> {
-        if method.visibility != ClassVisibility::Public
+        if (method.visibility != ClassVisibility::Public && !method.is_static)
             || method.is_abstract
             || stmt_list_contains_global_import(&method.function.body)
             || method.function.is_nested
@@ -20308,6 +20310,8 @@ impl CGenerator {
                 .eq_ignore_ascii_case("__construct"),
             next_static_data: self.next_static_data,
             next_native_temp: self.next_native_temp,
+            active_declared_class_name: Some(class_name.to_string()),
+            active_declared_parent_class_name: self.declared_class_parent_name(class_name),
             generated_method_frame_this_property_assignment: !method.is_static,
             ..CGenerator::default()
         };
@@ -26244,6 +26248,9 @@ impl CGenerator {
         args: &[Expr],
     ) -> Option<CNativeValueFacts> {
         let (class, method) = self.declared_class_static_method(class_name, method_name)?;
+        if method.visibility != ClassVisibility::Public {
+            return None;
+        }
         let identity = CNativeCallableIdentity::DeclaredStaticMethod {
             class_key: Self::declared_class_key(&class.name),
             method_key: Self::declared_method_key(&method.decl.name),
@@ -31347,9 +31354,27 @@ impl CGenerator {
                     Err(self.unsupported_value_call(expr))
                 }
             }
-            Expr::ParentMethodCall { .. }
-            | Expr::SelfMethodCall { .. }
-            | Expr::LateStaticMethodCall { .. } => Err(self.unsupported_value_call(expr)),
+            Expr::ParentMethodCall { method, args, span } => {
+                if let Some(value) =
+                    self.try_materialize_parent_static_method_source_call(method, args, *span, "")?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    Ok(CValue::NativeValueHandle(value.handle))
+                } else {
+                    Err(self.unsupported_value_call(expr))
+                }
+            }
+            Expr::SelfMethodCall { method, args, span } => {
+                if let Some(value) =
+                    self.try_materialize_self_static_method_source_call(method, args, *span, "")?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    Ok(CValue::NativeValueHandle(value.handle))
+                } else {
+                    Err(self.unsupported_value_call(expr))
+                }
+            }
+            Expr::LateStaticMethodCall { .. } => Err(self.unsupported_value_call(expr)),
             Expr::Variable(name, span) => {
                 if self.by_reference_foreach_linger_variables.contains(name) {
                     return Err(self
@@ -34770,7 +34795,7 @@ impl CGenerator {
                     .get(&lookup_key)
                     .expect("declared class lookup key has metadata");
                 for method in &method_class.methods {
-                    if method.is_static {
+                    if method.visibility == ClassVisibility::Public && method.is_static {
                         candidates.push((
                             target_class.name.clone(),
                             method_class.clone(),
@@ -34790,6 +34815,15 @@ impl CGenerator {
     ) -> Option<(CDeclaredClass, CDeclaredClassMethod)> {
         let class_key = Self::declared_class_key(class_name);
         self.declared_class_static_method_for_key(&class_key, method_name)
+    }
+
+    fn declared_class_parent_name(&self, class_name: &str) -> Option<String> {
+        let class_key = Self::declared_class_key(class_name);
+        let class = self.declared_classes.get(&class_key)?;
+        let parent_key = class.parent_key.as_ref()?;
+        self.declared_classes
+            .get(parent_key)
+            .map(|parent| parent.name.clone())
     }
 
     fn declared_class_receiver_method_for_key(
@@ -34844,7 +34878,10 @@ impl CGenerator {
                 .get(class_key)
                 .expect("registered class key has metadata");
             for method in &class.methods {
-                if method.is_static && Self::declared_method_key(&method.decl.name) == method_key {
+                if method.visibility == ClassVisibility::Public
+                    && method.is_static
+                    && Self::declared_method_key(&method.decl.name) == method_key
+                {
                     candidates.push((class.clone(), method.clone()));
                 }
             }
@@ -35305,6 +35342,74 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        self.try_materialize_static_method_source_call_with_access_context(
+            class_name,
+            method_name,
+            args,
+            span,
+            failure_cleanup,
+            NativeSourceCallAccessContext::Static,
+        )
+    }
+
+    fn try_materialize_self_static_method_source_call(
+        &mut self,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some(caller_scope) = self.active_declared_class_name.clone() else {
+            return Ok(None);
+        };
+
+        self.try_materialize_static_method_source_call_with_access_context(
+            &caller_scope,
+            method_name,
+            args,
+            span,
+            failure_cleanup,
+            NativeSourceCallAccessContext::ClassContext {
+                caller_scope: &caller_scope,
+            },
+        )
+    }
+
+    fn try_materialize_parent_static_method_source_call(
+        &mut self,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let (Some(caller_scope), Some(parent_scope)) = (
+            self.active_declared_class_name.clone(),
+            self.active_declared_parent_class_name.clone(),
+        ) else {
+            return Ok(None);
+        };
+
+        self.try_materialize_static_method_source_call_with_access_context(
+            &parent_scope,
+            method_name,
+            args,
+            span,
+            failure_cleanup,
+            NativeSourceCallAccessContext::ClassContext {
+                caller_scope: &caller_scope,
+            },
+        )
+    }
+
+    fn try_materialize_static_method_source_call_with_access_context(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+        access_context: NativeSourceCallAccessContext<'_>,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
         let Some(signature_contract) =
             self.static_method_source_call_signature_contract(class_name, method_name, args.len())
         else {
@@ -35325,7 +35430,7 @@ impl CGenerator {
         let target = self.emit_native_static_method_source_call_target_operands(
             scope,
             method,
-            NativeSourceCallAccessContext::Static,
+            access_context,
             &target_failure_cleanup,
         );
         let binding = self.emit_native_method_static_source_call_binding_operands(
@@ -35743,6 +35848,10 @@ impl CGenerator {
         else {
             return Ok(None);
         };
+
+        if method.visibility != ClassVisibility::Public {
+            return Ok(None);
+        }
 
         if !native_user_function_accepts_arg_count(&method.decl, args.len()) {
             return Err(
@@ -45477,6 +45586,20 @@ impl CGenerator {
                 *span,
                 failure_cleanup,
             ),
+            Expr::ParentMethodCall { method, args, span } => self
+                .try_materialize_parent_static_method_source_call(
+                    method,
+                    args,
+                    *span,
+                    failure_cleanup,
+                ),
+            Expr::SelfMethodCall { method, args, span } => self
+                .try_materialize_self_static_method_source_call(
+                    method,
+                    args,
+                    *span,
+                    failure_cleanup,
+                ),
             Expr::New {
                 class_name,
                 args,
@@ -55145,6 +55268,113 @@ echo " 10" < "zeta";
         assert_eq!(
             push_summary.result_kind,
             CNativeCallableResultKind::NativeValue
+        );
+    }
+
+    #[test]
+    fn native_self_parent_static_source_call_uses_ancestor_metadata_and_class_context() {
+        let span = test_span();
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "class SourceCallRoot {\n",
+            "    protected static function hidden(&$slot, $value) { return $value; }\n",
+            "    public static function inherited(&$slot, $value) { return $value; }\n",
+            "}\n",
+            "class SourceCallMid extends SourceCallRoot {\n",
+            "    private static function local(&$slot, $value) { return $value; }\n",
+            "    public static function relay($slot, $value) {\n",
+            "        return parent::hidden($slot, $value) . self::local($slot, $value);\n",
+            "    }\n",
+            "}\n",
+            "class SourceCallLeaf extends SourceCallMid {}\n",
+        ))
+        .expect("self/parent static source-call fixture should parse");
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            active_declared_class_name: Some("SourceCallMid".to_string()),
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .expect("self/parent static fixture should register");
+        generator.active_declared_parent_class_name =
+            generator.declared_class_parent_name("SourceCallMid");
+
+        assert_eq!(
+            generator.active_declared_parent_class_name.as_deref(),
+            Some("SourceCallRoot")
+        );
+
+        let expected_signature = CScopedCallableStringSignature {
+            fixed_param_by_reference: vec![true, false],
+            returns_by_reference: false,
+        };
+        for (scope, method) in [
+            ("SourceCallRoot", "hidden"),
+            ("SourceCallMid", "local"),
+            ("SourceCallLeaf", "inherited"),
+        ] {
+            let contract = generator
+                .static_method_source_call_signature_contract(scope, method, 2)
+                .expect("ancestor static source-call contract should resolve");
+            assert_eq!(contract.candidate_count, 1);
+            assert_eq!(contract.arity_compatible_count, 1);
+            assert_eq!(
+                contract.availability,
+                NativeMethodStaticSignatureAvailability::Known(expected_signature.clone())
+            );
+        }
+
+        let args = vec![
+            test_variable_expr("slot"),
+            Expr::String("method-argument".to_string(), span),
+        ];
+        let parent_result = generator
+            .try_materialize_parent_static_method_source_call(
+                "hidden",
+                &args,
+                span,
+                "cleanup_parent_owner();",
+            )
+            .expect("parent static source-call should emit")
+            .expect("parent static source-call should materialize");
+        let self_result = generator
+            .try_materialize_self_static_method_source_call(
+                "local",
+                &args,
+                span,
+                "cleanup_self_owner();",
+            )
+            .expect("self static source-call should emit")
+            .expect("self static source-call should materialize");
+
+        let body = generator.body.join("\n");
+        assert!(body.contains(
+            "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments"
+        ));
+        assert!(body.contains("PHPC_NATIVE_CALLABLE_ACCESS_CLASS_CONTEXT"));
+        assert!(body.contains("method_call_caller_scope_"));
+        assert!(body.contains("phpc_native_callable_table_register_class_parent_and_free"));
+        assert!(body.contains("PHPC_NATIVE_CALLABLE_VISIBILITY_PROTECTED"));
+        assert!(body.contains("PHPC_NATIVE_CALLABLE_VISIBILITY_PRIVATE"));
+        assert_eq!(
+            body.matches("phpc_native_call_arguments_push_reference_and_free")
+                .count(),
+            2
+        );
+        assert_eq!(
+            body.matches("phpc_native_call_arguments_push_value_and_free")
+                .count(),
+            2
+        );
+        assert!(!body.contains("static_method_status"));
+        assert_eq!(
+            parent_result.cleanup_after_use,
+            vec![format!("phpc_native_value_free({});", parent_result.handle)]
+        );
+        assert_eq!(
+            self_result.cleanup_after_use,
+            vec![format!("phpc_native_value_free({});", self_result.handle)]
         );
     }
 

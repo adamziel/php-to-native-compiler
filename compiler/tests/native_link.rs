@@ -373,6 +373,25 @@ const NATIVE_DECLARED_METHOD_STATIC_DEFAULT_VARIADIC_SOURCE_CALL_SOURCE: &str = 
     "echo SourceCallWide::stat(\"S\", \"y\", \"pack\"), \"\\n\";\n",
 );
 
+const NATIVE_SELF_PARENT_STATIC_SOURCE_CALL_SOURCE: &str = concat!(
+    "<?php\n",
+    "class StaticBoundaryRoot {\n",
+    "    protected static function hidden(&$slot, $value) { $slot = strtolower($value); return \"R\" . $slot; }\n",
+    "    public static function inherited($value) { return \"I\" . strtoupper($value); }\n",
+    "}\n",
+    "class StaticBoundaryMid extends StaticBoundaryRoot {\n",
+    "    private static function local(&$slot, $value) { $slot = $value; return \"M\" . $value; }\n",
+    "    public static function relay($value) {\n",
+    "        $slot = \"seed\";\n",
+    "        $left = parent::hidden($slot, $value);\n",
+    "        $middle = self::local($slot, strtoupper($value));\n",
+    "        return $left . \":\" . $middle . \":\" . parent::inherited($value);\n",
+    "    }\n",
+    "}\n",
+    "class StaticBoundaryLeaf extends StaticBoundaryMid {}\n",
+    "echo StaticBoundaryMid::relay(\"Go\"), \"|\", StaticBoundaryLeaf::inherited(\"ok\"), \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_CONSTRUCTOR_SOURCE: &str = concat!(
     "<?php\n",
     "class Box {\n",
@@ -1956,6 +1975,34 @@ fn emit_exe_links_and_runs_declared_class_dynamic_constructor_new_program() {
         run.stdout,
         b"ADA:DefaultBox|side:side:Packet|base:kid:ChildCtor|GRACE\n"
     );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_self_parent_static_source_call_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "self_parent_static_source_call",
+        NATIVE_SELF_PARENT_STATIC_SOURCE_CALL_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run self/parent static source-call executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"Rgo:MGO:IGO|IOK\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -4092,6 +4139,42 @@ fn native_executable_c_source_routes_declared_method_static_default_variadic_cal
         "default/variadic source-call production should not fall back to generated frame-dispatch ladders:\n{source}"
     );
     assert!(!source.contains("method-call lowering rejects"), "{source}");
+}
+
+#[test]
+fn native_executable_c_source_routes_self_parent_static_calls_through_class_context_source_call_carriers(
+) {
+    let program = parse(NATIVE_SELF_PARENT_STATIC_SOURCE_CALL_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains(
+            "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments"
+        ) && source.contains("PHPC_NATIVE_CALLABLE_ACCESS_CLASS_CONTEXT")
+            && source.contains("method_call_caller_scope_"),
+        "self::/parent:: static calls should route through class-context static source-call carriers:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_callable_table_register_class_parent_and_free")
+            && source.contains("PHPC_NATIVE_CALLABLE_VISIBILITY_PROTECTED")
+            && source.contains("PHPC_NATIVE_CALLABLE_VISIBILITY_PRIVATE"),
+        "inherited/protected/private static metadata should remain in the callable table for runtime access checks:\n{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_call_arguments_push_reference_and_free")
+            .count()
+            >= 2
+            && source
+                .matches("phpc_native_call_arguments_push_value_and_free")
+                .count()
+                >= 5,
+        "self::/parent:: source calls should preserve shared call-argument handle binding, including by-reference args:\n{source}"
+    );
+    assert!(
+        !source.contains("static_method_status") && !source.contains("method-call lowering rejects"),
+        "the source-call fixture should not fall back to generated direct static dispatch ladders:\n{source}"
+    );
 }
 
 #[test]
