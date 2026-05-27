@@ -24,7 +24,9 @@ struct Parser {
     current_namespace: String,
     class_imports: Vec<(String, String)>,
     function_imports: Vec<(String, String)>,
+    constant_imports: Vec<(String, String)>,
     function_declarations: Vec<String>,
+    constant_declarations: Vec<String>,
     namespace_declared: bool,
     pending_doc_comment: Option<String>,
     trace_parse: bool,
@@ -66,7 +68,9 @@ impl Parser {
             current_namespace: String::new(),
             class_imports: Vec::new(),
             function_imports: Vec::new(),
+            constant_imports: Vec::new(),
             function_declarations: Vec::new(),
+            constant_declarations: Vec::new(),
             namespace_declared: false,
             pending_doc_comment: None,
             trace_parse: std::env::var_os("PHPC_TRACE_PARSE").is_some(),
@@ -1464,7 +1468,9 @@ impl Parser {
         self.current_namespace = name.clone();
         self.class_imports.clear();
         self.function_imports.clear();
+        self.constant_imports.clear();
         self.function_declarations.clear();
+        self.constant_declarations.clear();
         self.namespace_declared = true;
         Ok(Stmt::Namespace { name, span })
     }
@@ -1482,7 +1488,8 @@ impl Parser {
         } else if self.check(|kind| {
             matches!(kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const"))
         }) {
-            return Err(self.error_at(span, unsupported_const_use_message()));
+            self.advance();
+            UseImportKind::Constant
         } else {
             UseImportKind::Class
         };
@@ -1524,6 +1531,25 @@ impl Parser {
                     }
                     self.function_imports
                         .push((alias_key, format!("\\{}", name.trim_start_matches('\\'))));
+                }
+                UseImportKind::Constant => {
+                    if self
+                        .constant_imports
+                        .iter()
+                        .any(|(import_alias, _)| import_alias == &alias)
+                        || self
+                            .constant_declarations
+                            .iter()
+                            .any(|declaration| declaration == &alias)
+                    {
+                        return Err(
+                            self.error_at(import_span, constant_import_alias_conflict_message())
+                        );
+                    }
+                    self.constant_imports.push((
+                        alias.clone(),
+                        format!("\\{}", name.trim_start_matches('\\')),
+                    ));
                 }
             }
 
@@ -1718,9 +1744,19 @@ impl Parser {
                     unsupported_namespace_const_declaration_message(),
                 ));
             }
+            if self
+                .constant_imports
+                .iter()
+                .any(|(import_alias, _)| import_alias == &name)
+            {
+                return Err(
+                    self.error_at(name_span, constant_declaration_import_conflict_message())
+                );
+            }
             self.consume_keyword(TokenKind::Equal, "expected '=' after constant name")?;
             let value = self.parse_expression()?;
             self.ensure_supported_const_declaration_expr(&value)?;
+            self.constant_declarations.push(name.clone());
             let name = self.resolve_constant_declaration_name(&name);
             declarations.push(ConstDeclarator {
                 name,
@@ -5610,6 +5646,7 @@ impl Parser {
                     return self.reject_unsupported_static_member_access(Some(&receiver));
                 }
                 if !self.check(|kind| matches!(kind, TokenKind::LParen)) {
+                    let name = self.resolve_constant_read_name(&name);
                     return Ok(Expr::GlobalConstant {
                         name,
                         span: token.span,
@@ -6938,6 +6975,22 @@ impl Parser {
         }
     }
 
+    fn resolve_constant_read_name(&self, name: &str) -> String {
+        if let Some((_, imported)) = self
+            .constant_imports
+            .iter()
+            .find(|(alias, _)| alias == name)
+        {
+            return imported.clone();
+        }
+
+        if self.current_namespace.is_empty() {
+            name.to_string()
+        } else {
+            format!("{}\\{}", self.current_namespace, name)
+        }
+    }
+
     fn resolve_function_call_name(&self, name: &str) -> String {
         if let Some((_, imported)) = self
             .function_imports
@@ -7649,16 +7702,20 @@ fn unsupported_multiple_class_use_message() -> &'static str {
     "unsupported multiple class use declaration: multiple simple class imports in one use declaration require import-list metadata, alias handling, namespace resolution, and native lowering"
 }
 
-fn unsupported_const_use_message() -> &'static str {
-    "unsupported const use declaration: missing constant import metadata, namespace-aware constant lookup, alias handling, fallback lookup, and native lowering"
-}
-
 fn function_import_alias_conflict_message() -> &'static str {
     "unsupported function use declaration: imported function alias conflicts with an existing function declaration or import in the same namespace"
 }
 
 fn function_declaration_import_conflict_message() -> &'static str {
     "unsupported function declaration: function name conflicts with an imported function alias in the same namespace"
+}
+
+fn constant_import_alias_conflict_message() -> &'static str {
+    "unsupported const use declaration: imported constant alias conflicts with an existing constant declaration or import in the same namespace"
+}
+
+fn constant_declaration_import_conflict_message() -> &'static str {
+    "unsupported const declaration: constant name conflicts with an imported constant alias in the same namespace"
 }
 
 fn unsupported_grouped_use_message() -> &'static str {

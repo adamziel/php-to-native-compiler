@@ -27883,9 +27883,24 @@ impl Interpreter {
     }
 
     fn evaluate_global_constant(&self, name: &str, span: Span) -> CompileResult<Value> {
-        self.constants
-            .get(name)
-            .ok_or_else(|| runtime_error(span, RuntimeError::undefined_constant(name)))
+        if let Some(exact_name) = name.strip_prefix('\\') {
+            return self
+                .constants
+                .get(exact_name)
+                .ok_or_else(|| runtime_error(span, RuntimeError::undefined_constant(exact_name)));
+        }
+
+        if let Some(value) = self.constants.get(name) {
+            return Ok(value);
+        }
+
+        if let Some((_, fallback_name)) = name.rsplit_once('\\') {
+            if let Some(value) = self.constants.get(fallback_name) {
+                return Ok(value);
+            }
+        }
+
+        Err(runtime_error(span, RuntimeError::undefined_constant(name)))
     }
 
     fn evaluate_array(

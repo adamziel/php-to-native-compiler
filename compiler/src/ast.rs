@@ -265,6 +265,7 @@ pub struct UseImport {
 pub enum UseImportKind {
     Class,
     Function,
+    Constant,
 }
 
 #[derive(Debug, Clone, PartialEq)]

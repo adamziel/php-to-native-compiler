@@ -1,1 +1,1 @@
-phpc intentionally rejects const use declarations while simple class imports are the only supported import slice.
+phpc accepts simple const imports and keeps missing imported constants on the exact imported-name runtime diagnostic instead of falling back to namespace/global constants.

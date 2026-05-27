@@ -30126,6 +30126,13 @@ impl CGenerator {
             {
                 Err(self.unsupported(*span, ASSEMBLY_FUNCTION_CALL_REJECTION))
             }
+            Stmt::Use { imports, span }
+                if imports
+                    .iter()
+                    .any(|import| import.kind == UseImportKind::Constant) =>
+            {
+                Err(self.unsupported(*span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION))
+            }
             Stmt::Namespace { .. } | Stmt::Use { .. } => Ok(()),
             Stmt::Echo { exprs, .. } => {
                 for (index, expr) in exprs.iter().enumerate() {

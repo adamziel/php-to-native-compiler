@@ -8,6 +8,7 @@ use php_compiler::{
 
 const LLVM_NAMESPACE_REJECTION: &str = "LLVM namespace lowering rejects namespace declarations, namespace-qualified names, namespace imports, and namespace-aware name resolution until native symbol tables, namespace context, aliases/imports, fallback function/constant lookup, class/autoload lookup, and exact native error behavior exist; phpc run handles current namespace behavior";
 const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, unsupported by-reference argument binding, and unsupported dynamic string-valued calls, until full callable lookup, full arity/type diagnostics, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value fixed/default/variadic direct, supported direct and compiler-known single-target by-reference frames, finite known-string dynamic, and runtime string-valued dynamic user-function frames";
+const ASSEMBLY_GLOBAL_CONSTANT_REJECTION: &str = "assembly global-constant lowering rejects built-in constant values, runtime-defined constants, bare constant reads, top-level const declarations, define()/constant(), and unsupported defined() forms until native constant tables, source-order definitions, namespace-aware lookup, and exact native error behavior exist; phpc run handles current global constant behavior";
 
 fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -290,6 +291,140 @@ use function Other\Tools\label;
 }
 
 #[test]
+fn const_imports_resolve_aliases_and_keep_non_imported_fallback() {
+    let root = std::env::temp_dir().join(format!(
+        "phpc-namespace-resolution-{}-{}",
+        std::process::id(),
+        "const-imports"
+    ));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("create const import fixture directory");
+    let main = root.join("index.php");
+    let lib = root.join("constants.php");
+
+    fs::write(
+        &lib,
+        r#"<?php
+namespace Vendor\Values;
+
+const PRIMARY = "vendor-primary";
+const SECONDARY = "vendor-secondary";
+"#,
+    )
+    .expect("write const import library fixture");
+
+    let source = r#"<?php
+namespace App\Demo;
+
+use const Vendor\Values\PRIMARY as picked_value, Vendor\Values\SECONDARY;
+require 'constants.php';
+
+define("GLOBAL_ONLY", "global");
+define("LOCAL_ONLY", "global-local");
+const LOCAL_ONLY = "local";
+
+echo picked_value, "\n";
+echo SECONDARY, "\n";
+echo LOCAL_ONLY, "\n";
+echo GLOBAL_ONLY;
+"#;
+    fs::write(&main, source).expect("write const import main fixture");
+
+    let execution = run_source_with_source_file(source, main.display().to_string()).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "vendor-primary\nvendor-secondary\nlocal\nglobal"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let _ = fs::remove_file(lib);
+    let _ = fs::remove_file(main);
+    let _ = fs::remove_dir(root);
+}
+
+#[test]
+fn const_imports_use_exact_lookup_without_namespace_or_global_fallback() {
+    let root = std::env::temp_dir().join(format!(
+        "phpc-namespace-resolution-{}-{}",
+        std::process::id(),
+        "const-import-exact"
+    ));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("create exact const import fixture directory");
+    let main = root.join("index.php");
+
+    let source = r#"<?php
+namespace App\Demo;
+
+define("GLOBAL_ONLY", "global");
+const GLOBAL_ONLY = "local";
+use const Vendor\Missing\GLOBAL_ONLY as MISSING_ALIAS;
+
+echo MISSING_ALIAS;
+"#;
+    fs::write(&main, source).expect("write exact const import main fixture");
+
+    let error = run_source_with_source_file(source, main.display().to_string()).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 8);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "undefined constant Vendor\\Missing\\GLOBAL_ONLY"
+    );
+
+    let _ = fs::remove_file(main);
+    let _ = fs::remove_dir(root);
+}
+
+#[test]
+fn const_imports_reject_alias_conflicts_and_const_declarations() {
+    let duplicate_import = parse_error(
+        r#"<?php
+namespace App\Demo;
+use const Vendor\Tools\VALUE;
+use const Other\Tools\VALUE;
+"#,
+    );
+    assert_eq!(duplicate_import.phase, Phase::Parse);
+    assert_eq!(duplicate_import.line, 4);
+    assert_eq!(
+        duplicate_import.message,
+        "unsupported const use declaration: imported constant alias conflicts with an existing constant declaration or import in the same namespace"
+    );
+
+    let declaration_after_import = parse_error(
+        r#"<?php
+namespace App\Demo;
+use const Vendor\Tools\VALUE;
+const VALUE = 1;
+"#,
+    );
+    assert_eq!(declaration_after_import.phase, Phase::Parse);
+    assert_eq!(declaration_after_import.line, 4);
+    assert_eq!(
+        declaration_after_import.message,
+        "unsupported const declaration: constant name conflicts with an imported constant alias in the same namespace"
+    );
+
+    let import_after_declaration = parse_error(
+        r#"<?php
+namespace App\Demo;
+const VALUE = 1;
+use const Vendor\Tools\VALUE;
+"#,
+    );
+    assert_eq!(import_after_declaration.phase, Phase::Parse);
+    assert_eq!(import_after_declaration.line, 4);
+    assert_eq!(
+        import_after_declaration.message,
+        "unsupported const use declaration: imported constant alias conflicts with an existing constant declaration or import in the same namespace"
+    );
+}
+
+#[test]
 fn unbracketed_namespace_resolves_const_declarations_to_qualified_names() {
     let execution = run_source(
         r#"<?php
@@ -365,14 +500,6 @@ if (true) {
         ),
         (
             r#"<?php
-use const App\Demo\VALUE as DEMO_VALUE;
-"#,
-            2,
-            1,
-            "unsupported const use declaration: missing constant import metadata, namespace-aware constant lookup, alias handling, fallback lookup, and native lowering",
-        ),
-        (
-            r#"<?php
 use App\A, App\B;
 "#,
             2,
@@ -405,6 +532,7 @@ fn native_lowering_rejects_namespace_context_before_scalar_folds() {
         "<?php\nnamespace App;\necho defined(\"\\\\PHP_VERSION_ID\");\n",
         "<?php\nnamespace App;\nuse Vendor\\Lib\\Tool;\necho Tool::class;\n",
         "<?php\nuse function strlen as len;\necho len(\"abc\");\n",
+        "<?php\nuse const Vendor\\Values\\ANSWER;\necho ANSWER;\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
 
@@ -413,6 +541,17 @@ fn native_lowering_rejects_namespace_context_before_scalar_folds() {
         assert_eq!(error.column, 1);
         assert_eq!(error.message, LLVM_NAMESPACE_REJECTION);
     }
+}
+
+#[test]
+fn generated_c_rejects_const_import_boundary() {
+    let program = parse("<?php\nuse const Vendor\\Values\\ANSWER;\necho ANSWER;\n").unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, ASSEMBLY_GLOBAL_CONSTANT_REJECTION);
 }
 
 #[test]
