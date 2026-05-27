@@ -15904,6 +15904,34 @@ const ARRAYACCESS_NESTED_OWNER_STACK_PRODUCTION_SOURCE: &str = concat!(
     "$holder->bag[\"pouter\"][\"pmiddle\"][\"pleaf\"] = \"P\";\n",
 );
 
+const ARRAYACCESS_NESTED_RMW_OWNER_STACK_SOURCE: &str = concat!(
+    "<?php\n",
+    "class NestedRmwLeafBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"leaf-get:\", $offset, \";\"; return 4; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"leaf-set:\", $offset, \"=\", $value, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class NestedRmwMiddleBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"middle-get:\", $offset, \";\"; return new NestedRmwLeafBag(); }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"middle-set:\", $offset, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class NestedRmwRootBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"root-get:\", $offset, \";\"; return new NestedRmwMiddleBag(); }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"root-set:\", $offset, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class NestedRmwHolder { public $bag; public function __construct() { $this->bag = new NestedRmwRootBag(); } }\n",
+    "$direct = new NestedRmwRootBag();\n",
+    "$direct[\"outer\"][\"middle\"][\"leaf\"] += 1 + 2;\n",
+    "echo \"|\";\n",
+    "$holder = new NestedRmwHolder();\n",
+    "echo ($holder->bag[\"pouter\"][\"pmiddle\"][\"pleaf\"] *= 1 + 1);\n",
+);
+
 #[test]
 fn native_executable_c_source_routes_arrayaccess_reference_slot_owners_through_value_owner_boundary(
 ) {
@@ -16122,6 +16150,70 @@ fn emit_exe_links_and_runs_nested_arrayaccess_owner_stack_program() {
     assert_eq!(
         run.stdout,
         b"root-get:outer;middle-get:middle;leaf-set:leaf=D;middle-set:middle;root-set:outer;|root-get:pouter;middle-get:pmiddle;leaf-set:pleaf=P;middle-set:pmiddle;root-set:pouter;"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_executable_c_source_routes_nested_arrayaccess_rmw_owner_stack_for_direct_and_property_roots(
+) {
+    let program = parse(ARRAYACCESS_NESTED_RMW_OWNER_STACK_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_GET")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_SET")
+            && source.contains("PHPC_NATIVE_VALUE_BINARY_ADD")
+            && source.contains("PHPC_NATIVE_VALUE_BINARY_MUL")
+            && source.contains("phpc_native_value_binary_result")
+            && source
+                .matches("phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic")
+                .count()
+                >= 6
+            && source
+                .matches("phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic")
+                .count()
+                >= 6
+            && source.matches("nested_arrayaccess_leaf_write").count() >= 2
+            && source.matches("nested_arrayaccess_parent_writeback").count() >= 4
+            && source.matches("nested_arrayaccess_root_commit").count() >= 2
+            && source.contains("phpc_native_value_public_property_reference_with_diagnostic_and_free")
+            && source.contains("phpc_native_reference_set_value("),
+        "nested ArrayAccess RMW should emit owner-stack descent, leaf reads, native binary updates, reverse parent writebacks, and direct/property root commits:\n{source}"
+    );
+    assert!(
+        !source.contains("ArrayAccess lowering rejects")
+            && !source.contains("assembly mutation lowering rejects")
+            && !source.contains("non-local assignment lowering rejects"),
+        "nested ArrayAccess RMW production must not fall back to rejection paths:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_nested_arrayaccess_rmw_owner_stack_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "nested_arrayaccess_rmw_owner_stack_production",
+        ARRAYACCESS_NESTED_RMW_OWNER_STACK_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native nested ArrayAccess RMW executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(
+        run.stdout,
+        b"root-get:outer;middle-get:middle;leaf-get:leaf;leaf-set:leaf=7;middle-set:middle;root-set:outer;|root-get:pouter;middle-get:pmiddle;leaf-get:pleaf;leaf-set:pleaf=8;middle-set:pmiddle;root-set:pouter;8"
     );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 

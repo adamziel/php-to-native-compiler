@@ -42468,6 +42468,46 @@ impl CGenerator {
         rhs_expr: &Expr,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        if let Some(context) =
+            self.materialize_native_nested_arrayaccess_write_context(target, failure_cleanup)?
+        {
+            let context_cleanup = context.cleanup_sequence();
+            let current = self.emit_native_nested_arrayaccess_leaf_read_operation(
+                &context,
+                CNativeArrayAccessOffsetReadOperation::Get,
+                failure_cleanup,
+            );
+            let rhs_failure_cleanup = format!(
+                "{}{context_cleanup}{failure_cleanup}",
+                c_cleanup_sequence(&current.cleanup_after_use)
+            );
+            let rhs_value =
+                self.materialize_native_value_result_operand(rhs_expr, &rhs_failure_cleanup)?;
+            let value = self.emit_native_value_binary_result_handle(
+                current,
+                native_array_lvalue_compound_binary_op_tag(op),
+                rhs_value,
+                &format!("{context_cleanup}{failure_cleanup}"),
+            );
+
+            let value_cleanup = c_cleanup_sequence(&value.cleanup_after_use);
+            let replacement_handle = self.checked_clone_native_value_handle(
+                &value.handle,
+                &format!("{value_cleanup}{context_cleanup}{failure_cleanup}"),
+            );
+            let replacement = CNativeValueMaterialization {
+                handle: replacement_handle.clone(),
+                cleanup_after_use: vec![format!("phpc_native_value_free({replacement_handle});")],
+            };
+            self.emit_native_nested_arrayaccess_write_context(
+                context,
+                replacement,
+                &format!("{value_cleanup}{failure_cleanup}"),
+            )?;
+
+            return Ok(Some(value));
+        }
+
         let Some(target) = self
             .materialize_native_arrayaccess_offset_mutation_target_for_assign_target(
                 target,
@@ -49290,6 +49330,27 @@ impl CGenerator {
         self.body.extend(context.cleanup_after_use);
 
         Ok(())
+    }
+
+    fn emit_native_nested_arrayaccess_leaf_read_operation(
+        &mut self,
+        context: &CNativeNestedArrayAccessWriteContext,
+        operation: CNativeArrayAccessOffsetReadOperation,
+        failure_cleanup: &str,
+    ) -> CNativeValueMaterialization {
+        let subject_handle = context
+            .subject_handle(context.plan.leaf_offset.owner)
+            .to_string();
+        let offset_handle = context.offsets[context.plan.leaf_offset.index]
+            .handle
+            .clone();
+        let operands = CNativeArrayAccessOffsetReadOperands {
+            subject_handle,
+            offset_handle,
+            callable_table: context.callable_table.clone(),
+            cleanup_after_use: context.cleanup_after_use.clone(),
+        };
+        self.emit_native_arrayaccess_offset_read_operation(&operands, operation, failure_cleanup)
     }
 
     fn emit_native_arrayaccess_offset_write_operation_for_variable(
