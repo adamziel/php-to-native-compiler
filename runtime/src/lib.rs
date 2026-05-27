@@ -38215,6 +38215,24 @@ fn native_declare_user_class_alias_bytes_result(
     Ok(true)
 }
 
+unsafe fn native_class_alias_value_bytes(
+    handle: NativeValueHandle,
+    label: &str,
+) -> RuntimeResult<Vec<u8>> {
+    let Some(value) = (unsafe { handle.as_ref() }) else {
+        return Err(RuntimeError::invalid_string_conversion(format!(
+            "native class alias declaration failed: {label} value handle is null"
+        )));
+    };
+
+    value.string_bytes().map(Vec::from).ok_or_else(|| {
+        RuntimeError::unsupported_call(
+            "class_alias()",
+            format!("{label} argument must be string, got {}", value.type_name()),
+        )
+    })
+}
+
 unsafe fn native_declare_user_class_alias_bytes_with_autoload_registry_result(
     source: &[u8],
     alias: &[u8],
@@ -38323,6 +38341,74 @@ pub unsafe extern "C" fn phpc_native_declare_user_class_alias_bytes_with_autoloa
         })?;
         native_declare_user_class_alias_bytes_with_autoload_registry_result(
             source, alias, registry, autoload, diagnostic,
+        )
+    })();
+
+    match result {
+        Ok(aliased) => aliased,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// `source` and `alias` must be null or value handles previously returned by
+/// the runtime ABI and not yet freed. They are borrowed, not consumed. The
+/// diagnostic slot is overwritten when operands are not string values or alias
+/// registration hits an unsupported autoload or alias-conflict boundary.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_declare_user_class_alias_values_with_diagnostic(
+    source: NativeValueHandle,
+    alias: NativeValueHandle,
+    autoload: bool,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let result: RuntimeResult<bool> = (|| unsafe {
+        let source = native_class_alias_value_bytes(source, "class name")?;
+        let alias = native_class_alias_value_bytes(alias, "alias")?;
+        native_declare_user_class_alias_bytes_result(&source, &alias, autoload)
+    })();
+
+    match result {
+        Ok(aliased) => aliased,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// `source` and `alias` must be null or value handles previously returned by
+/// the runtime ABI and not yet freed. They are borrowed, not consumed.
+/// `registry` must be the request-local SPL autoload registry when autoload is
+/// enabled. `table` is accepted for generated-request ABI symmetry; callbacks
+/// are stored in the registry as normalized dispatch values. The diagnostic
+/// slot is overwritten when operands are not string values or alias
+/// registration hits an unsupported callback, reentrant autoload, or
+/// alias-conflict boundary.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_declare_user_class_alias_values_with_autoload_registry_and_diagnostic(
+    source: NativeValueHandle,
+    alias: NativeValueHandle,
+    registry: NativeSplAutoloadRegistryHandle,
+    _table: NativeCallableTableHandle,
+    autoload: bool,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let result: RuntimeResult<bool> = (|| unsafe {
+        let source = native_class_alias_value_bytes(source, "class name")?;
+        let alias = native_class_alias_value_bytes(alias, "alias")?;
+        native_declare_user_class_alias_bytes_with_autoload_registry_result(
+            &source, &alias, registry, autoload, diagnostic,
         )
     })();
 
@@ -52996,6 +53082,133 @@ mod tests {
         assert!(diagnostic.is_null());
 
         unsafe {
+            phpc_native_value_free(alias);
+            phpc_native_spl_autoload_registry_free(registry);
+            phpc_native_callable_table_free(table);
+        }
+        native_user_classes_reset_for_test();
+        spl_autoload_events_reset_for_test();
+    }
+
+    #[test]
+    fn native_user_class_alias_value_metadata_registers_aliases_and_rejects_non_strings() {
+        native_user_classes_reset_for_test();
+        unsafe {
+            phpc_native_declare_user_class_bytes(
+                b"ValueAliasSource".as_ptr(),
+                b"ValueAliasSource".len(),
+            );
+        }
+
+        let source = NativeValueHandle::from_value(Value::String("ValueAliasSource".to_string()));
+        let alias = NativeValueHandle::from_value(Value::String("ValueAliasRuntime".to_string()));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        assert!(unsafe {
+            phpc_native_declare_user_class_alias_values_with_diagnostic(
+                source,
+                alias,
+                false,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let lookup = NativeValueHandle::from_value(Value::String("valuealiasruntime".to_string()));
+        assert!(unsafe {
+            phpc_native_value_class_metadata_exists_with_diagnostic(
+                lookup,
+                NativeValueHandle::null(),
+                NativeClassMetadataOperation::ClassExists as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let bad_source = NativeValueHandle::from_value(Value::Int(42));
+        let bad_alias = NativeValueHandle::from_value(Value::String("BadAlias".to_string()));
+        assert!(!unsafe {
+            phpc_native_declare_user_class_alias_values_with_diagnostic(
+                bad_source,
+                bad_alias,
+                false,
+                &mut diagnostic,
+            )
+        });
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "unsupported call class_alias(): class name argument must be string, got int"
+        );
+
+        unsafe {
+            phpc_native_diagnostic_free(diagnostic);
+            phpc_native_value_free(source);
+            phpc_native_value_free(alias);
+            phpc_native_value_free(lookup);
+            phpc_native_value_free(bad_source);
+            phpc_native_value_free(bad_alias);
+        }
+        native_user_classes_reset_for_test();
+    }
+
+    #[test]
+    fn native_user_class_alias_value_autoload_registry_delegates_to_alias_helpers() {
+        native_user_classes_reset_for_test();
+        spl_autoload_events_reset_for_test();
+        let registry = phpc_native_spl_autoload_registry_new();
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "declare_class",
+                NativeCallableVisibility::Public,
+                native_autoload_declare_class_callback,
+            );
+            register_spl_autoload_callable_for_test(
+                registry,
+                table,
+                Value::String("declare_class".to_string()),
+                false,
+            );
+        }
+
+        let source =
+            NativeValueHandle::from_value(Value::String("ValueAliasAutoloadSource".to_string()));
+        let alias =
+            NativeValueHandle::from_value(Value::String("ValueAliasAutoloaded".to_string()));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        assert!(unsafe {
+            phpc_native_declare_user_class_alias_values_with_autoload_registry_and_diagnostic(
+                source,
+                alias,
+                registry,
+                table,
+                true,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            spl_autoload_events_for_test(),
+            vec!["declare-class:ValueAliasAutoloadSource"]
+        );
+
+        let lookup =
+            NativeValueHandle::from_value(Value::String("valuealiasautoloaded".to_string()));
+        assert!(unsafe {
+            phpc_native_value_class_metadata_exists_with_diagnostic(
+                lookup,
+                NativeValueHandle::null(),
+                NativeClassMetadataOperation::ClassExists as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        unsafe {
+            phpc_native_value_free(lookup);
+            phpc_native_value_free(source);
             phpc_native_value_free(alias);
             phpc_native_spl_autoload_registry_free(registry);
             phpc_native_callable_table_free(table);

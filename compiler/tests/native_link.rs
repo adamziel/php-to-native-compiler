@@ -6513,6 +6513,49 @@ fn native_executable_c_source_routes_class_alias_autoload_to_registry_boundary()
 }
 
 #[test]
+fn native_executable_c_source_lowers_class_alias_inside_user_function_frame() {
+    let program = parse(concat!(
+        "<?php\n",
+        "class FrameAliasSource {}\n",
+        "function load_frame_alias($name) {\n",
+        "    return class_alias(\"FrameAliasSource\", $name, false);\n",
+        "}\n",
+        "load_frame_alias(\"FrameAliasRuntime\");\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_declare_user_class_alias_values_with_diagnostic(")
+            && source.contains("phpc_user_function_"),
+        "class_alias() inside generated user-function frames should lower through the value-handle alias metadata ABI:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_frame_class_alias_autoload_through_value_registry() {
+    let program = parse(concat!(
+        "<?php\n",
+        "function class_alias_loader($name) { echo $name; }\n",
+        "spl_autoload_register(\"class_alias_loader\");\n",
+        "function load_frame_alias($source, $alias) {\n",
+        "    return class_alias($source, $alias);\n",
+        "}\n",
+        "load_frame_alias(\"FrameAliasMaterialized\", \"FrameAliasRuntime\");\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains(
+            "phpc_native_declare_user_class_alias_values_with_autoload_registry_and_diagnostic("
+        ) && source.contains("phpc_user_spl_autoload_registry")
+            && source.contains("phpc_user_function_"),
+        "class_alias() with frame-provided operands and default autoload should lower through the value-handle SPL registry ABI:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_keeps_class_alias_false_off_registry_boundary() {
     let program = parse(concat!(
         "<?php\n",
@@ -6722,6 +6765,49 @@ fn emit_exe_links_and_runs_class_alias_autoload_registry_program() {
     );
 
     let _ = fs::remove_dir_all(fixture_dir);
+}
+
+#[test]
+fn emit_exe_class_alias_autoload_callback_materializes_alias_from_function_frame() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class FrameAliasSource { public $slot; public function run() { } }\n",
+        "function frame_alias_loader($name) {\n",
+        "    echo \"load:\", $name, \"\\n\";\n",
+        "    class_alias(\"FrameAliasSource\", $name, false);\n",
+        "}\n",
+        "spl_autoload_register(\"frame_alias_loader\");\n",
+        "function materialize_frame_alias($source, $alias) {\n",
+        "    return class_alias($source, $alias);\n",
+        "}\n",
+        "materialize_frame_alias(\"FrameAliasMaterialized\", \"FrameAliasUser\");\n",
+        "echo class_exists(\"framealiasuser\", false) ? \"alias\\n\" : \"alias-fail\\n\";\n",
+        "echo method_exists(\"FrameAliasUser\", \"run\") ? \"method\\n\" : \"missing-method\\n\";\n",
+        "echo property_exists(\"FrameAliasUser\", \"slot\") ? \"property\" : \"missing-property\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("class_alias_frame_autoload_alias", source);
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run class_alias frame-autoload executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "load:FrameAliasMaterialized\nalias\nmethod\nproperty"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
 }
 
 #[test]

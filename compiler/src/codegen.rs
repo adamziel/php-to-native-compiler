@@ -24666,8 +24666,10 @@ impl CGenerator {
                 output.push_str("extern bool phpc_native_declare_user_class_property_bytes(const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, uint8_t visibility, bool is_static);\n");
                 output.push_str("extern bool phpc_native_declare_user_class_trait_bytes(const uint8_t *class_ptr, size_t class_len, const uint8_t *trait_ptr, size_t trait_len);\n");
                 output.push_str("extern bool phpc_native_declare_user_class_alias_bytes_with_diagnostic(const uint8_t *source_ptr, size_t source_len, const uint8_t *alias_ptr, size_t alias_len, bool autoload, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_declare_user_class_alias_values_with_diagnostic(phpc_NativeValueHandle source, phpc_NativeValueHandle alias, bool autoload, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 if self.uses_native_spl_autoload_registry_helpers {
                     output.push_str("extern bool phpc_native_declare_user_class_alias_bytes_with_autoload_registry_and_diagnostic(const uint8_t *source_ptr, size_t source_len, const uint8_t *alias_ptr, size_t alias_len, phpc_NativeSplAutoloadRegistryHandle registry, phpc_NativeCallableTableHandle table, bool autoload, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                    output.push_str("extern bool phpc_native_declare_user_class_alias_values_with_autoload_registry_and_diagnostic(phpc_NativeValueHandle source, phpc_NativeValueHandle alias, phpc_NativeSplAutoloadRegistryHandle registry, phpc_NativeCallableTableHandle table, bool autoload, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 }
             }
             if self.uses_native_user_trait_declaration {
@@ -39620,7 +39622,103 @@ impl CGenerator {
         }
     }
 
+    fn class_alias_operand_is_direct_bytes(value: &CValue) -> bool {
+        matches!(value, CValue::String(_) | CValue::StringExpr(_))
+    }
+
+    fn emit_class_alias_value_operand(
+        &mut self,
+        value: CValue,
+        span: Span,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        match value {
+            CValue::String(_)
+            | CValue::StringExpr(_)
+            | CValue::NativeValueHandle(_)
+            | CValue::NativeReferenceHandle(_) => {
+                let handle = self.emit_native_value_for_cvalue(value, span)?;
+                Ok(CNativeValueMaterialization {
+                    handle: handle.clone(),
+                    cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
+                })
+            }
+            _ => {
+                Err(self
+                    .unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup))
+            }
+        }
+    }
+
+    fn emit_class_alias_value_call(
+        &mut self,
+        source: CValue,
+        alias: CValue,
+        autoload: &str,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
+        let source = self.emit_class_alias_value_operand(source, span)?;
+        let source_cleanup = c_cleanup_sequence(&source.cleanup_after_use);
+        let alias = self.emit_class_alias_value_operand(alias, span)?;
+        let operand_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&alias.cleanup_after_use),
+            source_cleanup
+        );
+        let failure_cleanup_with_operands = format!("{operand_cleanup}{failure_cleanup}");
+        let diagnostic = self.next_native_name("class_alias_diagnostic");
+        let result = self.next_native_name("class_alias_result");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        if autoload == "false" {
+            self.body.push(format!(
+                "bool {result} = phpc_native_declare_user_class_alias_values_with_diagnostic({}, {}, false, &{diagnostic});",
+                source.handle, alias.handle
+            ));
+        } else if autoload == "true" {
+            let (registry, table) =
+                self.ensure_native_spl_autoload_registry(&failure_cleanup_with_operands, span)?;
+            self.body.push(format!(
+                "bool {result} = phpc_native_declare_user_class_alias_values_with_autoload_registry_and_diagnostic({}, {}, {registry}, {table}, true, &{diagnostic});",
+                source.handle, alias.handle
+            ));
+        } else {
+            self.body.push(format!("bool {result} = false;"));
+            self.body.push(format!("if ({autoload}) {{"));
+            let (registry, table) =
+                self.ensure_native_spl_autoload_registry(&failure_cleanup_with_operands, span)?;
+            self.body.push(format!(
+                "  {result} = phpc_native_declare_user_class_alias_values_with_autoload_registry_and_diagnostic({}, {}, {registry}, {table}, true, &{diagnostic});",
+                source.handle, alias.handle
+            ));
+            self.body.push("} else {".to_string());
+            self.body.push(format!(
+                "  {result} = phpc_native_declare_user_class_alias_values_with_diagnostic({}, {}, false, &{diagnostic});",
+                source.handle, alias.handle
+            ));
+            self.body.push("}".to_string());
+        }
+        let report_call = c_diagnostic_report_call(&diagnostic);
+        let error_exit = self.native_error_exit(&format!(
+            "{report_call} {diagnostic}.ptr = NULL; {failure_cleanup_with_operands}"
+        ));
+        self.body
+            .push(format!("if ({diagnostic}.ptr != NULL) {{ {error_exit} }}"));
+        self.body.extend(alias.cleanup_after_use);
+        self.body.extend(source.cleanup_after_use);
+        Ok(CValue::BoolExpr(result))
+    }
+
     fn emit_class_alias_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
+        self.emit_class_alias_call_with_cleanup(args, span, "")
+    }
+
+    fn emit_class_alias_call_with_cleanup(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CValue> {
         if !(2..=3).contains(&args.len()) {
             return Err(
                 self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
@@ -39629,14 +39727,6 @@ impl CGenerator {
 
         let source = self.emit_expr(&args[0])?;
         let alias = self.emit_expr(&args[1])?;
-        if !matches!(&source, CValue::String(_) | CValue::StringExpr(_))
-            || !matches!(&alias, CValue::String(_) | CValue::StringExpr(_))
-        {
-            return Err(
-                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
-            );
-        }
-
         let autoload = if let Some(autoload) = args.get(2) {
             let autoload = self.emit_expr(autoload)?;
             Self::c_bool_expr(autoload).ok_or_else(|| {
@@ -39648,6 +39738,18 @@ impl CGenerator {
 
         self.uses_native_string_helpers = true;
         self.uses_native_user_class_declaration = true;
+        if !Self::class_alias_operand_is_direct_bytes(&source)
+            || !Self::class_alias_operand_is_direct_bytes(&alias)
+        {
+            return self.emit_class_alias_value_call(
+                source,
+                alias,
+                &autoload,
+                span,
+                failure_cleanup,
+            );
+        }
+
         let (source_ptr, source_len) =
             self.emit_class_alias_string_bytes_operand(source, "phpc_class_alias_source", span)?;
         let (alias_ptr, alias_len) =
@@ -39661,14 +39763,16 @@ impl CGenerator {
                 "bool {result} = phpc_native_declare_user_class_alias_bytes_with_diagnostic({source_ptr}, (size_t){source_len}, {alias_ptr}, (size_t){alias_len}, false, &{diagnostic});"
             ));
         } else if autoload == "true" {
-            let (registry, table) = self.ensure_native_spl_autoload_registry("", span)?;
+            let (registry, table) =
+                self.ensure_native_spl_autoload_registry(failure_cleanup, span)?;
             self.body.push(format!(
                 "bool {result} = phpc_native_declare_user_class_alias_bytes_with_autoload_registry_and_diagnostic({source_ptr}, (size_t){source_len}, {alias_ptr}, (size_t){alias_len}, {registry}, {table}, true, &{diagnostic});"
             ));
         } else {
             self.body.push(format!("bool {result} = false;"));
             self.body.push(format!("if ({autoload}) {{"));
-            let (registry, table) = self.ensure_native_spl_autoload_registry("", span)?;
+            let (registry, table) =
+                self.ensure_native_spl_autoload_registry(failure_cleanup, span)?;
             self.body.push(format!(
                 "  {result} = phpc_native_declare_user_class_alias_bytes_with_autoload_registry_and_diagnostic({source_ptr}, (size_t){source_len}, {alias_ptr}, (size_t){alias_len}, {registry}, {table}, true, &{diagnostic});"
             ));
@@ -39679,10 +39783,11 @@ impl CGenerator {
             self.body.push("}".to_string());
         }
         let report_call = c_diagnostic_report_call(&diagnostic);
-        let error_exit = self.native_error_exit("");
-        self.body.push(format!(
-            "if ({diagnostic}.ptr != NULL) {{ {report_call} {diagnostic}.ptr = NULL; {error_exit} }}"
+        let error_exit = self.native_error_exit(&format!(
+            "{report_call} {diagnostic}.ptr = NULL; {failure_cleanup}"
         ));
+        self.body
+            .push(format!("if ({diagnostic}.ptr != NULL) {{ {error_exit} }}"));
         Ok(CValue::BoolExpr(result))
     }
 
@@ -60187,6 +60292,16 @@ impl CGenerator {
                         *span,
                         failure_cleanup,
                     )?;
+                    return self
+                        .materialize_native_array_c_value_handle(value, *span)
+                        .map(Some);
+                }
+                if php_unqualified_name(name).eq_ignore_ascii_case("class_alias")
+                    && !(name.contains('\\')
+                        && self.direct_call_targets_registered_user_function(name))
+                {
+                    let value =
+                        self.emit_class_alias_call_with_cleanup(args, *span, failure_cleanup)?;
                     return self
                         .materialize_native_array_c_value_handle(value, *span)
                         .map(Some);
