@@ -1831,13 +1831,15 @@ unknown or non-direct property holders, reference-returning `offsetGet()`
 without proven object facts, root keyed-suffix append without owner-stack
 descent, broad reference/COW behavior, cleanup/unwind breadth, and exact PHP
 diagnostics behind explicit blockers.
-`instanceof` expressions have a dedicated native rejection boundary for the
-current class/interface relationship checks. Both LLVM IR emission and the C
-assembly fallback path reject the `instanceof` AST node before lowering the
-left operand, so missing native class metadata tables, object handles,
-inheritance/interface registries, class-name resolution, autoload interaction,
-references/copy-on-write, and exact native diagnostics stay visible instead of
-collapsing into the broader object/class boundary.
+`instanceof` expressions route named, non-relative LLVM IR operands that can be
+materialized as native values through the shared runtime class-relationship ABI.
+This gives scalar and already-native value operands the same diagnostic and
+non-object false behavior as generated C without adding text-membership tables.
+LLVM still rejects dynamic right-hand class operands at parse time and relative
+`self`/`parent`/`static` targets at codegen time, while object-producing checks
+remain blocked by the LLVM `new`/object-handle boundary. Generated C remains the
+backend with declared-object allocation, interface metadata registration, and
+linked object relationship execution.
 Method-call expressions also have a dedicated native rejection boundary for
 instance calls, named static calls, object/static-receiver calls, `self::`,
 `parent::`, and late-static `static::` calls. Both LLVM IR emission and the C

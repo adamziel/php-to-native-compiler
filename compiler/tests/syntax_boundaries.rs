@@ -1509,8 +1509,8 @@ fn unsupported_instanceof_expression_has_stable_parse_errors() {
 
 #[test]
 fn emit_ir_rejects_instanceof_expression_at_codegen_boundary() {
-    let error =
-        php_compiler::emit_ir_source("<?php\n$is = $object instanceof Widget;\n").unwrap_err();
+    let error = php_compiler::emit_ir_source("<?php\n$value = 7;\n$is = $value instanceof self;\n")
+        .unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, LLVM_INSTANCEOF_REJECTION);

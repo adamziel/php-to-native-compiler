@@ -334,13 +334,26 @@ fn emit_ir_rejects_builtin_class_metadata_lookups_with_specific_boundary() {
 }
 
 #[test]
-fn emit_ir_rejects_instanceof_with_specific_boundary() {
-    let error = emit_ir_source("<?php\n$is = $value instanceof Countable;\n").unwrap_err();
+fn emit_ir_routes_named_instanceof_through_runtime_relationship_abi() {
+    let ir = emit_ir_source(
+        "<?php\n$value = 7;\n$is = $value instanceof Countable;\necho $is ? \"Y\" : \"N\";\n",
+    )
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 7);
-    assert_eq!(error.message, LLVM_INSTANCEOF_REJECTION);
+    assert!(
+        ir.contains("declare i1 @phpc_native_value_class_relationship_matches_with_diagnostic"),
+        "{ir}"
+    );
+    assert!(
+        ir.contains("call i1 @phpc_native_value_class_relationship_matches_with_diagnostic"),
+        "{ir}"
+    );
+    assert!(ir.contains("i8 0"), "{ir}");
+    assert!(
+        ir.contains("call void @phpc_native_value_free(%phpc.NativeValueHandle"),
+        "{ir}"
+    );
+    assert!(!ir.contains("instanceof lowering rejects"), "{ir}");
 }
 
 #[test]
@@ -354,6 +367,43 @@ fn emit_ir_routes_instanceof_operand_calls_through_call_boundary() {
 }
 
 #[test]
+fn emit_ir_rejects_relative_instanceof_targets_until_class_context_resolution_exists() {
+    for source in [
+        "<?php\n$value = 7;\n$is = $value instanceof self;\n",
+        "<?php\n$value = 7;\n$is = $value instanceof parent;\n",
+        "<?php\n$value = 7;\n$is = $value instanceof STATIC;\n",
+    ] {
+        let error = emit_ir_source(source).unwrap_err();
+
+        assert_eq!(error.phase, Phase::Codegen);
+        assert_eq!(error.message, LLVM_INSTANCEOF_REJECTION);
+    }
+}
+
+#[test]
+fn emit_ir_keeps_object_instanceof_blocked_until_llvm_new_produces_object_handles() {
+    let error =
+        emit_ir_source("<?php\nclass Box {}\n$box = new Box();\necho $box instanceof Box;\n")
+            .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.message, LLVM_OBJECT_INSTANTIATION_REJECTION);
+}
+
+#[test]
+fn emit_ir_keeps_dynamic_instanceof_targets_at_parse_boundary() {
+    let error =
+        emit_ir_source("<?php\n$class = \"Box\";\n$value = 7;\necho $value instanceof $class;\n")
+            .unwrap_err();
+
+    assert_eq!(error.phase, Phase::Parse);
+    assert_eq!(
+        error.message,
+        "unsupported instanceof class expression: dynamic class names are not implemented"
+    );
+}
+
+#[test]
 fn emit_asm_rejects_class_declarations_outside_generated_native_subset() {
     let error = emit_asm_source("<?php\nclass Box { public $name; }\n").unwrap_err();
 
@@ -362,13 +412,16 @@ fn emit_asm_rejects_class_declarations_outside_generated_native_subset() {
 }
 
 #[test]
-fn emit_asm_rejects_instanceof_before_backend_execution() {
-    let error = emit_asm_source("<?php\n$is = $value instanceof Countable;\n").unwrap_err();
+fn emit_asm_routes_named_instanceof_through_llvm_relationship_abi() {
+    let asm = emit_asm_source(
+        "<?php\n$value = 7;\n$is = $value instanceof Countable;\necho $is ? \"Y\" : \"N\";\n",
+    )
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 7);
-    assert_eq!(error.message, LLVM_INSTANCEOF_REJECTION);
+    assert!(
+        asm.contains("phpc_native_value_class_relationship_matches_with_diagnostic"),
+        "{asm}"
+    );
 }
 
 #[test]

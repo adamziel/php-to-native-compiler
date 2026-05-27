@@ -6003,14 +6003,15 @@
   metadata, including unresolved internal interface names recorded on class
   declarations. Unknown names without a matching class or recorded
   `implements` entry return `false`.
-  Dynamic right-hand class operands, namespace-qualified names, `self`/`parent`/`static`
-  targets, autoload side effects, exact PHP diagnostics, and native lowering
-  remain unsupported. Native lowering rejects `instanceof` relationship
-  checks with a dedicated codegen diagnostic before lowering the left operand,
-  because generated code still lacks class metadata tables, object handles,
-  inheritance/interface registries, class-name resolution, autoload
-  interaction, references/copy-on-write, and exact native `instanceof`
-  diagnostics.
+  Dynamic right-hand class operands, namespace-qualified names,
+  `self`/`parent`/`static` targets, autoload side effects, exact PHP
+  diagnostics, and full non-C backend object parity remain unsupported. LLVM IR
+  lowering routes named, non-relative operands that can be materialized as
+  native values through
+  `phpc_native_value_class_relationship_matches_with_diagnostic`, so scalar and
+  already-native values share the generated-C non-object false behavior without
+  text-membership tables. LLVM object-producing `instanceof` checks remain
+  blocked until `new` and object handles lower in LLVM.
   `ClassName::class` expressions return the source-spelled class string without
   requiring class metadata. `self::class` resolves to the active declaring
   class name and `parent::class` resolves to that class's immediate parent
@@ -7138,11 +7139,13 @@
   class metadata tables, object handles, inheritance/interface/trait/enum
   registries, property/method tables, autoload interaction,
   references/copy-on-write, and exact native object-metadata errors.
-  Native `instanceof` lowering has a separate rejection for class/interface
-  relationship checks until generated code has native class metadata tables,
-  object handles, inheritance/interface registries, class-name resolution,
-  autoload interaction, references/copy-on-write, and exact native
-  `instanceof` diagnostics.
+  Native `instanceof` lowering routes generated-C declared-object checks and
+  lowerable LLVM named value checks through the shared class-relationship ABI.
+  LLVM still keeps dynamic right-hand operands, relative class targets, and
+  object-producing checks behind explicit parse/codegen blockers until class
+  context resolution, object handles, autoload interaction,
+  references/copy-on-write, and exact native `instanceof` diagnostics are
+  available there.
   Native object-instantiation lowering supports a bounded generated-C
   declared-class slice for `new Class(...)` and selected runtime string-valued
   `new $class(...)` expressions when a supported public constructor is present.
