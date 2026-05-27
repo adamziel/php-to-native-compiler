@@ -1,7 +1,7 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 00:55 CEST
-Latest source head: `520d7b62 native: iterate reference-slot foreach owners`
+Updated: 2026-05-28 00:59 CEST
+Latest source head: `3ff60469 native: run finally before include return`
 Evaluation marker: `20260526T040843Z`
 
 Progress counts only generalized, tested, committed primary source work.
@@ -19,13 +19,14 @@ move the bars.
 | Compiler/backend consumers | **85%** `[#################---]` | Generated C is the primary executable consumer; LLVM has selected parity; direct assembly lags newer ABIs. |
 | Arrays, lvalues, refs, COW | **86%** `[#################---]` | Selected owner/reference paths include direct reference-slot foreach owners; arbitrary alias roots, broader foreach owners, and backend parity remain. |
 | Object model/classes/traits | **90%** `[##################--]` | Metadata, traits, typed properties, aliases, autoload-selected lookup, visibility, and magic reads/writes are selected-path integrated. |
-| Cleanup/unwind/lifecycle | **35%** `[#######-------------]` | Output-buffer shutdown, fatal destructor finalization, shutdown callbacks, and missing-require active-finally replay exist only for selected paths. |
+| Cleanup/unwind/lifecycle | **36%** `[#######-------------]` | Output-buffer shutdown, fatal destructor finalization, shutdown callbacks, missing-require active-finally replay, and include-unit return-through-finally exist for selected paths. |
 | Backend parity | **45%** `[#########-----------]` | Queued LLVM parity targets include references, output buffers, property metadata, include/require blockers, and callable membership. |
 
 ## Recent Source Ledger
 
 | Commit | Capability | Proof anchor |
 | --- | --- | --- |
+| `3ff60469` | Included units that `return` through an active generated-C `finally` now replay the `finally` body before handing the include value back to the caller. | `state/logs/phpc-primary-exception-finally-67bfce5a-20260528.gates.log`, sha256 `3e3c6ea2603b712ef45c9f0111f1ca777f138f07924c811f6ccdb36d5e7616e1`. |
 | `520d7b62` | Direct local reference-slot array owners now feed by-value and by-reference generated-C `foreach` iterable snapshots through shared native array-lvalue owner APIs without broad symbol-table owner routing. | `state/logs/phpc-primary-foreach-refslot-9ba0c62a-20260528.gates.log`, sha256 `8a1eaa139f79c134b19bde7fed4ae27f38993862945192d34f56329b880db6fd`. |
 | `37dc8a85` | Missing required include paths run active `finally` before fatal diagnostics/exit. | `state/logs/phpc-primary-include-finally-missing-require-f9bcd680-20260528.gates.log`, sha256 `01d45a27884cbaa4b5a3efdffb5a85972f38a67997901f279003c23da95c2d2f`. |
 | `bf8d2e0d` | Request cleanup runs native shutdown callbacks, including nested same-pass registration, before destructors/output buffers. | `state/logs/phpc-primary-shutdown-callbacks-858eeea3-20260528.gates.log`, sha256 `2cfd21340dba95bc789ddb02b3e26a629cbd0df355c6d0099e55c6a7b435a9f9`. |
@@ -57,10 +58,11 @@ Older committed source work is intentionally summarized by the bars. Use
 
 - Consumed: shutdown callback cleanup (`bf8d2e0d`), missing-required-include
   active-finally replay (`37dc8a85`), and direct local reference-slot
-  foreach owners (`520d7b62`). Do not requeue older variants.
+  foreach owners (`520d7b62`), and include-unit return-through-finally
+  (`3ff60469`). Do not requeue older variants.
 - Highest current source/semantics watch: comparison-abort cleanup refresh,
-  dynamic include/finally scoped terminal-arm work, and exception/finally
-  include-unit terminal transfer refresh.
+  dynamic include/finally scoped terminal-arm work, and broader throw/catch
+  `finally` transfer scouting.
 - Highest backend watch: LLVM output-buffer unwind is a refreshed GO candidate;
   LLVM property metadata and callable membership have focused IR proof;
   LLVM reference write-through is parked until real LLVM/ASM tooling is
