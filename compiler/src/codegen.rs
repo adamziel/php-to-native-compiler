@@ -1603,18 +1603,25 @@ fn native_closure_frame_blocker(
     }
 }
 
-fn native_user_function_variadic_param(function: &FunctionDecl) -> Option<(usize, &FunctionParam)> {
-    function
-        .params
+fn native_function_variadic_param(params: &[FunctionParam]) -> Option<(usize, &FunctionParam)> {
+    params
         .iter()
         .enumerate()
         .find(|(_, param)| param.is_variadic)
 }
 
-fn native_user_function_fixed_param_count(function: &FunctionDecl) -> usize {
-    native_user_function_variadic_param(function)
+fn native_user_function_variadic_param(function: &FunctionDecl) -> Option<(usize, &FunctionParam)> {
+    native_function_variadic_param(&function.params)
+}
+
+fn native_function_fixed_param_count(params: &[FunctionParam]) -> usize {
+    native_function_variadic_param(params)
         .map(|(index, _)| index)
-        .unwrap_or(function.params.len())
+        .unwrap_or(params.len())
+}
+
+fn native_user_function_fixed_param_count(function: &FunctionDecl) -> usize {
+    native_function_fixed_param_count(&function.params)
 }
 
 fn native_user_function_required_arg_count(function: &FunctionDecl) -> usize {
@@ -16844,6 +16851,64 @@ impl CScopedCallableStringSignature {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct NativeMethodStaticSourceCallArgumentPlan {
+    params: Vec<FunctionParam>,
+}
+
+impl NativeMethodStaticSourceCallArgumentPlan {
+    fn from_method(method: &CDeclaredClassMethod) -> Self {
+        Self {
+            params: method.decl.params.clone(),
+        }
+    }
+
+    fn fixed_count(&self) -> usize {
+        native_function_fixed_param_count(&self.params)
+    }
+
+    fn variadic_param(&self) -> Option<(usize, &FunctionParam)> {
+        native_function_variadic_param(&self.params)
+    }
+
+    fn semantically_matches(&self, other: &Self) -> bool {
+        self.params.len() == other.params.len()
+            && self
+                .params
+                .iter()
+                .zip(&other.params)
+                .all(|(left, right)| native_source_call_params_semantically_match(left, right))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum NativeMethodStaticSourceCallArgumentStrategy {
+    RuntimeDynamic,
+    ForwardCallSite,
+    Frame(NativeMethodStaticSourceCallArgumentPlan),
+}
+
+impl NativeMethodStaticSourceCallArgumentStrategy {
+    fn for_method(method: &CDeclaredClassMethod, arg_count: usize) -> Self {
+        if native_method_static_source_call_can_forward_call_site_arguments(method, arg_count) {
+            Self::ForwardCallSite
+        } else {
+            Self::Frame(NativeMethodStaticSourceCallArgumentPlan::from_method(
+                method,
+            ))
+        }
+    }
+
+    fn semantically_matches(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::RuntimeDynamic, Self::RuntimeDynamic)
+            | (Self::ForwardCallSite, Self::ForwardCallSite) => true,
+            (Self::Frame(left), Self::Frame(right)) => left.semantically_matches(right),
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeMethodStaticSignatureFamily {
     ReceiverMethod,
@@ -16858,7 +16923,7 @@ enum NativeMethodStaticSignatureFallbackReason {
     RuntimeDynamicMethodName,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 enum NativeMethodStaticSignatureAvailability {
     Known(CScopedCallableStringSignature),
     RuntimeFallback(NativeMethodStaticSignatureFallbackReason),
@@ -16880,12 +16945,13 @@ impl NativeMethodStaticSignatureAvailability {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct NativeMethodStaticSignatureFallbackContract {
     family: NativeMethodStaticSignatureFamily,
     candidate_count: usize,
     arity_compatible_count: usize,
     availability: NativeMethodStaticSignatureAvailability,
+    argument_strategy: NativeMethodStaticSourceCallArgumentStrategy,
 }
 
 impl NativeMethodStaticSignatureFallbackContract {
@@ -16895,6 +16961,10 @@ impl NativeMethodStaticSignatureFallbackContract {
 
     fn source_selection(&self) -> NativeSourceCallSignatureSelection {
         self.availability.source_selection()
+    }
+
+    fn argument_strategy(&self) -> &NativeMethodStaticSourceCallArgumentStrategy {
+        &self.argument_strategy
     }
 }
 
@@ -16906,6 +16976,7 @@ fn native_method_static_signature_fallback_contract_from_methods<'a>(
     let mut candidate_count = 0;
     let mut arity_compatible_count = 0;
     let mut signature = None;
+    let mut argument_strategy: Option<NativeMethodStaticSourceCallArgumentStrategy> = None;
 
     for method in methods {
         candidate_count += 1;
@@ -16914,6 +16985,8 @@ fn native_method_static_signature_fallback_contract_from_methods<'a>(
         }
         arity_compatible_count += 1;
         let method_signature = CScopedCallableStringSignature::from_method(method);
+        let method_argument_strategy =
+            NativeMethodStaticSourceCallArgumentStrategy::for_method(method, arg_count);
         match &signature {
             Some(previous) if previous != &method_signature => {
                 return NativeMethodStaticSignatureFallbackContract {
@@ -16923,22 +16996,48 @@ fn native_method_static_signature_fallback_contract_from_methods<'a>(
                     availability: NativeMethodStaticSignatureAvailability::RuntimeFallback(
                         NativeMethodStaticSignatureFallbackReason::HeterogeneousDeclaredMethodMetadata,
                     ),
+                    argument_strategy: NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic,
                 };
             }
             Some(_) => {}
             None => signature = Some(method_signature),
         }
+        match &argument_strategy {
+            Some(previous) if !previous.semantically_matches(&method_argument_strategy) => {
+                return NativeMethodStaticSignatureFallbackContract {
+                    family,
+                    candidate_count,
+                    arity_compatible_count,
+                    availability: NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                        NativeMethodStaticSignatureFallbackReason::HeterogeneousDeclaredMethodMetadata,
+                    ),
+                    argument_strategy: NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic,
+                };
+            }
+            Some(_) => {}
+            None => argument_strategy = Some(method_argument_strategy),
+        }
     }
 
-    let availability = if let Some(signature) = signature {
-        NativeMethodStaticSignatureAvailability::Known(signature)
+    let (availability, argument_strategy) = if let Some(signature) = signature {
+        (
+            NativeMethodStaticSignatureAvailability::Known(signature),
+            argument_strategy
+                .unwrap_or(NativeMethodStaticSourceCallArgumentStrategy::ForwardCallSite),
+        )
     } else if candidate_count == 0 {
-        NativeMethodStaticSignatureAvailability::RuntimeFallback(
-            NativeMethodStaticSignatureFallbackReason::NoDeclaredMethodMetadata,
+        (
+            NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                NativeMethodStaticSignatureFallbackReason::NoDeclaredMethodMetadata,
+            ),
+            NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic,
         )
     } else {
-        NativeMethodStaticSignatureAvailability::RuntimeFallback(
-            NativeMethodStaticSignatureFallbackReason::NoArityCompatibleDeclaredMethodMetadata,
+        (
+            NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                NativeMethodStaticSignatureFallbackReason::NoArityCompatibleDeclaredMethodMetadata,
+            ),
+            NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic,
         )
     };
 
@@ -16947,6 +17046,7 @@ fn native_method_static_signature_fallback_contract_from_methods<'a>(
         candidate_count,
         arity_compatible_count,
         availability,
+        argument_strategy,
     }
 }
 
@@ -16960,15 +17060,128 @@ fn native_method_static_runtime_signature_fallback_contract(
         availability: NativeMethodStaticSignatureAvailability::RuntimeFallback(
             NativeMethodStaticSignatureFallbackReason::RuntimeDynamicMethodName,
         ),
+        argument_strategy: NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic,
     }
 }
 
-fn native_method_static_source_call_frame_signature_compatible(
+fn native_method_static_source_call_arity_compatible(
+    method: &CDeclaredClassMethod,
+    arg_count: usize,
+) -> bool {
+    native_user_function_accepts_arg_count(&method.decl, arg_count)
+}
+
+fn native_method_static_source_call_can_forward_call_site_arguments(
     method: &CDeclaredClassMethod,
     arg_count: usize,
 ) -> bool {
     native_user_function_variadic_param(&method.decl).is_none()
         && method.decl.params.len() == arg_count
+}
+
+fn native_source_call_params_semantically_match(
+    left: &FunctionParam,
+    right: &FunctionParam,
+) -> bool {
+    left.by_reference == right.by_reference
+        && left.is_variadic == right.is_variadic
+        && left.type_decl.as_ref().map(|decl| decl.text.as_str())
+            == right.type_decl.as_ref().map(|decl| decl.text.as_str())
+        && native_source_call_default_exprs_semantically_match(
+            left.default.as_ref(),
+            right.default.as_ref(),
+        )
+}
+
+fn native_source_call_default_exprs_semantically_match(
+    left: Option<&Expr>,
+    right: Option<&Expr>,
+) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => {
+            native_source_call_default_expr_semantically_matches(left, right)
+        }
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+fn native_source_call_default_expr_semantically_matches(left: &Expr, right: &Expr) -> bool {
+    match (left, right) {
+        (Expr::Null(_), Expr::Null(_)) => true,
+        (Expr::Bool(left, _), Expr::Bool(right, _)) => left == right,
+        (Expr::Int(left, _), Expr::Int(right, _)) => left == right,
+        (Expr::Float(left, _), Expr::Float(right, _)) => left == right,
+        (Expr::String(left, _), Expr::String(right, _)) => left == right,
+        (Expr::Array { items: left, .. }, Expr::Array { items: right, .. }) => {
+            left.len() == right.len()
+                && left.iter().zip(right).all(|(left, right)| {
+                    left.by_reference == right.by_reference
+                        && match (&left.key, &right.key) {
+                            (Some(left), Some(right)) => {
+                                native_source_call_default_expr_semantically_matches(left, right)
+                            }
+                            (None, None) => true,
+                            _ => false,
+                        }
+                        && native_source_call_default_expr_semantically_matches(
+                            &left.value,
+                            &right.value,
+                        )
+                })
+        }
+        (
+            Expr::Unary {
+                op: left_op,
+                expr: left,
+                ..
+            },
+            Expr::Unary {
+                op: right_op,
+                expr: right,
+                ..
+            },
+        ) => {
+            left_op == right_op && native_source_call_default_expr_semantically_matches(left, right)
+        }
+        (
+            Expr::Binary {
+                left: left_left,
+                op: left_op,
+                right: left_right,
+                ..
+            },
+            Expr::Binary {
+                left: right_left,
+                op: right_op,
+                right: right_right,
+                ..
+            },
+        ) => {
+            left_op == right_op
+                && native_source_call_default_expr_semantically_matches(left_left, right_left)
+                && native_source_call_default_expr_semantically_matches(left_right, right_right)
+        }
+        (
+            Expr::GlobalConstant {
+                name: left_name, ..
+            },
+            Expr::GlobalConstant {
+                name: right_name, ..
+            },
+        ) => left_name == right_name,
+        (
+            Expr::ClassNameConstant {
+                class_name: left_name,
+                ..
+            },
+            Expr::ClassNameConstant {
+                class_name: right_name,
+                ..
+            },
+        ) => left_name == right_name,
+        _ => left == right,
+    }
 }
 
 fn borrowed_native_arg(
@@ -25918,7 +26131,7 @@ impl CGenerator {
         for class_key in &object.declared_class_keys {
             let (_, method) =
                 self.declared_class_receiver_method_for_key(class_key, method_name)?;
-            if !native_method_static_source_call_frame_signature_compatible(&method, arg_count) {
+            if !native_method_static_source_call_arity_compatible(&method, arg_count) {
                 return None;
             }
             methods.push(method);
@@ -25956,7 +26169,7 @@ impl CGenerator {
         arg_count: usize,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
         let (_, method) = self.declared_class_static_method(class_name, method_name)?;
-        if !native_method_static_source_call_frame_signature_compatible(&method, arg_count) {
+        if !native_method_static_source_call_arity_compatible(&method, arg_count) {
             return None;
         }
 
@@ -31322,17 +31535,23 @@ impl CGenerator {
         owner_failure_cleanup: &str,
         signature_contract: &NativeMethodStaticSignatureFallbackContract,
     ) -> CompileResult<NativeSourceCallBindingOperands> {
-        let mut binding = self.emit_native_source_call_binding_operands(
+        let binding_failure_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&target.cleanup_on_preinvoke_failure),
+            owner_failure_cleanup
+        );
+        let arguments = self.emit_native_method_static_source_call_arguments_handle(
             argument_prefix,
-            target,
             args,
             span,
-            owner_failure_cleanup,
-            NativeCallCallee::MethodDispatch,
-            signature_contract.signature(),
+            &binding_failure_cleanup,
+            signature_contract,
         )?;
-        binding.signature_selection = signature_contract.source_selection();
-        Ok(binding)
+        Ok(NativeSourceCallBindingOperands {
+            target,
+            arguments,
+            signature_selection: signature_contract.source_selection(),
+        })
     }
 
     fn emit_native_source_call_carrier_invocation(
@@ -31510,6 +31729,51 @@ impl CGenerator {
         }
     }
 
+    fn emit_native_source_call_materialized_value_argument_push(
+        &mut self,
+        call_arguments: &str,
+        value: CNativeValueMaterialization,
+        call_cleanup: &str,
+    ) {
+        let value_aux_cleanup = native_value_aux_cleanup_after_consuming_handle(&value);
+        let push_failure_cleanup =
+            format!("{}{}", c_cleanup_sequence(&value_aux_cleanup), call_cleanup);
+        self.body.push(format!(
+            "if (!phpc_native_call_arguments_push_value_and_free({call_arguments}, {})) {{ {} }}",
+            value.handle,
+            self.native_error_exit(&push_failure_cleanup)
+        ));
+        self.body.extend(value_aux_cleanup);
+    }
+
+    fn emit_native_source_call_argument(
+        &mut self,
+        call_arguments: &str,
+        arg: &Expr,
+        span: Span,
+        call_cleanup: &str,
+        callee: NativeCallCallee,
+        push_reference: bool,
+    ) -> CompileResult<()> {
+        if push_reference {
+            let reference =
+                self.materialize_call_reference_argument(arg, span, call_cleanup, callee)?;
+            self.body.push(format!(
+                "if (!phpc_native_call_arguments_push_reference_and_free({call_arguments}, {})) {{ {} }}",
+                reference.handle,
+                self.native_error_exit(call_cleanup)
+            ));
+        } else {
+            let value = self.materialize_native_value_result_operand(arg, call_cleanup)?;
+            self.emit_native_source_call_materialized_value_argument_push(
+                call_arguments,
+                value,
+                call_cleanup,
+            );
+        }
+        Ok(())
+    }
+
     fn emit_runtime_callable_value_call_arguments(
         &mut self,
         call_arguments: &str,
@@ -31524,27 +31788,105 @@ impl CGenerator {
                 || self.runtime_dynamic_call_reference_argument_is_supported(arg),
                 |signature| signature.param_is_by_reference(index),
             );
-            if push_reference {
-                let reference =
-                    self.materialize_call_reference_argument(arg, span, call_cleanup, callee)?;
-                self.body.push(format!(
-                    "if (!phpc_native_call_arguments_push_reference_and_free({call_arguments}, {})) {{ {} }}",
-                    reference.handle,
-                    self.native_error_exit(call_cleanup)
-                ));
-            } else {
-                let value = self.materialize_native_value_result_operand(arg, call_cleanup)?;
-                let value_aux_cleanup = native_value_aux_cleanup_after_consuming_handle(&value);
-                let push_failure_cleanup =
-                    format!("{}{}", c_cleanup_sequence(&value_aux_cleanup), call_cleanup);
-                self.body.push(format!(
-                    "if (!phpc_native_call_arguments_push_value_and_free({call_arguments}, {})) {{ {} }}",
-                    value.handle,
-                    self.native_error_exit(&push_failure_cleanup)
-                ));
-                self.body.extend(value_aux_cleanup);
+            self.emit_native_source_call_argument(
+                call_arguments,
+                arg,
+                span,
+                call_cleanup,
+                callee,
+                push_reference,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn emit_native_method_static_source_call_arguments_handle(
+        &mut self,
+        prefix: &str,
+        args: &[Expr],
+        span: Span,
+        owner_failure_cleanup: &str,
+        signature_contract: &NativeMethodStaticSignatureFallbackContract,
+    ) -> CompileResult<String> {
+        match signature_contract.argument_strategy() {
+            NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic
+            | NativeMethodStaticSourceCallArgumentStrategy::ForwardCallSite => self
+                .emit_native_source_call_arguments_handle(
+                    prefix,
+                    args,
+                    span,
+                    owner_failure_cleanup,
+                    NativeCallCallee::MethodDispatch,
+                    signature_contract.signature(),
+                ),
+            NativeMethodStaticSourceCallArgumentStrategy::Frame(plan) => {
+                let call_arguments = self
+                    .emit_empty_native_source_call_arguments_handle(prefix, owner_failure_cleanup);
+                let call_cleanup = format!(
+                    "phpc_native_call_arguments_free({call_arguments}); {owner_failure_cleanup}"
+                );
+                self.emit_native_method_static_source_call_frame_arguments(
+                    &call_arguments,
+                    args,
+                    span,
+                    &call_cleanup,
+                    plan,
+                )?;
+                Ok(call_arguments)
             }
         }
+    }
+
+    fn emit_native_method_static_source_call_frame_arguments(
+        &mut self,
+        call_arguments: &str,
+        args: &[Expr],
+        span: Span,
+        call_cleanup: &str,
+        plan: &NativeMethodStaticSourceCallArgumentPlan,
+    ) -> CompileResult<()> {
+        let fixed_count = plan.fixed_count();
+        for (index, param) in plan.params.iter().take(fixed_count).enumerate() {
+            let value_expr = if let Some(arg) = args.get(index) {
+                arg
+            } else {
+                param.default.as_ref().ok_or_else(|| {
+                    self.unsupported_call_operation(NativeCallOperation::value_result(
+                        span,
+                        NativeCallCallee::MethodDispatch,
+                        NativeCallBlocker::UnknownCalleeDiagnostics,
+                    ))
+                })?
+            };
+            self.emit_native_source_call_argument(
+                call_arguments,
+                value_expr,
+                span,
+                call_cleanup,
+                NativeCallCallee::MethodDispatch,
+                param.by_reference,
+            )?;
+        }
+
+        if let Some((_, variadic_param)) = plan.variadic_param() {
+            let variadic_args = if args.len() > fixed_count {
+                &args[fixed_count..]
+            } else {
+                &[]
+            };
+            let variadic_value = self.materialize_variadic_argument_array_from_exprs(
+                variadic_param,
+                variadic_args,
+                "method/static source-call",
+                call_cleanup,
+            )?;
+            self.emit_native_source_call_materialized_value_argument_push(
+                call_arguments,
+                variadic_value,
+                call_cleanup,
+            );
+        }
+
         Ok(())
     }
 
@@ -52911,6 +53253,8 @@ echo " 10" < "zeta";
             "    public function inst(&$slot, $value) { return $value; }\n",
             "    public static function stat(&$slot, $value) { return $value; }\n",
             "    public function arity($only) { return $only; }\n",
+            "    public function withDefault($value, $suffix = \"D\") { return $value . $suffix; }\n",
+            "    public static function withVariadic($head, ...$tail) { return $head; }\n",
             "}\n",
             "class SignatureLeft {\n",
             "    public function mixed(&$slot, $value) { return $value; }\n",
@@ -52958,6 +53302,38 @@ echo " 10" < "zeta";
             static_method.availability,
             NativeMethodStaticSignatureAvailability::Known(expected_signature)
         );
+        assert_eq!(
+            static_method.argument_strategy,
+            NativeMethodStaticSourceCallArgumentStrategy::ForwardCallSite
+        );
+
+        let default_receiver =
+            generator.receiver_method_signature_fallback_contract("withDefault", 1);
+        assert_eq!(default_receiver.candidate_count, 1);
+        assert_eq!(default_receiver.arity_compatible_count, 1);
+        assert!(matches!(
+            default_receiver.availability,
+            NativeMethodStaticSignatureAvailability::Known(_)
+        ));
+        assert!(matches!(
+            default_receiver.argument_strategy,
+            NativeMethodStaticSourceCallArgumentStrategy::Frame(ref plan)
+                if plan.params.len() == 2 && plan.fixed_count() == 2 && plan.variadic_param().is_none()
+        ));
+
+        let variadic_static =
+            generator.static_method_signature_fallback_contract("withVariadic", 3);
+        assert_eq!(variadic_static.candidate_count, 1);
+        assert_eq!(variadic_static.arity_compatible_count, 1);
+        assert!(matches!(
+            variadic_static.availability,
+            NativeMethodStaticSignatureAvailability::Known(_)
+        ));
+        assert!(matches!(
+            variadic_static.argument_strategy,
+            NativeMethodStaticSourceCallArgumentStrategy::Frame(ref plan)
+                if plan.params.len() == 2 && plan.fixed_count() == 1 && plan.variadic_param().is_some()
+        ));
 
         let missing = generator.receiver_method_signature_fallback_contract("missing", 1);
         assert_eq!(
@@ -53024,12 +53400,14 @@ echo " 10" < "zeta";
             candidate_count: 2,
             arity_compatible_count: 2,
             availability: NativeMethodStaticSignatureAvailability::Known(known_signature.clone()),
+            argument_strategy: NativeMethodStaticSourceCallArgumentStrategy::ForwardCallSite,
         };
         let static_contract = NativeMethodStaticSignatureFallbackContract {
             family: NativeMethodStaticSignatureFamily::StaticMethod,
             candidate_count: 1,
             arity_compatible_count: 1,
             availability: NativeMethodStaticSignatureAvailability::Known(known_signature),
+            argument_strategy: NativeMethodStaticSourceCallArgumentStrategy::ForwardCallSite,
         };
         let unknown_contract = native_method_static_runtime_signature_fallback_contract(
             NativeMethodStaticSignatureFamily::ReceiverMethod,

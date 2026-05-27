@@ -342,6 +342,23 @@ const NATIVE_DECLARED_METHOD_STATIC_SOURCE_CALL_SOURCE: &str = concat!(
     "echo SourceCallAlpha::stat(\"LOUD\"), \"|\", SourceCallBeta::stat(\"go\"), \"\\n\";\n",
 );
 
+const NATIVE_DECLARED_METHOD_STATIC_DEFAULT_VARIADIC_SOURCE_CALL_SOURCE: &str = concat!(
+    "<?php\n",
+    "class SourceCallWide {\n",
+    "    public function inst($head, $suffix = \"D\", ...$tail) {\n",
+    "        return $head . \":\" . $suffix . \":\" . ($tail[0] ?? \"empty\");\n",
+    "    }\n",
+    "    public static function stat($head, $suffix = \"S\", ...$tail) {\n",
+    "        return $head . \":\" . $suffix . \":\" . ($tail[0] ?? \"empty\");\n",
+    "    }\n",
+    "}\n",
+    "$wide = new SourceCallWide();\n",
+    "echo $wide->inst(\"R\"), \"|\";\n",
+    "echo $wide->inst(\"R\", \"x\", \"tail\"), \"|\";\n",
+    "echo SourceCallWide::stat(\"S\"), \"|\";\n",
+    "echo SourceCallWide::stat(\"S\", \"y\", \"pack\"), \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_CONSTRUCTOR_SOURCE: &str = concat!(
     "<?php\n",
     "class Box {\n",
@@ -1787,6 +1804,36 @@ fn emit_exe_links_and_runs_declared_method_static_source_call_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"AGO|Bloud|Sloud|TGO\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_declared_method_static_default_variadic_source_call_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "declared_method_static_default_variadic_source_call",
+        NATIVE_DECLARED_METHOD_STATIC_DEFAULT_VARIADIC_SOURCE_CALL_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run declared method/static default/variadic source-call executable: {error}"
+        )
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"R:D:empty|R:x:tail|S:S:empty|S:y:pack\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -3760,6 +3807,43 @@ fn native_executable_c_source_routes_declared_method_static_calls_through_source
             && !body.contains("method_dispatch_status")
             && !body.contains("static_method_status"),
         "the exact source-call fixture should not fall back to generated frame-dispatch ladders:\n{source}"
+    );
+    assert!(!source.contains("method-call lowering rejects"), "{source}");
+}
+
+#[test]
+fn native_executable_c_source_routes_declared_method_static_default_variadic_calls_through_source_call_carriers(
+) {
+    let program = parse(NATIVE_DECLARED_METHOD_STATIC_DEFAULT_VARIADIC_SOURCE_CALL_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains(
+            "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+        ) && body.contains(
+            "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments"
+        ),
+        "default/variadic receiver and static calls should still use shared source-call carriers:\n{source}"
+    );
+    assert!(
+        body.matches("receiver_method_source_call_args_").count() >= 2
+            && body.matches("static_method_source_call_args_").count() >= 2
+            && body.matches("phpc_native_call_arguments_push_value_and_free").count() >= 12,
+        "default/variadic method/static production should build every frame slot through the shared owned argument handle:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_array_empty")
+            && body.contains("phpc_native_array_append_value_with_diagnostic")
+            && body.contains("phpc_native_value_from_array"),
+        "variadic receiver/static source calls should pack surplus call-site arguments before carrier invocation:\n{source}"
+    );
+    assert!(
+        body.contains("PHPC_NATIVE_CALLABLE_ACCESS_OBJECT_RECEIVER")
+            && body.contains("PHPC_NATIVE_CALLABLE_ACCESS_STATIC")
+            && !body.contains("method_dispatch_status")
+            && !body.contains("static_method_status"),
+        "default/variadic source-call production should not fall back to generated frame-dispatch ladders:\n{source}"
     );
     assert!(!source.contains("method-call lowering rejects"), "{source}");
 }
