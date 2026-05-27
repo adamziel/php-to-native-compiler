@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 13:20 CEST
+Updated: 2026-05-27 13:25 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,7 +19,22 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest accounted source capability: `f42f1f91` routes selected generated-C
+Latest accounted source capability: `630f2b1f` routes selected generated-C
+callable-object invocation through declared `__invoke` metadata and the shared
+receiver-method source-call machinery. Supported `$object(...)` calls now use
+access-context method lookup plus `NativeCallArgumentsHandle`, preserving
+source-order named argument keys, defaults, variadics, selected by-reference
+argument transfer, receiver/value cleanup, and malformed metadata rejection
+through the runtime lookup/invoke diagnostics. Static or private `__invoke`,
+unknown object metadata, spread/unpack call sites, missing metadata, and
+unsupported by-reference literal/non-cell shapes remain blocked instead of
+falling into fixture-specific callable lowering. Dynamic receiver class-name
+constants, trait effective-method metadata, direct receiver magic,
+static-property storage/reference/offset/ArrayAccess references, constructor
+reference results, reference-returning ArrayAccess owner stacks, descriptor
+closures, malformed magic metadata, source-call references, exact imports,
+literal/relative class constants, and class aliases remain green. Recent
+source commit `f42f1f91` routes selected generated-C
 dynamic receiver class-name constants through a reusable no-autoload receiver
 normalization ABI. `$receiver::class` and `($receiver)::class` now consume
 object or class-string receivers, normalize registered generated-native class
@@ -29,11 +44,6 @@ explicit cleanup, and keep unsupported receiver values behind a focused
 dynamic class-name diagnostic. Literal `ClassName::class` remains the PHP
 source-string form, while relative `self::class`, `parent::class`, and
 method-frame `static::class` keep using the existing metadata-aware paths.
-Dynamic class constants, trait effective-method metadata, direct receiver
-magic, static-property storage/reference/offset/ArrayAccess references,
-constructor reference results, reference-returning ArrayAccess owner stacks,
-descriptor closures, malformed magic metadata, source-call references, exact
-imports, literal/relative class constants, and class aliases remain green.
 Recent source commit `b15a882c` adds a shared trait effective method metadata
 composition boundary consumed by both interpreter metadata and generated-C
 class metadata validation. Trait lookup, nested trait uses, aliases,
