@@ -4,6 +4,31 @@
 
 Implemented:
 
+- Added generated-C named-argument preservation for selected receiver
+  `__call` fallback calls. Direct receiver calls with missing or inaccessible
+  instance methods, and dynamic receiver calls with statically known method
+  names, now carry source-order named `$args` keys through shared
+  `NativeCallArgumentsHandle` metadata and runtime magic `$args` packing when
+  the compiler can prove the site resolves to public non-static receiver magic.
+  Normal declared receiver hits still bind through declared parameter metadata
+  first, mixed declared-hit/magic-fallback facts stay blocked, and malformed
+  magic signatures still reject before derived magic argument packing. Focused
+  primary gates cover call-argument metadata, runtime magic `$args` packing,
+  generated-C and linked executable named receiver magic proofs, unknown
+  named-dynamic blockers, named static magic regression, malformed magic
+  metadata, magic dynamic/static filters, named arguments, descriptor
+  closures, static-property storage/reference behavior, class constants,
+  constructors, nested `ArrayAccess`, source-call references, exact imports,
+  namespace imports, class aliases, and `cargo check -p phpc`. Unknown runtime
+  dynamic receiver method names when a declared hit is still possible, mixed
+  receiver fact sets, constructor named arguments, spread/unpack, unknown
+  dynamic callables, full declaration-time malformed signature parity,
+  traits/interfaces/effective method tables, aliases/autoload,
+  callable-object magic shapes, full `$args` reference/COW parity, computed
+  static-property names, top-level `static::$prop`, static-property
+  array-offset references, broader static-reference/COW parity, and LLVM
+  IR/assembly parity remain unsupported.
+
 - Added generated-C static-property reference production through the shared
   static-property storage boundary. Literal class, object/class-string,
   `self`, `parent`, and declared method-frame `static` receivers now
