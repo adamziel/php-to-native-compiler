@@ -15842,6 +15842,7 @@ struct CGenerator {
     constructor_value_return_diagnostic: bool,
     active_declared_class_name: Option<String>,
     active_declared_parent_class_name: Option<String>,
+    active_called_scope_handle: Option<String>,
     generated_method_frame_this_property_assignment: bool,
 }
 
@@ -19150,7 +19151,10 @@ impl CGenerator {
         requires_this: bool,
         returns_by_reference: bool,
     ) -> String {
-        let mut params = vec!["int phpc_call_depth".to_string()];
+        let mut params = vec![
+            "int phpc_call_depth".to_string(),
+            "phpc_NativeStringHandle phpc_called_scope".to_string(),
+        ];
         if requires_this {
             params.push("phpc_NativeValueHandle phpc_this".to_string());
         }
@@ -20121,6 +20125,12 @@ impl CGenerator {
 
         let mut call_args = vec!["phpc_user_callable_call_depth".to_string()];
         let mut cleanup = Vec::new();
+        definition.push_str(
+            "  phpc_NativeStringHandle phpc_called_scope = phpc_native_call_frame_called_scope(phpc_call_frame);\n",
+        );
+        definition.push_str("  if (phpc_called_scope.ptr == NULL) { phpc_user_callable_call_depth -= 1; return (phpc_NativeCallResultHandle){0}; }\n");
+        cleanup.push("phpc_native_string_free(phpc_called_scope);".to_string());
+        call_args.push("phpc_called_scope".to_string());
         if !method.is_static {
             definition.push_str(
                 "  phpc_NativeValueHandle phpc_this = phpc_native_call_frame_read_receiver(phpc_call_frame);\n",
@@ -20612,6 +20622,7 @@ impl CGenerator {
             next_native_temp: self.next_native_temp,
             active_declared_class_name: Some(class_name.to_string()),
             active_declared_parent_class_name: self.declared_class_parent_name(class_name),
+            active_called_scope_handle: Some("phpc_called_scope".to_string()),
             generated_method_frame_this_property_assignment: !method.is_static,
             ..CGenerator::default()
         };
@@ -21373,6 +21384,7 @@ impl CGenerator {
                 output.push_str("extern void phpc_native_call_arguments_free(phpc_NativeCallArgumentsHandle handle);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_call_frame_read_value(phpc_NativeCallFrameHandle frame, size_t index);\n");
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_call_frame_read_reference(phpc_NativeCallFrameHandle frame, size_t index);\n");
+                output.push_str("extern phpc_NativeStringHandle phpc_native_call_frame_called_scope(phpc_NativeCallFrameHandle frame);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_call_frame_read_receiver(phpc_NativeCallFrameHandle frame);\n");
                 output.push_str("extern phpc_NativeCallResultHandle phpc_native_call_result_from_value(phpc_NativeValueHandle value);\n");
                 output.push_str("extern phpc_NativeCallResultHandle phpc_native_call_result_from_reference(phpc_NativeReferenceHandle reference);\n");
@@ -27148,6 +27160,43 @@ impl CGenerator {
         }
 
         let methods = [method];
+        let contract = native_method_static_signature_fallback_contract_from_methods(
+            NativeMethodStaticSignatureFamily::StaticMethod,
+            methods.iter(),
+            arg_count,
+        );
+        matches!(
+            contract.availability,
+            NativeMethodStaticSignatureAvailability::Known(_)
+        )
+        .then_some(contract)
+    }
+
+    fn late_static_method_source_call_signature_contract(
+        &self,
+        method_name: &str,
+        arg_count: usize,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        let active_class_key = Self::declared_class_key(self.active_declared_class_name.as_ref()?);
+        let mut methods = Vec::new();
+        for class_key in &self.declared_class_order {
+            if class_key != &active_class_key {
+                let ancestor_keys = self.declared_class_ancestor_keys(class_key).ok()?;
+                if !ancestor_keys.iter().any(|key| key == &active_class_key) {
+                    continue;
+                }
+            }
+
+            let (_, method) = self.declared_class_static_method_for_key(class_key, method_name)?;
+            if !native_method_static_source_call_arity_compatible(&method, arg_count) {
+                return None;
+            }
+            methods.push(method);
+        }
+        if methods.is_empty() {
+            return None;
+        }
+
         let contract = native_method_static_signature_fallback_contract_from_methods(
             NativeMethodStaticSignatureFamily::StaticMethod,
             methods.iter(),
@@ -33199,7 +33248,16 @@ impl CGenerator {
                     Err(self.unsupported_value_call(expr))
                 }
             }
-            Expr::LateStaticMethodCall { .. } => Err(self.unsupported_value_call(expr)),
+            Expr::LateStaticMethodCall { method, args, span } => {
+                if let Some(value) =
+                    self.try_materialize_late_static_method_source_call(method, args, *span, "")?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    Ok(CValue::NativeValueHandle(value.handle))
+                } else {
+                    Err(self.unsupported_value_call(expr))
+                }
+            }
             Expr::Variable(name, span) => {
                 if self.by_reference_foreach_linger_variables.contains(name) {
                     return Err(self
@@ -34274,6 +34332,17 @@ impl CGenerator {
         }
     }
 
+    fn emit_native_called_scope_source_call_string_operand(
+        &self,
+    ) -> Option<NativeSourceCallStringHandleOperand> {
+        self.active_called_scope_handle
+            .as_ref()
+            .map(|handle| NativeSourceCallStringHandleOperand {
+                handle: handle.clone(),
+                cleanup_after_use: Vec::new(),
+            })
+    }
+
     fn emit_native_object_static_receiver_source_call_scope_operand(
         &mut self,
         receiver: CNativeValueMaterialization,
@@ -35040,7 +35109,7 @@ impl CGenerator {
         self.body.push(format!("    _Bool {array_matched} = 0;"));
         self.body.push(format!("    int {status} = 0;"));
 
-        for (target_class_name, method_class, method) in static_candidates {
+        for (target_class_name, _method_class, method) in static_candidates {
             let (class_name, class_name_len) = self
                 .emit_call_type_static_bytes("callable_array_class_name_bytes", &target_class_name);
             let (method_name, method_name_len) = self
@@ -35073,7 +35142,7 @@ impl CGenerator {
                 failure_cleanup
             );
             let frame_arguments = self.materialize_declared_method_frame_arguments(
-                &method_class.name,
+                &target_class_name,
                 &method,
                 None,
                 args,
@@ -35518,6 +35587,9 @@ impl CGenerator {
                     args.len(),
                 )
                 .is_some(),
+            Expr::LateStaticMethodCall { method, args, .. } => self
+                .late_static_method_source_call_reference_signature_contract(method, args.len())
+                .is_some(),
             _ => false,
         }
     }
@@ -35544,6 +35616,19 @@ impl CGenerator {
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
         let contract =
             self.static_method_source_call_signature_contract(class_name, method_name, arg_count)?;
+        contract
+            .signature()
+            .is_some_and(|signature| signature.returns_by_reference)
+            .then_some(contract)
+    }
+
+    fn late_static_method_source_call_reference_signature_contract(
+        &self,
+        method_name: &str,
+        arg_count: usize,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        let contract =
+            self.late_static_method_source_call_signature_contract(method_name, arg_count)?;
         contract
             .signature()
             .is_some_and(|signature| signature.returns_by_reference)
@@ -35634,6 +35719,13 @@ impl CGenerator {
                 *span,
                 failure_cleanup,
             ),
+            Expr::LateStaticMethodCall { method, args, span } => self
+                .try_materialize_late_static_method_source_call_reference_argument(
+                    method,
+                    args,
+                    *span,
+                    failure_cleanup,
+                ),
             _ => Ok(None),
         }
     }
@@ -35884,6 +35976,83 @@ impl CGenerator {
                 "source_reference_static_result",
             )
             .expect("static-method reference source-call carrier must produce a reference handle");
+        self.body.extend(binding.target.cleanup_after_invocation);
+        self.emit_report_native_diagnostic(&invoke_diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!(
+            "if ({emitted_reference}.ptr == NULL) {{ {error_exit} }}"
+        ));
+
+        Ok(Some(CNativeReferenceMaterialization {
+            handle: emitted_reference.clone(),
+            cleanup_after_use: vec![format!("phpc_native_reference_free({emitted_reference});")],
+        }))
+    }
+
+    fn try_materialize_late_static_method_source_call_reference_argument(
+        &mut self,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeReferenceMaterialization>> {
+        let Some(caller_scope) = self.active_declared_class_name.clone() else {
+            return Ok(None);
+        };
+        let Some(signature_contract) = self
+            .late_static_method_source_call_reference_signature_contract(method_name, args.len())
+        else {
+            return Ok(None);
+        };
+        let Some(scope) = self.emit_native_called_scope_source_call_string_operand() else {
+            return Ok(None);
+        };
+
+        self.uses_native_reference_helpers = true;
+        let scope_cleanup = c_cleanup_sequence(&scope.cleanup_after_use);
+        let method = self.materialize_native_array_c_value_handle(
+            CValue::String(method_name.to_string()),
+            span,
+        )?;
+        let method_cleanup = c_cleanup_sequence(&method.cleanup_after_use);
+        let target_failure_cleanup = format!("{method_cleanup}{scope_cleanup}{failure_cleanup}");
+        let target = self.emit_native_static_method_source_call_target_operands(
+            scope,
+            method,
+            NativeSourceCallAccessContext::ClassContext {
+                caller_scope: &caller_scope,
+            },
+            &target_failure_cleanup,
+        );
+        let binding = self.emit_native_method_static_source_call_binding_operands(
+            "source_reference_late_static_args",
+            target,
+            args,
+            span,
+            failure_cleanup,
+            &signature_contract,
+        )?;
+
+        let invoke_diagnostic = self.next_native_name("source_reference_late_static_diagnostic");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {invoke_diagnostic} = {{0}};"
+        ));
+        let carrier = self.native_source_call_carrier(
+            NativeInvokeResultTarget::StaticMethodLookupWithAccessContext,
+            NativeSourceCallResultConsumer::Reference,
+            span,
+        )?;
+        let emitted_reference = self
+            .emit_native_source_call_carrier_invocation(
+                carrier,
+                &binding.target.args,
+                &binding.arguments,
+                &invoke_diagnostic,
+                "source_reference_late_static_result",
+            )
+            .expect(
+                "late-static-method reference source-call carrier must produce a reference handle",
+            );
         self.body.extend(binding.target.cleanup_after_invocation);
         self.emit_report_native_diagnostic(&invoke_diagnostic);
         let error_exit = self.native_error_exit(failure_cleanup);
@@ -37089,6 +37258,10 @@ impl CGenerator {
         let mut cleanup_after_use = Vec::new();
         let mut argument_handles = NativeObjectCallDispatchArgumentHandles::empty();
         let mut call_args = vec![self.user_function_call_depth_argument()];
+        let called_scope = self
+            .emit_native_static_text_source_call_string_operand("method_called_scope", class_name);
+        cleanup_after_use.extend(called_scope.cleanup_after_use.clone());
+        call_args.push(called_scope.handle);
         if let Some(receiver_handle) = receiver_handle {
             call_args.push(receiver_handle.to_string());
         }
@@ -37413,6 +37586,79 @@ impl CGenerator {
                 caller_scope: &caller_scope,
             },
         )
+    }
+
+    fn try_materialize_late_static_method_source_call(
+        &mut self,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some(caller_scope) = self.active_declared_class_name.clone() else {
+            return Ok(None);
+        };
+        let Some(signature_contract) =
+            self.late_static_method_source_call_signature_contract(method_name, args.len())
+        else {
+            return Ok(None);
+        };
+        let Some(scope) = self.emit_native_called_scope_source_call_string_operand() else {
+            return Ok(None);
+        };
+
+        let method = self.materialize_native_array_c_value_handle(
+            CValue::String(method_name.to_string()),
+            span,
+        )?;
+        let method_cleanup = c_cleanup_sequence(&method.cleanup_after_use);
+        let scope_cleanup = c_cleanup_sequence(&scope.cleanup_after_use);
+        let target_failure_cleanup = format!("{method_cleanup}{scope_cleanup}{failure_cleanup}");
+        let target = self.emit_native_static_method_source_call_target_operands(
+            scope,
+            method,
+            NativeSourceCallAccessContext::ClassContext {
+                caller_scope: &caller_scope,
+            },
+            &target_failure_cleanup,
+        );
+        let binding = self.emit_native_method_static_source_call_binding_operands(
+            "late_static_method_source_call_args",
+            target,
+            args,
+            span,
+            failure_cleanup,
+            &signature_contract,
+        )?;
+
+        let invoke_diagnostic = self.next_native_name("late_static_method_source_call_diagnostic");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {invoke_diagnostic} = {{0}};"
+        ));
+        let carrier = self.native_source_call_carrier(
+            NativeInvokeResultTarget::StaticMethodLookupWithAccessContext,
+            NativeSourceCallResultConsumer::Value,
+            span,
+        )?;
+        let result = self
+            .emit_native_source_call_carrier_invocation(
+                carrier,
+                &binding.target.args,
+                &binding.arguments,
+                &invoke_diagnostic,
+                "late_static_method_source_call_result",
+            )
+            .expect("late-static-method value source-call carrier must produce a value handle");
+        self.body.extend(binding.target.cleanup_after_invocation);
+        self.emit_report_native_diagnostic(&invoke_diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+
+        Ok(Some(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }))
     }
 
     fn try_materialize_static_method_source_call_with_access_context(
@@ -37944,7 +38190,7 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let Some((class, method)) = self.declared_class_static_method(class_name, method_name)
+        let Some((_class, method)) = self.declared_class_static_method(class_name, method_name)
         else {
             return Ok(None);
         };
@@ -37964,7 +38210,7 @@ impl CGenerator {
         }
 
         let frame_arguments = self.materialize_declared_method_frame_arguments(
-            &class.name,
+            class_name,
             &method,
             None,
             args,
@@ -47891,6 +48137,13 @@ impl CGenerator {
                     *span,
                     failure_cleanup,
                 ),
+            Expr::LateStaticMethodCall { method, args, span } => self
+                .try_materialize_late_static_method_source_call(
+                    method,
+                    args,
+                    *span,
+                    failure_cleanup,
+                ),
             Expr::New {
                 class_name,
                 args,
@@ -54223,6 +54476,7 @@ mod tests {
         ))
         .unwrap();
         let mut generator = CGenerator::default();
+        generator.uses_native_string_helpers = true;
         generator
             .register_top_level_declared_classes(&program.statements)
             .unwrap();
@@ -54251,11 +54505,16 @@ mod tests {
             .call_args
             .iter()
             .any(|arg| arg == "receiver_handle"));
+        let instance_called_scope = instance_frame
+            .call_args
+            .get(1)
+            .expect("instance frame includes called scope");
+        assert!(instance_called_scope.starts_with("method_called_scope_"));
         assert_eq!(instance_frame.argument_handles.len(), 2);
-        assert_eq!(
-            instance_frame.cleanup_after_use,
-            instance_frame.argument_handles.cleanup_after_use().to_vec()
-        );
+        let mut instance_cleanup =
+            vec![format!("phpc_native_string_free({instance_called_scope});")];
+        instance_cleanup.extend(instance_frame.argument_handles.cleanup_after_use().to_vec());
+        assert_eq!(instance_frame.cleanup_after_use, instance_cleanup);
 
         let (static_class, static_method) = generator
             .declared_class_static_method("DispatchArgumentBox", "stat")
@@ -54271,12 +54530,20 @@ mod tests {
                 NativeCallCallee::MethodDispatch,
             )
             .unwrap();
-        assert_eq!(static_frame.call_args.len(), 2);
+        assert_eq!(static_frame.call_args.len(), 3);
+        let static_called_scope = static_frame
+            .call_args
+            .get(1)
+            .expect("static frame includes called scope");
+        assert!(static_called_scope.starts_with("method_called_scope_"));
         assert_eq!(static_frame.argument_handles.len(), 1);
         assert!(!static_frame
             .call_args
             .iter()
             .any(|arg| arg == "receiver_handle"));
+        let mut static_cleanup = vec![format!("phpc_native_string_free({static_called_scope});")];
+        static_cleanup.extend(static_frame.argument_handles.cleanup_after_use().to_vec());
+        assert_eq!(static_frame.cleanup_after_use, static_cleanup);
 
         let constructor_class = generator
             .declared_classes
@@ -54304,7 +54571,22 @@ mod tests {
             .call_args
             .iter()
             .any(|arg| arg == "object_handle"));
+        let constructor_called_scope = constructor_frame
+            .call_args
+            .get(1)
+            .expect("constructor frame includes called scope");
+        assert!(constructor_called_scope.starts_with("method_called_scope_"));
         assert_eq!(constructor_frame.argument_handles.len(), 2);
+        let mut constructor_cleanup = vec![format!(
+            "phpc_native_string_free({constructor_called_scope});"
+        )];
+        constructor_cleanup.extend(
+            constructor_frame
+                .argument_handles
+                .cleanup_after_use()
+                .to_vec(),
+        );
+        assert_eq!(constructor_frame.cleanup_after_use, constructor_cleanup);
 
         let constructorless_arguments = generator
             .materialize_constructor_argument_value_array(

@@ -478,6 +478,19 @@ const NATIVE_SELF_PARENT_STATIC_SOURCE_CALL_SOURCE: &str = concat!(
     "echo StaticBoundaryMid::relay(\"Go\"), \"|\", StaticBoundaryLeaf::inherited(\"ok\"), \"\\n\";\n",
 );
 
+const NATIVE_LATE_STATIC_SOURCE_CALL_SOURCE: &str = concat!(
+    "<?php\n",
+    "class LateStaticRoot {\n",
+    "    protected static function hidden($value) { return \"R\" . strtoupper($value); }\n",
+    "    public static function name($value = \"seed\", ...$tail) { return \"root:\" . $value . \":\" . ($tail[0] ?? \"empty\"); }\n",
+    "    public static function relay($value) {\n",
+    "        return static::name($value, \"tail\") . \":\" . static::hidden($value);\n",
+    "    }\n",
+    "}\n",
+    "class LateStaticLeaf extends LateStaticRoot {}\n",
+    "echo LateStaticRoot::relay(\"go\"), \"|\", LateStaticLeaf::relay(\"up\"), \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_CONSTRUCTOR_SOURCE: &str = concat!(
     "<?php\n",
     "class Box {\n",
@@ -2309,6 +2322,34 @@ fn emit_exe_links_and_runs_self_parent_static_source_call_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"Rgo:MGO:IGO|IOK\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_late_static_source_call_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "late_static_source_call",
+        NATIVE_LATE_STATIC_SOURCE_CALL_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run late-static source-call executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"root:go:tail:RGO|root:up:tail:RUP\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -4700,6 +4741,57 @@ fn native_executable_c_source_routes_self_parent_static_calls_through_class_cont
     assert!(
         !source.contains("static_method_status") && !source.contains("method-call lowering rejects"),
         "the source-call fixture should not fall back to generated direct static dispatch ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_late_static_calls_through_called_scope_source_call_carriers() {
+    let program = parse(NATIVE_LATE_STATIC_SOURCE_CALL_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_call_frame_called_scope")
+            && source.contains("phpc_NativeStringHandle phpc_called_scope")
+            && source.contains("late_static_method_source_call_args_"),
+        "generated method frames should receive runtime called scope and use it for static:: source-call arguments:\n{source}"
+    );
+    assert!(
+        source.contains(
+            "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments"
+        ) && source.contains("PHPC_NATIVE_CALLABLE_ACCESS_CLASS_CONTEXT")
+            && source.contains("method_call_caller_scope_"),
+        "static:: calls should invoke through class-context static source-call carriers instead of lexical direct dispatch:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_callable_table_register_class_parent_and_free")
+            && source.contains("PHPC_NATIVE_CALLABLE_VISIBILITY_PROTECTED"),
+        "late-static source calls should keep inherited protected metadata in the callable table for runtime access checks:\n{source}"
+    );
+    assert!(
+        !source.contains("static_method_status") && !source.contains("method-call lowering rejects"),
+        "late-static calls in the supported subset must not fall back to generated direct static dispatch ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_keeps_descendant_only_late_static_targets_blocked() {
+    let program = parse(concat!(
+        "<?php\n",
+        "class LateStaticDescendantOnlyBase {\n",
+        "    public static function relay($value) { return static::target($value); }\n",
+        "}\n",
+        "class LateStaticDescendantOnlyChild extends LateStaticDescendantOnlyBase {\n",
+        "    public static function target($value) { return $value; }\n",
+        "}\n",
+        "echo LateStaticDescendantOnlyChild::relay(\"x\");\n",
+    ))
+    .unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("method-call lowering rejects"),
+        "descendant-only static:: targets should stay on the explicit method-call blocker, got {error:?}"
     );
 }
 
