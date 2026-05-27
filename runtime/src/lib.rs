@@ -1342,6 +1342,12 @@ struct NativeCallableLookup<'a> {
 }
 
 #[derive(Debug)]
+enum NativeStaticMethodLookupFailure {
+    Lookup(String),
+    NonStatic(String),
+}
+
+#[derive(Debug)]
 struct NativeStaticPropertyStorage {
     classes: PhpClassTable,
     defaults: PhpStaticPropertyDefaults,
@@ -1692,24 +1698,73 @@ impl NativeCallableTable {
         method_name: String,
         access_context: NativeCallableAccessContext,
     ) -> Result<NativeCallable, String> {
-        let callable = self.lookup_with_access_context(
-            NativeCallableKind::Method,
-            Some(scope),
-            method_name,
-            access_context,
-        )?;
+        self.lookup_static_method_for_dispatch(scope, method_name, access_context)
+            .map_err(NativeStaticMethodLookupFailure::into_message)
+    }
+
+    fn lookup_static_method_for_dispatch(
+        &self,
+        scope: String,
+        method_name: String,
+        access_context: NativeCallableAccessContext,
+    ) -> Result<NativeCallable, NativeStaticMethodLookupFailure> {
+        let callable = self
+            .lookup_with_access_context(
+                NativeCallableKind::Method,
+                Some(scope),
+                method_name,
+                access_context,
+            )
+            .map_err(NativeStaticMethodLookupFailure::Lookup)?;
         if !callable.descriptor.is_static {
             let scope = callable
                 .called_scope
                 .as_deref()
                 .or(callable.descriptor.scope.as_deref())
                 .unwrap_or("<unknown>");
-            return Err(format!(
+            return Err(NativeStaticMethodLookupFailure::NonStatic(format!(
                 "native static method lookup failed: non-static method {}::{} cannot be used for static dispatch",
                 scope, callable.descriptor.name
-            ));
+            )));
         }
         Ok(callable)
+    }
+
+    fn lookup_static_magic_call(
+        &self,
+        scope: &str,
+        original_error: &str,
+    ) -> Result<Option<NativeCallable>, String> {
+        let Some(lookup) =
+            self.lookup_descriptor(NativeCallableKind::Method, Some(scope), "__callStatic")
+        else {
+            return Ok(None);
+        };
+        let descriptor = lookup.descriptor;
+        if !descriptor.is_static {
+            let scope = lookup
+                .called_scope
+                .as_deref()
+                .or(descriptor.scope.as_deref())
+                .unwrap_or("<unknown>");
+            return Err(format!(
+                "native static method invocation failed: non-static magic method {scope}::__callStatic cannot be used for static dispatch after {original_error}"
+            ));
+        }
+        if descriptor.visibility != NativeCallableVisibility::Public {
+            let scope = lookup
+                .called_scope
+                .as_deref()
+                .or(descriptor.scope.as_deref())
+                .unwrap_or("<unknown>");
+            return Err(format!(
+                "native static method invocation failed: magic method {scope}::__callStatic must be public after {original_error}"
+            ));
+        }
+        Ok(Some(NativeCallable {
+            descriptor: descriptor.clone(),
+            called_scope: lookup.called_scope,
+        }))
     }
 
     fn lookup_constructor_for_scope(
@@ -1785,6 +1840,14 @@ impl NativeCallableTable {
             current = next;
         }
         false
+    }
+}
+
+impl NativeStaticMethodLookupFailure {
+    fn into_message(self) -> String {
+        match self {
+            Self::Lookup(message) | Self::NonStatic(message) => message,
+        }
     }
 }
 
@@ -10404,6 +10467,14 @@ pub unsafe extern "C" fn phpc_native_closure_invoke_discard_with_diagnostic_and_
     unsafe { native_call_result_discard_with_diagnostic_and_free(result, diagnostic) };
 }
 
+fn native_magic_callstatic_arguments_from_method_and_arguments(
+    method_name: &str,
+    arguments: &NativeCallArguments,
+) -> Result<NativeCallArgumentsHandle, String> {
+    native_magic_call_arguments_from_method_and_arguments(method_name, arguments)
+        .map_err(|message| message.replace("magic __call", "magic __callStatic"))
+}
+
 /// # Safety
 ///
 /// `callable` must be a callable-value dispatch handle. `arguments` must be a
@@ -10678,22 +10749,50 @@ unsafe fn native_static_method_lookup_invoke_result_with_access_context_and_free
                         "native static method invocation failed",
                     )
                 })?;
-        let callable = table
-            .lookup_static_method(scope, method_name, access_context)
-            .map_err(|message| {
-                message
-                    .replace(
-                        "native callable lookup failed",
-                        "native static method invocation failed",
+        let callable = match table.lookup_static_method_for_dispatch(
+            scope.clone(),
+            method_name.clone(),
+            access_context,
+        ) {
+            Ok(callable) => {
+                return Ok(unsafe {
+                    native_callable_value_invoke_table_result(
+                        &callable, None, arguments, diagnostic,
                     )
-                    .replace(
-                        "native static method lookup failed",
-                        "native static method invocation failed",
-                    )
-            })?;
-        Ok(unsafe {
-            native_callable_value_invoke_table_result(&callable, None, arguments, diagnostic)
-        })
+                });
+            }
+            Err(NativeStaticMethodLookupFailure::NonStatic(message)) => {
+                return Err(message.replace(
+                    "native static method lookup failed",
+                    "native static method invocation failed",
+                ));
+            }
+            Err(NativeStaticMethodLookupFailure::Lookup(message)) => {
+                let original_error = message.replace(
+                    "native callable lookup failed",
+                    "native static method invocation failed",
+                );
+                match table.lookup_static_magic_call(&scope, &original_error)? {
+                    Some(callable) => callable,
+                    None => return Err(original_error),
+                }
+            }
+        };
+        let Some(arguments_ref) = (unsafe { arguments.as_ref() }) else {
+            return Err(
+                "native static method invocation failed: arguments handle is null during magic __callStatic dispatch"
+                    .to_string(),
+            );
+        };
+        let magic_arguments = native_magic_callstatic_arguments_from_method_and_arguments(
+            &method_name,
+            arguments_ref,
+        )?;
+        let magic_result = unsafe {
+            native_callable_value_invoke_table_result(&callable, None, magic_arguments, diagnostic)
+        };
+        unsafe { phpc_native_call_arguments_free(magic_arguments) };
+        Ok(magic_result)
     })();
     unsafe { phpc_native_value_free(method) };
     unsafe { phpc_native_call_arguments_free(arguments) };
@@ -33863,6 +33962,34 @@ mod tests {
         ))))
     }
 
+    unsafe extern "C" fn native_magic_call_static_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        let scope =
+            unsafe { string_from_native_for_test(phpc_native_call_frame_called_scope(frame)) };
+        let name = unsafe { phpc_native_call_frame_read_value(frame, 0) };
+        let method_name = match unsafe { name.as_ref() } {
+            Some(Value::String(value)) => value.clone(),
+            other => panic!("expected magic static method name string, got {other:?}"),
+        };
+        unsafe { phpc_native_value_free(name) };
+        let args = unsafe { phpc_native_call_frame_read_value(frame, 1) };
+        let (arg_count, first_arg) = match unsafe { args.as_ref() } {
+            Some(Value::Array(array)) => (
+                array.len(),
+                array
+                    .get_cloned(ArrayKey::Int(0))
+                    .map(|value| value.echo_string())
+                    .unwrap_or_else(|| "none".to_string()),
+            ),
+            other => panic!("expected magic static argument array, got {other:?}"),
+        };
+        unsafe { phpc_native_value_free(args) };
+        phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::String(format!(
+            "{scope}::__callStatic({method_name},{arg_count},{first_arg})"
+        ))))
+    }
+
     unsafe extern "C" fn native_descriptor_sum_closure_callback(
         _call_depth: c_int,
         args: *const NativeClosureArgument,
@@ -35782,6 +35909,168 @@ mod tests {
         );
         unsafe { phpc_native_value_free(class_context_value) };
         unsafe { phpc_native_string_free(caller_scope) };
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn native_static_method_lookup_plus_invoke_dispatches_missing_and_inaccessible_methods_to_magic_call_static(
+    ) {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_static_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("MagicStaticInvoke"),
+                "__callStatic",
+                NativeCallableVisibility::Public,
+                native_magic_call_static_callback,
+            );
+            register_static_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("MagicStaticInvoke"),
+                "secret",
+                NativeCallableVisibility::Private,
+                native_scoped_method_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("MagicStaticInvoke"),
+                "plain",
+                NativeCallableVisibility::Public,
+                native_scoped_method_callback,
+            );
+        }
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        reset_call_arguments_free_count_for_test();
+        let missing = unsafe {
+            phpc_native_static_method_invoke_result_with_access_context_diagnostic_and_free_scope_method_arguments(
+                table,
+                native_string_for_test("MagicStaticInvoke"),
+                NativeValueHandle::from_value(Value::String("missing".to_string())),
+                NativeCallableAccessContextTag::Static,
+                NativeStringHandle::null(),
+                call_arguments_from_ints_for_test(&[3, 4]),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 2);
+        let missing_value = unsafe { phpc_native_call_result_take_value_and_free(missing) };
+        assert_eq!(
+            unsafe { missing_value.as_ref() },
+            Some(&Value::String(
+                "MagicStaticInvoke::__callStatic(missing,2,3)".to_string()
+            ))
+        );
+        unsafe { phpc_native_value_free(missing_value) };
+
+        reset_call_arguments_free_count_for_test();
+        let reference_arguments = phpc_native_call_arguments_new();
+        assert!(unsafe {
+            phpc_native_call_arguments_push_reference_and_free(
+                reference_arguments,
+                phpc_native_reference_from_value_and_free(NativeValueHandle::from_value(
+                    Value::String("ref".to_string()),
+                )),
+            )
+        });
+        let reference_magic = unsafe {
+            phpc_native_static_method_invoke_result_with_access_context_diagnostic_and_free_scope_method_arguments(
+                table,
+                native_string_for_test("MagicStaticInvoke"),
+                NativeValueHandle::from_value(Value::String("refmiss".to_string())),
+                NativeCallableAccessContextTag::Static,
+                NativeStringHandle::null(),
+                reference_arguments,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 2);
+        let reference_magic_value =
+            unsafe { phpc_native_call_result_take_value_and_free(reference_magic) };
+        assert_eq!(
+            unsafe { reference_magic_value.as_ref() },
+            Some(&Value::String(
+                "MagicStaticInvoke::__callStatic(refmiss,1,ref)".to_string()
+            ))
+        );
+        unsafe { phpc_native_value_free(reference_magic_value) };
+
+        reset_call_arguments_free_count_for_test();
+        let inaccessible = unsafe {
+            phpc_native_static_method_invoke_result_with_access_context_diagnostic_and_free_scope_method_arguments(
+                table,
+                native_string_for_test("MagicStaticInvoke"),
+                NativeValueHandle::from_value(Value::String("secret".to_string())),
+                NativeCallableAccessContextTag::Static,
+                NativeStringHandle::null(),
+                call_arguments_from_ints_for_test(&[5]),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 2);
+        let inaccessible_value =
+            unsafe { phpc_native_call_result_take_value_and_free(inaccessible) };
+        assert_eq!(
+            unsafe { inaccessible_value.as_ref() },
+            Some(&Value::String(
+                "MagicStaticInvoke::__callStatic(secret,1,5)".to_string()
+            ))
+        );
+        unsafe { phpc_native_value_free(inaccessible_value) };
+
+        reset_call_arguments_free_count_for_test();
+        let caller_scope = native_string_for_test("MagicStaticInvoke");
+        let class_context = unsafe {
+            phpc_native_static_method_invoke_result_with_access_context_diagnostic_and_free_scope_method_arguments(
+                table,
+                native_string_for_test("MagicStaticInvoke"),
+                NativeValueHandle::from_value(Value::String("secret".to_string())),
+                NativeCallableAccessContextTag::ClassContext,
+                caller_scope,
+                call_arguments_from_ints_for_test(&[7]),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        let class_context_value =
+            unsafe { phpc_native_call_result_take_value_and_free(class_context) };
+        assert_eq!(
+            unsafe { class_context_value.as_ref() },
+            Some(&Value::String("MagicStaticInvoke:7".to_string()))
+        );
+        unsafe { phpc_native_value_free(class_context_value) };
+        unsafe { phpc_native_string_free(caller_scope) };
+
+        reset_call_arguments_free_count_for_test();
+        let non_static = unsafe {
+            phpc_native_static_method_invoke_result_with_access_context_diagnostic_and_free_scope_method_arguments(
+                table,
+                native_string_for_test("MagicStaticInvoke"),
+                NativeValueHandle::from_value(Value::String("plain".to_string())),
+                NativeCallableAccessContextTag::Static,
+                NativeStringHandle::null(),
+                call_arguments_from_ints_for_test(&[9]),
+                &mut diagnostic,
+            )
+        };
+        assert!(non_static.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "native static method invocation failed: non-static method MagicStaticInvoke::plain cannot be used for static dispatch"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
         unsafe { phpc_native_callable_table_free(table) };
     }
 

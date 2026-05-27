@@ -17390,6 +17390,7 @@ enum NativeMethodStaticSignatureFallbackReason {
     NoArityCompatibleDeclaredMethodMetadata,
     HeterogeneousDeclaredMethodMetadata,
     RuntimeDynamicMethodName,
+    MagicStaticFallback,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -27340,12 +27341,35 @@ impl CGenerator {
         }
 
         let mut methods = Vec::new();
+        let mut saw_magic_call_static = false;
         for class_key in &object.declared_class_keys {
-            let (_, method) = self.declared_class_static_method_for_key(class_key, method_name)?;
-            if !native_method_static_source_call_arity_compatible(&method, arg_count) {
-                return None;
+            match self.declared_class_static_method_for_key(class_key, method_name) {
+                Some((_, method)) => {
+                    if !native_method_static_source_call_arity_compatible(&method, arg_count) {
+                        return None;
+                    }
+                    methods.push(method);
+                }
+                None if self
+                    .declared_class_public_static_magic_call_method_for_key(class_key)
+                    .is_some() =>
+                {
+                    saw_magic_call_static = true;
+                }
+                None => return None,
             }
-            methods.push(method);
+        }
+
+        if saw_magic_call_static {
+            return Some(NativeMethodStaticSignatureFallbackContract {
+                family: NativeMethodStaticSignatureFamily::StaticMethod,
+                candidate_count: methods.len(),
+                arity_compatible_count: methods.len(),
+                availability: NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                    NativeMethodStaticSignatureFallbackReason::MagicStaticFallback,
+                ),
+                argument_strategy: NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic,
+            });
         }
 
         let contract = native_method_static_signature_fallback_contract_from_methods(
@@ -27366,7 +27390,20 @@ impl CGenerator {
         method_name: &str,
         arg_count: usize,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
-        let (_, method) = self.declared_class_static_method(class_name, method_name)?;
+        let class_key = Self::declared_class_key(class_name);
+        let Some((_, method)) = self.declared_class_static_method(class_name, method_name) else {
+            return self
+                .declared_class_public_static_magic_call_method_for_key(&class_key)
+                .map(|_| NativeMethodStaticSignatureFallbackContract {
+                    family: NativeMethodStaticSignatureFamily::StaticMethod,
+                    candidate_count: 0,
+                    arity_compatible_count: 0,
+                    availability: NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                        NativeMethodStaticSignatureFallbackReason::MagicStaticFallback,
+                    ),
+                    argument_strategy: NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic,
+                });
+        };
         if !native_method_static_source_call_arity_compatible(&method, arg_count) {
             return None;
         }
@@ -27391,6 +27428,7 @@ impl CGenerator {
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
         let active_class_key = Self::declared_class_key(self.active_declared_class_name.as_ref()?);
         let mut methods = Vec::new();
+        let mut saw_magic_call_static = false;
         for class_key in &self.declared_class_order {
             if class_key != &active_class_key {
                 let ancestor_keys = self.declared_class_ancestor_keys(class_key).ok()?;
@@ -27399,11 +27437,32 @@ impl CGenerator {
                 }
             }
 
-            let (_, method) = self.declared_class_static_method_for_key(class_key, method_name)?;
-            if !native_method_static_source_call_arity_compatible(&method, arg_count) {
-                return None;
+            match self.declared_class_static_method_for_key(class_key, method_name) {
+                Some((_, method)) => {
+                    if !native_method_static_source_call_arity_compatible(&method, arg_count) {
+                        return None;
+                    }
+                    methods.push(method);
+                }
+                None if self
+                    .declared_class_public_static_magic_call_method_for_key(class_key)
+                    .is_some() =>
+                {
+                    saw_magic_call_static = true;
+                }
+                None => return None,
             }
-            methods.push(method);
+        }
+        if saw_magic_call_static {
+            return Some(NativeMethodStaticSignatureFallbackContract {
+                family: NativeMethodStaticSignatureFamily::StaticMethod,
+                candidate_count: methods.len(),
+                arity_compatible_count: methods.len(),
+                availability: NativeMethodStaticSignatureAvailability::RuntimeFallback(
+                    NativeMethodStaticSignatureFallbackReason::MagicStaticFallback,
+                ),
+                argument_strategy: NativeMethodStaticSourceCallArgumentStrategy::RuntimeDynamic,
+            });
         }
         if methods.is_empty() {
             return None;
@@ -37803,6 +37862,18 @@ impl CGenerator {
             }
         }
         None
+    }
+
+    fn declared_class_public_static_magic_call_method_for_key(
+        &self,
+        class_key: &str,
+    ) -> Option<(CDeclaredClass, CDeclaredClassMethod)> {
+        self.declared_class_static_method_for_key(class_key, "__callStatic")
+            .filter(|(_, method)| {
+                method.visibility == ClassVisibility::Public
+                    && method.is_static
+                    && native_user_function_accepts_arg_count(&method.decl, 2)
+            })
     }
 
     fn declared_class_static_method_candidates(

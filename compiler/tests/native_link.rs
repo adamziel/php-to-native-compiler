@@ -446,6 +446,22 @@ const NATIVE_DECLARED_DYNAMIC_METHOD_MAGIC_BLOCKED_SOURCE: &str = concat!(
     "echo $box->reveal(), \"\\n\";\n",
 );
 
+const NATIVE_DECLARED_STATIC_MAGIC_SOURCE_CALL_SOURCE: &str = concat!(
+    "<?php\n",
+    "class StaticSourceCallMagicBox {\n",
+    "    public static function known($value) { return \"known:\" . $value; }\n",
+    "    private static function secret($value) { return \"secret:\" . $value; }\n",
+    "    public static function reveal($value) { return self::secret($value) . \":\" . static::later($value); }\n",
+    "    public static function __callStatic($name, $args) { return \"magic:\" . $name . \":\" . $args[0]; }\n",
+    "}\n",
+    "$box = new StaticSourceCallMagicBox();\n",
+    "echo StaticSourceCallMagicBox::known(\"A\"), \"|\";\n",
+    "echo StaticSourceCallMagicBox::secret(\"B\"), \"|\";\n",
+    "echo StaticSourceCallMagicBox::missing(\"C\"), \"|\";\n",
+    "echo $box::missing(\"D\"), \"|\";\n",
+    "echo StaticSourceCallMagicBox::reveal(\"E\"), \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_STATIC_METHOD_SOURCE: &str = concat!(
     "<?php\n",
     "class Label {\n",
@@ -2630,6 +2646,37 @@ fn emit_exe_links_and_runs_magic_dynamic_method_source_call_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"known:A|magic:missing:B|hidden:in\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_magic_static_method_source_call_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "declared_magic_static_method_source_call",
+        NATIVE_DECLARED_STATIC_MAGIC_SOURCE_CALL_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run magic static method source-call executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"known:A|magic:secret:B|magic:missing:C|magic:missing:D|secret:E:magic:later:E\n"
+    );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -5141,6 +5188,34 @@ fn native_executable_c_source_routes_magic_dynamic_methods_through_runtime_dispa
         "declared __call classes should preserve class-context visibility for dynamic receiver calls inside methods:\n{source}"
     );
     assert!(!source.contains("method-call lowering rejects"), "{source}");
+}
+
+#[test]
+fn native_executable_c_source_routes_magic_static_methods_through_runtime_dispatch_boundary() {
+    let program = parse(NATIVE_DECLARED_STATIC_MAGIC_SOURCE_CALL_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains(
+            "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments"
+        ) && body.contains("static_method_source_call_args_")
+            && body.contains("object_static_method_source_call_args_")
+            && source.contains("late_static_method_source_call_args_"),
+        "declared __callStatic fallback should use shared static source-call carriers across literal, object-static, and late-static calls:\n{source}"
+    );
+    assert!(
+        source.contains("PHPC_NATIVE_CALLABLE_ACCESS_STATIC")
+            && source.contains("PHPC_NATIVE_CALLABLE_ACCESS_CLASS_CONTEXT")
+            && source.contains("PHPC_NATIVE_CALLABLE_VISIBILITY_PRIVATE"),
+        "static magic dispatch must preserve external static access and class-context visibility for normal method hits:\n{source}"
+    );
+    assert!(
+        !body.contains("static_method_status")
+            && !body.contains("object_static_method_status")
+            && !source.contains("method-call lowering rejects"),
+        "static magic source calls should not fall back to generated static frame ladders or exact-shape blockers:\n{source}"
+    );
 }
 
 #[test]
@@ -22055,6 +22130,28 @@ fn native_executable_c_source_blocks_named_dynamic_method_fallback_without_share
         "$box = new NamedDynamicMethodMagicBox();\n",
         "$method = \"known\";\n",
         "echo $box->{$method}(value: \"x\");\n",
+    ))
+    .unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error
+            .message
+            .contains("named argument lowering is only implemented"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn native_executable_c_source_blocks_named_static_magic_fallback_without_shared_contract() {
+    let program = parse(concat!(
+        "<?php\n",
+        "class NamedStaticMethodMagicBox {\n",
+        "    public static function __callStatic($name, $args) { return \"magic\"; }\n",
+        "}\n",
+        "echo NamedStaticMethodMagicBox::missing(value: \"x\");\n",
     ))
     .unwrap();
     let error = emit_native_executable_c_source(&program).unwrap_err();
