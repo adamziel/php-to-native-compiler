@@ -808,7 +808,10 @@ impl NativeArraySortOperation {
     }
 
     fn supports_runtime_callable_writeback(self) -> bool {
-        matches!(self, Self::Sort | Self::Rsort | Self::Asort | Self::Arsort)
+        matches!(
+            self,
+            Self::Sort | Self::Rsort | Self::Asort | Self::Arsort | Self::Ksort | Self::Krsort
+        )
     }
 }
 
@@ -1578,6 +1581,8 @@ impl NativeCallableBuiltin {
             Self::ArraySort(NativeArraySortOperation::Rsort) => "rsort",
             Self::ArraySort(NativeArraySortOperation::Asort) => "asort",
             Self::ArraySort(NativeArraySortOperation::Arsort) => "arsort",
+            Self::ArraySort(NativeArraySortOperation::Ksort) => "ksort",
+            Self::ArraySort(NativeArraySortOperation::Krsort) => "krsort",
             Self::ArraySort(_) => "array-sort",
             Self::ArrayMutation(NativeArrayMutationOperation::Push) => "array_push",
             Self::ArrayMutation(NativeArrayMutationOperation::Pop) => "array_pop",
@@ -9850,6 +9855,12 @@ fn native_callable_builtin_for_function_name(name: &str) -> Option<NativeCallabl
         )),
         "arsort" => Some(NativeCallableBuiltin::ArraySort(
             NativeArraySortOperation::Arsort,
+        )),
+        "ksort" => Some(NativeCallableBuiltin::ArraySort(
+            NativeArraySortOperation::Ksort,
+        )),
+        "krsort" => Some(NativeCallableBuiltin::ArraySort(
+            NativeArraySortOperation::Krsort,
         )),
         "array_push" => Some(NativeCallableBuiltin::ArrayMutation(
             NativeArrayMutationOperation::Push,
@@ -45390,6 +45401,10 @@ mod tests {
         assert_eq!(asort, sort);
         let arsort = NativeCallableBuiltin::ArraySort(NativeArraySortOperation::Arsort).signature();
         assert_eq!(arsort, sort);
+        let ksort = NativeCallableBuiltin::ArraySort(NativeArraySortOperation::Ksort).signature();
+        assert_eq!(ksort, sort);
+        let krsort = NativeCallableBuiltin::ArraySort(NativeArraySortOperation::Krsort).signature();
+        assert_eq!(krsort, sort);
     }
 
     #[test]
@@ -45534,6 +45549,34 @@ mod tests {
                         ArrayKey::String("b".to_string()),
                         Value::String("b10".to_string()),
                     ),
+                ],
+            ),
+            (
+                "ksort",
+                Some(Value::Int(2)),
+                {
+                    let mut array = PhpArray::new();
+                    array.insert("b", Value::Int(1));
+                    array.insert("a", Value::Int(2));
+                    array
+                },
+                vec![
+                    (ArrayKey::String("a".to_string()), Value::Int(2)),
+                    (ArrayKey::String("b".to_string()), Value::Int(1)),
+                ],
+            ),
+            (
+                "krsort",
+                None,
+                {
+                    let mut array = PhpArray::new();
+                    array.insert("a", Value::Int(2));
+                    array.insert("b", Value::Int(1));
+                    array
+                },
+                vec![
+                    (ArrayKey::String("b".to_string()), Value::Int(1)),
+                    (ArrayKey::String("a".to_string()), Value::Int(2)),
                 ],
             ),
         ] {
@@ -45816,7 +45859,7 @@ mod tests {
         assert!(diagnostic.is_null());
         assert!(!finalized.is_null());
 
-        let callable_value = NativeValueHandle::from_value(Value::String("arsort".to_string()));
+        let callable_value = NativeValueHandle::from_value(Value::String("krsort".to_string()));
         let (callable, lookup_diagnostic) = unsafe {
             lookup_callable_value_for_test(NativeCallableTableHandle::null(), callable_value, None)
         };
@@ -45833,7 +45876,7 @@ mod tests {
         assert!(diagnostic.is_null());
         assert_eq!(unsafe { sorted.as_ref() }, Some(&Value::Bool(true)));
         let Value::Array(updated) = cell.value_cloned() else {
-            panic!("arsort should write an array back through the materialized reference");
+            panic!("krsort should write an array back through the materialized reference");
         };
         assert_eq!(
             updated
@@ -45843,12 +45886,12 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 (
-                    ArrayKey::String("a".to_string()),
-                    Value::String("b2".to_string())
-                ),
-                (
                     ArrayKey::String("b".to_string()),
                     Value::String("b10".to_string())
+                ),
+                (
+                    ArrayKey::String("a".to_string()),
+                    Value::String("b2".to_string())
                 ),
             ]
         );
