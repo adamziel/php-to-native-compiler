@@ -2144,6 +2144,31 @@ const NATIVE_BY_REFERENCE_FOREACH_ARRAY_LVALUE_WRITEBACK_SOURCE: &str = concat!(
     "echo $items[1][\"name\"], \":\", $items[1][0], \":\", $items[1][\"seen\"][0], \":\", $items[1][\"seen\"][1], \":\", $items[1][\"nested\"][\"key\"], \":\", $items[1][\"rows\"][0][\"label\"];\n",
 );
 
+const NATIVE_BY_REFERENCE_FOREACH_POST_LOOP_ALIAS_SOURCE: &str = concat!(
+    "<?php\n",
+    "$items = [\"a\", \"b\"];\n",
+    "$value = \"before\";\n",
+    "foreach ($items as &$value) { $value = strtoupper($value); }\n",
+    "echo $value, \"|\";\n",
+    "$items[1] = \"direct\";\n",
+    "echo $value, \"|\";\n",
+    "$value = \"tail\";\n",
+    "echo $items[0], \":\", $items[1], \":\", $value;\n",
+    "$reuse = [\"a\", \"b\", \"c\"];\n",
+    "foreach ($reuse as &$slot) { $slot = strtoupper($slot); }\n",
+    "foreach ([\"x\"] as $slot) { }\n",
+    "echo \"|\", $reuse[2], \":\", $slot;\n",
+    "$empty = [];\n",
+    "$carry = \"keep\";\n",
+    "foreach ($empty as &$carry) { $carry = \"bad\"; }\n",
+    "echo \"|\", $carry;\n",
+    "$carry = \"after\";\n",
+    "echo \":\", count($empty), \":\", $carry;\n",
+    "unset($value);\n",
+    "$value = \"free\";\n",
+    "echo \"|\", $items[1], \":\", $value;\n",
+);
+
 const NATIVE_VALUE_TERNARY_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [\"flag\" => \"1\", \"word\" => \"go\"];\n",
@@ -11941,12 +11966,39 @@ fn native_executable_c_source_routes_by_reference_foreach_array_lvalue_writeback
 }
 
 #[test]
+fn native_executable_c_source_routes_by_reference_foreach_post_loop_alias() {
+    let program = parse(NATIVE_BY_REFERENCE_FOREACH_POST_LOOP_ALIAS_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_NativeReferenceHandle array_foreach_linger_reference_"),
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_native_reference_from_value_and_free"),
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_native_reference_set_value_with_diagnostic"),
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_native_array_lvalue_owner_foreach_value_reference_result"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("native executable by-reference foreach lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_blocks_unsupported_by_reference_foreach_forms() {
     for source in [
         "<?php\nforeach ([\"a\" => 1, \"b\" => 2] as $key => &$value) { echo $key, $value; }\n",
         "<?php\n$a = [1, 2];\nforeach ($a as &$value) { $seen = $value; }\n",
         "<?php\n$a = [1, 2];\nforeach ($a as $value => &$value) { echo $value; }\n",
-        "<?php\n$a = [1, 2];\nforeach ($a as &$value) { $value = $value + 1; }\necho $value;\n",
     ] {
         let program = parse(source).unwrap();
         let error = emit_native_executable_c_source(&program).unwrap_err();
@@ -11961,7 +12013,7 @@ fn native_executable_c_source_blocks_unsupported_by_reference_foreach_forms() {
                 && error.message.contains("arbitrary body mutation")
                 && error
                     .message
-                    .contains("lingering post-loop reference binding"),
+                    .contains("direct loop-variable post-loop aliases"),
             "{error:?}"
         );
         assert!(
@@ -12080,6 +12132,37 @@ fn emit_exe_links_and_runs_by_reference_foreach_array_lvalue_writeback_program()
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"AL:tail:0:AL:AL|BO:tail:old:1:BO:BO");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_by_reference_foreach_post_loop_alias_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "foreach_by_reference_post_loop_alias",
+        NATIVE_BY_REFERENCE_FOREACH_POST_LOOP_ALIAS_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native by-reference foreach post-loop alias executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"B|direct|A:tail:tail|x:x|keep:0:after|tail:free"
+    );
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);

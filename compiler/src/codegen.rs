@@ -168,7 +168,7 @@ const ASSEMBLY_ENUM_REJECTION: &str = "assembly enum lowering rejects enum decla
 const LLVM_NAMESPACE_REJECTION: &str = "LLVM namespace lowering rejects namespace declarations, namespace-qualified names, namespace imports, and namespace-aware name resolution until native symbol tables, namespace context, aliases/imports, fallback function/constant lookup, class/autoload lookup, and exact native error behavior exist; phpc run handles current namespace behavior";
 const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
 const ASSEMBLY_ARRAY_REJECTION: &str = "assembly array lowering rejects unsupported arrays, unsupported array indexing forms, unsupported array assignment forms, unsupported foreach array iteration forms, unsupported array offset unset forms, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; generated-native C routes lowerable direct array offset writes, appends, unsets, and by-value foreach over tracked native array owners through shared native ABIs";
-const ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION: &str = "native executable by-reference foreach lowering rejects this by-reference iteration form; generated C currently supports array and nested-array lvalue owners with compact value-reference assignment and loop-value array-lvalue assignment bodies through phpc_native_array_lvalue_owner_foreach_value_reference_result(), while temporary iterable owners, arbitrary body mutation, cursor variable mutation, lingering post-loop reference binding, symbol-table/request owners, references/copy-on-write parity, and exact cleanup ownership remain unsupported; phpc run handles current by-reference foreach behavior";
+const ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION: &str = "native executable by-reference foreach lowering rejects this by-reference iteration form; generated C currently supports array and nested-array lvalue owners with compact value-reference assignment, loop-value array-lvalue assignment bodies, and direct loop-variable post-loop aliases through phpc_native_array_lvalue_owner_foreach_value_reference_result(), while temporary iterable owners, arbitrary body mutation, cursor variable mutation, symbol-table/request owners, broader references/copy-on-write parity, and exact cleanup ownership remain unsupported; phpc run handles current by-reference foreach behavior";
 const LLVM_ARRAY_ACCESS_REJECTION: &str = "LLVM ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
@@ -16990,7 +16990,6 @@ struct CGenerator {
     variable_order: Vec<String>,
     native_imported_constant_values: HashMap<String, CValue>,
     mutable_scalar_slots: HashMap<String, CMutableScalarSlot>,
-    by_reference_foreach_linger_variables: HashSet<String>,
     global_import_names: HashSet<String>,
     native_value_variable_facts: HashMap<String, CNativeValueFacts>,
     native_object_property_value_facts: HashMap<CNativeObjectPropertyFactKey, CNativeValueFacts>,
@@ -17280,7 +17279,6 @@ struct CGotoStateSnapshot {
     variable_order: Vec<String>,
     native_imported_constant_values: HashMap<String, CValue>,
     mutable_scalar_slots: HashMap<String, CMutableScalarSlot>,
-    by_reference_foreach_linger_variables: HashSet<String>,
     global_import_names: HashSet<String>,
     native_value_variable_facts: HashMap<String, CNativeValueFacts>,
     native_object_property_value_facts: HashMap<CNativeObjectPropertyFactKey, CNativeValueFacts>,
@@ -19452,6 +19450,26 @@ enum CFunctionReturnMode {
 struct CNativeForeachCursorStorage {
     name: String,
     handle: String,
+    kind: CNativeForeachCursorStorageKind,
+}
+
+#[derive(Clone, Copy)]
+enum CNativeForeachCursorStorageKind {
+    Value,
+    Reference,
+}
+
+impl CNativeForeachCursorStorage {
+    fn c_value(&self) -> CValue {
+        match self.kind {
+            CNativeForeachCursorStorageKind::Value => {
+                CValue::NativeValueHandle(self.handle.clone())
+            }
+            CNativeForeachCursorStorageKind::Reference => {
+                CValue::NativeReferenceHandle(self.handle.clone())
+            }
+        }
+    }
 }
 
 fn c_cleanup_sequence(cleanup: &[String]) -> String {
@@ -20322,8 +20340,6 @@ impl CGenerator {
             && self.variable_order == other.variable_order
             && self.native_imported_constant_values == other.native_imported_constant_values
             && self.mutable_scalar_slots == other.mutable_scalar_slots
-            && self.by_reference_foreach_linger_variables
-                == other.by_reference_foreach_linger_variables
             && self.global_import_names == other.global_import_names
             && self.native_value_variable_facts == other.native_value_variable_facts
             && self.native_object_property_value_facts == other.native_object_property_value_facts
@@ -20358,9 +20374,6 @@ impl CGenerator {
             variable_order: self.variable_order.clone(),
             native_imported_constant_values: self.native_imported_constant_values.clone(),
             mutable_scalar_slots: self.mutable_scalar_slots.clone(),
-            by_reference_foreach_linger_variables: self
-                .by_reference_foreach_linger_variables
-                .clone(),
             global_import_names: self.global_import_names.clone(),
             native_value_variable_facts: self.native_value_variable_facts.clone(),
             native_object_property_value_facts: self.native_object_property_value_facts.clone(),
@@ -20393,8 +20406,6 @@ impl CGenerator {
 
     fn non_joined_cleanup_state_matches(&self, other: &Self) -> bool {
         self.mutable_scalar_slots == other.mutable_scalar_slots
-            && self.by_reference_foreach_linger_variables
-                == other.by_reference_foreach_linger_variables
             && self.global_import_names == other.global_import_names
             && self.native_reference_cleanup_handles == other.native_reference_cleanup_handles
             && self.native_request_state_handle == other.native_request_state_handle
@@ -26341,11 +26352,6 @@ impl CGenerator {
         failure_cleanup: &str,
     ) -> CompileResult<CNativeValueReferenceSlot> {
         if let Expr::Variable(name, span) = expr {
-            if self.by_reference_foreach_linger_variables.contains(name) {
-                return Err(
-                    self.unsupported(*span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
-                );
-            }
             if let Some(CValue::NativeReferenceHandle(reference)) =
                 self.variables.get(name).cloned()
             {
@@ -41561,11 +41567,6 @@ impl CGenerator {
                 *span,
             ),
             Stmt::UnsetVariable { name, span } => {
-                if self.by_reference_foreach_linger_variables.remove(name) {
-                    self.release_variable_native_value_handle(name);
-                    self.variables.remove(name);
-                    return Ok(());
-                }
                 if is_request_superglobal_name(name) {
                     return self.emit_request_superglobal_root_unset(name, "");
                 }
@@ -42151,10 +42152,6 @@ impl CGenerator {
                 }
             }
             Expr::Variable(name, span) => {
-                if self.by_reference_foreach_linger_variables.contains(name) {
-                    return Err(self
-                        .unsupported(*span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION));
-                }
                 if is_globals_superglobal_name(name) {
                     let value = self.materialize_globals_snapshot_value("", *span)?;
                     self.retain_native_value_cleanup_handle(&value.handle);
@@ -49743,12 +49740,6 @@ impl CGenerator {
             return Ok(None);
         };
 
-        if self.by_reference_foreach_linger_variables.contains(name) {
-            return Err(
-                self.unsupported(span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
-            );
-        }
-
         if let Some(CValue::NativeReferenceHandle(reference)) = self.variables.get(name).cloned() {
             let facts = self.native_value_facts_for_expr(expr);
             let (result_value, replacement) =
@@ -51516,7 +51507,7 @@ impl CGenerator {
                 self.emit_native_array_foreach_cursor_value(&iterable_handle, &index, "key");
             self.retain_native_value_cleanup_handle(&key_handle);
             if let Some(storage) = cursor_storage.iter().find(|storage| storage.name == key) {
-                self.emit_native_foreach_cursor_storage_update(&storage.handle, &key_handle);
+                self.emit_native_foreach_cursor_storage_update(storage, &key_handle)?;
             }
             self.remember_variable_order(key);
             self.variables.insert(
@@ -51531,7 +51522,7 @@ impl CGenerator {
             self.emit_native_array_foreach_cursor_value(&iterable_handle, &index, "value");
         self.retain_native_value_cleanup_handle(&value_handle);
         if let Some(storage) = cursor_storage.iter().find(|storage| storage.name == value) {
-            self.emit_native_foreach_cursor_storage_update(&storage.handle, &value_handle);
+            self.emit_native_foreach_cursor_storage_update(storage, &value_handle)?;
         }
         self.remember_variable_order(value);
         self.variables.insert(
@@ -51557,10 +51548,8 @@ impl CGenerator {
         self.release_native_value_cleanup_handle(&iterable_handle);
         self.body.extend(foreach_iterable.cleanup_after_use);
         for storage in cursor_storage {
-            self.variables.insert(
-                storage.name,
-                CValue::NativeValueHandle(storage.handle.clone()),
-            );
+            let value = storage.c_value();
+            self.variables.insert(storage.name, value);
         }
         Ok(())
     }
@@ -51574,13 +51563,6 @@ impl CGenerator {
         span: Span,
     ) -> CompileResult<()> {
         if key == Some(value) {
-            return Err(
-                self.unsupported(span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
-            );
-        }
-        if key.is_some_and(|key| self.by_reference_foreach_linger_variables.contains(key))
-            || self.by_reference_foreach_linger_variables.contains(value)
-        {
             return Err(
                 self.unsupported(span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
             );
@@ -51602,6 +51584,11 @@ impl CGenerator {
                 self.unsupported(span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
             );
         };
+        if name == value || key == Some(name.as_str()) {
+            return Err(
+                self.unsupported(span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
+            );
+        }
         self.invalidate_native_callable_array_owner_identities(&name);
 
         let (path_arg, path_len, path_cleanup) = if indices.is_empty() {
@@ -51611,6 +51598,8 @@ impl CGenerator {
             (path.path, path.len, path.cleanup_after_use)
         };
         let path_cleanup_sequence = c_cleanup_sequence(&path_cleanup);
+        let linger_reference =
+            self.prepare_native_by_reference_foreach_linger_reference(value, span)?;
 
         let owner = self.next_native_name("array_foreach_reference_owner");
         let foreach_result = self.next_native_name("array_foreach_iterable_result");
@@ -51655,7 +51644,7 @@ impl CGenerator {
         self.retain_native_value_cleanup_handle(&key_handle);
         let exposed_key = if let Some(key) = key {
             if let Some(storage) = cursor_storage.iter().find(|storage| storage.name == key) {
-                self.emit_native_foreach_cursor_storage_update(&storage.handle, &key_handle);
+                self.emit_native_foreach_cursor_storage_update(storage, &key_handle)?;
             }
             self.remember_variable_order(key);
             self.variables.insert(
@@ -51686,7 +51675,7 @@ impl CGenerator {
             "phpc_native_array_lvalue_reference_result_free({reference_result});"
         ));
         self.retain_native_reference_cleanup_handle(&reference);
-        let previous_value = self.variables.insert(
+        self.variables.insert(
             value.to_string(),
             CValue::NativeReferenceHandle(reference.clone()),
         );
@@ -51696,12 +51685,12 @@ impl CGenerator {
         }
 
         self.variables.remove(value);
-        if let Some(previous_value) = previous_value {
-            self.variables.insert(value.to_string(), previous_value);
-        }
         self.release_native_reference_cleanup_handle(&reference);
-        self.body
-            .push(format!("phpc_native_reference_free({reference});"));
+        self.release_native_reference_fact_handle(&reference);
+        self.body.push(format!(
+            "if ({linger_reference}.ptr != NULL) {{ phpc_native_reference_free({linger_reference}); }}"
+        ));
+        self.body.push(format!("{linger_reference} = {reference};"));
 
         if let Some(key) = exposed_key {
             self.variables.remove(&key);
@@ -51716,14 +51705,56 @@ impl CGenerator {
             .push(format!("phpc_native_value_free({iterable_handle});"));
         self.body.extend(path_cleanup);
         for storage in cursor_storage {
-            self.variables.insert(
-                storage.name,
-                CValue::NativeValueHandle(storage.handle.clone()),
-            );
+            let value = storage.c_value();
+            self.variables.insert(storage.name, value);
         }
-        self.by_reference_foreach_linger_variables
-            .insert(value.to_string());
+        self.remember_variable_order(value);
+        self.set_native_reference_facts(&linger_reference, None);
+        self.variables.insert(
+            value.to_string(),
+            CValue::NativeReferenceHandle(linger_reference),
+        );
         Ok(())
+    }
+
+    fn prepare_native_by_reference_foreach_linger_reference(
+        &mut self,
+        name: &str,
+        span: Span,
+    ) -> CompileResult<String> {
+        self.uses_native_reference_helpers = true;
+
+        let reference = self.next_native_name("array_foreach_linger_reference");
+        match self.variables.get(name).cloned() {
+            Some(CValue::NativeReferenceHandle(previous)) => {
+                self.body.push(format!(
+                    "phpc_NativeReferenceHandle {reference} = phpc_native_reference_clone({previous});"
+                ));
+                self.release_variable_native_value_handle(name);
+                self.variables.remove(name);
+            }
+            Some(previous) => {
+                let initial = self.emit_native_value_for_cvalue(previous, span)?;
+                self.body.push(format!(
+                    "phpc_NativeReferenceHandle {reference} = phpc_native_reference_from_value_and_free({initial});"
+                ));
+                self.release_variable_native_value_handle(name);
+                self.variables.remove(name);
+            }
+            None => {
+                let initial = self.next_native_name("array_foreach_linger_initial");
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {initial} = phpc_native_value_from_scalar((phpc_NativeScalarValue){{0}});"
+                ));
+                self.body.push(format!(
+                    "phpc_NativeReferenceHandle {reference} = phpc_native_reference_from_value_and_free({initial});"
+                ));
+            }
+        }
+
+        self.retain_native_reference_cleanup_handle(&reference);
+        self.set_native_reference_facts(&reference, None);
+        Ok(reference)
     }
 
     fn prepare_native_foreach_cursor_storage(
@@ -51736,6 +51767,18 @@ impl CGenerator {
         };
 
         self.uses_native_string_helpers = true;
+        if let CValue::NativeReferenceHandle(handle) = previous {
+            self.native_value_variable_facts.remove(name);
+            self.clear_native_object_property_facts_for_object(name);
+            self.native_callable_variable_identities.remove(name);
+            self.variables.remove(name);
+            return Ok(Some(CNativeForeachCursorStorage {
+                name: name.to_string(),
+                handle,
+                kind: CNativeForeachCursorStorageKind::Reference,
+            }));
+        }
+
         let initial = self.emit_native_value_for_cvalue(previous, span)?;
         let handle = self.next_native_name("array_foreach_cursor_storage");
         self.body
@@ -51746,16 +51789,44 @@ impl CGenerator {
         Ok(Some(CNativeForeachCursorStorage {
             name: name.to_string(),
             handle,
+            kind: CNativeForeachCursorStorageKind::Value,
         }))
     }
 
-    fn emit_native_foreach_cursor_storage_update(&mut self, storage: &str, cursor: &str) {
-        self.uses_native_value_clone = true;
-        self.body.push(format!(
-            "if ({storage}.ptr != NULL) {{ phpc_native_value_free({storage}); }}"
-        ));
-        self.body
-            .push(format!("{storage} = phpc_native_value_clone({cursor});"));
+    fn emit_native_foreach_cursor_storage_update(
+        &mut self,
+        storage: &CNativeForeachCursorStorage,
+        cursor: &str,
+    ) -> CompileResult<()> {
+        match storage.kind {
+            CNativeForeachCursorStorageKind::Value => {
+                self.uses_native_value_clone = true;
+                self.body.push(format!(
+                    "if ({}.ptr != NULL) {{ phpc_native_value_free({}); }}",
+                    storage.handle, storage.handle
+                ));
+                self.body.push(format!(
+                    "{} = phpc_native_value_clone({cursor});",
+                    storage.handle
+                ));
+            }
+            CNativeForeachCursorStorageKind::Reference => {
+                self.uses_native_reference_helpers = true;
+                let diagnostic = self.next_native_name("array_foreach_cursor_reference_diagnostic");
+                let stored = self.next_native_name("array_foreach_cursor_reference_set");
+                self.body
+                    .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+                self.body.push(format!(
+                    "bool {stored} = phpc_native_reference_set_value_with_diagnostic({}, {cursor}, &{diagnostic});",
+                    storage.handle
+                ));
+                self.emit_report_native_diagnostic(&diagnostic);
+                let error_exit = self.native_error_exit("");
+                self.body.push(format!("if (!{stored}) {{ {error_exit} }}"));
+                self.set_native_reference_facts(&storage.handle, None);
+            }
+        }
+        Ok(())
     }
 
     fn materialize_native_array_foreach_iterable(
@@ -53676,12 +53747,6 @@ impl CGenerator {
         let AssignTarget::Variable { name, .. } = target else {
             return Ok(None);
         };
-        if self.by_reference_foreach_linger_variables.contains(name) {
-            return Err(self.unsupported(
-                target.span(),
-                ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION,
-            ));
-        }
         if is_request_superglobal_name(name) || is_globals_superglobal_name(name) {
             return Ok(None);
         }
@@ -56418,12 +56483,6 @@ impl CGenerator {
 
         match target {
             AssignTarget::Variable { name, .. } => {
-                if self.by_reference_foreach_linger_variables.contains(name) {
-                    return Err(self.unsupported(
-                        target.span(),
-                        ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION,
-                    ));
-                }
                 if let Some(CValue::NativeReferenceHandle(reference)) =
                     self.variables.get(name).cloned()
                 {
@@ -59591,11 +59650,6 @@ impl CGenerator {
         }
 
         if let Expr::Variable(name, span) = expr {
-            if self.by_reference_foreach_linger_variables.contains(name) {
-                return Err(
-                    self.unsupported(*span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
-                );
-            }
             if is_globals_superglobal_name(name) {
                 return self
                     .materialize_globals_snapshot_value(failure_cleanup, *span)
@@ -63608,11 +63662,6 @@ impl CGenerator {
         failure_cleanup: &[String],
     ) -> CompileResult<CNativeArrayKeyMaterialization> {
         if let Expr::Variable(name, span) = key {
-            if self.by_reference_foreach_linger_variables.contains(name) {
-                return Err(
-                    self.unsupported(*span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
-                );
-            }
             if let Some(CValue::NativeReferenceHandle(reference)) =
                 self.variables.get(name).cloned()
             {
