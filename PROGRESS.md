@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 18:16 CEST
+Updated: 2026-05-27 18:27 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,13 +19,33 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `22964e72` adds a generated include-unit
-registry plus runtime lookup ABI for non-finite generated-C
-`include`/`require` path values over declared generated include units. Runtime
-path operands can now be converted to bytes, looked up against generated
-request/canonical aliases, and dispatched through the same include unit,
-include_once/require_once, and result propagation helpers as literal and finite
-dynamic include paths.
+Latest accounted source capability: `40b33bcd` routes selected runtime
+callable sorting builtins `sort()` and `rsort()` through the shared
+materialized call-argument and runtime callable builtin writeback path. Builtin
+signature metadata now exposes a by-reference `$array` owner plus defaulted
+by-value `$flags`, callable string canonicalization recognizes the selected
+sort family, and runtime invocation mutates the caller-visible array through
+the existing native array sort lvalue semantics.
+
+Recent source commit `40b33bcd` advances selected sorting writeback without
+adding source-shape lowering. Runtime callable strings and spread calls for
+`sort()` / `rsort()` now share the same reference slot materialization,
+defaulted argument finalization, flag coercion, and callable-value invocation
+contracts used by other runtime builtin families. Focused gates cover runtime
+callable sort helpers, native array lvalue sorting, builtin signature metadata,
+generated-C source proof, linked executable writeback, by-reference builtin
+writeback regressions, variadic writeback regressions, callable string spread
+regressions, formatting, and diff checks. Key-preserving sort families,
+comparator callbacks, full flag/diagnostic parity, object/ArrayAccess/resource
+operands, unknown or heterogeneous callable families, magic fallback, broad
+COW/reference parity, and LLVM/ASM parity remain blocked.
+
+Recent source commit `22964e72` adds a generated include-unit registry plus
+runtime lookup ABI for non-finite generated-C `include`/`require` path values
+over declared generated include units. Runtime path operands can now be
+converted to bytes, looked up against generated request/canonical aliases, and
+dispatched through the same include unit, include_once/require_once, and result
+propagation helpers as literal and finite dynamic include paths.
 
 Recent source commit `22964e72` moves selected non-finite runtime
 include/require operands past the old compile-time blocker without parsing
@@ -49,7 +69,7 @@ by-reference parameters as references before spread finalization. The focused
 gates cover imported alias source/link execution, runtime callable builtin
 writeback regressions, callable spread regressions, and by-reference variadic
 regressions. Literal leading-global `\foo()` parsing in namespaces,
-object/ArrayAccess/resource mutation operands, sorting comparators/flags,
+object/ArrayAccess/resource mutation operands, broader sorting families and comparators/flags,
 unknown or heterogeneous callable builtin families, magic fallback, broad COW
 parity, and LLVM/ASM parity remain blocked.
 
@@ -58,7 +78,7 @@ variadic writeback family for `array_push()` and `array_unshift()`. Builtin
 signature metadata now exposes the shared by-reference `$array` parameter and
 variadic `$values` tail, and runtime invocation mutates the referenced owner
 through the existing array mutation semantics rather than a generated-C shape
-path. Sorting builtins, object/ArrayAccess/resource mutation operands, exact
+path. Broader sorting families, object/ArrayAccess/resource mutation operands, exact
 literal leading-global builtin namespace syntax, unknown or heterogeneous
 callable families, magic fallback, broad COW parity, and LLVM/ASM parity remain
 blocked.
