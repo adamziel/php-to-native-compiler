@@ -23798,15 +23798,19 @@ fn native_output_buffer_operation_value(
             } else {
                 0
             };
-            if let Some(flags) = args.get(2) {
-                let _ = value_to_native_int64(flags, NativeIntConversionOperation::StringLength)?;
-            }
+            let requested_flags = if let Some(flags) = args.get(2) {
+                value_to_native_int64(flags, NativeIntConversionOperation::StringLength)?
+            } else {
+                NATIVE_OUTPUT_HANDLER_STDFLAGS
+            };
+            let handler_status =
+                NativeOutputBufferHandlerStatus::new(handler.is_some(), requested_flags);
             NATIVE_OUTPUT_BUFFERS.with(|buffers| {
                 buffers.borrow_mut().push(NativeOutputBuffer {
                     bytes: Vec::new(),
                     chunk_size,
                     handler,
-                    handler_started: false,
+                    handler_status,
                 })
             });
             Ok(Value::Bool(true))
@@ -23864,6 +23868,7 @@ fn native_output_buffer_operation_value(
             let mut buffers = buffers.borrow_mut();
             if let Some(buffer) = buffers.last_mut() {
                 buffer.bytes.clear();
+                buffer.handler_status.mark_processed();
                 Value::Bool(true)
             } else {
                 Value::Bool(false)
@@ -23877,8 +23882,54 @@ fn native_output_buffer_operation_value(
 
 const NATIVE_OUTPUT_HANDLER_WRITE: i64 = 0;
 const NATIVE_OUTPUT_HANDLER_START: i64 = 1;
+const NATIVE_OUTPUT_HANDLER_TYPE_MASK: i64 = 0x000f;
+const NATIVE_OUTPUT_HANDLER_INTERNAL: i64 = 0x0000;
+const NATIVE_OUTPUT_HANDLER_USER: i64 = 0x0001;
 const NATIVE_OUTPUT_HANDLER_FLUSH: i64 = 4;
 const NATIVE_OUTPUT_HANDLER_FINAL: i64 = 8;
+const NATIVE_OUTPUT_HANDLER_STDFLAGS: i64 = 0x0070;
+const NATIVE_OUTPUT_HANDLER_STARTED: i64 = 0x1000;
+const NATIVE_OUTPUT_HANDLER_PROCESSED: i64 = 0x4000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NativeOutputBufferHandlerStatus {
+    handler_type: i64,
+    flags: i64,
+}
+
+impl NativeOutputBufferHandlerStatus {
+    fn new(user_handler: bool, requested_flags: i64) -> Self {
+        let handler_type = if user_handler {
+            NATIVE_OUTPUT_HANDLER_USER
+        } else {
+            NATIVE_OUTPUT_HANDLER_INTERNAL
+        };
+        Self {
+            handler_type,
+            flags: (requested_flags & !NATIVE_OUTPUT_HANDLER_TYPE_MASK) | handler_type,
+        }
+    }
+
+    fn internal_default() -> Self {
+        Self::new(false, NATIVE_OUTPUT_HANDLER_STDFLAGS)
+    }
+
+    fn handler_type(self) -> i64 {
+        self.handler_type
+    }
+
+    fn flags(self) -> i64 {
+        self.flags
+    }
+
+    fn started(self) -> bool {
+        self.flags & NATIVE_OUTPUT_HANDLER_STARTED != 0
+    }
+
+    fn mark_processed(&mut self) {
+        self.flags |= NATIVE_OUTPUT_HANDLER_STARTED | NATIVE_OUTPUT_HANDLER_PROCESSED;
+    }
+}
 
 fn native_output_buffer_handler_phase(started: bool, terminal_flag: i64) -> i64 {
     if started {
@@ -23975,9 +24026,11 @@ fn native_output_buffer_flush_active() -> RuntimeResult<Value> {
         };
         let bytes = std::mem::take(&mut buffer.bytes);
         let handler = buffer.handler.clone();
-        let phase =
-            native_output_buffer_handler_phase(buffer.handler_started, NATIVE_OUTPUT_HANDLER_FLUSH);
-        buffer.handler_started = true;
+        let phase = native_output_buffer_handler_phase(
+            buffer.handler_status.started(),
+            NATIVE_OUTPUT_HANDLER_FLUSH,
+        );
+        buffer.handler_status.mark_processed();
         drop(buffers);
         native_output_buffer_flush_bytes(
             &bytes,
@@ -24021,8 +24074,8 @@ fn native_output_buffer_status_value(level: usize, buffer: &NativeOutputBuffer) 
         "name",
         Value::String(native_output_buffer_handler_name(buffer)),
     );
-    status.insert("type", Value::Int(0));
-    status.insert("flags", Value::Int(112));
+    status.insert("type", Value::Int(buffer.handler_status.handler_type()));
+    status.insert("flags", Value::Int(buffer.handler_status.flags()));
     status.insert(
         "level",
         Value::Int(i64::try_from(level).unwrap_or(i64::MAX)),
@@ -24046,7 +24099,7 @@ fn native_output_buffer_pop_value(flush: bool) -> RuntimeResult<Value> {
         let bytes = buffer.bytes;
         if flush {
             let phase = native_output_buffer_handler_phase(
-                buffer.handler_started,
+                buffer.handler_status.started(),
                 NATIVE_OUTPUT_HANDLER_FINAL,
             );
             native_output_buffer_flush_bytes(
@@ -24075,7 +24128,7 @@ fn native_output_buffer_pop_bool(flush: bool) -> RuntimeResult<Value> {
         };
         if flush {
             let phase = native_output_buffer_handler_phase(
-                buffer.handler_started,
+                buffer.handler_status.started(),
                 NATIVE_OUTPUT_HANDLER_FINAL,
             );
             native_output_buffer_flush_bytes(
@@ -24135,10 +24188,10 @@ fn native_output_write_bytes_to_buffer_index(
             let bytes = std::mem::take(&mut buffer.bytes);
             let handler = buffer.handler.clone();
             let phase = native_output_buffer_handler_phase(
-                buffer.handler_started,
+                buffer.handler_status.started(),
                 NATIVE_OUTPUT_HANDLER_WRITE,
             );
-            buffer.handler_started = true;
+            buffer.handler_status.mark_processed();
             Some((bytes, handler, phase))
         } else {
             None
@@ -41176,7 +41229,7 @@ struct NativeOutputBuffer {
     bytes: Vec<u8>,
     chunk_size: usize,
     handler: Option<NativeCallableValueDispatch>,
-    handler_started: bool,
+    handler_status: NativeOutputBufferHandlerStatus,
 }
 
 impl Default for NativeOutputBuffer {
@@ -41185,7 +41238,7 @@ impl Default for NativeOutputBuffer {
             bytes: Vec::new(),
             chunk_size: 0,
             handler: None,
-            handler_started: false,
+            handler_status: NativeOutputBufferHandlerStatus::internal_default(),
         }
     }
 }
@@ -49087,6 +49140,285 @@ mod tests {
             after_inner_status_handle,
             outer_capture,
             final_status,
+        ] {
+            unsafe { phpc_native_value_free(handle) };
+        }
+        unsafe { phpc_native_callable_table_free(table) };
+        native_clear_output_buffers();
+    }
+
+    #[test]
+    fn native_output_buffer_status_flags_track_live_handler_state() {
+        unsafe extern "C" fn passthrough_handler(
+            frame: NativeCallFrameHandle,
+        ) -> NativeCallResultHandle {
+            let buffer = unsafe { phpc_native_call_frame_read_value(frame, 0) };
+            let result = unsafe { phpc_native_value_clone(buffer) };
+            unsafe { phpc_native_value_free(buffer) };
+            let phase = unsafe { phpc_native_call_frame_read_value(frame, 1) };
+            unsafe { phpc_native_value_free(phase) };
+            phpc_native_call_result_from_value(result)
+        }
+
+        fn call(
+            table: NativeCallableTableHandle,
+            operation: NativeOutputBufferOperation,
+            args: &[NativeValueHandle],
+            diagnostic: &mut NativeDiagnosticHandle,
+        ) -> NativeValueHandle {
+            let mut handles = [
+                NativeValueHandle::null(),
+                NativeValueHandle::null(),
+                NativeValueHandle::null(),
+            ];
+            for (index, arg) in args.iter().enumerate() {
+                handles[index] = *arg;
+            }
+            unsafe {
+                phpc_native_output_buffer_operation_with_callable_table_diagnostic(
+                    table,
+                    handles[0],
+                    handles[1],
+                    handles[2],
+                    args.len() as u8,
+                    operation as u8,
+                    diagnostic,
+                )
+            }
+        }
+
+        fn status_int(status: &PhpArray, key: &str) -> i64 {
+            match status.get(key) {
+                Some(Value::Int(value)) => *value,
+                other => panic!("expected integer status field {key}, got {other:?}"),
+            }
+        }
+
+        unsafe fn echo_bytes(value: &str, diagnostic: &mut NativeDiagnosticHandle) {
+            let handle = NativeValueHandle::from_value(Value::String(value.to_string()));
+            assert_eq!(
+                unsafe {
+                    phpc_native_value_format_stdout_with_diagnostic(
+                        handle,
+                        NativeValueFormatterTag::Echo as u8,
+                        diagnostic,
+                    )
+                },
+                value.len()
+            );
+            assert!(diagnostic.is_null());
+            unsafe { phpc_native_value_free(handle) };
+        }
+
+        native_clear_output_buffers();
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "status_flags_handler",
+                NativeCallableVisibility::Public,
+                passthrough_handler,
+            );
+        }
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let default_start = call(
+            table,
+            NativeOutputBufferOperation::Start,
+            &[],
+            &mut diagnostic,
+        );
+        assert_eq!(unsafe { default_start.as_ref() }, Some(&Value::Bool(true)));
+        let default_status_handle = call(
+            table,
+            NativeOutputBufferOperation::GetStatus,
+            &[],
+            &mut diagnostic,
+        );
+        let default_status = native_value_array_for_test(default_status_handle);
+        assert_eq!(
+            status_int(&default_status, "type"),
+            NATIVE_OUTPUT_HANDLER_INTERNAL
+        );
+        assert_eq!(
+            status_int(&default_status, "flags"),
+            NATIVE_OUTPUT_HANDLER_STDFLAGS
+        );
+        let default_clean = call(
+            table,
+            NativeOutputBufferOperation::GetClean,
+            &[],
+            &mut diagnostic,
+        );
+
+        let requested_flags = NATIVE_OUTPUT_HANDLER_STARTED
+            | NATIVE_OUTPUT_HANDLER_STDFLAGS
+            | NATIVE_OUTPUT_HANDLER_START
+            | NATIVE_OUTPUT_HANDLER_FLUSH;
+        let handler =
+            NativeValueHandle::from_value(Value::String("status_flags_handler".to_string()));
+        let zero_chunk = NativeValueHandle::from_value(Value::Int(0));
+        let custom_flags = NativeValueHandle::from_value(Value::Int(requested_flags));
+        let custom_start = call(
+            table,
+            NativeOutputBufferOperation::Start,
+            &[handler, zero_chunk, custom_flags],
+            &mut diagnostic,
+        );
+        assert_eq!(unsafe { custom_start.as_ref() }, Some(&Value::Bool(true)));
+        let custom_status_handle = call(
+            table,
+            NativeOutputBufferOperation::GetStatus,
+            &[],
+            &mut diagnostic,
+        );
+        let custom_status = native_value_array_for_test(custom_status_handle);
+        assert_eq!(
+            status_int(&custom_status, "type"),
+            NATIVE_OUTPUT_HANDLER_USER
+        );
+        assert_eq!(
+            status_int(&custom_status, "flags"),
+            (requested_flags & !NATIVE_OUTPUT_HANDLER_TYPE_MASK) | NATIVE_OUTPUT_HANDLER_USER
+        );
+        assert_eq!(
+            status_int(&custom_status, "flags") & NATIVE_OUTPUT_HANDLER_PROCESSED,
+            0
+        );
+        let custom_clean = call(
+            table,
+            NativeOutputBufferOperation::GetClean,
+            &[],
+            &mut diagnostic,
+        );
+
+        let default_parent = call(
+            table,
+            NativeOutputBufferOperation::Start,
+            &[],
+            &mut diagnostic,
+        );
+        let null_handler = NativeValueHandle::from_value(Value::Null);
+        let default_chunk = NativeValueHandle::from_value(Value::Int(2));
+        let default_child = call(
+            table,
+            NativeOutputBufferOperation::Start,
+            &[null_handler, default_chunk],
+            &mut diagnostic,
+        );
+        let default_before_handle = call(
+            table,
+            NativeOutputBufferOperation::GetStatus,
+            &[],
+            &mut diagnostic,
+        );
+        let default_before = native_value_array_for_test(default_before_handle);
+        unsafe { echo_bytes("ab", &mut diagnostic) };
+        let default_after_handle = call(
+            table,
+            NativeOutputBufferOperation::GetStatus,
+            &[],
+            &mut diagnostic,
+        );
+        let default_after = native_value_array_for_test(default_after_handle);
+        let default_delta =
+            status_int(&default_after, "flags") - status_int(&default_before, "flags");
+        assert_eq!(
+            default_delta,
+            NATIVE_OUTPUT_HANDLER_STARTED | NATIVE_OUTPUT_HANDLER_PROCESSED
+        );
+        let default_child_clean = call(
+            table,
+            NativeOutputBufferOperation::GetClean,
+            &[],
+            &mut diagnostic,
+        );
+        let default_parent_clean = call(
+            table,
+            NativeOutputBufferOperation::GetClean,
+            &[],
+            &mut diagnostic,
+        );
+
+        let callback_parent = call(
+            table,
+            NativeOutputBufferOperation::Start,
+            &[],
+            &mut diagnostic,
+        );
+        let callback_handler =
+            NativeValueHandle::from_value(Value::String("status_flags_handler".to_string()));
+        let callback_chunk = NativeValueHandle::from_value(Value::Int(2));
+        let callback_child = call(
+            table,
+            NativeOutputBufferOperation::Start,
+            &[callback_handler, callback_chunk],
+            &mut diagnostic,
+        );
+        let callback_before_handle = call(
+            table,
+            NativeOutputBufferOperation::GetStatus,
+            &[],
+            &mut diagnostic,
+        );
+        let callback_before = native_value_array_for_test(callback_before_handle);
+        unsafe { echo_bytes("ab", &mut diagnostic) };
+        let callback_after_handle = call(
+            table,
+            NativeOutputBufferOperation::GetStatus,
+            &[],
+            &mut diagnostic,
+        );
+        let callback_after = native_value_array_for_test(callback_after_handle);
+        assert_eq!(
+            status_int(&callback_before, "type"),
+            NATIVE_OUTPUT_HANDLER_USER
+        );
+        assert_eq!(
+            status_int(&callback_after, "flags") - status_int(&callback_before, "flags"),
+            default_delta
+        );
+        let callback_child_clean = call(
+            table,
+            NativeOutputBufferOperation::GetClean,
+            &[],
+            &mut diagnostic,
+        );
+        let callback_parent_clean = call(
+            table,
+            NativeOutputBufferOperation::GetClean,
+            &[],
+            &mut diagnostic,
+        );
+
+        for handle in [
+            default_start,
+            default_status_handle,
+            default_clean,
+            handler,
+            zero_chunk,
+            custom_flags,
+            custom_start,
+            custom_status_handle,
+            custom_clean,
+            default_parent,
+            null_handler,
+            default_chunk,
+            default_child,
+            default_before_handle,
+            default_after_handle,
+            default_child_clean,
+            default_parent_clean,
+            callback_parent,
+            callback_handler,
+            callback_chunk,
+            callback_child,
+            callback_before_handle,
+            callback_after_handle,
+            callback_child_clean,
+            callback_parent_clean,
         ] {
             unsafe { phpc_native_value_free(handle) };
         }

@@ -2,8 +2,6 @@ use php_compiler::error::Phase;
 use php_compiler::run_source;
 use php_compiler::{emit_asm_source, emit_ir_source};
 
-const LLVM_OUTPUT_BUFFER_REJECTION: &str = "LLVM output-buffer lowering rejects ob_start(), ob_get_level(), ob_get_contents(), ob_get_length(), ob_list_handlers(), ob_get_status(), ob_get_clean(), ob_get_flush(), ob_clean(), ob_flush(), ob_end_clean(), and ob_end_flush() until native stdout capture buffers, shutdown flushing, output-started tracking, SAPI interaction, references/copy-on-write, and exact native diagnostics exist; phpc run handles current bounded output-buffer behavior";
-
 fn runtime_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
     assert_eq!(error.phase, Phase::Runtime);
@@ -527,51 +525,42 @@ echo ob_end_flush(1);
 }
 
 #[test]
-fn emit_ir_rejects_output_buffer_builtins_until_native_state_exists() {
-    let error = emit_ir_source("<?php\nob_start();\n").unwrap_err();
+fn emit_ir_routes_output_buffer_builtins_through_native_runtime_abi() {
+    let ir = emit_ir_source(
+        r#"<?php
+ob_start();
+echo ob_get_length();
+ob_list_handlers();
+ob_get_status();
+echo ob_get_flush();
+"#,
+    )
+    .unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
-    assert_eq!(error.message, LLVM_OUTPUT_BUFFER_REJECTION);
-
-    let length_error = emit_ir_source("<?php\necho ob_get_length();\n").unwrap_err();
-
-    assert_eq!(length_error.phase, Phase::Codegen);
-    assert_eq!(length_error.line, 2);
-    assert_eq!(length_error.column, 6);
-    assert_eq!(length_error.message, LLVM_OUTPUT_BUFFER_REJECTION);
-
-    let handlers_error = emit_ir_source("<?php\necho ob_list_handlers();\n").unwrap_err();
-
-    assert_eq!(handlers_error.phase, Phase::Codegen);
-    assert_eq!(handlers_error.line, 2);
-    assert_eq!(handlers_error.column, 6);
-    assert_eq!(handlers_error.message, LLVM_OUTPUT_BUFFER_REJECTION);
-
-    let status_error = emit_ir_source("<?php\necho ob_get_status();\n").unwrap_err();
-
-    assert_eq!(status_error.phase, Phase::Codegen);
-    assert_eq!(status_error.line, 2);
-    assert_eq!(status_error.column, 6);
-    assert_eq!(status_error.message, LLVM_OUTPUT_BUFFER_REJECTION);
-
-    let get_flush_error = emit_ir_source("<?php\necho ob_get_flush();\n").unwrap_err();
-
-    assert_eq!(get_flush_error.phase, Phase::Codegen);
-    assert_eq!(get_flush_error.line, 2);
-    assert_eq!(get_flush_error.column, 6);
-    assert_eq!(get_flush_error.message, LLVM_OUTPUT_BUFFER_REJECTION);
+    assert!(
+        ir.contains(
+            "declare %phpc.NativeValueHandle @phpc_native_output_buffer_operation_with_diagnostic"
+        ),
+        "{ir}"
+    );
+    assert!(
+        ir.matches("@phpc_native_output_buffer_operation_with_diagnostic")
+            .count()
+            >= 5,
+        "{ir}"
+    );
+    assert!(!ir.contains("output-buffer lowering rejects"), "{ir}");
 }
 
 #[test]
-fn emit_asm_rejects_output_buffer_builtins_until_native_state_exists() {
-    let error = emit_asm_source("<?php\necho ob_get_clean();\n").unwrap_err();
+fn emit_asm_routes_output_buffer_builtins_through_native_runtime_abi() {
+    let asm = emit_asm_source("<?php\nob_start();\necho ob_get_clean();\n").unwrap();
 
-    assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(error.message, LLVM_OUTPUT_BUFFER_REJECTION);
+    assert!(
+        asm.contains("phpc_native_output_buffer_operation_with_diagnostic"),
+        "{asm}"
+    );
+    assert!(!asm.contains("output-buffer lowering rejects"), "{asm}");
 }
 
 #[test]

@@ -185,6 +185,47 @@ const NATIVE_OUTPUT_BUFFER_STATUS_SOURCE: &str = concat!(
     "echo $report . \"\\n\";\n",
 );
 
+const NATIVE_OUTPUT_BUFFER_STATUS_FLAGS_SOURCE: &str = concat!(
+    "<?php\n",
+    "function status_flags_handler($buffer, $phase) {\n",
+    "    return $buffer;\n",
+    "}\n",
+    "$ok = \"1\";\n",
+    "ob_start();\n",
+    "$internal = ob_get_status();\n",
+    "if (!($internal[\"type\"] === 0)) { $ok = \"0\"; }\n",
+    "if (!($internal[\"flags\"] > 0)) { $ok = \"0\"; }\n",
+    "$standard_flags = $internal[\"flags\"];\n",
+    "ob_get_clean();\n",
+    "ob_start(\"status_flags_handler\");\n",
+    "$user = ob_get_status();\n",
+    "if (!($user[\"type\"] === 1)) { $ok = \"0\"; }\n",
+    "if (!($user[\"flags\"] === $standard_flags + $user[\"type\"])) { $ok = \"0\"; }\n",
+    "ob_get_clean();\n",
+    "ob_start();\n",
+    "ob_start(null, 2);\n",
+    "$default_before = ob_get_status();\n",
+    "echo \"ab\";\n",
+    "$default_after = ob_get_status();\n",
+    "$processed_delta = $default_after[\"flags\"] - $default_before[\"flags\"];\n",
+    "if (!($processed_delta > $standard_flags)) { $ok = \"0\"; }\n",
+    "ob_get_clean();\n",
+    "ob_get_clean();\n",
+    "ob_start();\n",
+    "ob_start(\"status_flags_handler\", 2);\n",
+    "$user_before = ob_get_status();\n",
+    "echo \"ab\";\n",
+    "$user_after = ob_get_status();\n",
+    "if (!(($user_after[\"flags\"] - $user_before[\"flags\"]) === $processed_delta)) { $ok = \"0\"; }\n",
+    "ob_get_clean();\n",
+    "ob_get_clean();\n",
+    "ob_start(null, 0, $user[\"type\"]);\n",
+    "$low_bits = ob_get_status();\n",
+    "if (!($low_bits[\"flags\"] === $internal[\"type\"])) { $ok = \"0\"; }\n",
+    "ob_get_clean();\n",
+    "echo $ok === \"1\" ? \"status-flags-ok\\n\" : \"status-flags-fail\\n\";\n",
+);
+
 const NATIVE_DIAGNOSTIC_RESULT_DISCARDED_EXPR_SOURCE: &str = concat!(
     "<?php\n",
     "1;\n",
@@ -2494,6 +2535,34 @@ fn emit_exe_links_and_runs_native_output_buffer_status_metadata_program() {
         run.stdout,
         b"initial=0:0|handlers=2:default output handler:phase_handler|outer=default output handler:1:3:6|inner=phase_handler:2:2:10|active=phase_handler:2:2:10|after=default output handler:1:3:6|captures=out/in|chunk=phase_handler:2:0:3|chunk-capture=[abc:1]|final=0:0\n"
     );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_output_buffer_status_flag_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "native_output_buffer_status_flags",
+        NATIVE_OUTPUT_BUFFER_STATUS_FLAGS_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native output-buffer status flag executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"status-flags-ok\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -5508,6 +5577,28 @@ fn native_executable_c_source_keeps_output_buffer_status_metadata_in_runtime_sta
         !source.contains("default output handler"),
         "generated C should not snapshot default output-handler metadata:\n{source}"
     );
+}
+
+#[test]
+fn native_executable_c_source_keeps_output_buffer_status_flags_in_runtime_stack() {
+    let program = parse(NATIVE_OUTPUT_BUFFER_STATUS_FLAGS_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_output_buffer_operation_with_callable_table_diagnostic(phpc_user_callable_table"),
+        "callback status flag probes should route through the shared runtime stack ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_output_buffer_operation_with_diagnostic("),
+        "ordinary status flag probes should route through the shared runtime stack ABI:\n{source}"
+    );
+    for snapshot in ["20480", "20592", "20593"] {
+        assert!(
+            !source.contains(snapshot),
+            "generated C should not snapshot output-buffer status flag values:\n{source}"
+        );
+    }
 }
 
 #[test]
