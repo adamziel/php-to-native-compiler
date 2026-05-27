@@ -4,6 +4,20 @@
 
 Implemented:
 
+- Added generated-C direct root `ArrayAccess` append-with-keyed-suffix
+  production for shapes such as `$bag[]["leaf"] = $value`. Compiler-known
+  direct ArrayAccess roots now materialize suffix keys before RHS evaluation,
+  wrap the RHS through the shared appended-slot value boundary, call
+  `offsetSet(null, wrapped_value)` on the root object, and preserve
+  assignment-expression result ownership separately from the appended slot.
+  Focused unit, generated-C, and linked-executable tests prove the direct root
+  boundary and preserve nested/property-held ArrayAccess, constructor,
+  descriptor closure, magic static, static-property, source-call reference,
+  exact import, and class-alias filters. Function-call suffix-key expressions,
+  unknown root facts, arbitrary aliases, static-property roots,
+  reference-returning `offsetGet()`, broad references/COW, cleanup/unwind
+  breadth, spread/unpack, and LLVM IR/assembly parity remain unsupported.
+
 - Added a bounded generated-native constructor allocation-plus-invoke carrier
   for the `phpc compile --emit-exe` C-link path. Supported `new Class(...)`
   and selected runtime string-valued `new $class(...)` expressions now allocate

@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 09:53 CEST
+Updated: 2026-05-27 10:15 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,19 +19,34 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest accounted source capability: `ba46f5e2` routes selected generated-C
-nested ArrayAccess `unset()` and append-with-keyed-suffix assignments through
-the generalized owner-stack path for direct-variable and visible property-held
-roots. Supported unset paths materialize the root owner, descend through
-by-value `offsetGet()` intermediates, execute leaf `offsetUnset()`, reverse
-write changed parents with `offsetSet()`, and commit the original owner.
-Supported keyed append paths materialize suffix keys before RHS evaluation,
-wrap the RHS as nested native arrays through the shared appended-slot boundary,
-append at the owner-stack leaf with `offsetSet(null, value)`, reverse-write
-parents, commit the original owner, and keep assignment-expression result
-ownership separate from the appended slot value. Root append with keyed suffix
-without owner-stack descent, reference-returning `offsetGet()`, arbitrary alias
-roots, non-direct/unknown property holders, static-property roots, broad
+Latest accounted source capability: `8c922fa2` routes selected generated-C
+direct root ArrayAccess append-with-keyed-suffix assignments such as
+`$bag[]["leaf"] = $value` through a generalized root ArrayAccess owner
+boundary. The supported path materializes suffix keys before RHS evaluation,
+wraps the RHS through the shared appended-slot value boundary, calls
+`offsetSet(null, wrapped_value)` on the root ArrayAccess object, preserves
+assignment-expression result ownership separately from the appended slot value,
+and threads cleanup/diagnostics through the existing owner commit boundary.
+Function-call suffix-key expressions, unknown root facts, arbitrary alias
+roots, static-property roots, reference-returning `offsetGet()`, broad
+references/COW, cleanup/unwind breadth, spread/unpack, and LLVM/backend parity
+remain blocked. `7ff18dba` also routes selected generated-C constructor
+allocation-plus-invoke through declared class metadata, typed-property-aware
+allocation, shared `NativeCallArgumentsHandle` ownership, `$this` binding,
+called scope, caller access context, allocated receiver cleanup, and dedicated
+constructor value-return diagnostics. Recent source commits also route selected
+generated-C nested ArrayAccess `unset()` and append-with-keyed-suffix
+assignments through the generalized owner-stack path for direct-variable and
+visible property-held roots. Supported unset paths materialize the root owner,
+descend through by-value `offsetGet()` intermediates, execute leaf
+`offsetUnset()`, reverse-write changed parents with `offsetSet()`, and commit
+the original owner. Supported keyed append paths materialize suffix keys before
+RHS evaluation, wrap the RHS as nested native arrays through the shared
+appended-slot boundary, append at the owner-stack leaf with
+`offsetSet(null, value)`, reverse-write parents, commit the original owner, and
+keep assignment-expression result ownership separate from the appended slot
+value. Reference-returning `offsetGet()`, arbitrary alias roots,
+non-direct/unknown property holders, static-property roots, broad
 references/COW, cleanup/unwind breadth, spread/unpack, and LLVM/backend parity
 remain blocked. Recent source commits also route selected generated-C
 static-property plain assignment, compound assignment, and pre/post
