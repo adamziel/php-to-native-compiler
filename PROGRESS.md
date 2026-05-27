@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 15:45 CEST
+Updated: 2026-05-27 15:51 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,7 +19,19 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **90%** `[##################--]`
 
-Latest accounted source capability: `aed8d3e7` routes selected
+Latest accounted source capability: `15b8f029` composes selected trait
+properties and trait constants through `trait_semantics` before declared class
+metadata emission. Compatible duplicate trait instance properties, static
+properties, and public parser-supported constants now become ordinary declared
+class metadata and reuse object allocation defaults, static-property storage,
+class-constant lookup, trait method frames, and shared conflict diagnostics,
+including nested trait property conflicts. Unsupported trait member forms,
+unsupported initializer expressions, autoload-discovered traits, dynamic
+include timing, destructor execution, broad visibility/reference/COW parity,
+and LLVM/ASM parity remain blocked instead of gaining trait-specific access
+ladders.
+
+Recent source commit `aed8d3e7` routes selected
 descriptor-backed closure spread calls through preserved closure parameter
 contracts. Descriptor-closure-only callable values can now derive a reusable
 source-call argument plan, materialize unpacked entries, finalize them through
