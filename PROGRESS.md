@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 20:45 CEST
+Updated: 2026-05-27 20:52 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,15 +19,31 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `4982fccd` routes generated-C `instanceof`
-checks through generalized runtime class relationship metadata. The runtime now
-normalizes target names through class-like metadata registries, class aliases,
-parent chains, declared class-interface links, user interface metadata, and
-bounded core interface names before answering `InstanceOf` operation tag `0`.
-Generated C no longer needs text-membership tables for the accepted declared
-class/interface slice. Dynamic `instanceof $class`, arbitrary runtime
-source-loaded declarations, broader relationship operations, and LLVM/ASM parity
-remain blocked.
+Latest accounted source capability: `4602d028` reports live output-buffer
+status metadata from the runtime buffer stack. `ob_list_handlers()` and
+`ob_get_status()` now preserve handler names, levels, current byte counts, and
+configured chunk sizes for default buffers, callable-table handlers, runtime
+builtins, methods/constructors, and descriptor closures through shared callable
+dispatch metadata. Handler flags/mutability, shutdown/unwind ordering, exact
+SAPI interaction, broader binary string breadth, and LLVM/ASM parity remain
+blocked.
+
+Recent source commit `4602d028` advances generated-C output-buffer status
+metadata without adding production handler-name fixtures, generated-C snapshots,
+or source-shape recognizers. Runtime output-buffer status now reads live stack
+entries for handler names, stack levels, buffer byte counts, and configured
+chunk sizes; callback handler names are derived from
+`NativeCallableValueDispatch` metadata rather than fixture literals. Focused
+gates covered compile checking, runtime status metadata, linked generated-C
+status execution, generated-C source proof that status calls route through the
+shared runtime stack ABI, existing runtime/generated-C output-buffer
+regressions, SPL autoload function snapshot regression, formatting, and diff
+checks. `type` and `flags` remain bounded constants; full PHP parity for
+mutability flags, shutdown/unwind order, SAPI interaction, broader binary
+strings, non-C backend output-buffer parity, and exact diagnostics remain
+blocked. Primary gate log:
+`state/logs/phpc-primary-output-buffer-status-d7c37ba1-20260527.gates.log`
+sha256 `606b95ecaeadc49892b7b84bfdb93d269f4d7b4a4b68a400fd07e2257a519cac`.
 
 Recent source commit `4982fccd` advances interface-aware `instanceof` without
 adding one-interface, namespace, generated-text, or fixture-membership lowering.
