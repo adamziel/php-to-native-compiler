@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 16:37 CEST
+Updated: 2026-05-27 16:42 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,16 +19,26 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **90%** `[##################--]`
 
-Latest accounted source capability: `aecbc310` routes selected runtime builtin
-callable-string spread calls through reusable builtin signature metadata and
-the shared materialized argument path. Runtime string-valued callables that can
-only name supported homogeneous builtin families now build the same
-source-call argument contract used by generated functions and methods,
-materialize/unpack spread entries, finalize them through
-`NativeCallArgumentsHandle`, and invoke through existing runtime builtin
-callable helpers. Builtins without runtime callable families or default-value
-support, by-reference/writeback builtins, unknown or heterogeneous runtime
-callables, magic fallback, and broader by-reference unpack remain blocked.
+Latest accounted source capability: `f038ae76` admits destructor-observable
+allocations inside generated-C `try/finally` when the allocated object is
+already eligible for request-end finalization. Request-finalizable destructors
+no longer trip the try/finally cleanup preflight, finalizer setup forces the
+existing callable table initializer for destructor-only programs, and linked
+native execution preserves `try` body output, `finally` output, fallthrough
+output, then request-end destructor output. Unsupported destructor shapes,
+shutdown functions, broader exception/fatal unwinding, and exact cleanup-stack
+parity remain blocked.
+
+Recent source commit `aecbc310` routes selected runtime builtin callable-string
+spread calls through reusable builtin signature metadata and the shared
+materialized argument path. Runtime string-valued callables that can only name
+supported homogeneous builtin families now build the same source-call argument
+contract used by generated functions and methods, materialize/unpack spread
+entries, finalize them through `NativeCallArgumentsHandle`, and invoke through
+existing runtime builtin callable helpers. Builtins without runtime callable
+families or default-value support, by-reference/writeback builtins, unknown or
+heterogeneous runtime callables, magic fallback, and broader by-reference
+unpack remain blocked.
 
 Recent source commit `b8b29d93` routes bounded literal generated-C
 include/require execution through reusable include-unit functions. `phpc
