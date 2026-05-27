@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 11:46 CEST
+Updated: 2026-05-27 11:53 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,26 +19,29 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest accounted source capability: `f7facf37` preserves source-order named
-argument keys for selected generated-C receiver `__call` fallback calls through
-the shared `NativeCallArgumentsHandle` metadata and runtime magic `$args`
-packing boundary. Direct receiver calls with missing or inaccessible instance
-methods, plus dynamic receiver calls with statically known method names, now
-carry named `$args` keys when the compiler can prove the call site resolves to
-public non-static receiver magic. Normal declared receiver hits still bind
-through declared parameter metadata first, mixed declared-hit/magic-fallback
-facts stay blocked, and malformed magic metadata still rejects before derived
-magic argument packing. Named static `__callStatic`, descriptor closures,
-class constants, constructors, nested ArrayAccess, source-call references,
-static-property storage/reference behavior, exact imports, and class aliases
-remain green. Unknown runtime dynamic receiver method names when a declared hit
-is still possible, mixed receiver fact sets, constructor named arguments,
-spread/unpack, unknown dynamic callables, full declaration-time malformed
-signature parity, traits/interfaces/effective method tables, aliases/autoload,
-callable-object magic shapes, full `$args` reference/COW parity, computed
-static-property names, top-level `static::$prop`, static-property array-offset
-references, broader static-reference/COW parity, and LLVM/backend parity remain
-blocked. Recent source commit `ea6c7980` routes selected generated-C
+Latest accounted source capability: `9d2b3526` routes selected generated-C
+static-property array-offset mutation through the shared static-property
+lvalue/storage boundary and ArrayAccess owner-stack paths. Literal class,
+object/class-string, `self`, `parent`, and declared method-frame `static`
+receivers now support selected static-property offset assignment, append,
+compound/RMW updates, `??=`, and `unset()` without materializing fake local
+owners. Static-property references, named receiver magic, static-property
+storage, nested/property ArrayAccess, descriptor closures, malformed magic,
+source-call references, exact imports, class constants, and class aliases
+remain green. Computed static-property names, top-level `static::$prop`,
+static-property array-offset references, arbitrary alias roots, broad
+references/COW, magic/static-property overloading, traits/interfaces, autoload
+breadth, cleanup/unwind breadth, and LLVM/backend parity remain blocked. Recent
+source commit `f7facf37` preserves source-order named argument keys for selected
+generated-C receiver `__call` fallback calls through the shared
+`NativeCallArgumentsHandle` metadata and runtime magic `$args` packing boundary.
+Direct receiver calls with missing or inaccessible instance methods, plus
+dynamic receiver calls with statically known method names, now carry named
+`$args` keys when the compiler can prove the call site resolves to public
+non-static receiver magic. Normal declared receiver hits still bind through
+declared parameter metadata first, mixed declared-hit/magic-fallback facts stay
+blocked, and malformed magic metadata still rejects before derived magic
+argument packing. Recent source commit `ea6c7980` routes selected generated-C
 static-property reference sources through shared runtime static-property
 storage cells. Literal class, object/class-string, `self`, `parent`, and
 declared method-frame `static` receivers can now materialize storage-backed
@@ -522,6 +525,7 @@ Current critical path to 100%:
 
 | Commit | Capability | Proof shape |
 | --- | --- | --- |
+| `9d2b3526` | Generated C now routes selected static-property array-offset mutation through the shared static-property lvalue/storage boundary and ArrayAccess owner-stack paths. Literal class, object/class-string, `self`, `parent`, and declared method-frame `static` receivers can perform selected offset assignment, append, compound/RMW updates, `??=`, and `unset()` while preserving expression-result ownership, typed/visibility diagnostics, and static storage identity. Computed names, top-level `static::$prop`, static-property array-offset references, arbitrary alias roots, magic/static overloading, broad references/COW, cleanup/unwind breadth, and backend parity remain blocked. | Primary integration gates passed with `SUMMARY passes=22 failures=0`, covering fmt, diff check, `cargo check -p phpc`, nested ArrayAccess owner-stack and direct-root append guards, runtime static-property tests, generated-C linked static-property offset mutation proofs, static-property reference/storage regressions, named receiver magic regressions, nested/property ArrayAccess, descriptor closures, magic dynamic/static filters, malformed magic signatures, source-call references, exact imports, class constants, and class aliases. Gate log: `state/workers/logs/phpc-primary-static-property-offset-mutation-r3-integration-20260527.gates.log` sha256 `41488602ec21cdf8af469c72d323980d1f3c1a21886f93cc61c385436936c00a`. |
 | `f7facf37` | Generated C now preserves source-order named argument keys for selected receiver `__call` fallback calls through shared `NativeCallArgumentsHandle` source-name metadata and runtime magic `$args` packing. Direct receiver calls with missing or inaccessible instance methods and dynamic receiver calls with statically known method names carry named `$args` keys when every known possibility resolves to public non-static receiver magic. Declared receiver hits keep declared parameter binding first, mixed declared-hit/magic-fallback facts remain blocked, and malformed magic signatures still reject before derived magic argument packing. Unknown runtime dynamic receiver method names, constructor named arguments, spread/unpack, unknown dynamic callables, traits/interfaces, aliases/autoload, callable-object magic shapes, full `$args` reference/COW parity, static-property array-offset references, and backend parity remain blocked. | Primary integration gates passed with `SUMMARY passes=27 failures=0`, covering fmt, diff check, call-argument metadata, runtime named magic `$args`, generated-C and linked executable named receiver magic proofs, unknown named-dynamic blockers, named static magic regression, malformed magic metadata, magic dynamic/static filters, named arguments, descriptor closures, static-property storage/reference behavior, class constants, constructors, nested ArrayAccess, source-call references, exact imports, namespace imports, class aliases, and `cargo check -p phpc`. Gate log: `state/workers/logs/phpc-primary-named-dynamic-magic-r4-integration-20260527.gates.log` sha256 `491e631a289ca1c448f84517aed3069c053906f007212b649a8c08e590a0fac3`. |
 | `3149d1da` | Generated C now routes selected class constant reads through shared class/constant metadata instead of receiver-specific generated ladders. Literal `Class::CONST`, relative `self::CONST`/`parent::CONST`/method-frame `static::CONST`, alias canonicalization, inherited constants, visibility checks, and owned-result diagnostics share one runtime table. Relative `self::class`, `parent::class`, and `static::class` also use the declared/called class metadata context, while literal `ClassName::class` remains no-lookup source-string lowering. Dynamic class-name constant receivers, unsupported initializer expressions, traits/interfaces, include/autoload discovery, fuller diagnostics, and backend parity remain blocked. | Primary integration gates passed with `SUMMARY passes=19 failures=0`, covering fmt, diff check, `cargo check -p phpc`, runtime class-constant ABI proof, generated-C and linked executable class-constant proofs, class aliases, exact imports, static property, descriptor closure, magic static, named arguments, constructors, nested ArrayAccess, and source-call reference filters. Gate log: `state/workers/logs/phpc-primary-class-constants-r2-integration-20260527.gates.log` sha256 `181f391429b3972d20c73c11bf94b889b8186afa11776490b1fd3761b588c656`. |
 | `ae7b4535` | Generated C now preserves source-order named argument keys for selected static `__callStatic` fallback calls through shared `NativeCallArgumentsHandle` source-name metadata and runtime magic `$args` packing. Missing or inaccessible static method calls with public static `__callStatic` carry named `$args` keys for literal class, object-static receiver, `self::`, and method-frame `static::` calls, while normal declared static method hits keep declared parameter binding ahead of magic fallback. Named dynamic receiver `__call`, spread/unpack, constructors, unknown dynamic callables, malformed magic signatures, traits/interfaces, aliases/autoload, callable-object magic shapes, full `$args` reference/COW parity, and backend parity remain blocked. | Primary integration gates passed with `SUMMARY passes=19 failures=0`, covering fmt, diff checks, `cargo check -p phpc`, magic argument normalizer unit proof, generated-C and linked executable named magic static proofs, named dynamic receiver blocker, magic static, named, descriptor closure, static-property, static-property mutation, nested and property-held ArrayAccess, constructor, source-call reference, exact import, class alias, and namespace import filters. Gate log: `state/workers/logs/phpc-primary-magic-static-namedargs-r2-integration-20260527.gates.log` sha256 `27be264a2d3b11163e84ae6d105d492b1de79dbce85c2b9b1e5d2518e15fb84a`. |
