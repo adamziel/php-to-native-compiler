@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added generated-C class constant production through shared class/constant
+  metadata. Literal `Class::CONST`, relative `self::CONST` and
+  `parent::CONST`, and declared method-frame `static::CONST` now publish and
+  consume one runtime class-constant table with parent links, alias
+  canonicalization, inheritance lookup, visibility/scope diagnostics, and
+  owned native-value result semantics instead of generated receiver-specific
+  string ladders. Relative `self::class`, `parent::class`, and
+  `static::class` route through the declared/called class metadata context,
+  while literal `ClassName::class` keeps PHP's no-lookup source-string
+  behavior. Focused primary gates cover the runtime class-constant ABI,
+  generated-C and linked executable class-constant proofs, class aliases,
+  exact imports, static-property filters, descriptor closures, magic static
+  calls, named arguments, constructors, nested `ArrayAccess`, and source-call
+  references. Dynamic class-name constant receivers, unsupported initializer
+  expressions, traits/interfaces, include/autoload-discovered constants,
+  fuller diagnostic parity, and LLVM IR/assembly parity remain unsupported.
+
 - Added generated-C named-argument preservation for selected static
   `__callStatic` fallback calls. Source-order call arguments now carry optional
   source names through the shared `NativeCallArgumentsHandle`, and the runtime
