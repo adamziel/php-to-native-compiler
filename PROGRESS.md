@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 19:36 CEST
+Updated: 2026-05-27 19:39 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,14 +19,34 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `76497f73` dispatches selected
-generated-C output-buffer callbacks through the shared callable table and
-runtime callable-value ABI. `ob_start($handler, ...)` can now store a
-`NativeCallableValueDispatch` handler and invoke it on flush/final boundaries
-with buffer bytes and phase flags, while ordinary non-callback buffer
-operations keep the existing output-buffer ABI. Full PHP output-buffer parity,
-handler flags/mutability, shutdown/unwind ordering, broader callback families,
-reference/COW parity, and LLVM/ASM parity remain blocked.
+Latest accounted source capability: `ebd29e69` publishes descriptor-backed
+closure source signatures through the same runtime callable-value finalizer
+used by generated functions, methods, and selected builtins. Unknown callable
+named/spread calls can now finalize descriptor closure arguments from runtime
+parameter names, defaults, by-reference flags, and variadic metadata, while
+heterogeneous callable-family policy, broader callable object/array/external
+families, broad reference/COW parity, and LLVM/ASM parity remain blocked.
+
+Recent source commit `ebd29e69` advances selected descriptor closure callable
+semantics without adding closure-literal or fixture-shape lowering.
+`NativeClosureDescriptor` now carries copied source-call metadata for parameter
+names, required/default flags, by-reference flags, default values, and variadic
+metadata; `PhpClosure` stores that signature for descriptor-backed callable
+values; and dynamic named/spread calls without a compile-time argument plan
+route descriptor closures through
+`phpc_native_callable_value_finalize_materialized_arguments_with_diagnostic`.
+Generated closure descriptor emission reuses the same source-signature
+registration helper consumed by generated functions and methods. Focused gates
+covered runtime descriptor closure finalization, variadic descriptor closure
+finalization, broader runtime callable-value regressions, linked unknown
+descriptor closure execution, linked descriptor closure spread execution,
+output-buffer callback regression, unknown-callable regression, formatting, and
+diff checks. Heterogeneous callable-family signature compatibility,
+unsupported external/core callables, broader callable object/array dispatch,
+comparator callback signatures, full reference/COW parity, and LLVM/ASM parity
+remain blocked. Primary gate log:
+`state/logs/phpc-primary-closure-descriptor-after-output-d096ea47-20260527.gates.log`
+sha256 `e2fed6e32f9b0a4f1faac954151af049d15f818ecefd6bb655079b4422d1bec2`.
 
 Recent source commit `76497f73` advances selected output-buffer callback
 dispatch without adding handler-name or fixture-shape lowering. Generated-C
