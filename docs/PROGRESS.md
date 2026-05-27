@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added generated-C descriptor-closure reference-return production for proven
+  descriptor-backed closures. By-reference closure returns are accepted when
+  the returned variable is backed by a by-reference parameter or capture, and
+  generated C invokes those proven descriptor closures through the runtime
+  reference-return helper. The resulting owned reference carrier feeds both
+  by-reference argument transfer and direct reference assignment
+  materialization, preserving alias/write-through behavior instead of copying
+  values. Focused primary gates cover descriptor-closure reference carrier
+  units, generated-C and linked executable reference-return consumers,
+  descriptor closure and source-call reference filters, magic static, named,
+  static property, nested and property-held `ArrayAccess`, constructors, exact
+  imports, and class aliases. Unknown/mixed callables, callable arrays,
+  invokable objects, method descriptors, non-descriptor closures, unsupported
+  by-reference return sources, identity loss through symbol-table-only closure
+  storage, broader reference/COW ownership, and LLVM/backend parity remain
+  unsupported.
+
 - Added generated-C static-property `??=` production through the shared
   static-property lvalue/storage boundary. Literal class, object/class-string,
   `self`, `parent`, and declared method-frame `static` receivers now probe

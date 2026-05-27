@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 10:34 CEST
+Updated: 2026-05-27 10:40 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,20 +19,23 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest accounted source capability: `16e7dec5` routes selected generated-C
-static-property null-coalescing assignment through the shared static-property
-lvalue/storage boundary for literal class receivers, object/class-string
-receivers, `self`, `parent`, and declared method-frame `static` receivers.
-The supported path probes present non-null storage through the integrated
-read-for-`isset` APIs, lazily evaluates the RHS only for missing,
-uninitialized, or null storage, writes through typed/visibility static-property
-APIs, and preserves expression-result ownership. Computed static-property
-names, top-level `static::$prop`, references, `unset`, array-offset mutation,
-magic/static overloading, traits/interfaces, autoload breadth, broad
-references/COW, and LLVM/backend parity remain blocked. Recent source commit
-`3d32236a` routes selected generated-C static-property `isset()` and `empty()`
-through the same shared lvalue/storage boundary, preserving invalid receiver,
-scope, and visibility diagnostics. Recent source commit `8c922fa2` routes
+Latest accounted source capability: `2e2625eb` routes selected generated-C
+descriptor-closure reference returns into real reference carriers for proven
+descriptor-backed closures. The supported path admits by-reference closure
+returns from direct by-reference parameters or captures, invokes proven
+descriptor closures through the runtime reference-return helper, and feeds the
+owned reference into both by-reference argument transfer and direct reference
+assignment materialization without copying values to fake aliases. Unknown or
+mixed callables, callable arrays, invokable objects, method descriptors,
+non-descriptor closures, unsupported closure reference return sources,
+descriptor identity lost through symbol-table-only storage, broader
+reference/COW ownership, and LLVM/backend parity remain blocked. Recent source
+commit `16e7dec5` routes selected generated-C static-property null-coalescing
+assignment through the shared static-property lvalue/storage boundary for
+literal class, object/class-string, `self`, `parent`, and declared
+method-frame `static` receivers. Recent source commit `3d32236a` routes
+selected generated-C static-property `isset()` and `empty()` through the same
+shared lvalue/storage boundary. Recent source commit `8c922fa2` routes
 selected generated-C direct root ArrayAccess append-with-keyed-suffix
 assignments such as `$bag[]["leaf"] = $value` through a generalized root
 ArrayAccess owner boundary. The supported path materializes suffix keys before RHS evaluation,
@@ -438,6 +441,7 @@ Current critical path to 100%:
 
 | Commit | Capability | Proof shape |
 | --- | --- | --- |
+| `2e2625eb` | Generated C now routes selected descriptor-closure reference returns through a real runtime reference carrier for proven descriptor-backed closures. By-reference closure returns are admitted only when the return source is a direct by-reference parameter or capture, and the resulting reference can feed both by-reference argument transfer and direct reference assignment materialization with alias/write-through behavior. Unknown/mixed callables, callable arrays, invokable objects, method descriptors, non-descriptor closures, unsupported by-ref return sources, identity loss through symbol-table-only closure storage, broader reference/COW ownership, and backend parity remain blocked. | Primary integration gates passed with `SUMMARY passes=16 failures=0`, covering fmt, diff checks, `cargo check -p phpc`, descriptor-closure reference carrier unit proof, generated-C and linked executable reference-return consumer proofs, descriptor closure and source-call reference filters, magic static, named, static property, nested and property-held ArrayAccess, constructor, exact import, and class-alias filters. Gate log: `state/workers/logs/phpc-primary-descriptor-closure-reference-return-r2-integration-20260527.gates.log` sha256 `a31b72882552c114b2db8f69b5a12bc95c82d00e0b96ea7ffd11aad647695cb1`. |
 | `16e7dec5` | Generated C now routes selected static-property `??=` through the shared static-property lvalue target for literal class, object/class-string, `self`, `parent`, and method-frame `static` receivers. Supported paths use read-for-`isset` probes, skip RHS evaluation for present non-null storage, lazily write missing/null/uninitialized storage through typed/visibility static-property APIs, and preserve expression-result ownership. Computed names, top-level `static::$prop`, references, `unset`, array-offset mutation, magic/static overloading, broader references/COW, and backend parity remain blocked. | Primary integration gates passed with `SUMMARY passes=15 failures=0`, covering fmt, diff checks, `cargo check -p phpc`, runtime static-property tests, static-property and static-property mutation native-link filters, object static-property receivers, descriptor closures, magic static, nested and property-held ArrayAccess, constructors, source-call references, exact imports, and class aliases. Gate log: `state/workers/logs/phpc-primary-static-property-nullcoalesce-r2-integration-20260527.gates.log` sha256 `ae3fba1e97863bcf7068e4298d0103d9fe5bafb35a6a9c6aa6205470f201a6f8`. |
 | `ba46f5e2` | Generated C now routes selected nested ArrayAccess `unset()` and append-with-keyed-suffix assignments through the generalized owner stack for direct-variable and visible property-held roots. Supported unset paths perform by-value `offsetGet()` descent, leaf `offsetUnset()`, reverse parent writeback, and root commit. Supported keyed append paths materialize suffix keys, wrap the RHS through the shared appended-slot value boundary, append at the leaf with `offsetSet(null, value)`, reverse-write parents, commit the root owner, and preserve assignment expression results separately from the appended value. Root keyed-suffix append without owner-stack descent, reference-returning `offsetGet()`, arbitrary alias/static roots, broader references/COW, cleanup/unwind breadth, spread/unpack, and backend parity remain blocked. | Primary integration gates passed with `SUMMARY passes=18 failures=0`, covering fmt, diff checks, nested owner-stack units, exact generated-C and linked executable proofs for nested unset and keyed-append suffix, nested ArrayAccess regressions, property-held ArrayAccess owners, descriptor closures, magic static calls, static-property and static-property mutation regressions, object static-property receivers, source-call references, exact imports, class aliases, and `cargo check -q -p phpc`. |
 | `1202542e` | Generated C now routes selected static-property plain assignment, compound assignment, and pre/post increment/decrement through a shared lvalue target for literal class, object/class-string, `self`, `parent`, and method-frame `static` receivers. The path reuses runtime static-property storage read/write APIs, derives object/class-string scope through the shared receiver-scope ABI, preserves compound and pre/post expression-result ownership, and lets parser object-static-property lvalues reach codegen for prefix/compound mutations. Computed names, top-level `static::$prop`, static-property references, `??=`, `unset`, `isset`, `empty`, array-offset mutation, magic/static overloading, broader references/COW, and backend parity remain blocked. | Primary integration gates passed with `SUMMARY passes=14 failures=0`, covering fmt, diff checks, runtime static-property tests, static-property native-link proofs, static-property mutation executable proof, object static-property receivers, descriptor closures, magic static calls, source-call references, nested ArrayAccess, property-held ArrayAccess, class aliases, and `cargo check -p php_runtime -p phpc`. |
