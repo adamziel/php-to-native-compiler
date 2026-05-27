@@ -25923,6 +25923,19 @@ const NATIVE_VALUE_RESULT_STRICT_IDENTITY_SOURCE: &str = "<?php\n$items = [\"wor
 
 const NATIVE_VALUE_STRICT_IDENTITY_SOURCE: &str = "<?php\n$a = [\"i\" => 1, \"s\" => \"1\", \"n\" => null];\n$i = $a[\"i\"];\n$s = $a[\"s\"];\n$n = $a[\"n\"];\n$copy = $i;\n$GLOBALS[\"g\"] = 7;\n$_GET[\"id\"] = \"7\";\necho $i === 1;\necho \"|\";\necho $i !== 1;\necho \"|\";\necho $s !== 1;\necho \"|\";\necho $n === null;\necho \"|\";\necho $copy === 1;\necho \"|\";\necho $GLOBALS[\"g\"] === 7;\necho \"|\";\necho $_GET[\"id\"] === \"7\";\n";
 
+const NATIVE_COMPARISON_ABORT_OUTPUT_BUFFER_SOURCE: &str = concat!(
+    "<?php\n",
+    "class Box {}\n",
+    "function fail_compare($value, $object) {\n",
+    "    if ($value == $object) {\n",
+    "        echo \"unreachable\";\n",
+    "    }\n",
+    "}\n",
+    "ob_start();\n",
+    "echo \"buffered\";\n",
+    "fail_compare(\"x\", new Box());\n",
+);
+
 const NATIVE_VALUE_TYPE_PREDICATE_SOURCE: &str = "<?php\necho is_int(\"6\" + 1), \"|\";\necho is_float(\"7\" / 2), \"|\";\necho is_string((string)(2 + 3)), \"|\";\necho is_bool((2 + 3) > 4), \"|\";\necho is_array((array)\"x\"), \"|\";\necho is_scalar(gettype((float)\"3.5\")), \"|\";\necho is_numeric((string)(2 + 3)), \"|\";\necho is_countable((array)null), \"|\";\necho is_iterable((array)\"x\"), \"|\";\necho is_null((array)null), \"|\";\necho is_object((array)\"x\");\n";
 
 const NATIVE_STORED_VALUE_TYPE_INTROSPECTION_SOURCE: &str = concat!(
@@ -26498,6 +26511,44 @@ fn emit_exe_links_and_runs_native_value_strict_identity_program() {
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&temp_php);
+}
+
+#[test]
+fn emit_exe_unwinds_output_buffer_on_comparison_abort() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "native_comparison_abort_output_buffer",
+        NATIVE_COMPARISON_ABORT_OUTPUT_BUFFER_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native comparison abort executable: {error}")
+    });
+
+    assert_eq!(
+        run.status.code(),
+        Some(1),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "buffered",
+        "active output buffer should unwind before the comparison fatal exits"
+    );
+    assert!(
+        String::from_utf8_lossy(&run.stderr)
+            .contains("native value comparison rejects objects or closures"),
+        "run stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
 }
 
 #[test]

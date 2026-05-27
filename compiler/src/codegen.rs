@@ -57817,7 +57817,10 @@ impl CGenerator {
                 );
                 self.body
                     .push(format!("if ({comparison_abort_code} != 0) {{"));
-                self.body.push(format!("  return {comparison_abort_code};"));
+                self.body.push(format!(
+                    "  {}",
+                    self.native_error_exit_with_code("", &comparison_abort_code)
+                ));
                 self.body.push("}".to_string());
 
                 Ok(CValue::ComparisonDecision(comparison_decision))
@@ -67145,6 +67148,58 @@ mod tests {
         }
 
         assert!(native_comparison_op_for_binary_op(BinaryOp::Add).is_none());
+    }
+
+    #[test]
+    fn generated_c_generic_comparison_abort_uses_cleanup_exit() {
+        let mut generator = CGenerator::default();
+        generator.retain_native_value_cleanup_handle("tracked_value");
+        let result = generator
+            .emit_native_runtime_comparison(
+                CValue::NativeValueHandle("tracked_value".to_string()),
+                BinaryOp::Eq,
+                CValue::Int("1".to_string()),
+                test_span(),
+            )
+            .unwrap();
+        assert!(matches!(result, CValue::ComparisonDecision(_)));
+        let source = generator.body.join("\n");
+
+        assert!(
+            source.contains("phpc_NativeComparisonOperand")
+                && source
+                    .contains("phpc_native_comparison_operand_compare_operation_relation_and_free")
+                && source.contains(
+                    "phpc_native_comparison_relation_result_decision_or_report_stderr_and_free"
+                )
+                && source.contains("phpc_native_comparison_branch_decision_abort_code")
+                && !source.contains("phpc_native_value_compare_result"),
+            "generated C fragment must exercise the generic branch-decision comparison ABI:\n{source}"
+        );
+
+        let guard_offset = source
+            .find("if (comparison_abort_code_")
+            .unwrap_or_else(|| panic!("generic comparison abort guard missing:\n{source}"));
+        let guarded_exit = &source[guard_offset..];
+        let return_offset = guarded_exit
+            .find("return comparison_abort_code_")
+            .unwrap_or_else(|| panic!("generic comparison abort return missing:\n{source}"));
+        let cleanup_before_return = &guarded_exit[..return_offset];
+        assert!(
+            cleanup_before_return.contains("phpc_native_value_free("),
+            "generic comparison abort must run tracked native-value cleanup before returning:\n{source}"
+        );
+        for line in guarded_exit
+            .lines()
+            .take_while(|line| !line.trim_start().starts_with('}'))
+        {
+            assert!(
+                !line
+                    .trim_start()
+                    .starts_with("return comparison_abort_code_"),
+                "generic comparison abort must not return directly without cleanup:\n{source}"
+            );
+        }
     }
 
     fn test_span() -> Span {
