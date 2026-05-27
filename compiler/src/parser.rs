@@ -6060,10 +6060,13 @@ impl Parser {
                     return self.reject_unsupported_static_member_access(Some(&resolved));
                 }
                 if self.check(|kind| matches!(kind, TokenKind::LParen)) {
-                    return Err(self.error_at(
-                        token.span,
-                        unsupported_fully_qualified_function_call_message(),
-                    ));
+                    self.consume_keyword(TokenKind::LParen, "expected '(' after function name")?;
+                    let args = self.parse_call_arguments_after_open()?;
+                    return Ok(Expr::Call {
+                        name: qualified,
+                        args,
+                        span: token.span,
+                    });
                 }
                 Err(self.error_at(
                     token.span,
@@ -8290,10 +8293,6 @@ fn unsupported_namespace_const_declaration_message() -> &'static str {
 
 fn unsupported_namespace_qualified_function_name_message() -> &'static str {
     "unsupported namespace-qualified function name: namespace-aware function resolution is not implemented"
-}
-
-fn unsupported_fully_qualified_function_call_message() -> &'static str {
-    "unsupported fully-qualified function call: leading global namespace function calls require exact function-table lookup, namespace fallback bypass, builtin/user dispatch, and native lowering"
 }
 
 fn unsupported_namespace_qualified_constant_name_message() -> &'static str {

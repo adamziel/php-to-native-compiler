@@ -141,6 +141,31 @@ echo function_exists("label") ? "yes" : "no";
 }
 
 #[test]
+fn leading_global_function_calls_bypass_namespace_function_fallback() {
+    let execution = run_source(
+        r#"<?php
+namespace App\Core;
+
+function strlen($value) {
+    return 99;
+}
+
+function label($value) {
+    return "local:" . $value;
+}
+
+echo strlen("abc"), "\n";
+echo \strlen("abc"), "\n";
+echo \App\Core\label("name");
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "99\n3\nlocal:name");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn function_imports_resolve_aliases_and_keep_non_imported_fallback() {
     let root = std::env::temp_dir().join(format!(
         "phpc-namespace-resolution-{}-{}",

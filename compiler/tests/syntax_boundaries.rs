@@ -972,32 +972,32 @@ fn emit_ir_rejects_grouped_use_declarations_at_parse_boundary() {
 }
 
 #[test]
-fn unsupported_fully_qualified_function_calls_have_stable_parse_errors() {
-    let cases = [
-        ("<?php\n$result = \\strlen('abc');\n", 2, 11),
-        ("<?php\n$result = \\App\\make();\n", 2, 11),
-    ];
+fn fully_qualified_function_calls_parse_as_exact_global_calls() {
+    let program = parse("<?php\n$result = \\strlen('abc');\n$other = \\App\\make();\n").unwrap();
 
-    for (source, line, column) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(
-            error.message,
-            "unsupported fully-qualified function call: leading global namespace function calls require exact function-table lookup, namespace fallback bypass, builtin/user dispatch, and native lowering"
-        );
+    assert_eq!(program.statements.len(), 2);
+    match &program.statements[0] {
+        Stmt::Assign {
+            expr: Expr::Call { name, args, span },
+            ..
+        } => {
+            assert_eq!(name, "\\strlen");
+            assert_eq!(args.len(), 1);
+            assert_eq!((span.line, span.column), (2, 11));
+        }
+        other => panic!("expected fully-qualified strlen call assignment, got {other:?}"),
     }
-}
-
-#[test]
-fn emit_ir_rejects_fully_qualified_function_calls_at_parse_boundary() {
-    let error = php_compiler::emit_ir_source("<?php\n$result = \\strlen('abc');\n").unwrap_err();
-
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported fully-qualified function call: leading global namespace function calls require exact function-table lookup, namespace fallback bypass, builtin/user dispatch, and native lowering"
-    );
+    match &program.statements[1] {
+        Stmt::Assign {
+            expr: Expr::Call { name, args, span },
+            ..
+        } => {
+            assert_eq!(name, "\\App\\make");
+            assert!(args.is_empty());
+            assert_eq!((span.line, span.column), (3, 10));
+        }
+        other => panic!("expected fully-qualified namespaced call assignment, got {other:?}"),
+    }
 }
 
 #[test]

@@ -24519,6 +24519,18 @@ const NATIVE_RUNTIME_BUILTIN_SORT_WRITEBACK_SOURCE: &str = concat!(
     "echo $rsort(...$args), \":\", $values[0], \":\", $values[1], \":\", $values[2];\n",
 );
 
+const NATIVE_LEADING_GLOBAL_FUNCTION_CALL_SOURCE: &str = concat!(
+    "<?php\n",
+    "namespace App\\Demo;\n",
+    "function local_value($value) {\n",
+    "    return \"local:\" . $value;\n",
+    "}\n",
+    "$items = [\"zero\"];\n",
+    "$pushed = \\array_push($items, \\App\\Demo\\local_value(\"one\"), \"two\");\n",
+    "echo \\strlen(\"A\0B\"), \"|\", $pushed, \":\", $items[1], \":\", $items[2], \"|\";\n",
+    "echo \\App\\Demo\\local_value(\"user\");\n",
+);
+
 const NATIVE_DYNAMIC_BUILTIN_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "$len = \"strlen\";\n",
@@ -25905,6 +25917,31 @@ fn native_executable_c_source_lowers_runtime_builtin_sort_writeback_through_call
             && !source.contains("ByReferenceArgumentWriteback")
             && !source.contains("phpc_native_value_dynamic_call_name_matches"),
         "runtime sort callables should avoid exact-name dynamic ladders and old blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_leading_global_function_calls() {
+    let program = parse(NATIVE_LEADING_GLOBAL_FUNCTION_CALL_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_user_function_0_app_demo_local_value_native_callable_frame")
+            && body.contains("phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments"),
+        "leading-global generated user-function calls should target the exact registered callable frame:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && body.contains("phpc_native_call_arguments_push_reference_and_free")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "leading-global runtime builtins should reuse exact global callable lookup and shared call arguments:\n{source}"
+    );
+    assert!(
+        !source.contains("unsupported fully-qualified function call")
+            && !source.contains("assembly function-call lowering rejects")
+            && !source.contains("assembly user-function lowering rejects"),
+        "leading-global function calls should not hit parse or native call blockers:\n{source}"
     );
 }
 
@@ -29767,6 +29804,34 @@ fn emit_exe_links_and_runs_runtime_builtin_sort_writeback_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"1:1:2:10|1:10:2:1");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_leading_global_function_call_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "leading_global_function_calls",
+        NATIVE_LEADING_GLOBAL_FUNCTION_CALL_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native leading-global function-call executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"3|3:local:one:two|local:user");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
