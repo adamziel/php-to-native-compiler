@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 18:54 CEST
+Updated: 2026-05-27 19:03 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,13 +19,26 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `2c4268a9` materializes selected array
-append assignment RHS call values through the existing append/lvalue write
-paths. Direct `$array[] = <call>` statements, direct append assignment
-expressions, and nested `$array[...][] = <call>` assignment expressions can now
-store native value-result call handles without tripping the generic
-statement-operand cleanup blocker, while keyed assignment targets and
-object/ArrayAccess append owners remain blocked.
+Latest accounted source capability: `9bf241cc` accepts PHP keyword tokens as
+named-argument labels through the shared call-argument parser and selected
+materialized argument normalization paths. Keyword labels such as `return:` and
+`value:` can now flow through direct selected `print_r` named/spread lowering
+and ordinary named-argument metadata without adding exact-shape production
+recognizers, while broader named-argument call families and unsupported
+non-native `print_r` operands remain blocked.
+
+Recent source commit `9bf241cc` advances selected keyword named-argument
+semantics through generalized parsing and call-argument normalization. The
+parser now recognizes keyword tokens in contextual argument-label position, the
+shared normalizer/finalizer treats those labels as ordinary parameter names,
+and selected `print_r(value: ..., return: ...)` plus mixed spread forms route
+through the materialized call-argument ABI and native value formatter return
+mode. Focused gates cover parser keyword-label tests, shared call-argument
+normalization/finalization, generated-C and linked selected `print_r`
+named/spread execution, ordinary named-argument regressions, formatting, and
+diff checks. Broader named-argument lowering, unsupported non-native
+`print_r` operands, output/object formatting parity, arbitrary builtin-family
+named/spread binding, and LLVM/ASM parity remain blocked.
 
 Recent source commit `2c4268a9` advances selected append assignment call-value
 semantics without adding source-shape lowering. Append targets that already own
