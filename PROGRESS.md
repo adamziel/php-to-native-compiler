@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 18:45 CEST
+Updated: 2026-05-27 18:54 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,13 +19,25 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `cb323d8e` corrects selected magic
-fallback `$args` reference/COW behavior while carrying forward dynamic magic
-spread dispatch. Runtime magic packing now converts top-level reference call
-argument slots into PHP-style COW value array entries for `__call` and
-`__callStatic`, so writes to `$args[0]` or named `$args` entries inside magic
-methods do not mutate the caller reference, while nested references inside
-copied array values remain shared.
+Latest accounted source capability: `2c4268a9` materializes selected array
+append assignment RHS call values through the existing append/lvalue write
+paths. Direct `$array[] = <call>` statements, direct append assignment
+expressions, and nested `$array[...][] = <call>` assignment expressions can now
+store native value-result call handles without tripping the generic
+statement-operand cleanup blocker, while keyed assignment targets and
+object/ArrayAccess append owners remain blocked.
+
+Recent source commit `2c4268a9` advances selected append assignment call-value
+semantics without adding source-shape lowering. Append targets that already own
+native value-offset or array-lvalue writeback now share
+`materialize_assignment_expression_replacement_value()`, cloning assignment
+expression values for storage where needed and preserving expression results.
+Focused gates cover generated-C source proof, linked direct and nested append
+call-value execution, nested assignment/lvalue regressions, runtime nested
+append materialization helpers, reference-backed append storage, formatting,
+and diff checks. Keyed assignment RHS calls, object/ArrayAccess append owners,
+unknown callable families, broad COW/reference parity, and LLVM/ASM parity
+remain blocked.
 
 Recent source commit `cb323d8e` integrates the dynamic magic method spread
 surface through the shared materialized source-call forwarding carrier and
