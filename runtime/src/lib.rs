@@ -1641,6 +1641,51 @@ impl NativeCallableTable {
         Ok(callable)
     }
 
+    fn lookup_receiver_magic_call(
+        &self,
+        receiver: &Value,
+        original_error: &str,
+    ) -> Result<Option<NativeCallable>, String> {
+        let Value::Object(object) = receiver else {
+            return Err(format!(
+                "native method lookup failed: receiver must be an object, got {}",
+                receiver.type_name()
+            ));
+        };
+        let Some(lookup) = self.lookup_descriptor(
+            NativeCallableKind::Method,
+            Some(object.class_name()),
+            "__call",
+        ) else {
+            return Ok(None);
+        };
+        let descriptor = lookup.descriptor;
+        if descriptor.is_static {
+            let scope = lookup
+                .called_scope
+                .as_deref()
+                .or(descriptor.scope.as_deref())
+                .unwrap_or("<unknown>");
+            return Err(format!(
+                "native method invocation failed: static magic method {scope}::__call cannot be used for object dispatch after {original_error}"
+            ));
+        }
+        if descriptor.visibility != NativeCallableVisibility::Public {
+            let scope = lookup
+                .called_scope
+                .as_deref()
+                .or(descriptor.scope.as_deref())
+                .unwrap_or("<unknown>");
+            return Err(format!(
+                "native method invocation failed: magic method {scope}::__call must be public after {original_error}"
+            ));
+        }
+        Ok(Some(NativeCallable {
+            descriptor: descriptor.clone(),
+            called_scope: lookup.called_scope,
+        }))
+    }
+
     fn lookup_static_method(
         &self,
         scope: String,
@@ -10122,6 +10167,51 @@ unsafe fn native_callable_value_invoke_closure_result(
     }
 }
 
+fn native_call_argument_slot_value_cloned(slot: &NativeCallArgumentSlot) -> Result<Value, String> {
+    match slot {
+        NativeCallArgumentSlot::Value(value) => {
+            unsafe { value.as_ref() }.cloned().ok_or_else(|| {
+                "native magic __call argument packing failed: value slot is null".to_string()
+            })
+        }
+        NativeCallArgumentSlot::Reference(reference) => unsafe { reference.as_ref() }
+            .map(|reference| reference.cell.value_cloned())
+            .ok_or_else(|| {
+                "native magic __call argument packing failed: reference slot is null".to_string()
+            }),
+    }
+}
+
+fn native_magic_call_arguments_from_method_and_arguments(
+    method_name: &str,
+    arguments: &NativeCallArguments,
+) -> Result<NativeCallArgumentsHandle, String> {
+    let mut argument_array = PhpArray::new();
+    for slot in &arguments.slots {
+        argument_array
+            .append(native_call_argument_slot_value_cloned(slot)?)
+            .map_err(|error| {
+                format!(
+                    "native magic __call argument packing failed: {}",
+                    error.message()
+                )
+            })?;
+    }
+
+    Ok(NativeCallArgumentsHandle {
+        ptr: Box::into_raw(Box::new(NativeCallArguments {
+            slots: vec![
+                NativeCallArgumentSlot::Value(NativeValueHandle::from_value(Value::String(
+                    method_name.to_string(),
+                ))),
+                NativeCallArgumentSlot::Value(NativeValueHandle::from_value(Value::Array(
+                    argument_array,
+                ))),
+            ],
+        })),
+    })
+}
+
 /// # Safety
 ///
 /// `callable` must be a callable-value dispatch handle. `arguments` must be a
@@ -10280,13 +10370,21 @@ unsafe fn native_method_lookup_invoke_result_with_access_context_and_free_receiv
         let Some(method_value) = (unsafe { method.as_ref() }) else {
             return Err("native method invocation failed: method handle is null".to_string());
         };
-        let method_name =
-            native_callable_value_name(method_value, "method name").map_err(|message| {
-                message.replace(
-                    "native callable lookup failed",
-                    "native method invocation failed",
-                )
-            })?;
+        let method_name = match native_value_dynamic_method_name_string(method_value) {
+            Some(method_name) if !method_name.is_empty() => method_name,
+            Some(_) => {
+                return Err(
+                    "native method invocation failed: method name must be a non-empty scalar string"
+                        .to_string(),
+                );
+            }
+            None => {
+                return Err(format!(
+                    "native method invocation failed: method name must be a scalar-convertible string, got {}",
+                    method_value.type_name()
+                ));
+            }
+        };
         let access_context =
             unsafe { NativeCallableAccessContext::from_abi(access_context, caller_scope) }
                 .map_err(|message| {
@@ -10295,22 +10393,48 @@ unsafe fn native_method_lookup_invoke_result_with_access_context_and_free_receiv
                         "native method invocation failed",
                     )
                 })?;
-        let callable = table
-            .lookup_receiver_method(receiver_value, method_name, access_context)
-            .map_err(|message| {
-                message.replace(
-                    "native callable lookup failed",
-                    "native method invocation failed",
-                )
-            })?;
-        Ok(unsafe {
+        let callable =
+            match table.lookup_receiver_method(receiver_value, method_name.clone(), access_context)
+            {
+                Ok(callable) => {
+                    return Ok(unsafe {
+                        native_callable_value_invoke_table_result(
+                            &callable,
+                            Some(receiver_value),
+                            arguments,
+                            diagnostic,
+                        )
+                    });
+                }
+                Err(message) => {
+                    let original_error = message.replace(
+                        "native callable lookup failed",
+                        "native method invocation failed",
+                    );
+                    match table.lookup_receiver_magic_call(receiver_value, &original_error)? {
+                        Some(callable) => callable,
+                        None => return Err(original_error),
+                    }
+                }
+            };
+        let Some(arguments_ref) = (unsafe { arguments.as_ref() }) else {
+            return Err(
+                "native method invocation failed: arguments handle is null during magic __call dispatch"
+                    .to_string(),
+            );
+        };
+        let magic_arguments =
+            native_magic_call_arguments_from_method_and_arguments(&method_name, arguments_ref)?;
+        let magic_result = unsafe {
             native_callable_value_invoke_table_result(
                 &callable,
                 Some(receiver_value),
-                arguments,
+                magic_arguments,
                 diagnostic,
             )
-        })
+        };
+        unsafe { phpc_native_call_arguments_free(magic_arguments) };
+        Ok(magic_result)
     })();
     unsafe { phpc_native_value_free(receiver) };
     unsafe { phpc_native_value_free(method) };
@@ -33246,6 +33370,38 @@ mod tests {
         ))))
     }
 
+    unsafe extern "C" fn native_magic_call_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        let receiver = unsafe { phpc_native_call_frame_read_receiver(frame) };
+        let class_name = match unsafe { receiver.as_ref() } {
+            Some(Value::Object(object)) => object.class_name().to_string(),
+            other => panic!("expected bound object receiver, got {other:?}"),
+        };
+        unsafe { phpc_native_value_free(receiver) };
+        let name = unsafe { phpc_native_call_frame_read_value(frame, 0) };
+        let method_name = match unsafe { name.as_ref() } {
+            Some(Value::String(value)) => value.clone(),
+            other => panic!("expected magic method name string, got {other:?}"),
+        };
+        unsafe { phpc_native_value_free(name) };
+        let args = unsafe { phpc_native_call_frame_read_value(frame, 1) };
+        let (arg_count, first_arg) = match unsafe { args.as_ref() } {
+            Some(Value::Array(array)) => (
+                array.len(),
+                array
+                    .get_cloned(ArrayKey::Int(0))
+                    .map(|value| value.echo_string())
+                    .unwrap_or_else(|| "none".to_string()),
+            ),
+            other => panic!("expected magic argument array, got {other:?}"),
+        };
+        unsafe { phpc_native_value_free(args) };
+        phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::String(format!(
+            "{class_name}::__call({method_name},{arg_count},{first_arg})"
+        ))))
+    }
+
     unsafe extern "C" fn native_descriptor_sum_closure_callback(
         _call_depth: c_int,
         args: *const NativeClosureArgument,
@@ -34888,6 +35044,157 @@ mod tests {
             Some(&Value::String("PrivateInvoke:7".to_string()))
         );
         unsafe { phpc_native_value_free(value) };
+        unsafe { phpc_native_string_free(caller_scope) };
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn native_method_lookup_plus_invoke_dispatches_missing_and_inaccessible_methods_to_magic_call()
+    {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("MagicInvoke"),
+                "__call",
+                NativeCallableVisibility::Public,
+                native_magic_call_callback,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("MagicInvoke"),
+                "secret",
+                NativeCallableVisibility::Private,
+                native_receiver_method_callback,
+            );
+        }
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("MagicInvoke").unwrap();
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        reset_call_arguments_free_count_for_test();
+        let missing_receiver = NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+            classes.get(class_id).unwrap(),
+        )));
+        let missing_method = NativeValueHandle::from_value(Value::String("missing".to_string()));
+        let missing = unsafe {
+            phpc_native_method_invoke_result_with_access_context_diagnostic_and_free_receiver_method_arguments(
+                table,
+                missing_receiver,
+                missing_method,
+                NativeCallableAccessContextTag::ObjectReceiver,
+                NativeStringHandle::null(),
+                call_arguments_from_ints_for_test(&[3, 4]),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 2);
+        let missing_value = unsafe { phpc_native_call_result_take_value_and_free(missing) };
+        assert_eq!(
+            unsafe { missing_value.as_ref() },
+            Some(&Value::String(
+                "MagicInvoke::__call(missing,2,3)".to_string()
+            ))
+        );
+        unsafe { phpc_native_value_free(missing_value) };
+
+        reset_call_arguments_free_count_for_test();
+        let reference_receiver = NativeValueHandle::from_value(Value::Object(
+            PhpObject::from_class(classes.get(class_id).unwrap()),
+        ));
+        let reference_method = NativeValueHandle::from_value(Value::String("refmiss".to_string()));
+        let reference_arguments = phpc_native_call_arguments_new();
+        assert!(unsafe {
+            phpc_native_call_arguments_push_reference_and_free(
+                reference_arguments,
+                phpc_native_reference_from_value_and_free(NativeValueHandle::from_value(
+                    Value::String("ref".to_string()),
+                )),
+            )
+        });
+        let reference_magic = unsafe {
+            phpc_native_method_invoke_result_with_access_context_diagnostic_and_free_receiver_method_arguments(
+                table,
+                reference_receiver,
+                reference_method,
+                NativeCallableAccessContextTag::ObjectReceiver,
+                NativeStringHandle::null(),
+                reference_arguments,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 2);
+        let reference_magic_value =
+            unsafe { phpc_native_call_result_take_value_and_free(reference_magic) };
+        assert_eq!(
+            unsafe { reference_magic_value.as_ref() },
+            Some(&Value::String(
+                "MagicInvoke::__call(refmiss,1,ref)".to_string()
+            ))
+        );
+        unsafe { phpc_native_value_free(reference_magic_value) };
+
+        reset_call_arguments_free_count_for_test();
+        let inaccessible_receiver = NativeValueHandle::from_value(Value::Object(
+            PhpObject::from_class(classes.get(class_id).unwrap()),
+        ));
+        let inaccessible_method =
+            NativeValueHandle::from_value(Value::String("secret".to_string()));
+        let inaccessible = unsafe {
+            phpc_native_method_invoke_result_with_access_context_diagnostic_and_free_receiver_method_arguments(
+                table,
+                inaccessible_receiver,
+                inaccessible_method,
+                NativeCallableAccessContextTag::ObjectReceiver,
+                NativeStringHandle::null(),
+                call_arguments_from_ints_for_test(&[5]),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 2);
+        let inaccessible_value =
+            unsafe { phpc_native_call_result_take_value_and_free(inaccessible) };
+        assert_eq!(
+            unsafe { inaccessible_value.as_ref() },
+            Some(&Value::String(
+                "MagicInvoke::__call(secret,1,5)".to_string()
+            ))
+        );
+        unsafe { phpc_native_value_free(inaccessible_value) };
+
+        reset_call_arguments_free_count_for_test();
+        let class_context_receiver = NativeValueHandle::from_value(Value::Object(
+            PhpObject::from_class(classes.get(class_id).unwrap()),
+        ));
+        let class_context_method =
+            NativeValueHandle::from_value(Value::String("secret".to_string()));
+        let caller_scope = native_string_for_test("MagicInvoke");
+        let class_context = unsafe {
+            phpc_native_method_invoke_result_with_access_context_diagnostic_and_free_receiver_method_arguments(
+                table,
+                class_context_receiver,
+                class_context_method,
+                NativeCallableAccessContextTag::ClassContext,
+                caller_scope,
+                call_arguments_from_ints_for_test(&[7]),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        let class_context_value =
+            unsafe { phpc_native_call_result_take_value_and_free(class_context) };
+        assert_eq!(
+            unsafe { class_context_value.as_ref() },
+            Some(&Value::String("MagicInvoke:7".to_string()))
+        );
+        unsafe { phpc_native_value_free(class_context_value) };
         unsafe { phpc_native_string_free(caller_scope) };
         unsafe { phpc_native_callable_table_free(table) };
     }

@@ -27101,12 +27101,13 @@ impl CGenerator {
             return None;
         }
 
+        let mut saw_magic_call = false;
         for class_key in &object.declared_class_keys {
             if self
                 .declared_class_receiver_method_for_key(class_key, "__call")
                 .is_some()
             {
-                return None;
+                saw_magic_call = true;
             }
         }
 
@@ -27133,7 +27134,7 @@ impl CGenerator {
             }
         }
 
-        if methods.is_empty() || saw_runtime_lookup_only_name {
+        if saw_magic_call || methods.is_empty() || saw_runtime_lookup_only_name {
             return Some(native_method_static_runtime_signature_fallback_contract(
                 NativeMethodStaticSignatureFamily::ReceiverMethod,
             ));
