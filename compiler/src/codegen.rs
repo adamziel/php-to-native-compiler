@@ -21206,6 +21206,7 @@ impl CGenerator {
                 output.push_str("extern bool phpc_native_declare_user_class_parent_bytes(const uint8_t *class_ptr, size_t class_len, const uint8_t *parent_ptr, size_t parent_len);\n");
                 output.push_str("extern bool phpc_native_declare_user_class_method_bytes(const uint8_t *class_ptr, size_t class_len, const uint8_t *method_ptr, size_t method_len, uint8_t visibility, bool is_static);\n");
                 output.push_str("extern bool phpc_native_declare_user_class_property_bytes(const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, uint8_t visibility, bool is_static);\n");
+                output.push_str("extern bool phpc_native_declare_user_class_alias_bytes_with_diagnostic(const uint8_t *source_ptr, size_t source_len, const uint8_t *alias_ptr, size_t alias_len, bool autoload, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_class_metadata_exists {
                 output.push_str("extern bool phpc_native_value_class_metadata_exists_with_diagnostic(phpc_NativeValueHandle subject, phpc_NativeValueHandle member, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -30476,6 +30477,89 @@ impl CGenerator {
         }
     }
 
+    fn emit_class_alias_string_bytes_operand(
+        &mut self,
+        value: CValue,
+        prefix: &str,
+        span: Span,
+    ) -> CompileResult<(String, String)> {
+        match value {
+            CValue::String(value) => {
+                if value.is_empty() {
+                    return Ok(("NULL".to_string(), "0".to_string()));
+                }
+                let index = self.next_static_data;
+                self.next_static_data += 1;
+                let data = format!("{prefix}_{index}");
+                self.static_data.push(format!(
+                    "static const uint8_t {data}[] = {{{}}};",
+                    c_byte_array(value.as_bytes())
+                ));
+                Ok((data, value.len().to_string()))
+            }
+            CValue::StringExpr(value) => {
+                let Some(byte_len) = self.c_string_expr_byte_len_operand(&value) else {
+                    return Err(self.unsupported_direct_call(
+                        span,
+                        NativeCallBlocker::ArgumentEvaluationCleanup,
+                    ));
+                };
+                Ok((format!("(const uint8_t *)({value})"), byte_len))
+            }
+            _ => {
+                Err(self
+                    .unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup))
+            }
+        }
+    }
+
+    fn emit_class_alias_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
+        if !(2..=3).contains(&args.len()) {
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
+        }
+
+        let source = self.emit_expr(&args[0])?;
+        let alias = self.emit_expr(&args[1])?;
+        if !matches!(&source, CValue::String(_) | CValue::StringExpr(_))
+            || !matches!(&alias, CValue::String(_) | CValue::StringExpr(_))
+        {
+            return Err(
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            );
+        }
+
+        let autoload = if let Some(autoload) = args.get(2) {
+            let autoload = self.emit_expr(autoload)?;
+            Self::c_bool_expr(autoload).ok_or_else(|| {
+                self.unsupported_direct_call(span, NativeCallBlocker::ArgumentEvaluationCleanup)
+            })?
+        } else {
+            "true".to_string()
+        };
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_user_class_declaration = true;
+        let (source_ptr, source_len) =
+            self.emit_class_alias_string_bytes_operand(source, "phpc_class_alias_source", span)?;
+        let (alias_ptr, alias_len) =
+            self.emit_class_alias_string_bytes_operand(alias, "phpc_class_alias_name", span)?;
+        let diagnostic = self.next_native_name("class_alias_diagnostic");
+        let result = self.next_native_name("class_alias_result");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "bool {result} = phpc_native_declare_user_class_alias_bytes_with_diagnostic({source_ptr}, (size_t){source_len}, {alias_ptr}, (size_t){alias_len}, {autoload}, &{diagnostic});"
+        ));
+        let report_call = c_diagnostic_report_call(&diagnostic);
+        let error_exit = self.native_error_exit("");
+        self.body.push(format!(
+            "if ({diagnostic}.ptr != NULL) {{ {report_call} {diagnostic}.ptr = NULL; {error_exit} }}"
+        ));
+        Ok(CValue::BoolExpr(result))
+    }
+
     fn emit_statement(&mut self, stmt: &Stmt) -> CompileResult<()> {
         if !matches!(
             stmt,
@@ -31313,6 +31397,15 @@ impl CGenerator {
                     .materialize_native_output_buffer_operation_expr(operation, args, *span, "")?;
                 self.retain_native_value_cleanup_handle(&value.handle);
                 Ok(CValue::NativeValueHandle(value.handle))
+            }
+            Expr::Call { name, args, span }
+                if php_unqualified_name(name).eq_ignore_ascii_case("class_alias")
+                    && !(name.contains('\\')
+                        && self
+                            .user_functions
+                            .contains_key(&Self::user_function_key(name))) =>
+            {
+                self.emit_class_alias_call(args, *span)
             }
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("function_exists") => {
                 self.emit_function_exists_call(args, *span)

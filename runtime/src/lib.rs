@@ -29558,13 +29558,74 @@ fn native_class_metadata_lookup_key(bytes: &[u8]) -> Vec<u8> {
         .collect()
 }
 
+fn native_core_class_canonical_name_for_lookup_key(
+    classes: &PhpClassTable,
+    lookup_key: &[u8],
+) -> Option<Vec<u8>> {
+    classes
+        .classes()
+        .iter()
+        .find(|class| native_class_metadata_lookup_key(class.name().as_bytes()) == lookup_key)
+        .map(|class| class.name().as_bytes().to_vec())
+}
+
+fn native_user_class_canonical_name_for_lookup_key(lookup_key: &[u8]) -> Option<Vec<u8>> {
+    NATIVE_USER_CLASSES.with(|classes| {
+        classes
+            .borrow()
+            .iter()
+            .find(|class| class.lookup_key == lookup_key)
+            .map(|class| class.name.clone())
+    })
+}
+
+fn native_class_lookup_key_exists_without_alias(
+    classes: &PhpClassTable,
+    lookup_key: &[u8],
+) -> bool {
+    native_core_class_canonical_name_for_lookup_key(classes, lookup_key).is_some()
+        || native_user_class_canonical_name_for_lookup_key(lookup_key).is_some()
+}
+
+fn native_user_class_alias_target_lookup_key(alias_lookup_key: &[u8]) -> Option<Vec<u8>> {
+    NATIVE_USER_CLASS_ALIASES.with(|aliases| {
+        let aliases = aliases.borrow();
+        let mut current = alias_lookup_key.to_vec();
+        let mut visited = HashSet::new();
+        loop {
+            if !visited.insert(current.clone()) {
+                return None;
+            }
+            let Some(alias) = aliases.iter().find(|alias| alias.lookup_key == current) else {
+                return (current != alias_lookup_key).then_some(current);
+            };
+            current = alias.target_lookup_key.clone();
+        }
+    })
+}
+
+fn native_class_lookup_key_for_name(classes: &PhpClassTable, name: &[u8]) -> Option<Vec<u8>> {
+    let lookup_key = native_class_metadata_lookup_key(name);
+    if native_class_lookup_key_exists_without_alias(classes, &lookup_key) {
+        return Some(lookup_key);
+    }
+
+    let target_lookup_key = native_user_class_alias_target_lookup_key(&lookup_key)?;
+    native_class_lookup_key_exists_without_alias(classes, &target_lookup_key)
+        .then_some(target_lookup_key)
+}
+
 fn native_declare_user_class_bytes_result(bytes: &[u8]) -> bool {
     let lookup_key = native_class_metadata_lookup_key(bytes);
+    let core_classes = PhpClassTable::with_core_classes();
+    if native_class_lookup_key_exists_without_alias(&core_classes, &lookup_key)
+        || native_user_class_alias_target_lookup_key(&lookup_key).is_some()
+    {
+        return false;
+    }
+
     NATIVE_USER_CLASSES.with(|classes| {
         let mut classes = classes.borrow_mut();
-        if classes.iter().any(|class| class.lookup_key == lookup_key) {
-            return false;
-        }
         classes.push(NativeUserClassMetadata {
             name: bytes.to_vec(),
             lookup_key,
@@ -29653,6 +29714,81 @@ pub unsafe extern "C" fn phpc_native_declare_user_class_property_bytes(
     result.unwrap_or(false)
 }
 
+fn native_declare_user_class_alias_bytes_result(
+    source: &[u8],
+    alias: &[u8],
+    autoload: bool,
+) -> RuntimeResult<bool> {
+    let core_classes = PhpClassTable::with_core_classes();
+    let Some(source_lookup_key) = native_class_lookup_key_for_name(&core_classes, source) else {
+        if autoload {
+            return Err(RuntimeError::unsupported_call(
+                "class_alias()",
+                "generated-native autoload for missing source classes is not implemented",
+            ));
+        }
+        return Ok(false);
+    };
+
+    let alias_lookup_key = native_class_metadata_lookup_key(alias);
+    if native_class_lookup_key_exists_without_alias(&core_classes, &alias_lookup_key)
+        || native_user_class_alias_target_lookup_key(&alias_lookup_key).is_some()
+    {
+        return Err(RuntimeError::unsupported_call(
+            "class_alias()",
+            "alias name already resolves to a declared class or alias in generated-native metadata",
+        ));
+    }
+
+    NATIVE_USER_CLASS_ALIASES.with(|aliases| {
+        aliases.borrow_mut().push(NativeUserClassAliasMetadata {
+            lookup_key: alias_lookup_key,
+            target_lookup_key: source_lookup_key,
+        });
+    });
+    Ok(true)
+}
+
+/// # Safety
+///
+/// Source and alias pointers follow the same pointer/length rules as
+/// `phpc_native_declare_user_class_bytes`. The diagnostic slot is overwritten
+/// when generated-native alias registration hits an unsupported autoload or
+/// alias-conflict boundary.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_declare_user_class_alias_bytes_with_diagnostic(
+    source_ptr: *const u8,
+    source_len: usize,
+    alias_ptr: *const u8,
+    alias_len: usize,
+    autoload: bool,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let result: RuntimeResult<bool> = (|| unsafe {
+        let source = native_abi_bytes(source_ptr, source_len).ok_or_else(|| {
+            RuntimeError::invalid_string_conversion(
+                "native class alias declaration failed: invalid source name bytes",
+            )
+        })?;
+        let alias = native_abi_bytes(alias_ptr, alias_len).ok_or_else(|| {
+            RuntimeError::invalid_string_conversion(
+                "native class alias declaration failed: invalid alias name bytes",
+            )
+        })?;
+        native_declare_user_class_alias_bytes_result(source, alias, autoload)
+    })();
+
+    match result {
+        Ok(aliased) => aliased,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
 fn native_declare_user_class_parent_bytes_result(class: &[u8], parent: &[u8]) -> bool {
     let class_key = native_class_metadata_lookup_key(class);
     NATIVE_USER_CLASSES.with(|classes| {
@@ -29739,12 +29875,9 @@ fn native_declare_user_class_property_bytes_result(
 
 fn native_user_class_canonical_name_bytes(name: &[u8]) -> Option<Vec<u8>> {
     let lookup_key = native_class_metadata_lookup_key(name);
-    NATIVE_USER_CLASSES.with(|classes| {
-        classes
-            .borrow()
-            .iter()
-            .find(|class| class.lookup_key == lookup_key)
-            .map(|class| class.name.clone())
+    native_user_class_canonical_name_for_lookup_key(&lookup_key).or_else(|| {
+        let target_lookup_key = native_user_class_alias_target_lookup_key(&lookup_key)?;
+        native_user_class_canonical_name_for_lookup_key(&target_lookup_key)
     })
 }
 
@@ -29763,6 +29896,7 @@ fn native_user_class_metadata_bytes(class_name: &[u8]) -> Option<NativeUserClass
 #[cfg(test)]
 fn native_user_classes_reset_for_test() {
     NATIVE_USER_CLASSES.with(|classes| classes.borrow_mut().clear());
+    NATIVE_USER_CLASS_ALIASES.with(|aliases| aliases.borrow_mut().clear());
 }
 
 fn native_core_class_canonical_name_bytes(classes: &PhpClassTable, name: &[u8]) -> Option<Vec<u8>> {
@@ -29772,8 +29906,9 @@ fn native_core_class_canonical_name_bytes(classes: &PhpClassTable, name: &[u8]) 
 }
 
 fn native_class_canonical_name_bytes(classes: &PhpClassTable, name: &[u8]) -> Option<Vec<u8>> {
-    native_core_class_canonical_name_bytes(classes, name)
-        .or_else(|| native_user_class_canonical_name_bytes(name))
+    let lookup_key = native_class_lookup_key_for_name(classes, name)?;
+    native_core_class_canonical_name_for_lookup_key(classes, &lookup_key)
+        .or_else(|| native_user_class_canonical_name_for_lookup_key(&lookup_key))
 }
 
 fn native_user_class_names_bytes() -> Vec<Vec<u8>> {
@@ -30067,7 +30202,7 @@ fn native_user_class_has_member_bytes(
     operation: NativeClassMetadataOperation,
 ) -> bool {
     let classes = PhpClassTable::with_core_classes();
-    let mut current = native_user_class_canonical_name_bytes(class_name);
+    let mut current = native_class_canonical_name_bytes(&classes, class_name);
     let member_key = native_class_metadata_lookup_key(member);
     let mut visited = HashSet::new();
     while let Some(class_name) = current {
@@ -30128,8 +30263,7 @@ unsafe fn native_value_class_metadata_exists(
                     "class name",
                 )
             }?;
-            Ok(classes.lookup_class_bytes(&class_name).is_some()
-                || native_user_class_canonical_name_bytes(&class_name).is_some())
+            Ok(native_class_canonical_name_bytes(&classes, &class_name).is_some())
         }
         tag if tag == NativeClassMetadataOperation::MethodExists as u8 => {
             let class_name = unsafe {
@@ -31907,9 +32041,16 @@ struct NativeUserClassPropertyMetadata {
     visibility: Visibility,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeUserClassAliasMetadata {
+    lookup_key: Vec<u8>,
+    target_lookup_key: Vec<u8>,
+}
+
 thread_local! {
     static NATIVE_OUTPUT_BUFFERS: RefCell<Vec<NativeOutputBuffer>> = RefCell::new(Vec::new());
     static NATIVE_USER_CLASSES: RefCell<Vec<NativeUserClassMetadata>> = RefCell::new(Vec::new());
+    static NATIVE_USER_CLASS_ALIASES: RefCell<Vec<NativeUserClassAliasMetadata>> = RefCell::new(Vec::new());
 }
 
 #[cfg(test)]
@@ -35991,6 +36132,207 @@ mod tests {
         unsafe { phpc_native_value_free(property) };
         unsafe { phpc_native_value_free(method) };
         unsafe { phpc_native_value_free(child) };
+        native_user_classes_reset_for_test();
+    }
+
+    #[test]
+    fn native_user_class_alias_metadata_resolves_normalized_class_and_members() {
+        native_user_classes_reset_for_test();
+        assert!(native_declare_user_class_bytes_result(b"AliasBase"));
+        assert!(native_declare_user_class_method_bytes_result(
+            b"AliasBase",
+            b"BaseRun",
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+            false,
+        )
+        .expect("parent method metadata should declare"));
+        assert!(native_declare_user_class_property_bytes_result(
+            b"AliasBase",
+            b"baseSlot",
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+        )
+        .expect("parent property metadata should declare"));
+        assert!(native_declare_user_class_bytes_result(b"AliasChild"));
+        assert!(native_declare_user_class_parent_bytes_result(
+            b"AliasChild",
+            b"AliasBase",
+        ));
+        assert!(native_declare_user_class_method_bytes_result(
+            b"AliasChild",
+            b"run",
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+            false,
+        )
+        .expect("child method metadata should declare"));
+        assert!(native_declare_user_class_property_bytes_result(
+            b"AliasChild",
+            b"childSlot",
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+        )
+        .expect("child property metadata should declare"));
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        assert!(unsafe {
+            phpc_native_declare_user_class_alias_bytes_with_diagnostic(
+                b"aliaschild".as_ptr(),
+                b"aliaschild".len(),
+                b"RuntimeAlias".as_ptr(),
+                b"RuntimeAlias".len(),
+                false,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let alias = NativeValueHandle::from_value(Value::String("runtimealias".to_string()));
+        assert!(unsafe {
+            phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic(
+                alias,
+                NativeValueHandle::null(),
+                NativeClassMetadataOperation::ClassExists as u8,
+                true,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let parent = unsafe {
+            phpc_native_value_class_metadata_value_with_diagnostic(
+                alias,
+                NativeClassMetadataValueOperation::ParentClass as u8,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { parent.as_ref() },
+            Some(&Value::String("AliasBase".to_string()))
+        );
+
+        let inherited_method = NativeValueHandle::from_value(Value::String("baserun".to_string()));
+        assert!(unsafe {
+            phpc_native_value_class_metadata_exists_with_diagnostic(
+                alias,
+                inherited_method,
+                NativeClassMetadataOperation::MethodExists as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let inherited_property =
+            NativeValueHandle::from_value(Value::String("baseSlot".to_string()));
+        assert!(unsafe {
+            phpc_native_value_class_metadata_exists_with_diagnostic(
+                alias,
+                inherited_property,
+                NativeClassMetadataOperation::PropertyExists as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let child_property = NativeValueHandle::from_value(Value::String("childSlot".to_string()));
+        assert!(unsafe {
+            phpc_native_value_class_metadata_exists_with_diagnostic(
+                alias,
+                child_property,
+                NativeClassMetadataOperation::PropertyExists as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        unsafe { phpc_native_value_free(child_property) };
+        unsafe { phpc_native_value_free(inherited_property) };
+        unsafe { phpc_native_value_free(inherited_method) };
+        unsafe { phpc_native_value_free(parent) };
+        unsafe { phpc_native_value_free(alias) };
+        native_user_classes_reset_for_test();
+    }
+
+    #[test]
+    fn native_user_class_alias_metadata_reports_conflict_and_autoload_boundaries() {
+        native_user_classes_reset_for_test();
+        assert!(native_declare_user_class_bytes_result(b"AliasSource"));
+        assert!(native_declare_user_class_bytes_result(b"AliasConflict"));
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        assert!(!unsafe {
+            phpc_native_declare_user_class_alias_bytes_with_diagnostic(
+                b"MissingSource".as_ptr(),
+                b"MissingSource".len(),
+                b"NeverRegistered".as_ptr(),
+                b"NeverRegistered".len(),
+                false,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        assert!(!unsafe {
+            phpc_native_declare_user_class_alias_bytes_with_diagnostic(
+                b"MissingSource".as_ptr(),
+                b"MissingSource".len(),
+                b"AutoloadAlias".as_ptr(),
+                b"AutoloadAlias".len(),
+                true,
+                &mut diagnostic,
+            )
+        });
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "unsupported call class_alias(): generated-native autoload for missing source classes is not implemented"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        diagnostic = NativeDiagnosticHandle::null();
+
+        assert!(unsafe {
+            phpc_native_declare_user_class_alias_bytes_with_diagnostic(
+                b"AliasSource".as_ptr(),
+                b"AliasSource".len(),
+                b"AliasOk".as_ptr(),
+                b"AliasOk".len(),
+                false,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        assert!(!native_declare_user_class_bytes_result(b"aliasok"));
+
+        assert!(!unsafe {
+            phpc_native_declare_user_class_alias_bytes_with_diagnostic(
+                b"AliasSource".as_ptr(),
+                b"AliasSource".len(),
+                b"ALIASOK".as_ptr(),
+                b"ALIASOK".len(),
+                false,
+                &mut diagnostic,
+            )
+        });
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "unsupported call class_alias(): alias name already resolves to a declared class or alias in generated-native metadata"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        diagnostic = NativeDiagnosticHandle::null();
+
+        assert!(!unsafe {
+            phpc_native_declare_user_class_alias_bytes_with_diagnostic(
+                b"AliasSource".as_ptr(),
+                b"AliasSource".len(),
+                b"aliasconflict".as_ptr(),
+                b"aliasconflict".len(),
+                false,
+                &mut diagnostic,
+            )
+        });
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "unsupported call class_alias(): alias name already resolves to a declared class or alias in generated-native metadata"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
         native_user_classes_reset_for_test();
     }
 

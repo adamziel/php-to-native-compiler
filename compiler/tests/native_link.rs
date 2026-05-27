@@ -3063,6 +3063,96 @@ fn emit_exe_links_and_runs_user_class_metadata_registry_program() {
 }
 
 #[test]
+fn native_executable_c_source_lowers_class_alias_metadata_boundary() {
+    let program = parse(concat!(
+        "<?php\n",
+        "class AliasSourceBase { public $baseSlot; public function baseRun() { } }\n",
+        "class AliasSourceChild extends AliasSourceBase { public $childSlot; public function run() { } }\n",
+        "echo class_alias(\"AliasSourceChild\", \"AliasRuntime\", false) ? \"1\" : \"0\";\n",
+        "echo class_exists(\"aliasruntime\", false) ? \"1\" : \"0\";\n",
+        "echo method_exists(\"AliasRuntime\", \"baserun\") ? \"1\" : \"0\";\n",
+        "echo property_exists(\"AliasRuntime\", \"baseSlot\") ? \"1\" : \"0\";\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_declare_user_class_alias_bytes_with_diagnostic")
+            && source.contains("phpc_native_value_class_metadata_exists_with_diagnostic"),
+        "generated C should register class aliases through the shared metadata boundary:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_class_alias_metadata_boundary_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class AliasSourceBase { public $baseSlot; public function baseRun() { } }\n",
+        "class AliasSourceChild extends AliasSourceBase { public $childSlot; public function run() { } }\n",
+        "echo class_alias(\"AliasSourceChild\", \"AliasRuntime\", false) ? \"alias\" : \"alias-fail\";\n",
+        "echo \"|\";\n",
+        "echo class_exists(\"aliasruntime\", false) ? \"exists\" : \"missing\";\n",
+        "echo \"|\";\n",
+        "echo method_exists(\"AliasRuntime\", \"baserun\") ? \"method\" : \"missing-method\";\n",
+        "echo \"|\";\n",
+        "echo property_exists(\"AliasRuntime\", \"baseSlot\") ? \"property\" : \"missing-property\";\n",
+        "echo \"\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("class_alias_metadata_boundary", source);
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run class alias metadata boundary executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "alias|exists|method|property\n"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_class_alias_missing_default_reports_autoload_boundary() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = "<?php\nclass AliasLoaded {}\necho class_alias(\"MissingAliasSource\", \"AliasMissing\");\n";
+    let (source_path, output_path) =
+        compile_native_link_fixture("class_alias_missing_autoload_boundary", source);
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run class_alias autoload-boundary executable");
+    assert!(
+        !run.status.success(),
+        "class_alias missing source should report autoload boundary"
+    );
+    assert!(
+        String::from_utf8_lossy(&run.stderr).contains(
+            "class_alias(): generated-native autoload for missing source classes is not implemented"
+        ),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn emit_exe_links_and_runs_user_class_value_metadata_registry_program() {
     if !has_cc() {
         return;
