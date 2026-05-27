@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 16:18 CEST
+Updated: 2026-05-27 16:25 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,7 +19,18 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **90%** `[##################--]`
 
-Latest accounted source capability: `1d844d6d` registers generated declared
+Latest accounted source capability: `0bb20ff7` routes selected
+descriptor-backed variadic closure spread calls through a finalized variadic
+slot in the closure-frame ABI. Materialized call-argument finalization now
+marks handles that contain a packed variadic collection; descriptor closure
+invocation forwards that final slot as the closure variadic argument instead
+of double-packing it, while ordinary non-finalized closure calls keep their
+existing surplus-argument packing path. Typed variadic descriptor closures
+remain blocked until finalized variadic collection entry coercion exists
+generally, and by-reference unpack, magic fallback, and unknown-signature
+callable spread remain outside this descriptor-only surface.
+
+Recent source commit `1d844d6d` registers generated declared
 interface value metadata for selected generated-C `get_declared_interfaces()`
 and `class_implements()` execution. Declared interface order and resolved
 class-interface implementation metadata now feed compact runtime registries,
