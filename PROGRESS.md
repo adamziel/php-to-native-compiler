@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 13:48 CEST
+Updated: 2026-05-27 14:03 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,9 +19,21 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest accounted source capability: `e9ed9af4` routes selected generated-C
-computed static-property names through the shared static-property lvalue and
-runtime property-name normalization boundary. Supported `Class::${$name}`,
+Latest accounted source capability: `7ea73c02` discovers bounded literal
+same-repository include/require class metadata for `phpc compile --emit-exe`.
+Declaration-only included files reached through literal strings or `__DIR__`
+concatenation are expanded before executable top-level statements, so generated
+C can reuse the existing class, method, static-property, class-constant,
+callable-table, class-alias/case, and runtime metadata boundaries for included
+classes. Dynamic paths, missing/out-of-repository files, cyclic graphs,
+side-effecting or autoload-registering include files, and late includes stay
+behind explicit diagnostics instead of one-file fixture admission. Exact include
+execution/return values, include-once runtime de-duplication, traits/interfaces
+from included files, arbitrary autoload discovery, LLVM/ASM parity, and exact
+PHP include timing remain blocked. Recent source commit `e9ed9af4` routes
+selected generated-C computed static-property names through the shared
+static-property lvalue and runtime property-name normalization boundary.
+Supported `Class::${$name}`,
 `$object::${$name}`, `self::${$name}`, `parent::${$name}`, and declared
 method-frame `static::${$name}` paths now normalize dynamic names through
 `phpc_native_static_property_name_from_value_with_diagnostic_and_free`, preserve
