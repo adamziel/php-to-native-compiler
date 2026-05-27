@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 21:12 CEST
+Updated: 2026-05-27 21:16 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,7 +19,29 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `0b6cafd2` exposes the resolved
+Latest accounted source capability: `02aaa312` tracks live native
+output-buffer handler status flags instead of reporting bounded constants.
+Runtime output buffers now store handler type and requested flags on each live
+stack entry, mark started/processed state as writes, clean, flush, and chunk
+thresholds pass through the shared buffer machinery, and generated C/LLVM/ASM
+output-buffer builtins route through the native runtime ABI instead of the old
+lowering rejection. Full PHP parity for shutdown/unwind order, SAPI
+interaction, broader binary strings, exact diagnostics, and non-native backend
+behavior remains blocked.
+
+Recent source commit `02aaa312` advances native output-buffer status flags
+without adding exact flag snapshots, fixture-shaped status arrays, or
+generated-C constant lowering. Handler status now preserves requested
+high/mutability bits while replacing the low type nibble from the runtime
+handler kind, and runtime operations update `STARTED|PROCESSED` state from live
+buffer transitions. Focused gates covered runtime flag/type relationships,
+generated-C source proof that status calls use the shared runtime stack ABI,
+linked executable flag/metadata programs, the full output-buffer builtin suite,
+compile checking, formatting, and diff checks. Primary gate log:
+`state/logs/phpc-primary-output-buffer-flags-3c1c8624-20260527.gates.log`
+sha256 `c63849f3b4afd67c6ed7c052b662bc125384e7f5c06f0a8d42554408c21a32f3`.
+
+Recent source commit `0b6cafd2` exposes the resolved
 filesystem source path when runtime include/require registry misses hit an
 existing PHP source. The runtime now returns `SOURCE_LOAD_REQUIRED` with an
 owned `resolved_path` byte buffer, generated C frees that buffer on no-match
