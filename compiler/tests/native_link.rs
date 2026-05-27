@@ -5044,6 +5044,75 @@ fn native_executable_c_source_routes_static_property_unset_through_shared_lvalue
 }
 
 #[test]
+fn native_executable_c_source_routes_class_constants_through_shared_class_metadata() {
+    let program = parse(
+        "<?php\nclass RootConst { public const LABEL = \"root\"; }\nclass ChildConst extends RootConst { public const LOCAL = \"child\"; public static function show() { return self::LOCAL . \":\" . parent::LABEL . \":\" . static::LABEL . \":\" . static::class; } }\necho RootConst::LABEL, \"|\", ChildConst::show();\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    for required in [
+        "phpc_NativeClassConstantTableHandle",
+        "phpc_native_class_constant_table_new",
+        "phpc_native_class_constant_declare_class_bytes",
+        "phpc_native_class_constant_declare_class_parent_bytes",
+        "phpc_native_class_constant_declare_constant_bytes_and_free",
+        "phpc_native_class_constant_read_class_with_diagnostic",
+        "phpc_native_class_constant_read_relative_with_diagnostic",
+        "phpc_native_class_constant_class_name_relative_with_diagnostic",
+        "PHPC_NATIVE_CLASS_CONSTANT_RECEIVER_SELF",
+        "PHPC_NATIVE_CLASS_CONSTANT_RECEIVER_PARENT",
+        "PHPC_NATIVE_CLASS_CONSTANT_RECEIVER_LATE_STATIC",
+    ] {
+        assert!(source.contains(required), "missing {required}:\n{source}");
+    }
+    assert!(
+        body.matches("phpc_native_class_constant_read_class_with_diagnostic")
+            .count()
+            >= 1
+            && source
+                .matches("phpc_native_class_constant_read_relative_with_diagnostic")
+                .count()
+                >= 3,
+        "literal, self, parent, and static constants should share class-constant metadata reads:\n{source}"
+    );
+    assert!(
+        !source.contains("static-member lowering rejects")
+            && !source.contains("class-name constant lowering rejects"),
+        "supported class constants should not fall through old blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_runs_class_constants_across_literal_relative_static_and_alias_receivers() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = "<?php\nclass RootConstRun { public const LABEL = \"root\"; }\nclass ChildConstRun extends RootConstRun { public const LABEL = \"child\"; public static function show() { return self::LABEL . \":\" . parent::LABEL . \":\" . static::LABEL . \":\" . static::class; } }\nclass_alias(\"RootConstRun\", \"AliasConstRun\");\necho RootConstRun::LABEL, \"|\", AliasConstRun::LABEL, \"|\", ChildConstRun::show();\n";
+    let (source_path, output_path) =
+        compile_native_link_fixture("class_constants_metadata", source);
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run class constants executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "root|root|child:root:child:ChildConstRun"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn native_executable_c_source_keeps_unsupported_static_property_dynamic_shapes_blocked() {
     for (label, source) in [
         (

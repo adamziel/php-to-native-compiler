@@ -15961,6 +15961,7 @@ struct CGenerator {
     uses_native_user_class_declaration: bool,
     uses_native_class_metadata_exists: bool,
     uses_native_class_metadata_value: bool,
+    uses_native_class_constant_helpers: bool,
     uses_native_object_property_helpers: bool,
     uses_native_static_property_helpers: bool,
     uses_native_conversion_source_helpers: bool,
@@ -15980,6 +15981,8 @@ struct CGenerator {
     native_request_state_owned: bool,
     native_static_property_storage_handle: Option<String>,
     native_static_property_storage_owned: bool,
+    native_class_constant_table_handle: Option<String>,
+    native_class_constant_table_owned: bool,
     native_globals_symbol_table_handle: Option<String>,
     native_globals_symbol_table_owned: bool,
     native_callable_table_handle: Option<String>,
@@ -16128,6 +16131,8 @@ struct CGotoStateSnapshot {
     native_request_state_owned: bool,
     native_static_property_storage_handle: Option<String>,
     native_static_property_storage_owned: bool,
+    native_class_constant_table_handle: Option<String>,
+    native_class_constant_table_owned: bool,
     native_globals_symbol_table_handle: Option<String>,
     native_globals_symbol_table_owned: bool,
     native_callable_table_handle: Option<String>,
@@ -16185,6 +16190,7 @@ struct CDeclaredClass {
     allocation_metadata: CDeclaredClassAllocationMetadata,
     own_properties: Vec<CDeclaredClassProperty>,
     own_static_properties: Vec<CDeclaredClassProperty>,
+    own_constants: Vec<CDeclaredClassConstant>,
     properties: Vec<CDeclaredClassProperty>,
     constructor: Option<CDeclaredClassMethod>,
     methods: Vec<CDeclaredClassMethod>,
@@ -16416,6 +16422,13 @@ struct CResolvedStaticProperty {
 }
 
 #[derive(Debug, Clone)]
+struct CDeclaredClassConstant {
+    name: String,
+    visibility: ClassVisibility,
+    value: Expr,
+}
+
+#[derive(Debug, Clone)]
 enum CStaticPropertyLvalueReceiver {
     Class {
         class_bytes: String,
@@ -16458,6 +16471,14 @@ impl CRelativeStaticPropertyReceiver {
             Self::SelfClass => "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_SELF",
             Self::ParentClass => "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_PARENT",
             Self::LateStaticClass => "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_LATE_STATIC",
+        }
+    }
+
+    fn class_constant_abi_tag(self) -> &'static str {
+        match self {
+            Self::SelfClass => "PHPC_NATIVE_CLASS_CONSTANT_RECEIVER_SELF",
+            Self::ParentClass => "PHPC_NATIVE_CLASS_CONSTANT_RECEIVER_PARENT",
+            Self::LateStaticClass => "PHPC_NATIVE_CLASS_CONSTANT_RECEIVER_LATE_STATIC",
         }
     }
 }
@@ -18683,6 +18704,8 @@ impl CGenerator {
                 == other.native_static_property_storage_handle
             && self.native_static_property_storage_owned
                 == other.native_static_property_storage_owned
+            && self.native_class_constant_table_handle == other.native_class_constant_table_handle
+            && self.native_class_constant_table_owned == other.native_class_constant_table_owned
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
             && self.native_globals_symbol_table_owned == other.native_globals_symbol_table_owned
     }
@@ -18713,6 +18736,8 @@ impl CGenerator {
                 .native_static_property_storage_handle
                 .clone(),
             native_static_property_storage_owned: self.native_static_property_storage_owned,
+            native_class_constant_table_handle: self.native_class_constant_table_handle.clone(),
+            native_class_constant_table_owned: self.native_class_constant_table_owned,
             native_globals_symbol_table_handle: self.native_globals_symbol_table_handle.clone(),
             native_globals_symbol_table_owned: self.native_globals_symbol_table_owned,
             native_callable_table_handle: self.native_callable_table_handle.clone(),
@@ -18731,6 +18756,8 @@ impl CGenerator {
                 == other.native_static_property_storage_handle
             && self.native_static_property_storage_owned
                 == other.native_static_property_storage_owned
+            && self.native_class_constant_table_handle == other.native_class_constant_table_handle
+            && self.native_class_constant_table_owned == other.native_class_constant_table_owned
             && self.native_globals_symbol_table_handle == other.native_globals_symbol_table_handle
             && self.native_globals_symbol_table_owned == other.native_globals_symbol_table_owned
             && self.native_callable_table_handle == other.native_callable_table_handle
@@ -19279,6 +19306,7 @@ impl CGenerator {
         self.uses_native_user_class_declaration |= branch.uses_native_user_class_declaration;
         self.uses_native_class_metadata_exists |= branch.uses_native_class_metadata_exists;
         self.uses_native_class_metadata_value |= branch.uses_native_class_metadata_value;
+        self.uses_native_class_constant_helpers |= branch.uses_native_class_constant_helpers;
         self.uses_native_object_property_helpers |= branch.uses_native_object_property_helpers;
         self.uses_native_static_property_helpers |= branch.uses_native_static_property_helpers;
         self.uses_native_conversion_source_helpers |= branch.uses_native_conversion_source_helpers;
@@ -19325,6 +19353,7 @@ impl CGenerator {
             || self.uses_native_user_class_declaration
             || self.uses_native_class_metadata_exists
             || self.uses_native_class_metadata_value
+            || self.uses_native_class_constant_helpers
             || self.uses_native_object_property_helpers
             || self.uses_native_static_property_helpers
             || self.uses_native_conversion_source_helpers
@@ -19542,6 +19571,8 @@ impl CGenerator {
         let mut seen_properties = HashSet::new();
         let mut own_properties = Vec::new();
         let mut own_static_properties = Vec::new();
+        let mut seen_constants = HashSet::new();
+        let mut own_constants = Vec::new();
         let mut constructor = None;
         let mut allocation_metadata = CDeclaredClassAllocationMetadata::cleanup_safe();
         let mut seen_methods = HashSet::new();
@@ -19646,8 +19677,19 @@ impl CGenerator {
                         });
                     }
                 }
-                ClassMember::Constant(_) => {
-                    return Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION));
+                ClassMember::Constant(constant) => {
+                    if !Self::declared_class_constant_value_is_supported(&constant.value)
+                        || !seen_constants.insert(constant.name.clone())
+                    {
+                        return Err(
+                            self.unsupported(constant.span, ASSEMBLY_OBJECT_CLASS_REJECTION)
+                        );
+                    }
+                    own_constants.push(CDeclaredClassConstant {
+                        name: constant.name.clone(),
+                        visibility: constant.visibility,
+                        value: constant.value.clone(),
+                    });
                 }
             }
         }
@@ -19667,6 +19709,7 @@ impl CGenerator {
             properties: own_properties.clone(),
             own_properties,
             own_static_properties,
+            own_constants,
             constructor,
             methods,
         })
@@ -19889,6 +19932,10 @@ impl CGenerator {
             Expr::Unary { expr, .. } => Self::declared_class_property_default_is_supported(expr),
             _ => false,
         }
+    }
+
+    fn declared_class_constant_value_is_supported(expr: &Expr) -> bool {
+        Self::declared_class_property_default_is_supported(expr)
     }
 
     fn native_callable_visibility_tag(visibility: ClassVisibility) -> &'static str {
@@ -21337,6 +21384,7 @@ impl CGenerator {
                 || self.uses_native_user_class_declaration
                 || self.uses_native_class_metadata_exists
                 || self.uses_native_class_metadata_value
+                || self.uses_native_class_constant_helpers
                 || self.uses_native_static_property_helpers
             {
                 output.push_str("#include <stdbool.h>\n");
@@ -21433,6 +21481,11 @@ impl CGenerator {
             if self.uses_native_static_property_helpers {
                 output.push_str(
                     "typedef struct { void *ptr; } phpc_NativeStaticPropertyStorageHandle;\n",
+                );
+            }
+            if self.uses_native_class_constant_helpers {
+                output.push_str(
+                    "typedef struct { void *ptr; } phpc_NativeClassConstantTableHandle;\n",
                 );
             }
             if self.uses_native_symbol_table_helpers {
@@ -21971,6 +22024,19 @@ impl CGenerator {
                 output.push_str("extern bool phpc_native_static_property_unset_relative_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, uint8_t receiver_tag, const uint8_t *current_class_ptr, size_t current_class_len, const uint8_t *called_class_ptr, size_t called_class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern void phpc_native_static_property_storage_free(phpc_NativeStaticPropertyStorageHandle storage);\n");
             }
+            if self.uses_native_class_constant_helpers {
+                output.push_str("#define PHPC_NATIVE_CLASS_CONSTANT_RECEIVER_SELF 1\n");
+                output.push_str("#define PHPC_NATIVE_CLASS_CONSTANT_RECEIVER_PARENT 2\n");
+                output.push_str("#define PHPC_NATIVE_CLASS_CONSTANT_RECEIVER_LATE_STATIC 3\n");
+                output.push_str("extern phpc_NativeClassConstantTableHandle phpc_native_class_constant_table_new(void);\n");
+                output.push_str("extern bool phpc_native_class_constant_declare_class_bytes(phpc_NativeClassConstantTableHandle table, const uint8_t *class_ptr, size_t class_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_class_constant_declare_class_parent_bytes(phpc_NativeClassConstantTableHandle table, const uint8_t *class_ptr, size_t class_len, const uint8_t *parent_ptr, size_t parent_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_class_constant_declare_constant_bytes_and_free(phpc_NativeClassConstantTableHandle table, const uint8_t *class_ptr, size_t class_len, const uint8_t *constant_ptr, size_t constant_len, uint8_t visibility, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_class_constant_read_class_with_diagnostic(phpc_NativeClassConstantTableHandle table, const uint8_t *class_ptr, size_t class_len, const uint8_t *constant_ptr, size_t constant_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_class_constant_read_relative_with_diagnostic(phpc_NativeClassConstantTableHandle table, uint8_t receiver_tag, const uint8_t *current_class_ptr, size_t current_class_len, const uint8_t *called_class_ptr, size_t called_class_len, const uint8_t *constant_ptr, size_t constant_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeStringHandle phpc_native_class_constant_class_name_relative_with_diagnostic(phpc_NativeClassConstantTableHandle table, uint8_t receiver_tag, const uint8_t *current_class_ptr, size_t current_class_len, const uint8_t *called_class_ptr, size_t called_class_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern void phpc_native_class_constant_table_free(phpc_NativeClassConstantTableHandle table);\n");
+            }
             if self.uses_native_object_instanceof_helpers {
                 output.push_str("extern _Bool phpc_native_value_instanceof_class_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *class_name, size_t class_name_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
@@ -22121,6 +22187,11 @@ impl CGenerator {
                 "static phpc_NativeStaticPropertyStorageHandle phpc_user_static_properties = {0};\n\n",
             );
         }
+        if self.uses_native_class_constant_helpers {
+            output.push_str(
+                "static phpc_NativeClassConstantTableHandle phpc_user_class_constants = {0};\n\n",
+            );
+        }
         if !self.user_function_order.is_empty() || self.has_declared_class_methods() {
             for key in &self.user_function_order {
                 let function = self
@@ -22228,6 +22299,10 @@ impl CGenerator {
             output.push_str(
                 "  phpc_native_static_property_storage_free(phpc_user_static_properties);\n",
             );
+        }
+        if self.uses_native_class_constant_helpers {
+            output
+                .push_str("  phpc_native_class_constant_table_free(phpc_user_class_constants);\n");
         }
         if self.native_globals_symbol_table_owned {
             if let Some(handle) = &self.native_globals_symbol_table_handle {
@@ -33193,6 +33268,244 @@ impl CGenerator {
         Some(receiver.name.clone())
     }
 
+    fn ensure_native_class_constant_table(
+        &mut self,
+        failure_cleanup: &str,
+        span: Span,
+    ) -> CompileResult<String> {
+        if let Some(handle) = &self.native_class_constant_table_handle {
+            return Ok(handle.clone());
+        }
+
+        self.uses_native_class_constant_helpers = true;
+        self.uses_native_string_helpers = true;
+        let handle = "phpc_user_class_constants".to_string();
+        self.native_class_constant_table_handle = Some(handle.clone());
+        self.body.push(format!("if ({handle}.ptr == NULL) {{"));
+        self.body.push(format!(
+            "  {handle} = phpc_native_class_constant_table_new();"
+        ));
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("  if ({handle}.ptr == NULL) {{ {error_exit} }}"));
+        self.emit_native_class_constant_metadata(&handle, failure_cleanup, span)?;
+        self.body.push("}".to_string());
+        Ok(handle)
+    }
+
+    fn emit_native_class_constant_metadata(
+        &mut self,
+        handle: &str,
+        failure_cleanup: &str,
+        _span: Span,
+    ) -> CompileResult<()> {
+        let classes = self
+            .declared_class_order
+            .iter()
+            .map(|key| {
+                self.declared_classes
+                    .get(key)
+                    .expect("declared class order key has metadata")
+                    .clone()
+            })
+            .collect::<Vec<_>>();
+
+        for class in &classes {
+            let (class_bytes, class_len) =
+                self.emit_call_type_static_bytes("class_constant_class_name_bytes", &class.name);
+            let diagnostic = self.next_native_name("class_constant_decl_diagnostic");
+            let ok = self.next_native_name("class_constant_decl_ok");
+            self.body
+                .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+            self.body.push(format!(
+                "bool {ok} = phpc_native_class_constant_declare_class_bytes({handle}, {class_bytes}, {class_len}, &{diagnostic});"
+            ));
+            self.emit_report_native_diagnostic(&diagnostic);
+            let error_exit = self.native_error_exit(failure_cleanup);
+            self.body.push(format!("if (!{ok}) {{ {error_exit} }}"));
+        }
+
+        for class in &classes {
+            if let Some(parent_key) = &class.parent_key {
+                let parent_name = self
+                    .declared_classes
+                    .get(parent_key)
+                    .expect("declared parent class key has metadata")
+                    .name
+                    .clone();
+                let (class_bytes, class_len) = self
+                    .emit_call_type_static_bytes("class_constant_class_name_bytes", &class.name);
+                let (parent_bytes, parent_len) = self
+                    .emit_call_type_static_bytes("class_constant_parent_name_bytes", &parent_name);
+                let diagnostic = self.next_native_name("class_constant_parent_diagnostic");
+                let ok = self.next_native_name("class_constant_parent_ok");
+                self.body
+                    .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+                self.body.push(format!(
+                    "bool {ok} = phpc_native_class_constant_declare_class_parent_bytes({handle}, {class_bytes}, {class_len}, {parent_bytes}, {parent_len}, &{diagnostic});"
+                ));
+                self.emit_report_native_diagnostic(&diagnostic);
+                let error_exit = self.native_error_exit(failure_cleanup);
+                self.body.push(format!("if (!{ok}) {{ {error_exit} }}"));
+            }
+        }
+
+        for class in &classes {
+            self.emit_native_class_constant_class_metadata(handle, class, failure_cleanup)?;
+        }
+
+        Ok(())
+    }
+
+    fn emit_native_class_constant_class_metadata(
+        &mut self,
+        handle: &str,
+        class: &CDeclaredClass,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let (class_bytes, class_len) =
+            self.emit_call_type_static_bytes("class_constant_class_name_bytes", &class.name);
+        for constant in &class.own_constants {
+            let (constant_bytes, constant_len) =
+                self.emit_call_type_static_bytes("class_constant_name_bytes", &constant.name);
+            let value =
+                self.materialize_native_value_result_operand(&constant.value, failure_cleanup)?;
+            let diagnostic = self.next_native_name("class_constant_value_diagnostic");
+            let ok = self.next_native_name("class_constant_value_ok");
+            self.body
+                .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+            self.body.push(format!(
+                "bool {ok} = phpc_native_class_constant_declare_constant_bytes_and_free({handle}, {class_bytes}, {class_len}, {constant_bytes}, {constant_len}, (uint8_t){}, {}, &{diagnostic});",
+                Self::declared_class_property_visibility_tag(constant.visibility),
+                value.handle
+            ));
+            self.body
+                .extend(native_value_aux_cleanup_after_consuming_handle(&value));
+            self.emit_report_native_diagnostic(&diagnostic);
+            let error_exit = self.native_error_exit(failure_cleanup);
+            self.body.push(format!("if (!{ok}) {{ {error_exit} }}"));
+        }
+        Ok(())
+    }
+
+    fn materialize_declared_class_constant_read_expr(
+        &mut self,
+        class_name: &str,
+        constant_name: &str,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let handle = self.ensure_native_class_constant_table(failure_cleanup, span)?;
+        let (class_bytes, class_len) =
+            self.emit_call_type_static_bytes("class_constant_receiver_name_bytes", class_name);
+        let (constant_bytes, constant_len) =
+            self.emit_call_type_static_bytes("class_constant_read_name_bytes", constant_name);
+        let diagnostic = self.next_native_name("class_constant_read_diagnostic");
+        let value = self.next_native_name("class_constant_read_value");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value} = phpc_native_class_constant_read_class_with_diagnostic({handle}, {class_bytes}, {class_len}, {constant_bytes}, {constant_len}, &{diagnostic});"
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({value}.ptr == NULL) {{ {error_exit} }}"));
+        Ok(Some(CNativeValueMaterialization {
+            handle: value.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
+        }))
+    }
+
+    fn materialize_relative_class_constant_read_expr(
+        &mut self,
+        receiver: CRelativeStaticPropertyReceiver,
+        constant_name: &str,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some(current_class_name) = self.active_declared_class_name.clone() else {
+            return Ok(None);
+        };
+        let Some((called_class_ptr, called_class_len)) =
+            self.relative_static_property_called_class_operands(receiver)
+        else {
+            return Ok(None);
+        };
+        let handle = self.ensure_native_class_constant_table(failure_cleanup, span)?;
+        let (current_class_bytes, current_class_len) = self.emit_call_type_static_bytes(
+            "class_constant_current_class_name_bytes",
+            &current_class_name,
+        );
+        let (constant_bytes, constant_len) =
+            self.emit_call_type_static_bytes("class_constant_read_name_bytes", constant_name);
+        let diagnostic = self.next_native_name("class_constant_read_diagnostic");
+        let value = self.next_native_name("class_constant_read_value");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value} = phpc_native_class_constant_read_relative_with_diagnostic({handle}, {}, {current_class_bytes}, {current_class_len}, {called_class_ptr}, {called_class_len}, {constant_bytes}, {constant_len}, &{diagnostic});",
+            receiver.class_constant_abi_tag()
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({value}.ptr == NULL) {{ {error_exit} }}"));
+        Ok(Some(CNativeValueMaterialization {
+            handle: value.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
+        }))
+    }
+
+    fn emit_relative_class_name_constant_expr(
+        &mut self,
+        receiver: CRelativeStaticPropertyReceiver,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CValue>> {
+        let Some(current_class_name) = self.active_declared_class_name.clone() else {
+            return Ok(None);
+        };
+        let Some((called_class_ptr, called_class_len)) =
+            self.relative_static_property_called_class_operands(receiver)
+        else {
+            return Ok(None);
+        };
+        let handle = self.ensure_native_class_constant_table(failure_cleanup, span)?;
+        let (current_class_bytes, current_class_len) = self.emit_call_type_static_bytes(
+            "class_name_current_class_name_bytes",
+            &current_class_name,
+        );
+        let diagnostic = self.next_native_name("class_name_constant_diagnostic");
+        let class_name = self.next_native_name("class_name_constant_value");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "phpc_NativeStringHandle {class_name} = phpc_native_class_constant_class_name_relative_with_diagnostic({handle}, {}, {current_class_bytes}, {current_class_len}, {called_class_ptr}, {called_class_len}, &{diagnostic});",
+            receiver.class_constant_abi_tag()
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({class_name}.ptr == NULL) {{ {error_exit} }}"));
+        let value = self.next_native_name("class_name_constant_native_value");
+        let value_diagnostic = self.next_native_name("class_name_constant_value_diagnostic");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {value_diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value} = phpc_native_value_from_string_with_diagnostic({class_name}, &{value_diagnostic});"
+        ));
+        let class_name_cleanup = format!("phpc_native_string_free({class_name});");
+        self.emit_report_native_diagnostic(&value_diagnostic);
+        let error_exit = self.native_error_exit(&format!("{class_name_cleanup}{failure_cleanup}"));
+        self.body
+            .push(format!("if ({value}.ptr == NULL) {{ {error_exit} }}"));
+        self.body.push(class_name_cleanup);
+        self.retain_native_value_cleanup_handle(&value);
+        Ok(Some(CValue::NativeValueHandle(value)))
+    }
+
     fn ensure_native_static_property_storage(
         &mut self,
         failure_cleanup: &str,
@@ -34664,15 +34977,83 @@ impl CGenerator {
                 self.emit_exact_imported_global_constant(name, *span)
             }
             Expr::ClassNameConstant { class_name, .. } => Ok(CValue::String(class_name.clone())),
-            Expr::SelfClassNameConstant { span }
-            | Expr::ParentClassNameConstant { span }
-            | Expr::StaticClassNameConstant { span } => {
+            Expr::SelfClassNameConstant { span } => {
+                if let Some(value) = self.emit_relative_class_name_constant_expr(
+                    CRelativeStaticPropertyReceiver::SelfClass,
+                    *span,
+                    "",
+                )? {
+                    return Ok(value);
+                }
                 Err(self.unsupported(*span, ASSEMBLY_CLASS_NAME_CONSTANT_REJECTION))
             }
-            Expr::ClassConstant { span, .. }
-            | Expr::SelfClassConstant { span, .. }
-            | Expr::ParentClassConstant { span, .. }
-            | Expr::LateStaticClassConstant { span, .. } => {
+            Expr::ParentClassNameConstant { span } => {
+                if let Some(value) = self.emit_relative_class_name_constant_expr(
+                    CRelativeStaticPropertyReceiver::ParentClass,
+                    *span,
+                    "",
+                )? {
+                    return Ok(value);
+                }
+                Err(self.unsupported(*span, ASSEMBLY_CLASS_NAME_CONSTANT_REJECTION))
+            }
+            Expr::StaticClassNameConstant { span } => {
+                if let Some(value) = self.emit_relative_class_name_constant_expr(
+                    CRelativeStaticPropertyReceiver::LateStaticClass,
+                    *span,
+                    "",
+                )? {
+                    return Ok(value);
+                }
+                Err(self.unsupported(*span, ASSEMBLY_CLASS_NAME_CONSTANT_REJECTION))
+            }
+            Expr::ClassConstant {
+                class_name,
+                constant,
+                span,
+            } => {
+                if let Some(value) = self.materialize_declared_class_constant_read_expr(
+                    class_name, constant, *span, "",
+                )? {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
+                Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
+            }
+            Expr::SelfClassConstant { constant, span } => {
+                if let Some(value) = self.materialize_relative_class_constant_read_expr(
+                    CRelativeStaticPropertyReceiver::SelfClass,
+                    constant,
+                    *span,
+                    "",
+                )? {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
+                Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
+            }
+            Expr::ParentClassConstant { constant, span } => {
+                if let Some(value) = self.materialize_relative_class_constant_read_expr(
+                    CRelativeStaticPropertyReceiver::ParentClass,
+                    constant,
+                    *span,
+                    "",
+                )? {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
+                Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
+            }
+            Expr::LateStaticClassConstant { constant, span } => {
+                if let Some(value) = self.materialize_relative_class_constant_read_expr(
+                    CRelativeStaticPropertyReceiver::LateStaticClass,
+                    constant,
+                    *span,
+                    "",
+                )? {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
                 Err(self.unsupported(*span, ASSEMBLY_STATIC_MEMBER_REJECTION))
             }
             Expr::StaticProperty {
@@ -54163,6 +54544,18 @@ impl CGenerator {
                     " phpc_native_static_property_storage_free({handle});"
                 ));
             }
+        }
+        if self.native_class_constant_table_owned {
+            if let Some(handle) = &self.native_class_constant_table_handle {
+                cleanup.push_str(&format!(
+                    " phpc_native_class_constant_table_free({handle});"
+                ));
+            }
+        }
+        if self.uses_native_class_constant_helpers && self.function_return_status.is_none() {
+            cleanup.push_str(" phpc_native_class_constant_table_free(phpc_user_class_constants);");
+            cleanup
+                .push_str(" phpc_user_class_constants = (phpc_NativeClassConstantTableHandle){0};");
         }
         if self.native_globals_symbol_table_owned {
             if let Some(handle) = &self.native_globals_symbol_table_handle {

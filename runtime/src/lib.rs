@@ -90,6 +90,32 @@ pub const PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_LATE_STATIC: u8 =
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeClassConstantReceiverTag {
+    SelfClass = 1,
+    ParentClass = 2,
+    LateStaticClass = 3,
+}
+
+impl NativeClassConstantReceiverTag {
+    fn from_abi_tag(tag: u8) -> Option<Self> {
+        match tag {
+            1 => Some(Self::SelfClass),
+            2 => Some(Self::ParentClass),
+            3 => Some(Self::LateStaticClass),
+            _ => None,
+        }
+    }
+}
+
+pub const PHPC_NATIVE_CLASS_CONSTANT_RECEIVER_SELF: u8 =
+    NativeClassConstantReceiverTag::SelfClass as u8;
+pub const PHPC_NATIVE_CLASS_CONSTANT_RECEIVER_PARENT: u8 =
+    NativeClassConstantReceiverTag::ParentClass as u8;
+pub const PHPC_NATIVE_CLASS_CONSTANT_RECEIVER_LATE_STATIC: u8 =
+    NativeClassConstantReceiverTag::LateStaticClass as u8;
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeTerminalKind {
     Return = 1,
     Throw = 2,
@@ -1221,6 +1247,12 @@ pub struct NativeStaticPropertyStorageHandle {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeClassConstantTableHandle {
+    ptr: *mut NativeClassConstantTable,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeRequestStateOperationResult {
     value: NativeValueHandle,
     array: NativeArrayHandle,
@@ -1352,6 +1384,12 @@ struct NativeStaticPropertyStorage {
     classes: PhpClassTable,
     defaults: PhpStaticPropertyDefaults,
     storage: PhpStaticPropertyStorage,
+}
+
+#[derive(Debug)]
+struct NativeClassConstantTable {
+    classes: PhpClassTable,
+    values: HashMap<(ClassId, String), Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3765,6 +3803,35 @@ impl NativeStaticPropertyStorageHandle {
     }
 
     unsafe fn as_mut(&mut self) -> Option<&mut NativeStaticPropertyStorage> {
+        unsafe { self.ptr.as_mut() }
+    }
+}
+
+impl NativeClassConstantTableHandle {
+    pub const fn null() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+        }
+    }
+
+    fn new() -> Self {
+        Self {
+            ptr: Box::into_raw(Box::new(NativeClassConstantTable {
+                classes: PhpClassTable::new(),
+                values: HashMap::new(),
+            })),
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+
+    unsafe fn as_ref(&self) -> Option<&NativeClassConstantTable> {
+        unsafe { self.ptr.as_ref() }
+    }
+
+    unsafe fn as_mut(&mut self) -> Option<&mut NativeClassConstantTable> {
         unsafe { self.ptr.as_mut() }
     }
 }
@@ -27327,6 +27394,517 @@ impl NativeStaticPropertyStorage {
             self.relative_receiver_and_context(receiver, current_class_name, called_class_name)?;
         self.storage
             .unset(&self.classes, receiver, property_name, context)
+    }
+}
+
+impl NativeClassConstantTable {
+    fn declare_class(&mut self, class_name: String) -> RuntimeResult<()> {
+        self.classes.declare_class(class_name).map(|_| ())
+    }
+
+    fn declare_parent(&mut self, class_name: &str, parent_name: &str) -> RuntimeResult<()> {
+        let child_id = self
+            .classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| RuntimeError::undefined_class(class_name))?;
+        let parent_id = self
+            .classes
+            .lookup_class_id(parent_name)
+            .ok_or_else(|| RuntimeError::undefined_class(parent_name))?;
+        self.classes.set_parent(child_id, parent_id)
+    }
+
+    fn class_id_for_name(&self, class_name: &str) -> RuntimeResult<ClassId> {
+        if let Some(id) = self.classes.lookup_class_id(class_name) {
+            return Ok(id);
+        }
+
+        let lookup_key = native_class_metadata_lookup_key(class_name.as_bytes());
+        if let Some(target_lookup_key) = native_user_class_alias_target_lookup_key(&lookup_key) {
+            let target = String::from_utf8(target_lookup_key).map_err(|_| {
+                RuntimeError::invalid_property_access(
+                    "native class-constant receiver alias target is not UTF-8".to_string(),
+                )
+            })?;
+            if let Some(id) = self.classes.lookup_class_id(&target) {
+                return Ok(id);
+            }
+        }
+
+        Err(RuntimeError::undefined_class(class_name))
+    }
+
+    fn declare_constant(
+        &mut self,
+        class_name: &str,
+        constant_name: String,
+        visibility: Visibility,
+        value: Value,
+    ) -> RuntimeResult<()> {
+        let class_id = self.class_id_for_name(class_name)?;
+        let class = self.classes.get_mut(class_id).ok_or_else(|| {
+            RuntimeError::invalid_property_access(format!(
+                "native class-constant class {class_name} does not resolve"
+            ))
+        })?;
+        class.add_constant(PhpClassConstantMetadata::new(&constant_name, visibility))?;
+        self.values.insert((class_id, constant_name), value);
+        Ok(())
+    }
+
+    fn relative_receiver_and_context(
+        &self,
+        receiver: NativeClassConstantReceiverTag,
+        current_class_name: &str,
+        called_class_name: Option<&str>,
+        constant_name: &str,
+    ) -> RuntimeResult<(ClassId, PhpStaticPropertyAccessContext)> {
+        let current_class_id = self.class_id_for_name(current_class_name)?;
+        let mut context = PhpStaticPropertyAccessContext::class_context(current_class_id);
+        if let Some(called_class_name) = called_class_name {
+            let called_class_id = self.class_id_for_name(called_class_name)?;
+            context = context.with_called_class(called_class_id);
+        }
+        let receiver_class_id = match receiver {
+            NativeClassConstantReceiverTag::SelfClass => current_class_id,
+            NativeClassConstantReceiverTag::ParentClass => {
+                let class = self.classes.get(current_class_id).ok_or_else(|| {
+                    RuntimeError::invalid_property_access(format!(
+                        "parent class constant class id #{} does not resolve",
+                        current_class_id.index()
+                    ))
+                })?;
+                class.parent_id().ok_or_else(|| {
+                    RuntimeError::unsupported_call(
+                        format!("parent::{constant_name}"),
+                        "parent class constant access requires a parent class",
+                    )
+                })?
+            }
+            NativeClassConstantReceiverTag::LateStaticClass => {
+                context.called_class_id().ok_or_else(|| {
+                    RuntimeError::unsupported_call(
+                        format!("static::{constant_name}"),
+                        "static class constant access requires called class context",
+                    )
+                })?
+            }
+        };
+        Ok((receiver_class_id, context))
+    }
+
+    fn read_class(&self, class_name: &str, constant_name: &str) -> RuntimeResult<Value> {
+        let class_id = self.class_id_for_name(class_name)?;
+        self.read_resolved(
+            class_id,
+            class_name,
+            constant_name,
+            PhpStaticPropertyAccessContext::external(),
+        )
+    }
+
+    fn read_relative(
+        &self,
+        receiver: NativeClassConstantReceiverTag,
+        current_class_name: &str,
+        called_class_name: Option<&str>,
+        constant_name: &str,
+    ) -> RuntimeResult<Value> {
+        let (class_id, context) = self.relative_receiver_and_context(
+            receiver,
+            current_class_name,
+            called_class_name,
+            constant_name,
+        )?;
+        let receiver_name = self
+            .classes
+            .get(class_id)
+            .map(|class| class.name().to_string())
+            .unwrap_or_else(|| current_class_name.to_string());
+        self.read_resolved(class_id, &receiver_name, constant_name, context)
+    }
+
+    fn class_name_relative(
+        &self,
+        receiver: NativeClassConstantReceiverTag,
+        current_class_name: &str,
+        called_class_name: Option<&str>,
+    ) -> RuntimeResult<String> {
+        let (class_id, _) = self.relative_receiver_and_context(
+            receiver,
+            current_class_name,
+            called_class_name,
+            "class",
+        )?;
+        self.classes
+            .get(class_id)
+            .map(|class| class.name().to_string())
+            .ok_or_else(|| {
+                RuntimeError::invalid_property_access(format!(
+                    "class-name constant class id #{} does not resolve",
+                    class_id.index()
+                ))
+            })
+    }
+
+    fn read_resolved(
+        &self,
+        class_id: ClassId,
+        class_name: &str,
+        constant_name: &str,
+        context: PhpStaticPropertyAccessContext,
+    ) -> RuntimeResult<Value> {
+        let (declaring_class_id, declaring_class_name, metadata) = self
+            .resolve_constant_metadata(class_id, constant_name)
+            .ok_or_else(|| {
+                RuntimeError::undefined_constant(format!("{class_name}::{constant_name}"))
+            })?;
+        ensure_class_constant_visible(
+            &self.classes,
+            declaring_class_id,
+            &declaring_class_name,
+            metadata.name(),
+            metadata.visibility(),
+            context,
+        )?;
+        self.values
+            .get(&(declaring_class_id, metadata.name().to_string()))
+            .cloned()
+            .ok_or_else(|| {
+                RuntimeError::invalid_property_access(format!(
+                    "native class constant {}::{} has metadata but no value",
+                    declaring_class_name,
+                    metadata.name()
+                ))
+            })
+    }
+
+    fn resolve_constant_metadata<'a>(
+        &'a self,
+        class_id: ClassId,
+        constant_name: &str,
+    ) -> Option<(ClassId, String, &'a PhpClassConstantMetadata)> {
+        let mut current = Some(class_id);
+        while let Some(current_id) = current {
+            let class = self.classes.get(current_id)?;
+            if let Some(metadata) = class.constant(constant_name) {
+                return Some((current_id, class.name().to_string(), metadata));
+            }
+            current = class.parent_id();
+        }
+        None
+    }
+}
+
+fn ensure_class_constant_visible(
+    classes: &PhpClassTable,
+    declaring_class_id: ClassId,
+    declaring_class_name: &str,
+    constant_name: &str,
+    visibility: Visibility,
+    context: PhpStaticPropertyAccessContext,
+) -> RuntimeResult<()> {
+    match visibility {
+        Visibility::Public => Ok(()),
+        Visibility::Private if context.current_class_id() == Some(declaring_class_id) => Ok(()),
+        Visibility::Protected
+            if context.current_class_id().is_some_and(|current_id| {
+                current_id == declaring_class_id
+                    || classes.is_subclass_of(current_id, declaring_class_id)
+            }) =>
+        {
+            Ok(())
+        }
+        Visibility::Private => Err(RuntimeError::unsupported_call(
+            format!("{declaring_class_name}::{constant_name}"),
+            "private class constant is not visible from the current class context",
+        )),
+        Visibility::Protected => Err(RuntimeError::unsupported_call(
+            format!("{declaring_class_name}::{constant_name}"),
+            "protected class constant is not visible from the current class context",
+        )),
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn phpc_native_class_constant_table_new() -> NativeClassConstantTableHandle {
+    NativeClassConstantTableHandle::new()
+}
+
+/// # Safety
+///
+/// `handle` must be null or a class-constant table handle previously returned
+/// by the runtime ABI and not yet freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_class_constant_table_free(
+    handle: NativeClassConstantTableHandle,
+) {
+    if handle.ptr.is_null() {
+        return;
+    }
+    drop(unsafe { Box::from_raw(handle.ptr) });
+}
+
+/// # Safety
+///
+/// `handle` must be a table handle. Class bytes must be null only when their
+/// length is zero. The diagnostic slot is overwritten on failure.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_class_constant_declare_class_bytes(
+    mut handle: NativeClassConstantTableHandle,
+    class_ptr: *const u8,
+    class_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let table = unsafe { handle.as_mut() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native class-constant table handle is null".to_string(),
+            )
+        })?;
+        let class_name =
+            unsafe { native_static_property_utf8_argument(class_ptr, class_len, "class name") }?;
+        table.declare_class(class_name)
+    })();
+    match result {
+        Ok(()) => true,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be a table handle. Class and parent bytes follow the same
+/// pointer/length rules as class declaration.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_class_constant_declare_class_parent_bytes(
+    mut handle: NativeClassConstantTableHandle,
+    class_ptr: *const u8,
+    class_len: usize,
+    parent_ptr: *const u8,
+    parent_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let table = unsafe { handle.as_mut() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native class-constant table handle is null".to_string(),
+            )
+        })?;
+        let class_name =
+            unsafe { native_static_property_utf8_argument(class_ptr, class_len, "class name") }?;
+        let parent_name = unsafe {
+            native_static_property_utf8_argument(parent_ptr, parent_len, "parent class name")
+        }?;
+        table.declare_parent(&class_name, &parent_name)
+    })();
+    match result {
+        Ok(()) => true,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be a table handle. Class/constant bytes follow the same
+/// pointer/length rules as class declaration. `value` is always consumed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_class_constant_declare_constant_bytes_and_free(
+    mut handle: NativeClassConstantTableHandle,
+    class_ptr: *const u8,
+    class_len: usize,
+    constant_ptr: *const u8,
+    constant_len: usize,
+    visibility: u8,
+    value: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let value = unsafe { native_static_property_take_value_and_free(value, "class constant") }?;
+        let table = unsafe { handle.as_mut() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native class-constant table handle is null".to_string(),
+            )
+        })?;
+        let class_name =
+            unsafe { native_static_property_utf8_argument(class_ptr, class_len, "class name") }?;
+        let constant_name = unsafe {
+            native_static_property_utf8_argument(constant_ptr, constant_len, "constant name")
+        }?;
+        let visibility = native_declared_class_property_visibility(visibility).ok_or_else(|| {
+            RuntimeError::invalid_property_access(format!(
+                "native class-constant table received unsupported constant visibility tag {visibility}"
+            ))
+        })?;
+        table.declare_constant(&class_name, constant_name, visibility, value)
+    })();
+    match result {
+        Ok(()) => true,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be a table handle. Class and constant bytes follow the same
+/// pointer/length rules as class declaration. Returned values are owned by the
+/// caller and must be freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_class_constant_read_class_with_diagnostic(
+    handle: NativeClassConstantTableHandle,
+    class_ptr: *const u8,
+    class_len: usize,
+    constant_ptr: *const u8,
+    constant_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let table = unsafe { handle.as_ref() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native class-constant table handle is null".to_string(),
+            )
+        })?;
+        let class_name =
+            unsafe { native_static_property_utf8_argument(class_ptr, class_len, "class name") }?;
+        let constant_name = unsafe {
+            native_static_property_utf8_argument(constant_ptr, constant_len, "constant name")
+        }?;
+        table.read_class(&class_name, &constant_name)
+    })();
+    match result {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be a table handle. Current/called class and constant bytes
+/// follow the same pointer/length rules as class declaration. Returned values
+/// are owned by the caller and must be freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_class_constant_read_relative_with_diagnostic(
+    handle: NativeClassConstantTableHandle,
+    receiver_tag: u8,
+    current_class_ptr: *const u8,
+    current_class_len: usize,
+    called_class_ptr: *const u8,
+    called_class_len: usize,
+    constant_ptr: *const u8,
+    constant_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let table = unsafe { handle.as_ref() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native class-constant table handle is null".to_string(),
+            )
+        })?;
+        let receiver =
+            NativeClassConstantReceiverTag::from_abi_tag(receiver_tag).ok_or_else(|| {
+                RuntimeError::invalid_property_access(format!(
+                    "native class-constant table received unsupported relative receiver tag {receiver_tag}"
+                ))
+            })?;
+        let current_class_name = unsafe {
+            native_static_property_utf8_argument(
+                current_class_ptr,
+                current_class_len,
+                "current class name",
+            )
+        }?;
+        let called_class_name = unsafe {
+            native_static_property_optional_utf8_argument(
+                called_class_ptr,
+                called_class_len,
+                "called class name",
+            )
+        }?;
+        let constant_name = unsafe {
+            native_static_property_utf8_argument(constant_ptr, constant_len, "constant name")
+        }?;
+        table.read_relative(
+            receiver,
+            &current_class_name,
+            called_class_name.as_deref(),
+            &constant_name,
+        )
+    })();
+    match result {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be a table handle. Current/called class bytes follow the
+/// same pointer/length rules as class declaration.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_class_constant_class_name_relative_with_diagnostic(
+    handle: NativeClassConstantTableHandle,
+    receiver_tag: u8,
+    current_class_ptr: *const u8,
+    current_class_len: usize,
+    called_class_ptr: *const u8,
+    called_class_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeStringHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let table = unsafe { handle.as_ref() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native class-constant table handle is null".to_string(),
+            )
+        })?;
+        let receiver =
+            NativeClassConstantReceiverTag::from_abi_tag(receiver_tag).ok_or_else(|| {
+                RuntimeError::invalid_property_access(format!(
+                    "native class-constant table received unsupported class-name receiver tag {receiver_tag}"
+                ))
+            })?;
+        let current_class_name = unsafe {
+            native_static_property_utf8_argument(
+                current_class_ptr,
+                current_class_len,
+                "current class name",
+            )
+        }?;
+        let called_class_name = unsafe {
+            native_static_property_optional_utf8_argument(
+                called_class_ptr,
+                called_class_len,
+                "called class name",
+            )
+        }?;
+        table.class_name_relative(receiver, &current_class_name, called_class_name.as_deref())
+    })();
+    match result {
+        Ok(class_name) => NativeStringHandle::from_vec(class_name.into_bytes()),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeStringHandle::null()
+        }
     }
 }
 
@@ -62399,6 +62977,132 @@ mod tests {
             }
         );
         assert_eq!(error.message(), "class widget is already defined");
+    }
+
+    #[test]
+    fn class_constant_native_abi_resolves_literal_relative_alias_and_visibility() {
+        let table = phpc_native_class_constant_table_new();
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let base = b"BaseConst";
+        let child = b"ChildConst";
+        let alias = b"AliasConst";
+        let label = b"LABEL";
+        let secret = b"SECRET";
+
+        assert!(unsafe {
+            phpc_native_class_constant_declare_class_bytes(
+                table,
+                base.as_ptr(),
+                base.len(),
+                &mut diagnostic,
+            )
+        });
+        assert!(unsafe {
+            phpc_native_class_constant_declare_class_bytes(
+                table,
+                child.as_ptr(),
+                child.len(),
+                &mut diagnostic,
+            )
+        });
+        assert!(unsafe {
+            phpc_native_class_constant_declare_class_parent_bytes(
+                table,
+                child.as_ptr(),
+                child.len(),
+                base.as_ptr(),
+                base.len(),
+                &mut diagnostic,
+            )
+        });
+        assert!(unsafe { phpc_native_declare_user_class_bytes(base.as_ptr(), base.len()) });
+        assert!(unsafe {
+            phpc_native_class_constant_declare_constant_bytes_and_free(
+                table,
+                base.as_ptr(),
+                base.len(),
+                label.as_ptr(),
+                label.len(),
+                NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+                NativeValueHandle::from_value(Value::String("base".to_string())),
+                &mut diagnostic,
+            )
+        });
+        assert!(unsafe {
+            phpc_native_class_constant_declare_constant_bytes_and_free(
+                table,
+                base.as_ptr(),
+                base.len(),
+                secret.as_ptr(),
+                secret.len(),
+                NATIVE_DECLARED_CLASS_PROPERTY_PRIVATE,
+                NativeValueHandle::from_value(Value::String("hidden".to_string())),
+                &mut diagnostic,
+            )
+        });
+        assert!(unsafe {
+            phpc_native_declare_user_class_alias_bytes_with_diagnostic(
+                base.as_ptr(),
+                base.len(),
+                alias.as_ptr(),
+                alias.len(),
+                false,
+                &mut diagnostic,
+            )
+        });
+
+        let alias_value = unsafe {
+            phpc_native_class_constant_read_class_with_diagnostic(
+                table,
+                alias.as_ptr(),
+                alias.len(),
+                label.as_ptr(),
+                label.len(),
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(
+            unsafe { alias_value.as_ref() },
+            Some(&Value::String("base".to_string()))
+        );
+        unsafe { phpc_native_value_free(alias_value) };
+
+        let parent_value = unsafe {
+            phpc_native_class_constant_read_relative_with_diagnostic(
+                table,
+                PHPC_NATIVE_CLASS_CONSTANT_RECEIVER_PARENT,
+                child.as_ptr(),
+                child.len(),
+                std::ptr::null(),
+                0,
+                label.as_ptr(),
+                label.len(),
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(
+            unsafe { parent_value.as_ref() },
+            Some(&Value::String("base".to_string()))
+        );
+        unsafe { phpc_native_value_free(parent_value) };
+
+        let denied = unsafe {
+            phpc_native_class_constant_read_class_with_diagnostic(
+                table,
+                child.as_ptr(),
+                child.len(),
+                secret.as_ptr(),
+                secret.len(),
+                &mut diagnostic,
+            )
+        };
+        assert!(denied.is_null());
+        assert_eq!(
+            native_diagnostic_message_for_test(diagnostic),
+            "unsupported call BaseConst::SECRET: private class constant is not visible from the current class context"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_class_constant_table_free(table) };
     }
 
     #[test]
