@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 19:51 CEST
+Updated: 2026-05-27 19:56 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,15 +19,35 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `f1b58b52` adds a runtime-only,
-request-local SPL autoload registry ABI that stores normalized
-`NativeCallableValueDispatch` values, supports ordered register/prepend and
-unregister operations, invokes callbacks through the shared callable-value
-runtime path, and exposes a registry-aware class/trait metadata lookup sibling
-with same-class recursion diagnostics. Generated-C lowering for SPL autoload
-builtins and class-like metadata calls, `spl_autoload_functions()`,
-interface-specific metadata autoload, arbitrary runtime PHP source loading,
-Composer/PSR/path-table behavior, and LLVM/ASM parity remain blocked.
+Latest accounted source capability: `43975e79` adds generalized output-buffer
+chunk-threshold flushing to the runtime output-buffer data model and shared
+native stdout write path. Plain buffers and callback buffers now flush
+automatically when accumulated bytes reach the configured `ob_start` chunk
+size, callback chunk dispatch reuses the existing
+`NativeCallableValueDispatch` path and phase handling, and recursive lower
+buffer writes can trigger lower buffer thresholds. Handler flags/mutability,
+shutdown ordering, exact warning/fatal parity, SAPI interaction,
+`ob_get_status()` chunk metadata, binary string breadth, and LLVM/ASM parity
+remain blocked.
+
+Recent source commit `43975e79` advances selected output-buffer chunk-size
+semantics without adding handler-name, output-string, fixture-shape, or
+generated-C snapshot lowering. `NativeOutputBuffer` now stores the configured
+chunk size, native stdout writes append through a shared target-buffer helper,
+and buffers whose accumulated length reaches a positive threshold flush the
+whole chunk to the next lower buffer or stdout. Automatic chunk flushing uses
+the existing optional output-buffer callback dispatch path: the first chunk
+uses `PHP_OUTPUT_HANDLER_START`, subsequent automatic chunks use the write
+phase, and explicit final flush still uses the final phase. Focused gates
+covered compile checking, runtime chunk tests over two chunk sizes with plain
+and callback buffers, existing callback flush regression, linked generated-C
+chunk execution, existing linked callback and ordinary output-buffer
+regressions, SPL autoload registry regression, formatting, and diff checks.
+Handler flags/mutability, shutdown/unwind ordering, precise diagnostics,
+SAPI interaction, `ob_get_status()` metadata, binary string breadth, and
+LLVM/ASM parity remain blocked. Primary gate log:
+`state/logs/phpc-primary-output-buffer-chunk-7b543baf-20260527.gates.log`
+sha256 `2910e004b281a22140c125122ca6c466d0640c326a18576d40037a0754793950`.
 
 Recent source commit `f1b58b52` advances generalized SPL autoload runtime
 semantics without adding generated-C lowering, runtime PHP parsing, or
