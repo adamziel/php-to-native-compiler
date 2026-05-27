@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 23:34 CEST
+Updated: 2026-05-27 23:37 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,12 +19,11 @@ Overall integrated-roadmap progress: **93%** `[##################--]`
 
 Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `ff6c0af4` binds direct declared static
-property reference-assignment targets through the shared static-property storage
-ABI. Generated C now accepts narrow `C::$prop =& $source` targets, binds the
-static property cell to the source reference, and keeps source writes and
-by-reference calls aliasing the same storage instead of falling through to
-generic reference-assignment rejection.
+Latest accounted source capability: `e95e5101` routes dynamic-name
+object-property writes through the existing magic-aware runtime property
+mutation boundary. Generated C now accepts `$object->$name = $value` when the
+object has a valid `__set()` contract, without generating property-name ladders
+or broadening `__get`, `__isset`, `__unset`, or reference-owner paths.
 
 Current blockers remain concentrated in broader array COW/reference edges,
 foreach by-reference lifetime, include exception/diagnostic propagation,
@@ -36,6 +35,7 @@ Recent primary source ledger:
 
 | Commit | Compact capability | Focused proof |
 | --- | --- | --- |
+| `e95e5101` | Dynamic-name object-property writes now route through the shared magic-aware mutation boundary for valid `__set()` methods. | Generated-C source proof, linked executable `__set` proof, adjacent magic runtime, malformed metadata, reference-source blockers, fmt, diff. Gate log: `state/logs/phpc-primary-magic-set-31da596f-20260527.gates.log` sha256 `f03a9a7dc46f73134b3eaff7c568d8206b088079c6de3a353bcb69c5253449e0`. |
 | `ff6c0af4` | Direct declared static-property reference assignment now binds real static storage reference cells. | Runtime ABI, generated-C source, linked executable aliasing, static-property reference/offset adjacency, object-property reference adjacency, fmt, diff. Gate log: `state/logs/phpc-primary-static-prop-ref-34fe4011-20260527.gates.log` sha256 `f66ba7559e112f7aabbd011a161171917bdeb99eab0efa089a90433ef3cdc1e5`. |
 | `5a5e0028` | Dynamic declared-class construction now invokes the SPL autoload registry on string misses before retrying allocatable metadata lookup. | Runtime ABI, generated-C source, linked autoload-before-diagnostic executable, dynamic constructor, SPL/class-alias autoload adjacency, fmt, diff. Gate log: `state/logs/phpc-primary-autoload-dc3e6fd2-20260527.gates.log` sha256 `5278beb2ec4faf2ec26cab5165298bf0d60ba5f89d095fa24f63574f3e66adf4`. |
 | `1318ffac` | Parser/type metadata resolves non-special class-like type declarations through namespace/import rules. | Namespace suite, parser metadata, linked generated-C typed static-property metadata, typed static-property adjacency, fmt, diff. Gate log: `state/logs/phpc-primary-namespace-types-f0453438-20260527.gates.log` sha256 `d47e5c2a7c13203c1e30154dd353e0b8f0d0c1cfdeb0de547a7ff1439b0dc033`. |
