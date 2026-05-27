@@ -4,6 +4,24 @@
 
 Implemented:
 
+- Added generated-C static-property reference production through the shared
+  static-property storage boundary. Literal class, object/class-string,
+  `self`, `parent`, and declared method-frame `static` receivers now
+  materialize real storage-backed `NativeReferenceHandle` carriers for
+  by-reference argument transfer and direct reference assignment. The runtime
+  reference APIs return handles backed by the stored `PhpReferenceCell`, and
+  reference writes use the diagnostic setter so typed static-property
+  constraints remain active. Focused primary gates cover runtime
+  static-property storage, generated-C and linked executable alias/write-through
+  proofs, static-property filters, source-call references, descriptor
+  closures, magic dynamic/static calls, malformed magic signatures, named
+  arguments, class constants, nested `ArrayAccess`, exact imports, class
+  aliases, and `cargo check -p phpc`. Computed static-property names,
+  top-level `static::$prop`, static-property array-offset references, broader
+  direct-variable reference-target parity, magic/static-property overloading,
+  traits/interfaces, autoload breadth, broad reference/COW parity, and LLVM
+  IR/assembly parity remain unsupported.
+
 - Added generated-C malformed magic-method signature rejection through shared
   callable-table metadata. Class method registration now publishes
   `__call`/`__callStatic` signature status beside visibility/staticness, and

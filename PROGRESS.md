@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 11:26 CEST
+Updated: 2026-05-27 11:35 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,7 +19,20 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest accounted source capability: `3b3a740a` publishes magic-method
+Latest accounted source capability: `ea6c7980` routes selected generated-C
+static-property reference sources through shared runtime static-property
+storage cells. Literal class, object/class-string, `self`, `parent`, and
+declared method-frame `static` receivers can now materialize storage-backed
+reference carriers for by-reference argument transfer and direct reference
+assignment, preserving alias/write-through behavior without cloning values
+into fake references. Reference writes use the diagnostic setter, so
+typed-property constraints attached to static storage cells remain enforced,
+and receiver-scope cleanup stays aligned with the existing static-property
+lvalue boundary. Computed static-property names, top-level `static::$prop`,
+static-property array-offset references, broader direct-variable
+reference-target parity, magic/static-property overloading, traits/interfaces,
+autoload breadth, broad reference/COW parity, and LLVM/backend parity remain
+blocked. Recent source commit `3b3a740a` publishes magic-method
 signature metadata through the shared generated-C callable table and rejects
 malformed `__call`/`__callStatic` fallback targets before runtime magic
 argument packing. Receiver `__call` and static `__callStatic` fallback lookup
@@ -64,7 +77,7 @@ has class and relative unset APIs, untyped storage resets to initialized
 `null`, typed storage returns to the uninitialized state, and read/`isset()`/
 `empty()` aftermath plus visibility, scope, and missing-property diagnostics
 reuse the same storage boundary. Computed static-property names, top-level
-`static::$prop`, static-property references, array-offset mutation,
+`static::$prop`, static-property array-offset references, array-offset mutation,
 magic/static overloading, traits/interfaces, autoload breadth, broad
 references/COW, and LLVM/backend parity remain blocked. Recent source commit
 `2e2625eb` routes selected generated-C
@@ -122,7 +135,7 @@ scope through the shared receiver-scope ABI, preserve expression-result
 ownership for compound and pre/post operations, and keep parser
 object-static-property lvalues flowing to codegen instead of falling behind
 prefix/compound blockers. Computed static-property names, top-level
-`static::$prop`, static-property references, array-offset
+`static::$prop`, static-property array-offset references, array-offset
 mutation, magic/static overloading, traits/interfaces, autoload
 breadth, broad references/COW, and LLVM/backend parity remain blocked. Recent
 source commits also route selected generated-C nested ArrayAccess
