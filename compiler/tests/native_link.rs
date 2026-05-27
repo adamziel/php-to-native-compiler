@@ -456,6 +456,57 @@ const NATIVE_STATIC_PROPERTY_UNSET_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_STATIC_PROPERTY_REFERENCE_SOURCE: &str = concat!(
+    "<?php\n",
+    "function static_ref_set(&$slot, $value) { $slot = $value; return $slot; }\n",
+    "class StaticReferenceRoot {\n",
+    "    public static $literal = \"L\";\n",
+    "    public static $object = \"O\";\n",
+    "    public static $className = \"C\";\n",
+    "    public static $self = \"S\";\n",
+    "    public static $parent = \"P\";\n",
+    "    public static $late = \"R\";\n",
+    "    public static function selfBits() {\n",
+    "        static_ref_set(self::$self, \"self-arg\");\n",
+    "        echo self::$self;\n",
+    "    }\n",
+    "    public static function lateBits() {\n",
+    "        static_ref_set(static::$late, \"late-arg\");\n",
+    "        echo static::$late;\n",
+    "    }\n",
+    "}\n",
+    "class StaticReferenceChild extends StaticReferenceRoot {\n",
+    "    public static $late = \"D\";\n",
+    "    public static function parentBits() {\n",
+    "        static_ref_set(parent::$parent, \"parent-arg\");\n",
+    "        echo parent::$parent;\n",
+    "    }\n",
+    "}\n",
+    "$object = new StaticReferenceRoot();\n",
+    "$class = \"StaticReferenceChild\";\n",
+    "static_ref_set(StaticReferenceRoot::$literal, \"lit-arg\");\n",
+    "echo StaticReferenceRoot::$literal, \":\";\n",
+    "$literalAlias =& StaticReferenceRoot::$literal;\n",
+    "$literalAlias = \"lit-alias\";\n",
+    "echo StaticReferenceRoot::$literal, \"|\";\n",
+    "static_ref_set($object::$object, \"object-arg\");\n",
+    "echo $object::$object, \":\";\n",
+    "$objectAlias =& $object::$object;\n",
+    "$objectAlias = \"object-alias\";\n",
+    "echo $object::$object, \"|\";\n",
+    "static_ref_set($class::$className, \"class-arg\");\n",
+    "echo $class::$className, \":\";\n",
+    "$classAlias =& $class::$className;\n",
+    "$classAlias = \"class-alias\";\n",
+    "echo $class::$className, \"|\";\n",
+    "StaticReferenceRoot::selfBits();\n",
+    "echo \"|\";\n",
+    "StaticReferenceChild::parentBits();\n",
+    "echo \"|\";\n",
+    "StaticReferenceChild::lateBits();\n",
+    "echo \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_PROPERTY_UNSET_SOURCE: &str = concat!(
     "<?php\n",
     "class Box { public $name; public $peer; private $secret; }\n",
@@ -2333,6 +2384,37 @@ fn emit_exe_links_and_runs_static_property_unset_program() {
     assert_eq!(
         run.stdout,
         b"NULL:lE|NULL:oE|NULL:cE|NULL:sE|NULL:pE|NULL:tE\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_static_property_reference_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "static_property_reference",
+        NATIVE_STATIC_PROPERTY_REFERENCE_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run static-property reference executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"lit-arg:lit-alias|object-arg:object-alias|class-arg:class-alias|self-arg|parent-arg|late-arg\n"
     );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
@@ -5182,6 +5264,59 @@ fn native_executable_runs_class_constants_across_literal_relative_static_and_ali
 
     let _ = fs::remove_file(source_path);
     let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn native_executable_c_source_routes_static_property_references_through_shared_storage() {
+    let program = parse(NATIVE_STATIC_PROPERTY_REFERENCE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    for required in [
+        "phpc_native_static_property_reference_class_with_diagnostic",
+        "phpc_native_static_property_reference_relative_with_diagnostic",
+        "phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free",
+        "phpc_native_call_arguments_push_reference_and_free",
+        "phpc_native_reference_set_value_with_diagnostic",
+        "static_property_reference_",
+        "static_property_lvalue_name_bytes",
+        "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_SELF",
+        "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_PARENT",
+        "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_LATE_STATIC",
+    ] {
+        assert!(source.contains(required), "missing {required}:\n{source}");
+    }
+    assert!(
+        body.matches("phpc_native_static_property_reference_class_with_diagnostic")
+            .count()
+            >= 6,
+        "literal, object, and class-string receivers should share the class-reference storage ABI for by-ref calls and direct aliases:\n{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_static_property_reference_relative_with_diagnostic")
+            .count()
+            >= 3,
+        "self, parent, and late-static receivers should share the relative-reference storage ABI for by-ref calls:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free")
+            .count()
+            >= 4,
+        "object and class-string reference receivers should derive scope through the existing receiver-scope boundary:\n{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_call_arguments_push_reference_and_free")
+            .count()
+            >= 6,
+        "static-property references should feed by-reference argument transfer as real references:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_reference_from_value_and_free(static_property")
+            && !body.contains("phpc_native_reference_value_clone(static_property_reference_"),
+        "static-property references must not be faked by value-copy promotion or clone/read detours:\n{source}"
+    );
 }
 
 #[test]

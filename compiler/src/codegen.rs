@@ -22074,10 +22074,12 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_read_isset_class_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_write_class_with_diagnostic_and_free(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_static_property_unset_class_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeReferenceHandle phpc_native_static_property_reference_class_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_read_relative_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, uint8_t receiver_tag, const uint8_t *current_class_ptr, size_t current_class_len, const uint8_t *called_class_ptr, size_t called_class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_read_isset_relative_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, uint8_t receiver_tag, const uint8_t *current_class_ptr, size_t current_class_len, const uint8_t *called_class_ptr, size_t called_class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_write_relative_with_diagnostic_and_free(phpc_NativeStaticPropertyStorageHandle storage, uint8_t receiver_tag, const uint8_t *current_class_ptr, size_t current_class_len, const uint8_t *called_class_ptr, size_t called_class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_static_property_unset_relative_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, uint8_t receiver_tag, const uint8_t *current_class_ptr, size_t current_class_len, const uint8_t *called_class_ptr, size_t called_class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeReferenceHandle phpc_native_static_property_reference_relative_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, uint8_t receiver_tag, const uint8_t *current_class_ptr, size_t current_class_len, const uint8_t *called_class_ptr, size_t called_class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern void phpc_native_static_property_storage_free(phpc_NativeStaticPropertyStorageHandle storage);\n");
             }
             if self.uses_native_class_constant_helpers {
@@ -24789,6 +24791,12 @@ impl CGenerator {
             return Ok(reference);
         }
 
+        if let Some(reference) =
+            self.materialize_static_property_expr_reference_source(expr, failure_cleanup)?
+        {
+            return Ok(reference);
+        }
+
         let Some(path) = self.c_reference_path_for_expr(expr) else {
             return Err(
                 self.unsupported_call_operation(NativeCallOperation::value_result(
@@ -24874,6 +24882,66 @@ impl CGenerator {
             }
             _ => Ok(None),
         }
+    }
+
+    fn materialize_static_property_expr_reference_source(
+        &mut self,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeReferenceMaterialization>> {
+        let Some(target) = Self::static_property_lvalue_target_from_expr(expr) else {
+            return Ok(None);
+        };
+        let Some(target) =
+            self.materialize_static_property_lvalue_target(&target, failure_cleanup)?
+        else {
+            return Ok(None);
+        };
+
+        self.uses_native_reference_helpers = true;
+        let diagnostic = self.next_native_name("static_property_reference_diagnostic");
+        let reference = self.next_native_name("static_property_reference");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        match &target.receiver {
+            CStaticPropertyLvalueReceiver::Class {
+                class_bytes,
+                class_len,
+            } => {
+                self.body.push(format!(
+                    "phpc_NativeReferenceHandle {reference} = phpc_native_static_property_reference_class_with_diagnostic({}, {class_bytes}, {class_len}, {}, {}, &{diagnostic});",
+                    target.storage, target.property_bytes, target.property_len
+                ));
+            }
+            CStaticPropertyLvalueReceiver::Relative {
+                receiver,
+                current_class_bytes,
+                current_class_len,
+                called_class_ptr,
+                called_class_len,
+            } => {
+                self.body.push(format!(
+                    "phpc_NativeReferenceHandle {reference} = phpc_native_static_property_reference_relative_with_diagnostic({}, {}, {current_class_bytes}, {current_class_len}, {called_class_ptr}, {called_class_len}, {}, {}, &{diagnostic});",
+                    target.storage,
+                    receiver.abi_tag(),
+                    target.property_bytes,
+                    target.property_len
+                ));
+            }
+        }
+        let error_exit =
+            self.native_error_exit(&format!("{}{failure_cleanup}", target.cleanup_sequence()));
+        self.body.push(format!(
+            "if ({reference}.ptr == NULL) {{ phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {error_exit} }}"
+        ));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.body.extend(target.cleanup_after_use);
+
+        Ok(Some(CNativeReferenceMaterialization {
+            handle: reference.clone(),
+            cleanup_after_use: vec![format!("phpc_native_reference_free({reference});")],
+        }))
     }
 
     fn materialize_object_property_reference_source(
@@ -25024,6 +25092,13 @@ impl CGenerator {
             ReferenceSource::Property { expr, .. } => {
                 if let Some(reference) =
                     self.materialize_object_property_expr_reference_source(expr, failure_cleanup)?
+                {
+                    return Ok(reference);
+                }
+            }
+            ReferenceSource::StaticProperty { expr, .. } => {
+                if let Some(reference) =
+                    self.materialize_static_property_expr_reference_source(expr, failure_cleanup)?
                 {
                     return Ok(reference);
                 }
@@ -47736,7 +47811,12 @@ impl CGenerator {
             c_cleanup_sequence(&replacement.cleanup_after_use),
             failure_cleanup
         );
-        self.emit_native_reference_value_commit(reference, &replacement.handle, facts, &cleanup)?;
+        self.emit_native_reference_value_commit_with_diagnostic(
+            reference,
+            &replacement.handle,
+            facts,
+            &cleanup,
+        )?;
         self.body.extend(replacement.cleanup_after_use);
         Ok(())
     }
