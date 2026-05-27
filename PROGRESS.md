@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 02:12 CEST
+Updated: 2026-05-27 02:28 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -15,27 +15,30 @@ changes the roadmap position.
 
 ## Executive Read
 
-Overall integrated-roadmap progress: **75%** `[###############-----]`
+Overall integrated-roadmap progress: **80%** `[################----]`
 
-Selected executable PHP semantics: **75%** `[###############-----]`
+Selected executable PHP semantics: **80%** `[################----]`
 
-Latest accounted source capability: `c8aeb771` adds bounded generated-C
-receiver-method and named static-method source-call production through shared
-method/static target operands, binding operands, signature fallback contracts,
-and source-call result carriers. Recent source commit `4e5e2709` adds
-value-returning class metadata runtime/generated-C consumers, and `69526631`
-transfers proven reference-return dynamic source-call results into
-by-reference call arguments through the existing carrier ABI.
+Latest accounted source capability: `b3f16040` adds a structured
+object-property owner/fact/commit prerequisite boundary for future
+property-held ArrayAccess and nested owner lowering. Recent source commits
+also add LLVM user-class metadata parity (`d96cc2bb`), a generated-C
+namespace/import/class-name/autoload-policy boundary (`cb8457f1`),
+terminal-kind diagnostic-result ABI support (`ac5004a3`), and generated
+method-frame `$this` property assignment (`04b18506`).
 
-Why the headline bars moved: the new source removes three primary
-critical-path blockers for selected generated-C execution: value-returning
-class metadata, reference-return source-call aliases in by-reference
-arguments, and executable method/static calls where receiver/static lookup,
-signatures, argument ownership, and diagnostics are already shared. The bars
-remain far from 100% because dynamic method names, default/variadic/named/
-spread arguments, constructors, late-static binding, arbitrary alias roots,
-object/static/typed properties, exceptions/cleanup, autoload, visibility/magic
-breadth, and backend parity are still open.
+Why the headline bars moved: the new source removes five primary blockers
+across object/class execution and backend parity: generated method frames can
+write `$this` properties, selected constructors with supported bodies run,
+generated C handles parser-resolved namespace/import class policy without fake
+autoload success, LLVM can declare and query user-class metadata through the
+shared runtime ABI, terminal transfer now carries return/throw/exit kind, and
+object-property owner facts have a real structured commit boundary. The bars
+remain far from 100% because property-held/nested ArrayAccess production,
+dynamic method names, default/variadic/named/spread arguments, broader
+constructors, late-static binding, arbitrary alias roots, static/typed
+properties, exceptions/cleanup, full SPL autoload, visibility/magic breadth,
+and backend parity are still open.
 
 Current critical path to 100%:
 
@@ -48,8 +51,10 @@ Current critical path to 100%:
    `NativeDiagnosticResult` operands.
 3. Route value/reference/return/deferred-cleanup consumers through the shared
    diagnostic-result and call-result carrier stack.
-4. Implement references/COW, arbitrary alias-root writeback, property-held and
-   nested ArrayAccess, object/static/dynamic/typed property storage.
+4. Turn the integrated object-property owner/fact/commit boundary into
+   property-held and nested ArrayAccess production, then broaden references/
+   COW, arbitrary alias-root writeback, and object/static/dynamic/typed
+   property storage.
 5. Implement real exception/Throwable propagation, catch/finally/destructor/
    shutdown cleanup, source-ordered diagnostics, and custom handler behavior.
 6. Broaden namespace fallback, autoload, aliases, visibility/magic,
@@ -59,21 +64,26 @@ Current critical path to 100%:
 
 | Workstream | Integrated | Bar | Current read |
 | --- | ---: | --- | --- |
-| Runtime and ABI foundations | **90%** | `[##################--]` | Strong selected-path value, byte-string, array, reference, symbol, callable, call-frame/result, diagnostic-result, request-state, lvalue, ArrayAccess, and class metadata value surfaces. Remaining gaps include arbitrary alias transfer, autoload, namespace fallback, magic calls, closure frame handoff, cleanup/unwind parity, and broader lookup parity. |
-| Compiler/backend consumers | **80%** | `[################----]` | Generated C has the freshest consumers for calls, callable facts, selected object/class metadata, selected ArrayAccess/lvalue paths, value-result casts, diagnostic-result family consumers, discarded statement-expression diagnostic operands, echo/print output diagnostic operands, and control-transfer cleanup report bridging. LLVM shares the discarded-expression, output operand, and cleanup report bridge paths, while direct assembly still lags newer object-offset/lvalue/runtime ABIs and most semantic result operands remain unmigrated. |
-| Executable PHP semantics | **75%** | `[###############-----]` | Many executable islands exist, including bounded method/static source-call production and value-returning class metadata consumers, but full assignment/RMW/writeback, references/COW, object/ArrayAccess operations, cleanup/unwind/finally/destructors, exact diagnostics, and backend parity remain open. |
+| Runtime and ABI foundations | **90%** | `[##################--]` | Strong selected-path value, byte-string, array, reference, symbol, callable, call-frame/result, diagnostic-result, terminal-kind, request-state, lvalue, ArrayAccess, class metadata value, and autoload-policy boundary surfaces. Remaining gaps include arbitrary alias transfer, full autoload, namespace fallback, magic calls, closure frame handoff, cleanup/unwind parity, and broader lookup parity. |
+| Compiler/backend consumers | **85%** | `[#################---]` | Generated C has the freshest consumers for calls, callable facts, selected object/class metadata, namespace/import class policy, selected ArrayAccess/lvalue paths, value-result casts, diagnostic-result family consumers, discarded statement-expression diagnostic operands, echo/print output diagnostic operands, and control-transfer cleanup report bridging. LLVM now shares user-class metadata declaration/exists routing plus the discarded-expression, output operand, and cleanup report bridge paths, while direct assembly still lags newer object-offset/lvalue/runtime ABIs and most semantic result operands remain unmigrated. |
+| Executable PHP semantics | **80%** | `[################----]` | Many executable islands exist, including bounded method/static source-call production, generated method-frame `$this` property assignment, selected constructor bodies, namespace/import class policy, and value-returning class metadata consumers, but full assignment/RMW/writeback, references/COW, property-held/nested ArrayAccess, cleanup/unwind/finally/destructors, exact diagnostics, and backend parity remain open. |
 | Strings and byte semantics | **60%** | `[############--------]` | Byte-backed values and selected byte-preserving string-array slots are integrated. Binary source bytes, byte-exact interpreter/session/debug output, `mb_str_split()`, request/global byte keys, and exact diagnostics remain open. |
-| Arrays, lvalues, references, COW | **70%** | `[##############------]` | Selected lvalue/reference-source extraction, ReferenceSlot owner facts, reference-cell predicates, membership helpers, RMW array-lvalue owner/writeback, and selected ArrayAccess RMW/`??=` paths are integrated. Object/static property storage, property-held/nested ArrayAccess, arbitrary alias roots, foreach breadth, broader writeback, and full COW remain incomplete. |
+| Arrays, lvalues, references, COW | **75%** | `[###############-----]` | Selected lvalue/reference-source extraction, ReferenceSlot owner facts, object-property owner/fact/commit prerequisites, reference-cell predicates, membership helpers, RMW array-lvalue owner/writeback, and selected ArrayAccess RMW/`??=` paths are integrated. Property-held/nested ArrayAccess production, arbitrary alias roots, foreach breadth, broader writeback, and full COW remain incomplete. |
 | Symbols, globals, request state | **70%** | `[##############------]` | Selected globals, root-symbol consumers, active symbol-table consumers, request-key blockers, append-shaped symbol reference-source materialization, direct generated-C request-state frame handoff, and dynamic user-function handoff proof exist. `$GLOBALS` self-cells, closure request-state handoff, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
-| Calls, functions, frames | **90%** | `[##################--]` | Runtime callable table/value dispatch, call arguments/frame/result ABI, conditional handoff, generated-C direct/dynamic callable consumers, declared-method registration/wrapper frames, callable return facts, by-reference argument transport, descriptor closures, closure returns, request-state frame handoff, access-context lookup ABI, lookup-plus-invoke exactly-once argument ownership helpers, source-call result carrier selectors, selected production source-call carrier emission, direct generated user-function lookup-plus-invoke production, method/static source-call target operands, method/static source-call binding operands, method/static signature fallback selection, selected reference-return source-call alias transfer into by-reference arguments, and bounded executable receiver-method/static source-call production are integrated. Unknown runtime callables, broader method/static call shapes, builtin/native/inherited/trait/interface signature metadata, broader by-reference alias transfer, namespace fallback, autoload, magic calls, named/spread breadth, broader return references, constructors, cleanup/unwind, and backend parity remain open. |
-| Objects, properties, methods | **70%** | `[##############------]` | Selected object metadata, value-returning class metadata consumers, public property reference-source extraction, object-property reference-slot mutation, ArrayAccess dispatch, generated-C ArrayAccess consumers for compiler-known generated objects, dynamic generated class-name producers, object-call argument handles, declared-method callable-table publication, bounded executable receiver/static method production, allocatable class metadata, user-class metadata registry consumers, and access-context preflights exist. Property/magic/unknown-runtime-dynamic-call/clone/static-property producers, property-held/nested ArrayAccess, broader visibility parity, typed properties, destructors, interfaces/traits execution, references/COW, constructors, and backend parity remain open. |
-| Control flow, cleanup, diagnostics | **65%** | `[#############-------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostic blockers, owned diagnostic-result list contracts, consumer contracts, backend family consumers, deferred-cleanup blockers, control-transfer cleanup result consumers, terminal cleanup transfer ABI, cleanup-frame producers/source metadata/report bridges, cleanup-frame stack aggregation, cleanup-frame enqueue validation, try-body call-boundary preflight, report sinks, continuation helpers, discarded statement-expression operands, and echo/print output operands exist. Broad unwind/finally/destructor/shutdown execution, cleanup result production from real control flow, executable reference binding, remaining semantic diagnostic-result producer migration, and source-ordered diagnostics remain open. |
-| Broad integrated verification | **70%** | `[##############------]` | Focused gates around recent source work are strong. Broad verification is still constrained by lane extraction cost, stale candidate expectations, heavy formatter/log pressure, and backend parity gaps. |
+| Calls, functions, frames | **90%** | `[##################--]` | Runtime callable table/value dispatch, call arguments/frame/result ABI, conditional handoff, generated-C direct/dynamic callable consumers, declared-method registration/wrapper frames, callable return facts, by-reference argument transport, descriptor closures, closure returns, request-state frame handoff, access-context lookup ABI, lookup-plus-invoke exactly-once argument ownership helpers, source-call result carrier selectors, selected production source-call carrier emission, direct generated user-function lookup-plus-invoke production, method/static source-call target operands, method/static source-call binding operands, method/static signature fallback selection, selected reference-return source-call alias transfer into by-reference arguments, and bounded executable receiver-method/static source-call production are integrated. Unknown runtime callables, broader method/static call shapes, builtin/native/inherited/trait/interface signature metadata, broader by-reference alias transfer, magic calls, named/spread breadth, broader return references, constructor breadth, cleanup/unwind, and backend parity remain open. |
+| Objects, properties, methods | **75%** | `[###############-----]` | Selected object metadata, value-returning class metadata consumers, LLVM/generated-C user-class metadata consumers, generated-C namespace/import class policy, public property reference-source extraction, method-frame `$this` property assignment, object-property owner/fact/commit prerequisites, object-property reference-slot mutation, ArrayAccess dispatch, generated-C ArrayAccess consumers for compiler-known generated objects, dynamic generated class-name producers, object-call argument handles, declared-method callable-table publication, bounded executable receiver/static method production, allocatable class metadata, user-class metadata registry consumers, and access-context preflights exist. Property-held/nested ArrayAccess production, magic/unknown-runtime-dynamic-call/clone/static-property producers, broader visibility parity, typed properties, destructors, interfaces/traits execution, references/COW, constructor breadth, and backend parity remain open. |
+| Control flow, cleanup, diagnostics | **70%** | `[##############------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostic blockers, owned diagnostic-result list contracts, consumer contracts, backend family consumers, deferred-cleanup blockers, control-transfer cleanup result consumers, terminal cleanup transfer ABI, terminal-kind ABI, cleanup-frame producers/source metadata/report bridges, cleanup-frame stack aggregation, cleanup-frame enqueue validation, try-body call-boundary preflight, report sinks, continuation helpers, discarded statement-expression operands, and echo/print output operands exist. Broad unwind/finally/destructor/shutdown execution, cleanup result production from real control flow, executable reference binding, remaining semantic diagnostic-result producer migration, and source-ordered diagnostics remain open. |
+| Broad integrated verification | **75%** | `[###############-----]` | Focused gates around recent source work are strong, with several primary integration gates now covering linked generated-C class/method/constructor programs, LLVM class metadata routing, terminal-kind ABI behavior, and owner-boundary regressions. Broad verification is still constrained by lane extraction cost, stale candidate expectations, heavy formatter/log pressure, and backend parity gaps. |
 
 ## Recently Accounted Source Work
 
 | Commit | Capability | Proof shape |
 | --- | --- | --- |
+| `b3f16040` | Structured object-property owner/fact/commit prerequisite boundary tracks literal and dynamic property writes without stringified paths, materializes dormant object-property owners through public-property reference slots, commits replacements through reference writeback, and preserves ArrayAccess owner cleanup ownership. | Codegen unit proof for owner materialization, fact invalidation, and commit cleanup; focused generated-C ArrayAccess owner-boundary/rejection/`??=` regressions; fmt, diff check. |
+| `d96cc2bb` | LLVM user-class metadata parity declares top-level user classes, parents, methods, and properties through the shared runtime registry and routes LLVM `class_exists()`, `method_exists()`, and `property_exists()` through the metadata-exists ABI. | LLVM IR declaration/call proof, LLVM assembly acceptance, object-model metadata ABI tests, class-boundary expectation updates, generated-C metadata regressions, fmt, diff check. |
+| `cb8457f1` | Generated-C accepts parser-resolved namespace/import class policy, named class constants, leading-backslash/case-normalized dynamic class matching, and `class_exists()` autoload policy without pretending autoload succeeded. | Runtime class-name/autoload-policy tests, generated-C source proof, linked namespace/import executable, exact namespaced `class_exists` precedence, missing default-autoload terminal boundary, metadata registry regression, fmt, diff check. |
+| `ac5004a3` | Runtime/compiler diagnostic results can carry return/throw/exit terminal kinds through cleanup transfer, report sinks, terminal-list inspection, and backend declaration surfaces without enabling production return/throw/exit lowering. | Runtime ABI tests across all terminal kinds, terminal cleanup masking, invalid/missing ownership blockers, report sinks, backend surface tests, existing terminal transfer/report regressions, fmt, diff check. |
+| `04b18506` | Generated non-static method and constructor frames can assign literal or dynamic `$this` properties through the shared object-property mutation ABI while preserving receiver/replacement ownership, diagnostics, cleanup, and assignment-expression value semantics. | Generated-C source proof updated for source-call carrier callers, linked `$this` assignment success/failure programs, declared method and constructor executable regressions, object-property mutation ABI regression, fmt, diff check. |
 | `c8aeb771` | Bounded generated-C receiver-method and named static-method source-call production runs through shared target operands, binding operands, signature fallback contracts, source-call carriers, and runtime diagnostics when exact frame-compatible signatures are known. | Generated-C carrier-shape proof, linked executable method/static proof, signature fallback carrier regression, native source-call carrier regressions, declared static dispatch guard, fmt, diff check. |
 | `4e5e2709` | Runtime and generated-C value-returning class metadata consumers for `get_parent_class()`, `class_parents()`, `get_declared_classes()`, `get_class_methods()`, and `get_class_vars()` over registered user classes and selected core class metadata. | Runtime ABI test across parent chain, declared classes, method/property visibility, and ownership; generated-C source proof; linked executable proof including user and core metadata; direct-call diagnostics regression; fmt, diff check. |
 | `69526631` | Generated-C dynamic source-call reference results can be materialized as by-reference arguments when the callee is proven reference-returning through scoped callable-string metadata or native callable identity summaries, while unsupported produced calls still hit the existing blockers. | Generated-C source proof across direct and dynamic consumers, multiple reference-return methods, multiple symbols, and multiple by-reference positions; linked executable success and cleanup-failure proofs; existing adjacent alias-transfer/runtime ABI regressions; fmt, diff check. |
@@ -168,6 +178,19 @@ Primary-integrated capability and candidate/lane-local work are separated.
   `get_declared_classes()`, `get_class_methods()`, and `get_class_vars()`
   consume shared runtime class metadata value handles for selected registered
   user classes and core class metadata.
+- LLVM top-level user-class declarations and LLVM `class_exists()`,
+  `method_exists()`, and `property_exists()` route through the shared class
+  metadata registry ABI.
+- Generated-C parser-resolved namespace/import class policy, named
+  `ClassName::class`, leading-backslash/case-normalized dynamic class-name
+  matching, and explicit `class_exists()` autoload policy boundary.
+- Generated non-static method/constructor frames can assign literal and
+  dynamic `$this` properties through the shared object-property mutation ABI.
+- Runtime terminal-kind diagnostic results can preserve return/throw/exit kind
+  through cleanup transfer and report sinks.
+- Structured generated-C object-property owner/fact/commit prerequisite
+  boundary over public-property reference slots, including conservative fact
+  invalidation and cleanup ownership for future property-held ArrayAccess.
 - Receiver-free static `Class::method` string callable lookup through the
   runtime callable-value ABI.
 - Shared diagnostic operation/operand-list blocker boundary.
@@ -220,16 +243,18 @@ Primary-integrated capability and candidate/lane-local work are separated.
 
 - Dynamic ArrayAccess producers beyond known generated declared-class `new` and
   direct generated-callable return summaries.
-- Property-held and nested ArrayAccess writes/unsets, compound/RMW,
-  null-coalesce assignment, append/increment forms, and reference-returning
-  ArrayAccess semantics.
+- Property-held and nested ArrayAccess production writes/unsets,
+  compound/RMW, null-coalesce assignment, append/increment forms, and
+  reference-returning ArrayAccess semantics on top of the integrated
+  object-property owner boundary.
 - Object/static/dynamic/typed property storage and full method/object model
-  execution.
+  execution beyond the selected generated `$this` assignment subset.
 - Full reference/COW identity and arbitrary alias-root writeback.
 - Actual exception/Throwable propagation, catch matching/binding, `finally`,
   destructors, shutdown cleanup, and object lifetime cleanup.
-- Namespace fallback, autoload, class aliases, broader visibility, magic calls,
-  constructors, named/spread arguments, and return references.
+- Full SPL autoload, class aliases, broader namespace/function fallback,
+  broader visibility, magic calls, constructor breadth, named/spread
+  arguments, and return references.
 - Broader source-call production lowering over expression-owned
   `NativeCallResultHandle` carriers, including dynamic method names,
   default/variadic method/static calls, object-static receiver calls,
@@ -248,6 +273,40 @@ Primary-integrated capability and candidate/lane-local work are separated.
   `finally`/destructor/shutdown sequencing.
 
 ## Latest Focused Verification
+
+For `b3f16040`:
+
+- `cargo test -p phpc native_object_property_owner -- --nocapture`
+- `cargo test -p phpc --test native_link native_executable_c_source_routes_arrayaccess_reference_slot_owners_through_value_owner_boundary -- --nocapture`
+- `cargo test -p phpc --test native_link native_executable_c_source_rejects_arrayaccess_rmw_unsupported_owner_shapes -- --nocapture`
+- `cargo test -p phpc --test native_link native_executable_c_source_routes_arrayaccess_rmw_nullcoalesce_assignment_through_owner_boundary -- --nocapture`
+- `cargo fmt --check`
+- `git diff --check`
+
+For `d96cc2bb`:
+
+- `cargo test -p phpc --test native_runtime_abi native_user_class_metadata_registry_emit_ir_routes_llvm_through_runtime_abis -- --exact`
+- `cargo test -p phpc --test native_runtime_abi native_user_class_metadata_registry_emit_asm_accepts_llvm_runtime_abi_routing -- --exact`
+- `cargo test -p phpc --test object_model emit_ir_routes_class_exists_through_native_metadata_abi_and_folds_other_absent_metadata_calls -- --exact`
+- `cargo test -p phpc --test object_model emit_ir_routes_absent_native_property_and_method_exists_calls_through_metadata_abi -- --exact`
+- `cargo test -p phpc --test native_object_class_boundary metadata_registry`
+- `cargo test -p phpc --test object_model until_native_object_lowering_exists`
+- `cargo test -p phpc --lib native_object_metadata_call_preflight_reuses_direct_call_diagnostics`
+- `cargo fmt --check`
+- `git diff --check`
+
+For `cb8457f1`, `ac5004a3`, and `04b18506`:
+
+- `cargo test -p phpc --test native_link emit_exe_links_and_runs_namespace_alias_class_policy_program -- --nocapture`
+- `cargo test -p phpc --test native_link emit_exe_namespaced_class_exists_user_function_takes_exact_precedence -- --nocapture`
+- `cargo test -p phpc --test native_link emit_exe_class_exists_missing_default_reports_autoload_boundary -- --nocapture`
+- `cargo test -p phpc --test native_runtime_abi terminal_kind -- --nocapture`
+- `cargo test -p phpc --lib native_diagnostic_result_terminal_kind -- --nocapture`
+- `cargo test -p phpc --test native_link emit_exe_links_and_runs_this_property_assignment_in_generated_method_frames -- --nocapture`
+- `cargo test -p phpc --test native_link emit_exe_this_property_assignment_reports_mutation_failure_from_method_frame -- --nocapture`
+- `cargo test -p phpc --test native_link emit_exe_links_and_runs_declared_class_constructor_program -- --nocapture`
+- `cargo fmt --check`
+- `git diff --check`
 
 For `c8aeb771`:
 
