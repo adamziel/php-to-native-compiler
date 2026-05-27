@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 17:37 CEST
+Updated: 2026-05-27 17:44 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,10 +19,28 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `e829222b` supports selected custom
-character masks for the trim family across the shared runtime callable builtin
-and interpreter paths. `trim`, `ltrim`, and `rtrim` now share byte-mask parsing
-for default masks, empty masks, and incrementing `x..y` ranges over string and
+Latest accounted source capability: `d4906e18` selects generated-C
+`print_r(<native value>, $return)` return mode at runtime for generated native
+PHP values. The shared runtime formatter ABI now evaluates the return-mode
+operand by PHP truthiness, either returning an owned formatter string or
+writing formatter output and returning PHP `true`, while named/spread
+arguments, unsupported non-native operands, broad object formatting, output
+buffering, and LLVM/ASM parity remain blocked.
+
+Recent source commit `d4906e18` routes selected generated-C `print_r(<native
+value>, $return)` expression values through the shared native value formatter
+return-mode ABI. Generated metadata arrays from `get_declared_interfaces()`,
+`class_implements(...)`, `get_declared_traits()`, and `class_uses(...)` can now
+use runtime-selected truthy/falsey second operands without compile-time
+literal folding or per-fixture array traversal. Arbitrary object `print_r`
+parity, core/external metadata discovery, general output buffering,
+named/spread arguments, unsupported non-native operands, and LLVM/ASM parity
+remain blocked.
+
+Recent source commit `e829222b` supports selected custom character masks for
+the trim family across the shared runtime callable builtin and interpreter
+paths. `trim`, `ltrim`, and `rtrim` now share byte-mask parsing for default
+masks, empty masks, and incrementing `x..y` ranges over string and
 binary-string values, while malformed/decrementing ranges and ambiguous dot
 runs remain centralized blockers instead of fixture-specific behavior.
 
