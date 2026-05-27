@@ -124,6 +124,20 @@ const NATIVE_RETURN_TERMINAL_KIND_HANDOFF_SOURCE: &str = concat!(
     "echo finish(\"GO\"), \"|\", $box->label(\"hi\");\n",
 );
 
+const NATIVE_TRY_FINALLY_RETURN_CLEANUP_DIAGNOSTIC_SOURCE: &str = concat!(
+    "<?php\n",
+    "function cleanup_finish($value) {\n",
+    "    try { return $value; } finally { echo \"f\", [1]; }\n",
+    "}\n",
+    "class CleanupReturnBox {\n",
+    "    public function label($value) {\n",
+    "        try { return $value; } finally { echo \"m\", [2]; }\n",
+    "    }\n",
+    "}\n",
+    "$box = new CleanupReturnBox();\n",
+    "echo cleanup_finish(\"GO\"), \"|\", $box->label(\"hi\");\n",
+);
+
 const NATIVE_DECLARED_CLASS_OBJECT_SOURCE: &str = concat!(
     "<?php\n",
     "class Box { public $name; private $secret; }\n",
@@ -949,7 +963,7 @@ const NATIVE_FUNCTION_TRY_FINALLY_FRAME_SOURCE: &str = concat!(
     "function finish($value) {\n",
     "    try {\n",
     "        echo \"try:\";\n",
-    "        return strtoupper($value);\n",
+    "        return $value;\n",
     "    } finally {\n",
     "        echo \"finally:\";\n",
     "    }\n",
@@ -5252,14 +5266,15 @@ fn native_executable_c_source_routes_try_finally_normal_flow() {
         "catch bodies should not be emitted for the bounded no-throw native path:\n{source}"
     );
     assert!(
-        body.matches("phpc_native_value_format_stdout_with_diagnostic")
+        body.matches("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free")
             .count()
             >= 4,
-        "try body, finally body, and following statements should all emit output calls:\n{source}"
+        "try body, finally body, and following statements should all emit output report sinks:\n{source}"
     );
     assert!(
-        body.contains("phpc_native_value_free(native_value_array_query_"),
-        "try-body discarded native values should still be cleaned before finally/fallthrough:\n{source}"
+        body.contains("stmt_diagnostic_result_")
+            && body.contains("phpc_native_diagnostic_result_report_stderr_list_and_free"),
+        "try-body discarded native values should be consumed by the diagnostics-only statement sink before finally/fallthrough:\n{source}"
     );
     assert!(
         !source.contains("try/catch/finally lowering rejects"),
@@ -5268,35 +5283,15 @@ fn native_executable_c_source_routes_try_finally_normal_flow() {
 }
 
 #[test]
-fn native_executable_c_source_runs_finally_before_try_return_transfer() {
+fn native_executable_c_source_keeps_top_level_try_return_cleanup_blocked() {
     let program = parse(NATIVE_TRY_FINALLY_RETURN_SOURCE).unwrap();
-    let source = emit_native_executable_c_source(&program).unwrap();
-    let body = main_body(&source);
-    let return_pos = body
-        .find("return 0;")
-        .unwrap_or_else(|| panic!("try return should terminate main:\n{source}"));
+    let error = emit_native_executable_c_source(&program).unwrap_err();
 
     assert!(
-        body[..return_pos].contains("phpc_native_value_free(native_value_array_query_"),
-        "try-body discarded native values should be cleaned on the return path:\n{source}"
-    );
-    assert!(
-        body[..return_pos]
-            .matches("phpc_native_value_format_stdout_with_diagnostic")
-            .count()
-            >= 3,
-        "try output and finally output should be emitted before return:\n{source}"
-    );
-    assert!(
-        body[..return_pos]
-            .matches("phpc_native_value_free(native_value_array_query_")
-            .count()
-            >= 2,
-        "return operand value results should be released before terminal return:\n{source}"
-    );
-    assert!(
-        !source.contains("try/catch/finally lowering rejects"),
-        "{source}"
+        error
+            .message
+            .contains("try blocks outside the bounded generated-C normal-flow subset"),
+        "{error:?}"
     );
 }
 
@@ -5312,12 +5307,18 @@ fn native_executable_c_source_runs_finally_inside_user_function_frames() {
                 .contains("static phpc_NativeValueHandle phpc_user_function_2_nested_finally("),
         "try/finally functions should still lower to reusable frame entries:\n{source}"
     );
+    let stdout_emit_count = source
+        .matches("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free")
+        .count();
     assert!(
-        source
-            .matches("phpc_native_value_format_stdout_with_diagnostic")
-            .count()
-            >= 6,
-        "try bodies and active finally bodies inside frames should emit through the shared stdout path:\n{source}"
+        stdout_emit_count >= 6,
+        "try bodies and active finally bodies inside frames should emit through shared stdout paths:\n{source}"
+    );
+    assert!(
+        source.contains("cleanup_diagnostic_result_")
+            && source.contains("phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free(1")
+            && source.contains("diagnostic_result_operands_"),
+        "return-through-finally inside frames should queue finalizer cleanup operands before handoff:\n{source}"
     );
     assert!(
         source.contains("*phpc_call_status = 1; return"),
@@ -5342,6 +5343,23 @@ fn native_executable_c_source_routes_function_and_method_returns_through_termina
             >= 2,
         "function and method returns should transfer return terminal kind through the diagnostic-result ABI:\n{source}"
     );
+    let return_transfer_cleanup_count = source
+        .lines()
+        .filter(|line| {
+            line.contains("phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free(1")
+                && line.contains("diagnostic_result_operands_")
+                && !line.contains("NULL, 0")
+        })
+        .count();
+    assert!(
+        return_transfer_cleanup_count >= 2,
+        "function and method returns through finally should pass cleanup-frame operands into terminal transfer:\n{source}"
+    );
+    assert!(
+        source.contains("cleanup_diagnostic_result_")
+            && source.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
+        "finally output should execute through output sinks and queue cleanup-surface operands:\n{source}"
+    );
     assert!(
         source
             .matches("phpc_native_diagnostic_result_return_take_value_and_free")
@@ -5362,6 +5380,37 @@ fn native_executable_c_source_routes_function_and_method_returns_through_termina
 }
 
 #[test]
+fn native_executable_c_source_preserves_finally_cleanup_diagnostics_during_return_transfer() {
+    let program = parse(NATIVE_TRY_FINALLY_RETURN_CLEANUP_DIAGNOSTIC_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    let return_transfer_cleanup_count = source
+        .lines()
+        .filter(|line| {
+            line.contains("phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free(1")
+                && line.contains("diagnostic_result_operands_")
+                && !line.contains("NULL, 0")
+        })
+        .count();
+    assert!(
+        return_transfer_cleanup_count >= 2,
+        "function and method return-through-finally should transfer queued cleanup operands:\n{source}"
+    );
+    assert!(
+        source.contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free")
+            && source.contains("cleanup_diagnostic_result_")
+            && source.contains("phpc_native_diagnostic_result_return_take_value_and_free"),
+        "finally output should keep stdout/diagnostic execution, cleanup-frame capture, and return value handoff:\n{source}"
+    );
+    assert!(
+        !source.contains("try/catch/finally lowering rejects")
+            && !source.contains("assembly user-function lowering rejects")
+            && !source.contains("assembly method-call lowering rejects"),
+        "bounded function/method return-through-finally cleanup should stay inside supported frame shapes:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_runs_finally_before_loop_transfers() {
     let program = parse(NATIVE_TRY_FINALLY_LOOP_TRANSFER_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -5372,10 +5421,10 @@ fn native_executable_c_source_runs_finally_before_loop_transfers() {
         "loop transfers should still lower to their selected C transfer targets:\n{source}"
     );
     assert!(
-        body.matches("phpc_native_value_format_stdout_with_diagnostic")
+        body.matches("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free")
             .count()
             >= 6,
-        "try bodies, finally bodies, and post-loop output should all emit through stdout:\n{source}"
+        "try bodies, finally bodies, and post-loop output should all emit through stdout report sinks:\n{source}"
     );
     assert!(
         !source.contains("try/catch/finally lowering rejects")
@@ -5395,7 +5444,7 @@ fn native_executable_c_source_distinguishes_exiting_and_inner_loop_transfers() {
         let body = main_body(&source);
 
         assert!(
-            body.matches("phpc_native_value_format_stdout_with_diagnostic")
+            body.matches("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free")
                 .count()
                 >= 2,
             "nested/inner transfer programs should preserve finally output paths:\n{source}"
@@ -5412,10 +5461,8 @@ fn native_executable_c_source_distinguishes_exiting_and_inner_loop_transfers() {
 fn native_executable_c_source_rejects_try_unwind_transfers() {
     for source in [
         "<?php\ntry { return; } catch (Exception $e) { echo \"catch\"; }\n",
-        "<?php\ntry { return exit(\"bye\"); } finally { echo \"finally\"; }\n",
-        "<?php\ntry { exit(\"bye\"); } finally { echo \"finally\"; }\n",
         "<?php\ntry { echo \"try\"; } finally { return; }\n",
-        "<?php\ntry { throw new Exception(\"boom\"); } catch (Exception $e) { echo \"catch\"; } finally { echo \"finally\"; }\n",
+        "<?php\n$e = \"boom\";\ntry { throw $e; } catch (Exception $caught) { echo \"catch\"; } finally { echo \"finally\"; }\n",
         "<?php\ntry { goto done; } finally { echo \"finally\"; }\ndone:\necho \"after\";\n",
         "<?php\n$i = 0;\nwhile ($i < 1) { try { echo \"try\"; } finally { break; } }\n",
         "<?php\n$i = 0;\nwhile ($i < 1) { try { echo \"try\"; } finally { continue; } }\n",
@@ -5427,7 +5474,24 @@ fn native_executable_c_source_rejects_try_unwind_transfers() {
             error
                 .message
                 .contains("try blocks outside the bounded generated-C normal-flow subset"),
-            "{error:?}"
+            "{source}\n{error:?}"
+        );
+    }
+    for source in [
+        "<?php\ntry { return exit(\"bye\"); } finally { echo \"finally\"; }\n",
+        "<?php\ntry { exit(\"bye\"); } finally { echo \"finally\"; }\n",
+    ] {
+        let program = parse(source).unwrap();
+        let error = emit_native_executable_c_source(&program).unwrap_err();
+
+        assert!(
+            error
+                .message
+                .contains("try blocks outside the bounded generated-C normal-flow subset")
+                || error
+                    .message
+                    .contains("assembly function-call lowering rejects function calls"),
+            "{source}\n{error:?}"
         );
     }
 }
@@ -6652,16 +6716,18 @@ fn emit_exe_links_and_runs_try_finally_normal_flow_program() {
 }
 
 #[test]
-fn emit_exe_links_and_runs_try_finally_return_program() {
+fn emit_exe_links_and_runs_try_finally_return_cleanup_diagnostic_program() {
     if !has_cc() {
         return;
     }
 
-    let (source_path, output_path) =
-        compile_native_link_fixture("try_finally_return", NATIVE_TRY_FINALLY_RETURN_SOURCE);
+    let (source_path, output_path) = compile_native_link_fixture(
+        "try_finally_return_cleanup_diagnostic",
+        NATIVE_TRY_FINALLY_RETURN_CLEANUP_DIAGNOSTIC_SOURCE,
+    );
 
     let run = Command::new(&output_path).output().unwrap_or_else(|error| {
-        panic!("failed to run native try/finally return executable: {error}")
+        panic!("failed to run native try/finally return cleanup executable: {error}")
     });
 
     assert!(
@@ -6670,8 +6736,12 @@ fn emit_exe_links_and_runs_try_finally_return_program() {
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(run.stdout, b"try|finally:7|");
-    assert_eq!(run.stderr, b"");
+    assert_eq!(run.stdout, b"fArrayGO|mArrayhi");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.matches("Array to string conversion").count() >= 2,
+        "finally cleanup diagnostics should be reported during return handoff, got stderr:\n{stderr}"
+    );
 
     let _ = fs::remove_file(&source_path);
     let _ = fs::remove_file(&output_path);
@@ -6700,7 +6770,7 @@ fn emit_exe_links_and_runs_function_try_finally_frame_program() {
     );
     assert_eq!(
         run.stdout,
-        b"try:finally:GO|body:cleanup:cba|inner:outer:done|after"
+        b"try:finally:go|body:cleanup:cba|inner:outer:done|after"
     );
     assert_eq!(run.stderr, b"");
 

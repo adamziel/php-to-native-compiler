@@ -31065,17 +31065,17 @@ impl CGenerator {
                 cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
             }
         };
-        self.emit_active_finally_bodies_before_terminal_transfer()?;
         materialized = self.emit_function_return_type_coercion(materialized);
         let terminal_result =
             self.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::value(
                 NativeDiagnosticResultOperandSurface::Terminal,
                 &materialized.handle,
             ));
+        let finally_cleanup = self.emit_active_finally_bodies_for_terminal_transfer()?;
         let transferred_return = self.emit_native_diagnostic_result_terminal_kind_transfer(
             NativeTerminalKind::Return,
             &terminal_result,
-            &[],
+            finally_cleanup.results(),
         );
         let return_value =
             self.emit_native_diagnostic_result_return_value_handoff(&transferred_return);
@@ -31289,6 +31289,107 @@ impl CGenerator {
 
     fn emit_active_finally_bodies_before_terminal_transfer(&mut self) -> CompileResult<()> {
         self.emit_active_finally_bodies_exiting_to_depth(0)
+    }
+
+    fn emit_active_finally_bodies_for_terminal_transfer(
+        &mut self,
+    ) -> CompileResult<NativeDiagnosticCleanupFrame> {
+        let mut frame = NativeDiagnosticCleanupFrame::default();
+        let mut operand_index = 0;
+        let active_finally_bodies = self.active_finally_bodies.clone();
+        for finally_body in active_finally_bodies.iter().rev() {
+            for statement in finally_body {
+                self.emit_finally_statement_for_terminal_transfer(
+                    statement,
+                    &mut frame,
+                    &mut operand_index,
+                )?;
+            }
+        }
+        Ok(frame)
+    }
+
+    fn emit_finally_statement_for_terminal_transfer(
+        &mut self,
+        stmt: &Stmt,
+        frame: &mut NativeDiagnosticCleanupFrame,
+        operand_index: &mut usize,
+    ) -> CompileResult<()> {
+        match stmt {
+            Stmt::Echo { exprs, .. } => {
+                for expr in exprs {
+                    self.emit_finally_output_expr_for_terminal_transfer(
+                        expr,
+                        frame,
+                        operand_index,
+                    )?;
+                }
+                Ok(())
+            }
+            Stmt::Print { expr, .. } => {
+                self.emit_finally_output_expr_for_terminal_transfer(expr, frame, operand_index)
+            }
+            Stmt::Expr { .. } => {
+                self.emit_statement(stmt)?;
+                self.emit_finally_null_cleanup_result(frame, operand_index);
+                Ok(())
+            }
+            _ => {
+                self.emit_statement(stmt)?;
+                self.emit_finally_null_cleanup_result(frame, operand_index);
+                Ok(())
+            }
+        }
+    }
+
+    fn emit_finally_output_expr_for_terminal_transfer(
+        &mut self,
+        expr: &Expr,
+        frame: &mut NativeDiagnosticCleanupFrame,
+        operand_index: &mut usize,
+    ) -> CompileResult<()> {
+        let value = self.materialize_native_value_result_operand(expr, "")?;
+        let result = self.emit_native_diagnostic_result_value_operand_for_materialized(
+            NativeDiagnosticResultOperandSurface::Output,
+            value,
+        );
+        self.emit_native_diagnostic_result_report_sink(
+            NativeDiagnosticResultReportSink::EchoStdout,
+            &[result],
+        );
+        self.emit_finally_null_cleanup_result(frame, operand_index);
+        Ok(())
+    }
+
+    fn emit_finally_null_cleanup_result(
+        &mut self,
+        frame: &mut NativeDiagnosticCleanupFrame,
+        operand_index: &mut usize,
+    ) {
+        self.emit_finally_cleanup_result(
+            frame,
+            operand_index,
+            NativeDiagnosticResultProducer::null(NativeDiagnosticResultOperandSurface::Cleanup),
+        );
+    }
+
+    fn emit_finally_cleanup_result(
+        &mut self,
+        frame: &mut NativeDiagnosticCleanupFrame,
+        operand_index: &mut usize,
+        producer: NativeDiagnosticResultProducer<'_>,
+    ) {
+        let source = NativeDiagnosticCleanupFrameSource::TerminalOperand {
+            requirement: NativeDiagnosticOperandRequirement {
+                tag: PHPC_NATIVE_DIAGNOSTIC_OPERAND_STATEMENT_EVALUATION_CLEANUP,
+                operand_index: *operand_index,
+            },
+        };
+        let result = self.emit_native_diagnostic_result_operand(producer);
+        frame
+            .enqueue_result(source, producer, result)
+            .expect("terminal finally cleanup emits cleanup-surface results");
+        *operand_index += 1;
     }
 
     fn emit_active_finally_bodies_exiting_to_depth(
