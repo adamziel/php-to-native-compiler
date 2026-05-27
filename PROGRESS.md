@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 16:54 CEST
+Updated: 2026-05-27 16:58 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,14 +19,23 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `98e9f154` allows bounded literal
-`include_once` / `require_once` cycles during generated-C executable include
-unit discovery and lowering. The root file now has an include-once slot, active
-include units can treat recursive `_once` edges as duplicate truth instead of
-fatal cyclic graph blockers, and non-`_once` include cycles still reject before
-native link. Dynamic paths, include_path search, stream wrappers, missing
-include warning/false recovery, require fatal fidelity, and LLVM/ASM parity
-remain blocked.
+Latest accounted source capability: `b4881053` registers selected generated
+trait metadata in the shared runtime class-metadata registries. Generated-C
+`trait_exists()`, `get_declared_traits()`, and direct `class_uses()` calls now
+reuse runtime metadata declaration/value helpers, direct trait-to-class
+metadata edges, and native value array consumers instead of generated
+per-fixture trait arrays. Parent-recursive `class_uses()` helper patterns,
+autoload-discovered traits, side-effecting include timing, core/external trait
+metadata, and LLVM/ASM parity remain blocked.
+
+Recent source commit `98e9f154` allows bounded literal `include_once` /
+`require_once` cycles during generated-C executable include unit discovery and
+lowering. The root file now has an include-once slot, active include units can
+treat recursive `_once` edges as duplicate truth instead of fatal cyclic graph
+blockers, and non-`_once` include cycles still reject before native link.
+Dynamic paths, include_path search, stream wrappers, missing include
+warning/false recovery, require fatal fidelity, and LLVM/ASM parity remain
+blocked.
 
 Recent source commit `98c8937b` lets selected generated native metadata arrays
 participate in shared native value-array consumers. The native value array
