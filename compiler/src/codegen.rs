@@ -19,7 +19,8 @@ use crate::call_arguments::{
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::include_discovery::{
-    resolve_literal_include_path, ExecutableCompilationUnit, ExecutableIncludeUnit,
+    resolve_literal_include_path, ExecutableCompilationUnit, ExecutableIncludeResolution,
+    ExecutableIncludeUnit,
 };
 use crate::trait_semantics;
 use php_runtime::{
@@ -133,6 +134,8 @@ const LLVM_REQUIRE_REJECTION: &str = "LLVM include/require lowering rejects mult
 const ASSEMBLY_REQUIRE_REJECTION: &str = "assembly include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
 const LLVM_REQUIRE_EXPRESSION_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution for expression forms with include return values, _once de-duplication results, and caller-scope side effects until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles current include/require expression behavior";
 const ASSEMBLY_REQUIRE_EXPRESSION_REJECTION: &str = "assembly include/require lowering rejects multi-file execution for expression forms with include return values, _once de-duplication results, and caller-scope side effects until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles current include/require expression behavior";
+const ASSEMBLY_RUNTIME_INCLUDE_REGISTRY_REJECTION: &str = "assembly runtime include/require lowering rejects non-finite path values until a generated include-unit registry has at least one declared unit; arbitrary filesystem/source loading remains blocked";
+const RUNTIME_INCLUDE_REGISTRY_LOOKUP_REJECTION: &str = "unsupported runtime include/require path: generated include-unit registry lookup did not find an unambiguous declared include unit; arbitrary filesystem/source loading remains blocked";
 const LLVM_MAGIC_CONSTANT_REJECTION: &str = "LLVM magic-constant lowering rejects executable magic constants __LINE__, __FILE__, __DIR__, __FUNCTION__, __CLASS__, and __METHOD__ until native source mapping, path canonicalization, and function/class/method-context lowering exist; phpc run handles current magic constant behavior";
 const ASSEMBLY_MAGIC_CONSTANT_REJECTION: &str = "assembly magic-constant lowering rejects executable magic constants __LINE__, __FILE__, __DIR__, __FUNCTION__, __CLASS__, and __METHOD__ until native source mapping, path canonicalization, and function/class/method-context lowering exist; phpc run handles current magic constant behavior";
 const LLVM_GLOBAL_CONSTANT_REJECTION: &str = "LLVM global-constant lowering rejects built-in constant values, runtime-defined constants, bare constant reads, top-level const declarations, define()/constant(), and unsupported defined() forms until native constant tables, source-order definitions, namespace-aware lookup, and exact native error behavior exist; phpc run handles current global constant behavior";
@@ -16200,6 +16203,7 @@ fn emit_c_source_for_assembly(program: &Program) -> CompileResult<String> {
 pub fn emit_native_executable_c_source(program: &Program) -> CompileResult<String> {
     let mut generator = CGenerator {
         uses_native_string_helpers: true,
+        native_include_path: ".".to_string(),
         ..CGenerator::default()
     };
     generator.emit_program(program)
@@ -16211,6 +16215,7 @@ pub fn emit_native_executable_c_source_for_include_units(
     let mut generator = CGenerator {
         uses_native_string_helpers: true,
         active_source_file: Some(unit.root_file.clone()),
+        native_include_path: ".".to_string(),
         ..CGenerator::default()
     };
     generator.emit_program_with_include_units(unit)
@@ -16331,6 +16336,8 @@ struct CGenerator {
     include_units: HashMap<PathBuf, CIncludeUnit>,
     include_unit_order: Vec<PathBuf>,
     include_once_slots: HashMap<PathBuf, String>,
+    include_resolutions: HashMap<CIncludeResolutionKey, Vec<CIncludeResolution>>,
+    native_include_path: String,
 }
 
 #[derive(Debug, Clone)]
@@ -16338,6 +16345,44 @@ struct CIncludeUnit {
     c_name: String,
     path: PathBuf,
     program: Program,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct CIncludeResolutionKey {
+    source_file: PathBuf,
+    line: usize,
+    column: usize,
+}
+
+#[derive(Debug, Clone)]
+enum CIncludeResolution {
+    Found(CFoundIncludeResolution),
+    Missing(CMissingIncludeResolution),
+}
+
+#[derive(Debug, Clone)]
+struct CFoundIncludeResolution {
+    path: PathBuf,
+    requested_path: String,
+}
+
+#[derive(Debug, Clone)]
+struct CMissingIncludeResolution {
+    path: PathBuf,
+    requested_path: String,
+    include_path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct CIncludeLookupEntry {
+    key: String,
+    path: PathBuf,
+}
+
+struct CIncludePathRuntimeOperand {
+    bytes: String,
+    byte_len: String,
+    cleanup_after_use: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -18585,6 +18630,15 @@ fn c_cleanup_sequence(cleanup: &[String]) -> String {
         let mut sequence = cleanup.join(" ");
         sequence.push(' ');
         sequence
+    }
+}
+
+fn include_construct_name(required: bool, once: bool) -> &'static str {
+    match (required, once) {
+        (true, true) => "require_once",
+        (true, false) => "require",
+        (false, true) => "include_once",
+        (false, false) => "include",
     }
 }
 
@@ -21734,6 +21788,8 @@ impl CGenerator {
             include_units: self.include_units.clone(),
             include_unit_order: self.include_unit_order.clone(),
             include_once_slots: self.include_once_slots.clone(),
+            include_resolutions: self.include_resolutions.clone(),
+            native_include_path: self.native_include_path.clone(),
             ..CGenerator::default()
         };
 
@@ -22777,6 +22833,31 @@ impl CGenerator {
         }
     }
 
+    fn prepare_include_resolutions(&mut self, resolutions: &[ExecutableIncludeResolution]) {
+        for resolution in resolutions {
+            let include_resolution = if resolution.found {
+                CIncludeResolution::Found(CFoundIncludeResolution {
+                    path: resolution.path.clone(),
+                    requested_path: resolution.requested_path.clone(),
+                })
+            } else {
+                CIncludeResolution::Missing(CMissingIncludeResolution {
+                    path: resolution.path.clone(),
+                    requested_path: resolution.requested_path.clone(),
+                    include_path: resolution.include_path.clone(),
+                })
+            };
+            self.include_resolutions
+                .entry(CIncludeResolutionKey {
+                    source_file: resolution.source_file.clone(),
+                    line: resolution.line,
+                    column: resolution.column,
+                })
+                .or_default()
+                .push(include_resolution);
+        }
+    }
+
     fn prepare_include_root_once_slot(&mut self, root_file: &Path) {
         let slot = "phpc_include_once_root".to_string();
         self.static_data
@@ -22802,6 +22883,7 @@ impl CGenerator {
     ) -> CompileResult<String> {
         self.prepare_include_root_once_slot(&unit.root_file);
         self.prepare_include_units(&unit.include_units);
+        self.prepare_include_resolutions(&unit.include_resolutions);
         let mut declaration_statements = unit.program.statements.clone();
         declaration_statements.extend(self.all_include_unit_statements());
         self.register_top_level_declared_traits(&declaration_statements)?;
@@ -22970,9 +23052,16 @@ impl CGenerator {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeSymbolTableHandle;\n");
             }
             if self.uses_native_include_unit_helpers {
+                output.push_str("#define PHPC_NATIVE_DIAGNOSTIC_SEVERITY_WARNING 2\n");
+                output.push_str("#define PHPC_NATIVE_DIAGNOSTIC_SEVERITY_ERROR 3\n");
                 output.push_str("#define PHPC_NATIVE_INCLUDE_RESULT_NORMAL 1\n");
                 output.push_str("#define PHPC_NATIVE_INCLUDE_RESULT_RETURN 2\n");
+                output.push_str("#define PHPC_NATIVE_INCLUDE_LOOKUP_STATUS_FOUND 1\n");
+                output.push_str("#define PHPC_NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED 2\n");
+                output.push_str("#define PHPC_NATIVE_INCLUDE_LOOKUP_STATUS_AMBIGUOUS 3\n");
                 output.push_str("typedef struct { uint8_t tag; phpc_NativeValueHandle value; int32_t exit_code; } phpc_NativeIncludeResult;\n");
+                output.push_str("typedef struct { const uint8_t *key_ptr; size_t key_len; size_t unit_index; } phpc_NativeIncludeUnitLookupEntry;\n");
+                output.push_str("typedef struct { uint8_t status; size_t unit_index; } phpc_NativeIncludeUnitLookupResult;\n");
             }
             if self.uses_native_string_helpers || self.uses_native_array_helpers {
                 output.push_str(
@@ -23575,6 +23664,10 @@ impl CGenerator {
                 output.push_str("extern void phpc_native_value_object_dynamic_method_failure_with_diagnostic(phpc_NativeValueHandle value, phpc_NativeValueHandle method_name, const uint8_t *reason, size_t reason_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             output.push_str("extern void phpc_native_value_free(phpc_NativeValueHandle value);\n");
+            if self.uses_native_include_unit_helpers {
+                output.push_str("extern phpc_NativeDiagnosticHandle phpc_native_diagnostic_from_severity_message_bytes(uint8_t severity, const uint8_t *ptr, size_t len);\n");
+                output.push_str("extern phpc_NativeIncludeUnitLookupResult phpc_native_include_unit_registry_lookup(const uint8_t *path_ptr, size_t path_len, const phpc_NativeIncludeUnitLookupEntry *entries, size_t entry_count);\n");
+            }
             output.push_str("extern size_t phpc_native_diagnostic_message_stderr(phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern size_t phpc_native_diagnostic_report(phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern void phpc_native_diagnostic_free(phpc_NativeDiagnosticHandle diagnostic);\n");
@@ -35239,11 +35332,149 @@ impl CGenerator {
         Ok(())
     }
 
-    fn resolve_active_include_path(&self, path: &Expr, span: Span) -> CompileResult<PathBuf> {
+    fn current_native_include_path(&self) -> &str {
+        if self.native_include_path.is_empty() {
+            "."
+        } else {
+            &self.native_include_path
+        }
+    }
+
+    fn literal_include_path_setting_expr(&self, expr: &Expr) -> Option<String> {
+        let source_dir = self
+            .active_source_file
+            .as_deref()
+            .and_then(Path::parent)
+            .unwrap_or_else(|| Path::new(""));
+        literal_include_path_setting_for_codegen(expr, source_dir)
+    }
+
+    fn emit_get_include_path_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
+        if !args.is_empty() {
+            return Err(self.unsupported_value_call(&Expr::Call {
+                name: "get_include_path".to_string(),
+                args: args.to_vec(),
+                span,
+            }));
+        }
+        Ok(CValue::String(
+            self.current_native_include_path().to_string(),
+        ))
+    }
+
+    fn emit_set_include_path_call(&mut self, args: &[Expr], span: Span) -> CompileResult<CValue> {
+        let [path] = args else {
+            return Err(self.unsupported_value_call(&Expr::Call {
+                name: "set_include_path".to_string(),
+                args: args.to_vec(),
+                span,
+            }));
+        };
+        let Some(next_path) = self.literal_include_path_setting_expr(path) else {
+            return Err(self.unsupported_value_call(&Expr::Call {
+                name: "set_include_path".to_string(),
+                args: args.to_vec(),
+                span,
+            }));
+        };
+        let previous = self.current_native_include_path().to_string();
+        self.native_include_path = next_path;
+        Ok(CValue::String(previous))
+    }
+
+    fn resolve_active_include(
+        &self,
+        path: &Expr,
+        span: Span,
+    ) -> CompileResult<Vec<CIncludeResolution>> {
         let Some(source_file) = &self.active_source_file else {
             return Err(self.unsupported(span, ASSEMBLY_REQUIRE_REJECTION));
         };
-        resolve_literal_include_path(path, source_file, Path::new("/"), span)
+        let key = CIncludeResolutionKey {
+            source_file: source_file.clone(),
+            line: span.line,
+            column: span.column,
+        };
+        if let Some(resolution) = self.include_resolutions.get(&key) {
+            return Ok(resolution.clone());
+        }
+        match resolve_literal_include_path(path, source_file, Path::new("/"), span) {
+            Ok(path) => Ok(vec![CIncludeResolution::Found(CFoundIncludeResolution {
+                path,
+                requested_path: String::new(),
+            })]),
+            Err(_) => Ok(Vec::new()),
+        }
+    }
+
+    fn emit_include_diagnostic_message(&mut self, message: &str, severity: &str) {
+        let data = self.next_native_name("include_diagnostic_message");
+        let diagnostic = self.next_native_name("include_diagnostic");
+        self.static_data.push(format!(
+            "static const uint8_t {data}[] = {{{}}};",
+            c_byte_array(message.as_bytes())
+        ));
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {diagnostic} = phpc_native_diagnostic_from_severity_message_bytes({severity}, {data}, {});",
+            message.len()
+        ));
+        self.body.push(format!(
+            "phpc_native_diagnostic_message_stderr({diagnostic});"
+        ));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+    }
+
+    fn emit_missing_include_result(
+        &mut self,
+        missing: &CMissingIncludeResolution,
+        span: Span,
+        keep_value: bool,
+        required: bool,
+        construct: &str,
+    ) -> CompileResult<Option<String>> {
+        let source_file = self
+            .active_source_file
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let requested_path = if missing.requested_path.is_empty() {
+            missing.path.to_string_lossy().into_owned()
+        } else {
+            missing.requested_path.clone()
+        };
+        let warning = format!(
+            "PHP Warning:  {construct}({requested_path}): Failed to open stream: No such file or directory in {source_file} on line {}\nPHP Warning:  {construct}(): Failed opening '{}' for inclusion (include_path='{}') in {source_file} on line {}\n",
+            span.line, requested_path, missing.include_path, span.line
+        );
+        self.emit_include_diagnostic_message(&warning, "PHPC_NATIVE_DIAGNOSTIC_SEVERITY_WARNING");
+
+        if required {
+            let fatal = format!(
+                "PHP Fatal error:  {construct}(): Failed opening required '{}' (include_path='{}') in {source_file} on line {}\n",
+                requested_path, missing.include_path, span.line
+            );
+            self.emit_include_diagnostic_message(&fatal, "PHPC_NATIVE_DIAGNOSTIC_SEVERITY_ERROR");
+            let exit = self.native_error_exit_with_code("", "255");
+            self.body.push(exit);
+        }
+
+        if keep_value {
+            let value = self.emit_native_value_for_cvalue(CValue::Bool(false), span)?;
+            self.retain_native_value_cleanup_handle(&value);
+            Ok(Some(value))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn emit_include_result_exit_check(&mut self, result: &str) {
+        let exit = self.native_error_exit_with_code(
+            &format!("phpc_native_value_free({result}.value);"),
+            &format!("{result}.exit_code"),
+        );
+        self.body
+            .push(format!("if ({result}.exit_code != 0) {{ {exit} }}"));
     }
 
     fn emit_root_include_once_duplicate(
@@ -35277,15 +35508,23 @@ impl CGenerator {
         Ok(None)
     }
 
-    fn emit_include_unit_call(
+    fn emit_concrete_include_unit_call(
         &mut self,
-        path: &Expr,
+        resolution: &CIncludeResolution,
         once: bool,
         span: Span,
         keep_value: bool,
+        required: bool,
+        construct: &str,
     ) -> CompileResult<Option<String>> {
-        let include_path = self.resolve_active_include_path(path, span)?;
         self.uses_native_include_unit_helpers = true;
+        let include_path = match resolution {
+            CIncludeResolution::Found(found) => found.path.clone(),
+            CIncludeResolution::Missing(missing) => {
+                return self
+                    .emit_missing_include_result(&missing, span, keep_value, required, construct);
+            }
+        };
 
         if once {
             let slot = self
@@ -35317,6 +35556,7 @@ impl CGenerator {
                     "  phpc_NativeIncludeResult {result} = {}({table});",
                     unit.c_name
                 ));
+                self.emit_include_result_exit_check(&result);
                 self.body.push(format!("  {duplicate} = {result}.value;"));
                 self.body.push("}".to_string());
                 self.retain_native_value_cleanup_handle(&duplicate);
@@ -35329,6 +35569,7 @@ impl CGenerator {
                 "  phpc_NativeIncludeResult {result} = {}({table});",
                 unit.c_name
             ));
+            self.emit_include_result_exit_check(&result);
             self.body
                 .push(format!("  phpc_native_value_free({result}.value);"));
             self.body.push("}".to_string());
@@ -35347,6 +35588,7 @@ impl CGenerator {
             "phpc_NativeIncludeResult {result} = {}({table});",
             unit.c_name
         ));
+        self.emit_include_result_exit_check(&result);
         if keep_value {
             let value = format!("{result}.value");
             let retained = self.next_native_name("include_value");
@@ -35361,13 +35603,366 @@ impl CGenerator {
         }
     }
 
+    fn emit_include_path_runtime_operand(
+        &mut self,
+        path: &Expr,
+        _span: Span,
+    ) -> CompileResult<CIncludePathRuntimeOperand> {
+        let materialized = self.materialize_native_value_result_operand(path, "")?;
+        let conversion = self.next_native_name("include_path_string_conversion");
+        let bytes = self.next_native_name("include_path_string_bytes");
+        let byte_len = self.next_native_name("include_path_string_len");
+        let cleanup = c_cleanup_sequence(&materialized.cleanup_after_use);
+        self.uses_native_string_helpers = true;
+        self.body.push(format!(
+            "phpc_NativeStringConversionResult {conversion} = phpc_native_value_to_string_bytes({});",
+            materialized.handle
+        ));
+        let conversion_failure_exit = self.native_error_exit(&format!(
+            "phpc_native_string_conversion_result_free({conversion}); {cleanup}"
+        ));
+        self.body.push(format!(
+            "if ({conversion}.diagnostic.ptr != NULL) {{ phpc_native_diagnostic_message_stderr({conversion}.diagnostic); {conversion_failure_exit} }}"
+        ));
+        self.body
+            .push(format!("const uint8_t *{bytes} = {conversion}.bytes.ptr;"));
+        self.body
+            .push(format!("size_t {byte_len} = {conversion}.bytes.len;"));
+        let mut cleanup_after_use = vec![format!(
+            "phpc_native_string_conversion_result_free({conversion});"
+        )];
+        cleanup_after_use.extend(materialized.cleanup_after_use);
+        Ok(CIncludePathRuntimeOperand {
+            bytes,
+            byte_len,
+            cleanup_after_use,
+        })
+    }
+
+    fn include_path_runtime_condition(
+        &mut self,
+        operand: &CIncludePathRuntimeOperand,
+        requested_path: &str,
+    ) -> String {
+        if requested_path.is_empty() {
+            return format!("{} == 0", operand.byte_len);
+        }
+        let data = self.next_native_name("include_path_candidate_bytes");
+        self.static_data.push(format!(
+            "static const uint8_t {data}[] = {{{}}};",
+            c_byte_array(requested_path.as_bytes())
+        ));
+        self.uses_strcmp = true;
+        format!(
+            "{} == {} && memcmp({}, {data}, {}) == 0",
+            operand.byte_len,
+            requested_path.len(),
+            operand.bytes,
+            requested_path.len()
+        )
+    }
+
+    fn include_unit_registry_entries(&self) -> Vec<CIncludeLookupEntry> {
+        let mut entries = Vec::new();
+        let mut seen = HashSet::new();
+
+        for path in &self.include_unit_order {
+            let key = path.to_string_lossy().into_owned();
+            if seen.insert((key.clone(), path.clone())) {
+                entries.push(CIncludeLookupEntry {
+                    key,
+                    path: path.clone(),
+                });
+            }
+        }
+
+        let mut aliases = self
+            .include_resolutions
+            .values()
+            .flat_map(|resolutions| resolutions.iter())
+            .filter_map(|resolution| match resolution {
+                CIncludeResolution::Found(found) if !found.requested_path.is_empty() => {
+                    Some(CIncludeLookupEntry {
+                        key: found.requested_path.clone(),
+                        path: found.path.clone(),
+                    })
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        aliases.sort_by(|left, right| {
+            left.key
+                .cmp(&right.key)
+                .then_with(|| left.path.cmp(&right.path))
+        });
+        for alias in aliases {
+            if seen.insert((alias.key.clone(), alias.path.clone())) {
+                entries.push(alias);
+            }
+        }
+
+        entries
+    }
+
+    fn emit_include_unit_registry_entries(
+        &mut self,
+        entries: &[CIncludeLookupEntry],
+        span: Span,
+    ) -> CompileResult<String> {
+        if entries.is_empty() {
+            return Err(self.unsupported(span, ASSEMBLY_RUNTIME_INCLUDE_REGISTRY_REJECTION));
+        }
+        let unit_indexes = self
+            .include_unit_order
+            .iter()
+            .enumerate()
+            .map(|(index, path)| (path.clone(), index))
+            .collect::<HashMap<_, _>>();
+        let array = self.next_native_name("include_unit_lookup_entries");
+        let mut initializers = Vec::new();
+        for entry in entries {
+            let Some(unit_index) = unit_indexes.get(&entry.path) else {
+                return Err(self.unsupported(span, ASSEMBLY_REQUIRE_REJECTION));
+            };
+            let key = self.next_native_name("include_unit_lookup_key");
+            self.static_data.push(format!(
+                "static const uint8_t {key}[] = {{{}}};",
+                c_byte_array(entry.key.as_bytes())
+            ));
+            initializers.push(format!("{{ {key}, {}, {unit_index} }}", entry.key.len()));
+        }
+        self.body.push(format!(
+            "static const phpc_NativeIncludeUnitLookupEntry {array}[] = {{ {} }};",
+            initializers.join(", ")
+        ));
+        Ok(array)
+    }
+
+    fn emit_runtime_registry_include_unit_call(
+        &mut self,
+        path: &Expr,
+        once: bool,
+        span: Span,
+        keep_value: bool,
+        required: bool,
+        construct: &str,
+    ) -> CompileResult<Option<String>> {
+        let entries = self.include_unit_registry_entries();
+        let entry_count = entries.len();
+        let entries = self.emit_include_unit_registry_entries(&entries, span)?;
+        self.ensure_globals_symbol_table("", span)?;
+        let operand = self.emit_include_path_runtime_operand(path, span)?;
+        let lookup = self.next_native_name("include_unit_lookup");
+        self.uses_native_include_unit_helpers = true;
+        self.body.push(format!(
+            "phpc_NativeIncludeUnitLookupResult {lookup} = phpc_native_include_unit_registry_lookup({}, {}, {entries}, {entry_count});",
+            operand.bytes, operand.byte_len
+        ));
+        self.body.push(format!(
+            "if ({lookup}.status != PHPC_NATIVE_INCLUDE_LOOKUP_STATUS_FOUND) {{"
+        ));
+        self.emit_include_diagnostic_message(
+            RUNTIME_INCLUDE_REGISTRY_LOOKUP_REJECTION,
+            "PHPC_NATIVE_DIAGNOSTIC_SEVERITY_ERROR",
+        );
+        let lookup_failure_exit = self
+            .native_error_exit_with_code(&c_cleanup_sequence(&operand.cleanup_after_use), "255");
+        self.body.push(format!("  {lookup_failure_exit}"));
+        self.body.push("}".to_string());
+
+        let dynamic_value = if keep_value {
+            let dynamic_value = self.next_native_name("runtime_registry_include_value");
+            self.body
+                .push(format!("phpc_NativeValueHandle {dynamic_value} = {{0}};"));
+            Some(dynamic_value)
+        } else {
+            None
+        };
+
+        let unit_paths = self.include_unit_order.clone();
+        for (index, include_path) in unit_paths.iter().enumerate() {
+            if index == 0 {
+                self.body
+                    .push(format!("if ({lookup}.unit_index == {index}) {{"));
+            } else {
+                self.body
+                    .push(format!("else if ({lookup}.unit_index == {index}) {{"));
+            }
+            let cleanup_len = self.native_value_cleanup_handles.len();
+            let resolution = CIncludeResolution::Found(CFoundIncludeResolution {
+                path: include_path.clone(),
+                requested_path: String::new(),
+            });
+            let branch_value = self.emit_concrete_include_unit_call(
+                &resolution,
+                once,
+                span,
+                keep_value,
+                required,
+                construct,
+            )?;
+            if let (Some(dynamic_value), Some(branch_value)) = (&dynamic_value, branch_value) {
+                self.native_value_cleanup_handles.truncate(cleanup_len);
+                self.uses_native_value_clone = true;
+                self.body.push(format!(
+                    "  {dynamic_value} = phpc_native_value_clone({branch_value});"
+                ));
+                self.body
+                    .push(format!("  phpc_native_value_free({branch_value});"));
+            }
+            self.body.push("}".to_string());
+        }
+        self.body.push("else {".to_string());
+        let stale_index_exit = self
+            .native_error_exit_with_code(&c_cleanup_sequence(&operand.cleanup_after_use), "255");
+        self.body.push(format!("  {stale_index_exit}"));
+        self.body.push("}".to_string());
+        self.body.extend(operand.cleanup_after_use);
+
+        if let Some(dynamic_value) = dynamic_value {
+            self.retain_native_value_cleanup_handle(&dynamic_value);
+            Ok(Some(dynamic_value))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn emit_dynamic_include_unit_call(
+        &mut self,
+        path: &Expr,
+        resolutions: &[CIncludeResolution],
+        once: bool,
+        span: Span,
+        keep_value: bool,
+        required: bool,
+        construct: &str,
+    ) -> CompileResult<Option<String>> {
+        let Some(values) = self.static_known_string_values_for_expr(path) else {
+            return Err(self.unsupported(span, ASSEMBLY_REQUIRE_REJECTION));
+        };
+        let requested_paths: HashSet<&str> = resolutions
+            .iter()
+            .map(|resolution| match resolution {
+                CIncludeResolution::Found(found) => found.requested_path.as_str(),
+                CIncludeResolution::Missing(missing) => missing.requested_path.as_str(),
+            })
+            .collect();
+        if values
+            .values()
+            .iter()
+            .any(|value| !requested_paths.contains(value.as_str()))
+        {
+            return Err(self.unsupported(span, ASSEMBLY_REQUIRE_REJECTION));
+        }
+
+        self.ensure_globals_symbol_table("", span)?;
+        let operand = self.emit_include_path_runtime_operand(path, span)?;
+        let dynamic_value = if keep_value {
+            let dynamic_value = self.next_native_name("dynamic_include_value");
+            self.body
+                .push(format!("phpc_NativeValueHandle {dynamic_value} = {{0}};"));
+            Some(dynamic_value)
+        } else {
+            None
+        };
+
+        for (index, resolution) in resolutions.iter().enumerate() {
+            let requested_path = match resolution {
+                CIncludeResolution::Found(found) => found.requested_path.as_str(),
+                CIncludeResolution::Missing(missing) => missing.requested_path.as_str(),
+            };
+            let condition = self.include_path_runtime_condition(&operand, requested_path);
+            if index == 0 {
+                self.body.push(format!("if ({condition}) {{"));
+            } else {
+                self.body.push(format!("else if ({condition}) {{"));
+            }
+            let cleanup_len = self.native_value_cleanup_handles.len();
+            let branch_value = self.emit_concrete_include_unit_call(
+                resolution, once, span, keep_value, required, construct,
+            )?;
+            if let (Some(dynamic_value), Some(branch_value)) = (&dynamic_value, branch_value) {
+                self.native_value_cleanup_handles.truncate(cleanup_len);
+                self.uses_native_value_clone = true;
+                self.body.push(format!(
+                    "  {dynamic_value} = phpc_native_value_clone({branch_value});"
+                ));
+                self.body
+                    .push(format!("  phpc_native_value_free({branch_value});"));
+            }
+            self.body.push("}".to_string());
+        }
+
+        self.body.push("else {".to_string());
+        let unmatched_exit =
+            self.native_error_exit(&c_cleanup_sequence(&operand.cleanup_after_use));
+        self.body.push(format!("  {unmatched_exit}"));
+        self.body.push("}".to_string());
+        self.body.extend(operand.cleanup_after_use);
+
+        if let Some(dynamic_value) = dynamic_value {
+            self.retain_native_value_cleanup_handle(&dynamic_value);
+            Ok(Some(dynamic_value))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn emit_include_unit_call(
+        &mut self,
+        path: &Expr,
+        once: bool,
+        span: Span,
+        keep_value: bool,
+        required: bool,
+        construct: &str,
+    ) -> CompileResult<Option<String>> {
+        let resolutions = self.resolve_active_include(path, span)?;
+        if resolutions.is_empty() {
+            return self.emit_runtime_registry_include_unit_call(
+                path, once, span, keep_value, required, construct,
+            );
+        }
+        if resolutions.len() == 1
+            && matches!(
+                path,
+                Expr::String(_, _) | Expr::Binary { .. } | Expr::MagicDir { .. }
+            )
+        {
+            return self.emit_concrete_include_unit_call(
+                &resolutions[0],
+                once,
+                span,
+                keep_value,
+                required,
+                construct,
+            );
+        }
+        if resolutions.len() == 1 && self.static_known_string_values_for_expr(path).is_none() {
+            return self.emit_runtime_registry_include_unit_call(
+                path, once, span, keep_value, required, construct,
+            );
+        }
+        self.emit_dynamic_include_unit_call(
+            path,
+            &resolutions,
+            once,
+            span,
+            keep_value,
+            required,
+            construct,
+        )
+    }
+
     fn emit_include_unit_statement(
         &mut self,
         path: &Expr,
         once: bool,
         span: Span,
+        required: bool,
     ) -> CompileResult<()> {
-        self.emit_include_unit_call(path, once, span, false)?;
+        let construct = include_construct_name(required, once);
+        self.emit_include_unit_call(path, once, span, false, required, construct)?;
         Ok(())
     }
 
@@ -35376,12 +35971,14 @@ impl CGenerator {
         path: &Expr,
         once: bool,
         span: Span,
+        required: bool,
     ) -> CompileResult<CValue> {
         if self.active_source_file.is_none() {
             return Err(self.unsupported(span, ASSEMBLY_REQUIRE_EXPRESSION_REJECTION));
         }
+        let construct = include_construct_name(required, once);
         let value = self
-            .emit_include_unit_call(path, once, span, true)?
+            .emit_include_unit_call(path, once, span, true, required, construct)?
             .ok_or_else(|| self.unsupported(span, ASSEMBLY_REQUIRE_EXPRESSION_REJECTION))?;
         Ok(CValue::NativeValueHandle(value))
     }
@@ -38149,8 +38746,11 @@ impl CGenerator {
             Stmt::ConstDeclaration { declarations, span } => {
                 self.emit_const_declaration(declarations, *span)
             }
-            Stmt::Require { path, once, span } | Stmt::Include { path, once, span } => {
-                self.emit_include_unit_statement(path, *once, *span)
+            Stmt::Require { path, once, span } => {
+                self.emit_include_unit_statement(path, *once, *span, true)
+            }
+            Stmt::Include { path, once, span } => {
+                self.emit_include_unit_statement(path, *once, *span, false)
             }
             Stmt::Throw { span, .. } => Err(self.unsupported(*span, ASSEMBLY_EXCEPTION_REJECTION)),
             Stmt::Try {
@@ -38708,6 +39308,12 @@ impl CGenerator {
             Expr::Call { name, args, span } if name.eq_ignore_ascii_case("empty") => {
                 self.emit_empty_call(args, *span)
             }
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("get_include_path") => {
+                self.emit_get_include_path_call(args, *span)
+            }
+            Expr::Call { name, args, span } if name.eq_ignore_ascii_case("set_include_path") => {
+                self.emit_set_include_path_call(args, *span)
+            }
             Expr::Call { name, args, span }
                 if exact_imported_runtime_builtin_signature(name).is_some() =>
             {
@@ -38957,11 +39563,17 @@ impl CGenerator {
             Expr::ErrorControl { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_ERROR_CONTROL_REJECTION))
             }
-            Expr::Include { path, once, span } | Expr::Require { path, once, span } => {
+            Expr::Include { path, once, span } => {
                 if let Some(operation) = native_value_operand_call_result_operation(expr) {
                     return Err(self.unsupported_call_operation(operation));
                 }
-                self.emit_include_unit_expr(path, *once, *span)
+                self.emit_include_unit_expr(path, *once, *span, false)
+            }
+            Expr::Require { path, once, span } => {
+                if let Some(operation) = native_value_operand_call_result_operation(expr) {
+                    return Err(self.unsupported_call_operation(operation));
+                }
+                self.emit_include_unit_expr(path, *once, *span, true)
             }
             Expr::Cast { span, .. } => {
                 if let Some(operation) = native_value_operand_call_result_operation(expr) {
@@ -60461,6 +61073,30 @@ fn known_strings_have_uniform_function_exists_result(values: &KnownString) -> Op
         }
     }
     result
+}
+
+fn literal_include_path_setting_for_codegen(expr: &Expr, source_dir: &Path) -> Option<String> {
+    match expr {
+        Expr::String(value, _) => Some(value.clone()),
+        Expr::MagicDir { .. } => Some(source_dir.to_string_lossy().into_owned()),
+        Expr::GlobalConstant { name, .. } if name.eq_ignore_ascii_case("PATH_SEPARATOR") => {
+            let separator = if cfg!(windows) { ';' } else { ':' };
+            Some(separator.to_string())
+        }
+        Expr::Binary {
+            left,
+            op: BinaryOp::Concat,
+            right,
+            ..
+        } => {
+            let mut value = literal_include_path_setting_for_codegen(left, source_dir)?;
+            value.push_str(&literal_include_path_setting_for_codegen(
+                right, source_dir,
+            )?);
+            Some(value)
+        }
+        _ => None,
+    }
 }
 
 const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[

@@ -2,10 +2,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use php_compiler::codegen::emit_native_executable_c_source;
+use php_compiler::codegen::{
+    emit_native_executable_c_source, emit_native_executable_c_source_for_include_units,
+};
 use php_compiler::error::Phase;
 use php_compiler::{
     compilation_unit_with_literal_include_metadata, emit_asm_source, emit_ir_source,
+    executable_compilation_unit_with_literal_include_units,
 };
 
 const LLVM_REQUIRE_REJECTION: &str = "LLVM include/require lowering rejects multi-file execution until native source loading, path resolution, declaration registration, stack/source mapping, and exact native error behavior exist; phpc run handles the current narrow include/require behavior";
@@ -449,6 +452,624 @@ fn emit_exe_links_and_runs_include_once_return_value_and_duplicate_true() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_literal_include_path_search_before_source_fallback() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("execution-include-path-precedence-exe");
+    let lib = dir.join("lib");
+    fs::create_dir_all(&lib).expect("create include_path lib fixture dir");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        lib.join("shared.php"),
+        "<?php\n$origin = 'include-path';\necho 'lib|';\nreturn 'lib-return';\n",
+    )
+    .expect("write include_path fixture");
+    fs::write(
+        dir.join("shared.php"),
+        "<?php\n$origin = 'source';\necho 'source|';\nreturn 'source-return';\n",
+    )
+    .expect("write source fallback fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "set_include_path(__DIR__ . '/lib');\n",
+            "$value = include 'shared.php';\n",
+            "echo $origin, '|', $value, \"\\n\";\n",
+        ),
+    )
+    .expect("write include_path root fixture");
+
+    let output = compile_exe(&root, &output, "include_path search executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run include_path search executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "lib|include-path|lib-return\n"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_literal_include_path_source_relative_fallback() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("execution-include-path-fallback-exe");
+    let missing = dir.join("missing");
+    fs::create_dir_all(&missing).expect("create missing include_path fixture dir");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        dir.join("fallback.php"),
+        "<?php\necho 'fallback|';\nreturn 'fallback-return';\n",
+    )
+    .expect("write source fallback fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "set_include_path(__DIR__ . '/missing');\n",
+            "$value = require 'fallback.php';\n",
+            "echo $value, \"\\n\";\n",
+        ),
+    )
+    .expect("write include_path fallback root fixture");
+
+    let output = compile_exe(&root, &output, "include_path fallback executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run include_path fallback executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "fallback|fallback-return\n"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_include_path_once_canonical_duplicate_true() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("execution-include-path-once-exe");
+    let lib = dir.join("lib");
+    fs::create_dir_all(&lib).expect("create include_path once fixture dir");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        lib.join("once.php"),
+        "<?php\necho 'once|';\nreturn 'once-return';\n",
+    )
+    .expect("write include_path once fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "set_include_path(__DIR__ . '/lib');\n",
+            "$first = include_once 'once.php';\n",
+            "$second = include_once __DIR__ . '/lib/once.php';\n",
+            "echo $first, '|', $second, \"\\n\";\n",
+        ),
+    )
+    .expect("write include_path once root fixture");
+
+    let output = compile_exe(&root, &output, "include_path once executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run include_path once executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "once|once-return|1\n");
+}
+
+#[test]
+fn executable_include_discovery_tags_variable_string_found_and_missing_results() {
+    let dir = include_discovery_fixture_dir("execution-variable-discovery");
+    let lib = dir.join("lib");
+    fs::create_dir_all(&lib).expect("create variable discovery include_path dir");
+    let root = dir.join("root.php");
+    fs::write(lib.join("present.php"), "<?php\nreturn 'present';\n")
+        .expect("write variable discovery include fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "set_include_path(__DIR__ . '/lib');\n",
+            "$present = 'present.php';\n",
+            "$missing = 'missing.php';\n",
+            "$first = include $present;\n",
+            "$second = include $missing;\n",
+        ),
+    )
+    .expect("write variable discovery root fixture");
+
+    let unit = executable_compilation_unit_with_literal_include_units(
+        &fs::read_to_string(&root).expect("read variable discovery root fixture"),
+        &root,
+        workspace_root(),
+    )
+    .unwrap();
+
+    assert_eq!(unit.include_units.len(), 1);
+    assert_eq!(unit.include_resolutions.len(), 2);
+    assert!(unit.include_resolutions[0].found);
+    assert_eq!(unit.include_resolutions[0].requested_path, "present.php");
+    assert!(!unit.include_resolutions[1].found);
+    assert_eq!(unit.include_resolutions[1].requested_path, "missing.php");
+}
+
+#[test]
+fn native_executable_c_source_uses_runtime_string_dispatch_for_variable_include_path() {
+    let dir = include_discovery_fixture_dir("execution-variable-c-source");
+    let lib = dir.join("lib");
+    fs::create_dir_all(&lib).expect("create variable c-source include_path dir");
+    let root = dir.join("root.php");
+    fs::write(lib.join("present.php"), "<?php\nreturn 'present';\n")
+        .expect("write variable c-source include fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "set_include_path(__DIR__ . '/lib');\n",
+            "$present = 'present.php';\n",
+            "$value = include $present;\n",
+            "echo $value;\n",
+        ),
+    )
+    .expect("write variable c-source root fixture");
+
+    let unit = executable_compilation_unit_with_literal_include_units(
+        &fs::read_to_string(&root).expect("read variable c-source root fixture"),
+        &root,
+        workspace_root(),
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source_for_include_units(&unit).unwrap();
+
+    assert!(
+        source.contains("phpc_native_value_to_string_bytes")
+            && source.contains("memcmp")
+            && source.contains("phpc_include_unit_0"),
+        "variable include operands should convert the runtime path string and dispatch to include units through shared helpers:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_variable_string_include_path_found_and_missing_results() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("execution-variable-include-exe");
+    let lib = dir.join("lib");
+    fs::create_dir_all(&lib).expect("create variable include_path fixture dir");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        lib.join("value.php"),
+        "<?php\necho 'loaded|';\nreturn 'value-return';\n",
+    )
+    .expect("write variable include fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "set_include_path(__DIR__ . '/lib');\n",
+            "$present = 'value.php';\n",
+            "$missing = 'missing.php';\n",
+            "$first = include $present;\n",
+            "$second = include $missing;\n",
+            "echo $first, '|', ($second === false ? 'false' : 'bad'), \"\\n\";\n",
+        ),
+    )
+    .expect("write variable include root fixture");
+
+    let output = compile_exe(&root, &output, "variable include executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run variable include executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "loaded|value-return|false\n"
+    );
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains("PHP Warning"), "{stderr}");
+    assert!(stderr.contains("include(missing.php)"), "{stderr}");
+}
+
+#[test]
+fn emit_exe_links_and_runs_variable_string_require_result() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("execution-variable-require-exe");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        dir.join("required.php"),
+        "<?php\necho 'required|';\nreturn 'require-return';\n",
+    )
+    .expect("write variable require fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "$path = 'required.php';\n",
+            "$value = require $path;\n",
+            "echo $value, \"\\n\";\n",
+        ),
+    )
+    .expect("write variable require root fixture");
+
+    let output = compile_exe(&root, &output, "variable require executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run variable require executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "required|require-return\n"
+    );
+}
+
+#[test]
+fn native_executable_c_source_uses_runtime_include_unit_registry_for_nonfinite_path_lookup() {
+    let dir = include_discovery_fixture_dir("runtime-registry-c-source");
+    let lib = dir.join("lib");
+    fs::create_dir_all(&lib).expect("create runtime registry c-source lib dir");
+    fs::write(lib.join("declared.php"), "<?php\necho 'declared|';\n")
+        .expect("write runtime registry c-source include");
+    let root = dir.join("root.php");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "set_include_path(__DIR__ . '/lib');\n",
+            "function runtime_path() { return 'declared.php'; }\n",
+            "require_once 'declared.php';\n",
+            "$path = runtime_path();\n",
+            "$value = include_once $path;\n",
+            "echo $value;\n",
+            "echo \"\\n\";\n",
+        ),
+    )
+    .expect("write runtime registry c-source root");
+
+    let unit = executable_compilation_unit_with_literal_include_units(
+        &fs::read_to_string(&root).expect("read runtime registry c-source root"),
+        &root,
+        workspace_root(),
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source_for_include_units(&unit).unwrap();
+
+    assert!(
+        source.contains("phpc_native_include_unit_registry_lookup")
+            && source.contains("phpc_NativeIncludeUnitLookupEntry")
+            && source.contains("phpc_include_unit_0"),
+        "non-finite include paths should dispatch through the generated include-unit registry:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_runtime_include_registry_request_path_lookup() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("runtime-registry-request-exe");
+    let lib = dir.join("lib");
+    fs::create_dir_all(&lib).expect("create runtime registry request lib dir");
+    fs::write(lib.join("declared.php"), "<?php\necho 'declared|';\n")
+        .expect("write runtime registry request include");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "set_include_path(__DIR__ . '/lib');\n",
+            "function runtime_path() { return 'declared.php'; }\n",
+            "require_once 'declared.php';\n",
+            "$path = runtime_path();\n",
+            "$value = include_once $path;\n",
+            "echo $value;\n",
+            "echo \"\\n\";\n",
+        ),
+    )
+    .expect("write runtime registry request root");
+
+    let output = compile_exe(
+        &root,
+        &output,
+        "runtime include registry request executable",
+    );
+    let run = Command::new(&output)
+        .output()
+        .expect("run runtime include registry request executable");
+
+    assert!(
+        run.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "declared|1\n");
+}
+
+#[test]
+fn emit_exe_links_and_runs_runtime_include_registry_canonical_path_lookup() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("runtime-registry-canonical-exe");
+    let included = dir.join("declared.php");
+    fs::write(&included, "<?php\necho 'canonical|';\n")
+        .expect("write runtime registry canonical include");
+    let canonical = fs::canonicalize(&included)
+        .expect("canonicalize runtime registry include")
+        .to_string_lossy()
+        .replace('\\', "\\\\")
+        .replace('\'', "\\'");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        &root,
+        format!(
+            concat!(
+                "<?php\n",
+                "function runtime_path() {{ return '{canonical}'; }}\n",
+                "require_once 'declared.php';\n",
+                "$path = runtime_path();\n",
+                "$value = require_once $path;\n",
+                "echo $value;\n",
+                "echo \"\\n\";\n",
+            ),
+            canonical = canonical
+        ),
+    )
+    .expect("write runtime registry canonical root");
+
+    let output = compile_exe(
+        &root,
+        &output,
+        "runtime include registry canonical executable",
+    );
+    let run = Command::new(&output)
+        .output()
+        .expect("run runtime include registry canonical executable");
+
+    assert!(
+        run.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "canonical|1\n");
+}
+
+#[test]
+fn emit_exe_blocks_dynamic_include_path_search_before_native_link() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("execution-dynamic-include-path-blocker");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        &root,
+        "<?php\n$dir = __DIR__ . '/lib';\nset_include_path($dir);\ninclude 'value.php';\n",
+    )
+    .expect("write dynamic include_path blocker fixture");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root())
+        .args([
+            "compile",
+            root.to_str().expect("root fixture path is UTF-8"),
+            "--emit-exe",
+            output.to_str().expect("output path is UTF-8"),
+        ])
+        .output()
+        .expect("compile dynamic include_path blocker executable");
+
+    assert!(!compile.status.success());
+    assert!(
+        String::from_utf8_lossy(&compile.stderr).contains("literal compile-time path string"),
+        "stderr should report dynamic include_path blocker:\n{}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    assert!(!output.exists());
+}
+
+#[test]
+fn executable_include_discovery_tags_missing_and_found_literal_results() {
+    let dir = include_discovery_fixture_dir("execution-missing-discovery");
+    let lib = dir.join("lib");
+    fs::create_dir_all(&lib).expect("create missing discovery include_path dir");
+    let root = dir.join("root.php");
+    fs::write(
+        lib.join("present.php"),
+        "<?php\n$loaded = 'present';\nreturn 'loaded';\n",
+    )
+    .expect("write present include fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "set_include_path(__DIR__ . '/lib');\n",
+            "$missing = include 'absent.php';\n",
+            "$present = require 'present.php';\n",
+            "echo $loaded;\n",
+        ),
+    )
+    .expect("write missing discovery root fixture");
+
+    let unit = executable_compilation_unit_with_literal_include_units(
+        &fs::read_to_string(&root).expect("read missing discovery root fixture"),
+        &root,
+        workspace_root(),
+    )
+    .unwrap();
+
+    assert_eq!(unit.include_units.len(), 1);
+    assert_eq!(unit.include_resolutions.len(), 2);
+    assert!(!unit.include_resolutions[0].found);
+    assert_eq!(unit.include_resolutions[0].requested_path, "absent.php");
+    assert!(unit.include_resolutions[0].include_path.ends_with("/lib"));
+    assert!(unit.include_resolutions[1].found);
+    assert!(unit.include_resolutions[1].path.ends_with("present.php"));
+}
+
+#[test]
+fn emit_exe_links_and_runs_missing_include_returns_false_and_continues() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("execution-missing-include-exe");
+    let lib = dir.join("lib");
+    fs::create_dir_all(&lib).expect("create missing include include_path dir");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "set_include_path(__DIR__ . '/lib');\n",
+            "$first = include 'optional.php';\n",
+            "$second = include_once __DIR__ . '/optional-once.php';\n",
+            "echo 'first=', ($first === false ? 'false' : 'bad');\n",
+            "echo '|second=', ($second === false ? 'false' : 'bad');\n",
+            "echo '|continued', \"\\n\";\n",
+        ),
+    )
+    .expect("write missing include root fixture");
+
+    let output = compile_exe(&root, &output, "missing include executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run missing include executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "first=false|second=false|continued\n"
+    );
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains("PHP Warning"), "{stderr}");
+    assert!(stderr.contains("include(optional.php)"), "{stderr}");
+    assert!(stderr.contains("include_once("), "{stderr}");
+    assert!(stderr.contains("include_path='"), "{stderr}");
+}
+
+#[test]
+fn emit_exe_missing_require_statement_exits_after_warning_and_fatal() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("execution-missing-require-exe");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        &root,
+        "<?php\necho 'before|';\nrequire 'required.php';\necho 'after';\n",
+    )
+    .expect("write missing require root fixture");
+
+    let output = compile_exe(&root, &output, "missing require executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run missing require executable");
+    assert!(!run.status.success());
+    assert_eq!(run.status.code(), Some(255));
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "before|");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains("PHP Warning"), "{stderr}");
+    assert!(stderr.contains("require(required.php)"), "{stderr}");
+    assert!(stderr.contains("PHP Fatal error"), "{stderr}");
+    assert!(
+        stderr.contains("Failed opening required 'required.php'"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn emit_exe_missing_require_once_expression_exits_after_warning_and_fatal() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("execution-missing-require-once-exe");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "echo 'start|';\n",
+            "$value = require_once __DIR__ . '/required-once.php';\n",
+            "echo 'after';\n",
+        ),
+    )
+    .expect("write missing require_once root fixture");
+
+    let output = compile_exe(&root, &output, "missing require_once executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run missing require_once executable");
+    assert!(!run.status.success());
+    assert_eq!(run.status.code(), Some(255));
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "start|");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains("PHP Warning"), "{stderr}");
+    assert!(stderr.contains("require_once("), "{stderr}");
+    assert!(stderr.contains("PHP Fatal error"), "{stderr}");
+    assert!(
+        stderr.contains("Failed opening required"),
+        "stderr should report require_once fatal opening failure:\n{stderr}"
+    );
+}
+
+#[test]
 fn emit_exe_blocks_dynamic_include_paths_before_native_link() {
     if !has_cc() {
         return;
@@ -457,11 +1078,8 @@ fn emit_exe_blocks_dynamic_include_paths_before_native_link() {
     let dir = include_discovery_fixture_dir("execution-dynamic-blocker");
     let root = dir.join("root.php");
     let output = dir.join("program");
-    fs::write(
-        &root,
-        "<?php\n$name = 'value.php';\n$value = include $name;\necho $value;\n",
-    )
-    .expect("write dynamic include blocker fixture");
+    fs::write(&root, "<?php\n$value = include $name;\necho $value;\n")
+        .expect("write dynamic include blocker fixture");
 
     let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
         .current_dir(workspace_root())
@@ -476,7 +1094,7 @@ fn emit_exe_blocks_dynamic_include_paths_before_native_link() {
 
     assert!(!compile.status.success());
     assert!(
-        String::from_utf8_lossy(&compile.stderr).contains("literal same-repository path"),
+        String::from_utf8_lossy(&compile.stderr).contains("generated include-unit registry"),
         "stderr should report dynamic include path blocker:\n{}",
         String::from_utf8_lossy(&compile.stderr)
     );

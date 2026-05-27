@@ -323,6 +323,25 @@ pub struct NativeStringConversionResult {
     pub diagnostic: NativeDiagnosticHandle,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeIncludeUnitLookupEntry {
+    pub key_ptr: *const u8,
+    pub key_len: usize,
+    pub unit_index: usize,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeIncludeUnitLookupResult {
+    pub status: u8,
+    pub unit_index: usize,
+}
+
+const NATIVE_INCLUDE_LOOKUP_STATUS_FOUND: u8 = 1;
+const NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED: u8 = 2;
+const NATIVE_INCLUDE_LOOKUP_STATUS_AMBIGUOUS: u8 = 3;
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeExitResultStatus {
@@ -5510,6 +5529,70 @@ pub unsafe extern "C" fn phpc_native_string_dynamic_class_name_matches(
 
 /// # Safety
 ///
+/// `path_ptr..path_ptr+path_len` must either be a valid byte slice or be null
+/// with a zero length. `entries..entries+entry_count` must either be a valid
+/// include-unit registry slice or be null with a zero length. Registry keys
+/// are generated request-path and canonical-path aliases for already compiled
+/// include units; this ABI does not parse source or probe the filesystem.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_include_unit_registry_lookup(
+    path_ptr: *const u8,
+    path_len: usize,
+    entries: *const NativeIncludeUnitLookupEntry,
+    entry_count: usize,
+) -> NativeIncludeUnitLookupResult {
+    let Some(path) = (unsafe { native_abi_bytes(path_ptr, path_len) }) else {
+        return NativeIncludeUnitLookupResult {
+            status: NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED,
+            unit_index: 0,
+        };
+    };
+    if entry_count > 0 && entries.is_null() {
+        return NativeIncludeUnitLookupResult {
+            status: NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED,
+            unit_index: 0,
+        };
+    }
+
+    let registry = unsafe { std::slice::from_raw_parts(entries, entry_count) };
+    let mut matched_unit = None;
+    for entry in registry {
+        let Some(key) = (unsafe { native_abi_bytes(entry.key_ptr, entry.key_len) }) else {
+            return NativeIncludeUnitLookupResult {
+                status: NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED,
+                unit_index: 0,
+            };
+        };
+        if key != path {
+            continue;
+        }
+        if let Some(previous) = matched_unit {
+            if previous != entry.unit_index {
+                return NativeIncludeUnitLookupResult {
+                    status: NATIVE_INCLUDE_LOOKUP_STATUS_AMBIGUOUS,
+                    unit_index: previous,
+                };
+            }
+        } else {
+            matched_unit = Some(entry.unit_index);
+        }
+    }
+
+    if let Some(unit_index) = matched_unit {
+        NativeIncludeUnitLookupResult {
+            status: NATIVE_INCLUDE_LOOKUP_STATUS_FOUND,
+            unit_index,
+        }
+    } else {
+        NativeIncludeUnitLookupResult {
+            status: NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED,
+            unit_index: 0,
+        }
+    }
+}
+
+/// # Safety
+///
 /// `handle` must be null or a value handle previously returned by the runtime
 /// ABI and not yet freed. `name_ptr..name_ptr+name_len` must either be a valid
 /// byte slice or be null with a zero length. Dynamic method-name matching
@@ -10507,14 +10590,39 @@ pub unsafe extern "C" fn phpc_native_diagnostic_from_message_bytes(
     ptr: *const u8,
     len: usize,
 ) -> NativeDiagnosticHandle {
+    unsafe {
+        phpc_native_diagnostic_from_severity_message_bytes(
+            NativeDiagnosticSeverity::Error.tag(),
+            ptr,
+            len,
+        )
+    }
+}
+
+/// # Safety
+///
+/// `ptr` must reference `len` bytes of UTF-8 diagnostic text for the duration
+/// of this call. `severity` uses the native diagnostic severity ABI tags.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_from_severity_message_bytes(
+    severity: u8,
+    ptr: *const u8,
+    len: usize,
+) -> NativeDiagnosticHandle {
+    let severity =
+        NativeDiagnosticSeverity::from_abi_tag(severity).unwrap_or(NativeDiagnosticSeverity::Error);
     let Some(bytes) = (unsafe { native_abi_bytes(ptr, len) }) else {
-        return NativeDiagnosticHandle::from_message(
+        return NativeDiagnosticHandle::from_message_with_severity(
+            severity,
             "native diagnostic creation failed: message bytes are null",
         );
     };
     match std::str::from_utf8(bytes) {
-        Ok(message) => NativeDiagnosticHandle::from_message(message.to_string()),
-        Err(_) => NativeDiagnosticHandle::from_message(
+        Ok(message) => {
+            NativeDiagnosticHandle::from_message_with_severity(severity, message.to_string())
+        }
+        Err(_) => NativeDiagnosticHandle::from_message_with_severity(
+            severity,
             "native diagnostic creation failed: message bytes are not valid UTF-8",
         ),
     }
@@ -48591,6 +48699,85 @@ mod tests {
     }
 
     #[test]
+    fn native_include_unit_registry_lookup_matches_request_and_canonical_aliases() {
+        let entries = [
+            NativeIncludeUnitLookupEntry {
+                key_ptr: b"lib/boot.php".as_ptr(),
+                key_len: b"lib/boot.php".len(),
+                unit_index: 0,
+            },
+            NativeIncludeUnitLookupEntry {
+                key_ptr: b"/tmp/project/lib/boot.php".as_ptr(),
+                key_len: b"/tmp/project/lib/boot.php".len(),
+                unit_index: 0,
+            },
+            NativeIncludeUnitLookupEntry {
+                key_ptr: b"lib/config.php".as_ptr(),
+                key_len: b"lib/config.php".len(),
+                unit_index: 1,
+            },
+        ];
+
+        let request = unsafe {
+            phpc_native_include_unit_registry_lookup(
+                b"lib/boot.php".as_ptr(),
+                b"lib/boot.php".len(),
+                entries.as_ptr(),
+                entries.len(),
+            )
+        };
+        assert_eq!(request.status, NATIVE_INCLUDE_LOOKUP_STATUS_FOUND);
+        assert_eq!(request.unit_index, 0);
+
+        let canonical = unsafe {
+            phpc_native_include_unit_registry_lookup(
+                b"/tmp/project/lib/boot.php".as_ptr(),
+                b"/tmp/project/lib/boot.php".len(),
+                entries.as_ptr(),
+                entries.len(),
+            )
+        };
+        assert_eq!(canonical.status, NATIVE_INCLUDE_LOOKUP_STATUS_FOUND);
+        assert_eq!(canonical.unit_index, 0);
+
+        let missing = unsafe {
+            phpc_native_include_unit_registry_lookup(
+                b"lib/missing.php".as_ptr(),
+                b"lib/missing.php".len(),
+                entries.as_ptr(),
+                entries.len(),
+            )
+        };
+        assert_eq!(missing.status, NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED);
+    }
+
+    #[test]
+    fn native_include_unit_registry_lookup_rejects_ambiguous_request_aliases() {
+        let entries = [
+            NativeIncludeUnitLookupEntry {
+                key_ptr: b"shared.php".as_ptr(),
+                key_len: b"shared.php".len(),
+                unit_index: 0,
+            },
+            NativeIncludeUnitLookupEntry {
+                key_ptr: b"shared.php".as_ptr(),
+                key_len: b"shared.php".len(),
+                unit_index: 1,
+            },
+        ];
+
+        let result = unsafe {
+            phpc_native_include_unit_registry_lookup(
+                b"shared.php".as_ptr(),
+                b"shared.php".len(),
+                entries.as_ptr(),
+                entries.len(),
+            )
+        };
+        assert_eq!(result.status, NATIVE_INCLUDE_LOOKUP_STATUS_AMBIGUOUS);
+    }
+
+    #[test]
     fn native_dynamic_class_lookup_normalizes_leading_namespace_separator() {
         let class_name =
             NativeValueHandle::from_value(Value::String("\\App\\Core\\Service".to_string()));
@@ -63874,6 +64061,30 @@ mod tests {
         });
         assert!(!unsafe { phpc_native_diagnostic_contains_severity(diagnostic, 250) });
         unsafe { phpc_native_comparison_result_free(comparison) };
+
+        let warning_message = b"include warning";
+        let warning = unsafe {
+            phpc_native_diagnostic_from_severity_message_bytes(
+                NativeDiagnosticSeverity::Warning.tag(),
+                warning_message.as_ptr(),
+                warning_message.len(),
+            )
+        };
+        assert_eq!(
+            unsafe { phpc_native_diagnostic_severity_at(warning, 0) },
+            NativeDiagnosticSeverity::Warning.tag()
+        );
+        assert!(unsafe {
+            phpc_native_diagnostic_contains_severity(
+                warning,
+                NativeDiagnosticSeverity::Warning.tag(),
+            )
+        });
+        assert_eq!(
+            native_diagnostic_message_for_test(warning),
+            "include warning"
+        );
+        unsafe { phpc_native_diagnostic_free(warning) };
     }
 
     #[test]
