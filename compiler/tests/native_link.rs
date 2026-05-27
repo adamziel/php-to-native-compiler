@@ -275,6 +275,39 @@ const NATIVE_OBJECT_STATIC_PROPERTY_RECEIVER_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_STATIC_PROPERTY_MUTATION_SOURCE: &str = concat!(
+    "<?php\n",
+    "class StaticMutationRoot {\n",
+    "    public static int $count = 1;\n",
+    "    public static int $other = 10;\n",
+    "    public static function mutateSelf() {\n",
+    "        self::$count += 2;\n",
+    "        return ++self::$count;\n",
+    "    }\n",
+    "    public static function bumpLate() {\n",
+    "        return static::$count++;\n",
+    "    }\n",
+    "}\n",
+    "class StaticMutationChild extends StaticMutationRoot {\n",
+    "    public static int $count = 20;\n",
+    "    public static function mutateParent() {\n",
+    "        parent::$other += 5;\n",
+    "        return parent::$other;\n",
+    "    }\n",
+    "}\n",
+    "$object = new StaticMutationRoot();\n",
+    "$class = \"StaticMutationChild\";\n",
+    "echo (StaticMutationRoot::$other += 1), \":\";\n",
+    "echo ($object::$count += 4), \":\";\n",
+    "echo $object::$count--, \":\";\n",
+    "echo ++$class::$count, \":\";\n",
+    "echo StaticMutationRoot::mutateSelf(), \":\";\n",
+    "echo StaticMutationChild::mutateParent(), \":\";\n",
+    "echo StaticMutationRoot::bumpLate(), \":\";\n",
+    "echo StaticMutationChild::bumpLate(), \":\";\n",
+    "echo StaticMutationRoot::$count, \":\", StaticMutationChild::$count, \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_PROPERTY_UNSET_SOURCE: &str = concat!(
     "<?php\n",
     "class Box { public $name; public $peer; private $secret; }\n",
@@ -1982,6 +2015,34 @@ fn emit_exe_links_and_runs_typed_static_property_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"1:NULL|21:ok\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_static_property_mutation_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "static_property_mutation",
+        NATIVE_STATIC_PROPERTY_MUTATION_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run static-property mutation executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"11:5:5:21:7:16:7:21:8:22\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -4449,6 +4510,44 @@ fn native_executable_c_source_routes_object_static_property_receivers_through_sc
     assert!(
         !source.contains("static-member lowering rejects"),
         "supported object/class-string static-property access should not fall back to static-member rejection:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_static_property_mutations_through_shared_lvalue_boundary() {
+    let program = parse(NATIVE_STATIC_PROPERTY_MUTATION_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    for required in [
+        "phpc_native_static_property_read_class_with_diagnostic",
+        "phpc_native_static_property_write_class_with_diagnostic_and_free",
+        "phpc_native_static_property_read_relative_with_diagnostic",
+        "phpc_native_static_property_write_relative_with_diagnostic_and_free",
+        "phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free",
+        "phpc_native_value_binary_result",
+        "phpc_native_value_increment_decrement_result",
+        "static_property_lvalue_read_value_",
+        "static_property_lvalue_write_value_",
+    ] {
+        assert!(source.contains(required), "missing {required}:\n{source}");
+    }
+    assert!(
+        body.matches("static_property_lvalue_read_value_").count() >= 6
+            && body.matches("static_property_lvalue_write_value_").count() >= 6,
+        "compound assignment and increment/decrement should share static-property lvalue read/write result handles:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free")
+            .count()
+            >= 3,
+        "object and class-string static-property mutations should derive receiver scope through the shared receiver ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("static-member lowering rejects")
+            && !source.contains("assembly mutation lowering rejects")
+            && !source.contains("assembly arithmetic lowering rejects"),
+        "supported static-property mutations should not fall through old blockers:\n{source}"
     );
 }
 

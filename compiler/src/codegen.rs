@@ -16355,6 +16355,36 @@ struct CResolvedStaticProperty {
     name: String,
 }
 
+#[derive(Debug, Clone)]
+enum CStaticPropertyLvalueReceiver {
+    Class {
+        class_bytes: String,
+        class_len: String,
+    },
+    Relative {
+        receiver: CRelativeStaticPropertyReceiver,
+        current_class_bytes: String,
+        current_class_len: String,
+        called_class_ptr: String,
+        called_class_len: String,
+    },
+}
+
+#[derive(Debug, Clone)]
+struct CStaticPropertyLvalueTarget {
+    storage: String,
+    receiver: CStaticPropertyLvalueReceiver,
+    property_bytes: String,
+    property_len: String,
+    cleanup_after_use: Vec<String>,
+}
+
+impl CStaticPropertyLvalueTarget {
+    fn cleanup_sequence(&self) -> String {
+        c_cleanup_sequence(&self.cleanup_after_use)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CRelativeStaticPropertyReceiver {
     SelfClass,
@@ -31905,6 +31935,14 @@ impl CGenerator {
                     return Ok(());
                 }
                 if let Some(value) = self
+                    .materialize_static_property_compound_assignment_result_for_target(
+                        target, *op, expr, "",
+                    )?
+                {
+                    self.body.extend(value.cleanup_after_use);
+                    return Ok(());
+                }
+                if let Some(value) = self
                     .materialize_array_lvalue_compound_assignment_result_for_target(
                         target, *op, expr, span, "",
                     )?
@@ -31926,6 +31964,17 @@ impl CGenerator {
                 }
                 if let Some(value) = self
                     .materialize_native_arrayaccess_offset_increment_decrement_result_for_target(
+                        target,
+                        *op,
+                        IncrementDecrementPosition::Pre,
+                        "",
+                    )?
+                {
+                    self.body.extend(value.cleanup_after_use);
+                    return Ok(());
+                }
+                if let Some(value) = self
+                    .materialize_static_property_increment_decrement_result_for_target(
                         target,
                         *op,
                         IncrementDecrementPosition::Pre,
@@ -33086,175 +33135,239 @@ impl CGenerator {
         }
     }
 
-    fn materialize_declared_static_property_assignment_result_for_target(
+    fn materialize_static_property_lvalue_target(
         &mut self,
         target: &AssignTarget,
-        expr: &Expr,
         failure_cleanup: &str,
-    ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let AssignTarget::StaticProperty {
-            class_name,
-            property,
-            span,
-        } = target
-        else {
-            return Ok(None);
-        };
-        let Some(resolved) = self.resolve_declared_static_property(class_name, property) else {
-            return Ok(None);
-        };
-        let handle = self.ensure_native_static_property_storage(failure_cleanup, *span)?;
-        let replacement = self.materialize_native_value_result_operand(expr, failure_cleanup)?;
-        let aux_cleanup = native_value_aux_cleanup_after_consuming_handle(&replacement);
-        let write_failure_cleanup =
-            format!("{}{}", c_cleanup_sequence(&aux_cleanup), failure_cleanup);
-        let (class_bytes, class_len) = self.emit_call_type_static_bytes(
-            "static_property_receiver_name_bytes",
-            &resolved.receiver_class_name,
-        );
-        let (property_bytes, property_len) =
-            self.emit_call_type_static_bytes("static_property_write_name_bytes", &resolved.name);
-        let diagnostic = self.next_native_name("static_property_write_diagnostic");
-        let result = self.next_native_name("static_property_write_value");
-        self.body
-            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
-        self.body.push(format!(
-            "phpc_NativeValueHandle {result} = phpc_native_static_property_write_class_with_diagnostic_and_free({handle}, {class_bytes}, {class_len}, {property_bytes}, {property_len}, {}, &{diagnostic});",
-            replacement.handle
-        ));
-        self.emit_report_native_diagnostic(&diagnostic);
-        let error_exit = self.native_error_exit(&write_failure_cleanup);
-        self.body
-            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
-        self.body.extend(aux_cleanup);
-        Ok(Some(CNativeValueMaterialization {
-            handle: result.clone(),
-            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
-        }))
+    ) -> CompileResult<Option<CStaticPropertyLvalueTarget>> {
+        match target {
+            AssignTarget::StaticProperty {
+                class_name,
+                property,
+                span,
+            } => {
+                let Some(resolved) = self.resolve_declared_static_property(class_name, property)
+                else {
+                    return Ok(None);
+                };
+                let storage = self.ensure_native_static_property_storage(failure_cleanup, *span)?;
+                let (class_bytes, class_len) = self.emit_call_type_static_bytes(
+                    "static_property_receiver_name_bytes",
+                    &resolved.receiver_class_name,
+                );
+                let (property_bytes, property_len) = self.emit_call_type_static_bytes(
+                    "static_property_lvalue_name_bytes",
+                    &resolved.name,
+                );
+                Ok(Some(CStaticPropertyLvalueTarget {
+                    storage,
+                    receiver: CStaticPropertyLvalueReceiver::Class {
+                        class_bytes,
+                        class_len,
+                    },
+                    property_bytes,
+                    property_len,
+                    cleanup_after_use: Vec::new(),
+                }))
+            }
+            AssignTarget::SelfStaticProperty { property, span }
+            | AssignTarget::ParentStaticProperty { property, span }
+            | AssignTarget::LateStaticProperty { property, span } => {
+                let receiver = match target {
+                    AssignTarget::SelfStaticProperty { .. } => {
+                        CRelativeStaticPropertyReceiver::SelfClass
+                    }
+                    AssignTarget::ParentStaticProperty { .. } => {
+                        CRelativeStaticPropertyReceiver::ParentClass
+                    }
+                    AssignTarget::LateStaticProperty { .. } => {
+                        CRelativeStaticPropertyReceiver::LateStaticClass
+                    }
+                    _ => unreachable!("relative static-property target already matched"),
+                };
+                let Some(current_class_name) = self.active_declared_class_name.clone() else {
+                    return Ok(None);
+                };
+                let Some((called_class_ptr, called_class_len)) =
+                    self.relative_static_property_called_class_operands(receiver)
+                else {
+                    return Ok(None);
+                };
+                let storage = self.ensure_native_static_property_storage(failure_cleanup, *span)?;
+                let (current_class_bytes, current_class_len) = self.emit_call_type_static_bytes(
+                    "static_property_current_class_name_bytes",
+                    &current_class_name,
+                );
+                let (property_bytes, property_len) =
+                    self.emit_call_type_static_bytes("static_property_lvalue_name_bytes", property);
+                Ok(Some(CStaticPropertyLvalueTarget {
+                    storage,
+                    receiver: CStaticPropertyLvalueReceiver::Relative {
+                        receiver,
+                        current_class_bytes,
+                        current_class_len,
+                        called_class_ptr,
+                        called_class_len,
+                    },
+                    property_bytes,
+                    property_len,
+                    cleanup_after_use: Vec::new(),
+                }))
+            }
+            AssignTarget::ObjectStaticProperty {
+                target: receiver_expr,
+                property,
+                span,
+            } => {
+                let receiver =
+                    self.materialize_native_value_result_operand(receiver_expr, failure_cleanup)?;
+                let receiver_cleanup = c_cleanup_sequence(&receiver.cleanup_after_use);
+                let storage = self.ensure_native_static_property_storage(
+                    &format!("{receiver_cleanup}{failure_cleanup}"),
+                    *span,
+                )?;
+                let scope = self.emit_native_static_property_scope_from_receiver_operand(
+                    &storage,
+                    receiver,
+                    failure_cleanup,
+                );
+                let (property_bytes, property_len) =
+                    self.emit_call_type_static_bytes("static_property_lvalue_name_bytes", property);
+                Ok(Some(CStaticPropertyLvalueTarget {
+                    storage,
+                    receiver: CStaticPropertyLvalueReceiver::Class {
+                        class_bytes: format!("phpc_native_string_bytes({})", scope.handle),
+                        class_len: format!("phpc_native_string_len({})", scope.handle),
+                    },
+                    property_bytes,
+                    property_len,
+                    cleanup_after_use: scope.cleanup_after_use,
+                }))
+            }
+            _ => Ok(None),
+        }
     }
 
-    fn materialize_relative_static_property_assignment_result_for_target(
+    fn emit_static_property_lvalue_read(
         &mut self,
-        target: &AssignTarget,
-        expr: &Expr,
+        target: &CStaticPropertyLvalueTarget,
         failure_cleanup: &str,
-    ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let (receiver, property_name, span) = match target {
-            AssignTarget::SelfStaticProperty { property, span } => (
-                CRelativeStaticPropertyReceiver::SelfClass,
-                property.as_str(),
-                *span,
-            ),
-            AssignTarget::ParentStaticProperty { property, span } => (
-                CRelativeStaticPropertyReceiver::ParentClass,
-                property.as_str(),
-                *span,
-            ),
-            AssignTarget::LateStaticProperty { property, span } => (
-                CRelativeStaticPropertyReceiver::LateStaticClass,
-                property.as_str(),
-                *span,
-            ),
-            _ => return Ok(None),
-        };
-        let Some(current_class_name) = self.active_declared_class_name.clone() else {
-            return Ok(None);
-        };
-        let Some((called_class_ptr, called_class_len)) =
-            self.relative_static_property_called_class_operands(receiver)
-        else {
-            return Ok(None);
-        };
-        let handle = self.ensure_native_static_property_storage(failure_cleanup, span)?;
-        let replacement = self.materialize_native_value_result_operand(expr, failure_cleanup)?;
-        let aux_cleanup = native_value_aux_cleanup_after_consuming_handle(&replacement);
-        let write_failure_cleanup =
-            format!("{}{}", c_cleanup_sequence(&aux_cleanup), failure_cleanup);
-        let (current_class_bytes, current_class_len) = self.emit_call_type_static_bytes(
-            "static_property_current_class_name_bytes",
-            &current_class_name,
-        );
-        let (property_bytes, property_len) =
-            self.emit_call_type_static_bytes("static_property_write_name_bytes", property_name);
-        let diagnostic = self.next_native_name("static_property_write_diagnostic");
-        let result = self.next_native_name("static_property_write_value");
+    ) -> CNativeValueMaterialization {
+        let diagnostic = self.next_native_name("static_property_lvalue_read_diagnostic");
+        let value = self.next_native_name("static_property_lvalue_read_value");
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
-        self.body.push(format!(
-            "phpc_NativeValueHandle {result} = phpc_native_static_property_write_relative_with_diagnostic_and_free({handle}, {}, {current_class_bytes}, {current_class_len}, {called_class_ptr}, {called_class_len}, {property_bytes}, {property_len}, {}, &{diagnostic});",
-            receiver.abi_tag(),
-            replacement.handle
-        ));
+        match &target.receiver {
+            CStaticPropertyLvalueReceiver::Class {
+                class_bytes,
+                class_len,
+            } => {
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {value} = phpc_native_static_property_read_class_with_diagnostic({}, {class_bytes}, {class_len}, {}, {}, &{diagnostic});",
+                    target.storage, target.property_bytes, target.property_len
+                ));
+            }
+            CStaticPropertyLvalueReceiver::Relative {
+                receiver,
+                current_class_bytes,
+                current_class_len,
+                called_class_ptr,
+                called_class_len,
+            } => {
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {value} = phpc_native_static_property_read_relative_with_diagnostic({}, {}, {current_class_bytes}, {current_class_len}, {called_class_ptr}, {called_class_len}, {}, {}, &{diagnostic});",
+                    target.storage,
+                    receiver.abi_tag(),
+                    target.property_bytes,
+                    target.property_len
+                ));
+            }
+        }
         self.emit_report_native_diagnostic(&diagnostic);
-        let error_exit = self.native_error_exit(&write_failure_cleanup);
+        let error_exit =
+            self.native_error_exit(&format!("{}{failure_cleanup}", target.cleanup_sequence()));
         self.body
-            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
-        self.body.extend(aux_cleanup);
-        Ok(Some(CNativeValueMaterialization {
-            handle: result.clone(),
-            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
-        }))
+            .push(format!("if ({value}.ptr == NULL) {{ {error_exit} }}"));
+        CNativeValueMaterialization {
+            handle: value.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
+        }
     }
 
-    fn materialize_object_static_property_assignment_result_for_target(
+    fn emit_static_property_lvalue_write(
         &mut self,
-        target: &AssignTarget,
-        expr: &Expr,
+        target: &CStaticPropertyLvalueTarget,
+        replacement: CNativeValueMaterialization,
         failure_cleanup: &str,
-    ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let AssignTarget::ObjectStaticProperty {
-            target: receiver_expr,
-            property,
-            span,
-        } = target
-        else {
-            return Ok(None);
-        };
-
-        let receiver =
-            self.materialize_native_value_result_operand(receiver_expr, failure_cleanup)?;
-        let receiver_cleanup = c_cleanup_sequence(&receiver.cleanup_after_use);
-        let storage = self.ensure_native_static_property_storage(
-            &format!("{receiver_cleanup}{failure_cleanup}"),
-            *span,
-        )?;
-        let scope = self.emit_native_static_property_scope_from_receiver_operand(
-            &storage,
-            receiver,
-            failure_cleanup,
-        );
-        let scope_cleanup = c_cleanup_sequence(&scope.cleanup_after_use);
-        let replacement = self.materialize_native_value_result_operand(
-            expr,
-            &format!("{scope_cleanup}{failure_cleanup}"),
-        )?;
+    ) -> CNativeValueMaterialization {
         let aux_cleanup = native_value_aux_cleanup_after_consuming_handle(&replacement);
         let write_failure_cleanup = format!(
             "{}{}{}",
             c_cleanup_sequence(&aux_cleanup),
-            scope_cleanup,
+            target.cleanup_sequence(),
             failure_cleanup
         );
-        let (property_bytes, property_len) =
-            self.emit_call_type_static_bytes("static_property_write_name_bytes", property);
-        let diagnostic = self.next_native_name("static_property_write_diagnostic");
-        let result = self.next_native_name("static_property_write_value");
+        let diagnostic = self.next_native_name("static_property_lvalue_write_diagnostic");
+        let result = self.next_native_name("static_property_lvalue_write_value");
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
-        self.body.push(format!(
-            "phpc_NativeValueHandle {result} = phpc_native_static_property_write_class_with_diagnostic_and_free({storage}, phpc_native_string_bytes({}), phpc_native_string_len({}), {property_bytes}, {property_len}, {}, &{diagnostic});",
-            scope.handle, scope.handle, replacement.handle
-        ));
+        match &target.receiver {
+            CStaticPropertyLvalueReceiver::Class {
+                class_bytes,
+                class_len,
+            } => {
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {result} = phpc_native_static_property_write_class_with_diagnostic_and_free({}, {class_bytes}, {class_len}, {}, {}, {}, &{diagnostic});",
+                    target.storage, target.property_bytes, target.property_len, replacement.handle
+                ));
+            }
+            CStaticPropertyLvalueReceiver::Relative {
+                receiver,
+                current_class_bytes,
+                current_class_len,
+                called_class_ptr,
+                called_class_len,
+            } => {
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {result} = phpc_native_static_property_write_relative_with_diagnostic_and_free({}, {}, {current_class_bytes}, {current_class_len}, {called_class_ptr}, {called_class_len}, {}, {}, {}, &{diagnostic});",
+                    target.storage,
+                    receiver.abi_tag(),
+                    target.property_bytes,
+                    target.property_len,
+                    replacement.handle
+                ));
+            }
+        }
         self.emit_report_native_diagnostic(&diagnostic);
         let error_exit = self.native_error_exit(&write_failure_cleanup);
         self.body
             .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
         self.body.extend(aux_cleanup);
-        self.body.extend(scope.cleanup_after_use);
-        Ok(Some(CNativeValueMaterialization {
+        CNativeValueMaterialization {
             handle: result.clone(),
             cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
-        }))
+        }
+    }
+
+    fn materialize_static_property_assignment_result_for_target(
+        &mut self,
+        target: &AssignTarget,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some(target) =
+            self.materialize_static_property_lvalue_target(target, failure_cleanup)?
+        else {
+            return Ok(None);
+        };
+        let target_cleanup = target.cleanup_sequence();
+        let replacement = self.materialize_native_value_result_operand(
+            expr,
+            &format!("{target_cleanup}{failure_cleanup}"),
+        )?;
+        let result = self.emit_static_property_lvalue_write(&target, replacement, failure_cleanup);
+        self.body.extend(target.cleanup_after_use);
+        Ok(Some(result))
     }
 
     fn emit_statement(&mut self, stmt: &Stmt) -> CompileResult<()> {
@@ -33481,6 +33594,14 @@ impl CGenerator {
                     self.body.extend(value.cleanup_after_use);
                     return Ok(());
                 }
+                if let Some(value) = self
+                    .materialize_static_property_compound_assignment_result_for_target(
+                        target, *op, expr, "",
+                    )?
+                {
+                    self.body.extend(value.cleanup_after_use);
+                    return Ok(());
+                }
                 if let Some(boundary) = native_object_array_access_compound_operation_result(target)
                 {
                     return Err(self.unsupported(
@@ -33510,6 +33631,17 @@ impl CGenerator {
                 }
                 if let Some(value) = self
                     .materialize_native_arrayaccess_offset_increment_decrement_result_for_target(
+                        target,
+                        *op,
+                        IncrementDecrementPosition::Pre,
+                        "",
+                    )?
+                {
+                    self.body.extend(value.cleanup_after_use);
+                    return Ok(());
+                }
+                if let Some(value) = self
+                    .materialize_static_property_increment_decrement_result_for_target(
                         target,
                         *op,
                         IncrementDecrementPosition::Pre,
@@ -34475,26 +34607,8 @@ impl CGenerator {
                     self.retain_native_value_cleanup_handle(&value.handle);
                     return Ok(CValue::NativeValueHandle(value.handle));
                 }
-                if let Some(value) = self
-                    .materialize_declared_static_property_assignment_result_for_target(
-                        target, expr, "",
-                    )?
-                {
-                    self.retain_native_value_cleanup_handle(&value.handle);
-                    return Ok(CValue::NativeValueHandle(value.handle));
-                }
-                if let Some(value) = self
-                    .materialize_relative_static_property_assignment_result_for_target(
-                        target, expr, "",
-                    )?
-                {
-                    self.retain_native_value_cleanup_handle(&value.handle);
-                    return Ok(CValue::NativeValueHandle(value.handle));
-                }
-                if let Some(value) = self
-                    .materialize_object_static_property_assignment_result_for_target(
-                        target, expr, "",
-                    )?
+                if let Some(value) =
+                    self.materialize_static_property_assignment_result_for_target(target, expr, "")?
                 {
                     self.retain_native_value_cleanup_handle(&value.handle);
                     return Ok(CValue::NativeValueHandle(value.handle));
@@ -34612,6 +34726,14 @@ impl CGenerator {
                     self.retain_native_value_cleanup_handle(&value.handle);
                     return Ok(CValue::NativeValueHandle(value.handle));
                 }
+                if let Some(value) = self
+                    .materialize_static_property_compound_assignment_result_for_target(
+                        target, *op, expr, "",
+                    )?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
                 if let Some(boundary) = native_object_array_access_compound_operation_result(target)
                 {
                     return Err(self.unsupported(
@@ -34646,6 +34768,14 @@ impl CGenerator {
                 }
                 if let Some(value) = self
                     .materialize_native_arrayaccess_offset_increment_decrement_result_for_target(
+                        target, *op, *position, "",
+                    )?
+                {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
+                if let Some(value) = self
+                    .materialize_static_property_increment_decrement_result_for_target(
                         target, *op, *position, "",
                     )?
                 {
@@ -43548,6 +43678,37 @@ impl CGenerator {
         .map(Some)
     }
 
+    fn materialize_static_property_compound_assignment_result_for_target(
+        &mut self,
+        target: &AssignTarget,
+        op: CompoundAssignOp,
+        rhs_expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some(target) =
+            self.materialize_static_property_lvalue_target(target, failure_cleanup)?
+        else {
+            return Ok(None);
+        };
+
+        let target_cleanup = target.cleanup_sequence();
+        let current = self.emit_static_property_lvalue_read(&target, failure_cleanup);
+        let current_cleanup = c_cleanup_sequence(&current.cleanup_after_use);
+        let rhs_value = self.materialize_native_value_result_operand(
+            rhs_expr,
+            &format!("{current_cleanup}{target_cleanup}{failure_cleanup}"),
+        )?;
+        let replacement = self.emit_native_value_binary_result_handle(
+            current,
+            native_array_lvalue_compound_binary_op_tag(op),
+            rhs_value,
+            &format!("{target_cleanup}{failure_cleanup}"),
+        );
+        let result = self.emit_static_property_lvalue_write(&target, replacement, failure_cleanup);
+        self.body.extend(target.cleanup_after_use);
+        Ok(Some(result))
+    }
+
     fn materialize_native_arrayaccess_offset_compound_assignment_result_for_target(
         &mut self,
         target: &AssignTarget,
@@ -43646,6 +43807,55 @@ impl CGenerator {
         )?;
 
         Ok(Some(value))
+    }
+
+    fn materialize_static_property_increment_decrement_result_for_target(
+        &mut self,
+        target: &AssignTarget,
+        op: IncrementDecrementOp,
+        position: IncrementDecrementPosition,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some(target) =
+            self.materialize_static_property_lvalue_target(target, failure_cleanup)?
+        else {
+            return Ok(None);
+        };
+
+        let target_cleanup = target.cleanup_sequence();
+        let current = self.emit_static_property_lvalue_read(&target, failure_cleanup);
+        let current_cleanup = c_cleanup_sequence(&current.cleanup_after_use);
+        let update_input_handle = self.checked_clone_native_value_handle(
+            &current.handle,
+            &format!("{current_cleanup}{target_cleanup}{failure_cleanup}"),
+        );
+        let update_input = CNativeValueMaterialization {
+            handle: update_input_handle.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({update_input_handle});")],
+        };
+        let updated = self.emit_native_value_increment_decrement_result_handle(
+            update_input,
+            native_value_increment_decrement_op_tag(op),
+            &format!("{current_cleanup}{target_cleanup}{failure_cleanup}"),
+        );
+
+        let result = match position {
+            IncrementDecrementPosition::Pre => {
+                self.body.extend(current.cleanup_after_use);
+                self.emit_static_property_lvalue_write(&target, updated, failure_cleanup)
+            }
+            IncrementDecrementPosition::Post => {
+                let write_result = self.emit_static_property_lvalue_write(
+                    &target,
+                    updated,
+                    &format!("{current_cleanup}{failure_cleanup}"),
+                );
+                self.body.extend(write_result.cleanup_after_use);
+                current
+            }
+        };
+        self.body.extend(target.cleanup_after_use);
+        Ok(Some(result))
     }
 
     fn materialize_native_arrayaccess_offset_increment_decrement_result_for_target(
@@ -46034,20 +46244,8 @@ impl CGenerator {
             self.body.extend(value.cleanup_after_use);
             return Ok(());
         }
-        if let Some(value) = self
-            .materialize_declared_static_property_assignment_result_for_target(target, expr, "")?
-        {
-            self.body.extend(value.cleanup_after_use);
-            return Ok(());
-        }
-        if let Some(value) = self
-            .materialize_relative_static_property_assignment_result_for_target(target, expr, "")?
-        {
-            self.body.extend(value.cleanup_after_use);
-            return Ok(());
-        }
         if let Some(value) =
-            self.materialize_object_static_property_assignment_result_for_target(target, expr, "")?
+            self.materialize_static_property_assignment_result_for_target(target, expr, "")?
         {
             self.body.extend(value.cleanup_after_use);
             return Ok(());
@@ -49499,6 +49697,16 @@ impl CGenerator {
                 {
                     return Ok(Some(value));
                 }
+                if let Some(value) = self
+                    .materialize_static_property_compound_assignment_result_for_target(
+                        target,
+                        *op,
+                        expr,
+                        failure_cleanup,
+                    )?
+                {
+                    return Ok(Some(value));
+                }
                 self.materialize_array_lvalue_compound_assignment_result_for_target(
                     target,
                     *op,
@@ -49515,6 +49723,16 @@ impl CGenerator {
             } => {
                 if let Some(value) = self
                     .materialize_native_arrayaccess_offset_increment_decrement_result_for_target(
+                        target,
+                        *op,
+                        *position,
+                        failure_cleanup,
+                    )?
+                {
+                    return Ok(Some(value));
+                }
+                if let Some(value) = self
+                    .materialize_static_property_increment_decrement_result_for_target(
                         target,
                         *op,
                         *position,

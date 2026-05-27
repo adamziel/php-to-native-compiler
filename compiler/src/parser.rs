@@ -2818,6 +2818,7 @@ impl Parser {
                 AssignTarget::Variable { .. }
                     | AssignTarget::ArrayIndex { index: Some(_), .. }
                     | AssignTarget::Property { .. }
+                    | AssignTarget::ObjectStaticProperty { .. }
                     | AssignTarget::StaticProperty { .. }
                     | AssignTarget::SelfStaticProperty { .. }
                     | AssignTarget::ParentStaticProperty { .. }
@@ -3615,6 +3616,7 @@ impl Parser {
             | AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
             | AssignTarget::Property { .. }
+            | AssignTarget::ObjectStaticProperty { .. }
             | AssignTarget::StaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
@@ -3623,7 +3625,6 @@ impl Parser {
             | AssignTarget::DynamicProperty { .. }
             | AssignTarget::NonDirectProperty { .. }
             | AssignTarget::NonDirectDynamicProperty { .. }
-            | AssignTarget::ObjectStaticProperty { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
@@ -3648,6 +3649,7 @@ impl Parser {
             | AssignTarget::Property { .. }
             | AssignTarget::ObjectPropertyArrayIndex { .. }
             | AssignTarget::DynamicObjectPropertyArrayIndex { .. }
+            | AssignTarget::ObjectStaticProperty { .. }
             | AssignTarget::StaticProperty { .. }
             | AssignTarget::SelfStaticProperty { .. }
             | AssignTarget::ParentStaticProperty { .. }
@@ -3659,7 +3661,6 @@ impl Parser {
             | AssignTarget::DynamicProperty { .. }
             | AssignTarget::NonDirectProperty { .. }
             | AssignTarget::NonDirectDynamicProperty { .. }
-            | AssignTarget::ObjectStaticProperty { .. }
             | AssignTarget::NonDirectObjectPropertyArrayIndex { .. }
             | AssignTarget::NonDirectObjectPropertyArrayAppend { .. }
             | AssignTarget::NonDirectDynamicObjectPropertyArrayIndex { .. }
@@ -3755,6 +3756,15 @@ impl Parser {
                 }),
                 _ => Err(unsupported_increment_decrement_target_message()),
             },
+            Expr::ObjectStaticProperty {
+                target,
+                property,
+                span,
+            } => Ok(AssignTarget::ObjectStaticProperty {
+                target: *target,
+                property,
+                span,
+            }),
             Expr::StaticProperty {
                 class_name,
                 property,
@@ -3890,6 +3900,15 @@ impl Parser {
                 }),
                 _ => Err(unsupported_compound_assignment_target_message()),
             },
+            Expr::ObjectStaticProperty {
+                target,
+                property,
+                span,
+            } => Ok(AssignTarget::ObjectStaticProperty {
+                target: *target,
+                property,
+                span,
+            }),
             Expr::StaticProperty {
                 class_name,
                 property,
