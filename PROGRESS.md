@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 22:20 CEST
+Updated: 2026-05-27 22:26 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,13 +19,26 @@ Overall integrated-roadmap progress: **93%** `[##################--]`
 
 Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `c9e97085` routes selected nested
-ArrayAccess reference owners through a real runtime reference-array-path ABI.
-Reference-returning `offsetGet()` roots can now feed nested array-key
-by-reference consumers and reference assignments for direct variables and
-property-held roots without `offsetSet()` substitution or fake reference
-cloning. Broader unknown owner facts, arbitrary object/property reference
-paths, full COW/reference parity, and LLVM/ASM parity remain blocked.
+Latest accounted source capability: `7837d68e` bridges direct-variable
+`call_user_func()` arguments to declared by-reference parameters through the
+generated-C source-call path. Literal function names, statically-known callback
+variables, descriptor closures, and invokable objects with proven contracts can
+now forward direct variables as aliases instead of rejecting the call as
+value-only. `call_user_func_array()`, non-direct owners, array offsets,
+properties, ArrayAccess, request superglobals, `$GLOBALS`, nested owners,
+broader COW/reference parity, and LLVM/ASM parity remain blocked.
+
+Recent source commit `7837d68e` advances dynamic callable by-reference
+lowering without adding callable-name ladders, source-shape production
+recognizers, by-value fallbacks for reference slots, or fake writeback.
+Generated C now preflights `call_user_func()` callback contracts with direct
+argument shapes, reuses the existing source-call reference binding operands for
+supported direct variables, and keeps unsupported owners blocked. Focused gates
+covered `call_user_func` by-reference source and linked executable proof,
+descriptor-closure regressions, closure-capture callable regressions, compile
+checking, formatting, and diff checks. Primary gate log:
+`state/logs/phpc-primary-callable-byref-args-fec83cfc-20260527.gates.log`
+sha256 `51f55ecd03cd753326646da6c081619b8d030851c0632154bcfb6a9aaad0be47`.
 
 Recent source commit `c9e97085` advances nested ArrayAccess reference owner
 coverage without adding object-name ladders, generated-C source-shape
