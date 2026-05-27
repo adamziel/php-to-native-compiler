@@ -23752,6 +23752,9 @@ impl CGenerator {
                 output.push_str("extern bool phpc_native_declare_user_class_property_bytes(const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, uint8_t visibility, bool is_static);\n");
                 output.push_str("extern bool phpc_native_declare_user_class_trait_bytes(const uint8_t *class_ptr, size_t class_len, const uint8_t *trait_ptr, size_t trait_len);\n");
                 output.push_str("extern bool phpc_native_declare_user_class_alias_bytes_with_diagnostic(const uint8_t *source_ptr, size_t source_len, const uint8_t *alias_ptr, size_t alias_len, bool autoload, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                if self.uses_native_spl_autoload_registry_helpers {
+                    output.push_str("extern bool phpc_native_declare_user_class_alias_bytes_with_autoload_registry_and_diagnostic(const uint8_t *source_ptr, size_t source_len, const uint8_t *alias_ptr, size_t alias_len, phpc_NativeSplAutoloadRegistryHandle registry, phpc_NativeCallableTableHandle table, bool autoload, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                }
             }
             if self.uses_native_user_trait_declaration {
                 output.push_str("extern bool phpc_native_declare_user_trait_bytes(const uint8_t *ptr, size_t len);\n");
@@ -37446,9 +37449,28 @@ impl CGenerator {
         let result = self.next_native_name("class_alias_result");
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
-        self.body.push(format!(
-            "bool {result} = phpc_native_declare_user_class_alias_bytes_with_diagnostic({source_ptr}, (size_t){source_len}, {alias_ptr}, (size_t){alias_len}, {autoload}, &{diagnostic});"
-        ));
+        if autoload == "false" {
+            self.body.push(format!(
+                "bool {result} = phpc_native_declare_user_class_alias_bytes_with_diagnostic({source_ptr}, (size_t){source_len}, {alias_ptr}, (size_t){alias_len}, false, &{diagnostic});"
+            ));
+        } else if autoload == "true" {
+            let (registry, table) = self.ensure_native_spl_autoload_registry("", span)?;
+            self.body.push(format!(
+                "bool {result} = phpc_native_declare_user_class_alias_bytes_with_autoload_registry_and_diagnostic({source_ptr}, (size_t){source_len}, {alias_ptr}, (size_t){alias_len}, {registry}, {table}, true, &{diagnostic});"
+            ));
+        } else {
+            self.body.push(format!("bool {result} = false;"));
+            self.body.push(format!("if ({autoload}) {{"));
+            let (registry, table) = self.ensure_native_spl_autoload_registry("", span)?;
+            self.body.push(format!(
+                "  {result} = phpc_native_declare_user_class_alias_bytes_with_autoload_registry_and_diagnostic({source_ptr}, (size_t){source_len}, {alias_ptr}, (size_t){alias_len}, {registry}, {table}, true, &{diagnostic});"
+            ));
+            self.body.push("} else {".to_string());
+            self.body.push(format!(
+                "  {result} = phpc_native_declare_user_class_alias_bytes_with_diagnostic({source_ptr}, (size_t){source_len}, {alias_ptr}, (size_t){alias_len}, false, &{diagnostic});"
+            ));
+            self.body.push("}".to_string());
+        }
         let report_call = c_diagnostic_report_call(&diagnostic);
         let error_exit = self.native_error_exit("");
         self.body.push(format!(

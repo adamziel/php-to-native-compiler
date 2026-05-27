@@ -5528,6 +5528,49 @@ fn native_executable_c_source_lowers_class_alias_metadata_boundary() {
 }
 
 #[test]
+fn native_executable_c_source_routes_class_alias_autoload_to_registry_boundary() {
+    let program = parse(concat!(
+        "<?php\n",
+        "function class_alias_loader($name) { echo $name; }\n",
+        "spl_autoload_register(\"class_alias_loader\");\n",
+        "echo class_alias(\"MissingAliasSource\", \"LoadedAlias\") ? \"1\" : \"0\";\n",
+        "echo class_alias(\"MissingNoAutoload\", \"SkippedAlias\", false) ? \"1\" : \"0\";\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains(
+            "phpc_native_declare_user_class_alias_bytes_with_autoload_registry_and_diagnostic("
+        ) && body.contains("phpc_native_declare_user_class_alias_bytes_with_diagnostic(")
+            && body.contains("phpc_user_spl_autoload_registry")
+            && body.contains("phpc_user_callable_table"),
+        "autoload-enabled class_alias() should use the generated-C SPL registry boundary while autoload=false keeps the existing alias ABI:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_keeps_class_alias_false_off_registry_boundary() {
+    let program = parse(concat!(
+        "<?php\n",
+        "echo class_alias(\"MissingNoAutoload\", \"SkippedAlias\", false) ? \"1\" : \"0\";\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("phpc_native_declare_user_class_alias_bytes_with_diagnostic(")
+            && !source.contains(
+                "phpc_native_declare_user_class_alias_bytes_with_autoload_registry_and_diagnostic("
+            )
+            && !source.contains("phpc_user_spl_autoload_registry")
+            && !source.contains("phpc_native_spl_autoload_registry_new"),
+        "literal autoload=false class_alias() should avoid SPL registry state and calls:\n{source}"
+    );
+}
+
+#[test]
 fn emit_exe_links_and_runs_class_alias_metadata_boundary_program() {
     if !has_cc() {
         return;
@@ -5568,29 +5611,25 @@ fn emit_exe_links_and_runs_class_alias_metadata_boundary_program() {
 }
 
 #[test]
-fn emit_exe_class_alias_missing_default_reports_autoload_boundary() {
+fn emit_exe_class_alias_missing_default_without_callbacks_returns_false() {
     if !has_cc() {
         return;
     }
 
-    let source = "<?php\nclass AliasLoaded {}\necho class_alias(\"MissingAliasSource\", \"AliasMissing\");\n";
+    let source = "<?php\necho class_alias(\"MissingAliasSource\", \"AliasMissing\") ? \"alias\" : \"missing\";\n";
     let (source_path, output_path) =
-        compile_native_link_fixture("class_alias_missing_autoload_boundary", source);
+        compile_native_link_fixture("class_alias_missing_without_callbacks", source);
 
     let run = Command::new(&output_path)
         .output()
-        .expect("run class_alias autoload-boundary executable");
+        .expect("run class_alias missing-without-callbacks executable");
     assert!(
-        !run.status.success(),
-        "class_alias missing source should report autoload boundary"
-    );
-    assert!(
-        String::from_utf8_lossy(&run.stderr).contains(
-            "class_alias(): generated-native autoload for missing source classes is not implemented"
-        ),
-        "stderr:\n{}",
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
     );
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "missing");
 
     let _ = fs::remove_file(source_path);
     let _ = fs::remove_file(output_path);
@@ -5651,6 +5690,76 @@ fn emit_exe_links_and_runs_user_class_value_metadata_registry_program() {
 
     let _ = fs::remove_file(source_path);
     let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_class_alias_autoload_registry_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .expect("compiler crate has workspace parent");
+    let fixture_dir = workspace_root.join(format!(
+        "target/phpc-native-link-class-alias-autoload-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&fixture_dir);
+    fs::create_dir_all(&fixture_dir).expect("create class_alias autoload fixture dir");
+    let source_path = fixture_dir.join("main.php");
+    let output_path = fixture_dir.join("class_alias_autoload");
+    fs::write(
+        &source_path,
+        concat!(
+            "<?php\n",
+            "function load_class_alias_source($name) {\n",
+            "    echo \"load:\", $name, \"\\n\";\n",
+            "}\n",
+            "spl_autoload_register(\"load_class_alias_source\");\n",
+            "echo class_alias(\"ClassAliasAutoloadSource\", \"ClassAliasAutoloaded\") ? \"alias\\n\" : \"alias-fail\\n\";\n",
+            "echo class_alias(\"MissingNoAutoload\", \"SkippedAlias\", false) ? \"false-alias\" : \"false-skip\";\n",
+        ),
+    )
+    .expect("write class_alias autoload main");
+
+    let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .current_dir(workspace_root)
+        .args([
+            "compile",
+            source_path
+                .to_str()
+                .expect("class_alias autoload source path is valid UTF-8"),
+            "--emit-exe",
+            output_path
+                .to_str()
+                .expect("class_alias autoload executable path is valid UTF-8"),
+        ])
+        .output()
+        .expect("compile class_alias autoload executable");
+    assert!(
+        compile.status.success(),
+        "compile stdout:\n{}\ncompile stderr:\n{}",
+        String::from_utf8_lossy(&compile.stdout),
+        String::from_utf8_lossy(&compile.stderr)
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run class_alias autoload executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "load:ClassAliasAutoloadSource\nalias-fail\nfalse-skip"
+    );
+
+    let _ = fs::remove_dir_all(fixture_dir);
 }
 
 #[test]

@@ -37009,6 +37009,39 @@ fn native_declare_user_class_alias_bytes_result(
     Ok(true)
 }
 
+unsafe fn native_declare_user_class_alias_bytes_with_autoload_registry_result(
+    source: &[u8],
+    alias: &[u8],
+    mut registry: NativeSplAutoloadRegistryHandle,
+    autoload: bool,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> RuntimeResult<bool> {
+    let core_classes = PhpClassTable::with_core_classes();
+    if native_class_lookup_key_for_name(&core_classes, source).is_none() && autoload {
+        if let Some(registry) = unsafe { registry.as_mut() } {
+            if !unsafe {
+                native_spl_autoload_call_bytes(
+                    registry,
+                    source,
+                    Some(NativeClassMetadataOperation::ClassExists as u8),
+                    diagnostic,
+                )
+            } {
+                return Ok(false);
+            }
+        }
+    }
+
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        return Ok(false);
+    }
+
+    match native_declare_user_class_alias_bytes_result(source, alias, false) {
+        Ok(false) if autoload => Ok(false),
+        result => result,
+    }
+}
+
 /// # Safety
 ///
 /// Source and alias pointers follow the same pointer/length rules as
@@ -37038,6 +37071,53 @@ pub unsafe extern "C" fn phpc_native_declare_user_class_alias_bytes_with_diagnos
             )
         })?;
         native_declare_user_class_alias_bytes_result(source, alias, autoload)
+    })();
+
+    match result {
+        Ok(aliased) => aliased,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// Source and alias pointers follow the same pointer/length rules as
+/// `phpc_native_declare_user_class_bytes`. `registry` must be the
+/// request-local SPL autoload registry when autoload is enabled. `table` is
+/// accepted for generated-request ABI symmetry; callbacks are stored in the
+/// registry as normalized dispatch values. The diagnostic slot is overwritten
+/// when alias registration hits an unsupported callback, reentrant autoload, or
+/// alias-conflict boundary.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_declare_user_class_alias_bytes_with_autoload_registry_and_diagnostic(
+    source_ptr: *const u8,
+    source_len: usize,
+    alias_ptr: *const u8,
+    alias_len: usize,
+    registry: NativeSplAutoloadRegistryHandle,
+    _table: NativeCallableTableHandle,
+    autoload: bool,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    let result: RuntimeResult<bool> = (|| unsafe {
+        let source = native_abi_bytes(source_ptr, source_len).ok_or_else(|| {
+            RuntimeError::invalid_string_conversion(
+                "native class alias declaration failed: invalid source name bytes",
+            )
+        })?;
+        let alias = native_abi_bytes(alias_ptr, alias_len).ok_or_else(|| {
+            RuntimeError::invalid_string_conversion(
+                "native class alias declaration failed: invalid alias name bytes",
+            )
+        })?;
+        native_declare_user_class_alias_bytes_with_autoload_registry_result(
+            source, alias, registry, autoload, diagnostic,
+        )
     })();
 
     match result {
@@ -49688,6 +49768,83 @@ mod tests {
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         native_user_classes_reset_for_test();
+    }
+
+    #[test]
+    fn native_user_class_alias_autoload_registry_invokes_callbacks_before_alias_lookup() {
+        native_user_classes_reset_for_test();
+        spl_autoload_events_reset_for_test();
+        let registry = phpc_native_spl_autoload_registry_new();
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "declare_class",
+                NativeCallableVisibility::Public,
+                native_autoload_declare_class_callback,
+            );
+            register_spl_autoload_callable_for_test(
+                registry,
+                table,
+                Value::String("declare_class".to_string()),
+                false,
+            );
+        }
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        assert!(!unsafe {
+            phpc_native_declare_user_class_alias_bytes_with_autoload_registry_and_diagnostic(
+                b"SkippedAliasSource".as_ptr(),
+                b"SkippedAliasSource".len(),
+                b"SkippedAlias".as_ptr(),
+                b"SkippedAlias".len(),
+                registry,
+                table,
+                false,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert!(spl_autoload_events_for_test().is_empty());
+
+        assert!(unsafe {
+            phpc_native_declare_user_class_alias_bytes_with_autoload_registry_and_diagnostic(
+                b"AutoloadAliasSource".as_ptr(),
+                b"AutoloadAliasSource".len(),
+                b"AutoloadedAlias".as_ptr(),
+                b"AutoloadedAlias".len(),
+                registry,
+                table,
+                true,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            spl_autoload_events_for_test(),
+            vec!["declare-class:AutoloadAliasSource"]
+        );
+
+        let alias = NativeValueHandle::from_value(Value::String("autoloadedalias".to_string()));
+        assert!(unsafe {
+            phpc_native_value_class_metadata_exists_with_diagnostic(
+                alias,
+                NativeValueHandle::null(),
+                NativeClassMetadataOperation::ClassExists as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        unsafe {
+            phpc_native_value_free(alias);
+            phpc_native_spl_autoload_registry_free(registry);
+            phpc_native_callable_table_free(table);
+        }
+        native_user_classes_reset_for_test();
+        spl_autoload_events_reset_for_test();
     }
 
     #[test]
