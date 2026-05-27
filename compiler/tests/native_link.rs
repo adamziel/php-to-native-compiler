@@ -24499,6 +24499,27 @@ const NATIVE_SPREAD_DIRECT_USER_FUNCTION_ARGUMENT_SOURCE: &str = concat!(
     "echo spread_join(...[spread_marker(\"Q\")]);\n",
 );
 
+const NATIVE_SPREAD_CALLABLE_FAMILY_ARGUMENT_SOURCE: &str = concat!(
+    "<?php\n",
+    "function spread_callable_family_marker($label) { echo $label; return $label; }\n",
+    "class SpreadCallableFamilyBox {\n",
+    "    public static function stat($first, $second = \"D\", ...$tail) {\n",
+    "        return \"S\" . $first . $second . ($tail[0] ?? \"\") . ($tail[\"name\"] ?? \"\");\n",
+    "    }\n",
+    "    public function inst($first, $second = \"D\", ...$tail) {\n",
+    "        return \"I\" . $first . $second . ($tail[0] ?? \"\") . ($tail[\"name\"] ?? \"\");\n",
+    "    }\n",
+    "    public function __invoke($first, $second = \"D\", ...$tail) {\n",
+    "        return \"O\" . $first . $second . ($tail[0] ?? \"\") . ($tail[\"name\"] ?? \"\");\n",
+    "    }\n",
+    "}\n",
+    "$box = new SpreadCallableFamilyBox();\n",
+    "$static = [SpreadCallableFamilyBox::class, \"stat\"];\n",
+    "echo $static(...[spread_callable_family_marker(\"A\"), spread_callable_family_marker(\"B\")], ...[spread_callable_family_marker(\"C\"), \"name\" => spread_callable_family_marker(\"N\")]), \"|\";\n",
+    "echo [$box, \"inst\"](...[\"first\" => spread_callable_family_marker(\"X\"), \"name\" => spread_callable_family_marker(\"Z\")]), \"|\";\n",
+    "echo $box(...[spread_callable_family_marker(\"Q\")]);\n",
+);
+
 const NATIVE_NAMED_METHOD_SOURCE_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "function named_method_marker($label) { echo $label; return $label; }\n",
@@ -25090,6 +25111,32 @@ fn native_executable_c_source_blocks_spread_for_unsupported_callable_families_at
             .contains("spread operands need a materialized-entry producer"),
         "{}",
         error.message
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_callable_family_spread_through_materialized_bridge() {
+    let program = parse(NATIVE_SPREAD_CALLABLE_FAMILY_ARGUMENT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && body.contains("phpc_NativeCallArgumentsHandle dynamic_callable_args_")
+            && body.contains("callable_object_invoke_args_")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
+            && body.contains(
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+            ),
+        "callable arrays and callable objects with spread should share the materialized NativeCallArgumentsHandle finalizer and existing callable invoke boundaries:\n{source}"
+    );
+    assert!(
+        !source.contains("spread operands need a materialized-entry producer")
+            && !source.contains("callable_array_matched")
+            && !source.contains("callable_object_matched"),
+        "supported callable-family spread should not hit the old spread blocker or legacy callable ladders:\n{source}"
     );
 }
 
@@ -26106,15 +26153,6 @@ fn native_executable_c_source_keeps_unsupported_callable_object_shapes_blocked()
         (
             concat!(
                 "<?php\n",
-                "class SpreadCallableObject { public function __invoke($value) { return $value; } }\n",
-                "$call = new SpreadCallableObject();\n",
-                "echo $call(...[\"value\" => \"x\"]);\n",
-            ),
-            "unsupported argument unpacking",
-        ),
-        (
-            concat!(
-                "<?php\n",
                 "class ReferenceCallableObject { public function __invoke(&$slot) { return $slot; } }\n",
                 "$call = new ReferenceCallableObject();\n",
                 "echo $call(\"literal\");\n",
@@ -26461,6 +26499,34 @@ fn emit_exe_links_and_runs_direct_user_function_spread_argument_program() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_callable_family_spread_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "spread_callable_family_arguments",
+        NATIVE_SPREAD_CALLABLE_FAMILY_ARGUMENT_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native callable-family spread executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ABCNSABCN|XZIXDZ|QOQD");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
 fn emit_exe_reports_direct_user_function_spread_shape_diagnostics() {
     if !has_cc() {
         return;
@@ -26491,6 +26557,41 @@ fn emit_exe_reports_direct_user_function_spread_shape_diagnostics() {
         let (source_path, output_path) = compile_native_link_fixture(name, source);
         let run = Command::new(&output_path).output().unwrap_or_else(|error| {
             panic!("failed to run native spread diagnostic executable {name}: {error}")
+        });
+
+        assert!(!run.status.success(), "{name} should fail");
+        assert!(
+            String::from_utf8_lossy(&run.stderr).contains(expected),
+            "{name} stderr should contain {expected:?}, got:\n{}",
+            String::from_utf8_lossy(&run.stderr)
+        );
+
+        let _ = fs::remove_file(&output_path);
+        let _ = fs::remove_file(&source_path);
+    }
+}
+
+#[test]
+fn emit_exe_reports_callable_family_spread_shape_diagnostics() {
+    if !has_cc() {
+        return;
+    }
+
+    for (name, source, expected) in [
+        (
+            "spread_callable_array_duplicate_named",
+            "<?php\nclass SpreadCallableArrayDiagnostic { public static function fixed($first) { return $first; } }\n$call = [SpreadCallableArrayDiagnostic::class, \"fixed\"];\necho $call(\"a\", ...[\"first\" => \"b\"]), \"after\";\n",
+            "duplicate argument for parameter $first",
+        ),
+        (
+            "spread_callable_object_by_reference_rejected",
+            "<?php\nclass SpreadCallableObjectDiagnostic { public function __invoke(&$slot) { $slot = \"changed\"; return $slot; } }\n$call = new SpreadCallableObjectDiagnostic();\n$value = \"old\";\necho $call(...[$value]), \"after\";\n",
+            "by-reference parameter $slot requires reference materialization",
+        ),
+    ] {
+        let (source_path, output_path) = compile_native_link_fixture(name, source);
+        let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+            panic!("failed to run native callable-family spread diagnostic executable {name}: {error}")
         });
 
         assert!(!run.status.success(), "{name} should fail");
