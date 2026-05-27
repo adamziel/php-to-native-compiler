@@ -30654,12 +30654,45 @@ impl CGenerator {
         )
     }
 
+    fn receiver_method_source_call_signature_contract_for_args(
+        &self,
+        target: &Expr,
+        method_name: &str,
+        args: &[Expr],
+        access_context: NativeSourceCallAccessContext<'_>,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        self.receiver_method_source_call_signature_contract_for_arg_count_with_options(
+            target,
+            method_name,
+            native_source_call_arg_count_for_args(args),
+            access_context,
+            call_arguments_have_named(args) || call_arguments_have_spread(args),
+        )
+    }
+
     fn receiver_method_source_call_signature_contract_for_arg_count(
         &self,
         target: &Expr,
         method_name: &str,
         arg_count: Option<usize>,
         access_context: NativeSourceCallAccessContext<'_>,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        self.receiver_method_source_call_signature_contract_for_arg_count_with_options(
+            target,
+            method_name,
+            arg_count,
+            access_context,
+            false,
+        )
+    }
+
+    fn receiver_method_source_call_signature_contract_for_arg_count_with_options(
+        &self,
+        target: &Expr,
+        method_name: &str,
+        arg_count: Option<usize>,
+        access_context: NativeSourceCallAccessContext<'_>,
+        require_param_names: bool,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
         let facts = self.native_value_facts_for_expr(target)?;
         let object = facts.object.as_ref()?;
@@ -30669,6 +30702,7 @@ impl CGenerator {
                 method_name,
                 arg_count,
                 access_context,
+                require_param_names,
             );
         }
 
@@ -30715,10 +30749,11 @@ impl CGenerator {
             });
         }
 
-        let contract = native_method_static_signature_fallback_contract_from_methods(
+        let contract = native_method_static_signature_fallback_contract_from_methods_with_options(
             NativeMethodStaticSignatureFamily::ReceiverMethod,
             methods.iter(),
             arg_count,
+            require_param_names,
         );
         matches!(
             contract.availability,
@@ -30733,6 +30768,7 @@ impl CGenerator {
         method_name: &str,
         arg_count: Option<usize>,
         access_context: NativeSourceCallAccessContext<'_>,
+        require_param_names: bool,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
         let interface_methods =
             self.declared_interface_receiver_methods_for_object_facts(object, method_name)?;
@@ -30741,7 +30777,7 @@ impl CGenerator {
             interface_methods.iter().map(|method| &method.method),
             arg_count,
         );
-        if arg_count.is_none() {
+        if arg_count.is_none() && !require_param_names {
             return matches!(
                 contract.availability,
                 NativeMethodStaticSignatureAvailability::Known(_)
@@ -30867,6 +30903,39 @@ impl CGenerator {
         arg_count: usize,
         access_context: NativeSourceCallAccessContext<'_>,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        self.receiver_dynamic_method_source_call_signature_contract_for_arg_count_with_options(
+            target,
+            method,
+            Some(arg_count),
+            access_context,
+            false,
+        )
+    }
+
+    fn receiver_dynamic_method_source_call_signature_contract_for_args(
+        &self,
+        target: &Expr,
+        method: &Expr,
+        args: &[Expr],
+        access_context: NativeSourceCallAccessContext<'_>,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        self.receiver_dynamic_method_source_call_signature_contract_for_arg_count_with_options(
+            target,
+            method,
+            native_source_call_arg_count_for_args(args),
+            access_context,
+            call_arguments_have_named(args) || call_arguments_have_spread(args),
+        )
+    }
+
+    fn receiver_dynamic_method_source_call_signature_contract_for_arg_count_with_options(
+        &self,
+        target: &Expr,
+        method: &Expr,
+        arg_count: Option<usize>,
+        access_context: NativeSourceCallAccessContext<'_>,
+        require_param_names: bool,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
         let facts = self.native_value_facts_for_expr(target)?;
         let object = facts.object.as_ref()?;
         if object.declared_class_keys.is_empty() {
@@ -30912,8 +30981,7 @@ impl CGenerator {
                         saw_magic_call = true;
                         continue;
                     }
-                    if !native_method_static_source_call_arity_compatible(&method, Some(arg_count))
-                    {
+                    if !native_method_static_source_call_arity_compatible(&method, arg_count) {
                         return None;
                     }
                     methods.push(method);
@@ -30949,10 +31017,11 @@ impl CGenerator {
         }
 
         Some(
-            native_method_static_signature_fallback_contract_from_methods(
+            native_method_static_signature_fallback_contract_from_methods_with_options(
                 NativeMethodStaticSignatureFamily::ReceiverMethod,
                 methods.iter(),
-                Some(arg_count),
+                arg_count,
+                require_param_names,
             ),
         )
     }
@@ -30976,6 +31045,35 @@ impl CGenerator {
         method_name: &str,
         arg_count: usize,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        self.object_static_method_source_call_signature_contract_for_arg_count_with_options(
+            target,
+            method_name,
+            Some(arg_count),
+            false,
+        )
+    }
+
+    fn object_static_method_source_call_signature_contract_for_args(
+        &self,
+        target: &Expr,
+        method_name: &str,
+        args: &[Expr],
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        self.object_static_method_source_call_signature_contract_for_arg_count_with_options(
+            target,
+            method_name,
+            native_source_call_arg_count_for_args(args),
+            call_arguments_have_named(args) || call_arguments_have_spread(args),
+        )
+    }
+
+    fn object_static_method_source_call_signature_contract_for_arg_count_with_options(
+        &self,
+        target: &Expr,
+        method_name: &str,
+        arg_count: Option<usize>,
+        require_param_names: bool,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
         let facts = self.native_value_facts_for_expr(target)?;
         let object = facts.object.as_ref()?;
         if object.declared_class_keys.is_empty() {
@@ -30995,8 +31093,7 @@ impl CGenerator {
                         saw_magic_call_static = true;
                         continue;
                     }
-                    if !native_method_static_source_call_arity_compatible(&method, Some(arg_count))
-                    {
+                    if !native_method_static_source_call_arity_compatible(&method, arg_count) {
                         return None;
                     }
                     methods.push(method);
@@ -31023,10 +31120,11 @@ impl CGenerator {
             });
         }
 
-        let contract = native_method_static_signature_fallback_contract_from_methods(
+        let contract = native_method_static_signature_fallback_contract_from_methods_with_options(
             NativeMethodStaticSignatureFamily::StaticMethod,
             methods.iter(),
-            Some(arg_count),
+            arg_count,
+            require_param_names,
         );
         matches!(
             contract.availability,
@@ -31056,6 +31154,39 @@ impl CGenerator {
         method_name: &str,
         arg_count: Option<usize>,
         access_context: NativeSourceCallAccessContext<'_>,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        self.static_method_source_call_signature_contract_for_arg_count_with_options(
+            class_name,
+            method_name,
+            arg_count,
+            access_context,
+            false,
+        )
+    }
+
+    fn static_method_source_call_signature_contract_for_args(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        args: &[Expr],
+        access_context: NativeSourceCallAccessContext<'_>,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        self.static_method_source_call_signature_contract_for_arg_count_with_options(
+            class_name,
+            method_name,
+            native_source_call_arg_count_for_args(args),
+            access_context,
+            call_arguments_have_named(args) || call_arguments_have_spread(args),
+        )
+    }
+
+    fn static_method_source_call_signature_contract_for_arg_count_with_options(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        arg_count: Option<usize>,
+        access_context: NativeSourceCallAccessContext<'_>,
+        require_param_names: bool,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
         let class_key = Self::declared_class_key(class_name);
         let Some((class, method)) = self.declared_class_static_method(class_name, method_name)
@@ -31095,10 +31226,11 @@ impl CGenerator {
         }
 
         let methods = [method];
-        let contract = native_method_static_signature_fallback_contract_from_methods(
+        let contract = native_method_static_signature_fallback_contract_from_methods_with_options(
             NativeMethodStaticSignatureFamily::StaticMethod,
             methods.iter(),
             arg_count,
+            require_param_names,
         );
         matches!(
             contract.availability,
@@ -31113,6 +31245,39 @@ impl CGenerator {
         method: &Expr,
         arg_count: usize,
         access_context: NativeSourceCallAccessContext<'_>,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        self.dynamic_static_method_source_call_signature_contract_for_arg_count_with_options(
+            class_name,
+            method,
+            Some(arg_count),
+            access_context,
+            false,
+        )
+    }
+
+    fn dynamic_static_method_source_call_signature_contract_for_args(
+        &self,
+        class_name: &str,
+        method: &Expr,
+        args: &[Expr],
+        access_context: NativeSourceCallAccessContext<'_>,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        self.dynamic_static_method_source_call_signature_contract_for_arg_count_with_options(
+            class_name,
+            method,
+            native_source_call_arg_count_for_args(args),
+            access_context,
+            call_arguments_have_named(args) || call_arguments_have_spread(args),
+        )
+    }
+
+    fn dynamic_static_method_source_call_signature_contract_for_arg_count_with_options(
+        &self,
+        class_name: &str,
+        method: &Expr,
+        arg_count: Option<usize>,
+        access_context: NativeSourceCallAccessContext<'_>,
+        require_param_names: bool,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
         let class_key = Self::declared_class_key(class_name);
         let Some(method_names) = self.static_known_string_values_for_expr(method) else {
@@ -31155,7 +31320,7 @@ impl CGenerator {
                     saw_magic_call_static = true;
                     continue;
                 }
-                if !native_method_static_source_call_arity_compatible(&method, Some(arg_count)) {
+                if !native_method_static_source_call_arity_compatible(&method, arg_count) {
                     return None;
                 }
                 methods.push(method);
@@ -31190,10 +31355,11 @@ impl CGenerator {
         }
 
         Some(
-            native_method_static_signature_fallback_contract_from_methods(
+            native_method_static_signature_fallback_contract_from_methods_with_options(
                 NativeMethodStaticSignatureFamily::StaticMethod,
                 methods.iter(),
-                Some(arg_count),
+                arg_count,
+                require_param_names,
             ),
         )
     }
@@ -31203,6 +31369,35 @@ impl CGenerator {
         target: &Expr,
         method: &Expr,
         arg_count: usize,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        self.object_dynamic_static_method_source_call_signature_contract_for_arg_count_with_options(
+            target,
+            method,
+            Some(arg_count),
+            false,
+        )
+    }
+
+    fn object_dynamic_static_method_source_call_signature_contract_for_args(
+        &self,
+        target: &Expr,
+        method: &Expr,
+        args: &[Expr],
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        self.object_dynamic_static_method_source_call_signature_contract_for_arg_count_with_options(
+            target,
+            method,
+            native_source_call_arg_count_for_args(args),
+            call_arguments_have_named(args) || call_arguments_have_spread(args),
+        )
+    }
+
+    fn object_dynamic_static_method_source_call_signature_contract_for_arg_count_with_options(
+        &self,
+        target: &Expr,
+        method: &Expr,
+        arg_count: Option<usize>,
+        require_param_names: bool,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
         let facts = self.native_value_facts_for_expr(target)?;
         let object = facts.object.as_ref()?;
@@ -31245,10 +31440,7 @@ impl CGenerator {
                             saw_magic_call_static = true;
                             continue;
                         }
-                        if !native_method_static_source_call_arity_compatible(
-                            &method,
-                            Some(arg_count),
-                        ) {
+                        if !native_method_static_source_call_arity_compatible(&method, arg_count) {
                             return None;
                         }
                         methods.push(method);
@@ -31283,10 +31475,11 @@ impl CGenerator {
         }
 
         Some(
-            native_method_static_signature_fallback_contract_from_methods(
+            native_method_static_signature_fallback_contract_from_methods_with_options(
                 NativeMethodStaticSignatureFamily::StaticMethod,
                 methods.iter(),
-                Some(arg_count),
+                arg_count,
+                require_param_names,
             ),
         )
     }
@@ -31337,6 +31530,31 @@ impl CGenerator {
         method_name: &str,
         arg_count: usize,
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        self.late_static_method_source_call_signature_contract_for_arg_count_with_options(
+            method_name,
+            Some(arg_count),
+            false,
+        )
+    }
+
+    fn late_static_method_source_call_signature_contract_for_args(
+        &self,
+        method_name: &str,
+        args: &[Expr],
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        self.late_static_method_source_call_signature_contract_for_arg_count_with_options(
+            method_name,
+            native_source_call_arg_count_for_args(args),
+            call_arguments_have_named(args) || call_arguments_have_spread(args),
+        )
+    }
+
+    fn late_static_method_source_call_signature_contract_for_arg_count_with_options(
+        &self,
+        method_name: &str,
+        arg_count: Option<usize>,
+        require_param_names: bool,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
         let active_class_key = Self::declared_class_key(self.active_declared_class_name.as_ref()?);
         let mut methods = Vec::new();
         let mut saw_magic_call_static = false;
@@ -31350,8 +31568,7 @@ impl CGenerator {
 
             match self.declared_class_static_method_for_key(class_key, method_name) {
                 Some((_, method)) => {
-                    if !native_method_static_source_call_arity_compatible(&method, Some(arg_count))
-                    {
+                    if !native_method_static_source_call_arity_compatible(&method, arg_count) {
                         return None;
                     }
                     methods.push(method);
@@ -31380,10 +31597,11 @@ impl CGenerator {
             return None;
         }
 
-        let contract = native_method_static_signature_fallback_contract_from_methods(
+        let contract = native_method_static_signature_fallback_contract_from_methods_with_options(
             NativeMethodStaticSignatureFamily::StaticMethod,
             methods.iter(),
-            Some(arg_count),
+            arg_count,
+            require_param_names,
         );
         matches!(
             contract.availability,
@@ -31532,19 +31750,21 @@ impl CGenerator {
         );
 
         if let Some(class_name) = self.native_callable_literal_class_name(target) {
-            return self.static_method_source_call_signature_contract_for_arg_count(
+            return self.static_method_source_call_signature_contract_for_arg_count_with_options(
                 &class_name,
                 &method_name,
                 arg_count,
                 access_context,
+                require_param_names,
             );
         }
 
-        self.receiver_method_source_call_signature_contract_for_arg_count(
+        self.receiver_method_source_call_signature_contract_for_arg_count_with_options(
             target,
             &method_name,
             arg_count,
             access_context,
+            require_param_names,
         )
     }
 
@@ -41327,6 +41547,7 @@ impl CGenerator {
                 "__invoke",
                 arg_count,
                 NativeSourceCallAccessContext::ObjectReceiver,
+                require_param_names,
             );
         }
 
@@ -44413,10 +44634,8 @@ impl CGenerator {
                 args,
                 ..
             } => self
-                .receiver_method_source_call_reference_signature_contract(
-                    target,
-                    method,
-                    args.len(),
+                .receiver_method_source_call_reference_signature_contract_for_args(
+                    target, method, args,
                 )
                 .is_some(),
             Expr::StaticMethodCall {
@@ -44425,14 +44644,12 @@ impl CGenerator {
                 args,
                 ..
             } => self
-                .static_method_source_call_reference_signature_contract(
-                    class_name,
-                    method,
-                    args.len(),
+                .static_method_source_call_reference_signature_contract_for_args(
+                    class_name, method, args,
                 )
                 .is_some(),
             Expr::LateStaticMethodCall { method, args, .. } => self
-                .late_static_method_source_call_reference_signature_contract(method, args.len())
+                .late_static_method_source_call_reference_signature_contract_for_args(method, args)
                 .is_some(),
             Expr::New {
                 class_name, args, ..
@@ -44484,6 +44701,29 @@ impl CGenerator {
             .then_some(contract)
     }
 
+    fn receiver_method_source_call_reference_signature_contract_for_args(
+        &self,
+        target: &Expr,
+        method_name: &str,
+        args: &[Expr],
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        let caller_scope = self.active_declared_class_name.as_deref();
+        let access_context = Self::current_declared_class_access_context(
+            caller_scope,
+            NativeSourceCallAccessContext::ObjectReceiver,
+        );
+        let contract = self.receiver_method_source_call_signature_contract_for_args(
+            target,
+            method_name,
+            args,
+            access_context,
+        )?;
+        contract
+            .signature()
+            .is_some_and(|signature| signature.returns_by_reference)
+            .then_some(contract)
+    }
+
     fn static_method_source_call_reference_signature_contract(
         &self,
         class_name: &str,
@@ -44502,6 +44742,24 @@ impl CGenerator {
             .then_some(contract)
     }
 
+    fn static_method_source_call_reference_signature_contract_for_args(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        args: &[Expr],
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        let contract = self.static_method_source_call_signature_contract_for_args(
+            class_name,
+            method_name,
+            args,
+            NativeSourceCallAccessContext::Static,
+        )?;
+        contract
+            .signature()
+            .is_some_and(|signature| signature.returns_by_reference)
+            .then_some(contract)
+    }
+
     fn late_static_method_source_call_reference_signature_contract(
         &self,
         method_name: &str,
@@ -44509,6 +44767,19 @@ impl CGenerator {
     ) -> Option<NativeMethodStaticSignatureFallbackContract> {
         let contract =
             self.late_static_method_source_call_signature_contract(method_name, arg_count)?;
+        contract
+            .signature()
+            .is_some_and(|signature| signature.returns_by_reference)
+            .then_some(contract)
+    }
+
+    fn late_static_method_source_call_reference_signature_contract_for_args(
+        &self,
+        method_name: &str,
+        args: &[Expr],
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        let contract =
+            self.late_static_method_source_call_signature_contract_for_args(method_name, args)?;
         contract
             .signature()
             .is_some_and(|signature| signature.returns_by_reference)
@@ -44784,10 +45055,10 @@ impl CGenerator {
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeReferenceMaterialization>> {
         let Some(signature_contract) = self
-            .receiver_method_source_call_reference_signature_contract(
+            .receiver_method_source_call_reference_signature_contract_for_args(
                 target,
                 method_name,
-                args.len(),
+                args,
             )
         else {
             return Ok(None);
@@ -44858,11 +45129,13 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeReferenceMaterialization>> {
-        let Some(signature_contract) = self.static_method_source_call_reference_signature_contract(
-            class_name,
-            method_name,
-            args.len(),
-        ) else {
+        let Some(signature_contract) = self
+            .static_method_source_call_reference_signature_contract_for_args(
+                class_name,
+                method_name,
+                args,
+            )
+        else {
             return Ok(None);
         };
 
@@ -44935,7 +45208,10 @@ impl CGenerator {
             return Ok(None);
         };
         let Some(signature_contract) = self
-            .late_static_method_source_call_reference_signature_contract(method_name, args.len())
+            .late_static_method_source_call_reference_signature_contract_for_args(
+                method_name,
+                args,
+            )
         else {
             return Ok(None);
         };
@@ -46393,12 +46669,14 @@ impl CGenerator {
             caller_scope.as_deref(),
             NativeSourceCallAccessContext::ObjectReceiver,
         );
-        let Some(signature_contract) = self.receiver_method_source_call_signature_contract(
-            target,
-            method_name,
-            args.len(),
-            access_context,
-        ) else {
+        let Some(signature_contract) = self
+            .receiver_method_source_call_signature_contract_for_args(
+                target,
+                method_name,
+                args,
+                access_context,
+            )
+        else {
             return Ok(None);
         };
 
@@ -46468,12 +46746,14 @@ impl CGenerator {
             caller_scope.as_deref(),
             NativeSourceCallAccessContext::ObjectReceiver,
         );
-        let Some(signature_contract) = self.receiver_dynamic_method_source_call_signature_contract(
-            target,
-            method_expr,
-            args.len(),
-            access_context,
-        ) else {
+        let Some(signature_contract) = self
+            .receiver_dynamic_method_source_call_signature_contract_for_args(
+                target,
+                method_expr,
+                args,
+                access_context,
+            )
+        else {
             return Ok(None);
         };
 
@@ -46615,7 +46895,7 @@ impl CGenerator {
             return Ok(None);
         };
         let Some(signature_contract) =
-            self.late_static_method_source_call_signature_contract(method_name, args.len())
+            self.late_static_method_source_call_signature_contract_for_args(method_name, args)
         else {
             return Ok(None);
         };
@@ -46686,10 +46966,10 @@ impl CGenerator {
         failure_cleanup: &str,
         access_context: NativeSourceCallAccessContext<'_>,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let Some(signature_contract) = self.static_method_source_call_signature_contract(
+        let Some(signature_contract) = self.static_method_source_call_signature_contract_for_args(
             class_name,
             method_name,
-            args.len(),
+            args,
             access_context,
         ) else {
             return Ok(None);
@@ -46760,12 +47040,14 @@ impl CGenerator {
         failure_cleanup: &str,
         access_context: NativeSourceCallAccessContext<'_>,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let Some(signature_contract) = self.dynamic_static_method_source_call_signature_contract(
-            class_name,
-            method,
-            args.len(),
-            access_context,
-        ) else {
+        let Some(signature_contract) = self
+            .dynamic_static_method_source_call_signature_contract_for_args(
+                class_name,
+                method,
+                args,
+                access_context,
+            )
+        else {
             return Ok(None);
         };
 
@@ -46852,10 +47134,8 @@ impl CGenerator {
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
         let Some(signature_contract) = self
-            .object_dynamic_static_method_source_call_signature_contract(
-                target,
-                method,
-                args.len(),
+            .object_dynamic_static_method_source_call_signature_contract_for_args(
+                target, method, args,
             )
         else {
             return Ok(None);
@@ -46960,11 +47240,13 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let Some(signature_contract) = self.object_static_method_source_call_signature_contract(
-            target,
-            method_name,
-            args.len(),
-        ) else {
+        let Some(signature_contract) = self
+            .object_static_method_source_call_signature_contract_for_args(
+                target,
+                method_name,
+                args,
+            )
+        else {
             return Ok(None);
         };
 
@@ -73742,6 +74024,7 @@ echo $call("Ada");
                 "run",
                 Some(2),
                 NativeSourceCallAccessContext::ObjectReceiver,
+                false,
             )
             .expect("interface-only facts should produce a runtime method contract");
 
@@ -73804,7 +74087,7 @@ echo $call("Ada");
             .callable_value_source_call_signature_contract_for_args(&callable, &args)
             .expect("interface-only callable-array spread should produce a parameter contract");
 
-        assert_eq!(contract.candidate_count, 1);
+        assert_eq!(contract.candidate_count, 2);
         assert!(matches!(
             contract.availability,
             NativeMethodStaticSignatureAvailability::Known(_)
@@ -73903,6 +74186,7 @@ echo $call("Ada");
                 "run",
                 Some(1),
                 NativeSourceCallAccessContext::ObjectReceiver,
+                false,
             )
             .is_none());
     }

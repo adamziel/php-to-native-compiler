@@ -26053,6 +26053,31 @@ const NATIVE_SPREAD_DIRECT_USER_FUNCTION_ARGUMENT_SOURCE: &str = concat!(
     "echo spread_join(...[spread_marker(\"Q\")]);\n",
 );
 
+const NATIVE_METHOD_SOURCE_CALL_SPREAD_ARGUMENT_SOURCE: &str = concat!(
+    "<?php\n",
+    "function method_spread_marker($label) { echo $label; return $label; }\n",
+    "class MethodSourceCallSpreadBox {\n",
+    "    public function pair($first, $second) { return \"I\" . $first . $second; }\n",
+    "    public function touch($prefix, &$slot) { $slot = $slot . \"R\"; return $prefix . $slot; }\n",
+    "    public static function stat($first, $second) { return \"S\" . $first . $second; }\n",
+    "    public static function stamp($prefix, &$slot) { $slot = $slot . \"T\"; return $prefix . $slot; }\n",
+    "}\n",
+    "$box = new MethodSourceCallSpreadBox();\n",
+    "echo $box->pair(...[method_spread_marker(\"A\"), method_spread_marker(\"B\")]), \"|\";\n",
+    "echo MethodSourceCallSpreadBox::stat(...[method_spread_marker(\"C\"), method_spread_marker(\"D\")]), \"|\";\n",
+    "echo $box->{(true ? \"pair\" : \"pair\")}(...[method_spread_marker(\"E\"), method_spread_marker(\"F\")]), \"|\";\n",
+    "echo MethodSourceCallSpreadBox::{(true ? \"stat\" : \"stat\")}(...[method_spread_marker(\"G\"), method_spread_marker(\"H\")]), \"|\";\n",
+    "echo $box::stat(...[method_spread_marker(\"I\"), method_spread_marker(\"J\")]), \"|\";\n",
+    "$slot = \"r\";\n",
+    "$refArgs = [\"K\"];\n",
+    "$refArgs[] =& $slot;\n",
+    "echo $box->touch(...$refArgs), \":\", $slot, \"|\";\n",
+    "$staticSlot = \"s\";\n",
+    "$staticRefArgs = [\"L\"];\n",
+    "$staticRefArgs[] =& $staticSlot;\n",
+    "echo MethodSourceCallSpreadBox::stamp(...$staticRefArgs), \":\", $staticSlot;\n",
+);
+
 const NATIVE_SPREAD_DIRECT_USER_FUNCTION_BYREF_UNPACK_SOURCE: &str = concat!(
     "<?php\n",
     "function spread_ref(&$slot) { $slot = $slot . \"!\"; return $slot; }\n",
@@ -27187,6 +27212,42 @@ fn native_executable_c_source_lowers_direct_user_function_spread_through_materia
         !source.contains("spread operands need a materialized-entry producer")
             && !source.contains("runtime unpack normalization"),
         "supported direct user-function spread should not hit the old shared spread blocker:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_method_source_call_spread_through_materialized_carriers() {
+    let program = parse(NATIVE_METHOD_SOURCE_CALL_SPREAD_ARGUMENT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && body.contains("receiver_method_source_call_args_")
+            && body.contains("dynamic_receiver_method_source_call_args_")
+            && body.contains("static_method_source_call_args_")
+            && body.contains("dynamic_static_method_source_call_args_")
+            && body.contains("object_static_method_source_call_args_")
+            && body.contains("uint8_t materialized_parameter_by_reference_")
+            && body.contains("= { 0, 1 };")
+            && body.contains(
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+            )
+            && body.contains(
+                "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments"
+            ),
+        "receiver, dynamic receiver, static, dynamic static, object-static, and by-reference method spreads should materialize into shared source-call carriers:\n{source}"
+    );
+    assert!(
+        !source.contains("spread operands need a materialized-entry producer")
+            && !body.contains("method_dispatch_status")
+            && !body.contains("dynamic_method_dispatch_status")
+            && !body.contains("static_method_status")
+            && !body.contains("dynamic_static_method_dispatch_status")
+            && !body.contains("phpc_native_value_dynamic_method_name_matches"),
+        "supported method source-call spreads should avoid old spread blockers and generated dispatch ladders:\n{source}"
     );
 }
 
@@ -30144,6 +30205,34 @@ fn emit_exe_links_and_runs_direct_user_function_spread_argument_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"ABCNABCN|YXXY|QQD");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_method_source_call_spread_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "spread_method_source_call_arguments",
+        NATIVE_METHOD_SOURCE_CALL_SPREAD_ARGUMENT_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native method source-call spread executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ABIAB|CDSCD|EFIEF|GHSGH|IJSIJ|KrR:rR|LsT:sT");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
