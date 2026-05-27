@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 15:14 CEST
+Updated: 2026-05-27 15:20 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,12 +19,24 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **90%** `[##################--]`
 
-Latest accounted source capability: `3db04bc3` routes selected callable-family
-spread/unpack calls through the shared materialized call-argument bridge.
-Known method-backed callable arrays and callable objects now use declared
-method frame parameter metadata to build a `NativeMaterializedCallArgumentsHandle`
-and finalize it into the existing `NativeCallArgumentsHandle` before invoking
-through the shared callable lookup/method helpers. Direct user-function spread,
+Latest accounted source capability: `10b40ead` routes selected generated-C
+trait method execution through declared method frame carriers. Trait-composed
+effective methods that pass declared-method frame validation now become normal
+declared method metadata, so trait methods, aliases, visibility adaptations,
+direct class overrides, and included trait declarations reuse the shared
+callable table, receiver/source-call invocation, declared frame setup, called
+scope, `$this`, named-argument, cleanup, and by-reference boundaries. Trait
+constructors, destructor execution, trait properties/constants, unsupported
+method bodies, autoload-discovered traits, broad reference/COW parity, and
+LLVM/ASM parity remain blocked instead of gaining trait-specific dispatch
+ladders.
+
+Recent source commit `3db04bc3` routes selected callable-family spread/unpack
+calls through the shared materialized call-argument bridge. Known method-backed
+callable arrays and callable objects now use declared method frame parameter
+metadata to build a `NativeMaterializedCallArgumentsHandle` and finalize it
+into the existing `NativeCallArgumentsHandle` before invoking through the
+shared callable lookup/method helpers. Direct user-function spread,
 callable-array, and callable-object regressions remain green. Interface-only
 callable-family spread, runtime-dynamic/descriptor-closure/magic-fallback
 callable spread, and by-reference unpack transfer remain blocked behind
