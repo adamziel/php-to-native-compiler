@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 21:39 CEST
+Updated: 2026-05-27 21:54 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -15,11 +15,31 @@ changes the roadmap position.
 
 ## Executive Read
 
-Overall integrated-roadmap progress: **90%** `[##################--]`
+Overall integrated-roadmap progress: **91%** `[##################--]`
 
-Selected executable PHP semantics: **96%** `[###################-]`
+Selected executable PHP semantics: **97%** `[###################-]`
 
-Latest accounted source capability: `b7ba8cfd` routes selected method/static
+Latest accounted source capability: `b13c97cf` unwinds native output buffers at
+generated-C shutdown and early-exit boundaries. Nested output-buffer handlers
+now drain in final order through the runtime stack ABI, exit string operands
+write through active buffers, and generated C calls the shared unwind helper
+before normal or exit returns. Shutdown functions, destructor/fatal-exception
+parity, callback-mutated buffer-stack edge cases, broader binary strings, and
+non-C backend output-buffer parity remain blocked.
+
+Recent source commit `b13c97cf` advances output-buffer shutdown/unwind without
+adding exact output snapshots, one-handler constant lowering, or source-shape
+recognizers. Runtime output writes can target a specific outer buffer, final
+unwind drains nested handlers through the callable-table path, and generated C
+routes normal main cleanup plus early `exit()` cleanup through
+`phpc_native_output_buffer_unwind_stack_with_diagnostic`. Focused gates covered
+runtime final-order unwind, exit-string buffering, linked shutdown/exit
+programs, generated-C source proof, output-buffer builtin regressions, compile
+checking, formatting, and diff checks. Primary gate log:
+`state/logs/phpc-primary-output-buffer-unwind-3c9731a4-20260527.gates.log`
+sha256 `c482bbf91eef7993d7acedeb80667af1f62f03b5fc708e656fc0f6bdf49fa96c`.
+
+Recent source commit `b7ba8cfd` routes selected method/static
 source-call spreads through the existing native materialized argument carriers.
 Receiver, dynamic receiver, static, dynamic static, object-static, and
 by-reference method/static spread calls can now reuse `NativeCallArgumentsHandle`
