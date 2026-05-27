@@ -16973,15 +16973,29 @@ struct CDeclaredClass {
     parent_key: Option<String>,
     ancestor_names: Vec<String>,
     interface_names: Vec<String>,
+    direct_trait_names: Vec<String>,
     is_final: bool,
     allocation_metadata: CDeclaredClassAllocationMetadata,
     own_properties: Vec<CDeclaredClassProperty>,
     own_static_properties: Vec<CDeclaredClassProperty>,
     own_constants: Vec<CDeclaredClassConstant>,
+    own_method_metadata: Vec<CDeclaredClassMethodMetadata>,
     properties: Vec<CDeclaredClassProperty>,
     constructor: Option<CDeclaredClassMethod>,
     methods: Vec<CDeclaredClassMethod>,
     effective_methods: Vec<CDeclaredClassEffectiveMethod>,
+}
+
+impl CDeclaredClass {
+    fn metadata_methods(&self) -> impl Iterator<Item = &CDeclaredClassMethodMetadata> {
+        self.own_method_metadata.iter()
+    }
+
+    fn metadata_properties(&self) -> impl Iterator<Item = &CDeclaredClassProperty> {
+        self.own_properties
+            .iter()
+            .chain(self.own_static_properties.iter())
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -17236,6 +17250,13 @@ struct CDeclaredClassConstant {
     name: String,
     visibility: ClassVisibility,
     value: Expr,
+}
+
+#[derive(Debug, Clone)]
+struct CDeclaredClassMethodMetadata {
+    name: String,
+    visibility: ClassVisibility,
+    is_static: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -20964,6 +20985,7 @@ impl CGenerator {
         let mut allocation_metadata = CDeclaredClassAllocationMetadata::cleanup_safe();
         let mut seen_methods = HashSet::new();
         let mut methods = Vec::new();
+        let mut own_method_metadata = Vec::new();
         let mut effective_methods = Vec::new();
         for method in trait_effective_methods {
             if method
@@ -20974,6 +20996,7 @@ impl CGenerator {
             {
                 allocation_metadata.cleanup_risk =
                     CDeclaredClassCleanupRisk::destructor_observable();
+                own_method_metadata.push(Self::declared_class_method_metadata(&method.method));
                 if self.declared_class_method_is_request_finalizable_destructor(&method.method) {
                     let key = Self::declared_method_key(&method.method.function.name);
                     if !seen_methods.insert(key) {
@@ -21016,6 +21039,7 @@ impl CGenerator {
                     return Err(self
                         .unsupported(method.method.span, ASSEMBLY_OBJECT_INSTANTIATION_REJECTION));
                 }
+                own_method_metadata.push(Self::declared_class_method_metadata(&method.method));
                 let c_name = Self::c_declared_class_method_name(
                     class_index,
                     methods.len(),
@@ -21037,6 +21061,7 @@ impl CGenerator {
             if !seen_methods.insert(key) {
                 return Err(self.unsupported(method.method.span, ASSEMBLY_METHOD_CALL_REJECTION));
             }
+            own_method_metadata.push(Self::declared_class_method_metadata(&method.method));
             let c_name = Self::c_declared_class_method_name(
                 class_index,
                 methods.len(),
@@ -21172,6 +21197,7 @@ impl CGenerator {
                                 ASSEMBLY_OBJECT_INSTANTIATION_REJECTION,
                             ));
                         }
+                        own_method_metadata.push(Self::declared_class_method_metadata(method));
                         let c_name = Self::c_declared_class_method_name(
                             class_index,
                             methods.len(),
@@ -21198,6 +21224,7 @@ impl CGenerator {
                                 self.unsupported(method.span, ASSEMBLY_METHOD_CALL_REJECTION)
                             );
                         }
+                        own_method_metadata.push(Self::declared_class_method_metadata(method));
                         let c_name = Self::c_declared_class_method_name(
                             class_index,
                             methods.len(),
@@ -21248,12 +21275,14 @@ impl CGenerator {
                 .map(|parent| Self::declared_class_key(parent)),
             ancestor_names: Vec::new(),
             interface_names,
+            direct_trait_names: self.declared_class_direct_trait_names(class),
             is_final: class.is_final,
             allocation_metadata,
             properties: own_properties.clone(),
             own_properties,
             own_static_properties,
             own_constants,
+            own_method_metadata,
             constructor,
             methods,
             effective_methods,
@@ -21648,6 +21677,14 @@ impl CGenerator {
             ClassVisibility::Public => NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
             ClassVisibility::Protected => NATIVE_DECLARED_CLASS_PROPERTY_PROTECTED,
             ClassVisibility::Private => NATIVE_DECLARED_CLASS_PROPERTY_PRIVATE,
+        }
+    }
+
+    fn declared_class_method_metadata(method: &ClassMethodDecl) -> CDeclaredClassMethodMetadata {
+        CDeclaredClassMethodMetadata {
+            name: method.function.name.clone(),
+            visibility: method.visibility,
+            is_static: method.is_static,
         }
     }
 
@@ -37983,11 +38020,7 @@ impl CGenerator {
         names
     }
 
-    fn emit_native_user_class_declaration(
-        &mut self,
-        class: &ClassDecl,
-        declared_class: &CDeclaredClass,
-    ) {
+    fn emit_native_user_class_declaration(&mut self, declared_class: &CDeclaredClass) {
         self.uses_native_string_helpers = true;
         self.uses_native_user_class_declaration = true;
 
@@ -37996,16 +38029,22 @@ impl CGenerator {
         let class_data = format!("phpc_user_class_name_{class_index}");
         self.static_data.push(format!(
             "static const uint8_t {class_data}[] = {{{}}};",
-            c_byte_array(class.name.as_bytes())
+            c_byte_array(declared_class.name.as_bytes())
         ));
         let declared = format!("user_class_declared_{class_index}");
         self.body.push(format!(
             "bool {declared} = phpc_native_declare_user_class_bytes({class_data}, (size_t){});",
-            class.name.len()
+            declared_class.name.len()
         ));
         self.body.push(format!("(void){declared};"));
 
-        if let Some(parent) = &class.parent {
+        if let Some(parent_key) = &declared_class.parent_key {
+            let parent = self
+                .declared_classes
+                .get(parent_key)
+                .expect("declared class parent key has metadata")
+                .name
+                .clone();
             let parent_index = self.next_static_data;
             self.next_static_data += 1;
             let parent_data = format!("phpc_user_class_parent_name_{parent_index}");
@@ -38016,7 +38055,7 @@ impl CGenerator {
             let declared = format!("user_class_parent_declared_{parent_index}");
             self.body.push(format!(
                 "bool {declared} = phpc_native_declare_user_class_parent_bytes({class_data}, (size_t){}, {parent_data}, (size_t){});",
-                class.name.len(),
+                declared_class.name.len(),
                 parent.len()
             ));
             self.body.push(format!("(void){declared};"));
@@ -38033,13 +38072,13 @@ impl CGenerator {
             let declared = format!("user_class_interface_declared_{interface_index}");
             self.body.push(format!(
                 "bool {declared} = phpc_native_declare_user_class_interface_bytes({class_data}, (size_t){}, {interface_data}, (size_t){});",
-                class.name.len(),
+                declared_class.name.len(),
                 interface.len()
             ));
             self.body.push(format!("(void){declared};"));
         }
 
-        for trait_name in self.declared_class_direct_trait_names(class) {
+        for trait_name in &declared_class.direct_trait_names {
             let trait_index = self.next_static_data;
             self.next_static_data += 1;
             let trait_data = format!("phpc_user_class_trait_name_{trait_index}");
@@ -38050,54 +38089,48 @@ impl CGenerator {
             let declared = format!("user_class_trait_declared_{trait_index}");
             self.body.push(format!(
                 "bool {declared} = phpc_native_declare_user_class_trait_bytes({class_data}, (size_t){}, {trait_data}, (size_t){});",
-                class.name.len(),
+                declared_class.name.len(),
                 trait_name.len()
             ));
             self.body.push(format!("(void){declared};"));
         }
 
-        for member in &class.members {
-            match member {
-                ClassMember::Method(method) => {
-                    let member_index = self.next_static_data;
-                    self.next_static_data += 1;
-                    let method_data = format!("phpc_user_class_method_name_{member_index}");
-                    self.static_data.push(format!(
-                        "static const uint8_t {method_data}[] = {{{}}};",
-                        c_byte_array(method.function.name.as_bytes())
-                    ));
-                    let declared = format!("user_class_method_declared_{member_index}");
-                    let visibility =
-                        Self::declared_class_property_visibility_tag(method.visibility);
-                    let is_static = if method.is_static { "true" } else { "false" };
-                    self.body.push(format!(
-                        "bool {declared} = phpc_native_declare_user_class_method_bytes({class_data}, (size_t){}, {method_data}, (size_t){}, (uint8_t){visibility}, {is_static});",
-                        class.name.len(),
-                        method.function.name.len()
-                    ));
-                    self.body.push(format!("(void){declared};"));
-                }
-                ClassMember::Property(property) => {
-                    let member_index = self.next_static_data;
-                    self.next_static_data += 1;
-                    let property_data = format!("phpc_user_class_property_name_{member_index}");
-                    self.static_data.push(format!(
-                        "static const uint8_t {property_data}[] = {{{}}};",
-                        c_byte_array(property.name.as_bytes())
-                    ));
-                    let declared = format!("user_class_property_declared_{member_index}");
-                    let visibility =
-                        Self::declared_class_property_visibility_tag(property.visibility);
-                    let is_static = if property.is_static { "true" } else { "false" };
-                    self.body.push(format!(
-                        "bool {declared} = phpc_native_declare_user_class_property_bytes({class_data}, (size_t){}, {property_data}, (size_t){}, (uint8_t){visibility}, {is_static});",
-                        class.name.len(),
-                        property.name.len()
-                    ));
-                    self.body.push(format!("(void){declared};"));
-                }
-                ClassMember::Constant(_) => {}
-            }
+        for method in declared_class.metadata_methods() {
+            let member_index = self.next_static_data;
+            self.next_static_data += 1;
+            let method_data = format!("phpc_user_class_method_name_{member_index}");
+            self.static_data.push(format!(
+                "static const uint8_t {method_data}[] = {{{}}};",
+                c_byte_array(method.name.as_bytes())
+            ));
+            let declared = format!("user_class_method_declared_{member_index}");
+            let visibility = Self::declared_class_property_visibility_tag(method.visibility);
+            let is_static = if method.is_static { "true" } else { "false" };
+            self.body.push(format!(
+                "bool {declared} = phpc_native_declare_user_class_method_bytes({class_data}, (size_t){}, {method_data}, (size_t){}, (uint8_t){visibility}, {is_static});",
+                declared_class.name.len(),
+                method.name.len()
+            ));
+            self.body.push(format!("(void){declared};"));
+        }
+
+        for property in declared_class.metadata_properties() {
+            let member_index = self.next_static_data;
+            self.next_static_data += 1;
+            let property_data = format!("phpc_user_class_property_name_{member_index}");
+            self.static_data.push(format!(
+                "static const uint8_t {property_data}[] = {{{}}};",
+                c_byte_array(property.name.as_bytes())
+            ));
+            let declared = format!("user_class_property_declared_{member_index}");
+            let visibility = Self::declared_class_property_visibility_tag(property.visibility);
+            let is_static = if property.is_static { "true" } else { "false" };
+            self.body.push(format!(
+                "bool {declared} = phpc_native_declare_user_class_property_bytes({class_data}, (size_t){}, {property_data}, (size_t){}, (uint8_t){visibility}, {is_static});",
+                declared_class.name.len(),
+                property.name.len()
+            ));
+            self.body.push(format!("(void){declared};"));
         }
     }
 
@@ -40017,7 +40050,7 @@ impl CGenerator {
                         .get(&key)
                         .expect("registered class key has metadata")
                         .clone();
-                    self.emit_native_user_class_declaration(class, &declared_class);
+                    self.emit_native_user_class_declaration(&declared_class);
                     Ok(())
                 } else {
                     Err(self.unsupported(class.span, ASSEMBLY_OBJECT_CLASS_REJECTION))
@@ -64794,7 +64827,10 @@ mod tests {
             "}\n",
         ))
         .unwrap();
-        let mut generator = CGenerator::default();
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            ..CGenerator::default()
+        };
         generator
             .register_top_level_declared_traits(&program.statements)
             .unwrap();

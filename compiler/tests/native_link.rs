@@ -5850,6 +5850,32 @@ fn native_executable_c_source_declares_user_class_metadata_for_shared_metadata_s
 }
 
 #[test]
+fn native_executable_c_source_declares_trait_composed_user_class_metadata_for_shared_surfaces() {
+    let program = parse(NATIVE_TRAIT_CLASS_METADATA_REGISTRY_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.matches("phpc_native_declare_user_class_method_bytes")
+            .count()
+            >= 4
+            && source
+                .matches("phpc_native_declare_user_class_property_bytes")
+                .count()
+                >= 3
+            && source.contains("phpc_native_declare_user_class_trait_bytes")
+            && source.contains("phpc_native_value_class_metadata_exists_with_diagnostic")
+            && source.contains("phpc_native_value_class_metadata_value_with_diagnostic"),
+        "trait-composed class methods/properties should be published through the shared runtime class metadata registry:\n{source}"
+    );
+    assert!(
+        !source.contains("trait lowering rejects")
+            && !source.contains("object/class lowering rejects")
+            && !source.contains("method-call lowering rejects"),
+        "trait-composed metadata registration should not fall back to blockers:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_value_metadata_consumers_through_runtime_registry() {
     let program = parse(concat!(
         "<?php\n",
@@ -5904,6 +5930,35 @@ fn emit_exe_links_and_runs_user_class_metadata_registry_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(String::from_utf8_lossy(&run.stdout), "1|1|1|0\n");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_trait_composed_class_metadata_registry_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "trait_composed_class_metadata_registry",
+        NATIVE_TRAIT_CLASS_METADATA_REGISTRY_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run trait-composed class metadata registry executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "method-run|method-hidden|method-alias|prop-slot|prop-hidden|prop-count|list-run|list-alias|list-hidden-filtered|var-slot|var-hidden-filtered\n"
+    );
 
     let _ = fs::remove_file(source_path);
     let _ = fs::remove_file(output_path);
@@ -26621,6 +26676,30 @@ const NATIVE_TRAIT_METHOD_FRAME_SOURCE: &str = concat!(
     "echo $box->{$method}(third: \"t\", extra: \"e\", first: \"f\", slot: $slot2), \"|\", $slot2;\n",
 );
 
+const NATIVE_TRAIT_CALLABLE_SPREAD_SOURCE: &str = concat!(
+    "<?php\n",
+    "function trait_spread_marker($label) { echo $label; return $label; }\n",
+    "trait TraitCallableSpreadSource {\n",
+    "    public static function stat($first, $second = \"D\", ...$tail) {\n",
+    "        return \"TS\" . $first . $second . ($tail[0] ?? \"\") . ($tail[\"name\"] ?? \"\");\n",
+    "    }\n",
+    "    public function inst($first, $second = \"D\", ...$tail) {\n",
+    "        return \"TI\" . $first . $second . ($tail[0] ?? \"\") . ($tail[\"name\"] ?? \"\");\n",
+    "    }\n",
+    "    public function __invoke($first, $second = \"D\", ...$tail) {\n",
+    "        return \"TO\" . $first . $second . ($tail[0] ?? \"\") . ($tail[\"name\"] ?? \"\");\n",
+    "    }\n",
+    "}\n",
+    "class TraitCallableSpreadBox {\n",
+    "    use TraitCallableSpreadSource;\n",
+    "}\n",
+    "$box = new TraitCallableSpreadBox();\n",
+    "$static = [TraitCallableSpreadBox::class, \"stat\"];\n",
+    "echo $static(...[trait_spread_marker(\"A\"), trait_spread_marker(\"B\")], ...[trait_spread_marker(\"C\"), \"name\" => trait_spread_marker(\"N\")]), \"|\";\n",
+    "echo [$box, \"inst\"](...[\"first\" => trait_spread_marker(\"X\"), \"name\" => trait_spread_marker(\"Z\")]), \"|\";\n",
+    "echo $box(...[trait_spread_marker(\"Q\")]);\n",
+);
+
 const NATIVE_TRAIT_CONSTRUCTOR_FRAME_SOURCE: &str = concat!(
     "<?php\n",
     "trait TraitConstructorFrameSource {\n",
@@ -26692,6 +26771,50 @@ const NATIVE_TRAIT_MEMBER_METADATA_SOURCE: &str = concat!(
     "}\n",
     "$box = new TraitMemberBox();\n",
     "echo $box->describe(), \"|\", TraitMemberBox::$count;\n",
+);
+
+const NATIVE_TRAIT_CLASS_METADATA_REGISTRY_SOURCE: &str = concat!(
+    "<?php\n",
+    "trait NativeTraitMetadataMembers {\n",
+    "    public $slot = \"seed\";\n",
+    "    protected $hidden = \"secret\";\n",
+    "    public static $count = 2;\n",
+    "    public function run() { return \"run\"; }\n",
+    "    public function hiddenMethod() { return \"hidden\"; }\n",
+    "}\n",
+    "trait NativeTraitMetadataAliases {\n",
+    "    public function label() { return \"label\"; }\n",
+    "}\n",
+    "class NativeTraitMetadataPlugin {\n",
+    "    use NativeTraitMetadataMembers, NativeTraitMetadataAliases {\n",
+    "        NativeTraitMetadataMembers::hiddenMethod as protected;\n",
+    "        NativeTraitMetadataAliases::label as aliasLabel;\n",
+    "    }\n",
+    "}\n",
+    "echo method_exists(\"NativeTraitMetadataPlugin\", \"run\") ? \"method-run\" : \"missing-run\";\n",
+    "echo \"|\";\n",
+    "echo method_exists(\"NativeTraitMetadataPlugin\", \"hiddenMethod\") ? \"method-hidden\" : \"missing-hidden\";\n",
+    "echo \"|\";\n",
+    "echo method_exists(\"NativeTraitMetadataPlugin\", \"aliasLabel\") ? \"method-alias\" : \"missing-alias\";\n",
+    "echo \"|\";\n",
+    "echo property_exists(\"NativeTraitMetadataPlugin\", \"slot\") ? \"prop-slot\" : \"missing-slot\";\n",
+    "echo \"|\";\n",
+    "echo property_exists(\"NativeTraitMetadataPlugin\", \"hidden\") ? \"prop-hidden\" : \"missing-hidden-prop\";\n",
+    "echo \"|\";\n",
+    "echo property_exists(\"NativeTraitMetadataPlugin\", \"count\") ? \"prop-count\" : \"missing-count\";\n",
+    "echo \"|\";\n",
+    "$methods = get_class_methods(\"NativeTraitMetadataPlugin\");\n",
+    "echo in_array(\"run\", $methods, true) ? \"list-run\" : \"list-missing-run\";\n",
+    "echo \"|\";\n",
+    "echo in_array(\"aliasLabel\", $methods, true) ? \"list-alias\" : \"list-missing-alias\";\n",
+    "echo \"|\";\n",
+    "echo in_array(\"hiddenMethod\", $methods, true) ? \"bad-hidden\" : \"list-hidden-filtered\";\n",
+    "echo \"|\";\n",
+    "$vars = get_class_vars(\"NativeTraitMetadataPlugin\");\n",
+    "echo array_key_exists(\"slot\", $vars) ? \"var-slot\" : \"var-missing-slot\";\n",
+    "echo \"|\";\n",
+    "echo array_key_exists(\"hidden\", $vars) ? \"bad-hidden-var\" : \"var-hidden-filtered\";\n",
+    "echo \"\\n\";\n",
 );
 
 const NATIVE_DESTRUCTOR_FINALIZATION_SOURCE: &str = concat!(
@@ -28104,6 +28227,33 @@ fn native_executable_c_source_routes_trait_methods_through_declared_frame_carrie
             && !body.contains("method_dispatch_status")
             && !body.contains("dynamic_method_dispatch_status"),
         "trait method execution must not fall back to blockers or generated dispatch ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_trait_callable_spread_through_declared_metadata_contract() {
+    let program = parse(NATIVE_TRAIT_CALLABLE_SPREAD_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && body.contains("phpc_NativeCallArgumentsHandle dynamic_callable_args_")
+            && body.contains("callable_object_invoke_args_")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
+            && body.contains(
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+            ),
+        "trait-composed callable arrays and callable objects with spread should use declared method metadata and the shared materialized source-call bridge:\n{source}"
+    );
+    assert!(
+        !source.contains("spread operands need a materialized-entry producer")
+            && !source.contains("callable_array_matched")
+            && !source.contains("callable_object_matched")
+            && !body.contains("method_dispatch_status"),
+        "trait-composed callable spread must not fall back to old blockers or generated method ladders:\n{source}"
     );
 }
 
@@ -30974,6 +31124,32 @@ fn emit_exe_links_and_runs_trait_method_frame_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"FS!TE|S!|LA|HB|class|fQ!te|Q!");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_trait_callable_spread_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) =
+        compile_native_link_fixture("trait_callable_spread", NATIVE_TRAIT_CALLABLE_SPREAD_SOURCE);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native trait callable spread executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ABCNTSABCN|XZTIXDZ|QTOQD");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
