@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 16:13 CEST
+Updated: 2026-05-27 16:18 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,7 +19,17 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **90%** `[##################--]`
 
-Latest accounted source capability: `beb73e34` finalizes selected
+Latest accounted source capability: `1d844d6d` registers generated declared
+interface value metadata for selected generated-C `get_declared_interfaces()`
+and `class_implements()` execution. Declared interface order and resolved
+class-interface implementation metadata now feed compact runtime registries,
+and the existing native class metadata value helper can return generated
+interface arrays and class implementation maps without per-fixture arrays in
+codegen. Core/external/autoload-only interfaces, broader consumers of returned
+native arrays such as `print_r()`/`count()`, and LLVM/ASM parity remain
+outside this bounded registry surface.
+
+Recent source commit `beb73e34` finalizes selected
 generated-native destructors through a request-owned finalizer registry.
 Eligible public non-static parameterless `__destruct` methods on generated
 declared objects, including trait-composed destructors, now register allocated
