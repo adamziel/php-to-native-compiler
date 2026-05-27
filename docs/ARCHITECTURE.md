@@ -1849,14 +1849,18 @@ broader static-member diagnostic.
 Static class members have a dedicated native boundary. LLVM IR emission still
 rejects class constants, static property reads/writes, and dynamic
 static-property receivers before lowering class/member operands. The generated-C
-executable path has a narrower exception for declared static properties: it
-materializes one static-property lvalue target for literal, object/class-string,
-`self`, `parent`, and method-frame late-`static` receivers, then uses the same
-request-owned runtime storage read/write APIs for plain assignment, compound
-assignment, and pre/post increment/decrement. Static-property references,
-`??=`, `unset`, `isset`, `empty`, dynamic property names, magic/static
-overloading, broad reference/COW behavior, and LLVM parity remain explicit
-native blockers instead of collapsing into generic object/class diagnostics.
+executable path has narrower metadata-backed exceptions for declared class
+constants and declared static properties. Static properties materialize one
+lvalue target for literal, object/class-string, `self`, `parent`, and
+method-frame late-`static` receivers, then use the same request-owned runtime
+storage APIs for reads, plain assignment, compound assignment, pre/post
+increment/decrement, `isset`, `empty`, `??`, `??=`, `unset`, direct reference
+carriers, selected array-offset mutation, and selected array-offset reference
+carriers. Computed property names, top-level `static::$prop[...]` without a
+method-frame called scope, static-property `ArrayAccess` offset references,
+magic/static overloading, broad reference/COW behavior, exact diagnostics, and
+LLVM parity remain explicit native blockers instead of collapsing into generic
+object/class diagnostics.
 
 Current assembly emission order:
 

@@ -4,6 +4,27 @@
 
 Implemented:
 
+- Added generated-C static-property array-offset reference production through
+  shared static-property storage and reference/lvalue ownership. Literal
+  class, object/class-string, `self`, `parent`, and declared method-frame
+  late-`static` receivers now materialize storage-backed array-path reference
+  carriers for by-reference argument transfer and direct reference assignment,
+  preserving storage identity, alias write-through, visibility diagnostics,
+  typed root array-promotion checks, receiver-scope cleanup, and result
+  ownership. Focused primary gates cover the runtime static-property
+  array-path reference ABI, generated-C and linked executable
+  by-reference-call/direct-reference proofs, unsupported-shape blockers,
+  static-property storage/reference/offset behavior, reference-returning
+  ArrayAccess owner stacks, constructors, magic dynamic/static calls,
+  malformed magic signatures, named arguments, descriptor closures,
+  source-call references, exact imports, class constants, class aliases, and
+  `cargo check -p phpc`. Direct static-property offset reads, computed
+  static-property names, top-level late-static offset references without a
+  method-frame called scope, static-property `ArrayAccess` offset references,
+  magic/static-property overloading, traits/interfaces, autoload breadth,
+  broad reference/COW parity, exact PHP diagnostics, and LLVM IR/assembly
+  parity remain unsupported.
+
 - Added generated-C nested `ArrayAccess` owner-stack descent through selected
   reference-returning `offsetGet()` intermediates. When declared method facts
   prove the returned reference is another `ArrayAccess` object, direct roots

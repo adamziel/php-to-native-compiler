@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 12:16 CEST
+Updated: 2026-05-27 12:21 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,7 +19,26 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest accounted source capability: `4f0acdf2` routes selected generated-C
+Latest accounted source capability: `ebabf95a` routes selected generated-C
+static-property array-offset reference sources through the shared
+static-property storage and lvalue/reference boundary. Literal class,
+object/class-string, `self`, `parent`, and declared method-frame `static`
+receivers can now feed `Class::$prop[$key]`-style array paths into
+by-reference arguments or direct reference assignment as storage-backed
+reference carriers. Root array promotion writes back through the typed
+static-property setter path, preserving storage identity, visibility/type
+diagnostics, receiver-scope cleanup, and alias write-through instead of
+cloning fake references. Static-property storage/reference/offset-mutation
+paths, reference-returning ArrayAccess owner stacks, constructor reference
+results, named receiver magic, descriptor closures, malformed magic,
+source-call references, exact imports, class constants, and class aliases
+remain green. Direct static-property offset reads outside reference transfer,
+computed static-property names, top-level `static::$prop[...]` without
+declared method-frame called scope, static-property ArrayAccess offset
+references, magic/static-property overloading, traits/interfaces/effective
+method tables, autoload breadth, broad references/COW, exact PHP diagnostics,
+and LLVM/backend parity remain blocked. Recent source commit `4f0acdf2`
+routes selected generated-C
 nested ArrayAccess owner-stack descents through reference-returning
 `offsetGet()` intermediates when declared facts prove the returned reference
 is another ArrayAccess object. Direct-variable and visible property-held roots

@@ -2898,14 +2898,15 @@
   `parent::CONST` resolve declared or inherited constants case-sensitively,
   enforce public/protected/private visibility in the current class context,
   and return null, bool, int, float, string, or array values.
-- static property reads and direct writes for untyped/no-default declared
-  static properties through `ClassName::$name`, `self::$name`, and
-  `parent::$name`, plus compound assignment, pre/post increment/decrement,
-  `isset`, `empty`, `??`, `??=`, and stable diagnostics for PHP-forbidden
-  `unset(...)` on those same static property forms. Storage is class-level,
-  initialized to `null`, inherited static properties share the declaring class
+- static property reads, direct writes, compound assignment, pre/post
+  increment/decrement, `isset`, `empty`, `??`, `??=`, `unset(...)`, direct
+  references, selected array-offset mutation, and selected array-offset
+  reference sources for declared static properties through literal class,
+  object/class-string, `self`, `parent`, and active method-frame
+  late-`static` receivers. Storage is class-level, initialized from supported
+  defaults or `null`, inherited static properties share the declaring class
   slot unless redeclared, names are case-sensitive, and current
-  public/protected/private visibility checks apply in active class context.
+  public/protected/private visibility plus typed-write checks apply.
 - `isset($object->name)` for direct public instance property operands on direct
   object variables, plus private property operands owned by the active
   declaring class, protected property operands owned by the active class or an
