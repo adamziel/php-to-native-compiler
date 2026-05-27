@@ -24514,6 +24514,32 @@ const NATIVE_NAMED_DYNAMIC_METHOD_SOURCE_CALL_SOURCE: &str = concat!(
     "echo $box->{(true ? \"mix\" : \"mix\")}(third: named_dynamic_method_marker(\"T\"), extra: named_dynamic_method_marker(\"E\"), first: named_dynamic_method_marker(\"F\"), slot: $slot), \"|\", $slot;\n",
 );
 
+const NATIVE_NAMED_CALLABLE_ARRAY_SOURCE_CALL_SOURCE: &str = concat!(
+    "<?php\n",
+    "function named_callable_array_marker($label) { echo $label; return $label; }\n",
+    "class NamedCallableArrayBox {\n",
+    "    public static function stat($first, &$slot, $third = \"D\", ...$tail) {\n",
+    "        $slot = $slot . \"!\";\n",
+    "        return \"S\" . $first . $slot . $third . $tail[\"extra\"];\n",
+    "    }\n",
+    "    public function inst($first, &$slot, $third = \"D\", ...$tail) {\n",
+    "        $slot = $slot . \"?\";\n",
+    "        return \"I\" . $first . $slot . $third . $tail[\"extra\"];\n",
+    "    }\n",
+    "    public function __call($name, $args) {\n",
+    "        return $name . \":\" . $args[\"beta\"] . $args[\"alpha\"];\n",
+    "    }\n",
+    "    public static function __callStatic($name, $args) {\n",
+    "        return $name . \":\" . $args[\"delta\"] . $args[\"gamma\"];\n",
+    "    }\n",
+    "}\n",
+    "$slot = \"S\";\n",
+    "$box = new NamedCallableArrayBox();\n",
+    "$static = [NamedCallableArrayBox::class, \"stat\"];\n",
+    "echo $static(third: named_callable_array_marker(\"T\"), extra: named_callable_array_marker(\"E\"), first: named_callable_array_marker(\"F\"), slot: $slot), \"|\", $slot, \"|\";\n",
+    "echo [$box, \"inst\"](third: named_callable_array_marker(\"U\"), extra: named_callable_array_marker(\"X\"), first: named_callable_array_marker(\"G\"), slot: $slot), \"|\", $slot;\n",
+);
+
 const NATIVE_BY_REFERENCE_USER_FUNCTION_FRAME_SOURCE: &str = concat!(
     "<?php\n",
     "function set_to(&$slot, $value) {\n",
@@ -25030,6 +25056,28 @@ fn native_executable_c_source_lowers_named_dynamic_method_source_call_arguments_
             && !body.contains("phpc_native_value_dynamic_method_name_matches")
             && !source.contains("named argument lowering is only implemented"),
         "named dynamic receiver-method source calls should not fall back to generated dynamic-dispatch ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_named_callable_array_arguments_through_shared_carriers() {
+    let program = parse(NATIVE_NAMED_CALLABLE_ARRAY_SOURCE_CALL_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && body.contains("phpc_NativeCallArgumentsHandle dynamic_callable_args_")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
+            && body.contains("phpc_native_call_arguments_push_reference_and_free")
+            && body.contains("phpc_native_array_insert_key_value_with_diagnostic"),
+        "callable-array dynamic calls should use the callable-value lookup plus shared source-call argument ABI for named, by-reference, and variadic arguments:\n{source}"
+    );
+    assert!(
+        !body.contains("callable_array_matched")
+            && !body.contains("phpc_native_value_dynamic_call_name_matches")
+            && !source.contains("named argument lowering is only implemented"),
+        "callable-array source calls should not use the legacy generated dynamic-call ladder or named-argument blocker:\n{source}"
     );
 }
 
@@ -26250,6 +26298,115 @@ fn emit_exe_links_and_runs_named_dynamic_method_source_call_argument_program() {
 
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_named_callable_array_source_call_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "named_callable_array_source_call_arguments",
+        NATIVE_NAMED_CALLABLE_ARRAY_SOURCE_CALL_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native named callable-array source-call executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"TEFSFS!TE|S!|UXGIGS!?UX|S!?");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_reports_callable_array_lookup_blockers_through_shared_runtime_abi() {
+    if !has_cc() {
+        return;
+    }
+
+    for (name, source, expected) in [
+        (
+            "callable_array_malformed_target",
+            concat!(
+                "<?php\n",
+                "$call = [1, \"run\"];\n",
+                "echo $call(\"x\"), \"after\";\n",
+            ),
+            "callable array target must be a class string or object",
+        ),
+        (
+            "callable_array_unknown_method",
+            concat!(
+                "<?php\n",
+                "class UnknownCallableArray { public function ok($value) { return $value; } }\n",
+                "$box = new UnknownCallableArray();\n",
+                "$call = [$box, \"missing\"];\n",
+                "echo $call(\"x\"), \"after\";\n",
+            ),
+            "Method missing is not registered",
+        ),
+        (
+            "callable_array_visibility_failure",
+            concat!(
+                "<?php\n",
+                "class HiddenCallableArray { private function hide($value) { return $value; } }\n",
+                "$box = new HiddenCallableArray();\n",
+                "$call = [$box, \"hide\"];\n",
+                "echo $call(\"x\"), \"after\";\n",
+            ),
+            "Private method HiddenCallableArray::hide is not visible from <global>",
+        ),
+    ] {
+        let (source_path, output_path) = compile_native_link_fixture(name, source);
+        let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+            panic!("failed to run native callable-array blocker executable: {error}")
+        });
+
+        assert!(!run.status.success(), "{name} should fail at runtime");
+        assert!(
+            run.stdout.is_empty(),
+            "{name} should stop before later side effects, stdout:\n{}",
+            String::from_utf8_lossy(&run.stdout)
+        );
+        assert!(
+            String::from_utf8_lossy(&run.stderr).contains(expected),
+            "{name} stderr should contain {expected:?}, got:\n{}",
+            String::from_utf8_lossy(&run.stderr)
+        );
+
+        let _ = fs::remove_file(&output_path);
+        let _ = fs::remove_file(&source_path);
+    }
+}
+
+#[test]
+fn native_executable_c_source_blocks_unsupported_named_callable_array_byref_shapes() {
+    let program = parse(concat!(
+        "<?php\n",
+        "class CallableArrayByRefBlocker { public static function mutate(&$slot, $value) { $slot = $value; return $slot; } }\n",
+        "$call = [CallableArrayByRefBlocker::class, \"mutate\"];\n",
+        "echo $call(slot: \"literal\", value: \"x\"), \"after\";\n",
+    ))
+    .unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error.message.contains("by-reference argument binding")
+            || error.message.contains("method-call lowering rejects"),
+        "{}",
+        error.message
+    );
 }
 
 #[test]

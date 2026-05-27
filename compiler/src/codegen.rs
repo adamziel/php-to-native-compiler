@@ -7144,12 +7144,12 @@ fn native_direct_call_blocker_message(
         (
             NativeCallResult::Value,
             NativeCallBlocker::ArgumentEvaluationCleanup
+            | NativeCallBlocker::ByReferenceArgumentBinding
             | NativeCallBlocker::StatementOperandEvaluationCleanup
             | NativeCallBlocker::ValueOperandEvaluationCleanup
             | NativeCallBlocker::LvalueOperandEvaluationCleanup
             | NativeCallBlocker::RmwLvalueOperandEvaluationCleanup
             | NativeCallBlocker::ReturnValueOwnership
-            | NativeCallBlocker::ByReferenceArgumentBinding
             | NativeCallBlocker::GlobalFrameSeparation
             | NativeCallBlocker::UnknownCalleeDiagnostics,
         ) => backend.function_call_rejection(),
@@ -10868,9 +10868,7 @@ impl LlvmGenerator {
                     .cloned()
                     .ok_or_else(|| self.unsupported(*span, LLVM_VARIABLE_READ_REJECTION))
             }
-            Expr::Call { args, span, .. } | Expr::DynamicCall { args, span, .. }
-                if call_arguments_have_named(args) =>
-            {
+            Expr::Call { args, span, .. } if call_arguments_have_named(args) => {
                 Err(self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION))
             }
             Expr::Call { name, args, span } if is_exit_construct_name(name) => {
@@ -28305,6 +28303,83 @@ impl CGenerator {
         self.native_value_facts_for_callable_identities(vec![identity], args.len())
     }
 
+    fn callable_value_declared_method_for_identity(
+        &self,
+        identity: &CNativeCallableIdentity,
+    ) -> Option<(NativeMethodStaticSignatureFamily, CDeclaredClassMethod)> {
+        match identity {
+            CNativeCallableIdentity::DeclaredInstanceMethod {
+                class_key,
+                method_key,
+            } => {
+                let class = self.declared_classes.get(class_key)?;
+                let method = class.methods.iter().find(|method| {
+                    Self::declared_method_key(&method.decl.name) == *method_key && !method.is_static
+                })?;
+                Some((
+                    NativeMethodStaticSignatureFamily::ReceiverMethod,
+                    method.clone(),
+                ))
+            }
+            CNativeCallableIdentity::DeclaredStaticMethod {
+                class_key,
+                method_key,
+            } => {
+                let class = self.declared_classes.get(class_key)?;
+                let method = class.methods.iter().find(|method| {
+                    Self::declared_method_key(&method.decl.name) == *method_key && method.is_static
+                })?;
+                Some((
+                    NativeMethodStaticSignatureFamily::StaticMethod,
+                    method.clone(),
+                ))
+            }
+            CNativeCallableIdentity::GeneratedFunction { .. }
+            | CNativeCallableIdentity::RuntimeBuiltin { .. }
+            | CNativeCallableIdentity::DescriptorClosure { .. } => None,
+        }
+    }
+
+    fn callable_value_source_call_contract_from_identities<I>(
+        &self,
+        identities: I,
+        arg_count: usize,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract>
+    where
+        I: IntoIterator<Item = CNativeCallableIdentity>,
+    {
+        let mut family = None;
+        let mut methods = Vec::new();
+        for identity in identities {
+            let (identity_family, method) =
+                self.callable_value_declared_method_for_identity(&identity)?;
+            family = Some(match family {
+                Some(NativeMethodStaticSignatureFamily::StaticMethod)
+                    if identity_family == NativeMethodStaticSignatureFamily::ReceiverMethod =>
+                {
+                    NativeMethodStaticSignatureFamily::ReceiverMethod
+                }
+                Some(previous) => previous,
+                None => identity_family,
+            });
+            methods.push(method);
+        }
+        if methods.is_empty() {
+            return None;
+        }
+
+        let contract = native_method_static_signature_fallback_contract_from_methods(
+            family?,
+            methods.iter(),
+            arg_count,
+        );
+        matches!(
+            contract.availability,
+            NativeMethodStaticSignatureAvailability::Known(_)
+        )
+        .then_some(contract)
+    }
+
     fn native_callable_array_target_and_method<'a>(
         &self,
         items: &'a [ArrayItem],
@@ -28954,6 +29029,50 @@ impl CGenerator {
         }
 
         (!identities.is_empty()).then_some(identities)
+    }
+
+    fn callable_array_source_call_signature_contract_for_items(
+        &self,
+        items: &[ArrayItem],
+        arg_count: usize,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        let (target, method) = self.native_callable_array_target_and_method(items)?;
+        let method_name = self.native_callable_literal_method_name(method)?;
+        let access_context = Self::current_declared_class_access_context(
+            self.active_declared_class_name.as_deref(),
+            NativeSourceCallAccessContext::External,
+        );
+
+        if let Some(class_name) = self.native_callable_literal_class_name(target) {
+            return self.static_method_source_call_signature_contract(
+                &class_name,
+                &method_name,
+                arg_count,
+                access_context,
+            );
+        }
+
+        self.receiver_method_source_call_signature_contract(
+            target,
+            &method_name,
+            arg_count,
+            access_context,
+        )
+    }
+
+    fn callable_value_source_call_signature_contract(
+        &self,
+        expr: &Expr,
+        arg_count: usize,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        if let Expr::Array { items, .. } = expr {
+            return self.callable_array_source_call_signature_contract_for_items(items, arg_count);
+        }
+
+        self.callable_value_source_call_contract_from_identities(
+            self.native_callable_identities_for_expr(expr)?,
+            arg_count,
+        )
     }
 
     fn native_callable_identities_for_invokable_object_facts(
@@ -36883,9 +37002,7 @@ impl CGenerator {
                 self.retain_native_value_cleanup_handle(&value.handle);
                 Ok(CValue::NativeValueHandle(value.handle))
             }
-            Expr::Call { args, span, .. } | Expr::DynamicCall { args, span, .. }
-                if call_arguments_have_named(args) =>
-            {
+            Expr::Call { args, span, .. } if call_arguments_have_named(args) => {
                 Err(self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION))
             }
             Expr::Call { name, args, span } if is_exit_construct_name(name) => {
@@ -37059,9 +37176,20 @@ impl CGenerator {
                 }
             }
             Expr::DynamicCall { callee, args, span } => {
-                if let Some(value) =
-                    self.try_materialize_dynamic_user_function_call(callee, args, *span, "")?
-                {
+                let source_call_contract =
+                    self.callable_value_source_call_signature_contract(callee, args.len());
+                if call_arguments_have_named(args) && source_call_contract.is_none() {
+                    return Err(
+                        self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
+                    );
+                }
+                if let Some(value) = self.try_materialize_dynamic_user_function_call(
+                    callee,
+                    args,
+                    *span,
+                    "",
+                    source_call_contract,
+                )? {
                     self.retain_native_value_cleanup_handle(&value.handle);
                     Ok(CValue::NativeValueHandle(value.handle))
                 } else {
@@ -37554,6 +37682,7 @@ impl CGenerator {
             span,
             failure_cleanup,
             source_call_signature,
+            None,
         )?
         else {
             return Err(
@@ -37573,6 +37702,7 @@ impl CGenerator {
         args: &[Expr],
         span: Span,
         failure_cleanup: &str,
+        source_call_contract: Option<NativeMethodStaticSignatureFallbackContract>,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
         if let Some(value) =
             self.try_materialize_callable_object_source_call(callee, args, span, failure_cleanup)?
@@ -37580,7 +37710,10 @@ impl CGenerator {
             return Ok(Some(value));
         }
 
-        let scoped_signature = self.callable_string_signature_for_expr(callee, args.len());
+        let scoped_signature = source_call_contract
+            .is_none()
+            .then(|| self.callable_string_signature_for_expr(callee, args.len()))
+            .flatten();
         let callee_value = self.emit_expr(callee)?;
         self.materialize_runtime_callable_value_call(
             callee_value,
@@ -37588,6 +37721,7 @@ impl CGenerator {
             span,
             failure_cleanup,
             scoped_signature,
+            source_call_contract,
         )
     }
 
@@ -37732,6 +37866,7 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
         scoped_signature: Option<CScopedCallableStringSignature>,
+        source_call_contract: Option<NativeMethodStaticSignatureFallbackContract>,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
         self.uses_native_string_helpers = true;
         self.uses_native_callable_helpers = true;
@@ -37795,15 +37930,25 @@ impl CGenerator {
         let callable_failure_cleanup = format!(
             "phpc_native_callable_value_free({callable}); {callee_cleanup}{failure_cleanup}"
         );
-        let call_arguments = self.emit_native_source_call_arguments_handle(
-            "dynamic_callable_args",
-            args,
-            span,
-            &callable_failure_cleanup,
-            NativeCallCallee::DynamicExpression,
-            scoped_signature.as_ref(),
-            false,
-        )?;
+        let call_arguments = if let Some(contract) = source_call_contract.as_ref() {
+            self.emit_native_method_static_source_call_arguments_handle(
+                "dynamic_callable_args",
+                args,
+                span,
+                &callable_failure_cleanup,
+                contract,
+            )?
+        } else {
+            self.emit_native_source_call_arguments_handle(
+                "dynamic_callable_args",
+                args,
+                span,
+                &callable_failure_cleanup,
+                NativeCallCallee::DynamicExpression,
+                scoped_signature.as_ref(),
+                false,
+            )?
+        };
 
         let invoke_diagnostic = self.next_native_name("dynamic_callable_invoke_diagnostic");
         self.body.push(format!(
@@ -52520,6 +52665,7 @@ impl CGenerator {
         items: &[ArrayItem],
         span: Span,
     ) -> CompileResult<CNativeValueMaterialization> {
+        let callable_identities = self.native_callable_identities_for_callable_array_items(items);
         let array = self.emit_array_literal(items, span)?;
         let handle = self.next_native_name("array_value");
         self.body.push(format!(
@@ -52527,6 +52673,10 @@ impl CGenerator {
         ));
         self.release_native_array_cleanup_handle(&array);
         self.body.push(format!("phpc_native_array_free({array});"));
+        if let Some(identities) = callable_identities {
+            self.native_callable_value_identities
+                .insert(handle.clone(), identities);
+        }
         Ok(CNativeValueMaterialization {
             handle: handle.clone(),
             cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
@@ -53091,18 +53241,20 @@ impl CGenerator {
                 Ok(None)
             }
             Expr::DynamicCall { callee, args, span } => {
-                let value = self.try_materialize_dynamic_user_function_call(
-                    callee,
-                    args,
-                    *span,
-                    failure_cleanup,
-                )?;
-                if value.is_none() && call_arguments_have_named(args) {
+                let source_call_contract =
+                    self.callable_value_source_call_signature_contract(callee, args.len());
+                if call_arguments_have_named(args) && source_call_contract.is_none() {
                     return Err(
                         self.unsupported(*span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION)
                     );
                 }
-                Ok(value)
+                self.try_materialize_dynamic_user_function_call(
+                    callee,
+                    args,
+                    *span,
+                    failure_cleanup,
+                    source_call_contract,
+                )
             }
             Expr::Closure {
                 params,
@@ -62278,6 +62430,169 @@ mod tests {
                 .native_value_facts_for_expr(&mixed_receiver_call)
                 .is_none(),
             "callable-array object receiver facts should be withheld if any possible receiver lacks the method"
+        );
+    }
+
+    #[test]
+    fn callable_array_source_call_contracts_drive_named_binding_and_magic_keys() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "class CallableArrayArgumentContract {\n",
+            "    public static function stat($first, &$slot, $third = \"D\") { return $third; }\n",
+            "    public function inst($first, &$slot, $third = \"D\") { return $third; }\n",
+            "}\n",
+            "class CallableArrayArgumentMagic {\n",
+            "    public function __call($name, $args) { return $args; }\n",
+            "    public static function __callStatic($name, $args) { return $args; }\n",
+            "}\n",
+        ))
+        .expect("callable-array argument contract fixture parses");
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .expect("callable-array classes register");
+        generator
+            .emit_declared_class_method_definitions()
+            .expect("callable-array method frames emit");
+
+        let span = test_span();
+        let args = vec![
+            Expr::NamedArgument {
+                name: "third".to_string(),
+                expr: Box::new(Expr::String("T".to_string(), span)),
+                span,
+            },
+            Expr::NamedArgument {
+                name: "first".to_string(),
+                expr: Box::new(Expr::String("F".to_string(), span)),
+                span,
+            },
+            Expr::NamedArgument {
+                name: "slot".to_string(),
+                expr: Box::new(test_variable_expr("slot")),
+                span,
+            },
+        ];
+
+        let static_contract = generator
+            .callable_value_source_call_signature_contract(
+                &callable_array_expr(
+                    Expr::ClassNameConstant {
+                        class_name: "CallableArrayArgumentContract".to_string(),
+                        span,
+                    },
+                    Expr::String("stat".to_string(), span),
+                ),
+                args.len(),
+            )
+            .expect("class-string callable array should produce a static source-call contract");
+        assert_eq!(
+            static_contract.availability,
+            NativeMethodStaticSignatureAvailability::Known(CScopedCallableStringSignature {
+                fixed_param_by_reference: vec![false, true, false],
+                returns_by_reference: false,
+            })
+        );
+        assert!(matches!(
+            static_contract.argument_strategy,
+            NativeMethodStaticSourceCallArgumentStrategy::Frame(_)
+        ));
+
+        let object_contract = generator
+            .callable_value_source_call_signature_contract(
+                &callable_array_expr(
+                    Expr::New {
+                        class_name: NewClassName::Named(
+                            "CallableArrayArgumentContract".to_string(),
+                        ),
+                        args: Vec::new(),
+                        span,
+                    },
+                    Expr::String("inst".to_string(), span),
+                ),
+                args.len(),
+            )
+            .expect("object callable array should produce a receiver source-call contract");
+        assert_eq!(
+            object_contract.availability,
+            NativeMethodStaticSignatureAvailability::Known(CScopedCallableStringSignature {
+                fixed_param_by_reference: vec![false, true, false],
+                returns_by_reference: false,
+            })
+        );
+
+        let class_key = CGenerator::declared_class_key("CallableArrayArgumentContract");
+        let class = generator
+            .declared_classes
+            .get(&class_key)
+            .expect("contract class is registered");
+        generator.native_value_variable_facts.insert(
+            "object".to_string(),
+            CNativeValueFacts::object(CNativeObjectFacts::for_declared_class(class_key, class))
+                .expect("declared class object facts"),
+        );
+        let variable_object_contract = generator
+            .callable_value_source_call_signature_contract(
+                &callable_array_expr(
+                    test_variable_expr("object"),
+                    Expr::String("inst".to_string(), span),
+                ),
+                args.len(),
+            )
+            .expect(
+                "variable object callable array should produce a receiver source-call contract",
+            );
+        assert_eq!(
+            variable_object_contract.availability,
+            NativeMethodStaticSignatureAvailability::Known(CScopedCallableStringSignature {
+                fixed_param_by_reference: vec![false, true, false],
+                returns_by_reference: false,
+            })
+        );
+
+        let receiver_magic = generator
+            .callable_value_source_call_signature_contract(
+                &callable_array_expr(
+                    Expr::New {
+                        class_name: NewClassName::Named("CallableArrayArgumentMagic".to_string()),
+                        args: Vec::new(),
+                        span,
+                    },
+                    Expr::String("missing".to_string(), span),
+                ),
+                args.len(),
+            )
+            .expect("missing object callable array should preserve magic fallback contract");
+        assert!(receiver_magic.preserves_named_source_keys_for_magic_args());
+
+        let static_magic = generator
+            .callable_value_source_call_signature_contract(
+                &callable_array_expr(
+                    Expr::ClassNameConstant {
+                        class_name: "CallableArrayArgumentMagic".to_string(),
+                        span,
+                    },
+                    Expr::String("missingStatic".to_string(), span),
+                ),
+                args.len(),
+            )
+            .expect("missing static callable array should preserve __callStatic contract");
+        assert!(static_magic.preserves_named_source_keys_for_magic_args());
+
+        assert!(
+            generator
+                .callable_value_source_call_signature_contract(
+                    &callable_array_expr(
+                        Expr::String("CallableArrayArgumentContract".to_string(), span),
+                        Expr::String("missing".to_string(), span),
+                    ),
+                    args.len(),
+                )
+                .is_none(),
+            "unknown callable-array methods without magic must stay at the runtime diagnostic boundary"
         );
     }
 
