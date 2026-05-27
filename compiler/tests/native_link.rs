@@ -20545,6 +20545,54 @@ fn native_executable_c_source_plans_scoped_callable_string_signature_arguments()
 }
 
 #[test]
+fn native_executable_c_source_transfers_reference_return_source_calls_into_byref_arguments() {
+    let source = concat!(
+        "<?php\n",
+        "class SourceCallAliasTransfer {\n",
+        "    public static function &borrow(&$slot) { return $slot; }\n",
+        "    public static function &borrowOther(&$slot) { return $slot; }\n",
+        "}\n",
+        "function source_call_consume(&$slot, $value) { $slot = $value; return $slot; }\n",
+        "function source_call_pair($label, &$left, &$right) { $left = $label . \"-left\"; $right = $label . \"-right\"; return $left . \":\" . $right; }\n",
+        "$slot = \"old\";\n",
+        "$borrow = \"SourceCallAliasTransfer::borrow\";\n",
+        "$other = \"SourceCallAliasTransfer::borrowOther\";\n",
+        "echo source_call_consume($borrow($slot), \"direct\"), \":\", $slot, \"|\";\n",
+        "$consume = \"source_call_consume\";\n",
+        "echo $consume($borrow($slot), \"dynamic\"), \":\", $slot;\n",
+        "$left = \"L0\";\n",
+        "$right = \"R0\";\n",
+        "echo \"|\", source_call_pair(\"pair\", $borrow($left), $other($right)), \":\", $left, \":\", $right;\n",
+        "$pair = \"source_call_pair\";\n",
+        "echo \"|\", $pair(\"dynpair\", $borrow($left), $other($right)), \":\", $left, \":\", $right;\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("source_reference_result")
+            && body.contains("phpc_native_callable_value_invoke_reference_with_diagnostic_and_free")
+            && body.contains("phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "source-call reference results should use reference carriers before entering direct and dynamic by-reference consumers:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_call_arguments_push_reference_and_free")
+            .count()
+            >= 12,
+        "source-call aliases and their direct/dynamic consumers should move multiple reference positions through the call-argument handle ABI:\n{source}"
+    );
+    assert!(
+        !body.contains("alias_transfer_missing")
+            && !body.contains(
+                "by-reference parameter alias transfer from produced arguments"
+            ),
+        "reference-return source calls should not fall back to the produced-argument alias-transfer blocker:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_keeps_non_reference_scoped_callable_strings_on_return_ownership_blocker(
 ) {
     let program = parse(concat!(
@@ -20561,6 +20609,96 @@ fn native_executable_c_source_keeps_non_reference_scoped_callable_strings_on_ret
 
     assert_eq!(error.phase, Phase::Codegen);
     assert_eq!(error.message, ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION);
+}
+
+#[test]
+fn emit_exe_links_and_runs_source_call_reference_alias_byref_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class SourceCallAliasTransferRun {\n",
+        "    public static function &borrow(&$slot) { return $slot; }\n",
+        "    public static function &borrowOther(&$slot) { return $slot; }\n",
+        "}\n",
+        "function source_call_consume_run(&$slot, $value) { $slot = $value; return $slot; }\n",
+        "function source_call_pair_run($label, &$left, &$right) { $left = $label . \"-left\"; $right = $label . \"-right\"; return $left . \":\" . $right; }\n",
+        "$slot = \"old\";\n",
+        "$borrow = \"SourceCallAliasTransferRun::borrow\";\n",
+        "$other = \"SourceCallAliasTransferRun::borrowOther\";\n",
+        "echo source_call_consume_run($borrow($slot), \"direct\"), \":\", $slot, \"|\";\n",
+        "$consume = \"source_call_consume_run\";\n",
+        "echo $consume($borrow($slot), \"dynamic\"), \":\", $slot;\n",
+        "$left = \"L0\";\n",
+        "$right = \"R0\";\n",
+        "echo \"|\", source_call_pair_run(\"pair\", $borrow($left), $other($right)), \":\", $left, \":\", $right;\n",
+        "$pair = \"source_call_pair_run\";\n",
+        "echo \"|\", $pair(\"dynpair\", $borrow($left), $other($right)), \":\", $left, \":\", $right;\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("source_call_reference_alias_byref_argument", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native source-call reference alias executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"direct:direct|dynamic:dynamic|pair-left:pair-right:pair-left:pair-right|dynpair-left:dynpair-right:dynpair-left:dynpair-right"
+    );
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_reports_source_call_reference_alias_argument_cleanup_failure() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class SourceCallAliasTransferFailure {\n",
+        "    public static function &borrow(&$slot) { return $slot; }\n",
+        "}\n",
+        "function source_call_consume_failure(&$slot, $value) { $slot = $value; return $slot; }\n",
+        "$slot = \"old\";\n",
+        "$borrow = \"SourceCallAliasTransferFailure::borrow\";\n",
+        "$consume = \"source_call_consume_failure\";\n",
+        "$missing = \"missing_source_call_alias_transfer\";\n",
+        "$consume($borrow($slot), $missing());\n",
+        "echo \"after\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("source_call_reference_alias_cleanup_failure", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native source-call reference alias failure executable: {error}")
+    });
+
+    assert!(
+        !run.status.success(),
+        "runtime lookup failure should stop execution"
+    );
+    assert_eq!(run.stdout, b"");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains("missing_source_call_alias_transfer") && stderr.contains("not registered"),
+        "stderr should report the failing second argument lookup, got:\n{stderr}"
+    );
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
 }
 
 #[test]

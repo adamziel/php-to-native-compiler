@@ -22713,6 +22713,12 @@ impl CGenerator {
         failure_cleanup: &str,
         callee: NativeCallCallee,
     ) -> CompileResult<CNativeReferenceMaterialization> {
+        if let Some(reference) =
+            self.try_materialize_source_call_reference_argument(expr, failure_cleanup)?
+        {
+            return Ok(reference);
+        }
+
         if let Expr::Variable(name, _) = expr {
             if let Some(CValue::NativeReferenceHandle(reference)) =
                 self.variables.get(name).cloned()
@@ -31726,6 +31732,10 @@ impl CGenerator {
     }
 
     fn runtime_dynamic_call_reference_argument_is_supported(&self, arg: &Expr) -> bool {
+        if self.source_call_reference_argument_is_supported(arg) {
+            return true;
+        }
+
         if let Expr::Variable(name, _) = arg {
             if matches!(
                 self.variables.get(name),
@@ -31753,6 +31763,153 @@ impl CGenerator {
         }
 
         self.runtime_dynamic_call_reference_argument_is_supported(arg)
+    }
+
+    fn source_call_reference_argument_is_supported(&self, arg: &Expr) -> bool {
+        match arg {
+            Expr::DynamicCall { callee, args, .. } => self
+                .source_call_reference_signature_for_dynamic_call(callee, args)
+                .is_some(),
+            _ => false,
+        }
+    }
+
+    fn source_call_reference_signature_for_dynamic_call(
+        &self,
+        callee: &Expr,
+        args: &[Expr],
+    ) -> Option<Option<CScopedCallableStringSignature>> {
+        let scoped_signature = self.scoped_callable_string_signature_for_expr(callee);
+        if scoped_signature
+            .as_ref()
+            .is_some_and(|signature| signature.returns_by_reference)
+        {
+            return Some(scoped_signature);
+        }
+
+        let identities = self.native_callable_identities_for_expr(callee)?;
+        let mut saw_identity = false;
+        for identity in identities {
+            let summary =
+                self.native_callable_return_summary_for_identity(&identity, args.len())?;
+            if summary.result_kind != CNativeCallableResultKind::Reference {
+                return None;
+            }
+            saw_identity = true;
+        }
+
+        saw_identity.then_some(scoped_signature)
+    }
+
+    fn try_materialize_source_call_reference_argument(
+        &mut self,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeReferenceMaterialization>> {
+        let Expr::DynamicCall { callee, args, span } = expr else {
+            return Ok(None);
+        };
+        let Some(scoped_signature) =
+            self.source_call_reference_signature_for_dynamic_call(callee, args)
+        else {
+            return Ok(None);
+        };
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_callable_helpers = true;
+        self.uses_native_reference_helpers = true;
+
+        let table = self.ensure_native_callable_table(failure_cleanup);
+        let callee_value = self.emit_expr(callee)?;
+        let callee = self.materialize_native_array_c_value_handle(callee_value, *span)?;
+        let callee_cleanup = c_cleanup_sequence(&callee.cleanup_after_use);
+
+        if self
+            .user_functions
+            .values()
+            .any(|function| function.frame_environment.root_symbols)
+        {
+            let symbol_table_failure_cleanup = format!("{callee_cleanup}{failure_cleanup}");
+            let root_symbols =
+                self.ensure_globals_symbol_table(&symbol_table_failure_cleanup, *span)?;
+            self.body
+                .push(format!("phpc_user_callable_root_symbols = {root_symbols};"));
+        }
+        if self
+            .user_functions
+            .values()
+            .any(|function| function.frame_environment.request_state)
+        {
+            let request_state = self.ensure_native_request_state_handle();
+            self.body.push(format!(
+                "phpc_user_callable_request_state = {request_state};"
+            ));
+        }
+
+        let lookup_diagnostic = self.next_native_name("source_reference_lookup_diagnostic");
+        let callable = self.next_native_name("source_reference_callable");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {lookup_diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "phpc_NativeCallableValueHandle {callable} = phpc_native_callable_lookup_value_or_closure_with_context_diagnostic({table}, {}, (phpc_NativeStringHandle){{0}}, &{lookup_diagnostic});",
+            callee.handle
+        ));
+        self.emit_report_native_diagnostic(&lookup_diagnostic);
+        let lookup_error_exit =
+            self.native_error_exit(&format!("{callee_cleanup}{failure_cleanup}"));
+        self.body.push(format!(
+            "if ({callable}.ptr == NULL) {{ {lookup_error_exit} }}"
+        ));
+
+        let callable_failure_cleanup = format!(
+            "phpc_native_callable_value_free({callable}); {callee_cleanup}{failure_cleanup}"
+        );
+        let call_arguments = self.emit_native_source_call_arguments_handle(
+            "source_reference_args",
+            args,
+            *span,
+            &callable_failure_cleanup,
+            NativeCallCallee::DynamicExpression,
+            scoped_signature.as_ref(),
+        )?;
+
+        let invoke_diagnostic = self.next_native_name("source_reference_invoke_diagnostic");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {invoke_diagnostic} = {{0}};"
+        ));
+        let carrier = self.native_source_call_carrier(
+            NativeInvokeResultTarget::CallableValueHandle,
+            NativeSourceCallResultConsumer::Reference,
+            *span,
+        )?;
+        let emitted_reference = self
+            .emit_native_source_call_carrier_invocation(
+                carrier,
+                &[callable.clone()],
+                &call_arguments,
+                &invoke_diagnostic,
+                "source_reference_result",
+            )
+            .expect("reference source-call carrier must produce a reference handle");
+        let reference = self.next_native_name("source_reference_result");
+        self.body.push(format!(
+            "phpc_NativeReferenceHandle {reference} = {emitted_reference};"
+        ));
+        self.body
+            .push(format!("phpc_native_callable_value_free({callable});"));
+        self.emit_report_native_diagnostic(&invoke_diagnostic);
+        let invoke_error_exit =
+            self.native_error_exit(&format!("{callee_cleanup}{failure_cleanup}"));
+        self.body.push(format!(
+            "if ({reference}.ptr == NULL) {{ {invoke_error_exit} }}"
+        ));
+        self.body.extend(callee.cleanup_after_use);
+
+        Ok(Some(CNativeReferenceMaterialization {
+            handle: reference.clone(),
+            cleanup_after_use: vec![format!("phpc_native_reference_free({reference});")],
+        }))
     }
 
     fn runtime_dynamic_call_needs_symbol_table_for_reference_args(
@@ -31942,9 +32099,10 @@ impl CGenerator {
             .enumerate()
             .any(|(index, param)| {
                 param.by_reference
-                    && args
-                        .get(index)
-                        .is_some_and(|arg| native_expr_contains_call_result(arg))
+                    && args.get(index).is_some_and(|arg| {
+                        native_expr_contains_call_result(arg)
+                            && !self.source_call_reference_argument_is_supported(arg)
+                    })
             })
     }
 
