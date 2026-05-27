@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added generated-C static-property `unset()` production through the shared
+  static-property lvalue/storage boundary. Literal class, object/class-string,
+  `self`, `parent`, and declared method-frame `static` receivers now route to
+  runtime class/relative unset APIs, preserving receiver-scope cleanup,
+  visibility/scope diagnostics, and missing-property runtime errors. Untyped
+  static storage resets to initialized `null`, typed storage returns to
+  uninitialized, and read/`isset()`/`empty()` aftermath is verified through the
+  same storage boundary. Focused primary gates cover runtime static-property
+  storage, generated-C static-property and mutation filters, object
+  static-property receivers, nested and property-held `ArrayAccess`,
+  constructors, descriptor closures, magic static calls, source-call
+  references, exact imports, and class aliases. Computed static-property
+  names, top-level `static::$prop`, static-property references, static-property
+  array-offset mutation, magic/static overloading, traits/interfaces, autoload
+  breadth, broad references/COW, and LLVM IR/assembly parity remain
+  unsupported.
+
 - Added generated-C descriptor-closure reference-return production for proven
   descriptor-backed closures. By-reference closure returns are accepted when
   the returned variable is backed by a by-reference parameter or capture, and
@@ -32,7 +49,7 @@ Implemented:
   object static-property receivers, descriptor closures, magic static, nested
   and property-held `ArrayAccess`, constructors, source-call references, exact
   imports, and class aliases. Computed static-property names, top-level
-  `static::$prop`, references, `unset`, array-offset mutation,
+  `static::$prop`, references, array-offset mutation,
   magic/static-property overloading, traits/interfaces, autoload breadth,
   broad references/COW, and LLVM IR/assembly parity remain unsupported.
 
@@ -118,8 +135,8 @@ Implemented:
   called-scope late-static storage. Focused generated-C and linked-executable
   tests cover literal, object, class-string, `self`, `parent`, and
   late-static receiver mutations. Dynamic static-property names, top-level
-  `static::$prop`, static-property references, `??=`, `unset`, `isset`,
-  `empty`, magic/static overloading, traits/interfaces, autoload breadth,
+  `static::$prop`, static-property references, static-property array-offset
+  mutation, magic/static overloading, traits/interfaces, autoload breadth,
   static-property array-offset mutation, broader reference/COW behavior, and
   LLVM IR/assembly parity remain unsupported.
 
