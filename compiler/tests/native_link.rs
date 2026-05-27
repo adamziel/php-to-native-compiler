@@ -1856,6 +1856,22 @@ const NATIVE_BY_REFERENCE_FOREACH_SOURCE: &str = concat!(
     "echo \"|\", $nested[\"outer\"][\"x\"];\n",
 );
 
+const NATIVE_BY_REFERENCE_FOREACH_ARRAY_LVALUE_WRITEBACK_SOURCE: &str = concat!(
+    "<?php\n",
+    "$items = [[\"name\" => \"al\"], [\"name\" => \"bo\", \"seen\" => [\"old\"]]];\n",
+    "foreach ($items as $k => &$item) {\n",
+    "    $item[\"name\"] = strtoupper($item[\"name\"]);\n",
+    "    $item[] = \"tail\";\n",
+    "    $item[\"seen\"][] = $k;\n",
+    "    $item[\"nested\"][\"key\"] = $item[\"name\"];\n",
+    "    $item[\"rows\"][][\"label\"] = $item[\"name\"];\n",
+    "}\n",
+    "unset($item);\n",
+    "echo $items[0][\"name\"], \":\", $items[0][0], \":\", $items[0][\"seen\"][0], \":\", $items[0][\"nested\"][\"key\"], \":\", $items[0][\"rows\"][0][\"label\"];\n",
+    "echo \"|\";\n",
+    "echo $items[1][\"name\"], \":\", $items[1][0], \":\", $items[1][\"seen\"][0], \":\", $items[1][\"seen\"][1], \":\", $items[1][\"nested\"][\"key\"], \":\", $items[1][\"rows\"][0][\"label\"];\n",
+);
+
 const NATIVE_VALUE_TERNARY_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [\"flag\" => \"1\", \"word\" => \"go\"];\n",
@@ -10431,6 +10447,36 @@ fn native_executable_c_source_routes_by_reference_foreach_through_reference_slot
 }
 
 #[test]
+fn native_executable_c_source_routes_by_reference_foreach_array_lvalue_writeback() {
+    let program = parse(NATIVE_BY_REFERENCE_FOREACH_ARRAY_LVALUE_WRITEBACK_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("phpc_native_array_lvalue_owner_foreach_value_reference_result"),
+        "{source}"
+    );
+    assert!(
+        body.contains("phpc_native_array_lvalue_owner_reference_slot"),
+        "{source}"
+    );
+    assert!(
+        body.matches("PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE")
+            .count()
+            >= 3,
+        "{source}"
+    );
+    assert!(
+        body.matches("array_lvalue_assign_result_").count() >= 5,
+        "{source}"
+    );
+    assert!(
+        !source.contains("native executable by-reference foreach lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_blocks_unsupported_by_reference_foreach_forms() {
     for source in [
         "<?php\nforeach ([\"a\" => 1, \"b\" => 2] as $key => &$value) { echo $key, $value; }\n",
@@ -10540,6 +10586,36 @@ fn emit_exe_links_and_runs_by_reference_foreach_array_lvalue_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"a=ab;b=cd;|AB:CD|hi!");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_by_reference_foreach_array_lvalue_writeback_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "foreach_by_reference_array_lvalue_writeback",
+        NATIVE_BY_REFERENCE_FOREACH_ARRAY_LVALUE_WRITEBACK_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native by-reference foreach array-lvalue writeback executable: {error}"
+        )
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"AL:tail:0:AL:AL|BO:tail:old:1:BO:BO");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);

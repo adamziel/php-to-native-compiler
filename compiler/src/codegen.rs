@@ -169,7 +169,7 @@ const ASSEMBLY_ENUM_REJECTION: &str = "assembly enum lowering rejects enum decla
 const LLVM_NAMESPACE_REJECTION: &str = "LLVM namespace lowering rejects namespace declarations, namespace-qualified names, namespace imports, and namespace-aware name resolution until native symbol tables, namespace context, aliases/imports, fallback function/constant lookup, class/autoload lookup, and exact native error behavior exist; phpc run handles current namespace behavior";
 const LLVM_ARRAY_REJECTION: &str = "LLVM array lowering rejects arrays, array literals, array indexing, array assignment, foreach array iteration, array offset unset, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; phpc run handles current array behavior";
 const ASSEMBLY_ARRAY_REJECTION: &str = "assembly array lowering rejects unsupported arrays, unsupported array indexing forms, unsupported array assignment forms, unsupported foreach array iteration forms, unsupported array offset unset forms, and array builtin function calls until native array storage layout, key normalization, copy-on-write, references, callbacks, and exact native error behavior exist; generated-native C routes lowerable direct array offset writes, appends, unsets, and by-value foreach over tracked native array owners through shared native ABIs";
-const ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION: &str = "native executable by-reference foreach lowering rejects this by-reference iteration form; generated C currently supports array and nested-array lvalue owners with compact value-reference assignment bodies through phpc_native_array_lvalue_owner_foreach_value_reference_result(), while temporary iterable owners, arbitrary body mutation, lingering post-loop reference binding, symbol-table/request owners, references/copy-on-write parity, and exact cleanup ownership remain unsupported; phpc run handles current by-reference foreach behavior";
+const ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION: &str = "native executable by-reference foreach lowering rejects this by-reference iteration form; generated C currently supports array and nested-array lvalue owners with compact value-reference assignment and loop-value array-lvalue assignment bodies through phpc_native_array_lvalue_owner_foreach_value_reference_result(), while temporary iterable owners, arbitrary body mutation, cursor variable mutation, lingering post-loop reference binding, symbol-table/request owners, references/copy-on-write parity, and exact cleanup ownership remain unsupported; phpc run handles current by-reference foreach behavior";
 const LLVM_ARRAY_ACCESS_REJECTION: &str = "LLVM ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 const ASSEMBLY_ARRAY_ACCESS_REJECTION: &str = "assembly ArrayAccess lowering rejects object offset reads/writes/isset/empty/unset/compound paths until native ArrayAccess dispatch for offsetGet(), offsetSet(), offsetExists(), and offsetUnset(), object handles, references/copy-on-write, and exact PHP diagnostics exist; phpc run handles current bounded ArrayAccess behavior";
 const LLVM_ARRAY_DESTRUCTURING_REJECTION: &str = "LLVM array destructuring lowering rejects list(...) and [...] assignment targets until native array storage layout, ordered key lookup, missing-key diagnostics, nested destructuring, references/copy-on-write, and exact native assignment ordering exist; phpc run handles current simple destructuring assignment behavior";
@@ -17452,11 +17452,20 @@ struct CNativeArrayLvalueOwnerMaterialization {
     owner: String,
     cleanup_after_use: Vec<String>,
     callable_identity_invalidation_name: Option<String>,
+    reference_fact_invalidation_name: Option<String>,
 }
 
 struct CNativeArrayLvalueTargetMaterialization {
     owner: CNativeArrayLvalueOwnerMaterialization,
     path: CNativeArrayLvaluePath,
+}
+
+impl CNativeArrayLvalueTargetMaterialization {
+    fn cleanup_sequence(&self) -> String {
+        let mut cleanup = self.owner.cleanup_after_use.clone();
+        cleanup.extend(self.path.cleanup_after_use.clone());
+        c_cleanup_sequence(&cleanup)
+    }
 }
 
 struct CNativeValueMaterialization {
@@ -32951,6 +32960,16 @@ impl CGenerator {
         }
     }
 
+    fn invalidate_native_array_lvalue_owner_write_facts(
+        &mut self,
+        owner: &CNativeArrayLvalueOwnerMaterialization,
+    ) {
+        self.invalidate_native_array_lvalue_owner_callable_identities(owner);
+        if let Some(reference) = owner.reference_fact_invalidation_name.clone() {
+            self.set_native_reference_facts(&reference, None);
+        }
+    }
+
     fn native_callable_identities_for_cvalue(
         &self,
         value: &CValue,
@@ -33094,12 +33113,14 @@ impl CGenerator {
         let owner = self.next_native_name(result_prefix);
         let mut cleanup_after_use = Vec::new();
         let mut callable_identity_invalidation_name = None;
+        let mut reference_fact_invalidation_name = None;
         let call = match source {
             CNativeArrayLvalueOwnerSource::ArrayHandle { name, handle } => {
                 callable_identity_invalidation_name = Some(name);
                 format!("phpc_native_array_lvalue_owner_array({handle})")
             }
             CNativeArrayLvalueOwnerSource::ReferenceSlot(reference) => {
+                reference_fact_invalidation_name = Some(reference.clone());
                 format!("phpc_native_array_lvalue_owner_reference_slot({reference})")
             }
             CNativeArrayLvalueOwnerSource::SymbolTableRoot(name) => {
@@ -33119,6 +33140,7 @@ impl CGenerator {
             owner,
             cleanup_after_use,
             callable_identity_invalidation_name,
+            reference_fact_invalidation_name,
         })
     }
 
@@ -48139,7 +48161,7 @@ impl CGenerator {
         self.uses_native_array_lvalue_helpers = true;
 
         let CNativeArrayLvalueTargetMaterialization { owner, path } = target;
-        self.invalidate_native_array_lvalue_owner_callable_identities(&owner);
+        self.invalidate_native_array_lvalue_owner_write_facts(&owner);
         let owner_cleanup = c_cleanup_sequence(&owner.cleanup_after_use);
         let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
         let target_cleanup = format!("{owner_cleanup}{path_cleanup}");
@@ -49552,7 +49574,10 @@ impl CGenerator {
                 !native_foreach_expr_may_mutate_storage(expr)
             }
             Stmt::Assign { target, expr, .. } => {
-                matches!(target, AssignTarget::Variable { name, .. } if name == value)
+                (matches!(target, AssignTarget::Variable { name, .. } if name == value)
+                    || native_by_reference_foreach_value_array_lvalue_target_supported(
+                        value, target,
+                    ))
                     && !native_foreach_expr_may_mutate_storage(expr)
             }
             _ => false,
@@ -49634,6 +49659,149 @@ impl CGenerator {
         self.body.extend(replacement.cleanup_after_use);
         self.body.extend(path.cleanup_after_use);
         Ok(())
+    }
+
+    fn emit_array_lvalue_write_materialized_for_owner(
+        &mut self,
+        target: CNativeArrayLvalueTargetMaterialization,
+        replacement: CNativeValueMaterialization,
+        result_prefix: &str,
+        failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_array_helpers = true;
+        self.uses_native_array_lvalue_helpers = true;
+
+        let CNativeArrayLvalueTargetMaterialization { owner, path } = target;
+        let owner_cleanup = c_cleanup_sequence(&owner.cleanup_after_use);
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let target_cleanup = format!("{owner_cleanup}{path_cleanup}");
+        let result = self.next_native_name(result_prefix);
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueResult {result} = phpc_native_array_lvalue_owner_value_operation_result({}, {}, {}, PHPC_NATIVE_ARRAY_LVALUE_VALUE_OPERATION_WRITE, 0, 0, 0, {});",
+            owner.owner, path.path, path.len, replacement.handle
+        ));
+        self.emit_native_array_lvalue_result_check(
+            &result,
+            &format!(
+                "{}{target_cleanup}{failure_cleanup}",
+                c_cleanup_sequence(&replacement.cleanup_after_use)
+            ),
+        );
+        self.body
+            .push(format!("phpc_native_array_lvalue_result_free({result});"));
+        self.invalidate_native_array_lvalue_owner_write_facts(&owner);
+        self.body.extend(replacement.cleanup_after_use);
+        self.body.extend(owner.cleanup_after_use);
+        self.body.extend(path.cleanup_after_use);
+        Ok(())
+    }
+
+    fn emit_array_lvalue_assignment_for_target(
+        &mut self,
+        target: &AssignTarget,
+        replacement_expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<bool> {
+        let Some(target) =
+            self.materialize_native_array_lvalue_assignment_target(target, failure_cleanup)?
+        else {
+            return Ok(false);
+        };
+        let target_cleanup = target.cleanup_sequence();
+        let replacement = self.materialize_native_value_result_operand(
+            replacement_expr,
+            &format!("{target_cleanup}{failure_cleanup}"),
+        )?;
+        self.emit_array_lvalue_write_materialized_for_owner(
+            target,
+            replacement,
+            "array_lvalue_assign_result",
+            failure_cleanup,
+        )?;
+        Ok(true)
+    }
+
+    fn materialize_native_array_lvalue_assignment_target(
+        &mut self,
+        target: &AssignTarget,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeArrayLvalueTargetMaterialization>> {
+        let (source, path, span) = match target {
+            AssignTarget::ArrayIndex { name, index, span } => {
+                let Some(source) = self.native_array_lvalue_owner_source_for_name(name) else {
+                    return Ok(None);
+                };
+                if matches!(&source, CNativeArrayLvalueOwnerSource::ArrayHandle { .. }) {
+                    return Ok(None);
+                }
+                let path = if let Some(index) = index.as_ref() {
+                    self.materialize_native_array_lvalue_key_path(&[index], *span, failure_cleanup)?
+                } else {
+                    self.materialize_native_array_lvalue_append_path(
+                        &[],
+                        &[],
+                        *span,
+                        failure_cleanup,
+                    )?
+                };
+                (source, path, *span)
+            }
+            AssignTarget::NestedArrayIndex {
+                name,
+                indices,
+                span,
+            } => {
+                let Some(source) = self.native_array_lvalue_owner_source_for_name(name) else {
+                    return Ok(None);
+                };
+                if matches!(&source, CNativeArrayLvalueOwnerSource::ArrayHandle { .. }) {
+                    return Ok(None);
+                }
+                let indices = indices.iter().collect::<Vec<_>>();
+                let path = self.materialize_native_array_lvalue_key_path(
+                    &indices,
+                    *span,
+                    failure_cleanup,
+                )?;
+                (source, path, *span)
+            }
+            AssignTarget::NestedArrayAppend {
+                name,
+                indices,
+                suffix_indices,
+                span,
+            } => {
+                let Some(source) = self.native_array_lvalue_owner_source_for_name(name) else {
+                    return Ok(None);
+                };
+                if matches!(&source, CNativeArrayLvalueOwnerSource::ArrayHandle { .. }) {
+                    return Ok(None);
+                }
+                let prefix_indices = indices.iter().collect::<Vec<_>>();
+                let suffix_indices = suffix_indices.iter().collect::<Vec<_>>();
+                let path = self.materialize_native_array_lvalue_append_path(
+                    &prefix_indices,
+                    &suffix_indices,
+                    *span,
+                    failure_cleanup,
+                )?;
+                (source, path, *span)
+            }
+            _ => return Ok(None),
+        };
+
+        let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
+        let owner = self.materialize_native_array_lvalue_owner(
+            source,
+            span,
+            "array_lvalue_owner",
+            &format!("{path_cleanup}{failure_cleanup}"),
+        )?;
+        Ok(Some(CNativeArrayLvalueTargetMaterialization {
+            owner,
+            path,
+        }))
     }
 
     fn emit_symbol_table_array_lvalue_write_with_path(
@@ -51223,7 +51391,7 @@ impl CGenerator {
         self.uses_native_array_lvalue_helpers = true;
 
         let CNativeArrayLvalueTargetMaterialization { owner, path } = target;
-        self.invalidate_native_array_lvalue_owner_callable_identities(&owner);
+        self.invalidate_native_array_lvalue_owner_write_facts(&owner);
         let owner_cleanup = c_cleanup_sequence(&owner.cleanup_after_use);
         let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
         let target_cleanup = format!("{owner_cleanup}{path_cleanup}");
@@ -51391,7 +51559,7 @@ impl CGenerator {
         self.uses_native_array_lvalue_helpers = true;
 
         let CNativeArrayLvalueTargetMaterialization { owner, path } = target;
-        self.invalidate_native_array_lvalue_owner_callable_identities(&owner);
+        self.invalidate_native_array_lvalue_owner_write_facts(&owner);
         let owner_cleanup = c_cleanup_sequence(&owner.cleanup_after_use);
         let path_cleanup = c_cleanup_sequence(&path.cleanup_after_use);
         let target_cleanup = format!("{owner_cleanup}{path_cleanup}");
@@ -53186,6 +53354,9 @@ impl CGenerator {
             self.materialize_object_public_property_assignment_result_for_target(target, expr, "")?
         {
             self.body.extend(value.cleanup_after_use);
+            return Ok(());
+        }
+        if self.emit_array_lvalue_assignment_for_target(target, expr, "")? {
             return Ok(());
         }
 
@@ -60946,6 +61117,30 @@ fn native_foreach_expr_may_mutate_storage(expr: &Expr) -> bool {
         | Expr::DynamicParentStaticProperty { .. }
         | Expr::LateStaticProperty { .. }
         | Expr::DynamicLateStaticProperty { .. } => false,
+    }
+}
+
+fn native_by_reference_foreach_value_array_lvalue_target_supported(
+    value: &str,
+    target: &AssignTarget,
+) -> bool {
+    match target {
+        AssignTarget::ArrayIndex { name, index, .. } if name == value => index
+            .as_ref()
+            .map_or(true, |index| !native_foreach_expr_may_mutate_storage(index)),
+        AssignTarget::NestedArrayIndex { name, indices, .. } if name == value => indices
+            .iter()
+            .all(|index| !native_foreach_expr_may_mutate_storage(index)),
+        AssignTarget::NestedArrayAppend {
+            name,
+            indices,
+            suffix_indices,
+            ..
+        } if name == value => indices
+            .iter()
+            .chain(suffix_indices.iter())
+            .all(|index| !native_foreach_expr_may_mutate_storage(index)),
+        _ => false,
     }
 }
 
