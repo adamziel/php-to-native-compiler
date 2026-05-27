@@ -5101,7 +5101,7 @@ fn native_executable_c_source_lowers_namespace_alias_class_policy_boundary() {
     assert!(
         source.contains("phpc_native_declare_user_class_bytes")
             && source.contains("phpc_native_value_new_declared_class_with_relationships_and_diagnostic")
-            && source.contains("phpc_native_value_dynamic_class_name_matches")
+            && source.contains("phpc_native_constructor_scope_from_value_with_diagnostic")
             && source.contains("phpc_native_value_class_metadata_exists_with_autoload_policy_and_diagnostic"),
         "namespace/import class policy should lower through generated-C class metadata and class-name helpers:\n{source}"
     );
@@ -5270,8 +5270,9 @@ fn native_executable_c_source_routes_dynamic_declared_class_new_through_declared
         "dynamic new should keep declared-child allocation on the ancestor-aware allocation helper:\n{source}"
     );
     assert!(
-        source.contains("phpc_native_value_dynamic_class_name_matches"),
-        "dynamic new should materialize class-name values and match generated declared-class candidates through the shared class-name helper:\n{source}"
+        source.contains("phpc_native_constructor_scope_from_value_with_diagnostic")
+            && body.contains("phpc_native_string_dynamic_class_name_matches"),
+        "dynamic new should materialize class-name values and match generated declared-class candidates through the shared constructor class-name scope helper:\n{source}"
     );
     assert!(
         body.matches("phpc_NativeValueHandle constructor_arg_values_")
@@ -7453,8 +7454,9 @@ fn native_executable_c_source_routes_dynamic_declared_constructors_through_frame
     let body = main_body(&source);
 
     assert!(
-        source.contains("phpc_native_value_dynamic_class_name_matches"),
-        "dynamic class-name new should match generated declared-class candidates through the shared class-name helper:\n{source}"
+        source.contains("phpc_native_constructor_scope_from_value_with_diagnostic")
+            && body.contains("phpc_native_string_dynamic_class_name_matches"),
+        "dynamic class-name new should normalize class names through the constructor scope metadata boundary before candidate allocation:\n{source}"
     );
     assert!(
         body.matches("phpc_native_constructor_allocation_invoke_value_with_access_context_diagnostic_and_free_scope_receiver_arguments").count() >= 4
@@ -7482,6 +7484,119 @@ fn native_executable_c_source_routes_dynamic_declared_constructors_through_frame
             && !source.contains("method-call lowering rejects"),
         "{source}"
     );
+}
+
+#[test]
+fn native_executable_c_source_routes_dynamic_constructor_alias_and_parenthesized_forms() {
+    let program = parse(concat!(
+        "<?php\n",
+        "class DynamicCtorAliasBox {\n",
+        "    public $label;\n",
+        "    public function __construct($label) { $this->label = strtoupper($label); }\n",
+        "}\n",
+        "class_alias(\"DynamicCtorAliasBox\", \"DynamicCtorRuntimeAlias\", false);\n",
+        "$class = \"dynamicctorruntimealias\";\n",
+        "$one = new $class(\"one\");\n",
+        "$two = new ($class)(\"two\");\n",
+        "$seed = new DynamicCtorAliasBox(\"seed\");\n",
+        "$three = new ($seed)(\"three\");\n",
+        "echo $one->label, \"|\", $two->label, \"|\", $three->label, \"\\n\";\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.matches("phpc_native_constructor_scope_from_value_with_diagnostic")
+            .count()
+            >= 3
+            && body.contains("phpc_native_string_dynamic_class_name_matches")
+            && body.contains("phpc_native_constructor_allocation_invoke_value_with_access_context_diagnostic_and_free_scope_receiver_arguments")
+            && source.contains("phpc_native_declare_user_class_alias_bytes_with_diagnostic"),
+        "dynamic constructor aliases and parenthesized class-string/object forms should share metadata normalization and constructor invocation:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_dynamic_constructor_alias_and_parenthesized_forms() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class DynamicCtorAliasRunBox {\n",
+        "    public $label;\n",
+        "    public function __construct($label) { $this->label = strtoupper($label); }\n",
+        "}\n",
+        "class_alias(\"DynamicCtorAliasRunBox\", \"DynamicCtorAliasRun\", false);\n",
+        "$class = \"dynamicctoraliasrun\";\n",
+        "$one = new $class(\"one\");\n",
+        "$two = new ($class)(\"two\");\n",
+        "$seed = new DynamicCtorAliasRunBox(\"seed\");\n",
+        "$three = new ($seed)(\"three\");\n",
+        "echo $one->label, \"|\", $two->label, \"|\", $three->label, \"\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("dynamic_constructor_alias_parenthesized", source);
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run dynamic constructor alias parenthesized executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ONE|TWO|THREE\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_dynamic_constructor_missing_and_bad_receiver_report_metadata_diagnostics() {
+    if !has_cc() {
+        return;
+    }
+
+    let (missing_source, missing_output) = compile_native_link_fixture(
+        "dynamic_constructor_missing_class",
+        "<?php\nclass KnownDynamicCtor {}\n$class = \"MissingDynamicCtor\";\nnew $class();\n",
+    );
+    let missing_run = Command::new(&missing_output)
+        .output()
+        .expect("run missing dynamic constructor executable");
+    assert!(!missing_run.status.success());
+    assert!(
+        String::from_utf8_lossy(&missing_run.stderr).contains(
+            "native constructor allocation failed: unknown or non-allocatable class MissingDynamicCtor"
+        ),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&missing_run.stderr)
+    );
+
+    let (bad_source, bad_output) = compile_native_link_fixture(
+        "dynamic_constructor_bad_receiver",
+        "<?php\nclass KnownDynamicCtor {}\n$value = array();\nnew ($value)();\n",
+    );
+    let bad_run = Command::new(&bad_output)
+        .output()
+        .expect("run bad dynamic constructor receiver executable");
+    assert!(!bad_run.status.success());
+    assert!(
+        String::from_utf8_lossy(&bad_run.stderr)
+            .contains("dynamic class-name expression must be object or class string, got array"),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&bad_run.stderr)
+    );
+
+    let _ = fs::remove_file(missing_source);
+    let _ = fs::remove_file(missing_output);
+    let _ = fs::remove_file(bad_source);
+    let _ = fs::remove_file(bad_output);
 }
 
 #[test]

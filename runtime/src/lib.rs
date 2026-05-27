@@ -1639,6 +1639,23 @@ impl NativeCallableTable {
             .contains(&normalize_class_lookup_name(class_name))
     }
 
+    fn allocatable_scope_for_lookup_key(&self, lookup_key: &[u8]) -> Option<Vec<u8>> {
+        let lookup = std::str::from_utf8(lookup_key).ok()?;
+        self.allocatable_classes
+            .contains(lookup)
+            .then(|| lookup_key.to_vec())
+    }
+
+    fn allocatable_scope_for_class_name(&self, class_name: &str) -> Option<Vec<u8>> {
+        let lookup_key = native_class_metadata_lookup_key(class_name.as_bytes());
+        if let Some(scope) = self.allocatable_scope_for_lookup_key(&lookup_key) {
+            return Some(scope);
+        }
+
+        let target_lookup_key = native_user_class_alias_target_lookup_key(&lookup_key)?;
+        self.allocatable_scope_for_lookup_key(&target_lookup_key)
+    }
+
     fn class_exists(&self, class_name: &str) -> bool {
         let class_name = normalize_class_lookup_name(class_name);
         !class_name.is_empty()
@@ -5229,6 +5246,29 @@ pub unsafe extern "C" fn phpc_native_value_dynamic_class_name_matches(
 
 /// # Safety
 ///
+/// `handle` must be null or a string handle previously returned by the runtime
+/// ABI and not yet freed. `name_ptr..name_ptr+name_len` must either be a valid
+/// byte slice or be null with a zero length. Class-name matching follows PHP's
+/// ASCII case-insensitive class lookup and ignores one leading namespace
+/// separator on either side.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_string_dynamic_class_name_matches(
+    handle: NativeStringHandle,
+    name_ptr: *const u8,
+    name_len: usize,
+) -> bool {
+    let Some(name) = (unsafe { native_abi_bytes(name_ptr, name_len) }) else {
+        return false;
+    };
+    let Some(class_name) = (unsafe { handle.as_ref() }) else {
+        return false;
+    };
+    native_class_metadata_lookup_key(class_name.bytes.as_slice())
+        == native_class_metadata_lookup_key(name)
+}
+
+/// # Safety
+///
 /// `handle` must be null or a value handle previously returned by the runtime
 /// ABI and not yet freed. `name_ptr..name_ptr+name_len` must either be a valid
 /// byte slice or be null with a zero length. Dynamic method-name matching
@@ -8395,6 +8435,66 @@ pub unsafe extern "C" fn phpc_native_constructor_lookup_scope_with_diagnostic(
             NativeStringHandle::null(),
             diagnostic,
         )
+    }
+}
+
+/// # Safety
+///
+/// `table`, `class_name`, and `diagnostic` must be valid according to the
+/// runtime ABI. Returns an owned normalized constructor scope for generated
+/// classes when `class_name` is a class string or object whose class is
+/// allocatable in the callable table. Class aliases are resolved through the
+/// shared generated user-class metadata registry.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_constructor_scope_from_value_with_diagnostic(
+    table: NativeCallableTableHandle,
+    class_name: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeStringHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| -> Result<NativeStringHandle, String> {
+        let Some(table) = (unsafe { table.as_ref() }) else {
+            return Err("native constructor allocation failed: table is null".to_string());
+        };
+        let Some(value) = (unsafe { class_name.as_ref() }) else {
+            return Err(
+                "native constructor allocation failed: class-name handle is null".to_string(),
+            );
+        };
+        let scope = match value {
+            Value::String(class_name) => table.allocatable_scope_for_class_name(class_name),
+            Value::Object(object) => table.allocatable_scope_for_class_name(object.class_name()),
+            other => {
+                return Err(RuntimeError::unsupported_object_instantiation(
+                    "dynamic class name",
+                    format!(
+                        "dynamic class-name expression must be object or class string, got {}",
+                        other.type_name()
+                    ),
+                )
+                .message()
+                .to_string())
+            }
+        };
+        let Some(scope) = scope else {
+            let name = match value {
+                Value::String(class_name) => class_name.as_str(),
+                Value::Object(object) => object.class_name(),
+                _ => "dynamic class name",
+            };
+            return Err(format!(
+                "native constructor allocation failed: unknown or non-allocatable class {name}"
+            ));
+        };
+        Ok(NativeStringHandle::from_vec(scope))
+    })();
+
+    match result {
+        Ok(scope) => scope,
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            NativeStringHandle::null()
+        }
     }
 }
 
@@ -38334,6 +38434,87 @@ mod tests {
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn native_constructor_scope_from_value_normalizes_strings_objects_aliases_and_missing() {
+        native_user_classes_reset_for_test();
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            assert!(phpc_native_declare_user_class_bytes(
+                b"FactoryWidget".as_ptr(),
+                "FactoryWidget".len(),
+            ));
+            assert!(
+                phpc_native_callable_table_register_allocatable_class_and_free(
+                    table,
+                    native_string_for_test("FactoryWidget"),
+                )
+            );
+        }
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let aliased = unsafe {
+            phpc_native_declare_user_class_alias_bytes_with_diagnostic(
+                b"FactoryWidget".as_ptr(),
+                "FactoryWidget".len(),
+                b"FactoryAlias".as_ptr(),
+                "FactoryAlias".len(),
+                false,
+                &mut diagnostic,
+            )
+        };
+        assert!(aliased);
+        assert!(diagnostic.is_null());
+
+        let string_scope = unsafe {
+            phpc_native_constructor_scope_from_value_with_diagnostic(
+                table,
+                NativeValueHandle::from_value(Value::String("FACTORYALIAS".to_string())),
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(
+            unsafe { native_string_handle_to_string(string_scope) }.as_deref(),
+            Some("factorywidget")
+        );
+        unsafe { phpc_native_string_free(string_scope) };
+        assert!(diagnostic.is_null());
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("FactoryWidget").unwrap();
+        let object_scope = unsafe {
+            phpc_native_constructor_scope_from_value_with_diagnostic(
+                table,
+                NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+                    classes.get(class_id).unwrap(),
+                ))),
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(
+            unsafe { native_string_handle_to_string(object_scope) }.as_deref(),
+            Some("factorywidget")
+        );
+        unsafe { phpc_native_string_free(object_scope) };
+        assert!(diagnostic.is_null());
+
+        let missing = unsafe {
+            phpc_native_constructor_scope_from_value_with_diagnostic(
+                table,
+                NativeValueHandle::from_value(Value::String("MissingWidget".to_string())),
+                &mut diagnostic,
+            )
+        };
+        assert!(missing.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "native constructor allocation failed: unknown or non-allocatable class MissingWidget"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_callable_table_free(table) };
+        native_user_classes_reset_for_test();
     }
 
     #[test]

@@ -1181,6 +1181,7 @@ pub enum Expr {
 pub enum NewClassName {
     Named(String),
     DynamicVariable(String),
+    DynamicExpression(Box<Expr>),
     SelfClass,
     ParentClass,
     StaticClass,

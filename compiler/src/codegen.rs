@@ -6132,8 +6132,15 @@ fn collect_native_arrow_capture_candidates_from_expr(
             args,
             span,
         } => {
-            if let NewClassName::DynamicVariable(name) = class_name {
-                captures.push((name.clone(), *span));
+            match class_name {
+                NewClassName::DynamicVariable(name) => captures.push((name.clone(), *span)),
+                NewClassName::DynamicExpression(expr) => {
+                    collect_native_arrow_capture_candidates_from_expr(expr, captures);
+                }
+                NewClassName::Named(_)
+                | NewClassName::SelfClass
+                | NewClassName::ParentClass
+                | NewClassName::StaticClass => {}
             }
             for arg in args {
                 collect_native_arrow_capture_candidates_from_expr(arg, captures);
@@ -22295,6 +22302,7 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeStringHandle phpc_native_static_method_scope_from_receiver_with_diagnostic_and_free(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle receiver, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_constructor_lookup_scope_with_access_context_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_constructor_lookup_scope_with_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeStringHandle phpc_native_constructor_scope_from_value_with_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle class_name, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeCallResultHandle phpc_native_constructor_allocation_invoke_result_with_access_context_diagnostic_and_free_scope_receiver_arguments(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeValueHandle receiver, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_constructor_allocation_invoke_value_with_access_context_diagnostic_and_free_scope_receiver_arguments(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeValueHandle receiver, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_constructor_allocation_invoke_reference_with_access_context_diagnostic_and_free_scope_receiver_arguments(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeValueHandle receiver, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -22494,6 +22502,7 @@ impl CGenerator {
                 output.push_str("extern void phpc_native_callable_array_parts_free(phpc_NativeCallableArrayParts parts);\n");
                 output.push_str("extern _Bool phpc_native_value_dynamic_call_name_matches(phpc_NativeValueHandle value, const uint8_t *name_ptr, size_t name_len);\n");
                 output.push_str("extern _Bool phpc_native_value_dynamic_class_name_matches(phpc_NativeValueHandle value, const uint8_t *name_ptr, size_t name_len);\n");
+                output.push_str("extern _Bool phpc_native_string_dynamic_class_name_matches(phpc_NativeStringHandle value, const uint8_t *name_ptr, size_t name_len);\n");
                 output.push_str("extern void phpc_native_value_dynamic_call_failure_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *reason_ptr, size_t reason_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_closure_helpers {
@@ -23503,8 +23512,24 @@ impl CGenerator {
                 }
                 class
             }
-            NewClassName::DynamicVariable(variable) => {
-                if self.dynamic_declared_class_constructor_has_destructor_risk(variable) {
+            NewClassName::DynamicVariable(_) => {
+                if self.dynamic_declared_class_constructor_has_destructor_risk(class_name) {
+                    return Err(self.unsupported_call_operation(
+                        NativeCallOperation::constructor_value(
+                            span,
+                            NativeCallBlocker::DestructorObservableCleanup,
+                        ),
+                    ));
+                }
+                return self.materialize_dynamic_declared_class_new_expr(
+                    class_name,
+                    args,
+                    span,
+                    failure_cleanup,
+                );
+            }
+            NewClassName::DynamicExpression(_) => {
+                if self.dynamic_declared_class_constructor_has_destructor_risk(class_name) {
                     return Err(self.unsupported_call_operation(
                         NativeCallOperation::constructor_value(
                             span,
@@ -23572,6 +23597,25 @@ impl CGenerator {
         let class_name_value =
             self.materialize_new_class_name_value(class_name, span, failure_cleanup)?;
         let class_name_cleanup = c_cleanup_sequence(&class_name_value.cleanup_after_use);
+        let scope_diagnostic = self.next_native_name("constructor_scope_diagnostic");
+        let scope = self.next_native_name("constructor_scope");
+        self.uses_native_string_helpers = true;
+        let callable_setup_failure_cleanup = format!("{class_name_cleanup}{failure_cleanup}");
+        let callable_table = self.ensure_native_callable_table(&callable_setup_failure_cleanup);
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {scope_diagnostic} = {{0}};"
+        ));
+        self.body.push(format!(
+            "phpc_NativeStringHandle {scope} = phpc_native_constructor_scope_from_value_with_diagnostic({callable_table}, {}, &{scope_diagnostic});",
+            class_name_value.handle
+        ));
+        self.emit_report_native_diagnostic(&scope_diagnostic);
+        let scope_failure_cleanup = format!("{class_name_cleanup}{failure_cleanup}");
+        let scope_error_exit = self.native_error_exit(&scope_failure_cleanup);
+        self.body
+            .push(format!("if ({scope}.ptr == NULL) {{ {scope_error_exit} }}"));
+        let scope_cleanup = format!("phpc_native_string_free({scope});");
+        let dynamic_cleanup = format!("{scope_cleanup}{class_name_cleanup}");
         let result = self.next_native_name("declared_class_object");
         let matched = self.next_native_name("declared_class_match");
         self.uses_native_dynamic_call_helpers = true;
@@ -23584,20 +23628,19 @@ impl CGenerator {
             let (candidate_name, candidate_name_len) =
                 self.emit_call_type_static_bytes("declared_class_match_name_bytes", &class.name);
             self.body.push(format!(
-                "if (!{matched} && phpc_native_value_dynamic_class_name_matches({}, {candidate_name}, {candidate_name_len})) {{",
-                class_name_value.handle
+                "if (!{matched} && phpc_native_string_dynamic_class_name_matches({scope}, {candidate_name}, {candidate_name_len})) {{"
             ));
             self.body.push(format!("{matched} = 1;"));
 
             let constructor = self.declared_class_constructor_for_instantiation(&class);
             if let Some((constructor_class, constructor)) = constructor {
-                let allocation_failure_cleanup = format!("{class_name_cleanup}{failure_cleanup}");
+                let allocation_failure_cleanup = format!("{dynamic_cleanup}{failure_cleanup}");
                 self.emit_declared_class_instantiation_assignment(
                     &class,
                     &result,
                     &allocation_failure_cleanup,
                 )?;
-                let constructor_failure_cleanup = format!("{class_name_cleanup}{failure_cleanup}");
+                let constructor_failure_cleanup = format!("{dynamic_cleanup}{failure_cleanup}");
                 let _ = constructor_class;
                 let constructor_result = self.materialize_declared_class_constructor_source_call(
                     &class.name,
@@ -23613,7 +23656,7 @@ impl CGenerator {
                 self.body
                     .push(format!("{result} = {};", constructor_result.handle));
             } else {
-                let branch_failure_cleanup = format!("{class_name_cleanup}{failure_cleanup}");
+                let branch_failure_cleanup = format!("{dynamic_cleanup}{failure_cleanup}");
                 let constructor_args = self
                     .materialize_constructor_argument_value_array(args, &branch_failure_cleanup)?;
                 let arg_cleanup = c_cleanup_sequence(&constructor_args.cleanup_after_use);
@@ -23634,11 +23677,12 @@ impl CGenerator {
 
         self.body.push(format!("if (!{matched}) {{"));
         let no_match_error_exit =
-            self.native_error_exit(&format!("{class_name_cleanup}{failure_cleanup}"));
+            self.native_error_exit(&format!("{dynamic_cleanup}{failure_cleanup}"));
         self.body.push(format!(
             "fprintf(stderr, \"runtime error: unsupported object instantiation: class name did not match a generated declared class\\n\"); {no_match_error_exit}"
         ));
         self.body.push("}".to_string());
+        self.body.push(scope_cleanup);
         self.body.extend(class_name_value.cleanup_after_use);
 
         Ok(Some(CNativeValueMaterialization {
@@ -23657,6 +23701,9 @@ impl CGenerator {
             NewClassName::DynamicVariable(name) => {
                 let expr = Expr::Variable(name.clone(), span);
                 self.materialize_native_value_result_operand(&expr, failure_cleanup)
+            }
+            NewClassName::DynamicExpression(expr) => {
+                self.materialize_native_value_result_operand(expr, failure_cleanup)
             }
             NewClassName::Named(_)
             | NewClassName::SelfClass
@@ -27899,6 +27946,17 @@ impl CGenerator {
             }
             NewClassName::DynamicVariable(variable) => {
                 self.native_value_facts_for_dynamic_declared_class_variable(variable)
+            }
+            NewClassName::DynamicExpression(expr) => {
+                let mut facts: Option<CNativeValueFacts> = None;
+                for class_key in self.dynamic_declared_class_known_keys_for_expr(expr)? {
+                    let class_facts = self.native_value_facts_for_declared_class_key(&class_key)?;
+                    facts = Some(match facts {
+                        Some(previous) => previous.intersection(&class_facts)?,
+                        None => class_facts,
+                    });
+                }
+                facts
             }
             NewClassName::SelfClass | NewClassName::ParentClass | NewClassName::StaticClass => None,
         }
@@ -41514,34 +41572,59 @@ impl CGenerator {
         })
     }
 
-    fn dynamic_declared_class_known_keys(&self, variable: &str) -> Option<HashSet<String>> {
-        let values = self
-            .variables
-            .get(variable)
-            .and_then(|value| self.known_string_values_for_value(value))?;
+    fn dynamic_declared_class_known_keys_for_expr(&self, expr: &Expr) -> Option<HashSet<String>> {
+        if let Some(facts) = self.native_value_facts_for_expr(expr) {
+            if let Some(object) = facts.object {
+                if !object.declared_class_keys.is_empty() {
+                    return Some(object.declared_class_keys);
+                }
+            }
+        }
 
-        Some(
-            values
-                .values()
-                .iter()
-                .map(|class_name| Self::declared_class_key(class_name))
-                .collect(),
-        )
+        let values = match expr {
+            Expr::Variable(variable, _) => self
+                .variables
+                .get(variable)
+                .and_then(|value| self.known_string_values_for_value(value))?,
+            Expr::String(value, _) => KnownString::one(value.clone()),
+            _ => return None,
+        };
+
+        let keys: HashSet<String> = values
+            .values()
+            .iter()
+            .map(|class_name| Self::declared_class_key(class_name))
+            .collect();
+        keys.iter()
+            .all(|key| self.declared_classes.contains_key(key))
+            .then_some(keys)
+    }
+
+    fn dynamic_declared_class_known_keys(
+        &self,
+        class_name: &NewClassName,
+    ) -> Option<HashSet<String>> {
+        match class_name {
+            NewClassName::DynamicVariable(variable) => self
+                .dynamic_declared_class_known_keys_for_expr(&Expr::Variable(
+                    variable.clone(),
+                    Span::new(0, 0),
+                )),
+            NewClassName::DynamicExpression(expr) => {
+                self.dynamic_declared_class_known_keys_for_expr(expr)
+            }
+            NewClassName::Named(_)
+            | NewClassName::SelfClass
+            | NewClassName::ParentClass
+            | NewClassName::StaticClass => None,
+        }
     }
 
     fn dynamic_declared_class_constructor_candidates(
         &self,
         class_name: &NewClassName,
     ) -> Vec<CDeclaredClass> {
-        let known_keys = match class_name {
-            NewClassName::DynamicVariable(variable) => {
-                self.dynamic_declared_class_known_keys(variable)
-            }
-            NewClassName::Named(_)
-            | NewClassName::SelfClass
-            | NewClassName::ParentClass
-            | NewClassName::StaticClass => None,
-        };
+        let known_keys = self.dynamic_declared_class_known_keys(class_name);
 
         self.declared_class_order
             .iter()
@@ -41559,7 +41642,10 @@ impl CGenerator {
             .collect()
     }
 
-    fn dynamic_declared_class_constructor_has_destructor_risk(&self, variable: &str) -> bool {
+    fn dynamic_declared_class_constructor_has_destructor_risk(
+        &self,
+        class_name: &NewClassName,
+    ) -> bool {
         if !self
             .declared_class_order
             .iter()
@@ -41568,7 +41654,7 @@ impl CGenerator {
             return false;
         }
 
-        let Some(known_keys) = self.dynamic_declared_class_known_keys(variable) else {
+        let Some(known_keys) = self.dynamic_declared_class_known_keys(class_name) else {
             return true;
         };
 
@@ -41586,8 +41672,8 @@ impl CGenerator {
                 .declared_class_requires_destructor_observable_cleanup_boundary(
                     &Self::declared_class_key(name),
                 ),
-            NewClassName::DynamicVariable(variable) => {
-                self.dynamic_declared_class_constructor_has_destructor_risk(variable)
+            NewClassName::DynamicVariable(_) | NewClassName::DynamicExpression(_) => {
+                self.dynamic_declared_class_constructor_has_destructor_risk(class_name)
             }
             NewClassName::SelfClass | NewClassName::ParentClass | NewClassName::StaticClass => {
                 false

@@ -6473,10 +6473,12 @@ impl Parser {
         let token = self.advance().clone();
         let class_name = match token.kind {
             TokenKind::LParen => {
-                return Err(self.error_at(
-                    token.span,
-                    unsupported_dynamic_new_class_expression_message(),
-                ));
+                let expr = self.parse_expression()?;
+                self.consume_keyword(
+                    TokenKind::RParen,
+                    "expected ')' after dynamic class-name expression in new",
+                )?;
+                NewClassName::DynamicExpression(Box::new(expr))
             }
             TokenKind::Backslash => {
                 let raw = format!(
@@ -8361,10 +8363,6 @@ fn unsupported_continue_expression_message() -> &'static str {
 
 fn unsupported_class_expression_message() -> &'static str {
     "unsupported class expression: anonymous classes are not implemented"
-}
-
-fn unsupported_dynamic_new_class_expression_message() -> &'static str {
-    "unsupported dynamic class-name expression in new: only named classes, self/parent/static, and direct variable class names are implemented; parenthesized and arbitrary class-name expressions require expression evaluation ordering, autoload interaction, exact PHP diagnostics, and native lowering"
 }
 
 fn unsupported_trait_declaration_message() -> &'static str {

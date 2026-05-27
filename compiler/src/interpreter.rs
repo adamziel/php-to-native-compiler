@@ -14683,10 +14683,10 @@ impl Interpreter {
     }
 
     fn resolve_new_class_name(
-        &self,
+        &mut self,
         class_name: &NewClassName,
         span: Span,
-        scope: &SymbolTable,
+        scope: &mut SymbolTable,
     ) -> CompileResult<String> {
         match class_name {
             NewClassName::Named(name) => Ok(name.clone()),
@@ -14703,6 +14703,22 @@ impl Interpreter {
                     ),
                 )),
             },
+            NewClassName::DynamicExpression(expr) => {
+                match self.evaluate(expr, scope)? {
+                Value::String(class_name) => Ok(class_name),
+                Value::Object(object) => Ok(object.class_name().to_string()),
+                other => Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_object_instantiation(
+                        "dynamic class name",
+                        format!(
+                            "dynamic class-name expression must evaluate to a string or object in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                )),
+                }
+            }
             NewClassName::SelfClass => {
                 let Some(current_class_id) = self.class_context.last().copied() else {
                     return Err(runtime_error(
