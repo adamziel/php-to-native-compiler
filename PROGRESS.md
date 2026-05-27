@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 11:12 CEST
+Updated: 2026-05-27 11:31 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,7 +19,20 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest accounted source capability: `3149d1da` routes selected generated-C
+Latest accounted source capability: `3b3a740a` publishes magic-method
+signature metadata through the shared generated-C callable table and rejects
+malformed `__call`/`__callStatic` fallback targets before runtime magic
+argument packing. Receiver `__call` and static `__callStatic` fallback lookup
+now require valid two-argument, non-reference, string/array-compatible
+signatures, while normal declared method hits still win and existing named
+`__callStatic` source-order `$args` packing remains intact. Invalid metadata
+reports through the shared runtime lookup-plus-invoke diagnostics instead of
+falling into generated name ladders or exact-shape status branches. Full PHP
+declaration-time warning/fatal timing, named dynamic receiver `__call` key
+preservation, traits/interfaces/effective method tables, aliases/autoload,
+callable-object magic shapes, full `$args` reference/COW parity, and
+LLVM/backend parity remain blocked. Recent source commit `3149d1da` routes
+selected generated-C
 class constant reads through shared runtime class/constant metadata. Literal
 `Class::CONST`, `self::CONST`, `parent::CONST`, and declared method-frame
 `static::CONST` now share generated class/parent/constant tables, alias
@@ -39,9 +52,10 @@ boundary. Missing or inaccessible static calls with public static
 object-static receiver, `self::`, and method-frame `static::` calls while
 normal declared static method hits still bind through declared parameter
 metadata first. Named dynamic receiver `__call`, spread/unpack, constructors,
-unknown dynamic callables, malformed magic signatures, traits/interfaces,
-aliases/autoload, callable-object magic shapes, full `$args` reference/COW
-parity, and LLVM/backend parity remain blocked. Recent source commit
+unknown dynamic callables, full PHP declaration-time malformed-signature
+parity, traits/interfaces, aliases/autoload, callable-object magic shapes,
+full `$args` reference/COW parity, and LLVM/backend parity remain blocked.
+Recent source commit
 `14edee16` routes selected generated-C
 static-property `unset()` through the shared static-property lvalue/storage
 boundary for literal class, object/class-string, `self`, `parent`, and
@@ -127,8 +141,8 @@ non-static methods called statically remain hard failures rather than falling
 through to magic. The integrated paths cover literal `Class::method(...)`,
 object-static receivers, `self::`, `parent::`, and bounded declared-frame
 `static::` source calls without generated method-name ladders or fixture-shaped
-dispatch. Malformed magic signature parity, named dynamic receiver magic
-fallback, traits/interfaces/effective method tables, aliases/autoload,
+dispatch. Full PHP declaration-time malformed signature parity, named dynamic
+receiver magic fallback, traits/interfaces/effective method tables, aliases/autoload,
 callable-object static magic shapes, full `$args` reference/COW parity, and
 LLVM/direct assembly parity remain blocked. Recent source commits also
 initialize generated-C declared static-property storage through the shared bulk

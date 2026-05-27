@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added generated-C malformed magic-method signature rejection through shared
+  callable-table metadata. Class method registration now publishes
+  `__call`/`__callStatic` signature status beside visibility/staticness, and
+  runtime receiver/static magic fallback lookup rejects invalid arity,
+  by-reference parameters, and incompatible first/second parameter types before
+  deriving magic `$args`. Normal declared method hits still win, valid receiver
+  and static magic fallback paths continue through the shared
+  lookup-plus-invoke carriers, and named `__callStatic` source-order argument
+  keys still flow through `NativeCallArgumentsHandle`. Focused primary gates
+  cover compiler metadata, runtime lookup rejection, generated-C metadata,
+  linked malformed-signature diagnostics, named magic static regression, magic
+  dynamic/static filters, named arguments, descriptor closures, static
+  properties, class constants, constructors, nested `ArrayAccess`,
+  source-call references, exact imports, and class aliases. Full PHP
+  declaration-time warning/fatal timing, named dynamic receiver `__call` key
+  preservation, traits/interfaces/effective method tables, aliases/autoload,
+  callable-object magic shapes, full `$args` reference/COW parity, and LLVM
+  IR/assembly parity remain unsupported.
+
 - Added generated-C class constant production through shared class/constant
   metadata. Literal `Class::CONST`, relative `self::CONST` and
   `parent::CONST`, and declared method-frame `static::CONST` now publish and
