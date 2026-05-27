@@ -6566,34 +6566,47 @@ impl Parser {
         })
     }
 
-    fn consume_instanceof_class_name(&mut self) -> CompileResult<String> {
+    fn consume_instanceof_class_name(&mut self) -> CompileResult<NewClassName> {
         let token = self.advance().clone();
         match token.kind {
+            TokenKind::LParen => {
+                let expr = self.parse_expression()?;
+                self.consume_keyword(
+                    TokenKind::RParen,
+                    "expected ')' after dynamic class-name expression in instanceof",
+                )?;
+                Ok(NewClassName::DynamicExpression(Box::new(expr)))
+            }
             TokenKind::Backslash => {
                 let raw = format!(
                     "\\{}",
                     self.parse_qualified_name(false, "expected class name after instanceof")?
                 );
-                Ok(self.resolve_class_like_name(&raw))
+                Ok(NewClassName::Named(self.resolve_class_like_name(&raw)))
             }
             TokenKind::Identifier(name) => {
-                if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
+                if name.eq_ignore_ascii_case("self") {
+                    Ok(NewClassName::SelfClass)
+                } else if name.eq_ignore_ascii_case("parent") {
+                    Ok(NewClassName::ParentClass)
+                } else if name.eq_ignore_ascii_case("static") {
+                    Ok(NewClassName::StaticClass)
+                } else if self.check(|kind| matches!(kind, TokenKind::Backslash)) {
                     let raw = self.parse_qualified_name_after_first(name)?;
-                    Ok(self.resolve_class_like_name(&raw))
+                    Ok(NewClassName::Named(self.resolve_class_like_name(&raw)))
                 } else {
-                    Ok(self.resolve_class_like_name(&name))
+                    Ok(NewClassName::Named(self.resolve_class_like_name(&name)))
                 }
             }
             TokenKind::Namespace if self.check(|kind| matches!(kind, TokenKind::Backslash)) => {
                 self.advance();
                 let suffix =
                     self.parse_qualified_name(false, "expected class name after instanceof")?;
-                Ok(self.resolve_relative_namespace_class_name(&suffix))
+                Ok(NewClassName::Named(
+                    self.resolve_relative_namespace_class_name(&suffix),
+                ))
             }
-            TokenKind::Variable(_) => Err(self.error_at(
-                token.span,
-                "unsupported instanceof class expression: dynamic class names are not implemented",
-            )),
+            TokenKind::Variable(name) => Ok(NewClassName::DynamicVariable(name)),
             _ => Err(self.error_at(token.span, "expected class name after instanceof")),
         }
     }
@@ -7043,7 +7056,12 @@ impl Parser {
                 Self::expr_contains_assignment(callee)
                     || args.iter().any(Self::expr_contains_assignment)
             }
-            Expr::InstanceOf { expr, .. } => Self::expr_contains_assignment(expr),
+            Expr::InstanceOf {
+                expr, class_name, ..
+            } => {
+                Self::expr_contains_assignment(expr)
+                    || Self::new_class_name_expr_contains_assignment(class_name)
+            }
             Expr::Binary { left, right, .. } => {
                 Self::expr_contains_assignment(left) || Self::expr_contains_assignment(right)
             }
@@ -7102,6 +7120,17 @@ impl Parser {
             | Expr::LateStaticProperty { .. }
             | Expr::DynamicLateStaticProperty { .. }
             | Expr::IncrementDecrement { .. } => false,
+        }
+    }
+
+    fn new_class_name_expr_contains_assignment(class_name: &NewClassName) -> bool {
+        match class_name {
+            NewClassName::DynamicExpression(expr) => Self::expr_contains_assignment(expr),
+            NewClassName::Named(_)
+            | NewClassName::DynamicVariable(_)
+            | NewClassName::SelfClass
+            | NewClassName::ParentClass
+            | NewClassName::StaticClass => false,
         }
     }
 
@@ -7198,7 +7227,12 @@ impl Parser {
                         .iter()
                         .any(Self::expr_contains_unsupported_assignment_rhs)
             }
-            Expr::InstanceOf { expr, .. } => Self::expr_contains_unsupported_assignment_rhs(expr),
+            Expr::InstanceOf {
+                expr, class_name, ..
+            } => {
+                Self::expr_contains_unsupported_assignment_rhs(expr)
+                    || Self::new_class_name_expr_contains_unsupported_assignment_rhs(class_name)
+            }
             Expr::Binary { left, right, .. } => {
                 Self::expr_contains_unsupported_assignment_rhs(left)
                     || Self::expr_contains_unsupported_assignment_rhs(right)
@@ -7261,6 +7295,19 @@ impl Parser {
         }
     }
 
+    fn new_class_name_expr_contains_unsupported_assignment_rhs(class_name: &NewClassName) -> bool {
+        match class_name {
+            NewClassName::DynamicExpression(expr) => {
+                Self::expr_contains_unsupported_assignment_rhs(expr)
+            }
+            NewClassName::Named(_)
+            | NewClassName::DynamicVariable(_)
+            | NewClassName::SelfClass
+            | NewClassName::ParentClass
+            | NewClassName::StaticClass => false,
+        }
+    }
+
     fn find_append_index_span(expr: &Expr) -> Option<Span> {
         match expr {
             Expr::AppendIndex { span, .. } => Some(*span),
@@ -7302,7 +7349,10 @@ impl Parser {
                 .filter_map(|param| param.default.as_ref())
                 .find_map(Self::find_append_index_span),
             Expr::DynamicCall { callee, .. } => Self::find_append_index_span(callee),
-            Expr::InstanceOf { expr, .. } => Self::find_append_index_span(expr),
+            Expr::InstanceOf {
+                expr, class_name, ..
+            } => Self::find_append_index_span(expr)
+                .or_else(|| Self::new_class_name_find_append_index_span(class_name)),
             Expr::Binary { left, right, .. } => {
                 Self::find_append_index_span(left).or_else(|| Self::find_append_index_span(right))
             }
@@ -7360,6 +7410,17 @@ impl Parser {
             | Expr::LateStaticProperty { .. }
             | Expr::DynamicLateStaticProperty { .. }
             | Expr::IncrementDecrement { .. } => None,
+        }
+    }
+
+    fn new_class_name_find_append_index_span(class_name: &NewClassName) -> Option<Span> {
+        match class_name {
+            NewClassName::DynamicExpression(expr) => Self::find_append_index_span(expr),
+            NewClassName::Named(_)
+            | NewClassName::DynamicVariable(_)
+            | NewClassName::SelfClass
+            | NewClassName::ParentClass
+            | NewClassName::StaticClass => None,
         }
     }
 

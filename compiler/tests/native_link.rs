@@ -805,6 +805,13 @@ const NATIVE_DECLARED_CLASS_INSTANCEOF_SOURCE: &str = concat!(
     "echo 7 instanceof Box ? \"Y\" : \"N\";\n",
     "echo $box instanceof Contract ? \"Y\" : \"N\";\n",
     "echo (new Packet()) instanceof RootContract ? \"Y\" : \"N\";\n",
+    "$target = \"Box\";\n",
+    "$contract = \"Contract\";\n",
+    "$targetObject = new Box();\n",
+    "echo $box instanceof $target ? \"Y\" : \"N\";\n",
+    "echo $box instanceof (\"box\") ? \"Y\" : \"N\";\n",
+    "echo $box instanceof $contract ? \"Y\" : \"N\";\n",
+    "echo (new Packet()) instanceof $targetObject ? \"Y\" : \"N\";\n",
     "echo \"\\n\";\n",
 );
 
@@ -3412,7 +3419,7 @@ fn emit_exe_links_and_runs_declared_class_instanceof_program() {
         String::from_utf8_lossy(&run.stdout),
         String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(run.stdout, b"YYNYNYY\n");
+    assert_eq!(run.stdout, b"YYNYNYYYYYN\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -7668,6 +7675,12 @@ fn native_executable_c_source_routes_declared_instanceof_through_runtime_abi() {
             .count()
             >= 7,
         "named instanceof expressions should share the class-like relationship ABI:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_value_dynamic_class_relationship_matches_with_diagnostic")
+            .count()
+            >= 4,
+        "dynamic instanceof expressions should route target values through the dynamic class relationship ABI:\n{source}"
     );
     assert!(
         source.contains("phpc_native_declare_user_interface_bytes")

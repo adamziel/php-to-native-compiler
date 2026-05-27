@@ -12632,22 +12632,34 @@ echo $name instanceof Countable ? "countable" : "plain";
 }
 
 #[test]
-fn instanceof_rejects_dynamic_class_names_for_now() {
-    let error = parse_error(
+fn instanceof_supports_dynamic_class_name_variables_and_expressions() {
+    let execution = run_source(
         r#"<?php
-class Box {}
-$box = new Box();
-$class = "Box";
-echo $box instanceof $class;
-"#,
-    );
+interface Contract {}
+class Box implements Contract {}
+class Child extends Box {}
 
-    assert_eq!(error.line, 5);
-    assert_eq!(error.column, 22);
-    assert_eq!(
-        error.message,
-        "unsupported instanceof class expression: dynamic class names are not implemented"
-    );
+$box = new Box();
+$child = new Child();
+$class = "Box";
+$lower = "box";
+$contract = "Contract";
+$missing = "Missing";
+$targetObject = new Box();
+
+echo $box instanceof $class ? "1" : "0";
+echo $child instanceof $class ? "1" : "0";
+echo $box instanceof $lower ? "1" : "0";
+echo $box instanceof $contract ? "1" : "0";
+echo $box instanceof $missing ? "1" : "0";
+echo $child instanceof $targetObject ? "1" : "0";
+echo $child instanceof ("Box") ? "1" : "0";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "1111011");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]

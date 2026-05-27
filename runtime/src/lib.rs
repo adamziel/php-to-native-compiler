@@ -39061,6 +39061,61 @@ unsafe fn native_value_class_relationship_matches(
             "native class relationship operation requires a non-empty target name".to_string(),
         );
     }
+    unsafe {
+        native_value_class_relationship_matches_target_bytes(
+            value,
+            target_name.as_bytes(),
+            operation,
+        )
+    }
+}
+
+/// # Safety
+///
+/// `value` and `target` must be null or value handles previously returned by
+/// the runtime ABI and not yet freed. The operation tag selects a class-like
+/// relationship predicate. Dynamic target values may be class strings or
+/// objects; other target values store a diagnostic and return false.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_dynamic_class_relationship_matches_with_diagnostic(
+    value: NativeValueHandle,
+    target: NativeValueHandle,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe { native_value_dynamic_class_relationship_matches(value, target, operation) } {
+        Ok(result) => result,
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            false
+        }
+    }
+}
+
+unsafe fn native_value_dynamic_class_relationship_matches(
+    value: NativeValueHandle,
+    target: NativeValueHandle,
+    operation: u8,
+) -> Result<bool, String> {
+    let Some(target_value) = (unsafe { target.as_ref() }) else {
+        return Err("native dynamic class relationship target handle is null".to_string());
+    };
+    let target_name = native_class_name_from_receiver_no_autoload(target_value)
+        .map_err(|error| error.message().to_string())?;
+    if target_name.is_empty() {
+        return Ok(false);
+    }
+
+    unsafe { native_value_class_relationship_matches_target_bytes(value, &target_name, operation) }
+}
+
+unsafe fn native_value_class_relationship_matches_target_bytes(
+    value: NativeValueHandle,
+    target_name: &[u8],
+    operation: u8,
+) -> Result<bool, String> {
     let operation = NativeClassRelationshipOperation::from_tag(operation).ok_or_else(|| {
         "native class relationship operation received unsupported operation tag".to_string()
     })?;
@@ -39072,7 +39127,7 @@ unsafe fn native_value_class_relationship_matches(
     if native_class_relationship_matches_bytes(
         &classes,
         object.class_name().as_bytes(),
-        target_name.as_bytes(),
+        target_name,
         operation,
     ) {
         return Ok(true);
@@ -39080,7 +39135,9 @@ unsafe fn native_value_class_relationship_matches(
 
     Ok(
         matches!(operation, NativeClassRelationshipOperation::InstanceOf)
-            && object.is_instance_of_class_name(target_name),
+            && std::str::from_utf8(target_name)
+                .ok()
+                .is_some_and(|target_name| object.is_instance_of_class_name(target_name)),
     )
 }
 
@@ -51071,6 +51128,102 @@ mod tests {
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(scalar) };
         unsafe { phpc_native_value_free(object) };
+        native_user_classes_reset_for_test();
+    }
+
+    #[test]
+    fn native_dynamic_class_relationship_accepts_string_and_object_targets() {
+        native_user_classes_reset_for_test();
+        assert!(native_declare_user_class_bytes_result(b"NativeBase"));
+        assert!(native_declare_user_class_bytes_result(b"NativeChild"));
+        assert!(native_declare_user_class_parent_bytes_result(
+            b"NativeChild",
+            b"NativeBase",
+        ));
+
+        let child_class = b"NativeChild";
+        let base_class = b"nativebase";
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let child = unsafe {
+            phpc_native_value_new_declared_class_with_diagnostic(
+                41,
+                child_class.as_ptr(),
+                child_class.len(),
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let base = unsafe {
+            phpc_native_value_new_declared_class_with_diagnostic(
+                42,
+                base_class.as_ptr(),
+                base_class.len(),
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        let string_target = NativeValueHandle::from_value(Value::String("nativebase".to_string()));
+        let empty_target = NativeValueHandle::from_value(Value::String(String::new()));
+        let scalar_target = NativeValueHandle::from_value(Value::Int(7));
+
+        assert!(unsafe {
+            phpc_native_value_dynamic_class_relationship_matches_with_diagnostic(
+                child,
+                string_target,
+                NativeClassRelationshipOperation::InstanceOf as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        assert!(unsafe {
+            phpc_native_value_dynamic_class_relationship_matches_with_diagnostic(
+                child,
+                base,
+                NativeClassRelationshipOperation::InstanceOf as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        assert!(!unsafe {
+            phpc_native_value_dynamic_class_relationship_matches_with_diagnostic(
+                child,
+                empty_target,
+                NativeClassRelationshipOperation::InstanceOf as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        assert!(!unsafe {
+            phpc_native_value_dynamic_class_relationship_matches_with_diagnostic(
+                child,
+                scalar_target,
+                NativeClassRelationshipOperation::InstanceOf as u8,
+                &mut diagnostic,
+            )
+        });
+        assert!(
+            native_diagnostic_message_for_test(diagnostic).contains("dynamic class-name receiver"),
+            "diagnostic should reject non-string, non-object dynamic targets"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        unsafe { phpc_native_value_free(scalar_target) };
+        unsafe { phpc_native_value_free(empty_target) };
+        unsafe { phpc_native_value_free(string_target) };
+        unsafe { phpc_native_value_free(base) };
+        unsafe { phpc_native_value_free(child) };
         native_user_classes_reset_for_test();
     }
 

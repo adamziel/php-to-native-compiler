@@ -1094,7 +1094,7 @@ pub enum Expr {
     },
     InstanceOf {
         expr: Box<Expr>,
-        class_name: String,
+        class_name: NewClassName,
         span: Span,
     },
     Closure {

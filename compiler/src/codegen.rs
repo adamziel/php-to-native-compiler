@@ -2082,9 +2082,16 @@ fn llvm_expr_call_results_are_lowerable(expr: &Expr, allow_scalar_results: bool)
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
         | Expr::ObjectClassNameConstant { target, .. }
-        | Expr::DynamicObjectStaticProperty { target, .. }
-        | Expr::InstanceOf { expr: target, .. } => {
+        | Expr::DynamicObjectStaticProperty { target, .. } => {
             llvm_expr_call_results_are_lowerable(target, allow_scalar_results)
+        }
+        Expr::InstanceOf {
+            expr: target,
+            class_name,
+            ..
+        } => {
+            llvm_expr_call_results_are_lowerable(target, allow_scalar_results)
+                && new_class_name_call_results_are_lowerable(class_name, allow_scalar_results)
         }
         Expr::DynamicProperty {
             target, property, ..
@@ -2164,6 +2171,22 @@ fn llvm_expr_call_results_are_lowerable(expr: &Expr, allow_scalar_results: bool)
         | Expr::DynamicParentStaticProperty { .. }
         | Expr::LateStaticProperty { .. }
         | Expr::DynamicLateStaticProperty { .. } => true,
+    }
+}
+
+fn new_class_name_call_results_are_lowerable(
+    class_name: &NewClassName,
+    allow_scalar_results: bool,
+) -> bool {
+    match class_name {
+        NewClassName::DynamicExpression(expr) => {
+            llvm_expr_call_results_are_lowerable(expr, allow_scalar_results)
+        }
+        NewClassName::Named(_)
+        | NewClassName::DynamicVariable(_)
+        | NewClassName::SelfClass
+        | NewClassName::ParentClass
+        | NewClassName::StaticClass => true,
     }
 }
 
@@ -2378,10 +2401,15 @@ fn native_expr_call_result_operation(
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
         | Expr::ObjectClassNameConstant { target, .. }
-        | Expr::DynamicObjectStaticProperty { target, .. }
-        | Expr::InstanceOf { expr: target, .. } => {
+        | Expr::DynamicObjectStaticProperty { target, .. } => {
             native_expr_call_result_operation(target, blocker)
         }
+        Expr::InstanceOf {
+            expr: target,
+            class_name,
+            ..
+        } => native_expr_call_result_operation(target, blocker)
+            .or_else(|| native_new_class_name_call_result_operation(class_name, blocker)),
         Expr::DynamicProperty {
             target, property, ..
         } => native_expr_call_result_operation(target, blocker)
@@ -2457,6 +2485,20 @@ fn native_expr_call_result_operation(
         | Expr::DynamicParentStaticProperty { .. }
         | Expr::LateStaticProperty { .. }
         | Expr::DynamicLateStaticProperty { .. } => None,
+    }
+}
+
+fn native_new_class_name_call_result_operation(
+    class_name: &NewClassName,
+    blocker: NativeCallBlocker,
+) -> Option<NativeCallOperation> {
+    match class_name {
+        NewClassName::DynamicExpression(expr) => native_expr_call_result_operation(expr, blocker),
+        NewClassName::Named(_)
+        | NewClassName::DynamicVariable(_)
+        | NewClassName::SelfClass
+        | NewClassName::ParentClass
+        | NewClassName::StaticClass => None,
     }
 }
 
@@ -3119,13 +3161,20 @@ fn native_conditional_rhs_needs_cleanup_boundary(expr: &Expr) -> bool {
         | Expr::ObjectStaticProperty { target, .. }
         | Expr::ObjectClassNameConstant { target, .. }
         | Expr::DynamicObjectStaticProperty { target, .. }
-        | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
         | Expr::ErrorControl { expr: target, .. }
         | Expr::Include { path: target, .. }
         | Expr::Require { path: target, .. }
         | Expr::Cast { expr: target, .. } => native_conditional_rhs_needs_cleanup_boundary(target),
+        Expr::InstanceOf {
+            expr: target,
+            class_name,
+            ..
+        } => {
+            native_conditional_rhs_needs_cleanup_boundary(target)
+                || new_class_name_conditional_rhs_needs_cleanup_boundary(class_name)
+        }
         Expr::DynamicProperty {
             target, property, ..
         } => {
@@ -3189,6 +3238,19 @@ fn native_conditional_rhs_needs_cleanup_boundary(expr: &Expr) -> bool {
         | Expr::ObjectStaticMethodCall { .. }
         | Expr::SelfMethodCall { .. }
         | Expr::LateStaticMethodCall { .. } => false,
+    }
+}
+
+fn new_class_name_conditional_rhs_needs_cleanup_boundary(class_name: &NewClassName) -> bool {
+    match class_name {
+        NewClassName::DynamicExpression(expr) => {
+            native_conditional_rhs_needs_cleanup_boundary(expr)
+        }
+        NewClassName::Named(_)
+        | NewClassName::DynamicVariable(_)
+        | NewClassName::SelfClass
+        | NewClassName::ParentClass
+        | NewClassName::StaticClass => false,
     }
 }
 
@@ -4713,13 +4775,20 @@ fn expr_contains_exit_construct(expr: &Expr) -> bool {
         | Expr::ObjectStaticProperty { target, .. }
         | Expr::ObjectClassNameConstant { target, .. }
         | Expr::DynamicObjectStaticProperty { target, .. }
-        | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
         | Expr::ErrorControl { expr: target, .. }
         | Expr::Include { path: target, .. }
         | Expr::Require { path: target, .. }
         | Expr::Cast { expr: target, .. } => expr_contains_exit_construct(target),
+        Expr::InstanceOf {
+            expr: target,
+            class_name,
+            ..
+        } => {
+            expr_contains_exit_construct(target)
+                || new_class_name_contains_exit_construct(class_name)
+        }
         Expr::DynamicProperty {
             target, property, ..
         } => expr_contains_exit_construct(target) || expr_contains_exit_construct(property),
@@ -4782,6 +4851,17 @@ fn expr_contains_exit_construct(expr: &Expr) -> bool {
         | Expr::LateStaticProperty { .. }
         | Expr::DynamicLateStaticProperty { .. }
         | Expr::Closure { .. } => false,
+    }
+}
+
+fn new_class_name_contains_exit_construct(class_name: &NewClassName) -> bool {
+    match class_name {
+        NewClassName::DynamicExpression(expr) => expr_contains_exit_construct(expr),
+        NewClassName::Named(_)
+        | NewClassName::DynamicVariable(_)
+        | NewClassName::SelfClass
+        | NewClassName::ParentClass
+        | NewClassName::StaticClass => false,
     }
 }
 
@@ -5578,13 +5658,20 @@ fn collect_direct_call_names_from_expr(expr: &Expr, names: &mut Vec<String>) {
         | Expr::ObjectStaticProperty { target, .. }
         | Expr::ObjectClassNameConstant { target, .. }
         | Expr::DynamicObjectStaticProperty { target, .. }
-        | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
         | Expr::ErrorControl { expr: target, .. }
         | Expr::Include { path: target, .. }
         | Expr::Require { path: target, .. }
         | Expr::Cast { expr: target, .. } => collect_direct_call_names_from_expr(target, names),
+        Expr::InstanceOf {
+            expr: target,
+            class_name,
+            ..
+        } => {
+            collect_direct_call_names_from_expr(target, names);
+            collect_direct_call_names_from_new_class_name(class_name, names);
+        }
         Expr::DynamicProperty {
             target, property, ..
         } => {
@@ -5656,6 +5743,15 @@ fn collect_direct_call_names_from_expr(expr: &Expr, names: &mut Vec<String>) {
         | Expr::DynamicParentStaticProperty { .. }
         | Expr::LateStaticProperty { .. }
         | Expr::DynamicLateStaticProperty { .. } => {}
+    }
+}
+
+fn collect_direct_call_names_from_new_class_name(
+    class_name: &NewClassName,
+    names: &mut Vec<String>,
+) {
+    if let NewClassName::DynamicExpression(expr) = class_name {
+        collect_direct_call_names_from_expr(expr, names);
     }
 }
 
@@ -6335,7 +6431,6 @@ fn collect_native_arrow_capture_candidates_from_expr(
         | Expr::ObjectStaticProperty { target, .. }
         | Expr::ObjectClassNameConstant { target, .. }
         | Expr::DynamicObjectStaticProperty { target, .. }
-        | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
         | Expr::ErrorControl { expr: target, .. }
@@ -6343,6 +6438,16 @@ fn collect_native_arrow_capture_candidates_from_expr(
         | Expr::Require { path: target, .. }
         | Expr::Cast { expr: target, .. } => {
             collect_native_arrow_capture_candidates_from_expr(target, captures);
+        }
+        Expr::InstanceOf {
+            expr: target,
+            class_name,
+            span,
+        } => {
+            collect_native_arrow_capture_candidates_from_expr(target, captures);
+            collect_native_arrow_capture_candidates_from_new_class_name(
+                class_name, *span, captures,
+            );
         }
         Expr::DynamicProperty {
             target, property, ..
@@ -6439,6 +6544,23 @@ fn collect_native_arrow_capture_candidates_from_expr(
     }
 }
 
+fn collect_native_arrow_capture_candidates_from_new_class_name(
+    class_name: &NewClassName,
+    span: Span,
+    captures: &mut Vec<(String, Span)>,
+) {
+    match class_name {
+        NewClassName::DynamicVariable(name) => captures.push((name.clone(), span)),
+        NewClassName::DynamicExpression(expr) => {
+            collect_native_arrow_capture_candidates_from_expr(expr, captures);
+        }
+        NewClassName::Named(_)
+        | NewClassName::SelfClass
+        | NewClassName::ParentClass
+        | NewClassName::StaticClass => {}
+    }
+}
+
 fn native_for_action_list_call_operation(actions: &[ForAction]) -> Option<NativeCallOperation> {
     actions.iter().find_map(native_for_action_call_operation)
 }
@@ -6503,8 +6625,17 @@ fn native_expr_contains_call_result(expr: &Expr) -> bool {
         | Expr::ObjectStaticClassConstant { target, .. }
         | Expr::ObjectStaticProperty { target, .. }
         | Expr::ObjectClassNameConstant { target, .. }
-        | Expr::DynamicObjectStaticProperty { target, .. }
-        | Expr::InstanceOf { expr: target, .. } => native_expr_contains_call_result(target),
+        | Expr::DynamicObjectStaticProperty { target, .. } => {
+            native_expr_contains_call_result(target)
+        }
+        Expr::InstanceOf {
+            expr: target,
+            class_name,
+            ..
+        } => {
+            native_expr_contains_call_result(target)
+                || new_class_name_contains_call_result(class_name)
+        }
         Expr::DynamicProperty {
             target, property, ..
         } => native_expr_contains_call_result(target) || native_expr_contains_call_result(property),
@@ -6577,6 +6708,17 @@ fn native_expr_contains_call_result(expr: &Expr) -> bool {
         | Expr::DynamicParentStaticProperty { .. }
         | Expr::LateStaticProperty { .. }
         | Expr::DynamicLateStaticProperty { .. } => false,
+    }
+}
+
+fn new_class_name_contains_call_result(class_name: &NewClassName) -> bool {
+    match class_name {
+        NewClassName::DynamicExpression(expr) => native_expr_contains_call_result(expr),
+        NewClassName::Named(_)
+        | NewClassName::DynamicVariable(_)
+        | NewClassName::SelfClass
+        | NewClassName::ParentClass
+        | NewClassName::StaticClass => false,
     }
 }
 
@@ -7590,13 +7732,20 @@ fn expr_contains_globals_access(expr: &Expr) -> bool {
         | Expr::ObjectStaticProperty { target, .. }
         | Expr::ObjectClassNameConstant { target, .. }
         | Expr::DynamicObjectStaticProperty { target, .. }
-        | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
         | Expr::ErrorControl { expr: target, .. }
         | Expr::Include { path: target, .. }
         | Expr::Require { path: target, .. }
         | Expr::Cast { expr: target, .. } => expr_contains_globals_access(target),
+        Expr::InstanceOf {
+            expr: target,
+            class_name,
+            ..
+        } => {
+            expr_contains_globals_access(target)
+                || new_class_name_contains_globals_access(class_name)
+        }
         Expr::DynamicProperty {
             target, property, ..
         } => expr_contains_globals_access(target) || expr_contains_globals_access(property),
@@ -7657,6 +7806,17 @@ fn expr_contains_globals_access(expr: &Expr) -> bool {
         | Expr::LateStaticProperty { .. }
         | Expr::DynamicLateStaticProperty { .. }
         | Expr::Closure { .. } => false,
+    }
+}
+
+fn new_class_name_contains_globals_access(class_name: &NewClassName) -> bool {
+    match class_name {
+        NewClassName::DynamicVariable(name) => is_globals_superglobal_name(name),
+        NewClassName::DynamicExpression(expr) => expr_contains_globals_access(expr),
+        NewClassName::Named(_)
+        | NewClassName::SelfClass
+        | NewClassName::ParentClass
+        | NewClassName::StaticClass => false,
     }
 }
 
@@ -8095,13 +8255,20 @@ fn expr_contains_request_state_access(expr: &Expr) -> bool {
         | Expr::ObjectStaticProperty { target, .. }
         | Expr::ObjectClassNameConstant { target, .. }
         | Expr::DynamicObjectStaticProperty { target, .. }
-        | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
         | Expr::ErrorControl { expr: target, .. }
         | Expr::Include { path: target, .. }
         | Expr::Require { path: target, .. }
         | Expr::Cast { expr: target, .. } => expr_contains_request_state_access(target),
+        Expr::InstanceOf {
+            expr: target,
+            class_name,
+            ..
+        } => {
+            expr_contains_request_state_access(target)
+                || new_class_name_contains_request_state_access(class_name)
+        }
         Expr::DynamicProperty {
             target, property, ..
         } => {
@@ -8171,6 +8338,17 @@ fn expr_contains_request_state_access(expr: &Expr) -> bool {
         | Expr::LateStaticProperty { .. }
         | Expr::DynamicLateStaticProperty { .. }
         | Expr::Closure { .. } => false,
+    }
+}
+
+fn new_class_name_contains_request_state_access(class_name: &NewClassName) -> bool {
+    match class_name {
+        NewClassName::DynamicVariable(name) => is_request_superglobal_name(name),
+        NewClassName::DynamicExpression(expr) => expr_contains_request_state_access(expr),
+        NewClassName::Named(_)
+        | NewClassName::SelfClass
+        | NewClassName::ParentClass
+        | NewClassName::StaticClass => false,
     }
 }
 
@@ -12601,15 +12779,12 @@ impl LlvmGenerator {
     fn emit_llvm_instanceof_expr(
         &mut self,
         expr: &Expr,
-        class_name: &str,
+        class_name: &NewClassName,
         span: Span,
     ) -> CompileResult<IrValue> {
-        if matches!(
-            class_name.to_ascii_lowercase().as_str(),
-            "self" | "parent" | "static"
-        ) {
+        let NewClassName::Named(class_name) = class_name else {
             return Err(self.unsupported(span, LLVM_INSTANCEOF_REJECTION));
-        }
+        };
 
         let value = self.emit_value_operand_expr(expr)?;
         let value = self
@@ -19209,7 +19384,6 @@ fn collect_loop_assigned_direct_variables_from_expr(expr: &Expr, names: &mut BTr
             collect_loop_assigned_direct_variables_from_expr(index, names);
         }
         Expr::AppendIndex { target, .. }
-        | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
         | Expr::ErrorControl { expr: target, .. }
@@ -19217,6 +19391,14 @@ fn collect_loop_assigned_direct_variables_from_expr(expr: &Expr, names: &mut BTr
         | Expr::Require { path: target, .. }
         | Expr::Cast { expr: target, .. } => {
             collect_loop_assigned_direct_variables_from_expr(target, names);
+        }
+        Expr::InstanceOf {
+            expr: target,
+            class_name,
+            ..
+        } => {
+            collect_loop_assigned_direct_variables_from_expr(target, names);
+            collect_loop_assigned_direct_variables_from_new_class_name(class_name, names);
         }
         Expr::Property { target, .. }
         | Expr::ObjectStaticClassConstant { target, .. }
@@ -19336,6 +19518,15 @@ fn collect_loop_assigned_direct_variables_from_expr(expr: &Expr, names: &mut BTr
         | Expr::DynamicParentStaticProperty { .. }
         | Expr::LateStaticProperty { .. }
         | Expr::DynamicLateStaticProperty { .. } => {}
+    }
+}
+
+fn collect_loop_assigned_direct_variables_from_new_class_name(
+    class_name: &NewClassName,
+    names: &mut BTreeSet<String>,
+) {
+    if let NewClassName::DynamicExpression(expr) = class_name {
+        collect_loop_assigned_direct_variables_from_expr(expr, names);
     }
 }
 
@@ -23938,6 +24129,7 @@ impl CGenerator {
             }
             if self.uses_native_object_instanceof_helpers {
                 output.push_str("extern _Bool phpc_native_value_class_relationship_matches_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *target_name, size_t target_name_len, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern _Bool phpc_native_value_dynamic_class_relationship_matches_with_diagnostic(phpc_NativeValueHandle value, phpc_NativeValueHandle target, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_object_method_helpers {
                 output.push_str("extern void phpc_native_value_object_method_failure_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *method_name, size_t method_name_len, const uint8_t *reason, size_t reason_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -25114,6 +25306,15 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<CNativeValueMaterialization> {
+        self.materialize_dynamic_class_name_value(class_name, span, failure_cleanup)
+    }
+
+    fn materialize_dynamic_class_name_value(
+        &mut self,
+        class_name: &NewClassName,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
         match class_name {
             NewClassName::DynamicVariable(name) => {
                 let expr = Expr::Variable(name.clone(), span);
@@ -25126,7 +25327,7 @@ impl CGenerator {
             | NewClassName::SelfClass
             | NewClassName::ParentClass
             | NewClassName::StaticClass => {
-                unreachable!("only dynamic variable new class names are materialized here")
+                unreachable!("only dynamic class names are materialized here")
             }
         }
     }
@@ -25986,12 +26187,12 @@ impl CGenerator {
     fn emit_object_instanceof_expr(
         &mut self,
         expr: &Expr,
-        class_name: &str,
+        class_name: &NewClassName,
         span: Span,
     ) -> CompileResult<CValue> {
         if matches!(
-            class_name.to_ascii_lowercase().as_str(),
-            "self" | "parent" | "static"
+            class_name,
+            NewClassName::SelfClass | NewClassName::ParentClass | NewClassName::StaticClass
         ) {
             return Err(self.unsupported(span, ASSEMBLY_INSTANCEOF_REJECTION));
         }
@@ -26000,17 +26201,37 @@ impl CGenerator {
         self.uses_native_object_instanceof_helpers = true;
 
         let value = self.materialize_native_value_result_operand(expr, "")?;
-        let (class_name, class_name_len) =
-            self.emit_call_type_static_bytes("instanceof_class_name_bytes", class_name);
         let diagnostic = self.next_native_name("instanceof_diagnostic");
         let result = self.next_native_name("instanceof_result");
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
-        self.body.push(format!(
-            "_Bool {result} = phpc_native_value_class_relationship_matches_with_diagnostic({}, {class_name}, {class_name_len}, 0, &{diagnostic});",
-            value.handle
-        ));
-        let cleanup = c_cleanup_sequence(&value.cleanup_after_use);
+
+        let mut cleanup_after_use = Vec::new();
+        match class_name {
+            NewClassName::Named(class_name) => {
+                let (class_name, class_name_len) =
+                    self.emit_call_type_static_bytes("instanceof_class_name_bytes", class_name);
+                self.body.push(format!(
+                    "_Bool {result} = phpc_native_value_class_relationship_matches_with_diagnostic({}, {class_name}, {class_name_len}, 0, &{diagnostic});",
+                    value.handle
+                ));
+            }
+            NewClassName::DynamicVariable(_) | NewClassName::DynamicExpression(_) => {
+                let value_cleanup = c_cleanup_sequence(&value.cleanup_after_use);
+                let target =
+                    self.materialize_dynamic_class_name_value(class_name, span, &value_cleanup)?;
+                self.body.push(format!(
+                    "_Bool {result} = phpc_native_value_dynamic_class_relationship_matches_with_diagnostic({}, {}, 0, &{diagnostic});",
+                    value.handle, target.handle
+                ));
+                cleanup_after_use.extend(target.cleanup_after_use);
+            }
+            NewClassName::SelfClass | NewClassName::ParentClass | NewClassName::StaticClass => {
+                unreachable!("relative instanceof class names rejected before lowering")
+            }
+        }
+        cleanup_after_use.extend(value.cleanup_after_use);
+        let cleanup = c_cleanup_sequence(&cleanup_after_use);
         let error_exit = self.native_error_exit(&format!(
             "phpc_native_diagnostic_report({diagnostic}); {cleanup}"
         ));
@@ -26018,7 +26239,7 @@ impl CGenerator {
             .push(format!("if ({diagnostic}.ptr != NULL) {{ {error_exit} }}"));
         self.body
             .push(format!("phpc_native_diagnostic_free({diagnostic});"));
-        self.body.extend(value.cleanup_after_use);
+        self.body.extend(cleanup_after_use);
 
         Ok(CValue::BoolExpr(result))
     }
@@ -45701,6 +45922,22 @@ impl CGenerator {
         }
     }
 
+    fn new_class_name_expr_requires_destructor_observable_cleanup_boundary(
+        &self,
+        class_name: &NewClassName,
+    ) -> bool {
+        match class_name {
+            NewClassName::DynamicExpression(expr) => {
+                self.expr_requires_destructor_observable_cleanup_boundary(expr)
+            }
+            NewClassName::Named(_)
+            | NewClassName::DynamicVariable(_)
+            | NewClassName::SelfClass
+            | NewClassName::ParentClass
+            | NewClassName::StaticClass => false,
+        }
+    }
+
     fn expr_requires_destructor_observable_cleanup_boundary(&self, expr: &Expr) -> bool {
         match expr {
             Expr::New {
@@ -45758,7 +45995,6 @@ impl CGenerator {
             | Expr::ObjectStaticProperty { target, .. }
             | Expr::ObjectClassNameConstant { target, .. }
             | Expr::DynamicObjectStaticProperty { target, .. }
-            | Expr::InstanceOf { expr: target, .. }
             | Expr::Clone { expr: target, .. }
             | Expr::Unary { expr: target, .. }
             | Expr::ErrorControl { expr: target, .. }
@@ -45766,6 +46002,16 @@ impl CGenerator {
             | Expr::Require { path: target, .. }
             | Expr::Cast { expr: target, .. } => {
                 self.expr_requires_destructor_observable_cleanup_boundary(target)
+            }
+            Expr::InstanceOf {
+                expr: target,
+                class_name,
+                ..
+            } => {
+                self.expr_requires_destructor_observable_cleanup_boundary(target)
+                    || self.new_class_name_expr_requires_destructor_observable_cleanup_boundary(
+                        class_name,
+                    )
             }
             Expr::DynamicProperty {
                 target, property, ..
@@ -61901,13 +62147,20 @@ fn native_foreach_expr_may_mutate_storage(expr: &Expr) -> bool {
         | Expr::ObjectStaticProperty { target, .. }
         | Expr::ObjectClassNameConstant { target, .. }
         | Expr::DynamicObjectStaticProperty { target, .. }
-        | Expr::InstanceOf { expr: target, .. }
         | Expr::Clone { expr: target, .. }
         | Expr::Unary { expr: target, .. }
         | Expr::ErrorControl { expr: target, .. }
         | Expr::Include { path: target, .. }
         | Expr::Require { path: target, .. }
         | Expr::Cast { expr: target, .. } => native_foreach_expr_may_mutate_storage(target),
+        Expr::InstanceOf {
+            expr: target,
+            class_name,
+            ..
+        } => {
+            native_foreach_expr_may_mutate_storage(target)
+                || new_class_name_may_mutate_storage(class_name)
+        }
         Expr::DynamicProperty {
             target, property, ..
         } => {
@@ -61985,6 +62238,17 @@ fn native_foreach_expr_may_mutate_storage(expr: &Expr) -> bool {
         | Expr::DynamicParentStaticProperty { .. }
         | Expr::LateStaticProperty { .. }
         | Expr::DynamicLateStaticProperty { .. } => false,
+    }
+}
+
+fn new_class_name_may_mutate_storage(class_name: &NewClassName) -> bool {
+    match class_name {
+        NewClassName::DynamicExpression(expr) => native_foreach_expr_may_mutate_storage(expr),
+        NewClassName::Named(_)
+        | NewClassName::DynamicVariable(_)
+        | NewClassName::SelfClass
+        | NewClassName::ParentClass
+        | NewClassName::StaticClass => false,
     }
 }
 

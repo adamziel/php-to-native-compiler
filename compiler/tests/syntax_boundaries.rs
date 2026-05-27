@@ -1,4 +1,4 @@
-use php_compiler::ast::{Expr, Stmt};
+use php_compiler::ast::{Expr, NewClassName, Stmt};
 use php_compiler::codegen::emit_native_executable_c_source;
 use php_compiler::error::Phase;
 use php_compiler::{parse, run_source};
@@ -1483,28 +1483,35 @@ fn emit_ir_rejects_clone_expression_at_codegen_boundary() {
 }
 
 #[test]
-fn unsupported_instanceof_expression_has_stable_parse_errors() {
-    let cases = [
-        (
-            "<?php\n$is = $object instanceof $class;\n",
-            2,
-            26,
-            "unsupported instanceof class expression: dynamic class names are not implemented",
-        ),
-        (
-            "<?php\n$is = $object INSTANCEOF $class;\n",
-            2,
-            26,
-            "unsupported instanceof class expression: dynamic class names are not implemented",
-        ),
-    ];
+fn dynamic_instanceof_targets_parse_as_class_name_operands() {
+    let program = parse(
+        "<?php\n$is = $object instanceof $class;\n$expr = $object INSTANCEOF (target_name());\n",
+    )
+    .unwrap();
 
-    for (source, line, column, message) in cases {
-        let error = parse_error(source);
-        assert_eq!(error.line, line);
-        assert_eq!(error.column, column);
-        assert_eq!(error.message, message);
-    }
+    let Stmt::Assign { expr: first, .. } = &program.statements[0] else {
+        panic!("first statement should be an assignment: {program:?}");
+    };
+    let Expr::InstanceOf {
+        class_name: NewClassName::DynamicVariable(variable),
+        ..
+    } = first
+    else {
+        panic!("first instanceof target should be a dynamic variable: {first:?}");
+    };
+    assert_eq!(variable, "class");
+
+    let Stmt::Assign { expr: second, .. } = &program.statements[1] else {
+        panic!("second statement should be an assignment: {program:?}");
+    };
+    let Expr::InstanceOf {
+        class_name: NewClassName::DynamicExpression(target),
+        ..
+    } = second
+    else {
+        panic!("second instanceof target should be a dynamic expression: {second:?}");
+    };
+    assert!(matches!(target.as_ref(), Expr::Call { name, .. } if name == "target_name"));
 }
 
 #[test]

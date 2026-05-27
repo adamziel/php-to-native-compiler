@@ -14369,10 +14369,13 @@ impl Interpreter {
                 self.call_dynamic_function(callee, args, *span, scope)
             }
             Expr::InstanceOf {
-                expr, class_name, ..
+                expr,
+                class_name,
+                span,
             } => {
                 let value = self.evaluate(expr, scope)?;
-                Ok(Value::Bool(self.value_instanceof(&value, class_name)))
+                let class_name = self.resolve_instanceof_class_name(class_name, *span, scope)?;
+                Ok(Value::Bool(self.value_instanceof(&value, &class_name)))
             }
             Expr::Closure {
                 params,
@@ -14783,6 +14786,119 @@ impl Interpreter {
                     .name()
                     .to_string())
             }
+        }
+    }
+
+    fn resolve_instanceof_class_name(
+        &mut self,
+        class_name: &NewClassName,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<String> {
+        match class_name {
+            NewClassName::Named(name) => Ok(name.clone()),
+            NewClassName::DynamicVariable(name) => {
+                let value = scope.read_static(name, span)?;
+                self.resolve_dynamic_instanceof_class_name(value, span)
+            }
+            NewClassName::DynamicExpression(expr) => {
+                let value = self.evaluate(expr, scope)?;
+                self.resolve_dynamic_instanceof_class_name(value, span)
+            }
+            NewClassName::SelfClass => {
+                let Some(current_class_id) = self.class_context.last().copied() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "instanceof",
+                            "self requires active class context",
+                        ),
+                    ));
+                };
+                Ok(self
+                    .classes
+                    .get(current_class_id)
+                    .expect("active class context should resolve to class metadata")
+                    .name()
+                    .to_string())
+            }
+            NewClassName::ParentClass => {
+                let Some(current_class_id) = self.class_context.last().copied() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "instanceof",
+                            "parent requires active class context",
+                        ),
+                    ));
+                };
+                let current_class = self
+                    .classes
+                    .get(current_class_id)
+                    .expect("active class context should resolve to class metadata");
+                let Some(parent_class_id) = current_class.parent_id() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "instanceof",
+                            "parent requires a parent class",
+                        ),
+                    ));
+                };
+                Ok(self
+                    .classes
+                    .get(parent_class_id)
+                    .expect("parent class id should resolve to class metadata")
+                    .name()
+                    .to_string())
+            }
+            NewClassName::StaticClass => {
+                let Some(called_class_id) = self.called_class_context.last().copied() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "instanceof",
+                            "static requires method or static class context",
+                        ),
+                    ));
+                };
+                Ok(self
+                    .classes
+                    .get(called_class_id)
+                    .expect("called class context should resolve to class metadata")
+                    .name()
+                    .to_string())
+            }
+        }
+    }
+
+    fn resolve_dynamic_instanceof_class_name(
+        &self,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<String> {
+        match value {
+            Value::String(class_name) => Ok(class_name),
+            Value::BinaryString(class_name) => String::from_utf8(class_name).map_err(|_| {
+                runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "instanceof",
+                        "dynamic class name must be valid UTF-8 in the current subset",
+                    ),
+                )
+            }),
+            Value::Object(object) => Ok(object.class_name().to_string()),
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "instanceof",
+                    format!(
+                        "dynamic class name must be object or string in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
         }
     }
 
