@@ -5792,6 +5792,15 @@ fn reference_array_path_cell(
     keys: &[ArrayKey],
     append: bool,
 ) -> RuntimeResult<PhpReferenceCell> {
+    reference_array_path_cell_with_root_write(reference, keys, append, false)
+}
+
+fn reference_array_path_cell_with_root_write(
+    reference: &PhpReferenceCell,
+    keys: &[ArrayKey],
+    append: bool,
+    checked_root_write: bool,
+) -> RuntimeResult<PhpReferenceCell> {
     let mut root = match reference.value_cloned() {
         Value::Array(array) => array,
         Value::Null | Value::Bool(false) => PhpArray::new(),
@@ -5815,7 +5824,12 @@ fn reference_array_path_cell(
             )
         })?
     };
-    reference.set_value(Value::Array(root));
+    let root = Value::Array(root);
+    if checked_root_write {
+        reference.set_value(reference.coerce_value_for_write(root)?);
+    } else {
+        reference.set_value(root);
+    }
     Ok(cell)
 }
 
@@ -27651,6 +27665,16 @@ impl NativeStaticPropertyStorage {
         )
     }
 
+    fn array_path_reference_class(
+        &mut self,
+        class_name: &str,
+        property_name: &str,
+        keys: &[ArrayKey],
+    ) -> RuntimeResult<PhpReferenceCell> {
+        let reference = self.reference_class(class_name, property_name)?;
+        reference_array_path_cell_with_root_write(&reference, keys, false, true)
+    }
+
     fn scope_from_receiver(&self, receiver: &Value) -> RuntimeResult<String> {
         match receiver {
             Value::Object(object) => Ok(object.class_name().to_string()),
@@ -27777,6 +27801,23 @@ impl NativeStaticPropertyStorage {
             self.relative_receiver_and_context(receiver, current_class_name, called_class_name)?;
         self.storage
             .reference_cell(&self.classes, receiver, property_name, context)
+    }
+
+    fn array_path_reference_relative(
+        &mut self,
+        receiver: NativeStaticPropertyReceiverTag,
+        current_class_name: &str,
+        called_class_name: Option<&str>,
+        property_name: &str,
+        keys: &[ArrayKey],
+    ) -> RuntimeResult<PhpReferenceCell> {
+        let reference = self.reference_relative(
+            receiver,
+            current_class_name,
+            called_class_name,
+            property_name,
+        )?;
+        reference_array_path_cell_with_root_write(&reference, keys, false, true)
     }
 }
 
@@ -28913,6 +28954,47 @@ pub unsafe extern "C" fn phpc_native_static_property_reference_class_with_diagno
     }
 }
 
+/// # Safety
+///
+/// `handle` must be a storage handle. Class/property bytes and key handles
+/// follow the same rules as static-property reference and native reference
+/// path helpers. Returned references are owned by the caller and must be freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_property_array_path_reference_class_with_diagnostic(
+    mut handle: NativeStaticPropertyStorageHandle,
+    class_ptr: *const u8,
+    class_len: usize,
+    property_ptr: *const u8,
+    property_len: usize,
+    keys: *const NativeValueHandle,
+    key_count: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeReferenceHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let storage = unsafe { handle.as_mut() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native static-property storage handle is null".to_string(),
+            )
+        })?;
+        let class_name =
+            unsafe { native_static_property_utf8_argument(class_ptr, class_len, "class name") }?;
+        let property_name = unsafe {
+            native_static_property_utf8_argument(property_ptr, property_len, "property name")
+        }?;
+        let keys = unsafe { native_array_path_keys_from_value_handles(keys, key_count, false) }?;
+        storage.array_path_reference_class(&class_name, &property_name, &keys)
+    })();
+    unsafe { native_value_handle_vector_free(keys, key_count) };
+    match result {
+        Ok(reference) => NativeReferenceHandle::from_cell(reference),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeReferenceHandle::null()
+        }
+    }
+}
+
 unsafe fn native_static_property_optional_utf8_argument(
     ptr: *const u8,
     len: usize,
@@ -29237,6 +29319,75 @@ pub unsafe extern "C" fn phpc_native_static_property_reference_relative_with_dia
             &property_name,
         )
     })();
+    match result {
+        Ok(reference) => NativeReferenceHandle::from_cell(reference),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeReferenceHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be a storage handle. Current/called class, property bytes,
+/// and key handles follow the same rules as static-property reference and
+/// native reference path helpers. Returned references are owned by the caller
+/// and must be freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_property_array_path_reference_relative_with_diagnostic(
+    mut handle: NativeStaticPropertyStorageHandle,
+    receiver_tag: u8,
+    current_class_ptr: *const u8,
+    current_class_len: usize,
+    called_class_ptr: *const u8,
+    called_class_len: usize,
+    property_ptr: *const u8,
+    property_len: usize,
+    keys: *const NativeValueHandle,
+    key_count: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeReferenceHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let storage = unsafe { handle.as_mut() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native static-property storage handle is null".to_string(),
+            )
+        })?;
+        let receiver =
+            NativeStaticPropertyReceiverTag::from_abi_tag(receiver_tag).ok_or_else(|| {
+                RuntimeError::invalid_property_access(format!(
+                    "native static-property storage received unsupported relative receiver tag {receiver_tag}"
+                ))
+            })?;
+        let current_class_name = unsafe {
+            native_static_property_utf8_argument(
+                current_class_ptr,
+                current_class_len,
+                "current class name",
+            )
+        }?;
+        let called_class_name = unsafe {
+            native_static_property_optional_utf8_argument(
+                called_class_ptr,
+                called_class_len,
+                "called class name",
+            )
+        }?;
+        let property_name = unsafe {
+            native_static_property_utf8_argument(property_ptr, property_len, "property name")
+        }?;
+        let keys = unsafe { native_array_path_keys_from_value_handles(keys, key_count, false) }?;
+        storage.array_path_reference_relative(
+            receiver,
+            &current_class_name,
+            called_class_name.as_deref(),
+            &property_name,
+            &keys,
+        )
+    })();
+    unsafe { native_value_handle_vector_free(keys, key_count) };
     match result {
         Ok(reference) => NativeReferenceHandle::from_cell(reference),
         Err(error) => {
@@ -64747,6 +64898,141 @@ mod tests {
         unsafe {
             phpc_native_reference_free(class_reference);
             phpc_native_reference_free(relative_reference);
+            phpc_native_static_property_storage_free(storage);
+        }
+    }
+
+    #[test]
+    fn static_property_array_path_reference_native_abi_preserves_storage_identity_and_type_checks()
+    {
+        let class = b"StaticOffsetRefCounter";
+        let property = b"items";
+        let typed = b"typed";
+        let type_array = b"array";
+        let type_nullable_string = b"?string";
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let storage = phpc_native_static_property_storage_new();
+
+        assert!(unsafe {
+            phpc_native_static_property_storage_declare_class_bytes(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                &mut diagnostic,
+            )
+        });
+        for (name, type_decl) in [
+            (property.as_slice(), type_array.as_slice()),
+            (typed.as_slice(), type_nullable_string.as_slice()),
+        ] {
+            assert!(unsafe {
+                phpc_native_static_property_storage_declare_property_bytes(
+                    storage,
+                    class.as_ptr(),
+                    class.len(),
+                    name.as_ptr(),
+                    name.len(),
+                    NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+                    true,
+                    type_decl.as_ptr(),
+                    type_decl.len(),
+                    &mut diagnostic,
+                )
+            });
+        }
+
+        let mut default_items = PhpArray::new();
+        default_items.insert(ArrayKey::string("k"), Value::String("original".to_string()));
+        assert!(unsafe {
+            phpc_native_static_property_storage_register_default_value_and_free(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                property.as_ptr(),
+                property.len(),
+                NativeValueHandle::from_value(Value::Array(default_items)),
+                &mut diagnostic,
+            )
+        });
+        assert!(unsafe {
+            phpc_native_static_property_storage_register_default_value_and_free(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                typed.as_ptr(),
+                typed.len(),
+                phpc_native_value_from_scalar(phpc_native_null()),
+                &mut diagnostic,
+            )
+        });
+        assert!(unsafe {
+            phpc_native_static_property_storage_reset_with_diagnostic(storage, &mut diagnostic)
+        });
+        assert!(diagnostic.is_null());
+
+        let key = NativeValueHandle::from_value(Value::String("k".to_string()));
+        let reference = unsafe {
+            phpc_native_static_property_array_path_reference_class_with_diagnostic(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                property.as_ptr(),
+                property.len(),
+                &key,
+                1,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!reference.is_null());
+        let replacement = NativeValueHandle::from_value(Value::String("changed".to_string()));
+        assert!(unsafe { phpc_native_reference_set_value(reference, replacement) });
+        unsafe { phpc_native_value_free(replacement) };
+
+        let read = unsafe {
+            phpc_native_static_property_read_class_with_diagnostic(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                property.as_ptr(),
+                property.len(),
+                &mut diagnostic,
+            )
+        };
+        let Some(Value::Array(array)) = (unsafe { read.as_ref() }) else {
+            panic!("static array-path reference should preserve the static property array root");
+        };
+        assert_eq!(
+            array.get_path_cloned(&[ArrayKey::string("k")]),
+            Some(Value::String("changed".to_string()))
+        );
+        unsafe { phpc_native_value_free(read) };
+
+        let bad_key = NativeValueHandle::from_value(Value::String("bad".to_string()));
+        let bad_reference = unsafe {
+            phpc_native_static_property_array_path_reference_class_with_diagnostic(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                typed.as_ptr(),
+                typed.len(),
+                &bad_key,
+                1,
+                &mut diagnostic,
+            )
+        };
+        assert!(bad_reference.is_null());
+        let message = unsafe { diagnostic.as_ref() }
+            .map(|diagnostic| diagnostic.message.clone())
+            .unwrap_or_default();
+        assert!(
+            message.contains("typed property StaticOffsetRefCounter::$typed expects ?string"),
+            "{message}"
+        );
+
+        unsafe {
+            phpc_native_diagnostic_free(diagnostic);
+            phpc_native_reference_free(reference);
             phpc_native_static_property_storage_free(storage);
         }
     }

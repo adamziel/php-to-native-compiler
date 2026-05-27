@@ -22241,11 +22241,13 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_write_class_with_diagnostic_and_free(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_static_property_unset_class_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_static_property_reference_class_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeReferenceHandle phpc_native_static_property_array_path_reference_class_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, const phpc_NativeValueHandle *keys, size_t key_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_read_relative_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, uint8_t receiver_tag, const uint8_t *current_class_ptr, size_t current_class_len, const uint8_t *called_class_ptr, size_t called_class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_read_isset_relative_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, uint8_t receiver_tag, const uint8_t *current_class_ptr, size_t current_class_len, const uint8_t *called_class_ptr, size_t called_class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_write_relative_with_diagnostic_and_free(phpc_NativeStaticPropertyStorageHandle storage, uint8_t receiver_tag, const uint8_t *current_class_ptr, size_t current_class_len, const uint8_t *called_class_ptr, size_t called_class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_static_property_unset_relative_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, uint8_t receiver_tag, const uint8_t *current_class_ptr, size_t current_class_len, const uint8_t *called_class_ptr, size_t called_class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_static_property_reference_relative_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, uint8_t receiver_tag, const uint8_t *current_class_ptr, size_t current_class_len, const uint8_t *called_class_ptr, size_t called_class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeReferenceHandle phpc_native_static_property_array_path_reference_relative_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, uint8_t receiver_tag, const uint8_t *current_class_ptr, size_t current_class_len, const uint8_t *called_class_ptr, size_t called_class_len, const uint8_t *property_ptr, size_t property_len, const phpc_NativeValueHandle *keys, size_t key_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern void phpc_native_static_property_storage_free(phpc_NativeStaticPropertyStorageHandle storage);\n");
             }
             if self.uses_native_class_constant_helpers {
@@ -25136,6 +25138,19 @@ impl CGenerator {
         expr: &Expr,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeReferenceMaterialization>> {
+        if let Some((root, indices, span)) = array_index_expr_path(expr) {
+            if Self::static_property_lvalue_target_from_expr(root).is_some() {
+                return self
+                    .materialize_static_property_array_path_reference_source(
+                        root,
+                        &indices,
+                        span,
+                        failure_cleanup,
+                    )
+                    .map(Some);
+            }
+        }
+
         let Some(target) = Self::static_property_lvalue_target_from_expr(expr) else {
             return Ok(None);
         };
@@ -25189,6 +25204,82 @@ impl CGenerator {
             handle: reference.clone(),
             cleanup_after_use: vec![format!("phpc_native_reference_free({reference});")],
         }))
+    }
+
+    fn materialize_static_property_array_path_reference_source(
+        &mut self,
+        expr: &Expr,
+        indices: &[&Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeReferenceMaterialization> {
+        if self
+            .native_static_property_owner_source_for_expr(expr)
+            .is_some()
+        {
+            return Err(self.unsupported(span, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION));
+        }
+        let Some(target) = Self::static_property_lvalue_target_from_expr(expr) else {
+            return Err(self.unsupported(span, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION));
+        };
+        let Some(target) =
+            self.materialize_static_property_lvalue_target(&target, failure_cleanup)?
+        else {
+            return Err(self.unsupported(span, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION));
+        };
+
+        self.uses_native_reference_helpers = true;
+        let key_failure_cleanup = format!("{}{failure_cleanup}", target.cleanup_sequence());
+        let keys = self.materialize_globals_symbol_path_keys(indices, &key_failure_cleanup)?;
+        let diagnostic = self.next_native_name("static_property_array_reference_diagnostic");
+        let reference = self.next_native_name("static_property_array_reference");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        match &target.receiver {
+            CStaticPropertyLvalueReceiver::Class {
+                class_bytes,
+                class_len,
+            } => {
+                self.body.push(format!(
+                    "phpc_NativeReferenceHandle {reference} = phpc_native_static_property_array_path_reference_class_with_diagnostic({}, {class_bytes}, {class_len}, {}, {}, {}, {}, &{diagnostic});",
+                    target.storage,
+                    target.property_bytes,
+                    target.property_len,
+                    keys.handles,
+                    keys.len
+                ));
+            }
+            CStaticPropertyLvalueReceiver::Relative {
+                receiver,
+                current_class_bytes,
+                current_class_len,
+                called_class_ptr,
+                called_class_len,
+            } => {
+                self.body.push(format!(
+                    "phpc_NativeReferenceHandle {reference} = phpc_native_static_property_array_path_reference_relative_with_diagnostic({}, {}, {current_class_bytes}, {current_class_len}, {called_class_ptr}, {called_class_len}, {}, {}, {}, {}, &{diagnostic});",
+                    target.storage,
+                    receiver.abi_tag(),
+                    target.property_bytes,
+                    target.property_len,
+                    keys.handles,
+                    keys.len
+                ));
+            }
+        }
+        let error_exit =
+            self.native_error_exit(&format!("{}{failure_cleanup}", target.cleanup_sequence()));
+        self.body.push(format!(
+            "if ({reference}.ptr == NULL) {{ phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {error_exit} }}"
+        ));
+        self.body
+            .push(format!("phpc_native_diagnostic_free({diagnostic});"));
+        self.body.extend(target.cleanup_after_use);
+
+        Ok(CNativeReferenceMaterialization {
+            handle: reference.clone(),
+            cleanup_after_use: vec![format!("phpc_native_reference_free({reference});")],
+        })
     }
 
     fn materialize_object_property_reference_source(
@@ -25349,6 +25440,19 @@ impl CGenerator {
                 {
                     return Ok(reference);
                 }
+            }
+            ReferenceSource::StaticPropertyArrayIndex {
+                expr,
+                indices,
+                span,
+            } => {
+                let indices = indices.iter().collect::<Vec<_>>();
+                return self.materialize_static_property_array_path_reference_source(
+                    expr,
+                    &indices,
+                    *span,
+                    failure_cleanup,
+                );
             }
             ReferenceSource::ObjectPropertyArrayIndex {
                 object,
@@ -59487,6 +59591,50 @@ mod tests {
             generator.native_object_property_value_facts.get(&key),
             Some(&facts)
         );
+    }
+
+    #[test]
+    fn static_property_offset_reference_materialization_selects_storage_array_path_carrier() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "class StaticOffsetReferenceUnit { public static $items = [\"k\" => \"v\"]; }\n",
+        ))
+        .unwrap();
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            uses_native_value_clone: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .unwrap();
+
+        let root = Expr::StaticProperty {
+            class_name: "StaticOffsetReferenceUnit".to_string(),
+            property: "items".to_string(),
+            span: span(10),
+        };
+        let indices = [Expr::String("k".to_string(), span(11))];
+        let index_refs = indices.iter().collect::<Vec<_>>();
+        let materialized = generator
+            .materialize_static_property_array_path_reference_source(
+                &root,
+                &index_refs,
+                span(10),
+                "cleanup_failure();",
+            )
+            .expect("static-property array-offset references should select a storage carrier");
+
+        assert!(materialized
+            .handle
+            .starts_with("static_property_array_reference_"));
+        assert_eq!(materialized.cleanup_after_use.len(), 1);
+        let body = generator.body.join("\n");
+        assert!(
+            body.contains("phpc_native_static_property_array_path_reference_class_with_diagnostic")
+        );
+        assert!(body.contains("static_property_lvalue_name_bytes"));
+        assert!(!body.contains("phpc_native_reference_from_value_and_free(static_property"));
     }
 
     #[test]

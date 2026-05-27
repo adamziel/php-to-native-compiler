@@ -507,6 +507,50 @@ const NATIVE_STATIC_PROPERTY_REFERENCE_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_STATIC_PROPERTY_OFFSET_REFERENCE_SOURCE: &str = concat!(
+    "<?php\n",
+    "function static_offset_ref_set(&$slot, $value) { $slot = $value; return $slot; }\n",
+    "class StaticOffsetReferenceRoot {\n",
+    "    public static $literal = [\"k\" => \"L\"];\n",
+    "    public static $object = [\"k\" => \"O\"];\n",
+    "    public static $className = [\"k\" => \"C\"];\n",
+    "    public static $self = [\"k\" => \"S\"];\n",
+    "    public static $parent = [\"k\" => \"P\"];\n",
+    "    public static $late = [\"k\" => \"R\"];\n",
+    "    public static function selfBits($key) {\n",
+    "        echo static_offset_ref_set(self::$self[$key], \"self-arg\");\n",
+    "    }\n",
+    "    public static function lateBits($key) {\n",
+    "        $lateAlias =& static::$late[$key];\n",
+    "        echo ($lateAlias = \"late-alias\");\n",
+    "    }\n",
+    "}\n",
+    "class StaticOffsetReferenceChild extends StaticOffsetReferenceRoot {\n",
+    "    public static $late = [\"k\" => \"D\"];\n",
+    "    public static function parentBits($key) {\n",
+    "        echo static_offset_ref_set(parent::$parent[$key], \"parent-arg\");\n",
+    "    }\n",
+    "}\n",
+    "$key = \"k\";\n",
+    "$object = new StaticOffsetReferenceRoot();\n",
+    "$class = \"StaticOffsetReferenceChild\";\n",
+    "echo static_offset_ref_set(StaticOffsetReferenceRoot::$literal[$key], \"lit-arg\"), \":\";\n",
+    "$literalAlias =& StaticOffsetReferenceRoot::$literal[$key];\n",
+    "echo ($literalAlias = \"lit-alias\"), \"|\";\n",
+    "echo static_offset_ref_set($object::$object[$key], \"object-arg\"), \":\";\n",
+    "$objectAlias =& $object::$object[$key];\n",
+    "echo ($objectAlias = \"object-alias\"), \"|\";\n",
+    "echo static_offset_ref_set($class::$className[$key], \"class-arg\"), \":\";\n",
+    "$classAlias =& $class::$className[$key];\n",
+    "echo ($classAlias = \"class-alias\"), \"|\";\n",
+    "StaticOffsetReferenceRoot::selfBits($key);\n",
+    "echo \"|\";\n",
+    "StaticOffsetReferenceChild::parentBits($key);\n",
+    "echo \"|\";\n",
+    "StaticOffsetReferenceChild::lateBits($key);\n",
+    "echo \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_PROPERTY_UNSET_SOURCE: &str = concat!(
     "<?php\n",
     "class Box { public $name; public $peer; private $secret; }\n",
@@ -2442,6 +2486,37 @@ fn emit_exe_links_and_runs_static_property_reference_program() {
     assert_eq!(
         run.stdout,
         b"lit-arg:lit-alias|object-arg:object-alias|class-arg:class-alias|self-arg|parent-arg|late-arg\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_static_property_offset_reference_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "static_property_offset_reference",
+        NATIVE_STATIC_PROPERTY_OFFSET_REFERENCE_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run static-property offset reference executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"lit-arg:lit-alias|object-arg:object-alias|class-arg:class-alias|self-arg|parent-arg|late-alias\n"
     );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
@@ -5425,6 +5500,52 @@ fn native_executable_c_source_routes_static_property_references_through_shared_s
 }
 
 #[test]
+fn native_executable_c_source_routes_static_property_offset_references_through_shared_storage() {
+    let program = parse(NATIVE_STATIC_PROPERTY_OFFSET_REFERENCE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    for required in [
+        "phpc_native_static_property_array_path_reference_class_with_diagnostic",
+        "phpc_native_static_property_array_path_reference_relative_with_diagnostic",
+        "phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free",
+        "phpc_native_call_arguments_push_reference_and_free",
+        "phpc_native_reference_set_value",
+        "static_property_array_reference_",
+        "static_property_lvalue_name_bytes",
+        "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_SELF",
+        "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_PARENT",
+        "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_LATE_STATIC",
+    ] {
+        assert!(source.contains(required), "missing {required}:\n{source}");
+    }
+    assert!(
+        body.matches("phpc_native_static_property_array_path_reference_class_with_diagnostic")
+            .count()
+            >= 6,
+        "literal, object, and class-string receivers should share the static-property array-path reference ABI for calls and aliases:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free")
+            .count()
+            >= 4,
+        "object/class-string static-property offset references should keep receiver-scope cleanup:\n{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_call_arguments_push_reference_and_free")
+            .count()
+            >= 4,
+        "static-property offset references should feed by-reference argument transfer as real references:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_reference_from_value_and_free(static_property")
+            && !body.contains("phpc_native_reference_value_clone(static_property_array_reference_"),
+        "static-property offset references must not be faked by value-copy promotion or clone/read detours:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_keeps_unsupported_static_property_dynamic_shapes_blocked() {
     for (label, source) in [
         (
@@ -5434,6 +5555,26 @@ fn native_executable_c_source_keeps_unsupported_static_property_dynamic_shapes_b
         (
             "late-static property outside class context",
             "<?php\nclass Counter { public static $count = 1; }\necho static::$count;\n",
+        ),
+        (
+            "late-static property offset reference outside class context",
+            "<?php\nfunction take(&$slot) {}\nclass Counter { public static $items = [\"k\" => 1]; }\ntake(static::$items[\"k\"]);\n",
+        ),
+        (
+            "static-property ArrayAccess offset reference source",
+            concat!(
+                "<?php\n",
+                "function take(&$slot) {}\n",
+                "class StaticOffsetReferenceBag implements ArrayAccess {\n",
+                "    public function offsetGet($offset) { return \"bad\"; }\n",
+                "    public function offsetExists($offset) { return true; }\n",
+                "    public function offsetSet($offset, $value) { return null; }\n",
+                "    public function offsetUnset($offset) { return null; }\n",
+                "}\n",
+                "class StaticOffsetReferenceBlocked { public static $bag; }\n",
+                "StaticOffsetReferenceBlocked::$bag = new StaticOffsetReferenceBag();\n",
+                "take(StaticOffsetReferenceBlocked::$bag[\"k\"]);\n",
+            ),
         ),
     ] {
         let program = parse(source).unwrap();
@@ -5446,7 +5587,8 @@ fn native_executable_c_source_keeps_unsupported_static_property_dynamic_shapes_b
         assert!(
             error.message.contains("static member")
                 || error.message.contains("static property")
-                || error.message.contains("object/class lowering rejects"),
+                || error.message.contains("object/class lowering rejects")
+                || error.message.contains("reference-assignment lowering rejects"),
             "{label} should remain behind an explicit static-property boundary, got {error:?}"
         );
     }
