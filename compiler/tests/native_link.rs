@@ -303,11 +303,57 @@ const NATIVE_DECLARED_CLASS_DYNAMIC_METHOD_SOURCE: &str = concat!(
 const NATIVE_DECLARED_CLASS_DYNAMIC_METHOD_LOOKUP_SOURCE: &str = concat!(
     "<?php\n",
     "class Box {\n",
-    "    public function store() { return \"ok\"; }\n",
+    "    public function store($value = \"ok\") { return $value; }\n",
     "}\n",
     "$box = new Box();\n",
-    "$method = \"store\";\n",
+    "$method = 0;\n",
     "echo $box->$method(), \"\\n\";\n",
+);
+
+const NATIVE_DECLARED_DYNAMIC_METHOD_SOURCE_CALL_SOURCE: &str = concat!(
+    "<?php\n",
+    "class DynamicSourceCallBox {\n",
+    "    public function left(&$slot, $suffix) { $slot = \"left-\" . $suffix; return \"L:\" . $slot; }\n",
+    "    public function right(&$slot, $suffix) { $slot = \"right-\" . $suffix; return \"R:\" . $slot; }\n",
+    "}\n",
+    "$box = new DynamicSourceCallBox();\n",
+    "$slot = \"seed\";\n",
+    "echo $box->{(true ? \"left\" : \"right\")}($slot, \"a\"), \"|\", $slot, \"|\";\n",
+    "echo $box->{(false ? \"left\" : \"right\")}($slot, \"b\"), \"|\", $slot, \"\\n\";\n",
+);
+
+const NATIVE_DECLARED_DYNAMIC_METHOD_SOURCE_CALL_FAILURE_SOURCE: &str = concat!(
+    "<?php\n",
+    "class DynamicSourceCallFailureBox {\n",
+    "    public function ok($value) { return \"ok:\" . $value; }\n",
+    "}\n",
+    "$box = new DynamicSourceCallFailureBox();\n",
+    "echo $box->{(false ? \"ok\" : \"missing\")}(\"value\");\n",
+    "echo \"after\\n\";\n",
+);
+
+const NATIVE_DECLARED_DYNAMIC_METHOD_CLASS_CONTEXT_SOURCE: &str = concat!(
+    "<?php\n",
+    "class DynamicSourceCallVisibilityBox {\n",
+    "    public function reveal($value) {\n",
+    "        $method = \"secret\";\n",
+    "        return $this->{$method}($value);\n",
+    "    }\n",
+    "    private function secret($value) { return \"p\" . strtoupper($value); }\n",
+    "}\n",
+    "$box = new DynamicSourceCallVisibilityBox();\n",
+    "echo $box->reveal(\"go\"), \"\\n\";\n",
+);
+
+const NATIVE_DECLARED_DYNAMIC_METHOD_MAGIC_BLOCKED_SOURCE: &str = concat!(
+    "<?php\n",
+    "class DynamicSourceCallMagicBox {\n",
+    "    public function __call($name, $args) { return \"magic:\" . $name; }\n",
+    "    public function known() { return \"known\"; }\n",
+    "}\n",
+    "$box = new DynamicSourceCallMagicBox();\n",
+    "$method = \"known\";\n",
+    "echo $box->{$method}(), \"\\n\";\n",
 );
 
 const NATIVE_DECLARED_CLASS_STATIC_METHOD_SOURCE: &str = concat!(
@@ -1965,6 +2011,94 @@ fn emit_exe_links_and_runs_declared_method_static_default_variadic_source_call_p
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"R:D:empty|R:x:tail|S:S:empty|S:y:pack\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_dynamic_method_source_call_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "declared_dynamic_method_source_call",
+        NATIVE_DECLARED_DYNAMIC_METHOD_SOURCE_CALL_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run dynamic method source-call executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"L:left-a|left-a|R:right-b|right-b\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_reports_dynamic_method_source_call_lookup_failure() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "declared_dynamic_method_source_call_failure",
+        NATIVE_DECLARED_DYNAMIC_METHOD_SOURCE_CALL_FAILURE_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run dynamic method source-call failure executable: {error}")
+    });
+
+    assert!(
+        !run.status.success(),
+        "dynamic method source-call lookup miss should fail through the shared runtime diagnostic"
+    );
+    assert_eq!(run.stdout, b"");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains("native method invocation failed")
+            && stderr.contains("Method missing is not registered")
+            && !stderr.contains("after"),
+        "stderr:\n{stderr}"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_dynamic_method_source_call_class_context_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "declared_dynamic_method_source_call_class_context",
+        NATIVE_DECLARED_DYNAMIC_METHOD_CLASS_CONTEXT_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run dynamic method class-context executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"pGO\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -4199,6 +4333,95 @@ fn native_executable_c_source_uses_scalar_normalizing_dynamic_method_name_helper
             && body.contains("phpc_declared_method_")
             && !body.contains("phpc_native_value_dynamic_call_name_matches"),
         "dynamic instance method calls should use the scalar-normalizing method-name helper, not the function-call name helper:\n{source}"
+    );
+    assert!(!source.contains("method-call lowering rejects"), "{source}");
+}
+
+#[test]
+fn native_executable_c_source_routes_known_dynamic_method_names_through_source_call_carriers() {
+    let program = parse(NATIVE_DECLARED_DYNAMIC_METHOD_SOURCE_CALL_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("dynamic_receiver_method_source_call_args_")
+            && body.contains(
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+            )
+            && body.contains("PHPC_NATIVE_CALLABLE_ACCESS_OBJECT_RECEIVER"),
+        "known dynamic receiver-method names should use shared source-call target/carrier helpers:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_call_arguments_push_reference_and_free")
+            .count()
+            >= 2,
+        "dynamic receiver-method source calls should preserve known by-reference binding through the shared argument handle:\n{source}"
+    );
+    assert!(
+        !body.contains("dynamic_method_dispatch_status")
+            && !body.contains("phpc_native_value_dynamic_method_name_matches"),
+        "known dynamic source-call route must not use generated-name comparison ladders:\n{source}"
+    );
+    assert!(!source.contains("method-call lowering rejects"), "{source}");
+}
+
+#[test]
+fn native_executable_c_source_routes_dynamic_method_name_misses_through_source_call_diagnostics() {
+    let program = parse(NATIVE_DECLARED_DYNAMIC_METHOD_SOURCE_CALL_FAILURE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("dynamic_receiver_method_source_call_args_")
+            && body.contains(
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+            )
+            && body.contains("phpc_native_diagnostic_report"),
+        "dynamic receiver-method source-call misses should stay on lookup-plus-invoke diagnostics:\n{source}"
+    );
+    assert!(
+        !body.contains("dynamic_method_dispatch_status")
+            && !body.contains("phpc_native_value_dynamic_method_name_matches"),
+        "dynamic source-call miss proof must not use generated-name comparison ladders:\n{source}"
+    );
+    assert!(!source.contains("method-call lowering rejects"), "{source}");
+}
+
+#[test]
+fn native_executable_c_source_routes_dynamic_method_class_context_calls_through_source_call_carriers(
+) {
+    let program = parse(NATIVE_DECLARED_DYNAMIC_METHOD_CLASS_CONTEXT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("PHPC_NATIVE_CALLABLE_VISIBILITY_PRIVATE")
+            && source.contains("dynamic_receiver_method_source_call_args_")
+            && source.contains(
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+            )
+            && source.contains("PHPC_NATIVE_CALLABLE_ACCESS_CLASS_CONTEXT")
+            && source.contains("method_call_caller_scope_"),
+        "dynamic receiver-method source calls inside declared methods should preserve class-context access:\n{source}"
+    );
+    assert!(
+        !source.contains("dynamic_method_dispatch_status")
+            && !source.contains("phpc_native_value_dynamic_method_name_matches")
+            && !source.contains("method-call lowering rejects"),
+        "class-context dynamic source calls should not fall back to generated-name comparison ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_keeps_magic_dynamic_methods_off_source_call_boundary() {
+    let program = parse(NATIVE_DECLARED_DYNAMIC_METHOD_MAGIC_BLOCKED_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("dynamic_method_dispatch_status")
+            && body.contains("phpc_native_value_dynamic_method_name_matches")
+            && !body.contains("dynamic_receiver_method_source_call_args_"),
+        "declared __call should keep dynamic receiver methods on the existing dynamic-dispatch boundary:\n{source}"
     );
     assert!(!source.contains("method-call lowering rejects"), "{source}");
 }

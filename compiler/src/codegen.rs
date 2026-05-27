@@ -26559,6 +26559,61 @@ impl CGenerator {
         .then_some(contract)
     }
 
+    fn receiver_dynamic_method_source_call_signature_contract(
+        &self,
+        target: &Expr,
+        method: &Expr,
+        arg_count: usize,
+    ) -> Option<NativeMethodStaticSignatureFallbackContract> {
+        let facts = self.native_value_facts_for_expr(target)?;
+        let object = facts.object.as_ref()?;
+        if object.declared_class_keys.is_empty() {
+            return None;
+        }
+
+        for class_key in &object.declared_class_keys {
+            if self
+                .declared_class_receiver_method_for_key(class_key, "__call")
+                .is_some()
+            {
+                return None;
+            }
+        }
+
+        let method_names = self.static_known_string_values_for_expr(method)?;
+        let mut methods = Vec::new();
+        let mut saw_runtime_lookup_only_name = false;
+
+        for class_key in &object.declared_class_keys {
+            for method_name in method_names.values() {
+                if let Some((_, method)) =
+                    self.declared_class_receiver_method_for_key(class_key, method_name)
+                {
+                    if !native_method_static_source_call_arity_compatible(&method, arg_count) {
+                        return None;
+                    }
+                    methods.push(method);
+                    continue;
+                }
+                saw_runtime_lookup_only_name = true;
+            }
+        }
+
+        if methods.is_empty() || saw_runtime_lookup_only_name {
+            return Some(native_method_static_runtime_signature_fallback_contract(
+                NativeMethodStaticSignatureFamily::ReceiverMethod,
+            ));
+        }
+
+        Some(
+            native_method_static_signature_fallback_contract_from_methods(
+                NativeMethodStaticSignatureFamily::ReceiverMethod,
+                methods.iter(),
+                arg_count,
+            ),
+        )
+    }
+
     fn static_method_signature_fallback_contract(
         &self,
         method_name: &str,
@@ -31978,6 +32033,12 @@ impl CGenerator {
                 args,
                 span,
             } => {
+                if let Some(value) = self.try_materialize_dynamic_receiver_method_source_call(
+                    target, method, args, *span, "",
+                )? {
+                    self.retain_native_value_cleanup_handle(&value.handle);
+                    return Ok(CValue::NativeValueHandle(value.handle));
+                }
                 if let Some(value) = self.try_materialize_declared_class_dynamic_method_call(
                     target, method, args, *span, "",
                 )? {
@@ -36025,6 +36086,82 @@ impl CGenerator {
                 "receiver_method_source_call_result",
             )
             .expect("receiver-method value source-call carrier must produce a value handle");
+        self.body.extend(binding.target.cleanup_after_invocation);
+        self.emit_report_native_diagnostic(&invoke_diagnostic);
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body
+            .push(format!("if ({result}.ptr == NULL) {{ {error_exit} }}"));
+
+        Ok(Some(CNativeValueMaterialization {
+            handle: result.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({result});")],
+        }))
+    }
+
+    fn try_materialize_dynamic_receiver_method_source_call(
+        &mut self,
+        target: &Expr,
+        method_expr: &Expr,
+        args: &[Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let Some(signature_contract) = self.receiver_dynamic_method_source_call_signature_contract(
+            target,
+            method_expr,
+            args.len(),
+        ) else {
+            return Ok(None);
+        };
+
+        let receiver = self.materialize_native_value_result_operand(target, failure_cleanup)?;
+        let receiver_cleanup = c_cleanup_sequence(&receiver.cleanup_after_use);
+        let method_failure_cleanup = format!("{receiver_cleanup}{failure_cleanup}");
+        let method =
+            self.materialize_native_value_result_operand(method_expr, &method_failure_cleanup)?;
+        let method_cleanup = c_cleanup_sequence(&method.cleanup_after_use);
+        let target_failure_cleanup = format!("{method_cleanup}{receiver_cleanup}{failure_cleanup}");
+        let caller_scope = self.active_declared_class_name.clone();
+        let access_context = Self::current_declared_class_access_context(
+            caller_scope.as_deref(),
+            NativeSourceCallAccessContext::ObjectReceiver,
+        );
+        let target = self.emit_native_receiver_method_source_call_target_operands(
+            receiver,
+            method,
+            access_context,
+            &target_failure_cleanup,
+        );
+        let binding = self.emit_native_method_static_source_call_binding_operands(
+            "dynamic_receiver_method_source_call_args",
+            target,
+            args,
+            span,
+            failure_cleanup,
+            &signature_contract,
+        )?;
+
+        let invoke_diagnostic =
+            self.next_native_name("dynamic_receiver_method_source_call_diagnostic");
+        self.body.push(format!(
+            "phpc_NativeDiagnosticHandle {invoke_diagnostic} = {{0}};"
+        ));
+        let carrier = self.native_source_call_carrier(
+            NativeInvokeResultTarget::ReceiverMethodLookupWithAccessContext,
+            NativeSourceCallResultConsumer::Value,
+            span,
+        )?;
+        let result = self
+            .emit_native_source_call_carrier_invocation(
+                carrier,
+                &binding.target.args,
+                &binding.arguments,
+                &invoke_diagnostic,
+                "dynamic_receiver_method_source_call_result",
+            )
+            .expect(
+                "dynamic receiver-method value source-call carrier must produce a value handle",
+            );
         self.body.extend(binding.target.cleanup_after_invocation);
         self.emit_report_native_diagnostic(&invoke_diagnostic);
         let error_exit = self.native_error_exit(failure_cleanup);
@@ -46491,13 +46628,24 @@ impl CGenerator {
                 method,
                 args,
                 span,
-            } => self.try_materialize_declared_class_dynamic_method_call(
-                target,
-                method,
-                args,
-                *span,
-                failure_cleanup,
-            ),
+            } => {
+                if let Some(value) = self.try_materialize_dynamic_receiver_method_source_call(
+                    target,
+                    method,
+                    args,
+                    *span,
+                    failure_cleanup,
+                )? {
+                    return Ok(Some(value));
+                }
+                self.try_materialize_declared_class_dynamic_method_call(
+                    target,
+                    method,
+                    args,
+                    *span,
+                    failure_cleanup,
+                )
+            }
             Expr::ParentMethodCall { method, args, span } => self
                 .try_materialize_parent_static_method_source_call(
                     method,

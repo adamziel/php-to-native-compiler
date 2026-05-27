@@ -1595,12 +1595,24 @@ impl NativeCallableTable {
                 receiver.type_name()
             ));
         };
-        self.lookup_with_access_context(
+        let callable = self.lookup_with_access_context(
             NativeCallableKind::Method,
             Some(object.class_name().to_string()),
             method_name,
             access_context,
-        )
+        )?;
+        if callable.descriptor.is_static {
+            let scope = callable
+                .called_scope
+                .as_deref()
+                .or(callable.descriptor.scope.as_deref())
+                .unwrap_or("<unknown>");
+            return Err(format!(
+                "native method lookup failed: static method {}::{} cannot be used for object dispatch",
+                scope, callable.descriptor.name
+            ));
+        }
+        Ok(callable)
     }
 
     fn lookup_static_method(
@@ -33887,6 +33899,14 @@ mod tests {
                 NativeCallableVisibility::Protected,
                 native_scoped_method_callback,
             );
+            register_static_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("BaseDispatch"),
+                "pubstat",
+                NativeCallableVisibility::Public,
+                native_scoped_method_callback,
+            );
             register_callable_for_test(
                 table,
                 NativeCallableKind::Method,
@@ -33910,6 +33930,7 @@ mod tests {
         let guarded = NativeValueHandle::from_value(Value::String("guarded".to_string()));
         let plain = NativeValueHandle::from_value(Value::String("plain".to_string()));
         let stat = NativeValueHandle::from_value(Value::String("stat".to_string()));
+        let pubstat = NativeValueHandle::from_value(Value::String("pubstat".to_string()));
         let mut diagnostic = NativeDiagnosticHandle::null();
 
         let public_receiver = unsafe {
@@ -33959,6 +33980,25 @@ mod tests {
         assert!(!class_context_receiver.is_null());
         unsafe { phpc_native_callable_free(class_context_receiver) };
 
+        let blocked_static_through_receiver = unsafe {
+            phpc_native_method_lookup_with_access_context_diagnostic(
+                table,
+                receiver,
+                pubstat,
+                NativeCallableAccessContextTag::ObjectReceiver,
+                NativeStringHandle::null(),
+                &mut diagnostic,
+            )
+        };
+        assert!(blocked_static_through_receiver.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "native method lookup failed: static method ChildDispatch::pubstat cannot be used for object dispatch"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
         let blocked_static = unsafe {
             phpc_native_static_method_lookup_with_access_context_diagnostic(
                 table,
@@ -33993,6 +34033,7 @@ mod tests {
         unsafe { phpc_native_callable_free(class_context_static) };
 
         unsafe { phpc_native_value_free(stat) };
+        unsafe { phpc_native_value_free(pubstat) };
         unsafe { phpc_native_value_free(plain) };
         unsafe { phpc_native_value_free(guarded) };
         unsafe { phpc_native_value_free(receiver) };
