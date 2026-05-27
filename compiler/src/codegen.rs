@@ -16292,6 +16292,7 @@ struct CGenerator {
     active_called_scope_handle: Option<String>,
     generated_method_frame_this_property_assignment: bool,
     active_source_file: Option<PathBuf>,
+    include_root_file: Option<PathBuf>,
     include_units: HashMap<PathBuf, CIncludeUnit>,
     include_unit_order: Vec<PathBuf>,
     include_once_slots: HashMap<PathBuf, String>,
@@ -21675,6 +21676,7 @@ impl CGenerator {
             native_globals_symbol_table_handle: Some("phpc_root_symbols".to_string()),
             native_globals_symbol_table_owned: false,
             active_source_file: Some(unit.path.clone()),
+            include_root_file: self.include_root_file.clone(),
             include_units: self.include_units.clone(),
             include_unit_order: self.include_unit_order.clone(),
             include_once_slots: self.include_once_slots.clone(),
@@ -22721,6 +22723,15 @@ impl CGenerator {
         }
     }
 
+    fn prepare_include_root_once_slot(&mut self, root_file: &Path) {
+        let slot = "phpc_include_once_root".to_string();
+        self.static_data
+            .push(format!("static unsigned char {slot} = 1;"));
+        self.include_once_slots
+            .insert(root_file.to_path_buf(), slot);
+        self.include_root_file = Some(root_file.to_path_buf());
+    }
+
     fn all_include_unit_statements(&self) -> Vec<Stmt> {
         let mut statements = Vec::new();
         for path in &self.include_unit_order {
@@ -22735,6 +22746,7 @@ impl CGenerator {
         &mut self,
         unit: &ExecutableCompilationUnit,
     ) -> CompileResult<String> {
+        self.prepare_include_root_once_slot(&unit.root_file);
         self.prepare_include_units(&unit.include_units);
         let mut declaration_statements = unit.program.statements.clone();
         declaration_statements.extend(self.all_include_unit_statements());
@@ -22783,6 +22795,7 @@ impl CGenerator {
                 || self.uses_native_class_metadata_value
                 || self.uses_native_class_constant_helpers
                 || self.uses_native_static_property_helpers
+                || self.uses_native_include_unit_helpers
             {
                 output.push_str("#include <stdbool.h>\n");
             }
@@ -23647,7 +23660,10 @@ impl CGenerator {
                 "static phpc_NativeClassConstantTableHandle phpc_user_class_constants = {0};\n\n",
             );
         }
-        if !self.user_function_order.is_empty() || self.has_declared_class_methods() {
+        if !self.user_function_order.is_empty()
+            || self.has_declared_class_methods()
+            || !self.include_unit_order.is_empty()
+        {
             for key in &self.user_function_order {
                 let function = self
                     .user_functions
@@ -35100,15 +35116,42 @@ impl CGenerator {
         Ok(())
     }
 
-    fn resolve_active_include_unit(&self, path: &Expr, span: Span) -> CompileResult<CIncludeUnit> {
+    fn resolve_active_include_path(&self, path: &Expr, span: Span) -> CompileResult<PathBuf> {
         let Some(source_file) = &self.active_source_file else {
             return Err(self.unsupported(span, ASSEMBLY_REQUIRE_REJECTION));
         };
-        let include_path = resolve_literal_include_path(path, source_file, Path::new("/"), span)?;
-        self.include_units
-            .get(&include_path)
-            .cloned()
-            .ok_or_else(|| self.unsupported(span, ASSEMBLY_REQUIRE_REJECTION))
+        resolve_literal_include_path(path, source_file, Path::new("/"), span)
+    }
+
+    fn emit_root_include_once_duplicate(
+        &mut self,
+        include_path: &Path,
+        slot: &str,
+        span: Span,
+        keep_value: bool,
+    ) -> CompileResult<Option<String>> {
+        if self.include_root_file.as_deref() != Some(include_path) {
+            return Err(self.unsupported(span, ASSEMBLY_REQUIRE_REJECTION));
+        }
+        if keep_value {
+            let duplicate = self.next_native_name("include_once_root_duplicate_value");
+            self.body
+                .push(format!("phpc_NativeValueHandle {duplicate} = {{0}};"));
+            self.body.push(format!("if ({slot}) {{"));
+            let bool_value = self.emit_native_value_for_cvalue(CValue::Bool(true), span)?;
+            self.body.push(format!("  {duplicate} = {bool_value};"));
+            self.body.push("} else {".to_string());
+            self.body.push(format!("  {slot} = 1;"));
+            let bool_value = self.emit_native_value_for_cvalue(CValue::Bool(true), span)?;
+            self.body.push(format!("  {duplicate} = {bool_value};"));
+            self.body.push("}".to_string());
+            self.retain_native_value_cleanup_handle(&duplicate);
+            return Ok(Some(duplicate));
+        }
+        self.body.push(format!("if (!{slot}) {{"));
+        self.body.push(format!("  {slot} = 1;"));
+        self.body.push("}".to_string());
+        Ok(None)
     }
 
     fn emit_include_unit_call(
@@ -35118,17 +35161,25 @@ impl CGenerator {
         span: Span,
         keep_value: bool,
     ) -> CompileResult<Option<String>> {
-        let unit = self.resolve_active_include_unit(path, span)?;
+        let include_path = self.resolve_active_include_path(path, span)?;
         self.uses_native_include_unit_helpers = true;
-        self.uses_native_symbol_table_helpers = true;
-        let table = self.ensure_globals_symbol_table("", span)?;
 
         if once {
             let slot = self
                 .include_once_slots
-                .get(&unit.path)
+                .get(&include_path)
                 .cloned()
                 .ok_or_else(|| self.unsupported(span, ASSEMBLY_REQUIRE_REJECTION))?;
+            let Some(unit) = self.include_units.get(&include_path).cloned() else {
+                return self.emit_root_include_once_duplicate(
+                    &include_path,
+                    &slot,
+                    span,
+                    keep_value,
+                );
+            };
+            self.uses_native_symbol_table_helpers = true;
+            let table = self.ensure_globals_symbol_table("", span)?;
             if keep_value {
                 let duplicate = self.next_native_name("include_once_duplicate_value");
                 self.body
@@ -35161,6 +35212,13 @@ impl CGenerator {
             return Ok(None);
         }
 
+        let unit = self
+            .include_units
+            .get(&include_path)
+            .cloned()
+            .ok_or_else(|| self.unsupported(span, ASSEMBLY_REQUIRE_REJECTION))?;
+        self.uses_native_symbol_table_helpers = true;
+        let table = self.ensure_globals_symbol_table("", span)?;
         let result = self.next_native_name("include_result");
         self.body.push(format!(
             "phpc_NativeIncludeResult {result} = {}({table});",
@@ -35196,7 +35254,7 @@ impl CGenerator {
         once: bool,
         span: Span,
     ) -> CompileResult<CValue> {
-        if self.active_source_file.is_none() || self.include_units.is_empty() {
+        if self.active_source_file.is_none() {
             return Err(self.unsupported(span, ASSEMBLY_REQUIRE_EXPRESSION_REJECTION));
         }
         let value = self

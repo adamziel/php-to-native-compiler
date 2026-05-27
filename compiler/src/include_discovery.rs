@@ -271,9 +271,12 @@ impl IncludeUnitDiscovery {
 
     fn discover_statement(&mut self, stmt: &Stmt, source_file: &Path) -> CompileResult<()> {
         match stmt {
-            Stmt::Require { path, span, .. } | Stmt::Include { path, span, .. } => {
-                self.discover_include(path, *span, source_file)
+            Stmt::Require {
+                path, once, span, ..
             }
+            | Stmt::Include {
+                path, once, span, ..
+            } => self.discover_include(path, *once, *span, source_file),
             Stmt::Echo { exprs, .. } => self.discover_expressions(exprs, source_file),
             Stmt::Print { expr, .. }
             | Stmt::Assign { expr, .. }
@@ -396,9 +399,12 @@ impl IncludeUnitDiscovery {
 
     fn discover_expression(&mut self, expr: &Expr, source_file: &Path) -> CompileResult<()> {
         match expr {
-            Expr::Include { path, span, .. } | Expr::Require { path, span, .. } => {
-                self.discover_include(path, *span, source_file)
+            Expr::Include {
+                path, once, span, ..
             }
+            | Expr::Require {
+                path, once, span, ..
+            } => self.discover_include(path, *once, *span, source_file),
             Expr::Binary { left, right, .. } => {
                 self.discover_expression(left, source_file)?;
                 self.discover_expression(right, source_file)
@@ -448,11 +454,15 @@ impl IncludeUnitDiscovery {
     fn discover_include(
         &mut self,
         path: &Expr,
+        once: bool,
         span: Span,
         source_file: &Path,
     ) -> CompileResult<()> {
         let include_path = resolve_literal_include_path(path, source_file, &self.repo_root, span)?;
         if self.discovered.contains(&include_path) {
+            return Ok(());
+        }
+        if once && self.visiting.contains(&include_path) {
             return Ok(());
         }
         if !self.visiting.insert(include_path.clone()) {

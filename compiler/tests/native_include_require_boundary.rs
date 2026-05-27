@@ -484,19 +484,123 @@ fn emit_exe_blocks_dynamic_include_paths_before_native_link() {
 }
 
 #[test]
-fn emit_exe_blocks_cyclic_once_registry_paths_before_native_link() {
+fn emit_exe_links_and_runs_root_include_once_cycle_with_duplicate_true() {
     if !has_cc() {
         return;
     }
 
-    let dir = include_discovery_fixture_dir("execution-once-cycle-blocker");
+    let dir = include_discovery_fixture_dir("execution-root-once-cycle-exe");
     let root = dir.join("root.php");
     let other = dir.join("other.php");
     let output = dir.join("program");
-    fs::write(&root, "<?php\nrequire_once __DIR__ . '/other.php';\n")
-        .expect("write root cyclic once fixture");
-    fs::write(&other, "<?php\nrequire_once __DIR__ . '/root.php';\n")
-        .expect("write nested cyclic once fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "echo 'root:start|';\n",
+            "require_once __DIR__ . '/other.php';\n",
+            "echo '|root:end', \"\\n\";\n",
+        ),
+    )
+    .expect("write root cyclic once fixture");
+    fs::write(
+        &other,
+        concat!(
+            "<?php\n",
+            "echo 'other:start|';\n",
+            "$again = require_once __DIR__ . '/root.php';\n",
+            "echo 'again=', $again, '|other:end';\n",
+        ),
+    )
+    .expect("write nested cyclic once fixture");
+
+    let output = compile_exe(&root, &output, "root include_once cycle executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run root include_once cycle executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "root:start|other:start|again=1|other:end|root:end\n"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_nested_include_once_cycle_with_duplicate_true() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("execution-nested-once-cycle-exe");
+    let root = dir.join("root.php");
+    let first = dir.join("first.php");
+    let second = dir.join("second.php");
+    let output = dir.join("program");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "require_once __DIR__ . '/first.php';\n",
+            "echo '|root:end', \"\\n\";\n",
+        ),
+    )
+    .expect("write root nested cyclic once fixture");
+    fs::write(
+        &first,
+        concat!(
+            "<?php\n",
+            "echo 'first:start|';\n",
+            "require_once __DIR__ . '/second.php';\n",
+            "echo '|first:end';\n",
+        ),
+    )
+    .expect("write first cyclic once fixture");
+    fs::write(
+        &second,
+        concat!(
+            "<?php\n",
+            "echo 'second:start|';\n",
+            "$again = require_once __DIR__ . '/first.php';\n",
+            "echo 'again=', $again, '|second:end';\n",
+        ),
+    )
+    .expect("write second cyclic once fixture");
+
+    let output = compile_exe(&root, &output, "nested include_once cycle executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run nested include_once cycle executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "first:start|second:start|again=1|second:end|first:end|root:end\n"
+    );
+}
+
+#[test]
+fn emit_exe_blocks_non_once_cyclic_include_paths_before_native_link() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("execution-cycle-blocker");
+    let root = dir.join("root.php");
+    let other = dir.join("other.php");
+    let output = dir.join("program");
+    fs::write(&root, "<?php\nrequire __DIR__ . '/other.php';\n")
+        .expect("write root cyclic include fixture");
+    fs::write(&other, "<?php\nrequire __DIR__ . '/root.php';\n")
+        .expect("write nested cyclic include fixture");
 
     let compile = Command::new(env!("CARGO_BIN_EXE_phpc"))
         .current_dir(workspace_root())
@@ -507,12 +611,12 @@ fn emit_exe_blocks_cyclic_once_registry_paths_before_native_link() {
             output.to_str().expect("output path is UTF-8"),
         ])
         .output()
-        .expect("compile cyclic once blocker executable");
+        .expect("compile cyclic include blocker executable");
 
     assert!(!compile.status.success());
     assert!(
         String::from_utf8_lossy(&compile.stderr).contains("cyclic include graph"),
-        "stderr should report cyclic once registry blocker:\n{}",
+        "stderr should report cyclic include graph blocker:\n{}",
         String::from_utf8_lossy(&compile.stderr)
     );
     assert!(!output.exists());
