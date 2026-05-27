@@ -218,6 +218,26 @@ const NATIVE_DECLARED_CLASS_STATIC_PROPERTY_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_SELF_PARENT_STATIC_PROPERTY_SOURCE: &str = concat!(
+    "<?php\n",
+    "class StaticPropertyRoot {\n",
+    "    protected static int $count = 2;\n",
+    "    public static $label = \"root\";\n",
+    "    public static function rootRead() { return self::$label; }\n",
+    "}\n",
+    "class StaticPropertyMid extends StaticPropertyRoot {\n",
+    "    private static $local = \"mid\";\n",
+    "    public static function bump($value) {\n",
+    "        self::$local = $value;\n",
+    "        parent::$count = parent::$count + 3;\n",
+    "        return self::$local . \":\" . parent::$count . \":\" . self::rootRead();\n",
+    "    }\n",
+    "    public static function read() { return self::$local . \":\" . parent::$count; }\n",
+    "}\n",
+    "class StaticPropertyLeaf extends StaticPropertyMid {}\n",
+    "echo StaticPropertyMid::bump(\"go\"), \"|\", StaticPropertyLeaf::read(), \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_PROPERTY_UNSET_SOURCE: &str = concat!(
     "<?php\n",
     "class Box { public $name; public $peer; private $secret; }\n",
@@ -1786,6 +1806,34 @@ fn emit_exe_links_and_runs_declared_static_property_storage_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"2:5:5:ready\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_self_parent_static_property_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "self_parent_static_property",
+        NATIVE_SELF_PARENT_STATIC_PROPERTY_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run self/parent static-property executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"go:5:root|go:5\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -3933,6 +3981,46 @@ fn native_executable_c_source_routes_declared_static_property_reads_writes_throu
 }
 
 #[test]
+fn native_executable_c_source_routes_self_parent_static_properties_through_relative_runtime_storage(
+) {
+    let program = parse(NATIVE_SELF_PARENT_STATIC_PROPERTY_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    for required in [
+        "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_SELF",
+        "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_PARENT",
+        "phpc_native_static_property_read_relative_with_diagnostic",
+        "phpc_native_static_property_write_relative_with_diagnostic_and_free",
+        "static_property_current_class_name_bytes",
+    ] {
+        assert!(source.contains(required), "missing {required}:\n{source}");
+    }
+    assert!(
+        source
+            .matches("phpc_native_static_property_read_relative_with_diagnostic")
+            .count()
+            >= 4,
+        "self::/parent:: static-property reads should use relative runtime storage:\n{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_static_property_write_relative_with_diagnostic_and_free")
+            .count()
+            >= 2,
+        "self::/parent:: static-property writes should use relative runtime storage:\n{source}"
+    );
+    assert!(
+        source.contains("PHPC_NATIVE_CALLABLE_ACCESS_CLASS_CONTEXT")
+            && source.contains("method_call_caller_scope_"),
+        "self::/parent:: property proof should preserve class-context source-call carriers for method entry:\n{source}"
+    );
+    assert!(
+        !source.contains("static-member lowering rejects"),
+        "supported self::/parent:: static-property access should not fall back to static-member rejection:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_keeps_unsupported_static_property_dynamic_shapes_blocked() {
     for (label, source) in [
         (
@@ -3942,6 +4030,10 @@ fn native_executable_c_source_keeps_unsupported_static_property_dynamic_shapes_b
         (
             "self static property outside class context",
             "<?php\nclass Counter { public static $count = 1; }\necho self::$count;\n",
+        ),
+        (
+            "late-static property without called-class frame carrier",
+            "<?php\nclass Counter { public static $count = 1; public static function read() { return static::$count; } }\necho Counter::read();\n",
         ),
     ] {
         let program = parse(source).unwrap();

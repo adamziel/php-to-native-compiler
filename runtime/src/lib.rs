@@ -64,6 +64,32 @@ pub enum NativeCallResultStatus {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeStaticPropertyReceiverTag {
+    SelfClass = 1,
+    ParentClass = 2,
+    LateStaticClass = 3,
+}
+
+impl NativeStaticPropertyReceiverTag {
+    fn from_abi_tag(tag: u8) -> Option<Self> {
+        match tag {
+            1 => Some(Self::SelfClass),
+            2 => Some(Self::ParentClass),
+            3 => Some(Self::LateStaticClass),
+            _ => None,
+        }
+    }
+}
+
+pub const PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_SELF: u8 =
+    NativeStaticPropertyReceiverTag::SelfClass as u8;
+pub const PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_PARENT: u8 =
+    NativeStaticPropertyReceiverTag::ParentClass as u8;
+pub const PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_LATE_STATIC: u8 =
+    NativeStaticPropertyReceiverTag::LateStaticClass as u8;
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeTerminalKind {
     Return = 1,
     Throw = 2,
@@ -26454,6 +26480,61 @@ impl NativeStaticPropertyStorage {
             PhpStaticPropertyAccessContext::external(),
         )
     }
+
+    fn relative_receiver_and_context(
+        &self,
+        receiver: NativeStaticPropertyReceiverTag,
+        current_class_name: &str,
+        called_class_name: Option<&str>,
+    ) -> RuntimeResult<(PhpStaticPropertyReceiver, PhpStaticPropertyAccessContext)> {
+        let current_class_id = self
+            .classes
+            .lookup_class_id(current_class_name)
+            .ok_or_else(|| RuntimeError::undefined_class(current_class_name))?;
+        let mut context = PhpStaticPropertyAccessContext::class_context(current_class_id);
+        if let Some(called_class_name) = called_class_name {
+            let called_class_id = self
+                .classes
+                .lookup_class_id(called_class_name)
+                .ok_or_else(|| RuntimeError::undefined_class(called_class_name))?;
+            context = context.with_called_class(called_class_id);
+        }
+        let receiver = match receiver {
+            NativeStaticPropertyReceiverTag::SelfClass => PhpStaticPropertyReceiver::SelfClass,
+            NativeStaticPropertyReceiverTag::ParentClass => PhpStaticPropertyReceiver::ParentClass,
+            NativeStaticPropertyReceiverTag::LateStaticClass => {
+                PhpStaticPropertyReceiver::LateStaticClass
+            }
+        };
+        Ok((receiver, context))
+    }
+
+    fn read_relative(
+        &self,
+        receiver: NativeStaticPropertyReceiverTag,
+        current_class_name: &str,
+        called_class_name: Option<&str>,
+        property_name: &str,
+    ) -> RuntimeResult<Value> {
+        let (receiver, context) =
+            self.relative_receiver_and_context(receiver, current_class_name, called_class_name)?;
+        self.storage
+            .read(&self.classes, receiver, property_name, context)
+    }
+
+    fn write_relative(
+        &mut self,
+        receiver: NativeStaticPropertyReceiverTag,
+        current_class_name: &str,
+        called_class_name: Option<&str>,
+        property_name: &str,
+        value: Value,
+    ) -> RuntimeResult<Value> {
+        let (receiver, context) =
+            self.relative_receiver_and_context(receiver, current_class_name, called_class_name)?;
+        self.storage
+            .write(&self.classes, receiver, property_name, value, context)
+    }
 }
 
 #[no_mangle]
@@ -26720,6 +26801,147 @@ pub unsafe extern "C" fn phpc_native_static_property_write_class_with_diagnostic
         }?;
         let value = unsafe { native_static_property_take_value_and_free(value, "write") }?;
         storage.write_class(&class_name, &property_name, value)
+    })();
+    match result {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+unsafe fn native_static_property_optional_utf8_argument(
+    ptr: *const u8,
+    len: usize,
+    label: &str,
+) -> RuntimeResult<Option<String>> {
+    if len == 0 {
+        return Ok(None);
+    }
+    unsafe { native_static_property_utf8_argument(ptr, len, label) }.map(Some)
+}
+
+/// # Safety
+///
+/// `handle` must be a storage handle. Current/called class and property bytes
+/// follow the same pointer/length rules as static-property class declaration.
+/// Returned values are owned by the caller and must be freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_property_read_relative_with_diagnostic(
+    handle: NativeStaticPropertyStorageHandle,
+    receiver_tag: u8,
+    current_class_ptr: *const u8,
+    current_class_len: usize,
+    called_class_ptr: *const u8,
+    called_class_len: usize,
+    property_ptr: *const u8,
+    property_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let storage = unsafe { handle.as_ref() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native static-property storage handle is null".to_string(),
+            )
+        })?;
+        let receiver =
+            NativeStaticPropertyReceiverTag::from_abi_tag(receiver_tag).ok_or_else(|| {
+                RuntimeError::invalid_property_access(format!(
+                    "native static-property storage received unsupported relative receiver tag {receiver_tag}"
+                ))
+            })?;
+        let current_class_name = unsafe {
+            native_static_property_utf8_argument(
+                current_class_ptr,
+                current_class_len,
+                "current class name",
+            )
+        }?;
+        let called_class_name = unsafe {
+            native_static_property_optional_utf8_argument(
+                called_class_ptr,
+                called_class_len,
+                "called class name",
+            )
+        }?;
+        let property_name = unsafe {
+            native_static_property_utf8_argument(property_ptr, property_len, "property name")
+        }?;
+        storage.read_relative(
+            receiver,
+            &current_class_name,
+            called_class_name.as_deref(),
+            &property_name,
+        )
+    })();
+    match result {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be a storage handle. Current/called class and property bytes
+/// follow the same pointer/length rules as static-property class declaration.
+/// `value` is always consumed. Returned values are owned by the caller and
+/// must be freed.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_property_write_relative_with_diagnostic_and_free(
+    mut handle: NativeStaticPropertyStorageHandle,
+    receiver_tag: u8,
+    current_class_ptr: *const u8,
+    current_class_len: usize,
+    called_class_ptr: *const u8,
+    called_class_len: usize,
+    property_ptr: *const u8,
+    property_len: usize,
+    value: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let storage = unsafe { handle.as_mut() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native static-property storage handle is null".to_string(),
+            )
+        })?;
+        let receiver =
+            NativeStaticPropertyReceiverTag::from_abi_tag(receiver_tag).ok_or_else(|| {
+                RuntimeError::invalid_property_access(format!(
+                    "native static-property storage received unsupported relative receiver tag {receiver_tag}"
+                ))
+            })?;
+        let current_class_name = unsafe {
+            native_static_property_utf8_argument(
+                current_class_ptr,
+                current_class_len,
+                "current class name",
+            )
+        }?;
+        let called_class_name = unsafe {
+            native_static_property_optional_utf8_argument(
+                called_class_ptr,
+                called_class_len,
+                "called class name",
+            )
+        }?;
+        let property_name = unsafe {
+            native_static_property_utf8_argument(property_ptr, property_len, "property name")
+        }?;
+        let value = unsafe { native_static_property_take_value_and_free(value, "write") }?;
+        storage.write_relative(
+            receiver,
+            &current_class_name,
+            called_class_name.as_deref(),
+            &property_name,
+            value,
+        )
     })();
     match result {
         Ok(value) => NativeValueHandle::from_value(value),
