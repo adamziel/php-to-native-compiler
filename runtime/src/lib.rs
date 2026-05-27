@@ -26,6 +26,7 @@ pub enum NativeScalarTag {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeValueFormatterTag {
     Echo = 0,
+    PrintR = 1,
 }
 
 #[repr(u8)]
@@ -15019,6 +15020,97 @@ unsafe fn native_value_to_string_bytes(handle: NativeValueHandle) -> RuntimeResu
     value.try_echo_bytes()
 }
 
+fn native_value_print_r_bytes(value: &Value) -> RuntimeResult<Vec<u8>> {
+    let mut output = Vec::new();
+    append_native_value_print_r_bytes(&mut output, value, 0)?;
+    Ok(output)
+}
+
+fn append_native_value_print_r_bytes(
+    output: &mut Vec<u8>,
+    value: &Value,
+    indent: usize,
+) -> RuntimeResult<()> {
+    match value {
+        Value::Array(array) => append_native_array_print_r_bytes(output, array, indent)?,
+        Value::Object(object) => append_native_object_print_r_bytes(output, object, indent)?,
+        _ => output.extend(value.try_echo_bytes()?),
+    }
+    Ok(())
+}
+
+fn append_native_array_print_r_bytes(
+    output: &mut Vec<u8>,
+    array: &PhpArray,
+    indent: usize,
+) -> RuntimeResult<()> {
+    let padding = "    ".repeat(indent);
+    let child_padding = "    ".repeat(indent + 1);
+
+    output.extend_from_slice(b"Array\n");
+    output.extend_from_slice(format!("{padding}(\n").as_bytes());
+    for entry in array.entries() {
+        output.extend_from_slice(
+            format!("{child_padding}[{}] => ", entry.key.display_key()).as_bytes(),
+        );
+        match entry.value_cloned() {
+            Value::Array(value) => append_native_array_print_r_bytes(output, &value, indent + 1)?,
+            Value::Object(value) => append_native_object_print_r_bytes(output, &value, indent + 1)?,
+            value => {
+                output.extend_from_slice(&value.try_echo_bytes()?);
+                output.push(b'\n');
+            }
+        }
+    }
+    output.extend_from_slice(format!("{padding})\n").as_bytes());
+    Ok(())
+}
+
+fn append_native_object_print_r_bytes(
+    output: &mut Vec<u8>,
+    object: &PhpObject,
+    indent: usize,
+) -> RuntimeResult<()> {
+    let padding = "    ".repeat(indent);
+    let child_padding = "    ".repeat(indent + 1);
+
+    output.extend_from_slice(format!("{} Object\n", object.class_name()).as_bytes());
+    output.extend_from_slice(format!("{padding}(\n").as_bytes());
+    for property in object.properties() {
+        output.extend_from_slice(
+            format!(
+                "{child_padding}[{}] => ",
+                native_print_r_object_property(&property)
+            )
+            .as_bytes(),
+        );
+        match property.value_cloned() {
+            Value::Array(value) => append_native_array_print_r_bytes(output, &value, indent + 1)?,
+            Value::Object(value) => append_native_object_print_r_bytes(output, &value, indent + 1)?,
+            value => {
+                output.extend_from_slice(&value.try_echo_bytes()?);
+                output.push(b'\n');
+            }
+        }
+    }
+    output.extend_from_slice(format!("{padding})\n").as_bytes());
+    Ok(())
+}
+
+fn native_print_r_object_property(property: &ObjectProperty) -> String {
+    match property.visibility() {
+        Visibility::Public => property.name().to_string(),
+        Visibility::Protected => format!("{}:protected", property.name()),
+        Visibility::Private => {
+            format!(
+                "{}:{}:private",
+                property.name(),
+                property.declaring_class_name()
+            )
+        }
+    }
+}
+
 /// # Safety
 ///
 /// `handle` must be null or a value handle previously returned by the runtime
@@ -21443,7 +21535,10 @@ unsafe fn native_value_format_stdout_bytes(
             "native value formatting failed: value handle is null",
         ));
     };
-    value.try_echo_bytes()
+    match formatter {
+        NativeValueFormatterTag::Echo => value.try_echo_bytes(),
+        NativeValueFormatterTag::PrintR => native_value_print_r_bytes(value),
+    }
 }
 
 #[cfg(test)]
@@ -37664,6 +37759,7 @@ impl NativeValueFormatterTag {
     fn from_tag(tag: u8) -> RuntimeResult<Self> {
         match tag {
             tag if tag == Self::Echo as u8 => Ok(Self::Echo),
+            tag if tag == Self::PrintR as u8 => Ok(Self::PrintR),
             _ => Err(RuntimeError::unsupported_call(
                 "native value formatter",
                 format!("unsupported native value formatter tag {tag}"),
@@ -37674,6 +37770,7 @@ impl NativeValueFormatterTag {
     fn surface_name(self) -> &'static str {
         match self {
             Self::Echo => "echo",
+            Self::PrintR => "print_r",
         }
     }
 }
@@ -42593,8 +42690,17 @@ mod tests {
         let mut array = PhpArray::new();
         array.insert("name", Value::String("Ada".to_string()));
         array.insert(2, Value::Bool(true));
+        let mut nested = PhpArray::new();
+        nested.insert("child", Value::String("ok".to_string()));
+        array.insert("nested", Value::Array(nested));
         let array = NativeValueHandle::from_value(Value::Array(array));
         assert_stdout("array echo", array, NativeValueFormatterTag::Echo, b"Array");
+        assert_stdout(
+            "array print_r",
+            array,
+            NativeValueFormatterTag::PrintR,
+            b"Array\n(\n    [name] => Ada\n    [2] => 1\n    [nested] => Array\n    (\n        [child] => ok\n    )\n)\n",
+        );
 
         let mut diagnostic = NativeDiagnosticHandle::null();
         let written =

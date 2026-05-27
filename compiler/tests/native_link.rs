@@ -26327,6 +26327,75 @@ fn emit_exe_links_and_runs_declared_trait_introspection_registry_program() {
     let _ = fs::remove_file(output_path);
 }
 
+const NATIVE_INTERFACE_METADATA_PRINT_R_SOURCE: &str = concat!(
+    "<?php\n",
+    "interface NativePrintDeclared {}\n",
+    "interface NativePrintContract {}\n",
+    "class NativePrintService implements NativePrintContract {}\n",
+    "print_r(get_declared_interfaces());\n",
+    "print_r(class_implements(\"NativePrintService\", false));\n",
+);
+
+const NATIVE_INTERFACE_METADATA_PRINT_R_STDOUT: &str = concat!(
+    "Array\n",
+    "(\n",
+    "    [0] => NativePrintDeclared\n",
+    "    [1] => NativePrintContract\n",
+    ")\n",
+    "Array\n",
+    "(\n",
+    "    [NativePrintContract] => NativePrintContract\n",
+    ")\n",
+);
+
+#[test]
+fn native_executable_c_source_routes_interface_metadata_print_r_through_value_formatter() {
+    let program = parse(NATIVE_INTERFACE_METADATA_PRINT_R_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("#define PHPC_NATIVE_VALUE_FORMAT_PRINT_R 1")
+            && body.contains("PHPC_NATIVE_VALUE_FORMAT_PRINT_R")
+            && body.contains("phpc_native_value_class_metadata_value_with_diagnostic"),
+        "print_r() over interface metadata arrays should reuse metadata registries and the shared native value formatter:\n{source}"
+    );
+    assert!(
+        !source.contains("object/class lowering rejects")
+            && !source.contains("interface lowering rejects interface declarations"),
+        "interface metadata print_r() should not fall back to blockers:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_interface_metadata_print_r_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "interface_metadata_print_r",
+        NATIVE_INTERFACE_METADATA_PRINT_R_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run interface metadata print_r executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        NATIVE_INTERFACE_METADATA_PRINT_R_STDOUT
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
 #[test]
 fn native_executable_c_source_blocks_unknown_named_dynamic_method_fallback_until_declared_hit_shape_is_known(
 ) {

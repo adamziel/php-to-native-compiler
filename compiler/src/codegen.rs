@@ -23169,6 +23169,7 @@ impl CGenerator {
                 output.push_str("#define PHPC_NATIVE_OBJECT_PROPERTY_MUTATION_UNSET 1\n");
             }
             output.push_str("#define PHPC_NATIVE_VALUE_FORMAT_ECHO 0\n");
+            output.push_str("#define PHPC_NATIVE_VALUE_FORMAT_PRINT_R 1\n");
             output.push('\n');
             output.push_str("extern phpc_NativeStringHandle phpc_native_string_from_bytes(const uint8_t *ptr, size_t len);\n");
             output.push_str(
@@ -35059,6 +35060,25 @@ impl CGenerator {
     }
 
     fn emit_discarded_expr_statement(&mut self, expr: &Expr) -> CompileResult<()> {
+        if let Expr::Call { name, args, span } = expr {
+            if name.eq_ignore_ascii_case("print_r")
+                && args.len() == 1
+                && !call_arguments_have_named(args)
+            {
+                let value = self.materialize_native_value_result_operand(&args[0], "")?;
+                self.emit_native_value_print_r_stdout_with_diagnostic(&value.handle);
+                self.body.extend(value.cleanup_after_use);
+                return Ok(());
+            }
+            if name.eq_ignore_ascii_case("print_r") {
+                return Err(self.unsupported_direct_named_call(
+                    args,
+                    *span,
+                    ASSEMBLY_FUNCTION_CALL_REJECTION,
+                ));
+            }
+        }
+
         if let Some(value) = self.try_materialize_native_value_result_expr(expr, "")? {
             let result =
                 self.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::value(
@@ -58879,11 +58899,29 @@ impl CGenerator {
     }
 
     fn emit_native_value_format_stdout_with_diagnostic(&mut self, value: &str) {
+        self.emit_native_value_format_stdout_with_diagnostic_tag(
+            value,
+            "PHPC_NATIVE_VALUE_FORMAT_ECHO",
+        );
+    }
+
+    fn emit_native_value_print_r_stdout_with_diagnostic(&mut self, value: &str) {
+        self.emit_native_value_format_stdout_with_diagnostic_tag(
+            value,
+            "PHPC_NATIVE_VALUE_FORMAT_PRINT_R",
+        );
+    }
+
+    fn emit_native_value_format_stdout_with_diagnostic_tag(
+        &mut self,
+        value: &str,
+        formatter: &str,
+    ) {
         let diagnostic = self.next_native_name("stdout_diagnostic");
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
         self.body.push(format!(
-            "phpc_native_value_format_stdout_with_diagnostic({value}, PHPC_NATIVE_VALUE_FORMAT_ECHO, &{diagnostic});"
+            "phpc_native_value_format_stdout_with_diagnostic({value}, {formatter}, &{diagnostic});"
         ));
         self.body.push(format!(
             "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); {diagnostic}.ptr = NULL; }}"
