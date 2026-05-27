@@ -1804,7 +1804,9 @@ fn generated_ir_routes_nul_strings_through_formatter_stdout_abi() {
         "{ir}"
     );
     assert!(
-        ir.contains("call i64 @phpc_native_value_format_stdout_with_diagnostic"),
+        ir.contains("call i64 @phpc_native_value_format_stdout_with_diagnostic")
+            || ir
+                .contains("@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{ir}"
     );
     assert!(
@@ -1847,7 +1849,9 @@ fn generated_ir_materializes_binary_string_values_with_explicit_lengths() {
         "{ir}"
     );
     assert!(
-        ir.contains("call i64 @phpc_native_value_format_stdout_with_diagnostic"),
+        ir.contains("call i64 @phpc_native_value_format_stdout_with_diagnostic")
+            || ir
+                .contains("@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{ir}"
     );
 }
@@ -1904,7 +1908,9 @@ fn native_output_buffer_builtins_share_runtime_boundary_across_backends() {
         "{ir}"
     );
     assert!(
-        ir.contains("call i64 @phpc_native_value_format_stdout_with_diagnostic"),
+        ir.contains("call i64 @phpc_native_value_format_stdout_with_diagnostic")
+            || ir
+                .contains("@phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{ir}"
     );
     assert!(
@@ -1921,15 +1927,17 @@ fn native_output_buffer_builtins_share_runtime_boundary_across_backends() {
         ),
         "{c_source}"
     );
+    let c_output_buffer_operation_calls = c_source
+        .matches("phpc_native_output_buffer_operation_with_diagnostic(")
+        .count()
+        + c_source
+            .matches("phpc_native_output_buffer_operation_with_callable_table_diagnostic(")
+            .count();
+    assert!(c_output_buffer_operation_calls >= 13, "{c_source}");
     assert!(
-        c_source
-            .matches("phpc_native_output_buffer_operation_with_diagnostic(")
-            .count()
-            >= 13,
-        "{c_source}"
-    );
-    assert!(
-        c_source.contains("phpc_native_value_format_stdout_with_diagnostic"),
+        c_source.contains("phpc_native_value_format_stdout_with_diagnostic")
+            || c_source
+                .contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "{c_source}"
     );
     assert!(

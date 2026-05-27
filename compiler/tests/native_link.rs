@@ -94,6 +94,31 @@ const NATIVE_OUTPUT_BUFFER_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_OUTPUT_BUFFER_CALLBACK_SOURCE: &str = concat!(
+    "<?php\n",
+    "function phase_handler($buffer, $phase) {\n",
+    "    return \"[\" . $buffer . \":\" . $phase . \"]\";\n",
+    "}\n",
+    "ob_start();\n",
+    "ob_start(\"phase_handler\");\n",
+    "echo \"A\";\n",
+    "ob_flush();\n",
+    "echo \"B\";\n",
+    "ob_end_flush();\n",
+    "echo \"|\";\n",
+    "echo ob_get_clean();\n",
+);
+
+const NATIVE_OUTPUT_BUFFER_CALLBACK_GET_CLEAN_SOURCE: &str = concat!(
+    "<?php\n",
+    "function ignored_handler($buffer, $phase) {\n",
+    "    return \"bad\";\n",
+    "}\n",
+    "ob_start(\"ignored_handler\");\n",
+    "echo \"raw\";\n",
+    "echo ob_get_clean();\n",
+);
+
 const NATIVE_DIAGNOSTIC_RESULT_DISCARDED_EXPR_SOURCE: &str = concat!(
     "<?php\n",
     "1;\n",
@@ -2270,6 +2295,54 @@ fn emit_exe_links_and_runs_native_output_buffer_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"A0B42:5:hidden|AB|0\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_native_output_buffer_callback_programs() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "native_output_buffer_callback",
+        NATIVE_OUTPUT_BUFFER_CALLBACK_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native output-buffer callback executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"[A:5][B:8]|");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "native_output_buffer_callback_get_clean",
+        NATIVE_OUTPUT_BUFFER_CALLBACK_GET_CLEAN_SOURCE,
+    );
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native output-buffer callback get-clean executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"raw");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -5179,18 +5252,56 @@ fn native_executable_c_source_routes_output_buffers_through_shared_runtime_abi()
         ),
         "{source}"
     );
+    let output_buffer_operation_calls = body
+        .matches("phpc_native_output_buffer_operation_with_diagnostic(")
+        .count()
+        + body
+            .matches("phpc_native_output_buffer_operation_with_callable_table_diagnostic(")
+            .count();
     assert!(
-        body.matches("phpc_native_output_buffer_operation_with_diagnostic(")
-            .count()
-            >= 12,
+        output_buffer_operation_calls >= 12,
         "all lowerable output-buffer operations should route through the shared runtime ABI:\n{source}"
     );
     assert!(
-        body.contains("phpc_native_value_format_stdout_with_diagnostic"),
+        body.contains("phpc_native_value_format_stdout_with_diagnostic")
+            || body
+                .contains("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free"),
         "captured output should continue through the diagnostic-aware stdout formatter:\n{source}"
     );
     assert!(
         !source.contains("output-buffer lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_output_buffer_callbacks_through_callable_runtime_abi() {
+    let program = parse(NATIVE_OUTPUT_BUFFER_CALLBACK_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains(
+            "extern phpc_NativeValueHandle phpc_native_output_buffer_operation_with_callable_table_diagnostic"
+        ),
+        "{source}"
+    );
+    assert!(
+        body.contains(
+            "phpc_native_callable_table_register_visibility_staticness_magic_signature_source_signature_frame_callback_and_free"
+        ),
+        "generated output-buffer handlers should use the shared source-signature callable table registration path:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_output_buffer_operation_with_callable_table_diagnostic(phpc_user_callable_table"),
+        "ob_start($handler) should route through the shared output-buffer callback ABI:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_output_buffer_operation_with_diagnostic("),
+        "ordinary output-buffer operations should keep using the non-callback runtime ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("callback output handlers await"),
         "{source}"
     );
 }

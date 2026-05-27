@@ -1444,7 +1444,7 @@ struct NativeRequestDestructorFinalizers {
     finalized_object_ids: HashSet<i64>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct NativeCallable {
     descriptor: NativeCallableDescriptor,
     called_scope: Option<String>,
@@ -1483,7 +1483,7 @@ enum NativeCallableAccessContext {
     ClassContextLookup { caller_scope: String },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum NativeCallableValueDispatch {
     Table {
         callable: NativeCallable,
@@ -22768,6 +22768,7 @@ unsafe fn native_output_buffer_args(
 }
 
 fn native_output_buffer_operation_value(
+    table: NativeCallableTableHandle,
     operation: NativeOutputBufferOperation,
     args: &[Value],
 ) -> RuntimeResult<Value> {
@@ -22781,14 +22782,20 @@ fn native_output_buffer_operation_value(
 
     match operation {
         NativeOutputBufferOperation::Start => {
-            if let Some(callback) = args.first() {
-                if !matches!(callback, Value::Null) {
-                    return Err(RuntimeError::unsupported_call(
-                        operation.callable(),
-                        "callback output handlers await callable dispatch, chunk phase ownership, and exact output-buffer diagnostics",
-                    ));
+            let handler = if let Some(callback) = args.first() {
+                if matches!(callback, Value::Null) {
+                    None
+                } else {
+                    Some(
+                        native_callable_value_lookup(unsafe { table.as_ref() }, callback, None)
+                            .map_err(|message| {
+                                RuntimeError::unsupported_call(operation.callable(), message)
+                            })?,
+                    )
                 }
-            }
+            } else {
+                None
+            };
             if let Some(chunk_size) = args.get(1) {
                 let _ =
                     value_to_native_int64(chunk_size, NativeIntConversionOperation::StringLength)?;
@@ -22796,8 +22803,13 @@ fn native_output_buffer_operation_value(
             if let Some(flags) = args.get(2) {
                 let _ = value_to_native_int64(flags, NativeIntConversionOperation::StringLength)?;
             }
-            NATIVE_OUTPUT_BUFFERS
-                .with(|buffers| buffers.borrow_mut().push(NativeOutputBuffer::default()));
+            NATIVE_OUTPUT_BUFFERS.with(|buffers| {
+                buffers.borrow_mut().push(NativeOutputBuffer {
+                    bytes: Vec::new(),
+                    handler,
+                    handler_started: false,
+                })
+            });
             Ok(Value::Bool(true))
         }
         NativeOutputBufferOperation::GetLevel => {
@@ -22858,18 +22870,124 @@ fn native_output_buffer_operation_value(
                 Value::Bool(false)
             }
         })),
-        NativeOutputBufferOperation::Flush => NATIVE_OUTPUT_BUFFERS.with(|buffers| {
-            let mut buffers = buffers.borrow_mut();
-            let Some(buffer) = buffers.last_mut() else {
-                return Ok(Value::Bool(false));
-            };
-            let bytes = std::mem::take(&mut buffer.bytes);
-            drop(buffers);
-            native_output_flush_active_bytes(&bytes).map(|_| Value::Bool(true))
-        }),
+        NativeOutputBufferOperation::Flush => native_output_buffer_flush_active(),
         NativeOutputBufferOperation::EndClean => native_output_buffer_pop_bool(false),
         NativeOutputBufferOperation::EndFlush => native_output_buffer_pop_bool(true),
     }
+}
+
+const NATIVE_OUTPUT_HANDLER_START: i64 = 1;
+const NATIVE_OUTPUT_HANDLER_FLUSH: i64 = 4;
+const NATIVE_OUTPUT_HANDLER_FINAL: i64 = 8;
+
+fn native_output_buffer_handler_phase(started: bool, terminal_flag: i64) -> i64 {
+    if started {
+        terminal_flag
+    } else {
+        NATIVE_OUTPUT_HANDLER_START | terminal_flag
+    }
+}
+
+unsafe fn native_output_buffer_handler_result_bytes(
+    handler: &NativeCallableValueDispatch,
+    bytes: &[u8],
+    phase: i64,
+    operation: NativeOutputBufferOperation,
+) -> RuntimeResult<Vec<u8>> {
+    let callable = NativeCallableValueHandle::from_dispatch(handler.clone());
+    let arguments = NativeCallArgumentsHandle::new();
+    let buffer = NativeValueHandle::from_value(Value::BinaryString(bytes.to_vec()));
+    if !unsafe { phpc_native_call_arguments_push_value_and_free(arguments, buffer) } {
+        unsafe { phpc_native_callable_value_free(callable) };
+        return Err(RuntimeError::unsupported_call(
+            operation.callable(),
+            "callback output handler argument materialization failed for buffer bytes",
+        ));
+    }
+    let phase = NativeValueHandle::from_value(Value::Int(phase));
+    if !unsafe { phpc_native_call_arguments_push_value_and_free(arguments, phase) } {
+        unsafe { phpc_native_call_arguments_free(arguments) };
+        unsafe { phpc_native_callable_value_free(callable) };
+        return Err(RuntimeError::unsupported_call(
+            operation.callable(),
+            "callback output handler argument materialization failed for phase flags",
+        ));
+    }
+
+    let mut diagnostic = NativeDiagnosticHandle::null();
+    let result = unsafe {
+        phpc_native_callable_value_invoke_value_with_diagnostic_and_free(
+            callable,
+            arguments,
+            &mut diagnostic,
+        )
+    };
+    unsafe { phpc_native_callable_value_free(callable) };
+    if !diagnostic.is_null() {
+        let message = unsafe { diagnostic.as_ref() }
+            .map(|diagnostic| diagnostic.message.clone())
+            .unwrap_or_else(|| "callback output handler invocation failed".to_string());
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        return Err(RuntimeError::unsupported_call(
+            operation.callable(),
+            message,
+        ));
+    }
+
+    let handled = match unsafe { result.as_ref() } {
+        Some(Value::Bool(false)) => Ok(bytes.to_vec()),
+        Some(_) => unsafe { native_value_to_string_bytes(result) },
+        None => Err(RuntimeError::unsupported_call(
+            operation.callable(),
+            "callback output handler returned a null value handle",
+        )),
+    };
+    unsafe { phpc_native_value_free(result) };
+    handled
+}
+
+fn native_output_buffer_flush_bytes(
+    bytes: &[u8],
+    handler: Option<&NativeCallableValueDispatch>,
+    phase: i64,
+    operation: NativeOutputBufferOperation,
+    skip_active: bool,
+) -> RuntimeResult<usize> {
+    let output = if let Some(handler) = handler {
+        let handled =
+            unsafe { native_output_buffer_handler_result_bytes(handler, bytes, phase, operation) }?;
+        handled
+    } else {
+        bytes.to_vec()
+    };
+    if skip_active {
+        native_output_flush_active_bytes(&output)
+    } else {
+        native_output_write_bytes(&output)
+    }
+}
+
+fn native_output_buffer_flush_active() -> RuntimeResult<Value> {
+    NATIVE_OUTPUT_BUFFERS.with(|buffers| {
+        let mut buffers = buffers.borrow_mut();
+        let Some(buffer) = buffers.last_mut() else {
+            return Ok(Value::Bool(false));
+        };
+        let bytes = std::mem::take(&mut buffer.bytes);
+        let handler = buffer.handler.clone();
+        let phase =
+            native_output_buffer_handler_phase(buffer.handler_started, NATIVE_OUTPUT_HANDLER_FLUSH);
+        buffer.handler_started = true;
+        drop(buffers);
+        native_output_buffer_flush_bytes(
+            &bytes,
+            handler.as_ref(),
+            phase,
+            NativeOutputBufferOperation::Flush,
+            true,
+        )
+        .map(|_| Value::Bool(true))
+    })
 }
 
 fn native_output_buffer_status_value(level: usize, buffer: &NativeOutputBuffer) -> Value {
@@ -22895,7 +23013,17 @@ fn native_output_buffer_pop_value(flush: bool) -> RuntimeResult<Value> {
         };
         let bytes = buffer.bytes;
         if flush {
-            native_output_write_bytes(&bytes)?;
+            let phase = native_output_buffer_handler_phase(
+                buffer.handler_started,
+                NATIVE_OUTPUT_HANDLER_FINAL,
+            );
+            native_output_buffer_flush_bytes(
+                &bytes,
+                buffer.handler.as_ref(),
+                phase,
+                NativeOutputBufferOperation::GetFlush,
+                false,
+            )?;
         }
         value_from_output_buffer_bytes(
             bytes,
@@ -22914,7 +23042,17 @@ fn native_output_buffer_pop_bool(flush: bool) -> RuntimeResult<Value> {
             return Ok(Value::Bool(false));
         };
         if flush {
-            native_output_write_bytes(&buffer.bytes)?;
+            let phase = native_output_buffer_handler_phase(
+                buffer.handler_started,
+                NATIVE_OUTPUT_HANDLER_FINAL,
+            );
+            native_output_buffer_flush_bytes(
+                &buffer.bytes,
+                buffer.handler.as_ref(),
+                phase,
+                NativeOutputBufferOperation::EndFlush,
+                false,
+            )?;
         }
         Ok(Value::Bool(true))
     })
@@ -23141,6 +23279,37 @@ pub unsafe extern "C" fn phpc_native_output_buffer_operation_with_diagnostic(
     operation: u8,
     diagnostic: *mut NativeDiagnosticHandle,
 ) -> NativeValueHandle {
+    unsafe {
+        phpc_native_output_buffer_operation_with_callable_table_diagnostic(
+            NativeCallableTableHandle::null(),
+            first,
+            second,
+            third,
+            argc,
+            operation,
+            diagnostic,
+        )
+    }
+}
+
+/// # Safety
+///
+/// `table` may be null unless `ob_start()` receives a non-null callback
+/// argument naming a generated user function, method, callable array, or
+/// invokable object. Argument handles up to `argc` must be non-null value
+/// handles previously returned by the runtime ABI and not yet freed.
+/// `diagnostic` may be null; when non-null, it must point to writable storage
+/// for one `NativeDiagnosticHandle`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_output_buffer_operation_with_callable_table_diagnostic(
+    table: NativeCallableTableHandle,
+    first: NativeValueHandle,
+    second: NativeValueHandle,
+    third: NativeValueHandle,
+    argc: u8,
+    operation: u8,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
     unsafe { native_clear_diagnostic_slot(diagnostic) };
     let result: RuntimeResult<Value> = (|| {
         let operation = NativeOutputBufferOperation::from_tag(operation).ok_or_else(|| {
@@ -23150,7 +23319,7 @@ pub unsafe extern "C" fn phpc_native_output_buffer_operation_with_diagnostic(
             )
         })?;
         let args = unsafe { native_output_buffer_args(first, second, third, argc) }?;
-        native_output_buffer_operation_value(operation, &args)
+        native_output_buffer_operation_value(table, operation, &args)
     })();
     match result {
         Ok(value) => NativeValueHandle::from_value(value),
@@ -39386,9 +39555,21 @@ impl NativeOutputBufferOperation {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 struct NativeOutputBuffer {
     bytes: Vec<u8>,
+    handler: Option<NativeCallableValueDispatch>,
+    handler_started: bool,
+}
+
+impl Default for NativeOutputBuffer {
+    fn default() -> Self {
+        Self {
+            bytes: Vec::new(),
+            handler: None,
+            handler_started: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45569,12 +45750,10 @@ mod tests {
             &[callback],
             &mut diagnostic,
         );
-        assert!(callback_start.is_null());
-        assert_eq!(
-            native_diagnostic_message_for_test(diagnostic),
-            "unsupported call ob_start(): callback output handlers await callable dispatch, chunk phase ownership, and exact output-buffer diagnostics"
-        );
-        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        assert_eq!(unsafe { callback_start.as_ref() }, Some(&Value::Bool(true)));
+        assert!(diagnostic.is_null());
+        let callback_clean = call(NativeOutputBufferOperation::EndClean, &[], &mut diagnostic);
+        assert_eq!(unsafe { callback_clean.as_ref() }, Some(&Value::Bool(true)));
 
         for handle in [
             started,
@@ -45595,9 +45774,203 @@ mod tests {
             final_contents,
             level,
             callback,
+            callback_start,
+            callback_clean,
         ] {
             unsafe { phpc_native_value_free(handle) };
         }
+        native_clear_output_buffers();
+    }
+
+    #[test]
+    fn native_output_buffers_invoke_callable_handlers_on_flush_boundaries() {
+        unsafe extern "C" fn phase_handler(frame: NativeCallFrameHandle) -> NativeCallResultHandle {
+            let buffer = unsafe { phpc_native_call_frame_read_value(frame, 0) };
+            let phase_handle = unsafe { phpc_native_call_frame_read_value(frame, 1) };
+            let bytes = unsafe { native_value_to_string_bytes(buffer) }
+                .expect("test handler should receive string-compatible buffer bytes");
+            let phase = match unsafe { phase_handle.as_ref() } {
+                Some(Value::Int(phase)) => *phase,
+                other => panic!("test handler should receive int phase, got {other:?}"),
+            };
+            unsafe { phpc_native_value_free(buffer) };
+            unsafe { phpc_native_value_free(phase_handle) };
+            let payload = format!("[{}:{phase}]", String::from_utf8_lossy(&bytes));
+            phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::String(
+                payload,
+            )))
+        }
+
+        unsafe extern "C" fn false_handler(frame: NativeCallFrameHandle) -> NativeCallResultHandle {
+            let buffer = unsafe { phpc_native_call_frame_read_value(frame, 0) };
+            let phase = unsafe { phpc_native_call_frame_read_value(frame, 1) };
+            assert_eq!(
+                unsafe { native_value_to_string_bytes(buffer) }.unwrap(),
+                b"raw"
+            );
+            assert_eq!(unsafe { phase.as_ref() }, Some(&Value::Int(9)));
+            unsafe { phpc_native_value_free(buffer) };
+            unsafe { phpc_native_value_free(phase) };
+            phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Bool(false)))
+        }
+
+        fn call(
+            table: NativeCallableTableHandle,
+            operation: NativeOutputBufferOperation,
+            args: &[NativeValueHandle],
+            diagnostic: &mut NativeDiagnosticHandle,
+        ) -> NativeValueHandle {
+            let mut handles = [
+                NativeValueHandle::null(),
+                NativeValueHandle::null(),
+                NativeValueHandle::null(),
+            ];
+            for (index, arg) in args.iter().enumerate() {
+                handles[index] = *arg;
+            }
+            unsafe {
+                phpc_native_output_buffer_operation_with_callable_table_diagnostic(
+                    table,
+                    handles[0],
+                    handles[1],
+                    handles[2],
+                    args.len() as u8,
+                    operation as u8,
+                    diagnostic,
+                )
+            }
+        }
+
+        native_clear_output_buffers();
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "phase_handler",
+                NativeCallableVisibility::Public,
+                phase_handler,
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "false_handler",
+                NativeCallableVisibility::Public,
+                false_handler,
+            );
+        }
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        let outer = call(
+            table,
+            NativeOutputBufferOperation::Start,
+            &[],
+            &mut diagnostic,
+        );
+        assert_eq!(unsafe { outer.as_ref() }, Some(&Value::Bool(true)));
+        let handler = NativeValueHandle::from_value(Value::String("phase_handler".to_string()));
+        let inner = call(
+            table,
+            NativeOutputBufferOperation::Start,
+            &[handler],
+            &mut diagnostic,
+        );
+        assert_eq!(unsafe { inner.as_ref() }, Some(&Value::Bool(true)));
+        let a = NativeValueHandle::from_value(Value::String("A".to_string()));
+        assert_eq!(
+            unsafe { phpc_native_value_format_stdout_with_diagnostic(a, 0, &mut diagnostic) },
+            1
+        );
+        let flushed = call(
+            table,
+            NativeOutputBufferOperation::Flush,
+            &[],
+            &mut diagnostic,
+        );
+        assert_eq!(unsafe { flushed.as_ref() }, Some(&Value::Bool(true)));
+        let b = NativeValueHandle::from_value(Value::String("B".to_string()));
+        assert_eq!(
+            unsafe { phpc_native_value_format_stdout_with_diagnostic(b, 0, &mut diagnostic) },
+            1
+        );
+        let ended = call(
+            table,
+            NativeOutputBufferOperation::EndFlush,
+            &[],
+            &mut diagnostic,
+        );
+        assert_eq!(unsafe { ended.as_ref() }, Some(&Value::Bool(true)));
+        let captured_outer = call(
+            table,
+            NativeOutputBufferOperation::GetClean,
+            &[],
+            &mut diagnostic,
+        );
+        assert_eq!(
+            native_value_string_bytes_for_test(captured_outer),
+            b"[A:5][B:8]"
+        );
+
+        let false_handler_value =
+            NativeValueHandle::from_value(Value::String("false_handler".to_string()));
+        let false_outer = call(
+            table,
+            NativeOutputBufferOperation::Start,
+            &[],
+            &mut diagnostic,
+        );
+        assert_eq!(unsafe { false_outer.as_ref() }, Some(&Value::Bool(true)));
+        let false_start = call(
+            table,
+            NativeOutputBufferOperation::Start,
+            &[false_handler_value],
+            &mut diagnostic,
+        );
+        assert_eq!(unsafe { false_start.as_ref() }, Some(&Value::Bool(true)));
+        let raw = NativeValueHandle::from_value(Value::String("raw".to_string()));
+        assert_eq!(
+            unsafe { phpc_native_value_format_stdout_with_diagnostic(raw, 0, &mut diagnostic) },
+            3
+        );
+        let false_flush = call(
+            table,
+            NativeOutputBufferOperation::GetFlush,
+            &[],
+            &mut diagnostic,
+        );
+        assert_eq!(native_value_string_bytes_for_test(false_flush), b"raw");
+        let false_outer_captured = call(
+            table,
+            NativeOutputBufferOperation::GetClean,
+            &[],
+            &mut diagnostic,
+        );
+        assert_eq!(
+            native_value_string_bytes_for_test(false_outer_captured),
+            b"raw"
+        );
+
+        for handle in [
+            outer,
+            handler,
+            inner,
+            a,
+            flushed,
+            b,
+            ended,
+            captured_outer,
+            false_handler_value,
+            false_outer,
+            false_start,
+            raw,
+            false_flush,
+            false_outer_captured,
+        ] {
+            unsafe { phpc_native_value_free(handle) };
+        }
+        unsafe { phpc_native_callable_table_free(table) };
         native_clear_output_buffers();
     }
 

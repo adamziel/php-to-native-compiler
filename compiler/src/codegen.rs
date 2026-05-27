@@ -23639,6 +23639,9 @@ impl CGenerator {
             }
             if self.uses_native_output_buffer_operation {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_output_buffer_operation_with_diagnostic(phpc_NativeValueHandle first, phpc_NativeValueHandle second, phpc_NativeValueHandle third, uint8_t argc, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                if self.uses_native_callable_helpers {
+                    output.push_str("extern phpc_NativeValueHandle phpc_native_output_buffer_operation_with_callable_table_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle first, phpc_NativeValueHandle second, phpc_NativeValueHandle third, uint8_t argc, uint8_t operation, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                }
             }
             if self.uses_native_object_instantiation_helpers {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_new_declared_class_with_diagnostic(size_t class_id, const uint8_t *class_name, size_t class_name_len, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, size_t property_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -60118,18 +60121,40 @@ impl CGenerator {
             cleanup_after_use.extend(value.cleanup_after_use);
         }
 
+        let cleanup_before_call = format!(
+            "{}{}",
+            c_cleanup_sequence(&cleanup_after_use),
+            failure_cleanup
+        );
+        let callable_table = if matches!(operation, NativeOutputBufferOperation::Start) && argc > 0
+        {
+            Some(self.ensure_native_callable_table(&cleanup_before_call))
+        } else {
+            None
+        };
         let diagnostic = self.next_native_name("output_buffer_diagnostic");
         let result = self.next_native_name(native_output_buffer_operation_result_prefix(operation));
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
-        self.body.push(format!(
-            "phpc_NativeValueHandle {result} = phpc_native_output_buffer_operation_with_diagnostic({}, {}, {}, {}, {}, &{diagnostic});",
-            handles[0],
-            handles[1],
-            handles[2],
-            argc,
-            operation as u8
-        ));
+        if let Some(callable_table) = callable_table {
+            self.body.push(format!(
+                "phpc_NativeValueHandle {result} = phpc_native_output_buffer_operation_with_callable_table_diagnostic({callable_table}, {}, {}, {}, {}, {}, &{diagnostic});",
+                handles[0],
+                handles[1],
+                handles[2],
+                argc,
+                operation as u8
+            ));
+        } else {
+            self.body.push(format!(
+                "phpc_NativeValueHandle {result} = phpc_native_output_buffer_operation_with_diagnostic({}, {}, {}, {}, {}, &{diagnostic});",
+                handles[0],
+                handles[1],
+                handles[2],
+                argc,
+                operation as u8
+            ));
+        }
         self.emit_report_native_diagnostic(&diagnostic);
         let cleanup = format!(
             "{}{}",
