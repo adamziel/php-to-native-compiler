@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 19:16 CEST
+Updated: 2026-05-27 19:39 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,12 +19,32 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `16f6737c` searches generated include-unit
-registry entries through selected `include_path` and source-directory fallbacks
-for runtime include/require path values. Generated-C runtime include dispatch
-can now resolve declared units through ordered include_path entries before the
-shared no-match/source-loader diagnostic boundary, while arbitrary runtime PHP
-source loading and fully dynamic include_path mutation remain blocked.
+Latest accounted source capability: `622f9479` publishes runtime callable
+source signatures for covered generated descriptors and runtime builtins so
+unknown callable named/spread calls can finalize materialized source arguments
+through the shared runtime callable-value ABI. Heterogeneous callable sets,
+descriptor-backed closure parameter/default metadata, broader callable
+object/array/external families, broad reference/COW parity, and LLVM/ASM parity
+remain blocked.
+
+Recent source commit `622f9479` advances selected unknown callable
+named/spread semantics without adding callable-name or fixture-shape lowering.
+Runtime callable descriptors now publish source-call signatures with parameter
+names, required/default flags, by-reference flags, default values, and variadic
+metadata; generated user functions and declared methods register those
+signatures from PHP parameter metadata; and unknown callable source calls use
+`phpc_native_callable_value_finalize_materialized_arguments_with_diagnostic`
+instead of compile-time parameter arrays. Focused gates covered unknown
+generated-C/link execution, runtime callable source-signature finalization,
+materialized argument/reference helpers, sort/variadic/by-reference callable
+regressions, leading-global and qualified-call regressions, keyword named
+argument regressions, include_path registry regressions, formatting, and diff
+checks. Heterogeneous callable-family signature policy, descriptor closure
+source signatures, unsupported external/core callables, broader callable
+object/array families, broader by-reference/writeback builtins, full
+reference/COW parity, and LLVM/ASM parity remain blocked. Primary gate log:
+`state/logs/phpc-primary-unknown-callable-6085869e-20260527.gates.log`
+sha256 `a14912cfe23ba7e3922a7e78bd92a84d25fef1ac45f2b50f75146eee5f507dbd`.
 
 Recent source commit `16f6737c` advances selected runtime include/require
 registry fidelity without adding a runtime PHP parser or source loader. The
