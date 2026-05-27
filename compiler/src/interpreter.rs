@@ -47897,6 +47897,10 @@ impl Interpreter {
     }
 
     fn lookup_direct_function_call(&self, name: &str) -> Option<Callable> {
+        if let Some(exact_name) = name.strip_prefix('\\') {
+            return self.lookup_function_exact(exact_name);
+        }
+
         if let Some(callable) = self.lookup_function_exact(name) {
             return Some(callable);
         }
@@ -77662,6 +77666,7 @@ fn arity_expectation(required: usize, total: usize, variadic: bool) -> ArityExpe
 }
 
 fn callable_name(name: &str) -> String {
+    let name = name.trim_start_matches('\\');
     format!("{name}()")
 }
 

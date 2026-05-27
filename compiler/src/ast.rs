@@ -257,7 +257,14 @@ impl Stmt {
 pub struct UseImport {
     pub name: String,
     pub alias: String,
+    pub kind: UseImportKind,
     pub span: Span,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UseImportKind {
+    Class,
+    Function,
 }
 
 #[derive(Debug, Clone, PartialEq)]

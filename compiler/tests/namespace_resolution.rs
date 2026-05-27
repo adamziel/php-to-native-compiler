@@ -1,9 +1,13 @@
 use std::fs;
 
 use php_compiler::error::Phase;
-use php_compiler::{emit_asm_source, emit_ir_source, run_source, run_source_with_source_file};
+use php_compiler::{
+    codegen::emit_native_executable_c_source, emit_asm_source, emit_ir_source, parse, run_source,
+    run_source_with_source_file,
+};
 
 const LLVM_NAMESPACE_REJECTION: &str = "LLVM namespace lowering rejects namespace declarations, namespace-qualified names, namespace imports, and namespace-aware name resolution until native symbol tables, namespace context, aliases/imports, fallback function/constant lookup, class/autoload lookup, and exact native error behavior exist; phpc run handles current namespace behavior";
+const ASSEMBLY_FUNCTION_CALL_REJECTION: &str = "assembly function-call lowering rejects function calls outside the bounded generated-C user-function frame subset, including unknown user functions, callable builtins outside define()/constant()/defined(), arity-mismatched direct calls, unsupported by-reference argument binding, and unsupported dynamic string-valued calls, until full callable lookup, full arity/type diagnostics, callbacks, and cleanup handoff exist; generated-native C lowers supported by-value fixed/default/variadic direct, supported direct and compiler-known single-target by-reference frames, finite known-string dynamic, and runtime string-valued dynamic user-function frames";
 
 fn parse_error(source: &str) -> php_compiler::error::Diagnostic {
     let error = run_source(source).unwrap_err();
@@ -136,6 +140,156 @@ echo function_exists("label") ? "yes" : "no";
 }
 
 #[test]
+fn function_imports_resolve_aliases_and_keep_non_imported_fallback() {
+    let root = std::env::temp_dir().join(format!(
+        "phpc-namespace-resolution-{}-{}",
+        std::process::id(),
+        "function-imports"
+    ));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("create function import fixture directory");
+    let main = root.join("index.php");
+    let lib = root.join("functions.php");
+
+    fs::write(
+        &lib,
+        r#"<?php
+namespace Vendor\Tools;
+
+function label($value) {
+    return __FUNCTION__ . ":" . $value;
+}
+
+function other($value) {
+    return __FUNCTION__ . ":" . $value;
+}
+"#,
+    )
+    .expect("write function import library fixture");
+
+    let source = r#"<?php
+namespace App\Demo;
+
+use function Vendor\Tools\label as vendor_label, Vendor\Tools\other;
+require 'functions.php';
+
+function label($value) {
+    return __FUNCTION__ . ":" . $value;
+}
+
+echo vendor_label("a"), "\n";
+echo other("b"), "\n";
+echo label("c"), "\n";
+echo strlen("abc");
+"#;
+    fs::write(&main, source).expect("write function import main fixture");
+
+    let execution = run_source_with_source_file(source, main.display().to_string()).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Vendor\\Tools\\label:a\nVendor\\Tools\\other:b\nApp\\Demo\\label:c\n3"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let _ = fs::remove_file(lib);
+    let _ = fs::remove_file(main);
+    let _ = fs::remove_dir(root);
+}
+
+#[test]
+fn function_imports_use_exact_lookup_without_global_suffix_fallback() {
+    let root = std::env::temp_dir().join(format!(
+        "phpc-namespace-resolution-{}-{}",
+        std::process::id(),
+        "function-import-exact"
+    ));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("create exact function import fixture directory");
+    let main = root.join("index.php");
+    let lib = root.join("global.php");
+
+    fs::write(
+        &lib,
+        r#"<?php
+function fallback_only() {
+    return "global";
+}
+"#,
+    )
+    .expect("write global fallback fixture");
+
+    let source = r#"<?php
+namespace App\Demo;
+
+use function Vendor\Missing\fallback_only;
+require 'global.php';
+
+echo fallback_only();
+"#;
+    fs::write(&main, source).expect("write exact function import main fixture");
+
+    let error = run_source_with_source_file(source, main.display().to_string()).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Runtime);
+    assert_eq!(error.line, 7);
+    assert_eq!(error.column, 6);
+    assert_eq!(
+        error.message,
+        "undefined function Vendor\\Missing\\fallback_only()"
+    );
+
+    let _ = fs::remove_file(lib);
+    let _ = fs::remove_file(main);
+    let _ = fs::remove_dir(root);
+}
+
+#[test]
+fn function_imports_reject_same_namespace_alias_conflicts() {
+    let import_then_function = parse_error(
+        r#"<?php
+namespace App\Demo;
+use function Vendor\Tools\label;
+function label() {}
+"#,
+    );
+    assert_eq!(import_then_function.phase, Phase::Parse);
+    assert_eq!(import_then_function.line, 4);
+    assert_eq!(
+        import_then_function.message,
+        "unsupported function declaration: function name conflicts with an imported function alias in the same namespace"
+    );
+
+    let function_then_import = parse_error(
+        r#"<?php
+namespace App\Demo;
+function label() {}
+use function Vendor\Tools\label;
+"#,
+    );
+    assert_eq!(function_then_import.phase, Phase::Parse);
+    assert_eq!(function_then_import.line, 4);
+    assert_eq!(
+        function_then_import.message,
+        "unsupported function use declaration: imported function alias conflicts with an existing function declaration or import in the same namespace"
+    );
+
+    let duplicate_import = parse_error(
+        r#"<?php
+namespace App\Demo;
+use function Vendor\Tools\label;
+use function Other\Tools\label;
+"#,
+    );
+    assert_eq!(duplicate_import.phase, Phase::Parse);
+    assert_eq!(duplicate_import.line, 4);
+    assert_eq!(
+        duplicate_import.message,
+        "unsupported function use declaration: imported function alias conflicts with an existing function declaration or import in the same namespace"
+    );
+}
+
+#[test]
 fn unbracketed_namespace_resolves_const_declarations_to_qualified_names() {
     let execution = run_source(
         r#"<?php
@@ -211,14 +365,6 @@ if (true) {
         ),
         (
             r#"<?php
-use function App\Demo\make_service;
-"#,
-            2,
-            1,
-            "unsupported function use declaration: missing function import metadata, namespace-aware function lookup, alias handling, fallback lookup, and native lowering",
-        ),
-        (
-            r#"<?php
 use const App\Demo\VALUE as DEMO_VALUE;
 "#,
             2,
@@ -258,6 +404,7 @@ fn native_lowering_rejects_namespace_context_before_scalar_folds() {
         "<?php\nnamespace App;\necho strlen(\"abc\");\n",
         "<?php\nnamespace App;\necho defined(\"\\\\PHP_VERSION_ID\");\n",
         "<?php\nnamespace App;\nuse Vendor\\Lib\\Tool;\necho Tool::class;\n",
+        "<?php\nuse function strlen as len;\necho len(\"abc\");\n",
     ] {
         let error = emit_ir_source(source).unwrap_err();
 
@@ -266,6 +413,17 @@ fn native_lowering_rejects_namespace_context_before_scalar_folds() {
         assert_eq!(error.column, 1);
         assert_eq!(error.message, LLVM_NAMESPACE_REJECTION);
     }
+}
+
+#[test]
+fn generated_c_rejects_function_import_boundary() {
+    let program = parse("<?php\nuse function strlen as len;\necho len(\"abc\");\n").unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 2);
+    assert_eq!(error.column, 1);
+    assert_eq!(error.message, ASSEMBLY_FUNCTION_CALL_REJECTION);
 }
 
 #[test]

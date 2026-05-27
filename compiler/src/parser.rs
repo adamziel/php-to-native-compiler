@@ -6,6 +6,7 @@ use crate::ast::{
     InterfaceMethodDecl, NewClassName, Program, ReferenceSource, Span, StaticLocalDeclarator, Stmt,
     SwitchCase, TraitDecl, TraitMethodAliasDecl, TraitMethodPrecedenceDecl,
     TraitMethodVisibilityDecl, TraitUseDecl, TypeDecl, UnaryOp, UnsetTarget, UseImport,
+    UseImportKind,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use crate::lexer::{tokenize, Token, TokenKind};
@@ -22,6 +23,8 @@ struct Parser {
     function_body_depth: usize,
     current_namespace: String,
     class_imports: Vec<(String, String)>,
+    function_imports: Vec<(String, String)>,
+    function_declarations: Vec<String>,
     namespace_declared: bool,
     pending_doc_comment: Option<String>,
     trace_parse: bool,
@@ -62,6 +65,8 @@ impl Parser {
             function_body_depth: 0,
             current_namespace: String::new(),
             class_imports: Vec::new(),
+            function_imports: Vec::new(),
+            function_declarations: Vec::new(),
             namespace_declared: false,
             pending_doc_comment: None,
             trace_parse: std::env::var_os("PHPC_TRACE_PARSE").is_some(),
@@ -206,6 +211,19 @@ impl Parser {
         let is_nested = self.nested_statement_depth > 0 || self.function_body_depth > 0;
         let returns_by_reference = self.match_token(|kind| matches!(kind, TokenKind::Ampersand));
         let name = self.consume_identifier("expected function name")?;
+        if resolve_namespace {
+            let alias = name.to_ascii_lowercase();
+            if self
+                .function_imports
+                .iter()
+                .any(|(import_alias, _)| import_alias == &alias)
+            {
+                return Err(self.error_at(start, function_declaration_import_conflict_message()));
+            }
+            if !is_nested {
+                self.function_declarations.push(alias);
+            }
+        }
         let name = if resolve_namespace {
             self.resolve_function_declaration_name(&name)
         } else {
@@ -1445,6 +1463,8 @@ impl Parser {
         )?;
         self.current_namespace = name.clone();
         self.class_imports.clear();
+        self.function_imports.clear();
+        self.function_declarations.clear();
         self.namespace_declared = true;
         Ok(Stmt::Namespace { name, span })
     }
@@ -1457,45 +1477,77 @@ impl Parser {
         if let Some(grouped_span) = self.grouped_use_brace_span() {
             return Err(self.error_at(grouped_span, unsupported_grouped_use_message()));
         }
-        if self.check(|kind| matches!(kind, TokenKind::Function)) {
-            return Err(self.error_at(span, unsupported_function_use_message()));
-        }
-        if self.check(|kind| {
+        let kind = if self.match_token(|kind| matches!(kind, TokenKind::Function)) {
+            UseImportKind::Function
+        } else if self.check(|kind| {
             matches!(kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("const"))
         }) {
             return Err(self.error_at(span, unsupported_const_use_message()));
-        }
-
-        let (name, import_span) = self.parse_use_import_name()?;
-        if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
-            return Err(self.error_at(self.peek().span, unsupported_use_message()));
-        }
-        let alias = if self.match_identifier("as") {
-            self.consume_identifier("expected import alias after 'as'")?
         } else {
-            name.rsplit('\\')
-                .next()
-                .expect("qualified name has at least one segment")
-                .to_string()
+            UseImportKind::Class
         };
-        if self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
-            return Err(self.error_at(
-                self.previous().span,
-                unsupported_multiple_class_use_message(),
-            ));
-        }
-        self.consume_keyword(TokenKind::Semicolon, "expected ';' after use declaration")?;
 
-        self.class_imports
-            .push((alias.to_ascii_lowercase(), name.clone()));
-        Ok(Stmt::Use {
-            imports: vec![UseImport {
+        let mut imports = Vec::new();
+        loop {
+            let (name, import_span) = self.parse_use_import_name()?;
+            if self.check(|kind| matches!(kind, TokenKind::LBrace)) {
+                return Err(self.error_at(self.peek().span, unsupported_use_message()));
+            }
+            let alias = if self.match_identifier("as") {
+                self.consume_identifier("expected import alias after 'as'")?
+            } else {
+                name.rsplit('\\')
+                    .next()
+                    .expect("qualified name has at least one segment")
+                    .to_string()
+            };
+
+            match kind {
+                UseImportKind::Class => {
+                    self.class_imports
+                        .push((alias.to_ascii_lowercase(), name.clone()));
+                }
+                UseImportKind::Function => {
+                    let alias_key = alias.to_ascii_lowercase();
+                    if self
+                        .function_imports
+                        .iter()
+                        .any(|(import_alias, _)| import_alias == &alias_key)
+                        || self
+                            .function_declarations
+                            .iter()
+                            .any(|declaration| declaration == &alias_key)
+                    {
+                        return Err(
+                            self.error_at(import_span, function_import_alias_conflict_message())
+                        );
+                    }
+                    self.function_imports
+                        .push((alias_key, format!("\\{}", name.trim_start_matches('\\'))));
+                }
+            }
+
+            imports.push(UseImport {
                 name,
                 alias,
+                kind,
                 span: import_span,
-            }],
-            span,
-        })
+            });
+
+            if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
+                break;
+            }
+            if kind == UseImportKind::Class {
+                return Err(self.error_at(
+                    self.previous().span,
+                    unsupported_multiple_class_use_message(),
+                ));
+            }
+        }
+
+        self.consume_keyword(TokenKind::Semicolon, "expected ';' after use declaration")?;
+
+        Ok(Stmt::Use { imports, span })
     }
 
     fn grouped_use_brace_span(&self) -> Option<Span> {
@@ -6857,6 +6909,14 @@ impl Parser {
     }
 
     fn resolve_function_call_name(&self, name: &str) -> String {
+        if let Some((_, imported)) = self
+            .function_imports
+            .iter()
+            .find(|(alias, _)| alias.eq_ignore_ascii_case(name))
+        {
+            return imported.clone();
+        }
+
         if self.current_namespace.is_empty() {
             name.to_string()
         } else {
@@ -7559,12 +7619,16 @@ fn unsupported_multiple_class_use_message() -> &'static str {
     "unsupported multiple class use declaration: multiple simple class imports in one use declaration require import-list metadata, alias handling, namespace resolution, and native lowering"
 }
 
-fn unsupported_function_use_message() -> &'static str {
-    "unsupported function use declaration: missing function import metadata, namespace-aware function lookup, alias handling, fallback lookup, and native lowering"
-}
-
 fn unsupported_const_use_message() -> &'static str {
     "unsupported const use declaration: missing constant import metadata, namespace-aware constant lookup, alias handling, fallback lookup, and native lowering"
+}
+
+fn function_import_alias_conflict_message() -> &'static str {
+    "unsupported function use declaration: imported function alias conflicts with an existing function declaration or import in the same namespace"
+}
+
+fn function_declaration_import_conflict_message() -> &'static str {
+    "unsupported function declaration: function name conflicts with an imported function alias in the same namespace"
 }
 
 fn unsupported_grouped_use_message() -> &'static str {

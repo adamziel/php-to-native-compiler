@@ -7,7 +7,7 @@ use crate::ast::{
     ClassMethodDecl, ClassVisibility, ClosureCapture, CompoundAssignOp, Expr, ForAction,
     FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition,
     InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart, NewClassName, Program,
-    ReferenceSource, Span, Stmt, SwitchCase, TypeDecl, UnaryOp, UnsetTarget,
+    ReferenceSource, Span, Stmt, SwitchCase, TypeDecl, UnaryOp, UnsetTarget, UseImportKind,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
@@ -29777,6 +29777,13 @@ impl CGenerator {
         }
 
         match stmt {
+            Stmt::Use { imports, span }
+                if imports
+                    .iter()
+                    .any(|import| import.kind == UseImportKind::Function) =>
+            {
+                Err(self.unsupported(*span, ASSEMBLY_FUNCTION_CALL_REJECTION))
+            }
             Stmt::Namespace { .. } | Stmt::Use { .. } => Ok(()),
             Stmt::Echo { exprs, .. } => {
                 for (index, expr) in exprs.iter().enumerate() {

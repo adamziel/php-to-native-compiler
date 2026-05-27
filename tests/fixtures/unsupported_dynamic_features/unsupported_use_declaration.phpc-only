@@ -1,1 +1,0 @@
-phpc intentionally rejects function use declarations while simple class imports are the only supported import slice.
