@@ -9883,6 +9883,90 @@ pub unsafe extern "C" fn phpc_native_constructor_scope_from_value_with_diagnosti
 
 /// # Safety
 ///
+/// `table`, `class_name`, `registry`, and `diagnostic` must be valid according
+/// to the runtime ABI. Returns an owned normalized constructor scope for
+/// generated classes. String class names that do not already resolve against
+/// the generated callable/class table invoke the request-local SPL autoload
+/// registry before scope lookup is retried.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_constructor_scope_from_value_with_autoload_registry_and_diagnostic(
+    table: NativeCallableTableHandle,
+    class_name: NativeValueHandle,
+    mut registry: NativeSplAutoloadRegistryHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeStringHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| -> Result<NativeStringHandle, String> {
+        let Some(table) = (unsafe { table.as_ref() }) else {
+            return Err("native constructor allocation failed: table is null".to_string());
+        };
+        let Some(value) = (unsafe { class_name.as_ref() }) else {
+            return Err(
+                "native constructor allocation failed: class-name handle is null".to_string(),
+            );
+        };
+        let scope = match value {
+            Value::String(class_name) => {
+                let mut scope = table.allocatable_scope_for_class_name(class_name);
+                if scope.is_none() {
+                    if let Some(registry) = unsafe { registry.as_mut() } {
+                        if !unsafe {
+                            native_spl_autoload_call_bytes(
+                                registry,
+                                class_name.as_bytes(),
+                                Some(NativeClassMetadataOperation::ClassExists as u8),
+                                diagnostic,
+                            )
+                        } {
+                            return Ok(NativeStringHandle::null());
+                        }
+                        if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+                            return Ok(NativeStringHandle::null());
+                        }
+                        scope = table.allocatable_scope_for_class_name(class_name);
+                    }
+                }
+                scope
+            }
+            Value::Object(object) => table.allocatable_scope_for_class_name(object.class_name()),
+            other => {
+                return Err(RuntimeError::unsupported_object_instantiation(
+                    "dynamic class name",
+                    format!(
+                        "dynamic class-name expression must be object or class string, got {}",
+                        other.type_name()
+                    ),
+                )
+                .message()
+                .to_string())
+            }
+        };
+        let Some(scope) = scope else {
+            let name = match value {
+                Value::String(class_name) => class_name.as_str(),
+                Value::Object(object) => object.class_name(),
+                _ => "dynamic class name",
+            };
+            return Err(format!(
+                "native constructor allocation failed: unknown or non-allocatable class {name}"
+            ));
+        };
+        Ok(NativeStringHandle::from_vec(scope))
+    })();
+
+    match result {
+        Ok(scope) => scope,
+        Err(message) => {
+            if !unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+                unsafe { native_store_diagnostic_message(diagnostic, message) };
+            }
+            NativeStringHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
 /// `handle` must be null or a callable handle previously returned by the
 /// runtime ABI and not yet freed.
 #[no_mangle]
@@ -42620,6 +42704,18 @@ mod tests {
         phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Null))
     }
 
+    unsafe extern "C" fn native_autoload_alias_factory_widget_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        let class_name = unsafe { autoload_class_bytes_from_frame_for_test(frame) };
+        spl_autoload_record_event_for_test("alias-class", &class_name);
+        let aliased =
+            native_declare_user_class_alias_bytes_result(b"FactoryWidget", &class_name, false)
+                .expect("test class alias should not hit runtime diagnostic");
+        assert!(aliased);
+        phpc_native_call_result_from_value(NativeValueHandle::from_value(Value::Null))
+    }
+
     unsafe extern "C" fn native_autoload_declare_trait_callback(
         frame: NativeCallFrameHandle,
     ) -> NativeCallResultHandle {
@@ -45955,6 +46051,70 @@ mod tests {
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_callable_table_free(table) };
         native_user_classes_reset_for_test();
+    }
+
+    #[test]
+    fn native_constructor_scope_from_value_invokes_autoload_registry_for_string_misses() {
+        native_user_classes_reset_for_test();
+        spl_autoload_events_reset_for_test();
+        let table = phpc_native_callable_table_new();
+        let registry = phpc_native_spl_autoload_registry_new();
+        unsafe {
+            assert!(phpc_native_declare_user_class_bytes(
+                b"FactoryWidget".as_ptr(),
+                "FactoryWidget".len(),
+            ));
+            assert!(
+                phpc_native_callable_table_register_allocatable_class_and_free(
+                    table,
+                    native_string_for_test("FactoryWidget"),
+                )
+            );
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Function,
+                None,
+                "alias_factory_widget",
+                NativeCallableVisibility::Public,
+                native_autoload_alias_factory_widget_callback,
+            );
+            register_spl_autoload_callable_for_test(
+                registry,
+                table,
+                Value::String("alias_factory_widget".to_string()),
+                false,
+            );
+        }
+
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let alias_value =
+            NativeValueHandle::from_value(Value::String("FactoryAutoloadAlias".to_string()));
+        let scope = unsafe {
+            phpc_native_constructor_scope_from_value_with_autoload_registry_and_diagnostic(
+                table,
+                alias_value,
+                registry,
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(
+            unsafe { native_string_handle_to_string(scope) }.as_deref(),
+            Some("factorywidget")
+        );
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            spl_autoload_events_for_test(),
+            vec!["alias-class:FactoryAutoloadAlias"]
+        );
+
+        unsafe {
+            phpc_native_string_free(scope);
+            phpc_native_value_free(alias_value);
+            phpc_native_spl_autoload_registry_free(registry);
+            phpc_native_callable_table_free(table);
+        }
+        native_user_classes_reset_for_test();
+        spl_autoload_events_reset_for_test();
     }
 
     #[test]

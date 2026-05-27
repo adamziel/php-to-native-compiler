@@ -24313,6 +24313,9 @@ impl CGenerator {
                 output.push_str("extern bool phpc_native_constructor_lookup_scope_with_access_context_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_constructor_lookup_scope_with_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeStringHandle phpc_native_constructor_scope_from_value_with_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle class_name, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                if self.uses_native_spl_autoload_registry_helpers {
+                    output.push_str("extern phpc_NativeStringHandle phpc_native_constructor_scope_from_value_with_autoload_registry_and_diagnostic(phpc_NativeCallableTableHandle table, phpc_NativeValueHandle class_name, phpc_NativeSplAutoloadRegistryHandle registry, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                }
                 output.push_str("extern phpc_NativeCallResultHandle phpc_native_constructor_allocation_invoke_result_with_access_context_diagnostic_and_free_scope_receiver_arguments(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeValueHandle receiver, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_constructor_allocation_invoke_value_with_access_context_diagnostic_and_free_scope_receiver_arguments(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeValueHandle receiver, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_constructor_allocation_invoke_reference_with_access_context_diagnostic_and_free_scope_receiver_arguments(phpc_NativeCallableTableHandle table, phpc_NativeStringHandle scope, phpc_NativeValueHandle receiver, uint8_t access_context, phpc_NativeStringHandle caller_scope, phpc_NativeCallArgumentsHandle arguments, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -25735,12 +25738,13 @@ impl CGenerator {
         let scope = self.next_native_name("constructor_scope");
         self.uses_native_string_helpers = true;
         let callable_setup_failure_cleanup = format!("{class_name_cleanup}{failure_cleanup}");
-        let callable_table = self.ensure_native_callable_table(&callable_setup_failure_cleanup);
+        let (autoload_registry, callable_table) =
+            self.ensure_native_spl_autoload_registry(&callable_setup_failure_cleanup, span)?;
         self.body.push(format!(
             "phpc_NativeDiagnosticHandle {scope_diagnostic} = {{0}};"
         ));
         self.body.push(format!(
-            "phpc_NativeStringHandle {scope} = phpc_native_constructor_scope_from_value_with_diagnostic({callable_table}, {}, &{scope_diagnostic});",
+            "phpc_NativeStringHandle {scope} = phpc_native_constructor_scope_from_value_with_autoload_registry_and_diagnostic({callable_table}, {}, {autoload_registry}, &{scope_diagnostic});",
             class_name_value.handle
         ));
         self.emit_report_native_diagnostic(&scope_diagnostic);

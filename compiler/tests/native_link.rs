@@ -9273,13 +9273,51 @@ fn native_executable_c_source_routes_dynamic_constructor_alias_and_parenthesized
     let body = main_body(&source);
 
     assert!(
-        body.matches("phpc_native_constructor_scope_from_value_with_diagnostic")
-            .count()
+        body.matches(
+            "phpc_native_constructor_scope_from_value_with_autoload_registry_and_diagnostic"
+        )
+        .count()
             >= 3
             && body.contains("phpc_native_string_dynamic_class_name_matches")
+            && body.contains("phpc_user_spl_autoload_registry")
             && body.contains("phpc_native_constructor_allocation_invoke_value_with_access_context_diagnostic_and_free_scope_receiver_arguments")
             && source.contains("phpc_native_declare_user_class_alias_bytes_with_diagnostic"),
-        "dynamic constructor aliases and parenthesized class-string/object forms should share metadata normalization and constructor invocation:\n{source}"
+        "dynamic constructor aliases and parenthesized class-string/object forms should share registry-aware metadata normalization and constructor invocation:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_dynamic_constructor_misses_through_spl_autoload_registry() {
+    let program = parse(concat!(
+        "<?php\n",
+        "class DynamicCtorAutoloadTarget {\n",
+        "    public $label = \"target\";\n",
+        "}\n",
+        "function dynamic_ctor_autoload($name) {\n",
+        "    echo $name;\n",
+        "}\n",
+        "spl_autoload_register(\"dynamic_ctor_autoload\");\n",
+        "$class = \"DynamicCtorAutoloadAlias\";\n",
+        "new $class();\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains(
+            "phpc_native_constructor_scope_from_value_with_autoload_registry_and_diagnostic("
+        ) && body.contains("phpc_user_spl_autoload_registry")
+            && body.contains(
+                "phpc_native_spl_autoload_register_callable_value_with_callback_value_and_free("
+            ),
+        "dynamic constructor lookup should invoke the existing SPL registry before constructor scope lookup:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_constructor_scope_from_value_with_diagnostic(")
+            && !body.contains("spl_autoload_register_callback_")
+            && !body.contains("dynamic_user_function_matched_"),
+        "dynamic constructor autoload must not fall back to no-autoload scope lookup or synthesized callback ladders:\n{source}"
     );
 }
 
@@ -9317,6 +9355,48 @@ fn emit_exe_links_and_runs_dynamic_constructor_alias_and_parenthesized_forms() {
     );
     assert_eq!(run.stdout, b"ONE|TWO|THREE\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_dynamic_constructor_miss_invokes_autoload_before_metadata_diagnostic() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class DynamicCtorAutoloadRunTarget {\n",
+        "    public $label = \"target\";\n",
+        "}\n",
+        "function dynamic_ctor_autoload_run($name) {\n",
+        "    echo \"autoload:\", $name, \"\\n\";\n",
+        "}\n",
+        "spl_autoload_register(\"dynamic_ctor_autoload_run\");\n",
+        "$class = \"DynamicCtorAutoloadRunMissing\";\n",
+        "new $class();\n",
+        "echo \"unreached\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("dynamic_constructor_autoload_miss", source);
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run dynamic constructor autoload miss executable");
+    assert!(!run.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "autoload:DynamicCtorAutoloadRunMissing\n"
+    );
+    assert!(
+        String::from_utf8_lossy(&run.stderr).contains(
+            "native constructor allocation failed: unknown or non-allocatable class DynamicCtorAutoloadRunMissing"
+        ),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
 
     let _ = fs::remove_file(source_path);
     let _ = fs::remove_file(output_path);
