@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 14:59 CEST
+Updated: 2026-05-27 15:01 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,18 +19,29 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **90%** `[##################--]`
 
-Latest accounted source capability: `a7dcd288` routes selected generated-C
-interface method dispatch through shared metadata and source-call boundaries.
-Declared user interfaces now register generated-C metadata, parent-interface
-expansion, and case-insensitive interface keys; declared classes validate
-public non-static implementation methods against interface method metadata
-before class metadata is emitted. Supported interface-typed receiver calls now
-reuse the existing receiver method lookup/invoke path, preserving declared
-method precedence, visibility/access context, source-order named arguments,
-defaults, variadics, by-reference diagnostics, receiver/value cleanup,
-malformed callable metadata rejection, and class alias/case behavior. Missing,
-heterogeneous, autoload-only, or malformed interface/implementation metadata
-remains blocked instead of gaining interface-specific dispatch ladders.
+Latest accounted source capability: `1554707a` extends bounded literal
+include/require declaration discovery from class-only files to declaration-only
+class, interface, and trait files. Included interface and trait declarations
+now enter the same expanded declaration stream and include metadata record as
+classes; included traits can feed generated-C trait metadata registration for
+root classes, while included interfaces compose with the integrated interface
+metadata boundary. Dynamic paths, side-effecting includes, runtime include
+timing, include return values, `_once` runtime de-duplication, include_path and
+stream wrappers, autoload discovery, and LLVM/ASM parity remain blocked behind
+explicit diagnostics.
+
+Recent source commit `a7dcd288` routes selected generated-C interface method
+dispatch through shared metadata and source-call boundaries. Declared user
+interfaces now register generated-C metadata, parent-interface expansion, and
+case-insensitive interface keys; declared classes validate public non-static
+implementation methods against interface method metadata before class metadata
+is emitted. Supported interface-typed receiver calls now reuse the existing
+receiver method lookup/invoke path, preserving declared method precedence,
+visibility/access context, source-order named arguments, defaults, variadics,
+by-reference diagnostics, receiver/value cleanup, malformed callable metadata
+rejection, and class alias/case behavior. Missing, heterogeneous,
+autoload-only, or malformed interface/implementation metadata remains blocked
+instead of gaining interface-specific dispatch ladders.
 
 Recent source commit `5cbb90af` routes selected direct generated user-function
 spread/unpack calls through a reusable materialized call-argument entry and
