@@ -9717,12 +9717,31 @@ unsafe fn native_materialized_slot_value_clone(
     }
 }
 
+unsafe fn native_materialized_slot_reference_clone(
+    slot: NativeCallArgumentSlot,
+    parameter_name: &str,
+) -> Result<PhpReferenceCell, String> {
+    match slot {
+        NativeCallArgumentSlot::Reference(reference) => unsafe { reference.as_ref() }
+            .map(|reference| reference.cell.clone())
+            .ok_or_else(|| {
+                format!(
+                    "native materialized call-argument finalization failed: variadic reference slot for parameter ${parameter_name} is null"
+                )
+            }),
+        NativeCallArgumentSlot::Value(_) => Err(format!(
+            "unsupported call argument unpacking: by-reference parameter ${parameter_name} requires reference materialization before NativeCallArgumentsHandle finalization"
+        )),
+    }
+}
+
 unsafe fn native_materialized_call_arguments_finalize(
     materialized: &NativeMaterializedCallArguments,
     parameter_names: Vec<String>,
     parameter_required: &[u8],
     parameter_by_reference: &[u8],
     parameter_defaults: &[NativeValueHandle],
+    variadic_parameter_name: Option<String>,
     has_variadic: bool,
     variadic_by_reference: bool,
 ) -> Result<NativeCallArgumentsHandle, String> {
@@ -9817,20 +9836,26 @@ unsafe fn native_materialized_call_arguments_finalize(
     }
 
     if has_variadic {
-        if variadic_by_reference && !variadic_entries.is_empty() {
-            return Err(
-                "unsupported call argument unpacking: by-reference variadic parameter requires reference materialization before NativeCallArgumentsHandle finalization"
-                    .to_string(),
-            );
-        }
+        let parameter_name = variadic_parameter_name.as_deref().unwrap_or("__variadic");
         let mut array = PhpArray::new();
         for entry_index in variadic_entries {
             let entry = &materialized.entries[entry_index];
-            let value = unsafe { native_materialized_slot_value_clone(entry.slot)? };
-            if let Some(name) = &entry.name {
-                array.insert_checked(ArrayKey::string(name.clone()), value)
+            if variadic_by_reference {
+                let reference =
+                    unsafe { native_materialized_slot_reference_clone(entry.slot, parameter_name)? };
+                if let Some(name) = &entry.name {
+                    array.insert_reference(ArrayKey::string(name.clone()), reference);
+                    Ok(ArrayKey::string(name.clone()))
+                } else {
+                    array.append_reference(reference)
+                }
             } else {
-                array.append(value)
+                let value = unsafe { native_materialized_slot_value_clone(entry.slot)? };
+                if let Some(name) = &entry.name {
+                    array.insert_checked(ArrayKey::string(name.clone()), value)
+                } else {
+                    array.append(value)
+                }
             }
             .map_err(|error| {
                 format!(
@@ -9868,6 +9893,7 @@ pub unsafe extern "C" fn phpc_native_materialized_call_arguments_finalize_with_d
     parameter_by_reference: *const u8,
     parameter_defaults: *const NativeValueHandle,
     fixed_count: usize,
+    variadic_parameter_name: NativeStringHandle,
     has_variadic: bool,
     variadic_by_reference: bool,
     diagnostic: *mut NativeDiagnosticHandle,
@@ -9891,6 +9917,16 @@ pub unsafe extern "C" fn phpc_native_materialized_call_arguments_finalize_with_d
             native_u8_metadata_slice(parameter_by_reference, fixed_count, "by-reference-flag")?
         };
         let defaults = unsafe { native_default_value_slice(parameter_defaults, fixed_count)? };
+        let variadic_name = if has_variadic {
+            Some(unsafe { native_string_handle_to_string(variadic_parameter_name) }.ok_or_else(
+                || {
+                    "native materialized call-argument finalization failed: variadic parameter name is null or not UTF-8"
+                        .to_string()
+                },
+            )?)
+        } else {
+            None
+        };
         unsafe {
             native_materialized_call_arguments_finalize(
                 entries,
@@ -9898,6 +9934,7 @@ pub unsafe extern "C" fn phpc_native_materialized_call_arguments_finalize_with_d
                 required,
                 by_reference,
                 defaults,
+                variadic_name,
                 has_variadic,
                 variadic_by_reference,
             )
@@ -37688,6 +37725,7 @@ mod tests {
             NativeValueHandle::from_value(Value::String("default".to_string())),
             NativeValueHandle::from_value(Value::String("plain".to_string())),
         ];
+        let variadic_name = native_string_for_test("rest");
         let finalized = unsafe {
             phpc_native_materialized_call_arguments_finalize_with_diagnostic(
                 materialized,
@@ -37696,6 +37734,7 @@ mod tests {
                 by_reference.as_ptr(),
                 defaults.as_ptr(),
                 names.len(),
+                variadic_name,
                 true,
                 false,
                 &mut diagnostic,
@@ -37726,6 +37765,7 @@ mod tests {
 
         unsafe { phpc_native_call_arguments_free(finalized) };
         unsafe { phpc_native_materialized_call_arguments_free(materialized) };
+        unsafe { phpc_native_string_free(variadic_name) };
         for name in names {
             unsafe { phpc_native_string_free(name) };
         }
@@ -37764,6 +37804,7 @@ mod tests {
                 by_reference.as_ptr(),
                 defaults.as_ptr(),
                 1,
+                NativeStringHandle::null(),
                 false,
                 false,
                 &mut diagnostic,
@@ -37786,6 +37827,71 @@ mod tests {
         unsafe { phpc_native_call_arguments_free(finalized) };
         unsafe { phpc_native_materialized_call_arguments_free(materialized) };
         unsafe { phpc_native_string_free(name) };
+    }
+
+    #[test]
+    fn native_materialized_call_arguments_preserve_reference_slots_in_byref_variadic_collection() {
+        let materialized = phpc_native_materialized_call_arguments_new();
+        let first = PhpReferenceCell::new(Value::String("first".to_string()));
+        let named = PhpReferenceCell::new(Value::String("named".to_string()));
+        let mut unpacked = PhpArray::new();
+        unpacked.append_reference(first.clone()).unwrap();
+        unpacked.insert_reference("name", named.clone());
+        let unpacked_value = NativeValueHandle::from_value(Value::Array(unpacked));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        assert!(unsafe {
+            phpc_native_materialized_call_arguments_unpack_array_value_and_free(
+                materialized,
+                unpacked_value,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let rest = native_string_for_test("values");
+        let finalized = unsafe {
+            phpc_native_materialized_call_arguments_finalize_with_diagnostic(
+                materialized,
+                ptr::null(),
+                ptr::null(),
+                ptr::null(),
+                ptr::null(),
+                0,
+                rest,
+                true,
+                true,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!finalized.is_null());
+        assert_eq!(unsafe { phpc_native_call_arguments_len(finalized) }, 1);
+
+        let variadic = unsafe { call_argument_array_for_test(finalized, 0) };
+        let first_slot = variadic.get_slot(0).expect("positional variadic reference");
+        let named_slot = variadic.get_slot("name").expect("named variadic reference");
+        assert!(first_slot
+            .reference_cell()
+            .is_some_and(|slot| slot.shares_reference_with(&first)));
+        assert!(named_slot
+            .reference_cell()
+            .is_some_and(|slot| slot.shares_reference_with(&named)));
+
+        first.set_value(Value::String("changed".to_string()));
+        named.set_value(Value::String("renamed".to_string()));
+        assert_eq!(
+            variadic.get_cloned(0),
+            Some(Value::String("changed".to_string()))
+        );
+        assert_eq!(
+            variadic.get_cloned("name"),
+            Some(Value::String("renamed".to_string()))
+        );
+
+        unsafe { phpc_native_call_arguments_free(finalized) };
+        unsafe { phpc_native_materialized_call_arguments_free(materialized) };
+        unsafe { phpc_native_string_free(rest) };
     }
 
     #[test]
@@ -37819,6 +37925,7 @@ mod tests {
                 by_reference.as_ptr(),
                 defaults.as_ptr(),
                 1,
+                NativeStringHandle::null(),
                 false,
                 false,
                 &mut diagnostic,
@@ -37876,6 +37983,7 @@ mod tests {
                     by_reference.as_ptr(),
                     defaults.as_ptr(),
                     1,
+                    NativeStringHandle::null(),
                     false,
                     false,
                     &mut diagnostic,
@@ -39981,6 +40089,7 @@ mod tests {
         assert!(diagnostic.is_null());
 
         let first = native_string_for_test("first");
+        let tail = native_string_for_test("tail");
         let required = [1];
         let by_reference = [0];
         let defaults = [NativeValueHandle::null()];
@@ -39992,6 +40101,7 @@ mod tests {
                 by_reference.as_ptr(),
                 defaults.as_ptr(),
                 1,
+                tail,
                 true,
                 false,
                 &mut diagnostic,
@@ -40027,6 +40137,7 @@ mod tests {
         unsafe { phpc_native_value_free(closure) };
         unsafe { phpc_native_materialized_call_arguments_free(materialized) };
         unsafe { phpc_native_string_free(first) };
+        unsafe { phpc_native_string_free(tail) };
     }
 
     #[test]

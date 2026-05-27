@@ -1761,8 +1761,7 @@ fn native_user_function_has_malformed_variadic_params(function: &FunctionDecl) -
 }
 
 fn native_user_function_param_has_unsupported_by_reference_shape(param: &FunctionParam) -> bool {
-    param.by_reference
-        && (param.is_variadic || param.default.is_some() || param.type_decl.is_some())
+    param.by_reference && (param.default.is_some() || param.type_decl.is_some())
 }
 
 fn native_diagnostic_operation_list_is_blocked(
@@ -20182,7 +20181,7 @@ impl CGenerator {
             params.push("phpc_NativeRequestStateHandle phpc_request_state".to_string());
         }
         params.extend(function_params.iter().enumerate().map(|(index, param)| {
-            if param.by_reference {
+            if param.by_reference && !param.is_variadic {
                 format!("phpc_NativeReferenceHandle arg_{index}")
             } else {
                 format!("phpc_NativeValueHandle arg_{index}")
@@ -20211,7 +20210,7 @@ impl CGenerator {
             params.push("phpc_NativeValueHandle phpc_this".to_string());
         }
         params.extend(function_params.iter().enumerate().map(|(index, param)| {
-            if param.by_reference {
+            if param.by_reference && !param.is_variadic {
                 format!("phpc_NativeReferenceHandle arg_{index}")
             } else {
                 format!("phpc_NativeValueHandle arg_{index}")
@@ -21729,7 +21728,7 @@ impl CGenerator {
         }
         let mut cleanup = Vec::new();
         for (index, param) in function.decl.params.iter().enumerate() {
-            if param.by_reference {
+            if param.by_reference && !param.is_variadic {
                 definition.push_str(&format!(
                     "  phpc_NativeReferenceHandle arg_{index} = phpc_native_call_frame_read_reference(phpc_call_frame, {index});\n"
                 ));
@@ -21806,7 +21805,7 @@ impl CGenerator {
         }
 
         for (index, param) in method.decl.params.iter().enumerate() {
-            if param.by_reference {
+            if param.by_reference && !param.is_variadic {
                 definition.push_str(&format!(
                     "  phpc_NativeReferenceHandle arg_{index} = phpc_native_call_frame_read_reference(phpc_call_frame, {index});\n"
                 ));
@@ -22407,7 +22406,7 @@ impl CGenerator {
     fn bind_function_frame_parameters(&mut self, function: &FunctionDecl) {
         for (index, param) in function.params.iter().enumerate() {
             let handle = self.next_native_name("frame_param");
-            if param.by_reference {
+            if param.by_reference && !param.is_variadic {
                 self.uses_native_reference_helpers = true;
                 self.body.push(format!(
                     "phpc_NativeReferenceHandle {handle} = phpc_native_reference_clone(arg_{index});"
@@ -23200,7 +23199,7 @@ impl CGenerator {
                     output.push_str("extern bool phpc_native_materialized_call_arguments_push_value_and_free(phpc_NativeMaterializedCallArgumentsHandle arguments, phpc_NativeValueHandle value);\n");
                     output.push_str("extern bool phpc_native_materialized_call_arguments_push_named_value_and_free(phpc_NativeMaterializedCallArgumentsHandle arguments, phpc_NativeStringHandle name, phpc_NativeValueHandle value);\n");
                     output.push_str("extern bool phpc_native_materialized_call_arguments_unpack_array_value_and_free(phpc_NativeMaterializedCallArgumentsHandle arguments, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
-                    output.push_str("extern phpc_NativeCallArgumentsHandle phpc_native_materialized_call_arguments_finalize_with_diagnostic(phpc_NativeMaterializedCallArgumentsHandle entries, const phpc_NativeStringHandle *parameter_names, const uint8_t *parameter_required, const uint8_t *parameter_by_reference, const phpc_NativeValueHandle *parameter_defaults, size_t fixed_count, bool has_variadic, bool variadic_by_reference, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                    output.push_str("extern phpc_NativeCallArgumentsHandle phpc_native_materialized_call_arguments_finalize_with_diagnostic(phpc_NativeMaterializedCallArgumentsHandle entries, const phpc_NativeStringHandle *parameter_names, const uint8_t *parameter_required, const uint8_t *parameter_by_reference, const phpc_NativeValueHandle *parameter_defaults, size_t fixed_count, phpc_NativeStringHandle variadic_parameter_name, bool has_variadic, bool variadic_by_reference, phpc_NativeDiagnosticHandle *diagnostic);\n");
                     output.push_str("extern void phpc_native_materialized_call_arguments_free(phpc_NativeMaterializedCallArgumentsHandle handle);\n");
                 }
                 output.push_str("extern phpc_NativeValueHandle phpc_native_call_frame_read_value(phpc_NativeCallFrameHandle frame, size_t index);\n");
@@ -40312,12 +40311,22 @@ impl CGenerator {
         let variadic_by_reference = native_function_variadic_param(params)
             .map(|(_, param)| param.by_reference)
             .unwrap_or(false);
+        let variadic_name = if let Some((_, param)) = native_function_variadic_param(params) {
+            let name = self.emit_native_static_text_source_call_string_operand(
+                "materialized_variadic_parameter_name",
+                &param.name,
+            );
+            metadata_cleanup.extend(name.cleanup_after_use.clone());
+            name.handle
+        } else {
+            "(phpc_NativeStringHandle){0}".to_string()
+        };
         let call_arguments = self.next_native_name(prefix);
         let diagnostic = self.next_native_name("materialized_finalize_diagnostic");
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
         self.body.push(format!(
-            "phpc_NativeCallArgumentsHandle {call_arguments} = phpc_native_materialized_call_arguments_finalize_with_diagnostic({materialized}, {parameter_name_arg}, {required_arg}, {by_reference_arg}, {default_arg}, {fixed_count}, {}, {}, &{diagnostic});",
+            "phpc_NativeCallArgumentsHandle {call_arguments} = phpc_native_materialized_call_arguments_finalize_with_diagnostic({materialized}, {parameter_name_arg}, {required_arg}, {by_reference_arg}, {default_arg}, {fixed_count}, {variadic_name}, {}, {}, &{diagnostic});",
             if has_variadic { "true" } else { "false" },
             if variadic_by_reference { "true" } else { "false" }
         ));
@@ -40943,6 +40952,13 @@ impl CGenerator {
         callable_name: &str,
         failure_cleanup: &str,
     ) -> CompileResult<CNativeValueMaterialization> {
+        if param.by_reference {
+            return Err(self.unsupported(
+                param.span,
+                "unsupported native call lowering: by-reference variadic collection requires materialized reference slots",
+            ));
+        }
+
         let array = self.emit_empty_variadic_argument_array(failure_cleanup);
         for arg in args {
             let arg_failure_cleanup = format!("phpc_native_array_free({array}); {failure_cleanup}");

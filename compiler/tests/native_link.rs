@@ -24520,6 +24520,45 @@ const NATIVE_SPREAD_DIRECT_USER_FUNCTION_BYREF_UNPACK_SOURCE: &str = concat!(
     "echo spread_ref(...$args), \"|\", $value;\n",
 );
 
+const NATIVE_SPREAD_BYREF_VARIADIC_UNPACK_SOURCE: &str = concat!(
+    "<?php\n",
+    "function spread_ref_variadic(&...$values) {\n",
+    "    $values[0] = $values[0] . \"D\";\n",
+    "    $values[\"name\"] = $values[\"name\"] . \"d\";\n",
+    "    return $values[0] . \":\" . $values[\"name\"];\n",
+    "}\n",
+    "class SpreadByRefVariadicCallableBox {\n",
+    "    public static function stat(&...$values) {\n",
+    "        $values[0] = $values[0] . \"S\";\n",
+    "        $values[\"name\"] = $values[\"name\"] . \"s\";\n",
+    "        return $values[0] . \":\" . $values[\"name\"];\n",
+    "    }\n",
+    "    public function inst(&...$values) {\n",
+    "        $values[0] = $values[0] . \"I\";\n",
+    "        $values[\"name\"] = $values[\"name\"] . \"i\";\n",
+    "        return $values[0] . \":\" . $values[\"name\"];\n",
+    "    }\n",
+    "    public function __invoke(&...$values) {\n",
+    "        $values[0] = $values[0] . \"O\";\n",
+    "        $values[\"name\"] = $values[\"name\"] . \"o\";\n",
+    "        return $values[0] . \":\" . $values[\"name\"];\n",
+    "    }\n",
+    "}\n",
+    "$direct = \"direct\";\n",
+    "$directName = \"name\";\n",
+    "$directArgs = [];\n",
+    "$directArgs[] =& $direct;\n",
+    "$directArgs[\"name\"] =& $directName;\n",
+    "echo spread_ref_variadic(...$directArgs), \"|\", $direct, \":\", $directName, \"|\";\n",
+    "$staticValue = \"static\";\n",
+    "$staticName = \"name\";\n",
+    "$staticArgs = [];\n",
+    "$staticArgs[] =& $staticValue;\n",
+    "$staticArgs[\"name\"] =& $staticName;\n",
+    "echo [SpreadByRefVariadicCallableBox::class, \"stat\"](...$staticArgs), \"|\", $staticValue, \":\", $staticName, \"|\";\n",
+    "echo \"done\";\n",
+);
+
 const NATIVE_SPREAD_CALLABLE_FAMILY_ARGUMENT_SOURCE: &str = concat!(
     "<?php\n",
     "function spread_callable_family_marker($label) { echo $label; return $label; }\n",
@@ -25392,6 +25431,32 @@ fn native_executable_c_source_lowers_direct_user_function_spread_through_materia
         !source.contains("spread operands need a materialized-entry producer")
             && !source.contains("runtime unpack normalization"),
         "supported direct user-function spread should not hit the old shared spread blocker:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_byref_variadic_unpack_through_materialized_bridge() {
+    let program = parse(NATIVE_SPREAD_BYREF_VARIADIC_UNPACK_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && body.contains("true, true, &materialized_finalize_diagnostic_")
+            && source.contains("phpc_NativeValueHandle arg_0")
+            && source.contains("phpc_native_call_frame_read_value(phpc_call_frame, 0)")
+            && body.contains("phpc_NativeCallArgumentsHandle dynamic_callable_args_"),
+        "by-reference variadic unpack should reuse the materialized finalizer and array-valued variadic frame slot:\n{source}"
+    );
+    assert!(
+        !source.contains("by-reference variadic parameter requires reference materialization")
+            && !source.contains("unsupported typed/default/variadic by-reference parameters")
+            && !source.contains("by-reference variadic collection is not implemented")
+            && !source.contains("callable_array_matched")
+            && !source.contains("callable_object_matched"),
+        "supported by-reference variadic unpack should avoid old blockers and legacy callable ladders:\n{source}"
     );
 }
 
@@ -27317,6 +27382,37 @@ fn emit_exe_links_and_runs_direct_user_function_spread_by_reference_unpack_progr
 }
 
 #[test]
+fn emit_exe_links_and_runs_by_reference_variadic_unpack_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "spread_by_reference_variadic_unpack",
+        NATIVE_SPREAD_BYREF_VARIADIC_UNPACK_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native by-reference variadic spread executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"directD:named|directD:named|staticS:names|staticS:names|done"
+    );
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
 fn emit_exe_links_and_runs_callable_family_spread_argument_program() {
     if !has_cc() {
         return;
@@ -27541,6 +27637,11 @@ fn emit_exe_reports_direct_user_function_spread_shape_diagnostics() {
             "spread_direct_by_reference_rejected",
             "<?php\nfunction takes_ref(&$slot) { $slot = \"changed\"; return $slot; }\n$value = \"old\";\necho takes_ref(...[$value]), \"after\";\n",
             "by-reference parameter $slot requires reference materialization",
+        ),
+        (
+            "spread_direct_by_reference_variadic_rejected",
+            "<?php\nfunction takes_refs(&...$values) { $values[0] = \"changed\"; return $values[0]; }\n$value = \"old\";\necho takes_refs(...[$value]), \"after\";\n",
+            "by-reference parameter $values requires reference materialization",
         ),
     ] {
         let (source_path, output_path) = compile_native_link_fixture(name, source);
@@ -28649,7 +28750,6 @@ fn emit_exe_links_and_runs_user_function_introspection_program() {
 #[test]
 fn native_executable_c_source_rejects_unsupported_user_function_frame_shapes() {
     for source in [
-        "<?php\nfunction byref_variadic(&...$values) { return 1; }\n",
         "<?php\nfunction typed_byref(int &$value) { return $value; }\n",
         "<?php\nfunction default_byref(&$value = null) { return $value; }\n",
         "<?php\nfunction typed(callable $value) { return 1; }\n",
