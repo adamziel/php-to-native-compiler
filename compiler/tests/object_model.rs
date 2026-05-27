@@ -3877,6 +3877,95 @@ print_r($methods);
 }
 
 #[test]
+fn unqualified_multi_trait_alias_and_visibility_adaptations_resolve_unique_methods() {
+    let source = r#"<?php
+trait HookTools {
+    public function boot() {
+        return "boot:" . get_class($this);
+    }
+}
+
+trait LabelTools {
+    public function label() {
+        return "label:" . get_class($this);
+    }
+}
+
+class Plugin {
+    use HookTools, LabelTools {
+        boot as protected;
+        label as private hiddenLabel;
+    }
+
+    public function callBoot() {
+        return $this->boot();
+    }
+
+    public function callHidden() {
+        return $this->hiddenLabel();
+    }
+}
+
+$plugin = new Plugin();
+echo $plugin->label(), "\n";
+echo $plugin->callBoot(), "\n";
+echo $plugin->callHidden(), "\n";
+echo method_exists($plugin, "boot") ? "boot-exists\n" : "missing\n";
+echo method_exists($plugin, "hiddenLabel") ? "hidden-exists\n" : "missing\n";
+
+$methods = get_class_methods($plugin);
+print_r($methods);
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "label:Plugin\nboot:Plugin\nlabel:Plugin\nboot-exists\nhidden-exists\nArray\n(\n    [0] => label\n    [1] => callBoot\n    [2] => callHidden\n)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let classes = class_metadata_source(source).unwrap();
+    let class = classes.lookup_class("Plugin").unwrap();
+    assert_eq!(
+        class.method("boot").unwrap().visibility(),
+        Visibility::Protected
+    );
+    assert_eq!(
+        class.method("hiddenLabel").unwrap().visibility(),
+        Visibility::Private
+    );
+    assert_eq!(
+        class.method("label").unwrap().visibility(),
+        Visibility::Public
+    );
+}
+
+#[test]
+fn unqualified_multi_trait_alias_adaptation_reports_ambiguous_methods() {
+    let error = runtime_error(
+        r#"<?php
+trait FirstLabel { public function label() {} }
+trait SecondLabel { public function label() {} }
+class Plugin {
+    use FirstLabel, SecondLabel {
+        label as labelAlias;
+        FirstLabel::label insteadof SecondLabel;
+    }
+}
+"#,
+    );
+
+    assert_eq!(error.line, 6);
+    assert_eq!(error.column, 9);
+    assert!(
+        error
+            .message
+            .contains("unqualified trait alias label is ambiguous"),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn trait_visibility_only_adaptation_requires_existing_trait_method() {
     let error = runtime_error(
         r#"<?php
@@ -12587,18 +12676,6 @@ class Box {
             4,
             9,
             "unsupported trait use adaptation: unqualified insteadof adaptations are not implemented",
-        ),
-        (
-            r#"<?php
-class Box {
-    use Labels, OtherLabels {
-        label as protected;
-    }
-}
-"#,
-            4,
-            9,
-            "unsupported trait use adaptation: unqualified visibility adaptations with multiple used traits are not implemented",
         ),
         (
             r#"<?php

@@ -6362,6 +6362,30 @@ fn native_executable_c_source_declares_trait_composed_user_class_metadata_for_sh
 }
 
 #[test]
+fn native_executable_c_source_resolves_unqualified_multi_trait_adaptation_metadata() {
+    let program = parse(NATIVE_TRAIT_UNQUALIFIED_MULTI_ADAPTATION_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source
+            .matches("phpc_native_declare_user_class_method_bytes")
+            .count()
+            >= 5
+            && source.contains(
+                "phpc_native_callable_table_register_visibility_staticness_magic_signature_frame_callback_and_free"
+            )
+            && source.contains("phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"),
+        "unqualified multi-trait adaptations should publish method metadata and callable frames:\n{source}"
+    );
+    assert!(
+        !source.contains("trait lowering rejects")
+            && !source.contains("object/class lowering rejects")
+            && !source.contains("method-call lowering rejects"),
+        "unqualified multi-trait adaptations should stay on the generated-C trait path:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_value_metadata_consumers_through_runtime_registry() {
     let program = parse(concat!(
         "<?php\n",
@@ -6493,6 +6517,35 @@ fn emit_exe_links_and_runs_trait_composed_class_metadata_registry_program() {
     assert_eq!(
         String::from_utf8_lossy(&run.stdout),
         "method-run|method-hidden|method-alias|prop-slot|prop-hidden|prop-count|list-run|list-alias|list-hidden-filtered|var-slot|var-hidden-filtered\n"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_unqualified_multi_trait_adaptation_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "trait_unqualified_multi_adaptation",
+        NATIVE_TRAIT_UNQUALIFIED_MULTI_ADAPTATION_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run unqualified multi-trait adaptation executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "label:direct|boot:protected|label:hidden|method-boot|method-hidden|list-label|list-boot-filtered|list-hidden-filtered\n"
     );
 
     let _ = fs::remove_file(source_path);
@@ -28262,6 +28315,39 @@ const NATIVE_TRAIT_CLASS_METADATA_REGISTRY_SOURCE: &str = concat!(
     "echo array_key_exists(\"slot\", $vars) ? \"var-slot\" : \"var-missing-slot\";\n",
     "echo \"|\";\n",
     "echo array_key_exists(\"hidden\", $vars) ? \"bad-hidden-var\" : \"var-hidden-filtered\";\n",
+    "echo \"\\n\";\n",
+);
+
+const NATIVE_TRAIT_UNQUALIFIED_MULTI_ADAPTATION_SOURCE: &str = concat!(
+    "<?php\n",
+    "trait NativeTraitUniqueBoot {\n",
+    "    public function boot($suffix) { return \"boot:\" . $suffix; }\n",
+    "}\n",
+    "trait NativeTraitUniqueLabel {\n",
+    "    public function label($suffix) { return \"label:\" . $suffix; }\n",
+    "}\n",
+    "class NativeTraitUniquePlugin {\n",
+    "    use NativeTraitUniqueBoot, NativeTraitUniqueLabel {\n",
+    "        boot as protected;\n",
+    "        label as private hiddenLabel;\n",
+    "    }\n",
+    "    public function callBoot($suffix) { return $this->boot($suffix); }\n",
+    "    public function callHidden($suffix) { return $this->hiddenLabel($suffix); }\n",
+    "}\n",
+    "$plugin = new NativeTraitUniquePlugin();\n",
+    "echo $plugin->label(\"direct\"), \"|\";\n",
+    "echo $plugin->callBoot(\"protected\"), \"|\";\n",
+    "echo $plugin->callHidden(\"hidden\"), \"|\";\n",
+    "echo method_exists(\"NativeTraitUniquePlugin\", \"boot\") ? \"method-boot\" : \"missing-boot\";\n",
+    "echo \"|\";\n",
+    "echo method_exists(\"NativeTraitUniquePlugin\", \"hiddenLabel\") ? \"method-hidden\" : \"missing-hidden\";\n",
+    "echo \"|\";\n",
+    "$methods = get_class_methods(\"NativeTraitUniquePlugin\");\n",
+    "echo in_array(\"label\", $methods, true) ? \"list-label\" : \"list-missing-label\";\n",
+    "echo \"|\";\n",
+    "echo in_array(\"boot\", $methods, true) ? \"bad-boot-list\" : \"list-boot-filtered\";\n",
+    "echo \"|\";\n",
+    "echo in_array(\"hiddenLabel\", $methods, true) ? \"bad-hidden-list\" : \"list-hidden-filtered\";\n",
     "echo \"\\n\";\n",
 );
 

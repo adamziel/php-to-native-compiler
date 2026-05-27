@@ -881,13 +881,7 @@ impl Parser {
                                         "unsupported trait use adaptation: trait-qualified visibility adaptations must target a trait in the same use declaration",
                                     )
                                 })?,
-                            None if trait_uses.len() == 1 => 0,
-                            None => {
-                                return Err(self.error_at(
-                                    span,
-                                    "unsupported trait use adaptation: unqualified visibility adaptations with multiple used traits are not implemented",
-                                ));
-                            }
+                            None => 0,
                         };
                     trait_uses[target_index].visibility_adaptations.push(
                         TraitMethodVisibilityDecl {
@@ -919,13 +913,7 @@ impl Parser {
                             "unsupported trait use adaptation: trait-qualified aliases must target a trait in the same use declaration",
                         )
                     })?,
-                None if trait_uses.len() == 1 => 0,
-                None => {
-                    return Err(self.error_at(
-                        span,
-                        "unsupported trait use adaptation: unqualified aliases with multiple used traits are not implemented",
-                    ));
-                }
+                None => 0,
             };
 
             trait_uses[target_index].aliases.push(TraitMethodAliasDecl {

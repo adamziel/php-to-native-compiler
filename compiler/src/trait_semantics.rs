@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use crate::ast::{
     ClassConstantDecl, ClassDecl, ClassMember, ClassMethodDecl, ClassPropertyDecl, ClassVisibility,
-    Expr, Span, TraitDecl, TraitUseDecl,
+    Expr, Span, TraitDecl, TraitMethodAliasDecl, TraitMethodVisibilityDecl, TraitUseDecl,
 };
 use crate::error::{Diagnostic, Phase};
 
@@ -55,6 +55,28 @@ pub struct EffectiveTraitConstant {
 struct ComposedTraitMethodName {
     declaring_trait_name: String,
     source_method_key: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ResolvedTraitMethodAdaptations {
+    aliases_by_trait_key: HashMap<String, Vec<TraitMethodAliasDecl>>,
+    visibility_by_trait_key: HashMap<String, Vec<TraitMethodVisibilityDecl>>,
+}
+
+impl ResolvedTraitMethodAdaptations {
+    fn aliases_for(&self, trait_key: &str) -> &[TraitMethodAliasDecl] {
+        self.aliases_by_trait_key
+            .get(trait_key)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    fn visibility_adaptations_for(&self, trait_key: &str) -> &[TraitMethodVisibilityDecl] {
+        self.visibility_by_trait_key
+            .get(trait_key)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
 }
 
 pub fn trait_key(name: &str) -> String {
@@ -368,6 +390,8 @@ fn compose_effective_trait_methods_from_uses(
 ) -> TraitSemanticResult<Vec<EffectiveTraitMethod>> {
     let mut methods = Vec::new();
     let mut composed_names: HashMap<String, ComposedTraitMethodName> = HashMap::new();
+    let method_adaptations =
+        resolve_trait_method_adaptations_for_uses(trait_uses, trait_lookup, path)?;
     let precedence_exclusions =
         trait_precedence_exclusions_for_uses(trait_uses, trait_lookup, path)?;
 
@@ -375,9 +399,13 @@ fn compose_effective_trait_methods_from_uses(
         let used_trait_key = trait_key(&trait_use.name);
         let trait_decl = resolve_trait_use_decl(trait_use, trait_lookup)?;
         let trait_methods = compose_trait_methods_for_trait(trait_decl, trait_lookup, path)?;
-        let visibility_adaptations = trait_visibility_adaptations(trait_use, &trait_methods)?;
+        let visibility_adaptations = trait_visibility_adaptations(
+            &trait_decl.name,
+            method_adaptations.visibility_adaptations_for(&used_trait_key),
+            &trait_methods,
+        )?;
         let mut aliases_by_method: HashMap<String, Vec<_>> = HashMap::new();
-        for alias in &trait_use.aliases {
+        for alias in method_adaptations.aliases_for(&used_trait_key) {
             let Some(candidate) = trait_methods.iter().find(|candidate| {
                 candidate
                     .method
@@ -385,11 +413,12 @@ fn compose_effective_trait_methods_from_uses(
                     .name
                     .eq_ignore_ascii_case(&alias.method_name)
             }) else {
+                let alias_trait_name = alias.trait_name.as_deref().unwrap_or(&trait_decl.name);
                 return Err(TraitSemanticError::new(
                     alias.span,
                     format!(
                         "unsupported trait use: trait alias {}::{} targets a missing method",
-                        trait_decl.name, alias.method_name
+                        alias_trait_name, alias.method_name
                     ),
                 ));
             };
@@ -410,11 +439,13 @@ fn compose_effective_trait_methods_from_uses(
                     if alias_key == method_name_key
                         && alias.visibility != candidate.method.visibility
                     {
+                        let alias_trait_name =
+                            alias.trait_name.as_deref().unwrap_or(&trait_decl.name);
                         return Err(TraitSemanticError::new(
                             alias.span,
                             format!(
                                 "unsupported trait use: trait alias {}::{} as {} conflicts with {}::{}",
-                                trait_decl.name,
+                                alias_trait_name,
                                 alias.method_name,
                                 alias.alias,
                                 candidate.declaring_trait_name,
@@ -429,11 +460,13 @@ fn compose_effective_trait_methods_from_uses(
                             &method_name_key,
                         ) || alias.visibility != candidate.method.visibility
                         {
+                            let alias_trait_name =
+                                alias.trait_name.as_deref().unwrap_or(&trait_decl.name);
                             return Err(TraitSemanticError::new(
                                 alias.span,
                                 format!(
                                     "unsupported trait use: trait alias {}::{} as {} conflicts with {}::{}",
-                                    trait_decl.name,
+                                    alias_trait_name,
                                     alias.method_name,
                                     alias.alias,
                                     existing.declaring_trait_name,
@@ -451,11 +484,13 @@ fn compose_effective_trait_methods_from_uses(
                                 &method_name_key,
                             )
                     }) {
+                        let alias_trait_name =
+                            alias.trait_name.as_deref().unwrap_or(&trait_decl.name);
                         return Err(TraitSemanticError::new(
                             alias.span,
                             format!(
                                 "unsupported trait use: trait alias {}::{} as {} conflicts with {}::{}",
-                                trait_decl.name,
+                                alias_trait_name,
                                 alias.method_name,
                                 alias.alias,
                                 existing.declaring_trait_name,
@@ -519,6 +554,126 @@ fn compose_effective_trait_methods_from_uses(
     Ok(methods)
 }
 
+fn resolve_trait_method_adaptations_for_uses(
+    trait_uses: &[TraitUseDecl],
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    path: &mut HashSet<String>,
+) -> TraitSemanticResult<ResolvedTraitMethodAdaptations> {
+    let mut resolved = ResolvedTraitMethodAdaptations::default();
+
+    for trait_use in trait_uses {
+        for alias in &trait_use.aliases {
+            let target_key = resolve_trait_method_adaptation_target_key(
+                trait_uses,
+                trait_lookup,
+                path,
+                alias.trait_name.as_deref(),
+                &alias.method_name,
+                alias.span,
+                "alias",
+            )?;
+            resolved
+                .aliases_by_trait_key
+                .entry(target_key)
+                .or_default()
+                .push(alias.clone());
+        }
+
+        for adaptation in &trait_use.visibility_adaptations {
+            let target_key = resolve_trait_method_adaptation_target_key(
+                trait_uses,
+                trait_lookup,
+                path,
+                adaptation.trait_name.as_deref(),
+                &adaptation.method_name,
+                adaptation.span,
+                "visibility adaptation",
+            )?;
+            resolved
+                .visibility_by_trait_key
+                .entry(target_key)
+                .or_default()
+                .push(adaptation.clone());
+        }
+    }
+
+    Ok(resolved)
+}
+
+fn resolve_trait_method_adaptation_target_key(
+    trait_uses: &[TraitUseDecl],
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    path: &mut HashSet<String>,
+    explicit_trait_name: Option<&str>,
+    method_name: &str,
+    span: Span,
+    kind: &str,
+) -> TraitSemanticResult<String> {
+    if let Some(trait_name) = explicit_trait_name {
+        return Ok(trait_key(trait_name));
+    }
+
+    if trait_uses.len() == 1 {
+        return Ok(trait_key(&trait_uses[0].name));
+    }
+
+    resolve_unqualified_trait_method_adaptation_target_key(
+        trait_uses,
+        trait_lookup,
+        path,
+        method_name,
+        span,
+        kind,
+    )
+}
+
+fn resolve_unqualified_trait_method_adaptation_target_key(
+    trait_uses: &[TraitUseDecl],
+    trait_lookup: &HashMap<String, Rc<TraitDecl>>,
+    path: &mut HashSet<String>,
+    method_name: &str,
+    span: Span,
+    kind: &str,
+) -> TraitSemanticResult<String> {
+    let mut matches = Vec::new();
+    for trait_use in trait_uses {
+        let trait_decl = resolve_trait_use_decl(trait_use, trait_lookup)?;
+        let trait_methods = compose_trait_methods_for_trait(trait_decl, trait_lookup, path)?;
+        if trait_methods.iter().any(|method| {
+            method
+                .method
+                .function
+                .name
+                .eq_ignore_ascii_case(method_name)
+        }) {
+            matches.push((trait_key(&trait_use.name), trait_decl.name.clone()));
+        }
+    }
+
+    match matches.as_slice() {
+        [] => Err(TraitSemanticError::new(
+            span,
+            format!(
+                "unsupported trait use: unqualified trait {kind} {method_name} targets a missing method"
+            ),
+        )),
+        [(target_key, _)] => Ok(target_key.clone()),
+        _ => {
+            let trait_names = matches
+                .iter()
+                .map(|(_, name)| name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            Err(TraitSemanticError::new(
+                span,
+                format!(
+                    "unsupported trait use: unqualified trait {kind} {method_name} is ambiguous across {trait_names}; qualify the trait method"
+                ),
+            ))
+        }
+    }
+}
+
 fn same_effective_trait_method_source(
     left: &EffectiveTraitMethod,
     right: &EffectiveTraitMethod,
@@ -541,11 +696,12 @@ fn composed_trait_method_name_matches_source(
 }
 
 fn trait_visibility_adaptations(
-    trait_use: &TraitUseDecl,
+    trait_name: &str,
+    visibility_adaptations: &[TraitMethodVisibilityDecl],
     trait_methods: &[EffectiveTraitMethod],
 ) -> TraitSemanticResult<HashMap<String, ClassVisibility>> {
     let mut adaptations = HashMap::new();
-    for adaptation in &trait_use.visibility_adaptations {
+    for adaptation in visibility_adaptations {
         let Some(method) = trait_methods.iter().find(|method| {
             method
                 .method
@@ -557,7 +713,8 @@ fn trait_visibility_adaptations(
                 adaptation.span,
                 format!(
                     "unsupported trait use: trait visibility adaptation {}::{} targets a missing method",
-                    trait_use.name, adaptation.method_name
+                    adaptation.trait_name.as_deref().unwrap_or(trait_name),
+                    adaptation.method_name
                 ),
             ));
         };
@@ -890,6 +1047,84 @@ class UsesTraits {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn trait_semantics_resolves_unqualified_multi_trait_adaptations_when_unique() {
+        let methods = effective_method_names(
+            r#"<?php
+trait HookTools {
+    public function boot() {}
+}
+trait LabelTools {
+    public function label() {}
+}
+class Plugin {
+    use HookTools, LabelTools {
+        boot as protected;
+        label as private hiddenLabel;
+    }
+}
+"#,
+        );
+
+        assert_eq!(
+            methods,
+            vec![
+                (
+                    "boot".to_string(),
+                    ClassVisibility::Protected,
+                    "HookTools".to_string()
+                ),
+                (
+                    "hiddenLabel".to_string(),
+                    ClassVisibility::Private,
+                    "LabelTools".to_string()
+                ),
+                (
+                    "label".to_string(),
+                    ClassVisibility::Public,
+                    "LabelTools".to_string()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn trait_semantics_reports_ambiguous_unqualified_multi_trait_adaptations() {
+        let (traits, class) = parsed_traits_and_class(
+            r#"<?php
+trait FirstLabel { public function label() {} }
+trait SecondLabel { public function label() {} }
+class Plugin {
+    use FirstLabel, SecondLabel {
+        label as labelAlias;
+        FirstLabel::label insteadof SecondLabel;
+    }
+}
+"#,
+        );
+        let alias_error = compose_class_effective_trait_methods(&class, &traits).unwrap_err();
+        assert!(alias_error
+            .message
+            .contains("unqualified trait alias label is ambiguous"));
+
+        let (traits, class) = parsed_traits_and_class(
+            r#"<?php
+trait FirstLabel { public function label() {} }
+trait SecondLabel { public function label() {} }
+class Plugin {
+    use FirstLabel, SecondLabel {
+        label as protected;
+        FirstLabel::label insteadof SecondLabel;
+    }
+}
+"#,
+        );
+        let visibility_error = compose_class_effective_trait_methods(&class, &traits).unwrap_err();
+        assert!(visibility_error
+            .message
+            .contains("unqualified trait visibility adaptation label is ambiguous"));
     }
 
     #[test]
