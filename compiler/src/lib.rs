@@ -2,6 +2,7 @@ pub mod ast;
 pub mod call_arguments;
 pub mod codegen;
 pub mod error;
+pub mod include_discovery;
 pub mod interpreter;
 pub mod lexer;
 pub mod parser;
@@ -10,6 +11,10 @@ pub mod trait_semantics;
 
 use ast::Program;
 use error::CompileResult;
+pub use include_discovery::{
+    compilation_unit_with_literal_include_metadata, parse_source_with_literal_include_metadata,
+    CompilationUnit, IncludeGraphMetadata, IncludedFileMetadata,
+};
 use interpreter::{Execution, RunOptions};
 use php_runtime::PhpClassTable;
 
