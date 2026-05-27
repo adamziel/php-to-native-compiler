@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 23:36 CEST
+Updated: 2026-05-27 23:59 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,15 +19,25 @@ Overall integrated-roadmap progress: **93%** `[##################--]`
 
 Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `38997317` binds declared public object
-properties to native references in generated C. Direct and dynamic known public
-property reference assignments now use a runtime public-property reference bind
-ABI, and selected plain public property owner writes commit through existing
-reference handles instead of copying values back through fake writeback.
-Typed, magic, non-public, static, and non-direct property owner cases remain
-blocked, along with include exception/diagnostic propagation, visibility-context
-rules, trait conflict/precedence parity, destructor-risk cleanup, and non-C
-backend parity.
+Latest accounted source capability: `bbffaab4` clones direct array variable
+assignments in generated C before storing the destination variable. Nested
+lvalue writes through `$copy` after `$copy = $items` now mutate the copied
+array handle without corrupting `$items`, preserving PHP array copy-on-write
+behavior for this direct-variable path. Broader array COW/reference edges,
+foreach by-reference lifetime, include exception/diagnostic propagation,
+visibility-context rules, trait conflict/precedence parity, destructor-risk
+cleanup, and non-C backend parity remain blocked.
+
+Recent source commit `bbffaab4` advances direct array COW without adding
+ArrayAccess overlap, object-property owner overlap, source-shape recognizers,
+or fake reference writeback. Generated C now clones a direct RHS
+`NativeArrayHandle` when storing another direct variable, so later nested
+lvalue owner writes target a distinct array handle. Focused gates covered
+generated-C source proof, linked executable direct-array copy/nested-write COW,
+adjacent nested array lvalue writes, active symbol array lvalue reference-owner
+paths, compile checking, formatting, and diff checks. Primary gate log:
+`state/logs/phpc-primary-array-cow-2af4dcf7-20260527.gates.log`
+sha256 `b1e4e8db9961ef970d2d12940212444b7986bd3a21a3d07f7ca23275c51190a4`.
 
 Recent source commit `38997317` advances object-property reference/COW owner
 coverage without adding ArrayAccess overlap, call-result owner shortcuts,
