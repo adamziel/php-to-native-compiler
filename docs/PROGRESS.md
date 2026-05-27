@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added generated-C nested `ArrayAccess` unset and append-with-keyed-suffix
+  production on the shared owner-stack path. Direct-variable roots and visible
+  property-held roots now materialize the root owner, descend through by-value
+  `offsetGet()` intermediates, and either execute leaf `offsetUnset()` or
+  append a suffix-wrapped value through `offsetSet(null, value)`. Both paths
+  reverse-write parent holders, commit the original root owner, and preserve
+  cleanup/diagnostic ownership. Keyed append materializes suffix keys before
+  RHS evaluation and wraps the RHS through a shared appended-slot value
+  boundary instead of recognizing one fixture shape. Focused generated-C and
+  linked-executable tests cover direct and property-held unset plus
+  keyed-suffix append. Root append with keyed suffix without owner-stack
+  descent, reference-returning `offsetGet()`, arbitrary alias/static roots,
+  broader references/COW, spread/unpack, and LLVM IR/assembly parity remain
+  unsupported.
+
 - Added a shared generated-C static-property lvalue target for request-scoped
   static-property storage. Plain assignment, compound assignment, and pre/post
   increment/decrement now materialize the same target shape for literal

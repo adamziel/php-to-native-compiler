@@ -6559,17 +6559,19 @@
   lowering source operands or invoking an assembly backend. Native support
   still needs reference containers, alias-aware symbol tables, copy-on-write,
   object/property alias roots, and exact native diagnostics.
-  Object-property `ArrayAccess` offset shapes such as
-  `$holder->bag[$key]`, `$holder->bag[$key] = $value`,
-  `isset($holder->bag[$key])`, `empty($holder->bag[$key])`,
-  `unset($holder->bag[$key])`, and `$holder->bag[$key] op= expr` also have a
-  dedicated native codegen boundary instead of falling through to broader
-  array/object diagnostics. Native support still needs object handles,
-  `offsetGet`/`offsetSet`/`offsetExists`/`offsetUnset` dispatch,
-  references/copy-on-write, and exact PHP diagnostics. Direct `$bag[$key]`
-  remains syntax-ambiguous with ordinary array offsets at this layer, so the
-  native array boundary still covers it unless a future analysis can prove the
-  root is an `ArrayAccess` object.
+  Generated-C executable lowering supports selected compiler-known
+  `ArrayAccess` roots. Direct object roots and visible property-held roots can
+  read/write/RMW, perform `??=`, append, unset, and run nested owner-stack
+  keyed-append-suffix paths when analysis proves the root implements
+  `ArrayAccess`. Nested owner-stack paths descend through by-value
+  `offsetGet()` intermediates, execute the leaf offset operation, reverse-write
+  parent holders, and commit the original root owner. Unsupported roots still
+  use dedicated native codegen diagnostics instead of collapsing into generic
+  array/object failures. Reference-returning `offsetGet()`, arbitrary alias
+  roots, unknown or non-direct property holders, root keyed-suffix append
+  without owner-stack descent, broader references/copy-on-write,
+  cleanup/unwind breadth, exact PHP diagnostics, and LLVM IR/assembly parity
+  remain unsupported.
   Method-call expressions have a dedicated native codegen boundary:
   `phpc compile --emit-ir` and `--emit-asm` reject instance calls,
   named static calls, object/static-receiver calls, `self::`, `parent::`, and
