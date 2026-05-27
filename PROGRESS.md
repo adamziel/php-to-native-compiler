@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 16:42 CEST
+Updated: 2026-05-27 16:49 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -17,17 +17,27 @@ changes the roadmap position.
 
 Overall integrated-roadmap progress: **85%** `[#################---]`
 
-Selected executable PHP semantics: **90%** `[##################--]`
+Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `f038ae76` admits destructor-observable
-allocations inside generated-C `try/finally` when the allocated object is
-already eligible for request-end finalization. Request-finalizable destructors
-no longer trip the try/finally cleanup preflight, finalizer setup forces the
-existing callable table initializer for destructor-only programs, and linked
-native execution preserves `try` body output, `finally` output, fallthrough
-output, then request-end destructor output. Unsupported destructor shapes,
-shutdown functions, broader exception/fatal unwinding, and exact cleanup-stack
-parity remain blocked.
+Latest accounted source capability: `e7d22c9c` coerces selected typed variadic
+descriptor-closure spread entries through a reusable variadic collection
+call-type helper. Descriptor-closure spread still uses the shared materialized
+call-argument finalizer and finalized variadic slot, but closure-frame binding
+now applies closure parameter metadata to each finalized variadic collection
+entry before exposing the typed variadic parameter. By-reference variadic
+descriptor closures, by-reference unpack transfer, runtime callable strings,
+magic fallback, unknown-signature callable spread, and LLVM/ASM parity remain
+blocked.
+
+Recent source commit `f038ae76` admits destructor-observable allocations inside
+generated-C `try/finally` when the allocated object is already eligible for
+request-end finalization. Request-finalizable destructors no longer trip the
+try/finally cleanup preflight, finalizer setup forces the existing callable
+table initializer for destructor-only programs, and linked native execution
+preserves `try` body output, `finally` output, fallthrough output, then
+request-end destructor output. Unsupported destructor shapes, shutdown
+functions, broader exception/fatal unwinding, and exact cleanup-stack parity
+remain blocked.
 
 Recent source commit `aecbc310` routes selected runtime builtin callable-string
 spread calls through reusable builtin signature metadata and the shared
