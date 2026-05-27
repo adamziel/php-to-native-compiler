@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 14:32 CEST
+Updated: 2026-05-27 14:39 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,15 +19,25 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest source correction: `416f007a` aligns the shared trait composition
+Latest accounted source capability: `5cbb90af` routes selected direct
+generated user-function spread/unpack calls through a reusable materialized
+call-argument entry and finalizer bridge. Supported direct calls now preserve
+source-order evaluation, positional unpack, string-key named unpack, ordinary
+named source arguments, default slots, variadic collection slots, duplicate and
+unknown-name diagnostics, positional-after-named diagnostics, required-argument
+diagnostics, and cleanup of materialized/default/slot ownership. Unsupported
+callable-family spread/unpack shapes and by-reference unpack transfer remain
+blocked at shared boundaries instead of gaining per-callable or per-arity
+lowering.
+
+Recent source correction `416f007a` aligns the shared trait composition
 ordering boundary with PHP reflection behavior. Direct trait methods now
 precede recursively imported trait methods, aliases are emitted at the target
 method slot before the original method, and the corrected order is covered by
 focused reflection, full `trait`, callable-object, and named-argument gates.
 This corrects previously accounted trait metadata semantics and does not move
-the coarse progress bars.
-
-Latest accounted source capability: `77cde10f` routes selected generated-C
+the coarse progress bars. Recent source commit `77cde10f` routes selected
+generated-C
 callable-array invocation through the shared callable/source-call machinery.
 Known object-method callable arrays and class-string/static callable arrays
 now classify as reusable callable values, preserve named argument source order
