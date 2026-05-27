@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 03:36 CEST
+Updated: 2026-05-27 03:47 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,16 +19,18 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **80%** `[################----]`
 
-Latest accounted source capability: `b3e2a724` routes direct generated-C
-user-function reference-return frames through native reference-returning frame
-signatures, callable wrappers, source-call reference consumers, by-reference
-argument materialization, and explicit by-value-return-source rejection.
-Recent source commits also add parser/runtime `use const` exact lookup
-(`e81aa43e`), route selected property-held ArrayAccess read/write/RMW/`??=`
-owners through real object-property reference owners (`6757bb43`), broaden
-generated-C receiver/static method source calls to default/variadic
-frame-compatible arities (`8886d9e5`), add parser/runtime `use function` exact
-lookup (`c3968d0a`), allow bare `return;` in supported constructor bodies
+Latest accounted source capability: `96ad8464` routes selected generated-C
+property-held ArrayAccess `unset()` through true object-property reference
+owners, ArrayAccess write/unset diagnostics, and the shared owner commit path
+while keeping nested, non-direct, and unknown dynamic owner shapes blocked.
+Recent source commits also route direct generated-C user-function
+reference-return frames through native reference-returning frame signatures
+(`b3e2a724`), add parser/runtime `use const` exact lookup (`e81aa43e`), route
+selected property-held ArrayAccess read/write/RMW/`??=` owners through real
+object-property reference owners (`6757bb43`), broaden generated-C
+receiver/static method source calls to default/variadic frame-compatible
+arities (`8886d9e5`), add parser/runtime `use function` exact lookup
+(`c3968d0a`), allow bare `return;` in supported constructor bodies
 (`bd0eafd0`), add object-property owner/fact/commit prerequisites
 (`b3f16040`), LLVM user-class metadata parity (`d96cc2bb`), a generated-C
 namespace/import/class-name/autoload-policy boundary (`cb8457f1`), and
@@ -41,7 +43,9 @@ early returns run, method/static source calls handle default and variadic
 frame-compatible arities, interpreter function imports resolve exactly,
 interpreter const imports resolve exactly before namespace/global fallback,
 direct generated-C user-function frames can return references through shared
-source-call carriers and by-reference consumer paths,
+source-call carriers and by-reference consumer paths, selected property-held
+ArrayAccess owners now cover `unset()` through the same reference-owner commit
+path as reads/writes/RMW,
 generated C handles parser-resolved namespace/import class policy without fake
 autoload success, LLVM can declare and query user-class metadata through the
 shared runtime ABI, terminal transfer now carries return/throw/exit kind, and
@@ -65,7 +69,8 @@ Current critical path to 100%:
 3. Route value/reference/return/deferred-cleanup consumers through the shared
    diagnostic-result and call-result carrier stack.
 4. Broaden the integrated object-property owner/fact/commit boundary from
-   selected property-held ArrayAccess into nested/append/increment forms,
+   selected property-held ArrayAccess read/write/RMW/unset into
+   nested/append/increment forms,
    references/COW, arbitrary alias-root writeback, and object/static/dynamic/
    typed property storage.
 5. Implement real exception/Throwable propagation, catch/finally/destructor/
@@ -80,12 +85,12 @@ Current critical path to 100%:
 | --- | ---: | --- | --- |
 | Runtime and ABI foundations | **90%** | `[##################--]` | Strong selected-path value, byte-string, array, reference, symbol, callable, call-frame/result, diagnostic-result, terminal-kind, request-state, lvalue, ArrayAccess, class metadata value, function/const-import exact lookup, and autoload-policy boundary surfaces. Remaining gaps include arbitrary alias transfer, full autoload, namespace fallback, magic calls, closure frame handoff, cleanup/unwind parity, and broader lookup parity. |
 | Compiler/backend consumers | **85%** | `[#################---]` | Generated C has the freshest consumers for calls, callable facts, selected object/class metadata, namespace/import class policy, selected ArrayAccess/lvalue paths, value-result casts, diagnostic-result family consumers, discarded statement-expression diagnostic operands, echo/print output diagnostic operands, and control-transfer cleanup report bridging. It now rejects function and const imports explicitly at the production boundary. LLVM shares user-class metadata declaration/exists routing plus the discarded-expression, output operand, and cleanup report bridge paths, while direct assembly still lags newer object-offset/lvalue/runtime ABIs and most semantic result operands remain unmigrated. |
-| Executable PHP semantics | **80%** | `[################----]` | Many executable islands exist, including bounded method/static source-call production, generated method-frame `$this` property assignment, selected constructor bodies with bare early returns, selected property-held ArrayAccess owners, namespace/import class policy, interpreter function/const-import exact lookup, and value-returning class metadata consumers, but full assignment/RMW/writeback, references/COW, nested/append ArrayAccess breadth, cleanup/unwind/finally/destructors, exact diagnostics, native function/const-import lowering, and backend parity remain open. |
+| Executable PHP semantics | **80%** | `[################----]` | Many executable islands exist, including bounded method/static source-call production, generated method-frame `$this` property assignment, selected constructor bodies with bare early returns, selected property-held ArrayAccess read/write/RMW/`??=`/unset owners, namespace/import class policy, interpreter function/const-import exact lookup, and value-returning class metadata consumers, but full assignment/RMW/writeback, references/COW, nested/append ArrayAccess breadth, cleanup/unwind/finally/destructors, exact diagnostics, native function/const-import lowering, and backend parity remain open. |
 | Strings and byte semantics | **60%** | `[############--------]` | Byte-backed values and selected byte-preserving string-array slots are integrated. Binary source bytes, byte-exact interpreter/session/debug output, `mb_str_split()`, request/global byte keys, and exact diagnostics remain open. |
-| Arrays, lvalues, references, COW | **80%** | `[################----]` | Selected lvalue/reference-source extraction, ReferenceSlot owner facts, object-property owner/fact/commit prerequisites, reference-cell predicates, membership helpers, RMW array-lvalue owner/writeback, selected direct/generated-object ArrayAccess RMW/`??=` paths, and selected property-held ArrayAccess owners are integrated. Nested/append/increment ArrayAccess production, arbitrary alias roots, foreach breadth, broader writeback, and full COW remain incomplete. |
+| Arrays, lvalues, references, COW | **80%** | `[################----]` | Selected lvalue/reference-source extraction, ReferenceSlot owner facts, object-property owner/fact/commit prerequisites, reference-cell predicates, membership helpers, RMW array-lvalue owner/writeback, selected direct/generated-object ArrayAccess RMW/`??=` paths, and selected property-held ArrayAccess read/write/RMW/`??=`/unset owners are integrated. Nested/append/increment ArrayAccess production, arbitrary alias roots, foreach breadth, broader writeback, and full COW remain incomplete. |
 | Symbols, globals, request state | **70%** | `[##############------]` | Selected globals, root-symbol consumers, active symbol-table consumers, request-key blockers, append-shaped symbol reference-source materialization, direct generated-C request-state frame handoff, and dynamic user-function handoff proof exist. `$GLOBALS` self-cells, closure request-state handoff, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
 | Calls, functions, frames | **90%** | `[##################--]` | Runtime callable table/value dispatch, call arguments/frame/result ABI, conditional handoff, generated-C direct/dynamic callable consumers, declared-method registration/wrapper frames, callable return facts, by-reference argument transport, descriptor closures, closure returns, request-state frame handoff, access-context lookup ABI, lookup-plus-invoke exactly-once argument ownership helpers, source-call result carrier selectors, selected production source-call carrier emission, direct generated user-function lookup-plus-invoke production, direct generated user-function reference-return frames, method/static source-call target operands, method/static source-call binding operands, method/static signature fallback selection, selected reference-return source-call alias transfer into by-reference arguments, executable receiver/static method source-call production for exact, default, and variadic frame-compatible arities, and interpreter `use function`/`use const` exact lookup are integrated. Unknown runtime callables, dynamic/object-static/late-static method shapes, builtin/native/inherited/trait/interface signature metadata, broader by-reference alias transfer, native function/const-import lowering, magic calls, named/spread breadth, descriptor/method/closure and broader return references, constructor value returns, cleanup/unwind, and backend parity remain open. |
-| Objects, properties, methods | **80%** | `[################----]` | Selected object metadata, value-returning class metadata consumers, LLVM/generated-C user-class metadata consumers, generated-C namespace/import class policy, public property reference-source extraction, method-frame `$this` property assignment, object-property owner/fact/commit prerequisites, object-property reference-slot mutation, selected property-held ArrayAccess owners, generated-C ArrayAccess consumers for compiler-known generated objects, dynamic generated class-name producers, object-call argument handles, declared-method callable-table publication, bounded executable receiver/static method production, selected constructor bodies with bare early returns, allocatable class metadata, user-class metadata registry consumers, and access-context preflights exist. Nested/append ArrayAccess production, magic/unknown-runtime-dynamic-call/clone/static-property producers, broader visibility parity, typed properties, destructors, interfaces/traits execution, references/COW, constructor value returns, and backend parity remain open. |
+| Objects, properties, methods | **80%** | `[################----]` | Selected object metadata, value-returning class metadata consumers, LLVM/generated-C user-class metadata consumers, generated-C namespace/import class policy, public property reference-source extraction, method-frame `$this` property assignment, object-property owner/fact/commit prerequisites, object-property reference-slot mutation, selected property-held ArrayAccess read/write/RMW/`??=`/unset owners, generated-C ArrayAccess consumers for compiler-known generated objects, dynamic generated class-name producers, object-call argument handles, declared-method callable-table publication, bounded executable receiver/static method production, selected constructor bodies with bare early returns, allocatable class metadata, user-class metadata registry consumers, and access-context preflights exist. Nested/append ArrayAccess production, magic/unknown-runtime-dynamic-call/clone/static-property producers, broader visibility parity, typed properties, destructors, interfaces/traits execution, references/COW, constructor value returns, and backend parity remain open. |
 | Control flow, cleanup, diagnostics | **70%** | `[##############------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostic blockers, owned diagnostic-result list contracts, consumer contracts, backend family consumers, deferred-cleanup blockers, control-transfer cleanup result consumers, terminal cleanup transfer ABI, terminal-kind ABI, cleanup-frame producers/source metadata/report bridges, cleanup-frame stack aggregation, cleanup-frame enqueue validation, try-body call-boundary preflight, report sinks, continuation helpers, discarded statement-expression operands, and echo/print output operands exist. Broad unwind/finally/destructor/shutdown execution, cleanup result production from real control flow, executable reference binding, remaining semantic diagnostic-result producer migration, and source-ordered diagnostics remain open. |
 | Broad integrated verification | **75%** | `[###############-----]` | Focused gates around recent source work are strong, with several primary integration gates now covering linked generated-C class/method/constructor programs, LLVM class metadata routing, terminal-kind ABI behavior, and owner-boundary regressions. Broad verification is still constrained by lane extraction cost, stale candidate expectations, heavy formatter/log pressure, and backend parity gaps. |
 
@@ -93,6 +98,7 @@ Current critical path to 100%:
 
 | Commit | Capability | Proof shape |
 | --- | --- | --- |
+| `96ad8464` | Generated-C property-held ArrayAccess `unset()` now materializes literal and single-known dynamic object-property holders through public-property reference owners, invokes the ArrayAccess write/unset ABI, commits the mutated holder through reference writeback, and keeps nested/non-direct/unknown dynamic owners blocked. | Generated-C source proof for write/unset ABI and owner commit shape, linked executable proof across literal and dynamic property holders, unsupported owner-shape rejection proof, fmt, diff check. |
 | `b3e2a724` | Generated-C direct user-function reference-return frames now accept by-reference parameter return sources, use native reference-returning frame signatures, preserve callable-wrapper reference ownership, route reference consumers through source-call reference carriers, and keep by-value return sources rejected. | Focused reference-return frame contract tests, alias-transfer result-vector source proof, by-value source rejection proof, source-call carrier selector regressions, direct user-function frame source/link regressions, fmt, diff check. |
 | `e81aa43e` | Parser/runtime `use const` imports carry import-kind metadata, resolve arbitrary aliases/default aliases exactly before namespace/global fallback, preserve non-imported namespace-then-global fallback, reject aliases that conflict with existing imports or same-namespace constant declarations in either order, and keep generated C/LLVM at explicit production rejection boundaries. | Namespace-resolution proof across const aliases, default aliases, exact-missing no-fallback, non-import fallback, declaration/import conflict guards, class/function import regressions, generated-C and LLVM rejection, unsupported const-use CLI snapshot, focused global-constant rejection, fmt, diff check. |
 | `6757bb43` | Generated-C property-held ArrayAccess owners materialize literal and single-known dynamic object-property values through public-property reference owners, use constructor `$this` property fact summaries for direct `new` assignments, commit writes/RMW/`??=` through reference writeback, and keep unknown/nested/append/increment owner shapes blocked. | Codegen owner/fact unit proof, generated-C source proof for property-held read/write/RMW/`??=`, linked executable proof across literal and dynamic property holders, unsupported-owner regression, existing ArrayAccess RMW/`??=` regressions, `$this` assignment and constructor regressions, method/static default-variadic regression, fmt, diff check. |
@@ -145,7 +151,7 @@ Primary-integrated capability and candidate/lane-local work are separated.
 | --- | ---: | ---: | ---: | --- |
 | Diagnostic-result carrier stack | **100%** `[####################]` | **100%** `[####################]` | **60%** `[############--------]` | Runtime/result contracts, family consumers, continuation helpers, report sinks, discarded statement-expression operands, echo/print output operands, source-call result conversion, control-transfer cleanup result consumers/report bridges, and cleanup-frame producers are integrated. Terminal producers, semantic cleanup result production from real control flow, lvalue, reference, RMW, and call-argument operands still need exact ownership and ordering migrations. |
 | Callable access context and class metadata | **100%** `[####################]` | **100%** `[####################]` | **65%** `[#############-------]` | Shared runtime access-context policy, lookup-plus-invoke argument ownership, source-call result carrier selectors, selected production source-call carrier emission, direct generated user-function lookup-plus-invoke production, direct user-function reference-return frame consumers, bounded generated-C method/static source-call production including default and variadic frame-compatible arities, method/static source-call target and binding operands, method/static signature fallback selection, allocatable-class metadata, generated-C user-class metadata-exists consumers, and value-returning class metadata consumers are integrated for selected function/method/static/constructor/class lookup preflights. Constructor execution, dynamic method names, named/spread arguments, runtime/builtin/inherited/trait/interface signature metadata, closure argument-handle ownership, namespace/function/const fallback, autoload, magic, and full visibility parity remain open. |
-| ArrayAccess compiler consumers | **100%** `[####################]` | **100%** `[####################]` | **65%** `[#############-------]` | Generated-C direct-object/direct-variable read, `isset`, `empty`, `??`, write, append, unset, compound assignment, `??=`, and selected property-held literal/single-known dynamic object-property owners are integrated for compiler-known generated declared `ArrayAccess` objects. Nested property owners, append RMW, increment/decrement, reference-returning `offsetGet`, references/COW, cleanup/unwind, and backend parity remain open. |
+| ArrayAccess compiler consumers | **100%** `[####################]` | **100%** `[####################]` | **65%** `[#############-------]` | Generated-C direct-object/direct-variable read, `isset`, `empty`, `??`, write, append, unset, compound assignment, `??=`, and selected property-held literal/single-known dynamic object-property read/write/RMW/`??=`/unset owners are integrated for compiler-known generated declared `ArrayAccess` objects. Nested property owners, append RMW, increment/decrement, reference-returning `offsetGet`, references/COW, cleanup/unwind, and backend parity remain open. |
 | ReferenceSlot owner facts | **100%** `[####################]` | **100%** `[####################]` | **50%** `[##########----------]` | Compiler-visible native reference handles can recover facts, source owners, and commit writeback for selected variable and object-property paths. Arbitrary alias roots, request/superglobal path facts, broader property-held reference binding, closure callback fact transport, references/COW, and backend parity remain open. |
 | Callable identity return summaries | **100%** `[####################]` | **100%** `[####################]` | **60%** `[############--------]` | Generated functions, declared methods/static methods, descriptor closures, known strings, definite `__invoke` objects, compiler-known callable arrays, and selected direct user-function reference-return frames can publish or consume selected return facts. Unknown runtime callables, builtins, non-descriptor closures, recursive summaries, descriptor/method/closure reference returns, property/magic producers, references/COW, and backend parity remain open. |
 | Dynamic object/interface fact carrier | **100%** `[####################]` | **100%** `[####################]` | **65%** `[#############-------]` | Generated declared objects, known dynamic class-name `new`, copies, gotos, branches, generated-callable returns, descriptor closures, known string/invokable/callable-array summaries, and compiler-visible reference slots feed existing object/interface consumers. Properties, clones, static properties, arbitrary symbols, unknown runtime callables/arrays, and non-descriptor closures remain open. |
@@ -267,8 +273,8 @@ Primary-integrated capability and candidate/lane-local work are separated.
   RMW/`??=` consumers for compiler-known generated declared `ArrayAccess`
   objects.
 - Generated-C selected property-held ArrayAccess read/isset/empty/`??`, write,
-  compound RMW, and `??=` owners for literal and single-known dynamic object
-  properties proven by constructor `$this` property facts.
+  unset, compound RMW, and `??=` owners for literal and single-known dynamic
+  object properties proven by constructor `$this` property facts.
 - Shared generated-C native value/object facts for selected generated declared
   object producers and callable return summaries.
 - Shared generated-C ReferenceSlot value owner source/commit and reference-cell
@@ -283,11 +289,10 @@ Primary-integrated capability and candidate/lane-local work are separated.
 
 - Dynamic ArrayAccess producers beyond known generated declared-class `new` and
   direct generated-callable return summaries.
-- Nested and non-direct property-held ArrayAccess production, property-held
-  unsets, append/increment forms, unknown dynamic property owners, dynamic
-  class-name holders without definite facts, and reference-returning
-  ArrayAccess semantics on top of the integrated object-property owner
-  boundary.
+- Nested and non-direct property-held ArrayAccess production,
+  append/increment forms, unknown dynamic property owners, dynamic class-name
+  holders without definite facts, and reference-returning ArrayAccess
+  semantics on top of the integrated object-property owner boundary.
 - Object/static/dynamic/typed property storage and full method/object model
   execution beyond the selected generated `$this` assignment subset.
 - Full reference/COW identity and arbitrary alias-root writeback.
