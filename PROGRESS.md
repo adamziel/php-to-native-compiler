@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 12:56 CEST
+Updated: 2026-05-27 13:20 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,20 +19,31 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest accounted source capability: `b15a882c` adds a shared trait effective
-method metadata composition boundary consumed by both interpreter metadata and
-generated-C class metadata validation. Trait lookup, nested trait uses,
-aliases, visibility adaptations, `insteadof` exclusions, direct class method
-overrides, conflict diagnostics, recursion diagnostics, and case-insensitive
-trait/method keys now flow through `trait_semantics` before generated-C class
-metadata is validated. This does not claim trait method frame emission,
-dispatch, trait properties/constants, destructor execution, interface
-dispatch, or autoload-discovered traits. Dynamic class constants, direct
-receiver magic, static-property storage/reference/offset/ArrayAccess
-references, constructor reference results, reference-returning ArrayAccess
-owner stacks, descriptor closures, malformed magic metadata, source-call
-references, exact imports, literal/relative class constants, and class aliases
-remain green. Recent source commit `ecef5dc3` routes selected generated-C
+Latest accounted source capability: `f42f1f91` routes selected generated-C
+dynamic receiver class-name constants through a reusable no-autoload receiver
+normalization ABI. `$receiver::class` and `($receiver)::class` now consume
+object or class-string receivers, normalize registered generated-native class
+metadata and aliases without autoloading, preserve missing class-string
+source spelling without lookup diagnostics, return owned native strings with
+explicit cleanup, and keep unsupported receiver values behind a focused
+dynamic class-name diagnostic. Literal `ClassName::class` remains the PHP
+source-string form, while relative `self::class`, `parent::class`, and
+method-frame `static::class` keep using the existing metadata-aware paths.
+Dynamic class constants, trait effective-method metadata, direct receiver
+magic, static-property storage/reference/offset/ArrayAccess references,
+constructor reference results, reference-returning ArrayAccess owner stacks,
+descriptor closures, malformed magic metadata, source-call references, exact
+imports, literal/relative class constants, and class aliases remain green.
+Recent source commit `b15a882c` adds a shared trait effective method metadata
+composition boundary consumed by both interpreter metadata and generated-C
+class metadata validation. Trait lookup, nested trait uses, aliases,
+visibility adaptations, `insteadof` exclusions, direct class method overrides,
+conflict diagnostics, recursion diagnostics, and case-insensitive trait/method
+keys now flow through `trait_semantics` before generated-C class metadata is
+validated. This does not claim trait method frame emission, dispatch, trait
+properties/constants, destructor execution, interface dispatch, or
+autoload-discovered traits. Recent source commit `ecef5dc3` routes selected
+generated-C
 static-property roots whose stored value is an `ArrayAccess` object into the
 shared reference-owner `offsetGet()` boundary when the static-property offset
 is used as a by-reference source. Literal class, object receiver,
@@ -42,22 +53,16 @@ diagnostics, receiver-scope cleanup, and alias/write-through behavior instead
 of reading the root by value or cloning a fake reference. Multi-hop
 static-property ArrayAccess reference paths, computed/static/dynamic
 reference-COW shapes, and new owner-stack/reference ABIs remain blocked.
-Dynamic class constants, direct receiver magic, constructor reference results,
-static-property storage/reference/offset references, reference-returning
-ArrayAccess owner stacks, descriptor closures, malformed magic metadata,
-source-call references, exact imports, literal/relative class constants, and
-class aliases remain green. Recent source commit `092288d3` routes selected
+Recent source commit `092288d3` routes selected
 generated-C
 dynamic class-constant receivers through the shared class/constant metadata
 tables. `$class::CONST` and `$object::CONST` now normalize declared
 class-string and object receivers, including class aliases, through the same
 runtime class-constant lookup used by literal and relative receivers while
 preserving inheritance, visibility, missing-class/missing-constant
-diagnostics, receiver cleanup, and owned result cleanup. Literal
-`ClassName::class` remains the PHP no-lookup source string form, and dynamic
-receiver `::class` remains blocked until there is a reusable no-autoload
-dynamic class-name ABI. Named receiver/static magic, constructor reference
-results, direct receiver magic, static-property storage/reference/offset
+diagnostics, receiver cleanup, and owned result cleanup. Named receiver/static
+magic, constructor reference results, direct receiver magic, static-property
+storage/reference/offset
 references, reference-returning ArrayAccess owner stacks, descriptor closures,
 malformed magic metadata, source-call references, exact imports, literal and
 relative class constants, and class aliases remain green. Traits/interfaces,
