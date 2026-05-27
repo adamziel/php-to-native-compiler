@@ -257,6 +257,24 @@ const NATIVE_LATE_STATIC_PROPERTY_SOURCE: &str = concat!(
     "echo LateStaticPropertyRoot::rootCount(), \":\", LateStaticPropertyLeaf::bump(), \"\\n\";\n",
 );
 
+const NATIVE_OBJECT_STATIC_PROPERTY_RECEIVER_SOURCE: &str = concat!(
+    "<?php\n",
+    "class ObjectStaticPropertyRoot { public static int $count = 2; public static $label = \"root\"; }\n",
+    "class ObjectStaticPropertyLeaf extends ObjectStaticPropertyRoot { public static $label = \"leaf\"; }\n",
+    "$object = new ObjectStaticPropertyRoot();\n",
+    "echo $object::$count;\n",
+    "echo \":\";\n",
+    "echo ($object::$count = 7);\n",
+    "echo \":\";\n",
+    "echo ObjectStaticPropertyRoot::$count;\n",
+    "echo \":\";\n",
+    "$class = \"ObjectStaticPropertyLeaf\";\n",
+    "echo ($class::$label = \"class-string\");\n",
+    "echo \":\";\n",
+    "echo ObjectStaticPropertyLeaf::$label;\n",
+    "echo \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_PROPERTY_UNSET_SOURCE: &str = concat!(
     "<?php\n",
     "class Box { public $name; public $peer; private $secret; }\n",
@@ -1888,6 +1906,84 @@ fn emit_exe_links_and_runs_late_static_property_program() {
 
     let _ = fs::remove_file(source_path);
     let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_object_static_property_receiver_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "object_static_property_receiver",
+        NATIVE_OBJECT_STATIC_PROPERTY_RECEIVER_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run object-static-property executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"2:7:7:class-string:class-string\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_object_static_property_receiver_preserves_type_and_visibility_diagnostics() {
+    if !has_cc() {
+        return;
+    }
+
+    for (name, source, expected) in [
+        (
+            "object_static_property_receiver_type_failure",
+            concat!(
+                "<?php\n",
+                "class ObjectStaticTyped { public static int $count = 1; }\n",
+                "$object = new ObjectStaticTyped();\n",
+                "$object::$count = array();\n",
+            ),
+            "typed property ObjectStaticTyped::$count expects int",
+        ),
+        (
+            "object_static_property_receiver_visibility_failure",
+            concat!(
+                "<?php\n",
+                "class ObjectStaticHidden { private static $secret = \"x\"; }\n",
+                "$class = \"ObjectStaticHidden\";\n",
+                "echo $class::$secret;\n",
+            ),
+            "private static property is not visible from the current class context",
+        ),
+    ] {
+        let (source_path, output_path) = compile_native_link_fixture(name, source);
+        let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+            panic!("failed to run object-static-property diagnostic executable: {error}")
+        });
+
+        assert!(
+            !run.status.success(),
+            "{name} unexpectedly succeeded with stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&run.stdout),
+            String::from_utf8_lossy(&run.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&run.stderr).contains(expected),
+            "{name} stderr did not contain {expected:?}:\n{}",
+            String::from_utf8_lossy(&run.stderr)
+        );
+
+        let _ = fs::remove_file(source_path);
+        let _ = fs::remove_file(output_path);
+    }
 }
 
 #[test]
@@ -4171,12 +4267,40 @@ fn native_executable_c_source_routes_late_static_properties_through_called_scope
 }
 
 #[test]
+fn native_executable_c_source_routes_object_static_property_receivers_through_scope_storage() {
+    let program = parse(NATIVE_OBJECT_STATIC_PROPERTY_RECEIVER_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    for required in [
+        "phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free",
+        "phpc_native_static_property_read_class_with_diagnostic",
+        "phpc_native_static_property_write_class_with_diagnostic_and_free",
+        "phpc_native_string_bytes(object_static_property_scope_",
+        "phpc_native_string_len(object_static_property_scope_",
+    ] {
+        assert!(source.contains(required), "missing {required}:\n{source}");
+    }
+    assert!(
+        body.matches("phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free")
+            .count()
+            >= 3,
+        "object/class-string static-property receivers should derive runtime scope for each independent read/write:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_static_method_scope_from_receiver_with_diagnostic_and_free")
+            && !body.contains("object_static_method_status"),
+        "object static-property receivers should not reuse method-call lowering or generated frame ladders:\n{source}"
+    );
+    assert!(
+        !source.contains("static-member lowering rejects"),
+        "supported object/class-string static-property access should not fall back to static-member rejection:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_keeps_unsupported_static_property_dynamic_shapes_blocked() {
     for (label, source) in [
-        (
-            "dynamic class name",
-            "<?php\nclass Counter { public static $count = 1; }\n$class = \"Counter\";\necho $class::$count;\n",
-        ),
         (
             "self static property outside class context",
             "<?php\nclass Counter { public static $count = 1; }\necho self::$count;\n",
@@ -4184,10 +4308,6 @@ fn native_executable_c_source_keeps_unsupported_static_property_dynamic_shapes_b
         (
             "late-static property outside class context",
             "<?php\nclass Counter { public static $count = 1; }\necho static::$count;\n",
-        ),
-        (
-            "object static property receiver",
-            "<?php\nclass Counter { public static $count = 1; }\n$object = new Counter();\necho $object::$count;\n",
         ),
     ] {
         let program = parse(source).unwrap();

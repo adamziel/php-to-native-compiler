@@ -26605,6 +26605,40 @@ impl NativeStaticPropertyStorage {
         )
     }
 
+    fn scope_from_receiver(&self, receiver: &Value) -> RuntimeResult<String> {
+        match receiver {
+            Value::Object(object) => Ok(object.class_name().to_string()),
+            Value::String(class_name) => {
+                if self.classes.lookup_class_id(class_name).is_some() {
+                    return Ok(class_name.clone());
+                }
+
+                let lookup_key = native_class_metadata_lookup_key(class_name.as_bytes());
+                if let Some(target_lookup_key) =
+                    native_user_class_alias_target_lookup_key(&lookup_key)
+                {
+                    let target = String::from_utf8(target_lookup_key).map_err(|_| {
+                        RuntimeError::invalid_property_access(
+                            "native static-property receiver alias target is not UTF-8".to_string(),
+                        )
+                    })?;
+                    if self.classes.lookup_class_id(&target).is_some() {
+                        return Ok(target);
+                    }
+                }
+
+                Err(RuntimeError::undefined_class(class_name))
+            }
+            other => Err(RuntimeError::unsupported_call(
+                "dynamic static property receiver",
+                format!(
+                    "dynamic static property receiver must be object or class string, got {}",
+                    other.type_name()
+                ),
+            )),
+        }
+    }
+
     fn relative_receiver_and_context(
         &self,
         receiver: NativeStaticPropertyReceiverTag,
@@ -26658,6 +26692,45 @@ impl NativeStaticPropertyStorage {
             self.relative_receiver_and_context(receiver, current_class_name, called_class_name)?;
         self.storage
             .write(&self.classes, receiver, property_name, value, context)
+    }
+}
+
+/// # Safety
+///
+/// `storage`, `receiver`, and `diagnostic` must be valid according to the
+/// runtime ABI. The receiver is always consumed. Returns an owned class-scope
+/// string for dynamic static-property access when the receiver is an object or
+/// declared class string.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free(
+    storage: NativeStaticPropertyStorageHandle,
+    receiver: NativeValueHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeStringHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| -> RuntimeResult<NativeStringHandle> {
+        let storage = unsafe { storage.as_ref() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native static-property storage handle is null".to_string(),
+            )
+        })?;
+        let receiver_value = unsafe { receiver.as_ref() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "dynamic static property receiver handle is null".to_string(),
+            )
+        })?;
+        storage
+            .scope_from_receiver(receiver_value)
+            .map(|scope| NativeStringHandle::from_vec(scope.into_bytes()))
+    })();
+    unsafe { phpc_native_value_free(receiver) };
+
+    match result {
+        Ok(scope) => scope,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeStringHandle::null()
+        }
     }
 }
 
@@ -61295,6 +61368,104 @@ mod tests {
         );
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_static_property_storage_free(storage) };
+    }
+
+    #[test]
+    fn static_property_receiver_scope_helper_accepts_objects_class_strings_and_aliases() {
+        native_user_classes_reset_for_test();
+
+        let class = b"StaticScopeWidget";
+        let alias = b"StaticScopeAlias";
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let storage = phpc_native_static_property_storage_new();
+        assert!(!storage.is_null());
+
+        assert!(unsafe {
+            phpc_native_static_property_storage_declare_class_bytes(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        assert!(unsafe { phpc_native_declare_user_class_bytes(class.as_ptr(), class.len()) });
+        assert!(unsafe {
+            phpc_native_declare_user_class_alias_bytes_with_diagnostic(
+                class.as_ptr(),
+                class.len(),
+                alias.as_ptr(),
+                alias.len(),
+                false,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("StaticScopeWidget").unwrap();
+        let object_scope = unsafe {
+            phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free(
+                storage,
+                NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+                    classes.get(class_id).unwrap(),
+                ))),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { native_string_handle_to_string(object_scope) }.as_deref(),
+            Some("StaticScopeWidget")
+        );
+        unsafe { phpc_native_string_free(object_scope) };
+
+        let string_scope = unsafe {
+            phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free(
+                storage,
+                NativeValueHandle::from_value(Value::String("StaticScopeWidget".to_string())),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { native_string_handle_to_string(string_scope) }.as_deref(),
+            Some("StaticScopeWidget")
+        );
+        unsafe { phpc_native_string_free(string_scope) };
+
+        let alias_scope = unsafe {
+            phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free(
+                storage,
+                NativeValueHandle::from_value(Value::String("StaticScopeAlias".to_string())),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { native_string_handle_to_string(alias_scope) }.as_deref(),
+            Some("staticscopewidget")
+        );
+        unsafe { phpc_native_string_free(alias_scope) };
+
+        let invalid_scope = unsafe {
+            phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free(
+                storage,
+                NativeValueHandle::from_value(Value::Int(5)),
+                &mut diagnostic,
+            )
+        };
+        assert!(invalid_scope.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "unsupported call dynamic static property receiver: dynamic static property receiver must be object or class string, got int"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_static_property_storage_free(storage) };
+
+        native_user_classes_reset_for_test();
     }
 
     #[test]
