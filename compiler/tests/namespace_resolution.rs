@@ -576,14 +576,88 @@ fn native_lowering_rejects_namespace_context_before_scalar_folds() {
 }
 
 #[test]
-fn generated_c_rejects_const_import_boundary() {
-    let program = parse("<?php\nuse const Vendor\\Values\\ANSWER;\necho ANSWER;\n").unwrap();
+fn generated_c_lowers_exact_imported_const_boundary() {
+    let program = parse(
+        r#"<?php
+namespace App\Values;
+const ANSWER = 42;
+const LABEL = "answer";
+use const App\Values\ANSWER as picked_number, App\Values\LABEL as picked_label;
+use const PHP_VERSION_ID as runtime_version;
+echo picked_label, "=", picked_number, "|", runtime_version;
+"#,
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("42")
+            && source.contains("80300")
+            && source.contains("phpc_native_value_from_string_bytes_with_diagnostic"),
+        "generated C should lower exact imported user and builtin constants:\n{source}"
+    );
+    assert!(
+        !source.contains("global-constant lowering rejects")
+            && !source.contains("namespace lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
+fn generated_c_rejects_missing_const_import_without_fallback() {
+    let program = parse(
+        "<?php\nnamespace App\\Values;\nconst ANSWER = 42;\nuse const Vendor\\Values\\ANSWER as missing_answer;\necho missing_answer;\n",
+    )
+    .unwrap();
     let error = emit_native_executable_c_source(&program).unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 1);
+    assert_eq!(error.line, 5);
+    assert_eq!(error.column, 6);
     assert_eq!(error.message, ASSEMBLY_GLOBAL_CONSTANT_REJECTION);
+}
+
+#[test]
+fn generated_c_rejects_imported_const_declaration_boundary_shapes() {
+    let cases = [
+        (
+            "array const value",
+            r#"<?php
+namespace App\Values;
+const ITEMS = [1];
+use const App\Values\ITEMS as items;
+echo items;
+"#,
+        ),
+        (
+            "dynamic const value",
+            r#"<?php
+namespace App\Values;
+const COPIED = PHP_VERSION_ID;
+use const App\Values\COPIED as copied;
+echo copied;
+"#,
+        ),
+        (
+            "builtin const collision",
+            r#"<?php
+const PHP_VERSION_ID = 1;
+use const PHP_VERSION_ID as version_id;
+echo version_id;
+"#,
+        ),
+    ];
+
+    for (label, source) in cases {
+        let program = parse(source).unwrap();
+        let error = match emit_native_executable_c_source(&program) {
+            Ok(source) => panic!("{label} should reject:\n{source}"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.phase, Phase::Codegen, "{label}");
+        assert_eq!(error.message, ASSEMBLY_GLOBAL_CONSTANT_REJECTION, "{label}");
+    }
 }
 
 #[test]

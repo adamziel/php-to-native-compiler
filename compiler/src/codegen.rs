@@ -4,10 +4,10 @@ use std::process::{Command, Stdio};
 
 use crate::ast::{
     ArrayItem, AssignTarget, BinaryOp, CastKind, CatchClause, ClassDecl, ClassMember,
-    ClassMethodDecl, ClassVisibility, ClosureCapture, CompoundAssignOp, Expr, ForAction,
-    FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition,
+    ClassMethodDecl, ClassVisibility, ClosureCapture, CompoundAssignOp, ConstDeclarator, Expr,
+    ForAction, FunctionDecl, FunctionParam, IncrementDecrementOp, IncrementDecrementPosition,
     InterpolatedAccessSegment, InterpolatedArrayKey, InterpolatedStringPart, NewClassName, Program,
-    ReferenceSource, Span, Stmt, SwitchCase, TypeDecl, UnaryOp, UnsetTarget, UseImportKind,
+    ReferenceSource, Span, Stmt, SwitchCase, TypeDecl, UnaryOp, UnsetTarget,
 };
 use crate::error::{CompileResult, Diagnostic, Phase};
 use php_runtime::{
@@ -15754,6 +15754,7 @@ struct CGenerator {
     static_data: Vec<String>,
     variables: HashMap<String, CValue>,
     variable_order: Vec<String>,
+    native_imported_constant_values: HashMap<String, CValue>,
     mutable_scalar_slots: HashMap<String, CMutableScalarSlot>,
     by_reference_foreach_linger_variables: HashSet<String>,
     global_import_names: HashSet<String>,
@@ -15951,6 +15952,7 @@ struct CLoopTransferTarget {
 struct CGotoStateSnapshot {
     variables: HashMap<String, CValue>,
     variable_order: Vec<String>,
+    native_imported_constant_values: HashMap<String, CValue>,
     mutable_scalar_slots: HashMap<String, CMutableScalarSlot>,
     by_reference_foreach_linger_variables: HashSet<String>,
     global_import_names: HashSet<String>,
@@ -18369,6 +18371,7 @@ impl CGenerator {
     fn persistent_state_matches(&self, other: &Self) -> bool {
         self.variables == other.variables
             && self.variable_order == other.variable_order
+            && self.native_imported_constant_values == other.native_imported_constant_values
             && self.mutable_scalar_slots == other.mutable_scalar_slots
             && self.by_reference_foreach_linger_variables
                 == other.by_reference_foreach_linger_variables
@@ -18397,6 +18400,7 @@ impl CGenerator {
         CGotoStateSnapshot {
             variables: self.variables.clone(),
             variable_order: self.variable_order.clone(),
+            native_imported_constant_values: self.native_imported_constant_values.clone(),
             mutable_scalar_slots: self.mutable_scalar_slots.clone(),
             by_reference_foreach_linger_variables: self
                 .by_reference_foreach_linger_variables
@@ -32657,13 +32661,6 @@ impl CGenerator {
         }
 
         match stmt {
-            Stmt::Use { imports, span }
-                if imports
-                    .iter()
-                    .any(|import| import.kind == UseImportKind::Constant) =>
-            {
-                Err(self.unsupported(*span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION))
-            }
             Stmt::Namespace { .. } | Stmt::Use { .. } => Ok(()),
             Stmt::Echo { exprs, .. } => {
                 for (index, expr) in exprs.iter().enumerate() {
@@ -33098,8 +33095,8 @@ impl CGenerator {
                 }
                 self.emit_unset_many(targets, *span)
             }
-            Stmt::ConstDeclaration { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION))
+            Stmt::ConstDeclaration { declarations, span } => {
+                self.emit_const_declaration(declarations, *span)
             }
             Stmt::Require { span, .. } | Stmt::Include { span, .. } => {
                 Err(self.unsupported(*span, ASSEMBLY_REQUIRE_REJECTION))
@@ -33137,8 +33134,8 @@ impl CGenerator {
             | Expr::MagicMethod { span } => {
                 Err(self.unsupported(*span, ASSEMBLY_MAGIC_CONSTANT_REJECTION))
             }
-            Expr::GlobalConstant { span, .. } => {
-                Err(self.unsupported(*span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION))
+            Expr::GlobalConstant { name, span } => {
+                self.emit_exact_imported_global_constant(name, *span)
             }
             Expr::ClassNameConstant { class_name, .. } => Ok(CValue::String(class_name.clone())),
             Expr::SelfClassNameConstant { span }
@@ -44618,6 +44615,41 @@ impl CGenerator {
         }
     }
 
+    fn emit_exact_imported_global_constant(&self, name: &str, span: Span) -> CompileResult<CValue> {
+        let Some(exact_name) = exact_imported_global_constant_name(name) else {
+            return Err(self.unsupported(span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION));
+        };
+
+        self.native_imported_constant_values
+            .get(exact_name)
+            .cloned()
+            .or_else(|| native_builtin_global_constant_c_value(exact_name))
+            .ok_or_else(|| self.unsupported(span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION))
+    }
+
+    fn emit_const_declaration(
+        &mut self,
+        declarations: &[ConstDeclarator],
+        _span: Span,
+    ) -> CompileResult<()> {
+        for declaration in declarations {
+            if native_builtin_global_constant_c_value(&declaration.name).is_some()
+                || self
+                    .native_imported_constant_values
+                    .contains_key(&declaration.name)
+            {
+                return Err(self.unsupported(declaration.span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION));
+            }
+
+            let Some(value) = native_user_constant_c_value(&declaration.value) else {
+                return Err(self.unsupported(declaration.span, ASSEMBLY_GLOBAL_CONSTANT_REJECTION));
+            };
+            self.native_imported_constant_values
+                .insert(declaration.name.clone(), value);
+        }
+        Ok(())
+    }
+
     fn emit_reference_variable_assignment(
         &mut self,
         reference: &str,
@@ -52820,86 +52852,124 @@ fn native_defined_result(name: &str) -> Option<bool> {
 }
 
 fn builtin_global_constant_is_defined(name: &str) -> bool {
+    native_builtin_global_constant_c_value(name).is_some()
+}
+
+fn native_builtin_global_constant_c_value(name: &str) -> Option<CValue> {
     match name {
-        "PHP_VERSION"
-        | "PHP_VERSION_ID"
-        | "PHP_INT_MAX"
-        | "PHP_SAPI"
-        | "PATH_SEPARATOR"
-        | "PHP_SESSION_DISABLED"
-        | "PHP_SESSION_NONE"
-        | "PHP_SESSION_ACTIVE"
-        | "E_ERROR"
-        | "E_WARNING"
-        | "E_PARSE"
-        | "E_NOTICE"
-        | "E_CORE_ERROR"
-        | "E_CORE_WARNING"
-        | "E_COMPILE_ERROR"
-        | "E_COMPILE_WARNING"
-        | "E_USER_ERROR"
-        | "E_USER_WARNING"
-        | "E_USER_NOTICE"
-        | "E_STRICT"
-        | "E_RECOVERABLE_ERROR"
-        | "E_DEPRECATED"
-        | "E_USER_DEPRECATED"
-        | "E_ALL"
-        | "CASE_LOWER"
-        | "CASE_UPPER"
-        | "ARRAY_FILTER_USE_BOTH"
-        | "ARRAY_FILTER_USE_KEY"
-        | "PREG_SPLIT_DELIM_CAPTURE"
-        | "SORT_REGULAR"
-        | "SORT_NUMERIC"
-        | "SORT_STRING"
-        | "SEEK_SET"
-        | "SEEK_CUR"
-        | "SEEK_END"
-        | "MYSQLI_REPORT_OFF"
-        | "MYSQLI_REPORT_ERROR"
-        | "MYSQLI_REPORT_STRICT"
-        | "MYSQLI_ASSOC"
-        | "MYSQLI_NUM"
-        | "MYSQLI_BOTH"
-        | "MYSQLI_ASYNC"
-        | "MYSQLI_CLIENT_SSL"
-        | "MYSQLI_CLIENT_COMPRESS"
-        | "MYSQLI_CLIENT_INTERACTIVE"
-        | "MYSQLI_CLIENT_IGNORE_SPACE"
-        | "MYSQLI_CLIENT_NO_SCHEMA"
-        | "MYSQLI_CLIENT_FOUND_ROWS"
-        | "MYSQLI_CLIENT_SSL_VERIFY_SERVER_CERT"
-        | "MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT"
-        | "MYSQLI_CLIENT_CAN_HANDLE_EXPIRED_PASSWORDS"
-        | "MYSQLI_OPT_CONNECT_TIMEOUT"
-        | "MYSQLI_OPT_LOCAL_INFILE"
-        | "MYSQLI_OPT_LOAD_DATA_LOCAL_DIR"
-        | "MYSQLI_INIT_COMMAND"
-        | "MYSQLI_OPT_READ_TIMEOUT"
-        | "MYSQLI_OPT_NET_CMD_BUFFER_SIZE"
-        | "MYSQLI_OPT_NET_READ_BUFFER_SIZE"
-        | "MYSQLI_OPT_INT_AND_FLOAT_NATIVE"
-        | "MYSQLI_OPT_SSL_VERIFY_SERVER_CERT"
-        | "MYSQLI_OPT_CAN_HANDLE_EXPIRED_PASSWORDS"
-        | "MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH"
-        | "MYSQLI_STMT_ATTR_CURSOR_TYPE"
-        | "MYSQLI_STMT_ATTR_PREFETCH_ROWS"
-        | "MYSQLI_CURSOR_TYPE_NO_CURSOR"
-        | "MYSQLI_CURSOR_TYPE_READ_ONLY"
-        | "MYSQLI_CURSOR_TYPE_FOR_UPDATE"
-        | "MYSQLI_CURSOR_TYPE_SCROLLABLE"
-        | "MYSQLI_REFRESH_GRANT"
-        | "MYSQLI_REFRESH_LOG"
-        | "MYSQLI_REFRESH_TABLES"
-        | "MYSQLI_REFRESH_HOSTS"
-        | "MYSQLI_REFRESH_STATUS"
-        | "MYSQLI_REFRESH_THREADS"
-        | "MYSQLI_REFRESH_SLAVE"
-        | "MYSQLI_REFRESH_REPLICA"
-        | "MYSQLI_REFRESH_MASTER"
-        | "MYSQLI_REFRESH_BACKUP_LOG" => true,
-        _ => false,
+        "PHP_VERSION" => Some(CValue::String("8.3.0".to_string())),
+        "PHP_VERSION_ID" => Some(CValue::Int("80300".to_string())),
+        "PHP_INT_MAX" => Some(CValue::Int(i64::MAX.to_string())),
+        "PHP_SAPI" => Some(CValue::String("cli".to_string())),
+        "PATH_SEPARATOR" => Some(CValue::String(
+            if cfg!(windows) { ";" } else { ":" }.to_string(),
+        )),
+        "PHP_SESSION_DISABLED" => Some(CValue::Int("0".to_string())),
+        "PHP_SESSION_NONE" => Some(CValue::Int("1".to_string())),
+        "PHP_SESSION_ACTIVE" => Some(CValue::Int("2".to_string())),
+        "E_ERROR" => Some(CValue::Int("1".to_string())),
+        "E_WARNING" => Some(CValue::Int("2".to_string())),
+        "E_PARSE" => Some(CValue::Int("4".to_string())),
+        "E_NOTICE" => Some(CValue::Int("8".to_string())),
+        "E_CORE_ERROR" => Some(CValue::Int("16".to_string())),
+        "E_CORE_WARNING" => Some(CValue::Int("32".to_string())),
+        "E_COMPILE_ERROR" => Some(CValue::Int("64".to_string())),
+        "E_COMPILE_WARNING" => Some(CValue::Int("128".to_string())),
+        "E_USER_ERROR" => Some(CValue::Int("256".to_string())),
+        "E_USER_WARNING" => Some(CValue::Int("512".to_string())),
+        "E_USER_NOTICE" => Some(CValue::Int("1024".to_string())),
+        "E_STRICT" => Some(CValue::Int("2048".to_string())),
+        "E_RECOVERABLE_ERROR" => Some(CValue::Int("4096".to_string())),
+        "E_DEPRECATED" => Some(CValue::Int("8192".to_string())),
+        "E_USER_DEPRECATED" => Some(CValue::Int("16384".to_string())),
+        "E_ALL" => Some(CValue::Int("32767".to_string())),
+        "CASE_LOWER" => Some(CValue::Int("0".to_string())),
+        "CASE_UPPER" => Some(CValue::Int("1".to_string())),
+        "ARRAY_FILTER_USE_BOTH" => Some(CValue::Int("1".to_string())),
+        "ARRAY_FILTER_USE_KEY" => Some(CValue::Int("2".to_string())),
+        "PREG_SPLIT_DELIM_CAPTURE" => Some(CValue::Int("2".to_string())),
+        "SORT_REGULAR" => Some(CValue::Int("0".to_string())),
+        "SORT_NUMERIC" => Some(CValue::Int("1".to_string())),
+        "SORT_STRING" => Some(CValue::Int("2".to_string())),
+        "SEEK_SET" => Some(CValue::Int("0".to_string())),
+        "SEEK_CUR" => Some(CValue::Int("1".to_string())),
+        "SEEK_END" => Some(CValue::Int("2".to_string())),
+        "MYSQLI_REPORT_OFF" => Some(CValue::Int("0".to_string())),
+        "MYSQLI_REPORT_ERROR" => Some(CValue::Int("1".to_string())),
+        "MYSQLI_REPORT_STRICT" => Some(CValue::Int("2".to_string())),
+        "MYSQLI_ASSOC" => Some(CValue::Int("1".to_string())),
+        "MYSQLI_NUM" => Some(CValue::Int("2".to_string())),
+        "MYSQLI_BOTH" => Some(CValue::Int("3".to_string())),
+        "MYSQLI_ASYNC" => Some(CValue::Int("8".to_string())),
+        "MYSQLI_CLIENT_SSL" => Some(CValue::Int("2048".to_string())),
+        "MYSQLI_CLIENT_COMPRESS" => Some(CValue::Int("32".to_string())),
+        "MYSQLI_CLIENT_INTERACTIVE" => Some(CValue::Int("1024".to_string())),
+        "MYSQLI_CLIENT_IGNORE_SPACE" => Some(CValue::Int("256".to_string())),
+        "MYSQLI_CLIENT_NO_SCHEMA" => Some(CValue::Int("16".to_string())),
+        "MYSQLI_CLIENT_FOUND_ROWS" => Some(CValue::Int("2".to_string())),
+        "MYSQLI_CLIENT_SSL_VERIFY_SERVER_CERT" => Some(CValue::Int("1073741824".to_string())),
+        "MYSQLI_CLIENT_SSL_DONT_VERIFY_SERVER_CERT" => Some(CValue::Int("64".to_string())),
+        "MYSQLI_CLIENT_CAN_HANDLE_EXPIRED_PASSWORDS" => Some(CValue::Int("4194304".to_string())),
+        "MYSQLI_OPT_CONNECT_TIMEOUT" => Some(CValue::Int("0".to_string())),
+        "MYSQLI_OPT_LOCAL_INFILE" => Some(CValue::Int("8".to_string())),
+        "MYSQLI_OPT_LOAD_DATA_LOCAL_DIR" => Some(CValue::Int("43".to_string())),
+        "MYSQLI_INIT_COMMAND" => Some(CValue::Int("3".to_string())),
+        "MYSQLI_OPT_READ_TIMEOUT" => Some(CValue::Int("11".to_string())),
+        "MYSQLI_OPT_NET_CMD_BUFFER_SIZE" => Some(CValue::Int("202".to_string())),
+        "MYSQLI_OPT_NET_READ_BUFFER_SIZE" => Some(CValue::Int("203".to_string())),
+        "MYSQLI_OPT_INT_AND_FLOAT_NATIVE" => Some(CValue::Int("201".to_string())),
+        "MYSQLI_OPT_SSL_VERIFY_SERVER_CERT" => Some(CValue::Int("21".to_string())),
+        "MYSQLI_OPT_CAN_HANDLE_EXPIRED_PASSWORDS" => Some(CValue::Int("37".to_string())),
+        "MYSQLI_STMT_ATTR_UPDATE_MAX_LENGTH" => Some(CValue::Int("0".to_string())),
+        "MYSQLI_STMT_ATTR_CURSOR_TYPE" => Some(CValue::Int("1".to_string())),
+        "MYSQLI_STMT_ATTR_PREFETCH_ROWS" => Some(CValue::Int("2".to_string())),
+        "MYSQLI_CURSOR_TYPE_NO_CURSOR" => Some(CValue::Int("0".to_string())),
+        "MYSQLI_CURSOR_TYPE_READ_ONLY" => Some(CValue::Int("1".to_string())),
+        "MYSQLI_CURSOR_TYPE_FOR_UPDATE" => Some(CValue::Int("2".to_string())),
+        "MYSQLI_CURSOR_TYPE_SCROLLABLE" => Some(CValue::Int("4".to_string())),
+        "MYSQLI_REFRESH_GRANT" => Some(CValue::Int("1".to_string())),
+        "MYSQLI_REFRESH_LOG" => Some(CValue::Int("2".to_string())),
+        "MYSQLI_REFRESH_TABLES" => Some(CValue::Int("4".to_string())),
+        "MYSQLI_REFRESH_HOSTS" => Some(CValue::Int("8".to_string())),
+        "MYSQLI_REFRESH_STATUS" => Some(CValue::Int("16".to_string())),
+        "MYSQLI_REFRESH_THREADS" => Some(CValue::Int("32".to_string())),
+        "MYSQLI_REFRESH_SLAVE" | "MYSQLI_REFRESH_REPLICA" => Some(CValue::Int("64".to_string())),
+        "MYSQLI_REFRESH_MASTER" => Some(CValue::Int("128".to_string())),
+        "MYSQLI_REFRESH_BACKUP_LOG" => Some(CValue::Int("2097152".to_string())),
+        _ => None,
+    }
+}
+
+fn exact_imported_global_constant_name(name: &str) -> Option<&str> {
+    let exact = name.strip_prefix('\\')?;
+    if is_supported_qualified_native_constant_name(exact) {
+        Some(exact)
+    } else {
+        None
+    }
+}
+
+fn native_user_constant_c_value(expr: &Expr) -> Option<CValue> {
+    match expr {
+        Expr::Null(_) => Some(CValue::Null),
+        Expr::Bool(value, _) => Some(CValue::Bool(*value)),
+        Expr::Int(value, _) => Some(CValue::Int(value.to_string())),
+        Expr::Float(value, _) if value.is_finite() => {
+            Some(CValue::Float(format_float_literal(*value)))
+        }
+        Expr::String(value, _) => Some(CValue::String(value.clone())),
+        Expr::Unary { op, expr, .. } if matches!(op, UnaryOp::Negate) => {
+            match native_user_constant_c_value(expr)? {
+                CValue::Int(value) if !value.starts_with('-') => {
+                    Some(CValue::Int(format!("-{value}")))
+                }
+                CValue::Float(value) if !value.starts_with('-') => {
+                    Some(CValue::Float(format!("-{value}")))
+                }
+                _ => None,
+            }
+        }
+        _ => None,
     }
 }
 
@@ -52911,6 +52981,12 @@ fn is_supported_native_constant_name(name: &str) -> bool {
 
     (first == '_' || first.is_ascii_alphabetic())
         && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn is_supported_qualified_native_constant_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with('\\')
+        && name.split('\\').all(is_supported_native_constant_name)
 }
 
 fn native_dynamic_callable_builtin_canonical_name(name: &str) -> Option<&'static str> {

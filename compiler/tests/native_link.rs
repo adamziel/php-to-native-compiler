@@ -3820,6 +3820,43 @@ fn emit_exe_links_and_runs_namespace_alias_class_policy_program() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_exact_imported_const_alias_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "namespace App\\Values;\n",
+        "const ANSWER = 42;\n",
+        "const LABEL = \"answer\";\n",
+        "use const App\\Values\\ANSWER as picked_number, App\\Values\\LABEL as picked_label;\n",
+        "use const PHP_VERSION_ID as runtime_version, PHP_VERSION as runtime_label;\n",
+        "echo picked_label, \"=\", picked_number, \"|\";\n",
+        "echo runtime_version, \"|\", runtime_label, \"\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("exact_imported_const_alias", source);
+
+    let run = Command::new(&output_path)
+        .output()
+        .expect("run exact imported const alias executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "answer=42|80300|8.3.0\n"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn emit_exe_namespaced_class_exists_user_function_takes_exact_precedence() {
     if !has_cc() {
         return;
