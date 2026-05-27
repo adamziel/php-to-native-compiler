@@ -31411,6 +31411,40 @@ impl PhpStaticPropertyStorage {
         cell.reference_cell()
     }
 
+    pub fn bind_reference_cell(
+        &mut self,
+        classes: &PhpClassTable,
+        receiver: PhpStaticPropertyReceiver,
+        property_name: &str,
+        reference: PhpReferenceCell,
+        context: PhpStaticPropertyAccessContext,
+    ) -> RuntimeResult<()> {
+        self.bind_reference_cell_with_object_type_resolver(
+            classes,
+            receiver,
+            property_name,
+            reference,
+            context,
+            |object, type_name| object.is_instance_of_class_name(type_name),
+        )
+    }
+
+    pub fn bind_reference_cell_with_object_type_resolver<F>(
+        &mut self,
+        classes: &PhpClassTable,
+        receiver: PhpStaticPropertyReceiver,
+        property_name: &str,
+        reference: PhpReferenceCell,
+        context: PhpStaticPropertyAccessContext,
+        object_type_resolver: F,
+    ) -> RuntimeResult<()>
+    where
+        F: Fn(&PhpObject, &str) -> bool,
+    {
+        let cell = self.resolved_cell_mut(classes, receiver, property_name, context)?;
+        cell.set_reference_cell_with_object_type_resolver(reference, &object_type_resolver)
+    }
+
     pub fn existing_reference_cell(
         &mut self,
         classes: &PhpClassTable,
@@ -31585,6 +31619,39 @@ impl PhpStaticPropertyCell {
         };
         self.initialized = true;
         Ok(value)
+    }
+
+    fn set_reference_cell_with_object_type_resolver<F>(
+        &mut self,
+        reference: PhpReferenceCell,
+        object_type_resolver: &F,
+    ) -> RuntimeResult<()>
+    where
+        F: Fn(&PhpObject, &str) -> bool,
+    {
+        let value = coerce_static_property_value_with_object_type_resolver(
+            self.type_decl.as_deref(),
+            reference.value_cloned(),
+            &self.declaring_class_name,
+            &self.name,
+            object_type_resolver,
+        )?;
+        if let PhpStaticPropertyCellStorage::Reference(old_reference) = &self.storage {
+            old_reference.remove_property_type_constraint(
+                self.type_decl.as_deref(),
+                &self.declaring_class_name,
+                &self.name,
+            );
+        }
+        reference.set_value(value);
+        reference.add_property_type_constraint(
+            self.type_decl.as_deref(),
+            &self.declaring_class_name,
+            &self.name,
+        );
+        self.storage = PhpStaticPropertyCellStorage::Reference(reference);
+        self.initialized = true;
+        Ok(())
     }
 
     fn unset_value(&mut self) {
@@ -32047,6 +32114,25 @@ impl NativeStaticPropertyStorage {
             &self.classes,
             PhpStaticPropertyReceiver::Class(class_id),
             property_name,
+            PhpStaticPropertyAccessContext::external(),
+        )
+    }
+
+    fn bind_reference_class(
+        &mut self,
+        class_name: &str,
+        property_name: &str,
+        reference: PhpReferenceCell,
+    ) -> RuntimeResult<()> {
+        let class_id = self
+            .classes
+            .lookup_class_id(class_name)
+            .ok_or_else(|| RuntimeError::undefined_class(class_name))?;
+        self.storage.bind_reference_cell(
+            &self.classes,
+            PhpStaticPropertyReceiver::Class(class_id),
+            property_name,
+            reference,
             PhpStaticPropertyAccessContext::external(),
         )
     }
@@ -33436,6 +33522,52 @@ pub unsafe extern "C" fn phpc_native_static_property_reference_class_with_diagno
         Err(error) => {
             unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
             NativeReferenceHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be a storage handle. Class and property bytes follow the
+/// same pointer/length rules as static-property class declaration. `reference`
+/// must be null or a reference handle previously returned by the runtime ABI.
+/// The target static property stores the same PHP reference cell; the reference
+/// handle remains owned by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_property_bind_reference_class_with_diagnostic(
+    mut handle: NativeStaticPropertyStorageHandle,
+    class_ptr: *const u8,
+    class_len: usize,
+    property_ptr: *const u8,
+    property_len: usize,
+    reference: NativeReferenceHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let storage = unsafe { handle.as_mut() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native static-property storage handle is null".to_string(),
+            )
+        })?;
+        let class_name =
+            unsafe { native_static_property_utf8_argument(class_ptr, class_len, "class name") }?;
+        let property_name = unsafe {
+            native_static_property_utf8_argument(property_ptr, property_len, "property name")
+        }?;
+        let reference = unsafe { reference.as_ref() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native static-property reference bind received missing source reference handle"
+                    .to_string(),
+            )
+        })?;
+        storage.bind_reference_class(&class_name, &property_name, reference.cell.clone())
+    })();
+    match result {
+        Ok(()) => true,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
         }
     }
 }
@@ -76823,6 +76955,111 @@ mod tests {
         unsafe {
             phpc_native_reference_free(class_reference);
             phpc_native_reference_free(relative_reference);
+            phpc_native_static_property_storage_free(storage);
+        }
+    }
+
+    #[test]
+    fn static_property_bind_reference_native_abi_preserves_source_alias_and_type_constraints() {
+        let class = b"StaticBindRefCounter";
+        let property = b"count";
+        let type_decl = b"int";
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let storage = phpc_native_static_property_storage_new();
+
+        assert!(unsafe {
+            phpc_native_static_property_storage_declare_class_bytes(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                &mut diagnostic,
+            )
+        });
+        assert!(unsafe {
+            phpc_native_static_property_storage_declare_property_bytes(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                property.as_ptr(),
+                property.len(),
+                NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+                true,
+                type_decl.as_ptr(),
+                type_decl.len(),
+                &mut diagnostic,
+            )
+        });
+        assert!(unsafe {
+            phpc_native_static_property_storage_reset_with_diagnostic(storage, &mut diagnostic)
+        });
+        assert!(diagnostic.is_null());
+
+        let source_cell = PhpReferenceCell::new(Value::Int(5));
+        let source_reference = NativeReferenceHandle::from_cell(source_cell.clone());
+        assert!(unsafe {
+            phpc_native_static_property_bind_reference_class_with_diagnostic(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                property.as_ptr(),
+                property.len(),
+                source_reference,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let bound_read = unsafe {
+            phpc_native_static_property_read_class_with_diagnostic(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                property.as_ptr(),
+                property.len(),
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(unsafe { bound_read.as_ref() }.cloned(), Some(Value::Int(5)));
+        unsafe { phpc_native_value_free(bound_read) };
+
+        assert!(unsafe {
+            phpc_native_reference_set_value_with_diagnostic(
+                source_reference,
+                phpc_native_value_from_scalar(phpc_native_int(8)),
+                &mut diagnostic,
+            )
+        });
+        let alias_read = unsafe {
+            phpc_native_static_property_read_class_with_diagnostic(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                property.as_ptr(),
+                property.len(),
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(unsafe { alias_read.as_ref() }.cloned(), Some(Value::Int(8)));
+        unsafe { phpc_native_value_free(alias_read) };
+
+        assert!(!unsafe {
+            phpc_native_reference_set_value_with_diagnostic(
+                source_reference,
+                NativeValueHandle::from_value(Value::Array(PhpArray::new())),
+                &mut diagnostic,
+            )
+        });
+        let message = unsafe { diagnostic.as_ref() }
+            .map(|diagnostic| diagnostic.message.clone())
+            .unwrap_or_default();
+        assert!(
+            message.contains("typed property StaticBindRefCounter::$count expects int"),
+            "{message}"
+        );
+
+        unsafe {
+            phpc_native_diagnostic_free(diagnostic);
+            phpc_native_reference_free(source_reference);
             phpc_native_static_property_storage_free(storage);
         }
     }

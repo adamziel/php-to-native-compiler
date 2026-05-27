@@ -24635,6 +24635,7 @@ impl CGenerator {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_write_class_with_diagnostic_and_free(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_static_property_unset_class_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_static_property_reference_class_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_static_property_bind_reference_class_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeReferenceHandle reference, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeReferenceHandle phpc_native_static_property_array_path_reference_class_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, const phpc_NativeValueHandle *keys, size_t key_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_read_relative_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, uint8_t receiver_tag, const uint8_t *current_class_ptr, size_t current_class_len, const uint8_t *called_class_ptr, size_t called_class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeValueHandle phpc_native_static_property_read_isset_relative_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, uint8_t receiver_tag, const uint8_t *current_class_ptr, size_t current_class_len, const uint8_t *called_class_ptr, size_t called_class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -40853,6 +40854,61 @@ impl CGenerator {
         Ok(true)
     }
 
+    fn emit_static_property_reference_assignment(
+        &mut self,
+        target: &AssignTarget,
+        source: &ReferenceSource,
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<bool> {
+        if !matches!(target, AssignTarget::StaticProperty { .. }) {
+            return Ok(false);
+        }
+
+        let fact_key = self.static_property_fact_key_for_assign_target(target);
+        let Some(target) =
+            self.materialize_static_property_lvalue_target(target, failure_cleanup)?
+        else {
+            return Ok(false);
+        };
+        let CStaticPropertyLvalueReceiver::Class {
+            class_bytes,
+            class_len,
+        } = &target.receiver
+        else {
+            return Ok(false);
+        };
+
+        self.uses_native_reference_helpers = true;
+        let target_cleanup = target.cleanup_sequence();
+        let source = self.materialize_reference_source_handle(
+            source,
+            span,
+            &format!("{target_cleanup}{failure_cleanup}"),
+        )?;
+        let source_cleanup = c_cleanup_sequence(&source.cleanup_after_use);
+        let diagnostic = self.next_native_name("static_property_reference_bind_diagnostic");
+        let bound = self.next_native_name("static_property_reference_bound");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "bool {bound} = phpc_native_static_property_bind_reference_class_with_diagnostic({}, {class_bytes}, {class_len}, {}, {}, {}, &{diagnostic});",
+            target.storage, target.property_bytes, target.property_len, source.handle
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        let error_exit = self.native_error_exit(&format!(
+            "{source_cleanup}{}{failure_cleanup}",
+            target.cleanup_sequence()
+        ));
+        self.body.push(format!("if (!{bound}) {{ {error_exit} }}"));
+        self.body.extend(source.cleanup_after_use);
+        self.body.extend(target.cleanup_after_use);
+        if let Some(key) = fact_key {
+            self.native_static_property_value_facts.remove(&key);
+        }
+        Ok(true)
+    }
+
     fn materialize_static_property_assignment_result_for_target(
         &mut self,
         target: &AssignTarget,
@@ -41083,6 +41139,10 @@ impl CGenerator {
                 if self.emit_request_superglobal_path_reference_source_assignment(
                     target, source, *span, "",
                 )? {
+                    return Ok(());
+                }
+
+                if self.emit_static_property_reference_assignment(target, source, *span, "")? {
                     return Ok(());
                 }
 

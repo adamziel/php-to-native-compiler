@@ -3007,12 +3007,23 @@ impl Parser {
             self.current = saved;
         }
 
-        if !self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
-            return Ok(None);
-        }
-
         let saved = self.current;
-        let target = self.parse_assignment_target()?;
+        let target = if self.check(|kind| matches!(kind, TokenKind::Variable(_))) {
+            self.parse_assignment_target()?
+        } else if self.check(|kind| matches!(kind, TokenKind::Identifier(_)))
+            && matches!(self.peek_next().kind, TokenKind::DoubleColon)
+        {
+            let expr = self.parse_postfix()?;
+            match self.assignment_expression_target_from_expr(expr) {
+                Ok(target @ AssignTarget::StaticProperty { .. }) => target,
+                _ => {
+                    self.current = saved;
+                    return Ok(None);
+                }
+            }
+        } else {
+            return Ok(None);
+        };
         if !self.match_token(|kind| matches!(kind, TokenKind::Equal)) {
             if let Some(op) = self.match_increment_decrement_operator() {
                 if !self.check(|kind| matches!(kind, TokenKind::Semicolon)) {

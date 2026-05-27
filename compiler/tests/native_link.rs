@@ -659,6 +659,22 @@ const NATIVE_STATIC_PROPERTY_REFERENCE_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_STATIC_PROPERTY_REFERENCE_ASSIGNMENT_SOURCE: &str = concat!(
+    "<?php\n",
+    "class StaticPropertyReferenceAssignmentBox { public static $slot; public static $other; }\n",
+    "function static_property_reference_assignment_set(&$slot, $value) { $slot = $value; }\n",
+    "$value = \"seed\";\n",
+    "StaticPropertyReferenceAssignmentBox::$slot =& $value;\n",
+    "$copy = StaticPropertyReferenceAssignmentBox::$slot;\n",
+    "$value = \"source\";\n",
+    "echo $copy, \":\", StaticPropertyReferenceAssignmentBox::$slot;\n",
+    "static_property_reference_assignment_set(StaticPropertyReferenceAssignmentBox::$slot, \"call\");\n",
+    "echo \"|\", $value, \":\", StaticPropertyReferenceAssignmentBox::$slot;\n",
+    "StaticPropertyReferenceAssignmentBox::$other =& StaticPropertyReferenceAssignmentBox::$slot;\n",
+    "static_property_reference_assignment_set(StaticPropertyReferenceAssignmentBox::$other, \"other\");\n",
+    "echo \"|\", $value, \":\", StaticPropertyReferenceAssignmentBox::$slot, \":\", StaticPropertyReferenceAssignmentBox::$other;\n",
+);
+
 const NATIVE_STATIC_PROPERTY_OFFSET_REFERENCE_SOURCE: &str = concat!(
     "<?php\n",
     "function static_offset_ref_set(&$slot, $value) { $slot = $value; return $slot; }\n",
@@ -3263,6 +3279,64 @@ fn emit_exe_links_and_runs_static_property_reference_program() {
         b"lit-arg:lit-alias|object-arg:object-alias|class-arg:class-alias|self-arg|parent-arg|late-arg\n"
     );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn native_executable_c_source_binds_direct_static_property_reference_assignment_targets_through_static_property_abi(
+) {
+    let program = parse(NATIVE_STATIC_PROPERTY_REFERENCE_ASSIGNMENT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    for required in [
+        "phpc_native_static_property_bind_reference_class_with_diagnostic",
+        "phpc_native_static_property_reference_class_with_diagnostic",
+        "phpc_native_call_arguments_push_reference_and_free",
+        "static_property_reference_bind_diagnostic_",
+        "static_property_reference_bound_",
+    ] {
+        assert!(source.contains(required), "missing {required}:\n{source}");
+    }
+    assert!(
+        body.matches("phpc_native_static_property_bind_reference_class_with_diagnostic")
+            .count()
+            >= 2,
+        "direct static-property reference assignment targets should bind the target cell to the source reference:\n{source}"
+    );
+    assert!(
+        !source.contains("reference-assignment lowering rejects")
+            && !body.contains("phpc_native_symbol_table_bind_reference_path")
+            && !body.contains("phpc_native_reference_from_value_and_free(static_property"),
+        "direct static-property reference assignment must not fall back to symbol targets or fake value-copy references:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_static_property_reference_assignment_alias_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "static_property_reference_assignment_alias",
+        NATIVE_STATIC_PROPERTY_REFERENCE_ASSIGNMENT_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run static-property reference-assignment executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "native executable failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"seed:source|call:call|other:other:other");
+    assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(source_path);
     let _ = fs::remove_file(output_path);
