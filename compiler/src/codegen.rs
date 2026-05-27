@@ -16544,8 +16544,9 @@ struct CNativeCallableReturnSummary {
     facts: Option<CNativeValueFacts>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct CNativeDescriptorClosureSummary {
+    params: Vec<FunctionParam>,
     required_arg_count: usize,
     param_count: usize,
     is_variadic: bool,
@@ -16629,6 +16630,7 @@ impl CNativeObjectFacts {
 impl CNativeDescriptorClosureSummary {
     fn for_function(function: &FunctionDecl, return_summary: CNativeCallableReturnSummary) -> Self {
         Self {
+            params: function.params.clone(),
             required_arg_count: native_user_function_required_arg_count(function),
             param_count: function.params.len(),
             is_variadic: native_user_function_variadic_param(function).is_some(),
@@ -16641,6 +16643,12 @@ impl CNativeDescriptorClosureSummary {
             return false;
         }
         self.is_variadic || arg_count <= self.param_count
+    }
+
+    fn source_call_argument_plan(&self) -> NativeMethodStaticSourceCallArgumentPlan {
+        NativeMethodStaticSourceCallArgumentPlan {
+            params: self.params.clone(),
+        }
     }
 }
 
@@ -27273,6 +27281,7 @@ impl CGenerator {
             args,
             call_span,
             failure_cleanup,
+            None,
             None,
         )?;
         let bound = self.emit_c_symbol_path_reference_assignment_from_source_ref(
@@ -38578,6 +38587,11 @@ impl CGenerator {
 
         let descriptor_closure_only =
             self.cvalue_has_only_descriptor_closure_callable_identities(&callee_value);
+        let descriptor_closure_argument_plan = if descriptor_closure_only {
+            self.descriptor_closure_source_call_argument_plan_for_cvalue(&callee_value)
+        } else {
+            None
+        };
         let callee = self.materialize_native_array_c_value_handle(callee_value, span)?;
         let callee_cleanup = c_cleanup_sequence(&callee.cleanup_after_use);
 
@@ -38588,6 +38602,7 @@ impl CGenerator {
                 span,
                 failure_cleanup,
                 scoped_signature.as_ref(),
+                descriptor_closure_argument_plan.as_ref(),
             );
         }
 
@@ -38699,6 +38714,44 @@ impl CGenerator {
             })
     }
 
+    fn descriptor_closure_source_call_argument_plan_for_cvalue(
+        &self,
+        value: &CValue,
+    ) -> Option<NativeMethodStaticSourceCallArgumentPlan> {
+        self.descriptor_closure_source_call_argument_plan_for_identities(
+            self.native_callable_identities_for_cvalue(value)?,
+        )
+    }
+
+    fn descriptor_closure_source_call_argument_plan_for_identities<I>(
+        &self,
+        identities: I,
+    ) -> Option<NativeMethodStaticSourceCallArgumentPlan>
+    where
+        I: IntoIterator<Item = CNativeCallableIdentity>,
+    {
+        let mut plan: Option<NativeMethodStaticSourceCallArgumentPlan> = None;
+        let mut saw_identity = false;
+        for identity in identities {
+            let CNativeCallableIdentity::DescriptorClosure { closure_key } = identity else {
+                return None;
+            };
+            let candidate = self
+                .native_descriptor_closure_return_summaries
+                .get(&closure_key)?
+                .source_call_argument_plan();
+            if let Some(existing) = &plan {
+                if !existing.semantically_matches_with_param_names(&candidate) {
+                    return None;
+                }
+            } else {
+                plan = Some(candidate);
+            }
+            saw_identity = true;
+        }
+        saw_identity.then_some(plan).flatten()
+    }
+
     fn callable_identities_are_only_reference_returning_descriptor_closures<I>(
         &self,
         identities: I,
@@ -38746,20 +38799,49 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
         scoped_signature: Option<&CScopedCallableStringSignature>,
+        descriptor_closure_argument_plan: Option<&NativeMethodStaticSourceCallArgumentPlan>,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
         self.uses_native_closure_helpers = true;
         self.uses_native_callable_helpers = true;
         let callee_cleanup = c_cleanup_sequence(&callee.cleanup_after_use);
         let callable_failure_cleanup = format!("{callee_cleanup}{failure_cleanup}");
-        let call_arguments = self.emit_native_source_call_arguments_handle(
-            "closure_source_call_args",
-            args,
-            span,
-            &callable_failure_cleanup,
-            NativeCallCallee::DynamicExpression,
-            scoped_signature,
-            false,
-        )?;
+        let call_arguments = if call_arguments_have_spread(args) {
+            if let Some(plan) = descriptor_closure_argument_plan {
+                if plan.variadic_param().is_some() {
+                    return Err(self.unsupported(
+                        span,
+                        "unsupported argument unpacking for native descriptor closure lowering: variadic descriptor closures need a finalized NativeCallArgumentsHandle to closure-frame variadic ABI before spread calls can be invoked without double-packing the variadic slot",
+                    ));
+                }
+                self.emit_materialized_native_source_call_arguments_handle(
+                    "closure_source_call_args",
+                    &plan.params,
+                    args,
+                    span,
+                    &callable_failure_cleanup,
+                )?
+            } else {
+                self.emit_native_source_call_arguments_handle(
+                    "closure_source_call_args",
+                    args,
+                    span,
+                    &callable_failure_cleanup,
+                    NativeCallCallee::DynamicExpression,
+                    scoped_signature,
+                    false,
+                )?
+            }
+        } else {
+            self.emit_native_source_call_arguments_handle(
+                "closure_source_call_args",
+                args,
+                span,
+                &callable_failure_cleanup,
+                NativeCallCallee::DynamicExpression,
+                scoped_signature,
+                false,
+            )?
+        };
 
         let invoke_diagnostic = self.next_native_name("closure_source_call_diagnostic");
         self.body.push(format!(
@@ -38802,21 +38884,50 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
         scoped_signature: Option<&CScopedCallableStringSignature>,
+        descriptor_closure_argument_plan: Option<&NativeMethodStaticSourceCallArgumentPlan>,
     ) -> CompileResult<CNativeReferenceMaterialization> {
         self.uses_native_closure_helpers = true;
         self.uses_native_callable_helpers = true;
         self.uses_native_reference_helpers = true;
         let callee_cleanup = c_cleanup_sequence(&callee.cleanup_after_use);
         let callable_failure_cleanup = format!("{callee_cleanup}{failure_cleanup}");
-        let call_arguments = self.emit_native_source_call_arguments_handle(
-            "closure_source_reference_args",
-            args,
-            span,
-            &callable_failure_cleanup,
-            NativeCallCallee::DynamicExpression,
-            scoped_signature,
-            false,
-        )?;
+        let call_arguments = if call_arguments_have_spread(args) {
+            if let Some(plan) = descriptor_closure_argument_plan {
+                if plan.variadic_param().is_some() {
+                    return Err(self.unsupported(
+                        span,
+                        "unsupported argument unpacking for native descriptor closure lowering: variadic descriptor closures need a finalized NativeCallArgumentsHandle to closure-frame variadic ABI before spread calls can be invoked without double-packing the variadic slot",
+                    ));
+                }
+                self.emit_materialized_native_source_call_arguments_handle(
+                    "closure_source_reference_args",
+                    &plan.params,
+                    args,
+                    span,
+                    &callable_failure_cleanup,
+                )?
+            } else {
+                self.emit_native_source_call_arguments_handle(
+                    "closure_source_reference_args",
+                    args,
+                    span,
+                    &callable_failure_cleanup,
+                    NativeCallCallee::DynamicExpression,
+                    scoped_signature,
+                    false,
+                )?
+            }
+        } else {
+            self.emit_native_source_call_arguments_handle(
+                "closure_source_reference_args",
+                args,
+                span,
+                &callable_failure_cleanup,
+                NativeCallCallee::DynamicExpression,
+                scoped_signature,
+                false,
+            )?
+        };
 
         let invoke_diagnostic = self.next_native_name("closure_source_reference_diagnostic");
         self.body.push(format!(
@@ -41318,6 +41429,11 @@ impl CGenerator {
         let callee_value = self.emit_expr(callee)?;
         let descriptor_closure_only =
             self.cvalue_has_only_descriptor_closure_callable_identities(&callee_value);
+        let descriptor_closure_argument_plan = if descriptor_closure_only {
+            self.descriptor_closure_source_call_argument_plan_for_cvalue(&callee_value)
+        } else {
+            None
+        };
         let callee = self.materialize_native_array_c_value_handle(callee_value, span)?;
         let callee_cleanup = c_cleanup_sequence(&callee.cleanup_after_use);
 
@@ -41329,6 +41445,7 @@ impl CGenerator {
                     span,
                     failure_cleanup,
                     scoped_signature.as_ref(),
+                    descriptor_closure_argument_plan.as_ref(),
                 )
                 .map(Some);
         }

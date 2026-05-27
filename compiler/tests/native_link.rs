@@ -24558,6 +24558,17 @@ const NATIVE_INTERFACE_ONLY_CALLABLE_SPREAD_SOURCE: &str = concat!(
     "echo $objectCall(...[interface_spread_marker(\"X\"), interface_spread_marker(\"Y\")], ...[interface_spread_marker(\"Z\"), \"name\" => interface_spread_marker(\"M\")]);\n",
 );
 
+const NATIVE_SPREAD_DESCRIPTOR_CLOSURE_ARGUMENT_SOURCE: &str = concat!(
+    "<?php\n",
+    "function spread_descriptor_closure_marker($label) { echo $label; return $label; }\n",
+    "$join = function ($first, $second = \"D\", $third = \"\", $name = \"\") {\n",
+    "    return \"C\" . $first . $second . $third . $name;\n",
+    "};\n",
+    "echo $join(...[spread_descriptor_closure_marker(\"A\"), spread_descriptor_closure_marker(\"B\")], ...[\"third\" => spread_descriptor_closure_marker(\"C\"), \"name\" => spread_descriptor_closure_marker(\"N\")]), \"|\";\n",
+    "echo $join(...[\"second\" => spread_descriptor_closure_marker(\"Y\"), \"first\" => spread_descriptor_closure_marker(\"X\")]), \"|\";\n",
+    "echo $join(...[spread_descriptor_closure_marker(\"Q\")]);\n",
+);
+
 const NATIVE_NAMED_METHOD_SOURCE_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "function named_method_marker($label) { echo $label; return $label; }\n",
@@ -25280,6 +25291,51 @@ fn native_executable_c_source_lowers_interface_only_callable_spread_through_mate
             && !source.contains("callable_array_matched")
             && !source.contains("callable_object_matched"),
         "interface-only callable spread should not hit old spread blockers or legacy ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_descriptor_closure_spread_through_runtime_signature_bridge() {
+    let program = parse(NATIVE_SPREAD_DESCRIPTOR_CLOSURE_ARGUMENT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && body.contains("phpc_NativeCallArgumentsHandle closure_source_call_args_")
+            && body.contains(
+                "phpc_native_closure_invoke_value_with_diagnostic_and_free_arguments"
+            ),
+        "descriptor closure spread calls should use preserved closure parameter metadata to finalize materialized entries before invoking the closure descriptor:\n{source}"
+    );
+    assert!(
+        !source.contains("spread operands need a materialized-entry producer")
+            && !source.contains("assembly dynamic function-call lowering rejects")
+            && !source.contains(ASSEMBLY_CLOSURE_REJECTION),
+        "supported descriptor closure spread should not hit the old spread or closure blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_blocks_variadic_descriptor_closure_spread_at_closure_frame_boundary()
+{
+    let program = parse(concat!(
+        "<?php\n",
+        "$join = function ($first, ...$tail) { return $first . ($tail[0] ?? \"\"); };\n",
+        "echo $join(...[\"A\", \"B\"]);\n",
+    ))
+    .unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error
+            .message
+            .contains("closure-frame variadic ABI before spread calls"),
+        "{}",
+        error.message
     );
 }
 
@@ -26823,6 +26879,34 @@ fn emit_exe_links_and_runs_interface_only_callable_spread_argument_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"ABCNRABCN|XYZMrXYZM");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_descriptor_closure_spread_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "spread_descriptor_closure_arguments",
+        NATIVE_SPREAD_DESCRIPTOR_CLOSURE_ARGUMENT_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native descriptor-closure spread executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ABCNCABCN|YXCXY|QCQD");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
