@@ -17857,10 +17857,27 @@ enum CNativeBuiltinSignatureBlocker {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CNativeBuiltinDefaultValue {
+    Int(i64),
+    String(&'static str),
+}
+
+impl CNativeBuiltinDefaultValue {
+    fn to_expr(self, span: Span) -> Expr {
+        match self {
+            Self::Int(value) => Expr::Int(value, span),
+            Self::String(value) => Expr::String(value.to_string(), span),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct CNativeBuiltinSignature {
     canonical_name: &'static str,
     required_arg_count: usize,
+    fixed_param_names: &'static [&'static str],
     fixed_param_by_reference: &'static [bool],
+    fixed_param_defaults: &'static [Option<CNativeBuiltinDefaultValue>],
     accepts_variadic_args: bool,
     returns_by_reference: bool,
     source_call_support: CNativeBuiltinSignatureSourceCallSupport,
@@ -17871,13 +17888,21 @@ impl CNativeBuiltinSignature {
         self.fixed_param_by_reference.len()
     }
 
+    fn metadata_is_complete(self) -> bool {
+        self.fixed_param_names.len() == self.fixed_param_by_reference.len()
+            && self.fixed_param_defaults.len() == self.fixed_param_by_reference.len()
+    }
+
     fn accepts_arg_count(self, arg_count: usize) -> bool {
         arg_count >= self.required_arg_count
             && (self.accepts_variadic_args || arg_count <= self.fixed_param_count())
     }
 
-    fn source_call_signature(self, arg_count: usize) -> Option<CScopedCallableStringSignature> {
-        if !self.accepts_arg_count(arg_count) {
+    fn source_call_signature_for_arg_count(
+        self,
+        arg_count: Option<usize>,
+    ) -> Option<CScopedCallableStringSignature> {
+        if arg_count.is_some_and(|arg_count| !self.accepts_arg_count(arg_count)) {
             return None;
         }
         if self.source_call_support
@@ -17885,10 +17910,42 @@ impl CNativeBuiltinSignature {
         {
             return None;
         }
+        if !self.metadata_is_complete() {
+            return None;
+        }
         Some(CScopedCallableStringSignature {
             fixed_param_by_reference: self.fixed_param_by_reference.to_vec(),
             returns_by_reference: self.returns_by_reference,
         })
+    }
+
+    fn source_call_signature(self, arg_count: usize) -> Option<CScopedCallableStringSignature> {
+        self.source_call_signature_for_arg_count(Some(arg_count))
+    }
+
+    fn source_call_argument_plan(
+        self,
+        arg_count: Option<usize>,
+    ) -> Option<NativeMethodStaticSourceCallArgumentPlan> {
+        self.source_call_signature_for_arg_count(arg_count)?;
+        if self.accepts_variadic_args {
+            return None;
+        }
+        let span = Span::new(0, 0);
+        let params = self
+            .fixed_param_names
+            .iter()
+            .enumerate()
+            .map(|(index, name)| FunctionParam {
+                name: (*name).to_string(),
+                type_decl: None,
+                by_reference: self.fixed_param_by_reference[index],
+                is_variadic: false,
+                default: self.fixed_param_defaults[index].map(|default| default.to_expr(span)),
+                span,
+            })
+            .collect::<Vec<_>>();
+        Some(NativeMethodStaticSourceCallArgumentPlan { params })
     }
 }
 
@@ -17983,6 +18040,7 @@ impl NativeMethodStaticSourceCallArgumentStrategy {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeMethodStaticSignatureFamily {
     GeneratedFunction,
+    RuntimeBuiltin,
     ReceiverMethod,
     StaticMethod,
 }
@@ -29268,8 +29326,17 @@ impl CGenerator {
                     NativeMethodStaticSourceCallArgumentStrategy::for_method(&method, arg_count),
                 ))
             }
-            CNativeCallableIdentity::RuntimeBuiltin { .. }
-            | CNativeCallableIdentity::DescriptorClosure { .. } => None,
+            CNativeCallableIdentity::RuntimeBuiltin { name } => {
+                let signature = native_builtin_signature_for_name(name)?;
+                Some((
+                    NativeMethodStaticSignatureFamily::RuntimeBuiltin,
+                    signature.source_call_signature_for_arg_count(arg_count)?,
+                    NativeMethodStaticSourceCallArgumentStrategy::Frame(
+                        signature.source_call_argument_plan(arg_count)?,
+                    ),
+                ))
+            }
+            CNativeCallableIdentity::DescriptorClosure { .. } => None,
         }
     }
 
@@ -60428,6 +60495,20 @@ const NATIVE_BUILTIN_BY_VALUE_1: &[bool] = &[false];
 const NATIVE_BUILTIN_BY_VALUE_2: &[bool] = &[false, false];
 const NATIVE_BUILTIN_BY_REF_THEN_VALUE_DEFAULT: &[bool] = &[true, false];
 const NATIVE_BUILTIN_BY_REF_VARIADIC: &[bool] = &[true];
+const NATIVE_BUILTIN_PARAM_STRING: &[&str] = &["string"];
+const NATIVE_BUILTIN_PARAM_VALUE: &[&str] = &["value"];
+const NATIVE_BUILTIN_PARAM_HAYSTACK_NEEDLE: &[&str] = &["haystack", "needle"];
+const NATIVE_BUILTIN_PARAM_ARRAY_FLAGS: &[&str] = &["array", "flags"];
+const NATIVE_BUILTIN_PARAM_ARRAY: &[&str] = &["array"];
+const NATIVE_BUILTIN_PARAM_STRING_CHARACTERS: &[&str] = &["string", "characters"];
+const NATIVE_BUILTIN_DEFAULTS_NONE_1: &[Option<CNativeBuiltinDefaultValue>] = &[None];
+const NATIVE_BUILTIN_DEFAULTS_NONE_2: &[Option<CNativeBuiltinDefaultValue>] = &[None, None];
+const NATIVE_BUILTIN_DEFAULTS_SORT_FLAGS: &[Option<CNativeBuiltinDefaultValue>] =
+    &[None, Some(CNativeBuiltinDefaultValue::Int(0))];
+const NATIVE_BUILTIN_DEFAULTS_TRIM_CHARACTERS: &[Option<CNativeBuiltinDefaultValue>] = &[
+    None,
+    Some(CNativeBuiltinDefaultValue::String(" \n\r\t\x0b\0")),
+];
 
 fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignature> {
     use CNativeBuiltinSignatureBlocker::{
@@ -60439,7 +60520,9 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
         "strlen" => CNativeBuiltinSignature {
             canonical_name: "strlen",
             required_arg_count: 1,
+            fixed_param_names: NATIVE_BUILTIN_PARAM_STRING,
             fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
+            fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
             accepts_variadic_args: false,
             returns_by_reference: false,
             source_call_support: RuntimeCallableValue,
@@ -60447,7 +60530,9 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
         "strtolower" => CNativeBuiltinSignature {
             canonical_name: "strtolower",
             required_arg_count: 1,
+            fixed_param_names: NATIVE_BUILTIN_PARAM_STRING,
             fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
+            fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
             accepts_variadic_args: false,
             returns_by_reference: false,
             source_call_support: RuntimeCallableValue,
@@ -60455,7 +60540,9 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
         "strtoupper" => CNativeBuiltinSignature {
             canonical_name: "strtoupper",
             required_arg_count: 1,
+            fixed_param_names: NATIVE_BUILTIN_PARAM_STRING,
             fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
+            fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
             accepts_variadic_args: false,
             returns_by_reference: false,
             source_call_support: RuntimeCallableValue,
@@ -60463,7 +60550,9 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
         "strval" => CNativeBuiltinSignature {
             canonical_name: "strval",
             required_arg_count: 1,
+            fixed_param_names: NATIVE_BUILTIN_PARAM_VALUE,
             fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
+            fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
             accepts_variadic_args: false,
             returns_by_reference: false,
             source_call_support: RuntimeCallableValue,
@@ -60471,7 +60560,9 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
         "gettype" => CNativeBuiltinSignature {
             canonical_name: "gettype",
             required_arg_count: 1,
+            fixed_param_names: NATIVE_BUILTIN_PARAM_VALUE,
             fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
+            fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
             accepts_variadic_args: false,
             returns_by_reference: false,
             source_call_support: RuntimeCallableValue,
@@ -60479,15 +60570,23 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
         "is_numeric" => CNativeBuiltinSignature {
             canonical_name: "is_numeric",
             required_arg_count: 1,
+            fixed_param_names: NATIVE_BUILTIN_PARAM_VALUE,
             fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
+            fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
             accepts_variadic_args: false,
             returns_by_reference: false,
             source_call_support: RuntimeCallableValue,
         },
-        "str_contains" => CNativeBuiltinSignature {
-            canonical_name: "str_contains",
+        "str_contains" | "str_starts_with" | "str_ends_with" => CNativeBuiltinSignature {
+            canonical_name: match name.to_ascii_lowercase().as_str() {
+                "str_starts_with" => "str_starts_with",
+                "str_ends_with" => "str_ends_with",
+                _ => "str_contains",
+            },
             required_arg_count: 2,
+            fixed_param_names: NATIVE_BUILTIN_PARAM_HAYSTACK_NEEDLE,
             fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_2,
+            fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_2,
             accepts_variadic_args: false,
             returns_by_reference: false,
             source_call_support: RuntimeCallableValue,
@@ -60495,7 +60594,9 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
         "count" => CNativeBuiltinSignature {
             canonical_name: "count",
             required_arg_count: 1,
+            fixed_param_names: NATIVE_BUILTIN_PARAM_VALUE,
             fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
+            fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
             accepts_variadic_args: false,
             returns_by_reference: false,
             source_call_support: Blocked(MissingRuntimeCallableFamily),
@@ -60503,7 +60604,9 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
         "sort" => CNativeBuiltinSignature {
             canonical_name: "sort",
             required_arg_count: 1,
+            fixed_param_names: NATIVE_BUILTIN_PARAM_ARRAY_FLAGS,
             fixed_param_by_reference: NATIVE_BUILTIN_BY_REF_THEN_VALUE_DEFAULT,
+            fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_SORT_FLAGS,
             accepts_variadic_args: false,
             returns_by_reference: false,
             source_call_support: Blocked(ByReferenceArgumentWriteback),
@@ -60511,7 +60614,9 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
         "array_push" => CNativeBuiltinSignature {
             canonical_name: "array_push",
             required_arg_count: 2,
+            fixed_param_names: NATIVE_BUILTIN_PARAM_ARRAY,
             fixed_param_by_reference: NATIVE_BUILTIN_BY_REF_VARIADIC,
+            fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_NONE_1,
             accepts_variadic_args: true,
             returns_by_reference: false,
             source_call_support: Blocked(ByReferenceArgumentWriteback),
@@ -60519,7 +60624,9 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
         "trim" => CNativeBuiltinSignature {
             canonical_name: "trim",
             required_arg_count: 1,
+            fixed_param_names: NATIVE_BUILTIN_PARAM_STRING_CHARACTERS,
             fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_2,
+            fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_TRIM_CHARACTERS,
             accepts_variadic_args: false,
             returns_by_reference: false,
             source_call_support: Blocked(MissingRuntimeCallableFamily),
@@ -67329,7 +67436,9 @@ echo " 10" < "zeta";
             .expect("strlen should have native builtin signature metadata");
         assert_eq!(strlen.canonical_name, "strlen");
         assert_eq!(strlen.required_arg_count, 1);
+        assert_eq!(strlen.fixed_param_names, &["string"]);
         assert_eq!(strlen.fixed_param_by_reference, &[false]);
+        assert_eq!(strlen.fixed_param_defaults, &[None]);
         assert!(strlen.accepts_arg_count(1));
         assert!(!strlen.accepts_arg_count(0));
         assert!(!strlen.accepts_arg_count(2));
@@ -67342,9 +67451,17 @@ echo " 10" < "zeta";
         let contains = native_builtin_signature_for_name("str_contains")
             .expect("str_contains should have native builtin signature metadata");
         assert_eq!(contains.required_arg_count, 2);
+        assert_eq!(contains.fixed_param_names, &["haystack", "needle"]);
         assert_eq!(contains.fixed_param_by_reference, &[false, false]);
+        assert_eq!(contains.fixed_param_defaults, &[None, None]);
         assert!(contains.accepts_arg_count(2));
         assert!(!contains.accepts_arg_count(1));
+
+        let starts = native_builtin_signature_for_name("str_starts_with")
+            .expect("str_starts_with should share string predicate signature metadata");
+        assert_eq!(starts.canonical_name, "str_starts_with");
+        assert_eq!(starts.fixed_param_names, contains.fixed_param_names);
+        assert_eq!(starts.fixed_param_defaults, contains.fixed_param_defaults);
 
         let count = native_builtin_signature_for_name("count")
             .expect("count should be mapped as a blocked runtime builtin signature");
@@ -67393,6 +67510,14 @@ echo " 10" < "zeta";
         let trim = native_builtin_signature_for_name("trim")
             .expect("trim should be mapped as a blocked default-arity signature");
         assert!(trim.required_arg_count < trim.fixed_param_count());
+        assert_eq!(trim.fixed_param_names, &["string", "characters"]);
+        assert_eq!(
+            trim.fixed_param_defaults,
+            &[
+                None,
+                Some(CNativeBuiltinDefaultValue::String(" \n\r\t\x0b\0"))
+            ]
+        );
         assert_eq!(
             trim.source_call_support,
             CNativeBuiltinSignatureSourceCallSupport::Blocked(
@@ -67459,6 +67584,35 @@ echo " 10" < "zeta";
                 .callable_string_signature_for_expr(&Expr::String("count".to_string(), span(8)), 1,)
                 .is_none(),
             "blocked runtime builtins must preserve the unsupported-native boundary"
+        );
+
+        let spread_args = vec![Expr::SpreadArgument {
+            expr: Box::new(Expr::Array {
+                items: Vec::new(),
+                span: span(9),
+            }),
+            span: span(9),
+        }];
+        let predicate = Expr::Ternary {
+            condition: Box::new(Expr::Bool(true, span(10))),
+            if_true: Box::new(Expr::String("str_contains".to_string(), span(11))),
+            if_false: Box::new(Expr::String("str_starts_with".to_string(), span(12))),
+            span: span(10),
+        };
+        let contract = generator
+            .callable_value_source_call_signature_contract_for_args(&predicate, &spread_args)
+            .expect("homogeneous runtime builtin spread should produce parameter metadata");
+        assert_eq!(contract.candidate_count, 2);
+        let NativeMethodStaticSourceCallArgumentStrategy::Frame(plan) = contract.argument_strategy
+        else {
+            panic!("runtime builtin spread should use builtin parameter metadata");
+        };
+        assert_eq!(
+            plan.params
+                .iter()
+                .map(|param| param.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["haystack", "needle"]
         );
     }
 

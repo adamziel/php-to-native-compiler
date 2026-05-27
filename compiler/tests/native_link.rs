@@ -24362,6 +24362,18 @@ const NATIVE_RUNTIME_DYNAMIC_BUILTIN_CALL_SOURCE: &str = concat!(
     "echo $cast(7), \"|\", $type([1]), \"|\", $numeric(\"42\");\n",
 );
 
+const NATIVE_RUNTIME_BUILTIN_CALLABLE_STRING_SPREAD_SOURCE: &str = concat!(
+    "<?php\n",
+    "function runtime_builtin_spread_marker($label) { echo $label; return $label; }\n",
+    "$predicate = isset($_GET[\"prefix\"]) ? \"str_starts_with\" : \"str_contains\";\n",
+    "echo $predicate(...[\"needle\" => runtime_builtin_spread_marker(\"b\"), \"haystack\" => runtime_builtin_spread_marker(\"abc\")]), \"|\";\n",
+    "$_GET[\"prefix\"] = \"1\";\n",
+    "$predicate = isset($_GET[\"prefix\"]) ? \"str_starts_with\" : \"str_contains\";\n",
+    "echo $predicate(...[\"needle\" => runtime_builtin_spread_marker(\"a\"), \"haystack\" => runtime_builtin_spread_marker(\"abc\")]), \"|\";\n",
+    "$case = isset($_GET[\"lower\"]) ? \"strtolower\" : \"strtoupper\";\n",
+    "echo $case(...[\"string\" => runtime_builtin_spread_marker(\"MiX\")]);\n",
+);
+
 const NATIVE_DYNAMIC_BUILTIN_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "$len = \"strlen\";\n",
@@ -25363,8 +25375,8 @@ fn native_executable_c_source_lowers_direct_user_function_spread_through_materia
 fn native_executable_c_source_blocks_spread_for_unsupported_callable_families_at_shared_boundary() {
     let program = parse(concat!(
         "<?php\n",
-        "$name = \"strlen\";\n",
-        "echo $name(...[\"abc\"]);\n",
+        "$name = \"count\";\n",
+        "echo $name(...[[\"abc\"]]);\n",
     ))
     .unwrap();
     let error = emit_native_executable_c_source(&program).unwrap_err();
@@ -25376,6 +25388,30 @@ fn native_executable_c_source_blocks_spread_for_unsupported_callable_families_at
             .contains("spread operands need a materialized-entry producer"),
         "{}",
         error.message
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_runtime_builtin_callable_string_spread_through_materialized_bridge(
+) {
+    let program = parse(NATIVE_RUNTIME_BUILTIN_CALLABLE_STRING_SPREAD_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && body.contains("phpc_NativeCallArgumentsHandle dynamic_callable_args_")
+            && body.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "runtime builtin callable-string spread should finalize named materialized entries through builtin signature metadata before callable-value invocation:\n{source}"
+    );
+    assert!(
+        !source.contains("spread operands need a materialized-entry producer")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches")
+            && !source.contains("unsupported runtime callable builtin families"),
+        "runtime builtin callable-string spread should not use old spread blockers or generated name ladders:\n{source}"
     );
 }
 
@@ -28261,6 +28297,34 @@ fn emit_exe_links_and_runs_runtime_dynamic_builtin_call_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"3|GO|1|7|array|1");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_runtime_builtin_callable_string_spread_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "runtime_builtin_callable_string_spread_arguments",
+        NATIVE_RUNTIME_BUILTIN_CALLABLE_STRING_SPREAD_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native runtime builtin callable-string spread executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"babc1|aabc1|MiXMIX");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
