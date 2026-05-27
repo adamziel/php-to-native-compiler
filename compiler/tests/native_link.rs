@@ -2208,6 +2208,20 @@ const NATIVE_BY_REFERENCE_FOREACH_SOURCE: &str = concat!(
     "echo \"|\", $nested[\"outer\"][\"x\"];\n",
 );
 
+const NATIVE_REFERENCE_SLOT_FOREACH_ITERABLE_SOURCE: &str = concat!(
+    "<?php\n",
+    "function refslot_foreach(&$alias) {\n",
+    "    foreach ($alias[\"outer\"] as $k => $v) { echo $k, \"=\", strtoupper($v), \";\"; }\n",
+    "    echo \"|\", $alias[\"outer\"][\"a\"];\n",
+    "    foreach ($alias[\"plain\"] as &$leaf) { $leaf = strtoupper($leaf); }\n",
+    "    echo \"|\", $alias[\"plain\"][\"x\"];\n",
+    "    $leaf = \"tail\";\n",
+    "}\n",
+    "$items = [\"outer\" => [\"a\" => \"one\", \"b\" => \"two\"], \"plain\" => [\"x\" => \"hi\"]];\n",
+    "refslot_foreach($items);\n",
+    "echo \":\", $items[\"plain\"][\"x\"];\n",
+);
+
 const NATIVE_BY_REFERENCE_FOREACH_ARRAY_LVALUE_WRITEBACK_SOURCE: &str = concat!(
     "<?php\n",
     "$items = [[\"name\" => \"al\"], [\"name\" => \"bo\", \"seen\" => [\"old\"]]];\n",
@@ -5550,6 +5564,43 @@ fn native_executable_c_source_routes_by_value_foreach_through_array_lvalue_owner
     );
     assert!(
         !source.contains("assembly array lowering rejects arrays"),
+        "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_foreach_reference_slot_iterable_owners() {
+    let program = parse(NATIVE_REFERENCE_SLOT_FOREACH_ITERABLE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source
+            .matches("phpc_native_array_lvalue_owner_reference_slot(frame_param_0)")
+            .count()
+            >= 2,
+        "{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_array_lvalue_owner_foreach_iterable_result")
+            .count()
+            >= 2,
+        "{source}"
+    );
+    assert!(
+        source.contains("phpc_native_array_lvalue_owner_foreach_value_reference_result"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("array_lvalue_symbol_reference"),
+        "foreach over a direct local reference slot should not route through symbol owners:\n{source}"
+    );
+    assert!(
+        !source.contains("native executable by-reference foreach lowering rejects"),
+        "{source}"
+    );
+    assert!(
+        !source.contains("assembly array lowering rejects"),
         "{source}"
     );
 }
@@ -12753,6 +12804,34 @@ fn emit_exe_links_and_runs_by_reference_foreach_array_lvalue_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"a=ab;b=cd;|AB:CD|hi!");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_reference_slot_foreach_iterable_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "foreach_reference_slot_iterable",
+        NATIVE_REFERENCE_SLOT_FOREACH_ITERABLE_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native reference-slot foreach executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"a=ONE;b=TWO;|one|HI:tail");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);

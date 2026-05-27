@@ -17844,6 +17844,13 @@ enum CNativeArrayLvalueOwnerSource {
     SymbolTableRoot(String),
 }
 
+struct CNativeArrayForeachLvalueParts<'a> {
+    root_name: String,
+    source: CNativeArrayLvalueOwnerSource,
+    indices: Vec<&'a Expr>,
+    span: Span,
+}
+
 enum CNativeValueOwnerSource {
     DirectVariable {
         name: String,
@@ -51842,19 +51849,22 @@ impl CGenerator {
         self.uses_native_array_helpers = true;
         self.uses_native_array_lvalue_helpers = true;
 
-        let Some((name, handle, indices, lvalue_span)) =
-            self.native_array_foreach_lvalue_parts(iterable)
-        else {
+        let Some(parts) = self.native_array_foreach_lvalue_owner_parts(iterable) else {
             return Err(
                 self.unsupported(span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
             );
         };
-        if name == value || key == Some(name.as_str()) {
+        if parts.root_name == value || key == Some(parts.root_name.as_str()) {
             return Err(
                 self.unsupported(span, ASSEMBLY_NATIVE_ARRAY_BY_REFERENCE_FOREACH_REJECTION)
             );
         }
-        self.invalidate_native_callable_array_owner_identities(&name);
+        let CNativeArrayForeachLvalueParts {
+            source,
+            indices,
+            span: lvalue_span,
+            ..
+        } = parts;
 
         let (path_arg, path_len, path_cleanup) = if indices.is_empty() {
             ("NULL".to_string(), 0, Vec::new())
@@ -51865,20 +51875,29 @@ impl CGenerator {
         let path_cleanup_sequence = c_cleanup_sequence(&path_cleanup);
         let linger_reference =
             self.prepare_native_by_reference_foreach_linger_reference(value, span)?;
+        let owner = self.materialize_native_array_lvalue_owner(
+            source,
+            lvalue_span,
+            "array_foreach_reference_owner",
+            &path_cleanup_sequence,
+        )?;
+        self.invalidate_native_array_lvalue_owner_write_facts(&owner);
+        let owner_path_cleanup_sequence = format!(
+            "{}{}",
+            c_cleanup_sequence(&owner.cleanup_after_use),
+            path_cleanup_sequence
+        );
 
-        let owner = self.next_native_name("array_foreach_reference_owner");
         let foreach_result = self.next_native_name("array_foreach_iterable_result");
         let iterable_handle = self.next_native_name("array_foreach_iterable");
         let len = self.next_native_name("array_foreach_len");
         let index = self.next_native_name("array_foreach_index");
 
         self.body.push(format!(
-            "phpc_NativeArrayLvalueOwner {owner} = phpc_native_array_lvalue_owner_array({handle});"
+            "phpc_NativeArrayLvalueResult {foreach_result} = phpc_native_array_lvalue_owner_foreach_iterable_result({}, {path_arg}, {path_len});",
+            owner.owner
         ));
-        self.body.push(format!(
-            "phpc_NativeArrayLvalueResult {foreach_result} = phpc_native_array_lvalue_owner_foreach_iterable_result({owner}, {path_arg}, {path_len});"
-        ));
-        self.emit_native_array_lvalue_result_check(&foreach_result, &path_cleanup_sequence);
+        self.emit_native_array_lvalue_result_check(&foreach_result, &owner_path_cleanup_sequence);
         self.body.push(format!(
             "phpc_NativeValueHandle {iterable_handle} = {foreach_result}.value;"
         ));
@@ -51924,11 +51943,12 @@ impl CGenerator {
         let reference_result = self.next_native_name("array_foreach_value_reference_result");
         let reference = self.next_native_name("array_foreach_value_reference");
         self.body.push(format!(
-            "phpc_NativeArrayLvalueReferenceResult {reference_result} = phpc_native_array_lvalue_owner_foreach_value_reference_result({owner}, {path_arg}, {path_len}, {key_handle});"
+            "phpc_NativeArrayLvalueReferenceResult {reference_result} = phpc_native_array_lvalue_owner_foreach_value_reference_result({}, {path_arg}, {path_len}, {key_handle});",
+            owner.owner
         ));
         self.emit_native_array_lvalue_reference_result_check(
             &reference_result,
-            &path_cleanup_sequence,
+            &owner_path_cleanup_sequence,
         );
         self.body.push(format!(
             "phpc_NativeReferenceHandle {reference} = {reference_result}.reference;"
@@ -51968,6 +51988,7 @@ impl CGenerator {
         self.release_native_value_cleanup_handle(&iterable_handle);
         self.body
             .push(format!("phpc_native_value_free({iterable_handle});"));
+        self.body.extend(owner.cleanup_after_use);
         self.body.extend(path_cleanup);
         for storage in cursor_storage {
             let value = storage.c_value();
@@ -52103,14 +52124,11 @@ impl CGenerator {
         self.uses_native_array_helpers = true;
         self.uses_native_array_lvalue_helpers = true;
 
-        if let Some((_name, handle, indices, lvalue_span)) =
-            self.native_array_foreach_lvalue_parts(iterable)
-        {
-            return self.materialize_native_array_foreach_iterable_for_handle(
-                &handle,
-                &indices,
-                lvalue_span,
-                Vec::new(),
+        if let Some(parts) = self.native_array_foreach_lvalue_owner_parts(iterable) {
+            return self.materialize_native_array_foreach_iterable_for_owner(
+                parts.source,
+                &parts.indices,
+                parts.span,
             );
         }
 
@@ -52126,6 +52144,50 @@ impl CGenerator {
         }
 
         Err(self.unsupported(span, ASSEMBLY_ARRAY_REJECTION))
+    }
+
+    fn materialize_native_array_foreach_iterable_for_owner(
+        &mut self,
+        source: CNativeArrayLvalueOwnerSource,
+        indices: &[&Expr],
+        span: Span,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        let (path_arg, path_len, mut path_cleanup) = if indices.is_empty() {
+            ("NULL".to_string(), 0, Vec::new())
+        } else {
+            let path = self.materialize_native_array_lvalue_key_path(indices, span, "")?;
+            (path.path, path.len, path.cleanup_after_use)
+        };
+
+        let path_cleanup_sequence = c_cleanup_sequence(&path_cleanup);
+        let owner = self.materialize_native_array_lvalue_owner(
+            source,
+            span,
+            "array_foreach_owner",
+            &path_cleanup_sequence,
+        )?;
+        let owner_cleanup_sequence = c_cleanup_sequence(&owner.cleanup_after_use);
+        let result = self.next_native_name("array_foreach_iterable_result");
+        let value = self.next_native_name("array_foreach_iterable");
+        self.body.push(format!(
+            "phpc_NativeArrayLvalueResult {result} = phpc_native_array_lvalue_owner_foreach_iterable_result({}, {path_arg}, {path_len});",
+            owner.owner
+        ));
+        let cleanup = format!("{owner_cleanup_sequence}{path_cleanup_sequence}");
+        self.emit_native_array_lvalue_result_check(&result, &cleanup);
+        self.body
+            .push(format!("phpc_NativeValueHandle {value} = {result}.value;"));
+        self.body
+            .push(format!("{result}.value = (phpc_NativeValueHandle){{0}};"));
+        self.body
+            .push(format!("phpc_native_array_lvalue_result_free({result});"));
+        self.body.extend(owner.cleanup_after_use);
+        self.body.append(&mut path_cleanup);
+
+        Ok(CNativeValueMaterialization {
+            handle: value.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
+        })
     }
 
     fn materialize_native_array_foreach_iterable_for_handle(
@@ -52196,6 +52258,45 @@ impl CGenerator {
                     self.native_array_foreach_lvalue_parts(target)?;
                 indices.push(index);
                 Some((name, handle, indices, *span))
+            }
+            _ => None,
+        }
+    }
+
+    fn native_array_foreach_lvalue_owner_parts<'a>(
+        &self,
+        iterable: &'a Expr,
+    ) -> Option<CNativeArrayForeachLvalueParts<'a>> {
+        match iterable {
+            Expr::Variable(name, span) => match self.variables.get(name) {
+                Some(CValue::ArrayHandle(handle)) => Some(CNativeArrayForeachLvalueParts {
+                    root_name: name.clone(),
+                    source: CNativeArrayLvalueOwnerSource::ArrayHandle {
+                        name: name.clone(),
+                        handle: handle.clone(),
+                    },
+                    indices: Vec::new(),
+                    span: *span,
+                }),
+                Some(CValue::NativeReferenceHandle(reference)) => {
+                    Some(CNativeArrayForeachLvalueParts {
+                        root_name: name.clone(),
+                        source: CNativeArrayLvalueOwnerSource::ReferenceSlot(reference.clone()),
+                        indices: Vec::new(),
+                        span: *span,
+                    })
+                }
+                _ => None,
+            },
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => {
+                let mut parts = self.native_array_foreach_lvalue_owner_parts(target)?;
+                parts.indices.push(index);
+                parts.span = *span;
+                Some(parts)
             }
             _ => None,
         }

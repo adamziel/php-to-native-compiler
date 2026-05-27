@@ -22354,26 +22354,44 @@ pub unsafe extern "C" fn phpc_native_array_lvalue_owner_foreach_iterable_result(
     segments: *const NativeArrayPathSegment,
     segment_count: usize,
 ) -> NativeArrayLvalueResult {
-    if owner.tag != NATIVE_ARRAY_LVALUE_OWNER_ARRAY {
-        return NativeArrayLvalueResult::diagnostic(
-            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
-            "array foreach iterable owner is not a native array handle",
-        );
-    }
-
-    let Some(array) = (unsafe { owner.array.as_ref() }) else {
-        return NativeArrayLvalueResult::diagnostic(
-            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
-            "array foreach iterable root is not a live native array handle",
-        );
-    };
     let path =
         match unsafe { native_array_lvalue_optional_path_from_segments(segments, segment_count) } {
             Ok(path) => path,
             Err(result) => return result,
         };
 
-    native_array_foreach_iterable_path_result(&array.value, &path)
+    match owner.tag {
+        NATIVE_ARRAY_LVALUE_OWNER_ARRAY => {
+            let Some(array) = (unsafe { owner.array.as_ref() }) else {
+                return NativeArrayLvalueResult::diagnostic(
+                    NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+                    "array foreach iterable root is not a live native array handle",
+                );
+            };
+
+            native_array_foreach_iterable_path_result(&array.value, &path)
+        }
+        NATIVE_ARRAY_LVALUE_OWNER_REFERENCE_SLOT => {
+            let Some(reference) = (unsafe { owner.reference.as_ref() }) else {
+                return NativeArrayLvalueResult::diagnostic(
+                    NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+                    "array foreach iterable reference owner is not a live native reference handle",
+                );
+            };
+
+            match reference.cell.value_cloned() {
+                Value::Array(array) => native_array_foreach_iterable_path_result(&array, &path),
+                value => native_value_foreach_iterable_value_result(value),
+            }
+        }
+        _ => NativeArrayLvalueResult::diagnostic(
+            NATIVE_ARRAY_LVALUE_INVALID_ROOT,
+            format!(
+                "array foreach iterable owner tag {} is not supported",
+                owner.tag
+            ),
+        ),
+    }
 }
 
 /// # Safety
@@ -70938,6 +70956,99 @@ mod tests {
         unsafe { phpc_native_value_free(items_key) };
         unsafe { phpc_native_array_lvalue_result_free(iterable) };
         unsafe { phpc_native_array_free(handle) };
+    }
+
+    #[test]
+    fn native_array_lvalue_owner_foreach_iterable_supports_reference_slot_owners() {
+        fn assert_entry(
+            iterable: NativeValueHandle,
+            index: usize,
+            expected_key: &[u8],
+            expected_value: &[u8],
+        ) {
+            let key = unsafe { phpc_native_array_foreach_iterable_key_result(iterable, index) };
+            assert_eq!(key.tag, NATIVE_ARRAY_LVALUE_OK);
+            assert_eq!(native_value_echo_bytes_for_test(key.value), expected_key);
+            unsafe { phpc_native_array_lvalue_result_free(key) };
+
+            let value = unsafe { phpc_native_array_foreach_iterable_value_result(iterable, index) };
+            assert_eq!(value.tag, NATIVE_ARRAY_LVALUE_OK);
+            assert_eq!(
+                native_value_echo_bytes_for_test(value.value),
+                expected_value
+            );
+            unsafe { phpc_native_array_lvalue_result_free(value) };
+        }
+
+        let mut outer = PhpArray::new();
+        outer.insert("a", Value::String("one".to_string()));
+        outer.insert("b", Value::String("two".to_string()));
+        let mut root = PhpArray::new();
+        root.insert("name", Value::String("root".to_string()));
+        root.insert("outer", Value::Array(outer));
+
+        let original = Value::Array(root.clone());
+        let root_reference = PhpReferenceCell::new(Value::Array(root));
+        let reference_handle = NativeReferenceHandle::from_cell(root_reference.clone());
+        let owner = phpc_native_array_lvalue_owner_reference_slot(reference_handle);
+
+        let iterable = unsafe {
+            phpc_native_array_lvalue_owner_foreach_iterable_result(owner, std::ptr::null(), 0)
+        };
+        assert_eq!(iterable.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(
+            unsafe { phpc_native_array_foreach_iterable_len(iterable.value) },
+            2
+        );
+        assert_entry(iterable.value, 0, b"name", b"root");
+
+        let outer_key = NativeValueHandle::from_value(Value::String("outer".to_string()));
+        let outer_path = [NativeArrayPathSegment {
+            tag: NATIVE_ARRAY_PATH_KEY,
+            key: outer_key,
+        }];
+        let nested_iterable = unsafe {
+            phpc_native_array_lvalue_owner_foreach_iterable_result(
+                owner,
+                outer_path.as_ptr(),
+                outer_path.len(),
+            )
+        };
+        assert_eq!(nested_iterable.tag, NATIVE_ARRAY_LVALUE_OK);
+        assert_eq!(
+            unsafe { phpc_native_array_foreach_iterable_len(nested_iterable.value) },
+            2
+        );
+        assert_entry(nested_iterable.value, 0, b"a", b"one");
+        assert_entry(nested_iterable.value, 1, b"b", b"two");
+        assert_eq!(
+            root_reference.value_cloned(),
+            original,
+            "foreach iterable snapshots must not mutate the reference slot"
+        );
+
+        let scalar_reference = PhpReferenceCell::new(Value::Int(42));
+        let scalar_handle = NativeReferenceHandle::from_cell(scalar_reference);
+        let scalar_owner = phpc_native_array_lvalue_owner_reference_slot(scalar_handle);
+        let scalar_iterable = unsafe {
+            phpc_native_array_lvalue_owner_foreach_iterable_result(
+                scalar_owner,
+                std::ptr::null(),
+                0,
+            )
+        };
+        assert_eq!(scalar_iterable.tag, NATIVE_ARRAY_LVALUE_INVALID_ROOT);
+        assert_eq!(
+            native_diagnostic_message_for_test(scalar_iterable.diagnostic),
+            "invalid foreach: cannot iterate int array lvalue iterable"
+        );
+
+        unsafe { phpc_native_array_lvalue_result_free(scalar_iterable) };
+        unsafe { phpc_native_reference_free(scalar_handle) };
+        unsafe { phpc_native_array_lvalue_result_free(nested_iterable) };
+        unsafe { phpc_native_value_free(outer_key) };
+        unsafe { phpc_native_array_lvalue_result_free(iterable) };
+        unsafe { phpc_native_reference_free(reference_handle) };
     }
 
     #[test]
