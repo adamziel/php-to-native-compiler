@@ -1465,9 +1465,17 @@ enum NativeCallableBuiltin {
     StringLength,
     StringPredicate(NativeStringPredicate),
     StringResult(NativeStringResultOperation),
+    StringTrim(NativeTrimMode),
     Cast(u8),
     TypeName(u8),
     TypePredicate(u8),
+}
+
+#[derive(Debug, Clone, Copy)]
+enum NativeTrimMode {
+    Both,
+    Left,
+    Right,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1494,6 +1502,9 @@ impl NativeCallableBuiltin {
             Self::StringResult(NativeStringResultOperation::AsciiFirstLower) => "lcfirst",
             Self::StringResult(NativeStringResultOperation::ShellArgEscape) => "escapeshellarg",
             Self::StringResult(NativeStringResultOperation::ShellCommandEscape) => "escapeshellcmd",
+            Self::StringTrim(NativeTrimMode::Both) => "trim",
+            Self::StringTrim(NativeTrimMode::Left) => "ltrim",
+            Self::StringTrim(NativeTrimMode::Right) => "rtrim",
             Self::Cast(NATIVE_VALUE_CAST_STRING) => "strval",
             Self::Cast(NATIVE_VALUE_CAST_BOOL) => "boolval",
             Self::Cast(NATIVE_VALUE_CAST_FLOAT) => "floatval",
@@ -1523,6 +1534,12 @@ impl NativeCallableBuiltin {
         match self {
             Self::StringPredicate(_) => NativeCallableBuiltinSignature {
                 required_arg_count: 2,
+                fixed_param_by_reference: BY_VALUE_2,
+                accepts_variadic_args: false,
+                returns_by_reference: false,
+            },
+            Self::StringTrim(_) => NativeCallableBuiltinSignature {
+                required_arg_count: 1,
                 fixed_param_by_reference: BY_VALUE_2,
                 accepts_variadic_args: false,
                 returns_by_reference: false,
@@ -8993,6 +9010,9 @@ fn native_callable_builtin_for_function_name(name: &str) -> Option<NativeCallabl
         "escapeshellcmd" => Some(NativeCallableBuiltin::StringResult(
             NativeStringResultOperation::ShellCommandEscape,
         )),
+        "trim" => Some(NativeCallableBuiltin::StringTrim(NativeTrimMode::Both)),
+        "ltrim" => Some(NativeCallableBuiltin::StringTrim(NativeTrimMode::Left)),
+        "rtrim" => Some(NativeCallableBuiltin::StringTrim(NativeTrimMode::Right)),
         "strval" => Some(NativeCallableBuiltin::Cast(NATIVE_VALUE_CAST_STRING)),
         "boolval" => Some(NativeCallableBuiltin::Cast(NATIVE_VALUE_CAST_BOOL)),
         "floatval" | "doubleval" => Some(NativeCallableBuiltin::Cast(NATIVE_VALUE_CAST_FLOAT)),
@@ -11414,6 +11434,75 @@ unsafe fn native_callable_builtin_argument_values(
     Ok(values)
 }
 
+const PHP_DEFAULT_TRIM_MASK: &[u8] = b" \n\r\t\x0b\0";
+
+fn native_callable_trimmed_bytes(subject: &[u8], mask: &[u8], mode: NativeTrimMode) -> Vec<u8> {
+    let mut start = 0;
+    let mut end = subject.len();
+
+    if matches!(mode, NativeTrimMode::Both | NativeTrimMode::Left) {
+        while start < end && mask.contains(&subject[start]) {
+            start += 1;
+        }
+    }
+    if matches!(mode, NativeTrimMode::Both | NativeTrimMode::Right) {
+        while end > start && mask.contains(&subject[end - 1]) {
+            end -= 1;
+        }
+    }
+
+    subject[start..end].to_vec()
+}
+
+fn native_callable_trim_mask(
+    mode: NativeTrimMode,
+    values: &[NativeValueHandle],
+) -> RuntimeResult<Vec<u8>> {
+    if values.len() == 1 {
+        return Ok(PHP_DEFAULT_TRIM_MASK.to_vec());
+    }
+
+    let mask = unsafe { native_value_to_string_bytes(values[1]) }?;
+    match mode {
+        NativeTrimMode::Both if mask != PHP_DEFAULT_TRIM_MASK => {
+            Err(RuntimeError::unsupported_call(
+                "trim()",
+                "custom character masks are not implemented; pass exactly one argument in the current subset",
+            ))
+        }
+        NativeTrimMode::Both => Ok(mask),
+        NativeTrimMode::Left | NativeTrimMode::Right => {
+            let name = match mode {
+                NativeTrimMode::Left => "ltrim()",
+                NativeTrimMode::Right => "rtrim()",
+                NativeTrimMode::Both => unreachable!(),
+            };
+            if mask.is_empty() {
+                return Err(RuntimeError::unsupported_call(
+                    name,
+                    "empty character masks are not implemented in the current subset",
+                ));
+            }
+            if mask.windows(2).any(|window| window == b"..") {
+                return Err(RuntimeError::unsupported_call(
+                    name,
+                    "character mask ranges are not implemented in the current subset",
+                ));
+            }
+            Ok(mask)
+        }
+    }
+}
+
+unsafe fn native_callable_trim_value(
+    mode: NativeTrimMode,
+    values: &[NativeValueHandle],
+) -> RuntimeResult<Value> {
+    let subject = unsafe { native_value_to_string_bytes(values[0]) }?;
+    let mask = native_callable_trim_mask(mode, values)?;
+    value_from_native_string_result_bytes(native_callable_trimmed_bytes(&subject, &mask, mode))
+}
+
 unsafe fn native_callable_builtin_invoke_value(
     builtin: NativeCallableBuiltin,
     arguments: NativeCallArgumentsHandle,
@@ -11435,6 +11524,7 @@ unsafe fn native_callable_builtin_invoke_value(
         NativeCallableBuiltin::StringResult(operation) => unsafe {
             native_value_string_result_operation_value(values[0], 0, operation as u8)
         },
+        NativeCallableBuiltin::StringTrim(mode) => unsafe { native_callable_trim_value(mode, &values) },
         NativeCallableBuiltin::Cast(operation) => unsafe {
             native_value_cast_operation_value(values[0], operation)
         },
@@ -41987,6 +42077,16 @@ mod tests {
         assert!(!two_arg.accepts_arg_count(1));
         assert!(!two_arg.accepts_arg_count(3));
         assert!(!two_arg.returns_by_reference);
+
+        let trim = NativeCallableBuiltin::StringTrim(NativeTrimMode::Both).signature();
+        assert_eq!(trim.required_arg_count, 1);
+        assert_eq!(trim.fixed_param_count(), 2);
+        assert_eq!(trim.fixed_param_by_reference, &[false, false]);
+        assert!(trim.accepts_arg_count(1));
+        assert!(trim.accepts_arg_count(2));
+        assert!(!trim.accepts_arg_count(0));
+        assert!(!trim.accepts_arg_count(3));
+        assert!(!trim.returns_by_reference);
     }
 
     #[test]

@@ -60700,6 +60700,9 @@ fn native_dynamic_callable_builtin_canonical_name(name: &str) -> Option<&'static
         "lcfirst" => Some("lcfirst"),
         "escapeshellarg" => Some("escapeshellarg"),
         "escapeshellcmd" => Some("escapeshellcmd"),
+        "trim" => Some("trim"),
+        "ltrim" => Some("ltrim"),
+        "rtrim" => Some("rtrim"),
         "strval" => Some("strval"),
         "boolval" => Some("boolval"),
         "floatval" | "doubleval" => Some("floatval"),
@@ -60850,15 +60853,19 @@ fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignatu
             returns_by_reference: false,
             source_call_support: Blocked(ByReferenceArgumentWriteback),
         },
-        "trim" => CNativeBuiltinSignature {
-            canonical_name: "trim",
+        "trim" | "ltrim" | "rtrim" => CNativeBuiltinSignature {
+            canonical_name: match name.to_ascii_lowercase().as_str() {
+                "ltrim" => "ltrim",
+                "rtrim" => "rtrim",
+                _ => "trim",
+            },
             required_arg_count: 1,
             fixed_param_names: NATIVE_BUILTIN_PARAM_STRING_CHARACTERS,
             fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_2,
             fixed_param_defaults: NATIVE_BUILTIN_DEFAULTS_TRIM_CHARACTERS,
             accepts_variadic_args: false,
             returns_by_reference: false,
-            source_call_support: Blocked(MissingRuntimeCallableFamily),
+            source_call_support: RuntimeCallableValue,
         },
         _ => return None,
     };
@@ -67737,7 +67744,7 @@ echo " 10" < "zeta";
         );
 
         let trim = native_builtin_signature_for_name("trim")
-            .expect("trim should be mapped as a blocked default-arity signature");
+            .expect("trim should be mapped as a runtime default-arity signature");
         assert!(trim.required_arg_count < trim.fixed_param_count());
         assert_eq!(trim.fixed_param_names, &["string", "characters"]);
         assert_eq!(
@@ -67749,10 +67756,21 @@ echo " 10" < "zeta";
         );
         assert_eq!(
             trim.source_call_support,
-            CNativeBuiltinSignatureSourceCallSupport::Blocked(
-                CNativeBuiltinSignatureBlocker::MissingRuntimeCallableFamily,
-            )
+            CNativeBuiltinSignatureSourceCallSupport::RuntimeCallableValue
         );
+        let ltrim = native_builtin_signature_for_name("ltrim")
+            .expect("ltrim should share trim-family signature metadata");
+        assert_eq!(ltrim.canonical_name, "ltrim");
+        assert_eq!(ltrim.fixed_param_names, trim.fixed_param_names);
+        assert_eq!(ltrim.fixed_param_defaults, trim.fixed_param_defaults);
+        assert_eq!(ltrim.source_call_support, trim.source_call_support);
+
+        let rtrim = native_builtin_signature_for_name("rtrim")
+            .expect("rtrim should share trim-family signature metadata");
+        assert_eq!(rtrim.canonical_name, "rtrim");
+        assert_eq!(rtrim.fixed_param_names, trim.fixed_param_names);
+        assert_eq!(rtrim.fixed_param_defaults, trim.fixed_param_defaults);
+        assert_eq!(rtrim.source_call_support, trim.source_call_support);
     }
 
     #[test]
@@ -67814,6 +67832,10 @@ echo " 10" < "zeta";
                 .is_none(),
             "blocked runtime builtins must preserve the unsupported-native boundary"
         );
+        let trim_signature = generator
+            .callable_string_signature_for_expr(&Expr::String("trim".to_string(), span(8)), 1)
+            .expect("defaulted trim-family builtin should feed runtime source calls");
+        assert_eq!(trim_signature.fixed_param_by_reference, vec![false, false]);
 
         let spread_args = vec![Expr::SpreadArgument {
             expr: Box::new(Expr::Array {
@@ -67843,6 +67865,32 @@ echo " 10" < "zeta";
                 .collect::<Vec<_>>(),
             vec!["haystack", "needle"]
         );
+
+        let trim_contract = generator
+            .callable_value_source_call_signature_contract_for_args(
+                &Expr::String("trim".to_string(), span(13)),
+                &spread_args,
+            )
+            .expect(
+                "defaulted trim-family runtime builtin spread should produce parameter metadata",
+            );
+        let NativeMethodStaticSourceCallArgumentStrategy::Frame(trim_plan) =
+            trim_contract.argument_strategy
+        else {
+            panic!("trim-family runtime builtin spread should use builtin parameter metadata");
+        };
+        assert_eq!(
+            trim_plan
+                .params
+                .iter()
+                .map(|param| param.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["string", "characters"]
+        );
+        assert!(matches!(
+            trim_plan.params[1].default.as_ref(),
+            Some(Expr::String(value, _)) if value == " \n\r\t\x0b\0"
+        ));
     }
 
     #[test]

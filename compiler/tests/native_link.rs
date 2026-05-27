@@ -24374,6 +24374,17 @@ const NATIVE_RUNTIME_BUILTIN_CALLABLE_STRING_SPREAD_SOURCE: &str = concat!(
     "echo $case(...[\"string\" => runtime_builtin_spread_marker(\"MiX\")]);\n",
 );
 
+const NATIVE_RUNTIME_BUILTIN_TRIM_CALLABLE_STRING_SPREAD_SOURCE: &str = concat!(
+    "<?php\n",
+    "function runtime_builtin_trim_marker($label, $value) { echo $label; return $value; }\n",
+    "$trim = \"trim\";\n",
+    "echo $trim(...[\"string\" => runtime_builtin_trim_marker(\"A\", \" \\twp\\n\")]), \"|\";\n",
+    "$ltrim = \"ltrim\";\n",
+    "echo $ltrim(...[\"string\" => runtime_builtin_trim_marker(\"B\", \"//wp/\"), \"characters\" => runtime_builtin_trim_marker(\"C\", \"/\")]), \"|\";\n",
+    "$rtrim = \"rtrim\";\n",
+    "echo $rtrim(...[\"characters\" => runtime_builtin_trim_marker(\"D\", \"/\"), \"string\" => runtime_builtin_trim_marker(\"E\", \"/wp///\")]);\n",
+);
+
 const NATIVE_DYNAMIC_BUILTIN_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "$len = \"strlen\";\n",
@@ -25509,6 +25520,31 @@ fn native_executable_c_source_lowers_runtime_builtin_callable_string_spread_thro
             && !source.contains("phpc_native_value_dynamic_call_name_matches")
             && !source.contains("unsupported runtime callable builtin families"),
         "runtime builtin callable-string spread should not use old spread blockers or generated name ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_runtime_builtin_callable_string_spread_trim_defaults_through_materialized_bridge(
+) {
+    let program = parse(NATIVE_RUNTIME_BUILTIN_TRIM_CALLABLE_STRING_SPREAD_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && body.contains("materialized_parameter_defaults")
+            && body.contains("dynamic_callable_args_")
+            && body.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "trim-family callable-string spread should use builtin default metadata, materialized entries, and callable-value invocation:\n{source}"
+    );
+    assert!(
+        !source.contains("spread operands need a materialized-entry producer")
+            && !source.contains("phpc_native_value_dynamic_call_name_matches")
+            && !source.contains("unsupported runtime callable builtin families"),
+        "trim-family callable-string spread should not use old spread blockers or generated name ladders:\n{source}"
     );
 }
 
@@ -28791,6 +28827,36 @@ fn emit_exe_links_and_runs_runtime_builtin_callable_string_spread_argument_progr
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"babc1|aabc1|MiXMIX");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_runtime_builtin_callable_string_spread_trim_default_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "runtime_builtin_trim_callable_string_spread_arguments",
+        NATIVE_RUNTIME_BUILTIN_TRIM_CALLABLE_STRING_SPREAD_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native runtime builtin trim callable-string spread executable: {error}"
+        )
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"Awp|BCwp/|DE/wp");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
