@@ -24499,6 +24499,15 @@ const NATIVE_SPREAD_DIRECT_USER_FUNCTION_ARGUMENT_SOURCE: &str = concat!(
     "echo spread_join(...[spread_marker(\"Q\")]);\n",
 );
 
+const NATIVE_SPREAD_DIRECT_USER_FUNCTION_BYREF_UNPACK_SOURCE: &str = concat!(
+    "<?php\n",
+    "function spread_ref(&$slot) { $slot = $slot . \"!\"; return $slot; }\n",
+    "$value = \"old\";\n",
+    "$args = [];\n",
+    "$args[] =& $value;\n",
+    "echo spread_ref(...$args), \"|\", $value;\n",
+);
+
 const NATIVE_SPREAD_CALLABLE_FAMILY_ARGUMENT_SOURCE: &str = concat!(
     "<?php\n",
     "function spread_callable_family_marker($label) { echo $label; return $label; }\n",
@@ -26847,6 +26856,34 @@ fn emit_exe_links_and_runs_direct_user_function_spread_argument_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"ABCNABCN|YXXY|QQD");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_direct_user_function_spread_by_reference_unpack_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "spread_direct_user_function_by_reference_unpack",
+        NATIVE_SPREAD_DIRECT_USER_FUNCTION_BYREF_UNPACK_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native direct user-function by-reference spread executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"old!|old!");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

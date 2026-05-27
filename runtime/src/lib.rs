@@ -9225,6 +9225,16 @@ unsafe fn native_materialized_call_arguments_push_slot(
     true
 }
 
+fn native_materialized_call_argument_slot_from_array_slot(
+    slot: &ArraySlot,
+) -> NativeCallArgumentSlot {
+    if let Some(reference) = slot.reference_cell() {
+        NativeCallArgumentSlot::Reference(NativeReferenceHandle::from_cell(reference))
+    } else {
+        NativeCallArgumentSlot::Value(NativeValueHandle::from_value(slot.value_cloned()))
+    }
+}
+
 /// # Safety
 ///
 /// `arguments` must be a materialized call-arguments handle. `value` is
@@ -9322,9 +9332,7 @@ pub unsafe extern "C" fn phpc_native_materialized_call_arguments_unpack_array_va
         };
         arguments.entries.push(NativeMaterializedCallArgumentEntry {
             name,
-            slot: NativeCallArgumentSlot::Value(NativeValueHandle::from_value(
-                entry.value_cloned(),
-            )),
+            slot: native_materialized_call_argument_slot_from_array_slot(entry.slot()),
         });
     }
 
@@ -37258,6 +37266,60 @@ mod tests {
         for default in defaults {
             unsafe { phpc_native_value_free(default) };
         }
+    }
+
+    #[test]
+    fn native_materialized_call_arguments_preserve_reference_slots_from_unpacked_arrays() {
+        let materialized = phpc_native_materialized_call_arguments_new();
+        let reference = PhpReferenceCell::new(Value::String("old".to_string()));
+        let mut unpacked = PhpArray::new();
+        unpacked.append_reference(reference.clone()).unwrap();
+        let unpacked_value = NativeValueHandle::from_value(Value::Array(unpacked));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        assert!(unsafe {
+            phpc_native_materialized_call_arguments_unpack_array_value_and_free(
+                materialized,
+                unpacked_value,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let name = native_string_for_test("slot");
+        let required = [1];
+        let by_reference = [1];
+        let defaults = [NativeValueHandle::null()];
+        let finalized = unsafe {
+            phpc_native_materialized_call_arguments_finalize_with_diagnostic(
+                materialized,
+                &name,
+                required.as_ptr(),
+                by_reference.as_ptr(),
+                defaults.as_ptr(),
+                1,
+                false,
+                false,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!finalized.is_null());
+
+        let argument_reference = unsafe { phpc_native_call_arguments_read_reference(finalized, 0) };
+        assert!(!argument_reference.is_null());
+        let changed = NativeValueHandle::from_value(Value::String("changed".to_string()));
+        assert!(unsafe { phpc_native_reference_set_value(argument_reference, changed) });
+        assert_eq!(
+            reference.value_cloned(),
+            Value::String("changed".to_string())
+        );
+
+        unsafe { phpc_native_value_free(changed) };
+        unsafe { phpc_native_reference_free(argument_reference) };
+        unsafe { phpc_native_call_arguments_free(finalized) };
+        unsafe { phpc_native_materialized_call_arguments_free(materialized) };
+        unsafe { phpc_native_string_free(name) };
     }
 
     #[test]
