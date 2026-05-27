@@ -365,6 +365,7 @@ pub struct NativeIncludeUnitLookupResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeIncludeRuntimeNoMatchResult {
     pub status: u8,
+    pub resolved_path: NativeByteBuffer,
     pub warning: NativeDiagnosticHandle,
     pub fatal: NativeDiagnosticHandle,
 }
@@ -5965,11 +5966,13 @@ pub unsafe extern "C" fn phpc_native_include_unit_registry_lookup_include_path(
 
 fn native_include_runtime_no_match_result(
     status: u8,
+    resolved_path: NativeByteBuffer,
     warning: NativeDiagnosticHandle,
     fatal: NativeDiagnosticHandle,
 ) -> NativeIncludeRuntimeNoMatchResult {
     NativeIncludeRuntimeNoMatchResult {
         status,
+        resolved_path,
         warning,
         fatal,
     }
@@ -5980,33 +5983,35 @@ fn native_include_runtime_no_match_unsupported(
 ) -> NativeIncludeRuntimeNoMatchResult {
     native_include_runtime_no_match_result(
         NATIVE_INCLUDE_RUNTIME_NO_MATCH_UNSUPPORTED,
+        NativeByteBuffer::empty(),
         NativeDiagnosticHandle::null(),
         NativeDiagnosticHandle::from_message(message),
     )
 }
 
-fn native_include_runtime_path_exists(
+fn native_include_runtime_resolved_source_path(
     requested_path: &str,
     source_file: &str,
     include_path: &str,
-) -> bool {
+) -> Option<PathBuf> {
     let raw_path = PathBuf::from(requested_path);
     if raw_path.is_absolute() {
-        return raw_path.exists();
+        return raw_path.is_file().then_some(raw_path);
     }
 
     for entry in include_path.split(NATIVE_INCLUDE_PATH_SEPARATOR) {
         let entry = if entry.is_empty() { "." } else { entry };
-        if PathBuf::from(entry).join(&raw_path).exists() {
-            return true;
+        let candidate = PathBuf::from(entry).join(&raw_path);
+        if candidate.is_file() {
+            return Some(candidate);
         }
     }
 
-    Path::new(source_file)
+    let candidate = Path::new(source_file)
         .parent()
         .unwrap_or_else(|| Path::new(""))
-        .join(raw_path)
-        .exists()
+        .join(raw_path);
+    candidate.is_file().then_some(candidate)
 }
 
 fn native_include_missing_warning(
@@ -6074,18 +6079,23 @@ pub unsafe extern "C" fn phpc_native_include_runtime_no_match_diagnostic(
         Err(error) => return native_include_runtime_no_match_unsupported(error.message()),
     };
 
-    if native_include_runtime_path_exists(requested_path, source_file, include_path) {
+    if let Some(resolved_path) =
+        native_include_runtime_resolved_source_path(requested_path, source_file, include_path)
+    {
+        let resolved_path = resolved_path.to_string_lossy().into_owned();
         return native_include_runtime_no_match_result(
             NATIVE_INCLUDE_RUNTIME_NO_MATCH_SOURCE_LOAD_REQUIRED,
+            NativeByteBuffer::from_vec(resolved_path.clone().into_bytes()),
             NativeDiagnosticHandle::null(),
             NativeDiagnosticHandle::from_message(format!(
-                "unsupported runtime include/require path: resolved '{requested_path}' to existing filesystem source outside the generated include-unit registry; native source loading/parsing ABI is required before arbitrary runtime include execution",
+                "unsupported runtime include/require path: resolved '{requested_path}' to '{resolved_path}', an existing filesystem source outside the generated include-unit registry; native source loading/parsing ABI is required before arbitrary runtime include execution",
             )),
         );
     }
 
     native_include_runtime_no_match_result(
         NATIVE_INCLUDE_RUNTIME_NO_MATCH_MISSING,
+        NativeByteBuffer::empty(),
         native_include_missing_warning(construct, requested_path, source_file, include_path, line),
         if required {
             native_include_missing_fatal(construct, requested_path, source_file, include_path, line)
@@ -53700,6 +53710,7 @@ mod tests {
         };
 
         assert_eq!(result.status, NATIVE_INCLUDE_RUNTIME_NO_MATCH_MISSING);
+        assert!(result.resolved_path.ptr().is_null());
         assert!(result.fatal.is_null());
         let warning = include_no_match_message_for_test(result.warning);
         assert!(warning.contains("PHP Warning"), "{warning}");
@@ -53729,6 +53740,7 @@ mod tests {
         };
 
         assert_eq!(result.status, NATIVE_INCLUDE_RUNTIME_NO_MATCH_MISSING);
+        assert!(result.resolved_path.ptr().is_null());
         let warning = include_no_match_message_for_test(result.warning);
         let fatal = include_no_match_message_for_test(result.fatal);
         assert!(warning.contains("require(required.php)"), "{warning}");
@@ -53766,7 +53778,64 @@ mod tests {
             NATIVE_INCLUDE_RUNTIME_NO_MATCH_SOURCE_LOAD_REQUIRED
         );
         assert!(result.warning.is_null());
+        let resolved_path =
+            String::from_utf8(native_byte_buffer_to_vec_for_test(result.resolved_path))
+                .expect("resolved source path is UTF-8");
+        assert_eq!(
+            resolved_path,
+            dir.join("extra.php").to_string_lossy().into_owned(),
+            "{resolved_path}"
+        );
         let fatal = include_no_match_message_for_test(result.fatal);
+        assert!(fatal.contains(&resolved_path), "{fatal}");
+        assert!(fatal.contains("existing filesystem source"), "{fatal}");
+        assert!(
+            fatal.contains("native source loading/parsing ABI"),
+            "{fatal}"
+        );
+    }
+
+    #[test]
+    fn native_include_runtime_no_match_diagnostic_blocks_existing_include_path_source() {
+        let dir = include_no_match_test_dir("existing-include-path-source");
+        let lib = dir.join("lib");
+        std::fs::create_dir_all(&lib).expect("create include_path source fixture dir");
+        std::fs::write(lib.join("extra.php"), "<?php echo 'extra';\n")
+            .expect("write include_path source fixture");
+        let include_path = lib.to_string_lossy().into_owned();
+        let source_file = dir.join("root.php").to_string_lossy().into_owned();
+
+        let result = unsafe {
+            phpc_native_include_runtime_no_match_diagnostic(
+                b"extra.php".as_ptr(),
+                b"extra.php".len(),
+                include_path.as_ptr(),
+                include_path.len(),
+                source_file.as_ptr(),
+                source_file.len(),
+                b"include".as_ptr(),
+                b"include".len(),
+                false,
+                17,
+            )
+        };
+
+        assert_eq!(
+            result.status,
+            NATIVE_INCLUDE_RUNTIME_NO_MATCH_SOURCE_LOAD_REQUIRED
+        );
+        assert!(result.warning.is_null());
+        let resolved_path =
+            String::from_utf8(native_byte_buffer_to_vec_for_test(result.resolved_path))
+                .expect("resolved include_path source path is UTF-8");
+        assert_eq!(
+            resolved_path,
+            lib.join("extra.php").to_string_lossy().into_owned(),
+            "{resolved_path}"
+        );
+        let fatal = include_no_match_message_for_test(result.fatal);
+        assert!(fatal.contains("resolved 'extra.php'"), "{fatal}");
+        assert!(fatal.contains(&resolved_path), "{fatal}");
         assert!(fatal.contains("existing filesystem source"), "{fatal}");
         assert!(
             fatal.contains("native source loading/parsing ABI"),

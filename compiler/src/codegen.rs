@@ -21914,6 +21914,13 @@ impl CGenerator {
             uses_native_symbol_table_helpers: function.frame_environment.root_symbols,
             uses_native_request_state_helpers: function.frame_environment.request_state,
             uses_native_reference_helpers: function.decl.returns_by_reference,
+            active_source_file: self.active_source_file.clone(),
+            include_root_file: self.include_root_file.clone(),
+            include_units: self.include_units.clone(),
+            include_unit_order: self.include_unit_order.clone(),
+            include_once_slots: self.include_once_slots.clone(),
+            include_resolutions: self.include_resolutions.clone(),
+            native_include_path: self.native_include_path.clone(),
             ..CGenerator::default()
         };
 
@@ -23293,6 +23300,14 @@ impl CGenerator {
             if self.uses_native_symbol_table_helpers {
                 output.push_str("typedef struct { void *ptr; } phpc_NativeSymbolTableHandle;\n");
             }
+            if self.uses_native_string_helpers
+                || self.uses_native_array_helpers
+                || self.uses_native_include_unit_helpers
+            {
+                output.push_str(
+                    "typedef struct { uint8_t *ptr; size_t len; size_t cap; } phpc_NativeByteBuffer;\n",
+                );
+            }
             if self.uses_native_include_unit_helpers {
                 output.push_str("#define PHPC_NATIVE_DIAGNOSTIC_SEVERITY_WARNING 2\n");
                 output.push_str("#define PHPC_NATIVE_DIAGNOSTIC_SEVERITY_ERROR 3\n");
@@ -23309,12 +23324,7 @@ impl CGenerator {
                 output.push_str("typedef struct { uint8_t tag; phpc_NativeValueHandle value; int32_t exit_code; } phpc_NativeIncludeResult;\n");
                 output.push_str("typedef struct { const uint8_t *key_ptr; size_t key_len; size_t unit_index; } phpc_NativeIncludeUnitLookupEntry;\n");
                 output.push_str("typedef struct { uint8_t status; size_t unit_index; } phpc_NativeIncludeUnitLookupResult;\n");
-                output.push_str("typedef struct { uint8_t status; phpc_NativeDiagnosticHandle warning; phpc_NativeDiagnosticHandle fatal; } phpc_NativeIncludeRuntimeNoMatchResult;\n");
-            }
-            if self.uses_native_string_helpers || self.uses_native_array_helpers {
-                output.push_str(
-                    "typedef struct { uint8_t *ptr; size_t len; size_t cap; } phpc_NativeByteBuffer;\n",
-                );
+                output.push_str("typedef struct { uint8_t status; phpc_NativeByteBuffer resolved_path; phpc_NativeDiagnosticHandle warning; phpc_NativeDiagnosticHandle fatal; } phpc_NativeIncludeRuntimeNoMatchResult;\n");
             }
             if self.uses_native_string_helpers {
                 output.push_str("typedef struct { phpc_NativeByteBuffer bytes; phpc_NativeDiagnosticHandle diagnostic; } phpc_NativeStringConversionResult;\n");
@@ -23937,6 +23947,9 @@ impl CGenerator {
             output.push_str("extern void phpc_native_value_free(phpc_NativeValueHandle value);\n");
             if self.uses_native_include_unit_helpers {
                 output.push_str("extern phpc_NativeDiagnosticHandle phpc_native_diagnostic_from_severity_message_bytes(uint8_t severity, const uint8_t *ptr, size_t len);\n");
+                output.push_str(
+                    "extern void phpc_native_byte_buffer_free(phpc_NativeByteBuffer buffer);\n",
+                );
                 output.push_str("extern phpc_NativeIncludeUnitLookupResult phpc_native_include_unit_registry_lookup(const uint8_t *path_ptr, size_t path_len, const phpc_NativeIncludeUnitLookupEntry *entries, size_t entry_count);\n");
                 output.push_str("extern phpc_NativeIncludeUnitLookupResult phpc_native_include_unit_registry_lookup_include_path(const uint8_t *path_ptr, size_t path_len, const uint8_t *include_path_ptr, size_t include_path_len, const uint8_t *source_dir_ptr, size_t source_dir_len, const phpc_NativeIncludeUnitLookupEntry *entries, size_t entry_count);\n");
                 output.push_str("extern phpc_NativeIncludeRuntimeNoMatchResult phpc_native_include_runtime_no_match_diagnostic(const uint8_t *path_ptr, size_t path_len, const uint8_t *include_path_ptr, size_t include_path_len, const uint8_t *source_file_ptr, size_t source_file_len, const uint8_t *construct_ptr, size_t construct_len, bool required, size_t line);\n");
@@ -36568,10 +36581,18 @@ impl CGenerator {
         self.body.push(format!(
             "  if ({no_match}.fatal.ptr != NULL) {{ phpc_native_diagnostic_report({no_match}.fatal);"
         ));
-        let lookup_failure_exit = self
-            .native_error_exit_with_code(&c_cleanup_sequence(&operand.cleanup_after_use), "255");
+        let lookup_failure_exit = self.native_error_exit_with_code(
+            &format!(
+                "phpc_native_byte_buffer_free({no_match}.resolved_path); {}",
+                c_cleanup_sequence(&operand.cleanup_after_use)
+            ),
+            "255",
+        );
         self.body.push(format!("  {lookup_failure_exit}"));
         self.body.push("}".to_string());
+        self.body.push(format!(
+            "  phpc_native_byte_buffer_free({no_match}.resolved_path);"
+        ));
         self.body.push(format!(
             "  if ({no_match}.status != PHPC_NATIVE_INCLUDE_RUNTIME_NO_MATCH_MISSING) {{"
         ));

@@ -1065,8 +1065,58 @@ fn native_executable_c_source_uses_runtime_include_no_match_diagnostic_boundary(
     assert!(
         source.contains("phpc_native_include_unit_registry_lookup")
             && source.contains("phpc_native_include_runtime_no_match_diagnostic")
+            && source.contains("phpc_NativeByteBuffer resolved_path")
+            && source.contains("phpc_native_byte_buffer_free")
             && source.contains("PHPC_NATIVE_INCLUDE_RUNTIME_NO_MATCH_MISSING"),
         "registry no-match should route through the shared runtime diagnostic/source-loader boundary:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_source_loader")
+            && !source.contains("phpc_runtime_source_loader")
+            && !source.contains("class_prefix")
+            && !source.contains("class_prefix_map")
+            && !source.contains("generated_source_table")
+            && !source.contains("spl_autoload_register_callback_")
+            && !source.contains("dynamic_user_function_matched_"),
+        "registry no-match must not synthesize runtime source loaders, class-prefix maps, source tables, or callback-name branches:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_autoload_callback_include_to_runtime_boundary() {
+    let dir = include_discovery_fixture_dir("autoload-callback-include-runtime-c-source");
+    fs::write(dir.join("declared.php"), "<?php\necho 'declared|';\n")
+        .expect("write autoload callback runtime declared include");
+    let root = dir.join("root.php");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "require_once __DIR__ . '/declared.php';\n",
+            "function loader($name) {\n",
+            "    include $name . '.php';\n",
+            "}\n",
+            "spl_autoload_register('loader');\n",
+            "echo class_exists('RuntimeLoaded') ? 'loaded' : 'missing';\n",
+        ),
+    )
+    .expect("write autoload callback include runtime c-source root");
+
+    let unit = executable_compilation_unit_with_literal_include_units(
+        &fs::read_to_string(&root).expect("read autoload callback include runtime c-source root"),
+        &root,
+        workspace_root(),
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source_for_include_units(&unit).unwrap();
+
+    assert!(
+        source.contains("phpc_native_include_unit_registry_lookup_include_path")
+            && source.contains("phpc_native_include_runtime_no_match_diagnostic")
+            && source.contains("phpc_native_value_class_metadata_exists_with_autoload_registry_and_diagnostic")
+            && !source.contains("spl_autoload_register_callback_")
+            && !source.contains("dynamic_user_function_matched_"),
+        "autoload callbacks with include should use the generated callback frame, SPL registry, and shared runtime include boundary:\n{source}"
     );
 }
 
@@ -1196,6 +1246,115 @@ fn emit_exe_runtime_registry_no_match_existing_source_blocks_on_loader_abi() {
     assert!(stderr.contains("existing filesystem source"), "{stderr}");
     assert!(
         stderr.contains("native source loading/parsing ABI"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn emit_exe_runtime_registry_no_match_existing_include_path_source_blocks_on_loader_abi() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("runtime-no-match-existing-include-path-source-exe");
+    let lib = dir.join("lib");
+    fs::create_dir_all(&lib).expect("create runtime existing include_path lib dir");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(lib.join("declared.php"), "<?php\necho 'declared|';\n")
+        .expect("write runtime existing include_path declared fixture");
+    fs::write(lib.join("extra.php"), "<?php\necho 'extra|';\n")
+        .expect("write undeclared runtime include_path source fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "set_include_path(__DIR__ . '/lib');\n",
+            "function runtime_path() { return 'extra.php'; }\n",
+            "require_once 'declared.php';\n",
+            "$path = runtime_path();\n",
+            "include $path;\n",
+            "echo 'after';\n",
+        ),
+    )
+    .expect("write runtime existing include_path source root");
+
+    let output = compile_exe(
+        &root,
+        &output,
+        "runtime existing include_path source blocker executable",
+    );
+    let run = Command::new(&output)
+        .output()
+        .expect("run runtime existing include_path source blocker executable");
+
+    assert!(!run.status.success());
+    assert_eq!(run.status.code(), Some(255));
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "declared|");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains("resolved 'extra.php'"), "{stderr}");
+    assert!(stderr.contains("existing filesystem source"), "{stderr}");
+    assert!(
+        stderr.contains("native source loading/parsing ABI"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn emit_exe_autoload_callback_existing_source_blocks_on_loader_abi() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("autoload-callback-existing-source-exe");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    let runtime_source = dir.join("RuntimeLoaded.php");
+    fs::write(dir.join("declared.php"), "<?php\necho 'declared|';\n")
+        .expect("write autoload runtime declared fixture");
+    fs::write(&runtime_source, "<?php\nclass RuntimeLoaded {}\n")
+        .expect("write undeclared autoload runtime source fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "require_once __DIR__ . '/declared.php';\n",
+            "function loader($name) {\n",
+            "    include $name . '.php';\n",
+            "    echo 'after-loader';\n",
+            "}\n",
+            "spl_autoload_register('loader');\n",
+            "echo class_exists('RuntimeLoaded') ? 'loaded' : 'missing';\n",
+            "echo 'after';\n",
+        ),
+    )
+    .expect("write autoload existing source root");
+
+    let output = compile_exe(
+        &root,
+        &output,
+        "autoload callback existing source blocker executable",
+    );
+    let run = Command::new(&output)
+        .output()
+        .expect("run autoload callback existing source blocker executable");
+
+    assert!(!run.status.success());
+    assert_eq!(run.status.code(), Some(1));
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "declared|");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains("RuntimeLoaded.php"), "{stderr}");
+    assert!(
+        stderr.contains(runtime_source.to_string_lossy().as_ref()),
+        "{stderr}"
+    );
+    assert!(stderr.contains("existing filesystem source"), "{stderr}");
+    assert!(
+        stderr.contains("native source loading/parsing ABI"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("native callable-value invocation failed"),
         "{stderr}"
     );
 }
