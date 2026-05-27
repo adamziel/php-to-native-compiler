@@ -27331,6 +27331,11 @@ impl CGenerator {
         {
             return Ok(reference);
         }
+        if let Some(reference) =
+            self.materialize_native_arrayaccess_offset_get_reference_expr(expr, failure_cleanup)?
+        {
+            return Ok(reference);
+        }
 
         let Some(path) = self.c_reference_path_for_expr(expr) else {
             return Err(
@@ -27643,6 +27648,20 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<CNativeReferenceMaterialization> {
+        if !append {
+            if let [index] = indices {
+                if let Some(source) =
+                    self.native_arrayaccess_object_property_owner_source(object, property, span)
+                {
+                    return self.materialize_native_arrayaccess_offset_get_reference_from_owner(
+                        source,
+                        index,
+                        failure_cleanup,
+                    );
+                }
+            }
+        }
+
         self.uses_native_object_property_helpers = true;
         self.uses_native_reference_helpers = true;
 
@@ -27969,6 +27988,33 @@ impl CGenerator {
                     *span,
                     failure_cleanup,
                 );
+            }
+            ReferenceSource::ArrayIndex { name, index, span } => {
+                let target = Expr::Variable(name.clone(), *span);
+                if let Some(reference) = self
+                    .materialize_native_arrayaccess_offset_get_reference_from_target(
+                        &target,
+                        index,
+                        failure_cleanup,
+                    )?
+                {
+                    return Ok(reference);
+                }
+            }
+            ReferenceSource::ExpressionArrayIndex {
+                target, indices, ..
+            } => {
+                if let [index] = indices.as_slice() {
+                    if let Some(reference) = self
+                        .materialize_native_arrayaccess_offset_get_reference_from_target(
+                            target,
+                            index,
+                            failure_cleanup,
+                        )?
+                    {
+                        return Ok(reference);
+                    }
+                }
             }
             _ => {}
         }
@@ -54272,7 +54318,7 @@ impl CGenerator {
                     } else {
                         self.known_strings.remove(name);
                     }
-                    return self.emit_symbol_table_variable_assignment(
+                    let result = self.emit_symbol_table_variable_assignment(
                         name,
                         expr,
                         target.span(),
@@ -54280,6 +54326,8 @@ impl CGenerator {
                         native_value_facts,
                         native_callable_identities,
                     );
+                    self.record_constructor_this_property_facts_for_variable(name, expr);
+                    return result;
                 }
                 if (self.uses_native_string_helpers || native_string_search_result_expr(expr))
                     && !self.mutable_scalar_slots.contains_key(name)
@@ -54288,14 +54336,17 @@ impl CGenerator {
                         if self.direct_variables_route_through_global_symbol_table()
                             && !is_globals_superglobal_name(name)
                         {
-                            return self.emit_symbol_table_variable_assignment_from_materialized(
-                                name,
-                                value,
-                                target.span(),
-                                "",
-                                native_value_facts.clone(),
-                                native_callable_identities.clone(),
-                            );
+                            let result = self
+                                .emit_symbol_table_variable_assignment_from_materialized(
+                                    name,
+                                    value,
+                                    target.span(),
+                                    "",
+                                    native_value_facts.clone(),
+                                    native_callable_identities.clone(),
+                                );
+                            self.record_constructor_this_property_facts_for_variable(name, expr);
+                            return result;
                         }
                         self.store_native_value_result_variable_with_native_value_facts(
                             name,
@@ -54319,7 +54370,7 @@ impl CGenerator {
                         self.known_strings.remove(name);
                     }
                     let value = self.materialize_native_array_c_value_handle(value, expr.span())?;
-                    return self.emit_symbol_table_variable_assignment_from_materialized(
+                    let result = self.emit_symbol_table_variable_assignment_from_materialized(
                         name,
                         value,
                         target.span(),
@@ -54327,6 +54378,8 @@ impl CGenerator {
                         native_value_facts,
                         native_callable_identities,
                     );
+                    self.record_constructor_this_property_facts_for_variable(name, expr);
+                    return result;
                 }
                 self.store_variable_value_with_native_value_facts(name, value, native_value_facts);
                 self.record_constructor_this_property_facts_for_variable(name, expr);
@@ -58800,6 +58853,16 @@ impl CGenerator {
         let Expr::Index { target, index, .. } = expr else {
             return Ok(None);
         };
+
+        self.materialize_native_arrayaccess_offset_read_operands(target, index, failure_cleanup)
+    }
+
+    fn materialize_native_arrayaccess_offset_read_operands(
+        &mut self,
+        target: &Expr,
+        index: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeArrayAccessOffsetReadOperands>> {
         if !self.expr_is_native_arrayaccess_subject(target) {
             return Ok(None);
         }
@@ -58836,6 +58899,89 @@ impl CGenerator {
             callable_table: table,
             cleanup_after_use: operand_cleanup,
         }))
+    }
+
+    fn materialize_native_arrayaccess_offset_get_reference_from_owner(
+        &mut self,
+        source: CNativeValueOwnerSource,
+        index: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeReferenceMaterialization> {
+        self.uses_native_string_helpers = true;
+        self.uses_native_callable_helpers = true;
+        self.uses_native_arrayaccess_offset_read_helpers = true;
+        self.uses_native_reference_helpers = true;
+
+        let owner = self.materialize_native_value_owner(source, failure_cleanup)?;
+        let owner_cleanup = owner.cleanup_after_abort();
+        let offset_failure_cleanup =
+            format!("{}{}", c_cleanup_sequence(&owner_cleanup), failure_cleanup);
+        let offset =
+            self.materialize_native_value_result_operand(index, &offset_failure_cleanup)?;
+        let mut operand_cleanup = offset.cleanup_after_use;
+        operand_cleanup.extend(owner_cleanup);
+        let operand_cleanup_sequence = c_cleanup_sequence(&operand_cleanup);
+        let table = self
+            .ensure_native_callable_table(&format!("{operand_cleanup_sequence}{failure_cleanup}"));
+        let operands = CNativeArrayAccessOffsetReadOperands {
+            subject_handle: owner.subject.handle,
+            offset_handle: offset.handle,
+            callable_table: table,
+            cleanup_after_use: operand_cleanup.clone(),
+        };
+        let reference =
+            self.emit_native_arrayaccess_offset_get_reference_operation(&operands, failure_cleanup);
+        self.body.extend(operand_cleanup);
+
+        Ok(reference)
+    }
+
+    fn materialize_native_arrayaccess_offset_get_reference_from_target(
+        &mut self,
+        target: &Expr,
+        index: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeReferenceMaterialization>> {
+        if let Some(source) = self.native_arrayaccess_object_property_owner_source_for_expr(target)
+        {
+            return self
+                .materialize_native_arrayaccess_offset_get_reference_from_owner(
+                    source,
+                    index,
+                    failure_cleanup,
+                )
+                .map(Some);
+        }
+
+        let Some(operands) = self.materialize_native_arrayaccess_offset_read_operands(
+            target,
+            index,
+            failure_cleanup,
+        )?
+        else {
+            return Ok(None);
+        };
+        let reference =
+            self.emit_native_arrayaccess_offset_get_reference_operation(&operands, failure_cleanup);
+        self.body.extend(operands.cleanup_after_use);
+
+        Ok(Some(reference))
+    }
+
+    fn materialize_native_arrayaccess_offset_get_reference_expr(
+        &mut self,
+        expr: &Expr,
+        failure_cleanup: &str,
+    ) -> CompileResult<Option<CNativeReferenceMaterialization>> {
+        let Expr::Index { target, index, .. } = expr else {
+            return Ok(None);
+        };
+
+        self.materialize_native_arrayaccess_offset_get_reference_from_target(
+            target,
+            index,
+            failure_cleanup,
+        )
     }
 
     fn emit_native_arrayaccess_offset_read_operation(

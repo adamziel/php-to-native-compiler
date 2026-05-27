@@ -43163,6 +43163,30 @@ mod tests {
         }
     }
 
+    unsafe extern "C" fn arrayaccess_offset_get_reference_callback(
+        frame: NativeCallFrameHandle,
+    ) -> NativeCallResultHandle {
+        match unsafe { arrayaccess_read_receiver_offset_for_test(frame, "offsetGet") }.and_then(
+            |(object, _offset)| {
+                object
+                    .bind_dynamic_public_property_reference_cell("slot")
+                    .map_err(|error| {
+                        RuntimeError::invalid_array_access(format!(
+                            "test ArrayAccess offsetGet reference callback failed: {}",
+                            error.message()
+                        ))
+                    })
+            },
+        ) {
+            Ok(reference) => {
+                phpc_native_call_result_from_reference(NativeReferenceHandle::from_cell(reference))
+            }
+            Err(error) => NativeCallResultHandle::from_slot(NativeCallResultSlot::Failure(
+                NativeDiagnosticHandle::from_message(error.message()),
+            )),
+        }
+    }
+
     unsafe extern "C" fn arrayaccess_offset_exists_callback(
         frame: NativeCallFrameHandle,
     ) -> NativeCallResultHandle {
@@ -43205,6 +43229,25 @@ mod tests {
         let class = classes.get_mut(class_id).unwrap();
         class
             .add_property(PhpPropertyMetadata::instance("events", Visibility::Public))
+            .unwrap();
+        PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &[],
+            Vec::new(),
+            vec!["ArrayAccess".to_string()],
+            id,
+        )
+    }
+
+    fn arrayaccess_object_with_slot_for_test(class_name: &str, id: i64) -> PhpObject {
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class(class_name).unwrap();
+        let class = classes.get_mut(class_id).unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("events", Visibility::Public))
+            .unwrap();
+        class
+            .add_property(PhpPropertyMetadata::instance("slot", Visibility::Public))
             .unwrap();
         PhpObject::from_class_with_relationship_metadata_with_id(
             class,
@@ -43261,6 +43304,28 @@ mod tests {
                 subject,
                 offset,
                 operation as u8,
+                NativeStringHandle::null(),
+                &mut diagnostic,
+            )
+        };
+        unsafe { phpc_native_value_free(offset) };
+        (result, diagnostic)
+    }
+
+    unsafe fn arrayaccess_offset_get_reference_for_test(
+        table: NativeCallableTableHandle,
+        subject: NativeValueHandle,
+        offset: Option<Value>,
+    ) -> (NativeReferenceHandle, NativeDiagnosticHandle) {
+        let offset = offset
+            .map(NativeValueHandle::from_value)
+            .unwrap_or_else(NativeValueHandle::null);
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let result = unsafe {
+            phpc_native_value_arrayaccess_offset_get_reference_with_diagnostic(
+                table,
+                subject,
+                offset,
                 NativeStringHandle::null(),
                 &mut diagnostic,
             )
@@ -65216,6 +65281,69 @@ mod tests {
 
         unsafe { phpc_native_value_free(first_subject) };
         unsafe { phpc_native_value_free(second_subject) };
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn arrayaccess_offset_get_reference_dispatch_returns_write_through_reference() {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("ReferenceReadBag"),
+                "offsetGet",
+                NativeCallableVisibility::Public,
+                arrayaccess_offset_get_reference_callback,
+            );
+        }
+
+        let object = arrayaccess_object_with_slot_for_test("ReferenceReadBag", 9701);
+        object
+            .write_dynamic_public_property("slot", Value::String("seed".to_string()))
+            .expect("slot property should be writable for test setup");
+        let subject = NativeValueHandle::from_value(Value::Object(object.clone()));
+        let (reference, diagnostic) = unsafe {
+            arrayaccess_offset_get_reference_for_test(
+                table,
+                subject,
+                Some(Value::String("slot".to_string())),
+            )
+        };
+        assert!(
+            diagnostic.is_null(),
+            "unexpected offsetGet reference diagnostic: {:?}",
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str())
+        );
+        assert!(!reference.is_null());
+
+        let initial = unsafe { phpc_native_reference_value_clone(reference) };
+        assert_eq!(
+            unsafe { initial.as_ref() },
+            Some(&Value::String("seed".to_string()))
+        );
+        unsafe { phpc_native_value_free(initial) };
+
+        let replacement = NativeValueHandle::from_value(Value::String("changed".to_string()));
+        assert!(unsafe { phpc_native_reference_set_value(reference, replacement) });
+        unsafe { phpc_native_value_free(replacement) };
+        assert_eq!(
+            object.read_public_property("slot").unwrap(),
+            Value::String("changed".to_string())
+        );
+
+        let event = arrayaccess_event_for_test(&object, 0);
+        assert_eq!(
+            event.get_cloned("method"),
+            Some(Value::String("offsetGet".to_string()))
+        );
+        assert_eq!(
+            event.get_cloned("offset"),
+            Some(Value::String("slot".to_string()))
+        );
+
+        unsafe { phpc_native_reference_free(reference) };
+        unsafe { phpc_native_value_free(subject) };
         unsafe { phpc_native_callable_table_free(table) };
     }
 

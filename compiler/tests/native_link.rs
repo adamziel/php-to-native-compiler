@@ -20127,6 +20127,27 @@ const ARRAYACCESS_REFERENCE_OFFSETGET_OWNER_STACK_SOURCE: &str = concat!(
     "echo \"aliasP=\", $holder_alias->last;\n",
 );
 
+const ARRAYACCESS_OFFSETGET_REFERENCE_SOURCE_OWNER_SOURCE: &str = concat!(
+    "<?php\n",
+    "function aa_ref_write(&$slot, $value) { $slot = $value; return $slot; }\n",
+    "class OffsetGetReferenceSourceBag implements ArrayAccess {\n",
+    "    public $slot = \"seed\";\n",
+    "    public function &offsetGet($offset) { return $this->slot; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"bad-set;\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class OffsetGetReferenceSourceHolder { public $bag; public function __construct() { $this->bag = new OffsetGetReferenceSourceBag(); } }\n",
+    "$direct = new OffsetGetReferenceSourceBag();\n",
+    "echo aa_ref_write($direct[\"slot\"], \"direct-arg\"), \":\";\n",
+    "$directAlias =& $direct[\"slot\"];\n",
+    "echo ($directAlias = \"direct-alias\"), \"=\", $direct->slot, \"|\";\n",
+    "$holder = new OffsetGetReferenceSourceHolder();\n",
+    "echo aa_ref_write($holder->bag[\"slot\"], \"prop-arg\"), \":\";\n",
+    "$propAlias =& $holder->bag[\"slot\"];\n",
+    "echo ($propAlias = \"prop-alias\"), \"=\", $holder->bag->slot;\n",
+);
+
 #[test]
 fn native_executable_c_source_routes_arrayaccess_reference_slot_owners_through_value_owner_boundary(
 ) {
@@ -20919,6 +20940,56 @@ fn emit_exe_links_and_runs_reference_returning_offsetget_owner_stack_program() {
     assert!(
         !String::from_utf8_lossy(&run.stdout).contains("bad-root-set"),
         "reference frames must write through the returned reference instead of parent offsetSet"
+    );
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_executable_c_source_routes_arrayaccess_offsetget_reference_sources_through_owner_boundary(
+) {
+    let program = parse(ARRAYACCESS_OFFSETGET_REFERENCE_SOURCE_OWNER_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source
+            .matches("phpc_native_value_arrayaccess_offset_get_reference_with_diagnostic")
+            .count()
+            >= 4
+            && source.contains("phpc_native_call_arguments_push_reference_and_free")
+            && source.contains("phpc_native_value_public_property_reference_with_diagnostic_and_free"),
+        "direct and property-held ArrayAccess reference sources should feed by-reference consumers through offsetGet reference owners and the object-property owner path:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_arrayaccess_offsetget_reference_source_owner_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "arrayaccess_offsetget_reference_source_owner",
+        ARRAYACCESS_OFFSETGET_REFERENCE_SOURCE_OWNER_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native ArrayAccess offsetGet reference-source executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(
+        run.stdout,
+        b"direct-arg:direct-alias=direct-alias|prop-arg:prop-alias=prop-alias"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+    assert!(
+        !String::from_utf8_lossy(&run.stdout).contains("bad-set"),
+        "offsetGet reference sources must not write through ArrayAccess::offsetSet"
     );
 
     let _ = fs::remove_file(&source_path);
