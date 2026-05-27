@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added generated-C dynamic class-constant receiver production through shared
+  runtime class/constant metadata. `$class::CONST` and `$object::CONST` now
+  normalize declared class-string and object receivers, including class
+  aliases, through the same class-constant lookup path used by literal,
+  `self`, `parent`, and method-frame `static` receivers. The source gate
+  preserves inheritance, visibility, missing-class/missing-constant
+  diagnostics, receiver cleanup, owned result cleanup, and regressions for
+  direct receiver magic, named static/receiver magic, static-property
+  storage/reference/offset references, reference-returning ArrayAccess owner
+  stacks, constructors, descriptor closures, source-call references, exact
+  imports, class constants, and class aliases. Dynamic receiver `::class`
+  remains blocked until a reusable no-autoload dynamic class-name ABI exists.
+
 - Added generated-C direct receiver `__call` fallback production through the
   shared runtime receiver lookup-plus-invoke boundary. Direct receiver calls
   with missing or externally inaccessible instance methods now dispatch to

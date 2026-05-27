@@ -1853,8 +1853,13 @@ Static class members have a dedicated native boundary. LLVM IR emission still
 rejects class constants, static property reads/writes, and dynamic
 static-property receivers before lowering class/member operands. The generated-C
 executable path has narrower metadata-backed exceptions for declared class
-constants and declared static properties. Static properties materialize one
-lvalue target for literal, object/class-string, `self`, `parent`, and
+constants, selected dynamic class-constant receivers, and declared static
+properties. Dynamic `$class::CONST` and `$object::CONST` receivers normalize
+through the same runtime class-constant table as literal and relative
+receivers, including class alias canonicalization, inheritance, visibility,
+missing-class/missing-constant diagnostics, and owned receiver/result cleanup.
+Static properties materialize one lvalue target for literal,
+object/class-string, `self`, `parent`, and
 method-frame late-`static` receivers, then use the same request-owned runtime
 storage APIs for reads, plain assignment, compound assignment, pre/post
 increment/decrement, `isset`, `empty`, `??`, `??=`, `unset`, direct reference

@@ -6021,11 +6021,18 @@
   late-bound `static::CONST` in active called-class context resolve declared
   or inherited class constants case-sensitively through `phpc run` with
   public/protected/private visibility checks in the current active class
-  context. Typed constants, multiple constants in one class declaration,
+  context. Generated C also supports selected `$class::CONST` and
+  `$object::CONST` receivers when the receiver is a declared class string or
+  object known to the compiler; those dynamic receivers use runtime
+  class-constant metadata, class alias canonicalization, inheritance,
+  visibility, missing-class/missing-constant diagnostics, and explicit owned
+  receiver/result cleanup. Typed constants, multiple constants in one class
+  declaration,
   broader string-name lookup for `self::CONST`, `parent::CONST`,
-  `static::CONST`, autoload-triggered class discovery, enum cases/interface
-  constants beyond the current metadata, typed constants, multiple constants
-  in one class declaration, and native lowering remain unsupported.
+  `static::CONST`, dynamic receiver `::class`, autoload-triggered class
+  discovery, enum cases/interface constants beyond the current metadata, typed
+  constants, multiple constants in one class declaration, and LLVM/direct
+  assembly lowering remain unsupported.
   Static property reads, direct writes, compound assignment, pre/post
   increment/decrement, `isset`, `empty`, `??`, `??=`, and stable diagnostics
   for PHP-forbidden `unset(...)` through
