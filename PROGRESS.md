@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 19:14 CEST
+Updated: 2026-05-27 19:16 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,13 +19,25 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `d6760f45` accepts namespace-qualified
-direct function call names through shared parser/name-resolution call
-categories. Unqualified, relative namespace-qualified, leading-global, and
-`namespace\...` calls can now route selected generated user functions and
-supported direct builtins through the shared direct-call lookup paths, while
-dynamic runtime function lookup and namespace-qualified constants/static-member
-surfaces remain blocked.
+Latest accounted source capability: `16f6737c` searches generated include-unit
+registry entries through selected `include_path` and source-directory fallbacks
+for runtime include/require path values. Generated-C runtime include dispatch
+can now resolve declared units through ordered include_path entries before the
+shared no-match/source-loader diagnostic boundary, while arbitrary runtime PHP
+source loading and fully dynamic include_path mutation remain blocked.
+
+Recent source commit `16f6737c` advances selected runtime include/require
+registry fidelity without adding a runtime PHP parser or source loader. The
+runtime ABI now searches generated registry aliases through ordered include_path
+entries plus source-directory fallback, and generated-C include/require
+dispatch passes those declared include_path entries before falling through to
+centralized no-match diagnostics. Focused gates cover runtime registry lookup,
+runtime no-match diagnostics, generated-C include_path include/require
+boundary tests, the full native include/require boundary suite, formatting,
+and diff checks. Fully arbitrary runtime source loading/parsing, dynamic
+`set_include_path()` mutation, stream wrappers/file URLs, non-UTF-8 path
+fidelity, symlink/stat-cache/open_basedir parity, exact warning/source-map
+fidelity, and LLVM/ASM parity remain blocked.
 
 Recent source commit `d6760f45` advances selected direct function-call
 namespace semantics without adding one-name or one-namespace lowering. The
