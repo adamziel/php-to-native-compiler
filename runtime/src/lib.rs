@@ -2601,6 +2601,14 @@ impl NativeValueHandle {
     unsafe fn as_mut(&mut self) -> Option<&mut Value> {
         unsafe { self.ptr.as_mut() }
     }
+
+    unsafe fn into_value(self) -> Option<Value> {
+        if self.ptr.is_null() {
+            None
+        } else {
+            Some(*unsafe { Box::from_raw(self.ptr) })
+        }
+    }
 }
 
 impl NativeDiagnosticHandle {
@@ -7627,6 +7635,14 @@ pub unsafe extern "C" fn phpc_native_reference_from_value_and_free(
     native_reference_from_value(stored)
 }
 
+unsafe fn native_reference_from_owned_value_handle(
+    value: NativeValueHandle,
+) -> NativeReferenceHandle {
+    unsafe { value.into_value() }
+        .map(native_reference_from_value)
+        .unwrap_or_else(NativeReferenceHandle::null)
+}
+
 /// # Safety
 ///
 /// `handle` must be null or a reference handle previously returned by the
@@ -11245,6 +11261,59 @@ pub unsafe extern "C" fn phpc_native_constructor_allocation_invoke_value_with_ac
             "native constructor invocation failed: result did not contain an object value",
         )
     }
+}
+
+/// # Safety
+///
+/// Constructor allocation-plus-invoke reference consumer over the shared owned
+/// result helper. The constructed receiver value is moved into a fresh PHP
+/// reference cell; it is not re-read through a copied value handle.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_constructor_allocation_invoke_reference_with_access_context_diagnostic_and_free_scope_receiver_arguments(
+    table: NativeCallableTableHandle,
+    scope: NativeStringHandle,
+    receiver: NativeValueHandle,
+    access_context: NativeCallableAccessContextTag,
+    caller_scope: NativeStringHandle,
+    arguments: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeReferenceHandle {
+    let result = unsafe {
+        phpc_native_constructor_allocation_invoke_result_with_access_context_diagnostic_and_free_scope_receiver_arguments(
+            table,
+            scope,
+            receiver,
+            access_context,
+            caller_scope,
+            arguments,
+            diagnostic,
+        )
+    };
+    if unsafe { native_diagnostic_slot_is_set(diagnostic) } {
+        unsafe { phpc_native_call_result_free(result) };
+        return NativeReferenceHandle::null();
+    }
+    let value = unsafe {
+        native_call_result_take_value_with_diagnostic_and_free(
+            result,
+            diagnostic,
+            "native constructor invocation failed: result did not contain an object value",
+        )
+    };
+    if value.is_null() {
+        return NativeReferenceHandle::null();
+    }
+    if !matches!(unsafe { value.as_ref() }, Some(Value::Object(_))) {
+        unsafe { phpc_native_value_free(value) };
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native constructor invocation failed: result did not contain an object value",
+            )
+        };
+        return NativeReferenceHandle::null();
+    }
+    unsafe { native_reference_from_owned_value_handle(value) }
 }
 
 /// # Safety
@@ -37884,6 +37953,92 @@ mod tests {
         unsafe { phpc_native_value_free(constructorless) };
 
         unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn native_constructor_allocation_invoke_reference_carrier_owns_receiver_cell() {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            assert!(
+                phpc_native_callable_table_register_allocatable_class_and_free(
+                    table,
+                    native_string_for_test("BaseCtor"),
+                )
+            );
+            assert!(
+                phpc_native_callable_table_register_allocatable_class_and_free(
+                    table,
+                    native_string_for_test("ChildCtor"),
+                )
+            );
+            assert!(
+                phpc_native_callable_table_register_allocatable_class_and_free(
+                    table,
+                    native_string_for_test("ReplacementCtor"),
+                )
+            );
+            assert!(phpc_native_callable_table_register_class_parent_and_free(
+                table,
+                native_string_for_test("ChildCtor"),
+                native_string_for_test("BaseCtor"),
+            ));
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Constructor,
+                Some("BaseCtor"),
+                "__construct",
+                NativeCallableVisibility::Public,
+                native_constructor_receiver_scope_callback,
+            );
+        }
+
+        let mut classes = PhpClassTable::new();
+        let base_id = classes.declare_class("BaseCtor").unwrap();
+        let child_id = classes.declare_class("ChildCtor").unwrap();
+        let replacement_id = classes.declare_class("ReplacementCtor").unwrap();
+        classes.set_parent(child_id, base_id).unwrap();
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        reset_call_arguments_free_count_for_test();
+        let reference = unsafe {
+            phpc_native_constructor_allocation_invoke_reference_with_access_context_diagnostic_and_free_scope_receiver_arguments(
+                table,
+                native_string_for_test("ChildCtor"),
+                NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+                    classes.get(child_id).unwrap(),
+                ))),
+                NativeCallableAccessContextTag::External,
+                NativeStringHandle::null(),
+                call_arguments_from_ints_for_test(&[42]),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        let constructed = unsafe { phpc_native_reference_value_clone(reference) };
+        match unsafe { constructed.as_ref() } {
+            Some(Value::Object(object)) => assert_eq!(object.class_name(), "ChildCtor"),
+            other => panic!("expected constructed ChildCtor reference, got {other:?}"),
+        }
+        unsafe { phpc_native_value_free(constructed) };
+
+        let alias = unsafe { phpc_native_reference_clone(reference) };
+        let replacement = NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+            classes.get(replacement_id).unwrap(),
+        )));
+        assert!(unsafe { phpc_native_reference_set_value(alias, replacement) });
+        unsafe { phpc_native_value_free(replacement) };
+        let observed = unsafe { phpc_native_reference_value_clone(reference) };
+        match unsafe { observed.as_ref() } {
+            Some(Value::Object(object)) => assert_eq!(object.class_name(), "ReplacementCtor"),
+            other => panic!("expected replacement through constructor reference, got {other:?}"),
+        }
+        unsafe {
+            phpc_native_value_free(observed);
+            phpc_native_reference_free(alias);
+            phpc_native_reference_free(reference);
+            phpc_native_callable_table_free(table);
+        }
     }
 
     #[test]

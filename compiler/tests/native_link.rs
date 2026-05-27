@@ -3066,6 +3066,53 @@ fn emit_exe_links_and_runs_declared_class_constructor_program() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_constructor_reference_alias_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class RefBox {\n",
+        "    public $name;\n",
+        "    public function __construct($value) { $this->name = $value; }\n",
+        "}\n",
+        "class RefHolder {\n",
+        "    public $seen;\n",
+        "    public function __construct(&$slot, $value) {\n",
+        "        $slot = new RefBox($value);\n",
+        "        $this->seen = $slot->name;\n",
+        "    }\n",
+        "}\n",
+        "function replace_ctor_arg(&$slot, $value) { $slot = new RefBox($value); return $slot->name; }\n",
+        "function dynamic_ctor_arg(&$slot, $value) { $slot = new RefBox($value); return $slot->name; }\n",
+        "echo replace_ctor_arg(new RefBox(\"old\"), \"function\"), \"|\";\n",
+        "$consume = \"dynamic_ctor_arg\";\n",
+        "echo $consume(new RefBox(\"old\"), \"dynamic\"), \"|\";\n",
+        "$holder = new RefHolder(new RefBox(\"old\"), \"constructor\");\n",
+        "echo $holder->seen, \"\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("constructor_reference_alias_argument", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run constructor reference alias executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"function|dynamic|constructor\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn emit_exe_links_and_runs_declared_class_named_constructor_argument_program() {
     if !has_cc() {
         return;
@@ -6590,6 +6637,56 @@ fn native_executable_c_source_routes_declared_constructors_through_frame_dispatc
         !source.contains("object-instantiation lowering rejects")
             && !source.contains("method-call lowering rejects"),
         "{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_transfers_constructor_results_into_byref_arguments() {
+    let source = concat!(
+        "<?php\n",
+        "class RefBox {\n",
+        "    public $name;\n",
+        "    public function __construct($value) { $this->name = $value; }\n",
+        "}\n",
+        "class RefHolder {\n",
+        "    public $seen;\n",
+        "    public function __construct(&$slot, $value) {\n",
+        "        $slot = new RefBox($value);\n",
+        "        $this->seen = $slot->name;\n",
+        "    }\n",
+        "}\n",
+        "function replace_ctor_arg(&$slot, $value) { $slot = new RefBox($value); return $slot->name; }\n",
+        "function dynamic_ctor_arg(&$slot, $value) { $slot = new RefBox($value); return $slot->name; }\n",
+        "echo replace_ctor_arg(new RefBox(\"old\"), \"function\"), \"|\";\n",
+        "$consume = \"dynamic_ctor_arg\";\n",
+        "echo $consume(new RefBox(\"old\"), \"dynamic\"), \"|\";\n",
+        "$holder = new RefHolder(new RefBox(\"old\"), \"constructor\");\n",
+        "echo $holder->seen, \"\\n\";\n",
+    );
+    let program = parse(source).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("constructor_reference_result")
+            && body.contains("constructor_reference_args")
+            && body.contains("phpc_native_constructor_allocation_invoke_reference_with_access_context_diagnostic_and_free_scope_receiver_arguments"),
+        "constructor results consumed as by-reference arguments should use the allocated-receiver reference carrier:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_call_arguments_push_reference_and_free")
+            .count()
+            >= 3
+            && body.contains("phpc_native_callable_lookup_invoke_value_with_diagnostic_and_free_arguments")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "direct, constructor, and dynamic consumers should all receive constructor reference handles through call arguments:\n{source}"
+    );
+    assert!(
+        !body.contains("alias_transfer_missing")
+            && !body.contains(
+                "by-reference parameter alias transfer from produced arguments"
+            ),
+        "constructor reference results must not fall back to the produced-argument alias-transfer blocker:\n{source}"
     );
 }
 
