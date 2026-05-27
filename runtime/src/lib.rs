@@ -27061,6 +27061,202 @@ pub unsafe extern "C" fn phpc_native_static_property_storage_declare_property_by
 /// # Safety
 ///
 /// `handle` must be a storage handle. Class and property bytes follow the
+/// same pointer/length rules as static-property class declaration. Type and
+/// default arrays may be null only as complete pointer/length or value/flag
+/// pairs. Default value handles are borrowed by this call and remain owned by
+/// the caller.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_static_property_storage_declare_properties_and_defaults_bytes(
+    mut handle: NativeStaticPropertyStorageHandle,
+    class_ptr: *const u8,
+    class_len: usize,
+    property_names: *const *const u8,
+    property_name_lens: *const usize,
+    property_visibilities: *const u8,
+    property_static_flags: *const u8,
+    property_type_decls: *const *const u8,
+    property_type_decl_lens: *const usize,
+    property_default_values: *const NativeValueHandle,
+    property_default_flags: *const u8,
+    property_count: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let result = (|| {
+        let storage = unsafe { handle.as_mut() }.ok_or_else(|| {
+            RuntimeError::invalid_property_access(
+                "native static-property storage handle is null".to_string(),
+            )
+        })?;
+        let class_name =
+            unsafe { native_static_property_utf8_argument(class_ptr, class_len, "class name") }?;
+        let property_names = unsafe { native_abi_slice(property_names, property_count) }
+            .ok_or_else(|| {
+                RuntimeError::invalid_property_access(
+                    "native static-property storage received invalid property-name ABI".to_string(),
+                )
+            })?;
+        let property_name_lens = unsafe { native_abi_slice(property_name_lens, property_count) }
+            .ok_or_else(|| {
+                RuntimeError::invalid_property_access(
+                    "native static-property storage received invalid property-name length ABI"
+                        .to_string(),
+                )
+            })?;
+        let property_visibilities =
+            unsafe { native_abi_slice(property_visibilities, property_count) }.ok_or_else(
+                || {
+                    RuntimeError::invalid_property_access(
+                        "native static-property storage received invalid property-visibility ABI"
+                            .to_string(),
+                    )
+                },
+            )?;
+        let property_static_flags =
+            unsafe { native_abi_slice(property_static_flags, property_count) }.ok_or_else(
+                || {
+                    RuntimeError::invalid_property_access(
+                        "native static-property storage received invalid property-static flag ABI"
+                            .to_string(),
+                    )
+                },
+            )?;
+        let property_type_decls =
+            if property_type_decls.is_null() && property_type_decl_lens.is_null() {
+                None
+            } else if property_type_decls.is_null() || property_type_decl_lens.is_null() {
+                return Err(RuntimeError::invalid_property_access(
+                    "native static-property storage received partial property-type ABI".to_string(),
+                ));
+            } else {
+                let decls = unsafe { native_abi_slice(property_type_decls, property_count) }
+                    .ok_or_else(|| {
+                        RuntimeError::invalid_property_access(
+                            "native static-property storage received invalid property-type ABI"
+                                .to_string(),
+                        )
+                    })?;
+                let lens = unsafe { native_abi_slice(property_type_decl_lens, property_count) }
+                    .ok_or_else(|| {
+                        RuntimeError::invalid_property_access(
+                        "native static-property storage received invalid property-type length ABI"
+                            .to_string(),
+                    )
+                    })?;
+                Some((decls, lens))
+            };
+        let property_defaults = if property_default_values.is_null()
+            && property_default_flags.is_null()
+        {
+            None
+        } else if property_default_values.is_null() || property_default_flags.is_null() {
+            return Err(RuntimeError::invalid_property_access(
+                "native static-property storage received partial property-default ABI".to_string(),
+            ));
+        } else {
+            let values = unsafe { native_abi_slice(property_default_values, property_count) }
+                    .ok_or_else(|| {
+                        RuntimeError::invalid_property_access(
+                            "native static-property storage received invalid property-default value ABI"
+                                .to_string(),
+                        )
+                    })?;
+            let flags = unsafe { native_abi_slice(property_default_flags, property_count) }
+                .ok_or_else(|| {
+                    RuntimeError::invalid_property_access(
+                        "native static-property storage received invalid property-default flag ABI"
+                            .to_string(),
+                    )
+                })?;
+            Some((values, flags))
+        };
+
+        let mut properties = Vec::with_capacity(property_count);
+        for index in 0..property_count {
+            let property_name = unsafe {
+                native_static_property_utf8_argument(
+                    property_names[index],
+                    property_name_lens[index],
+                    "property name",
+                )
+            }?;
+            let visibility =
+                native_declared_class_property_visibility(property_visibilities[index]).ok_or_else(
+                    || {
+                        RuntimeError::invalid_property_access(format!(
+                            "native static-property storage received unsupported property visibility tag {}",
+                            property_visibilities[index]
+                        ))
+                    },
+                )?;
+            let is_static = match property_static_flags[index] {
+                0 => false,
+                1 => true,
+                tag => {
+                    return Err(RuntimeError::invalid_property_access(format!(
+                        "native static-property storage received unsupported property static flag {tag}"
+                    )));
+                }
+            };
+            let type_decl = if let Some((type_decls, type_lens)) = property_type_decls {
+                unsafe {
+                    native_static_property_optional_type_decl(type_decls[index], type_lens[index])
+                }?
+            } else {
+                None
+            };
+            let default = if let Some((default_values, default_flags)) = property_defaults {
+                match default_flags[index] {
+                    0 => None,
+                    1 => {
+                        let Some(default) = (unsafe { default_values[index].as_ref() }) else {
+                            return Err(RuntimeError::invalid_property_access(
+                                "native static-property storage received null property-default value handle"
+                                    .to_string(),
+                            ));
+                        };
+                        Some(default.clone())
+                    }
+                    tag => {
+                        return Err(RuntimeError::invalid_property_access(format!(
+                            "native static-property storage received unsupported property-default flag {tag}"
+                        )));
+                    }
+                }
+            } else {
+                None
+            };
+            properties.push((property_name, visibility, is_static, type_decl, default));
+        }
+
+        for (property_name, visibility, is_static, type_decl, _) in &properties {
+            storage.declare_property(
+                &class_name,
+                property_name.clone(),
+                *visibility,
+                *is_static,
+                type_decl.clone(),
+            )?;
+        }
+        for (property_name, _, _, _, default) in properties {
+            if let Some(default) = default {
+                storage.register_default(&class_name, property_name, default)?;
+            }
+        }
+        Ok(())
+    })();
+    match result {
+        Ok(()) => true,
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            false
+        }
+    }
+}
+
+/// # Safety
+///
+/// `handle` must be a storage handle. Class and property bytes follow the
 /// same pointer/length rules as static-property class declaration. `value` is
 /// always consumed.
 #[no_mangle]
@@ -61783,6 +61979,125 @@ mod tests {
         unsafe { phpc_native_static_property_storage_free(storage) };
 
         native_user_classes_reset_for_test();
+    }
+
+    #[test]
+    fn static_property_native_abi_declares_bulk_metadata_defaults_and_type_checks() {
+        let class = b"BulkCounter";
+        let property_count = b"count";
+        let property_label = b"label";
+        let property_instance = b"shadow";
+        let type_int = b"int";
+        let type_string = b"?string";
+        let property_names = [
+            property_instance.as_ptr(),
+            property_count.as_ptr(),
+            property_label.as_ptr(),
+        ];
+        let property_name_lens = [
+            property_instance.len(),
+            property_count.len(),
+            property_label.len(),
+        ];
+        let visibilities = [
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+            NATIVE_DECLARED_CLASS_PROPERTY_PUBLIC,
+            NATIVE_DECLARED_CLASS_PROPERTY_PROTECTED,
+        ];
+        let static_flags = [0u8, 1u8, 1u8];
+        let type_decls = [std::ptr::null(), type_int.as_ptr(), type_string.as_ptr()];
+        let type_decl_lens = [0usize, type_int.len(), type_string.len()];
+        let default_values = [
+            NativeValueHandle::null(),
+            phpc_native_value_from_scalar(phpc_native_int(2)),
+            phpc_native_value_from_scalar(phpc_native_null()),
+        ];
+        let default_flags = [0u8, 1u8, 1u8];
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let storage = phpc_native_static_property_storage_new();
+        assert!(!storage.is_null());
+
+        assert!(unsafe {
+            phpc_native_static_property_storage_declare_class_bytes(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                &mut diagnostic,
+            )
+        });
+        assert!(unsafe {
+            phpc_native_static_property_storage_declare_properties_and_defaults_bytes(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                property_names.as_ptr(),
+                property_name_lens.as_ptr(),
+                visibilities.as_ptr(),
+                static_flags.as_ptr(),
+                type_decls.as_ptr(),
+                type_decl_lens.as_ptr(),
+                default_values.as_ptr(),
+                default_flags.as_ptr(),
+                property_names.len(),
+                &mut diagnostic,
+            )
+        });
+        for value in default_values {
+            unsafe { phpc_native_value_free(value) };
+        }
+        assert!(diagnostic.is_null());
+        assert!(unsafe {
+            phpc_native_static_property_storage_reset_with_diagnostic(storage, &mut diagnostic)
+        });
+
+        let read = unsafe {
+            phpc_native_static_property_read_class_with_diagnostic(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                property_count.as_ptr(),
+                property_count.len(),
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(unsafe { read.as_ref() }.cloned(), Some(Value::Int(2)));
+        unsafe { phpc_native_value_free(read) };
+
+        let coerced = unsafe {
+            phpc_native_static_property_write_class_with_diagnostic_and_free(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                property_count.as_ptr(),
+                property_count.len(),
+                NativeValueHandle::from_value(Value::String("7".to_string())),
+                &mut diagnostic,
+            )
+        };
+        assert_eq!(unsafe { coerced.as_ref() }.cloned(), Some(Value::Int(7)));
+        unsafe { phpc_native_value_free(coerced) };
+
+        let bad_write = unsafe {
+            phpc_native_static_property_write_class_with_diagnostic_and_free(
+                storage,
+                class.as_ptr(),
+                class.len(),
+                property_count.as_ptr(),
+                property_count.len(),
+                NativeValueHandle::from_value(Value::Array(PhpArray::new())),
+                &mut diagnostic,
+            )
+        };
+        assert!(bad_write.is_null());
+        let diagnostic_message = unsafe { diagnostic.as_ref() }
+            .map(|diagnostic| diagnostic.message.clone())
+            .unwrap_or_default();
+        assert!(
+            diagnostic_message.contains("typed property BulkCounter::$count expects int"),
+            "{diagnostic_message}"
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_static_property_storage_free(storage) };
     }
 
     #[test]

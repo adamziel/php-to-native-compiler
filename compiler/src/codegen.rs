@@ -16380,6 +16380,7 @@ struct CDeclaredClassPropertyMetadataArrays {
     names: String,
     name_lens: String,
     visibilities: String,
+    static_flags: String,
     type_decls: String,
     type_decl_lens: String,
     count: usize,
@@ -21769,6 +21770,7 @@ impl CGenerator {
                 output.push_str("extern bool phpc_native_static_property_storage_declare_class_bytes(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_static_property_storage_declare_class_parent_bytes(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *parent_ptr, size_t parent_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_static_property_storage_declare_property_bytes(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, uint8_t visibility, bool is_static, const uint8_t *type_ptr, size_t type_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern bool phpc_native_static_property_storage_declare_properties_and_defaults_bytes(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *const *property_names, const size_t *property_name_lens, const uint8_t *property_visibilities, const uint8_t *property_static_flags, const uint8_t *const *property_type_decls, const size_t *property_type_decl_lens, const phpc_NativeValueHandle *property_default_values, const uint8_t *property_default_flags, size_t property_count, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_static_property_storage_register_default_value_and_free(phpc_NativeStaticPropertyStorageHandle storage, const uint8_t *class_ptr, size_t class_len, const uint8_t *property_ptr, size_t property_len, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern bool phpc_native_static_property_storage_reset_with_diagnostic(phpc_NativeStaticPropertyStorageHandle storage, phpc_NativeDiagnosticHandle *diagnostic);\n");
                 output.push_str("extern phpc_NativeStringHandle phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free(phpc_NativeStaticPropertyStorageHandle storage, phpc_NativeValueHandle receiver, phpc_NativeDiagnosticHandle *diagnostic);\n");
@@ -22233,7 +22235,14 @@ impl CGenerator {
         &mut self,
         class: &CDeclaredClass,
     ) -> CDeclaredClassPropertyMetadataArrays {
-        if class.properties.is_empty() {
+        self.emit_declared_class_property_metadata_arrays_for_properties(&class.properties)
+    }
+
+    fn emit_declared_class_property_metadata_arrays_for_properties(
+        &mut self,
+        properties: &[CDeclaredClassProperty],
+    ) -> CDeclaredClassPropertyMetadataArrays {
+        if properties.is_empty() {
             return CDeclaredClassPropertyMetadataArrays {
                 declaring_class_ids: "NULL".to_string(),
                 declaring_class_names: "NULL".to_string(),
@@ -22241,6 +22250,7 @@ impl CGenerator {
                 names: "NULL".to_string(),
                 name_lens: "NULL".to_string(),
                 visibilities: "NULL".to_string(),
+                static_flags: "NULL".to_string(),
                 type_decls: "NULL".to_string(),
                 type_decl_lens: "NULL".to_string(),
                 count: 0,
@@ -22254,10 +22264,11 @@ impl CGenerator {
         let mut name_ptrs = Vec::new();
         let mut name_lens = Vec::new();
         let mut visibilities = Vec::new();
+        let mut static_flags = Vec::new();
         let mut type_decl_ptrs = Vec::new();
         let mut type_decl_lens = Vec::new();
         let mut has_type_decls = false;
-        for property in &class.properties {
+        for property in properties {
             declaring_ids.push(property.declaring_class_id);
             let (declaring_bytes, declaring_len) = self.emit_call_type_static_bytes(
                 "declared_class_property_declaring_name_bytes",
@@ -22273,6 +22284,7 @@ impl CGenerator {
             visibilities.push(Self::declared_class_property_visibility_tag(
                 property.visibility,
             ));
+            static_flags.push(u8::from(property.is_static));
             if let Some(type_decl) = &property.type_decl {
                 let (type_bytes, type_len) = self.emit_call_type_static_bytes(
                     "declared_class_property_type_decl_bytes",
@@ -22295,6 +22307,7 @@ impl CGenerator {
         let ptrs_name = format!("declared_class_property_name_ptrs_{index}");
         let lens_name = format!("declared_class_property_name_lens_{index}");
         let visibility_name = format!("declared_class_property_visibilities_{index}");
+        let static_flags_name = format!("declared_class_property_static_flags_{index}");
         let type_ptrs_name = format!("declared_class_property_type_decl_ptrs_{index}");
         let type_lens_name = format!("declared_class_property_type_decl_lens_{index}");
         self.static_data.push(format!(
@@ -22330,6 +22343,14 @@ impl CGenerator {
                 .join(", ")
         ));
         self.static_data.push(format!(
+            "static const uint8_t {static_flags_name}[] = {{{}}};",
+            static_flags
+                .iter()
+                .map(u8::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        self.static_data.push(format!(
             "static const uint8_t *{type_ptrs_name}[] = {{{}}};",
             type_decl_ptrs.join(", ")
         ));
@@ -22345,6 +22366,7 @@ impl CGenerator {
             names: ptrs_name,
             name_lens: lens_name,
             visibilities: visibility_name,
+            static_flags: static_flags_name,
             type_decls: if has_type_decls {
                 type_ptrs_name
             } else {
@@ -22355,7 +22377,7 @@ impl CGenerator {
             } else {
                 "NULL".to_string()
             },
-            count: class.properties.len(),
+            count: properties.len(),
             has_type_decls,
         }
     }
@@ -22365,11 +22387,22 @@ impl CGenerator {
         class: &CDeclaredClass,
         failure_cleanup: &str,
     ) -> CompileResult<CDeclaredClassPropertyDefaultValueHandles> {
-        if !class
-            .properties
-            .iter()
-            .any(|property| property.default.is_some())
-        {
+        self.materialize_declared_class_property_default_value_handles_for_properties(
+            &class.properties,
+            failure_cleanup,
+            false,
+        )
+    }
+
+    fn materialize_declared_class_property_default_value_handles_for_properties(
+        &mut self,
+        properties: &[CDeclaredClassProperty],
+        failure_cleanup: &str,
+        static_properties_only: bool,
+    ) -> CompileResult<CDeclaredClassPropertyDefaultValueHandles> {
+        if !properties.iter().any(|property| {
+            (!static_properties_only || property.is_static) && property.default.is_some()
+        }) {
             return Ok(CDeclaredClassPropertyDefaultValueHandles {
                 values: "NULL".to_string(),
                 flags: "NULL".to_string(),
@@ -22381,8 +22414,12 @@ impl CGenerator {
         let mut value_handles = Vec::new();
         let mut flags = Vec::new();
         let mut cleanup_after_use = Vec::new();
-        for property in &class.properties {
-            if let Some(default) = &property.default {
+        for property in properties {
+            if (!static_properties_only || property.is_static) && property.default.is_some() {
+                let default = property
+                    .default
+                    .as_ref()
+                    .expect("default checked before materialization");
                 let default_failure_cleanup = format!(
                     "{}{}",
                     c_cleanup_sequence(&cleanup_after_use),
@@ -32373,7 +32410,6 @@ impl CGenerator {
             .push(format!("  if ({handle}.ptr == NULL) {{ {error_exit} }}"));
 
         self.emit_native_static_property_storage_metadata(&handle, failure_cleanup, span)?;
-        self.emit_native_static_property_storage_defaults(&handle, failure_cleanup)?;
         self.emit_native_static_property_storage_reset(&handle, failure_cleanup);
         self.body.push("}".to_string());
         Ok(handle)
@@ -32437,18 +32473,11 @@ impl CGenerator {
         }
 
         for class in &classes {
-            for property in class
-                .own_properties
-                .iter()
-                .chain(class.own_static_properties.iter())
-            {
-                self.emit_native_static_property_storage_property_metadata(
-                    handle,
-                    &class.name,
-                    property,
-                    failure_cleanup,
-                );
-            }
+            self.emit_native_static_property_storage_property_metadata(
+                handle,
+                class,
+                failure_cleanup,
+            )?;
         }
 
         Ok(())
@@ -32457,83 +32486,52 @@ impl CGenerator {
     fn emit_native_static_property_storage_property_metadata(
         &mut self,
         handle: &str,
-        class_name: &str,
-        property: &CDeclaredClassProperty,
+        class: &CDeclaredClass,
         failure_cleanup: &str,
-    ) {
+    ) -> CompileResult<()> {
+        let properties = class
+            .own_properties
+            .iter()
+            .chain(class.own_static_properties.iter())
+            .cloned()
+            .collect::<Vec<_>>();
+        if properties.is_empty() {
+            return Ok(());
+        }
+
         let (class_bytes, class_len) =
-            self.emit_call_type_static_bytes("static_property_class_name_bytes", class_name);
-        let (property_bytes, property_len) =
-            self.emit_call_type_static_bytes("static_property_name_bytes", &property.name);
-        let (type_bytes, type_len) = property
-            .type_decl
-            .as_ref()
-            .map(|type_decl| {
-                self.emit_call_type_static_bytes("static_property_type_decl_bytes", type_decl)
-            })
-            .unwrap_or_else(|| ("NULL".to_string(), "0".to_string()));
-        let visibility = Self::declared_class_property_visibility_tag(property.visibility);
-        let is_static = if property.is_static { "true" } else { "false" };
+            self.emit_call_type_static_bytes("static_property_class_name_bytes", &class.name);
+        let property_metadata =
+            self.emit_declared_class_property_metadata_arrays_for_properties(&properties);
+        let property_defaults = self
+            .materialize_declared_class_property_default_value_handles_for_properties(
+                &properties,
+                failure_cleanup,
+                true,
+            )?;
+        let property_default_cleanup = c_cleanup_sequence(&property_defaults.cleanup_after_use);
         let diagnostic = self.next_native_name("static_property_metadata_diagnostic");
         let ok = self.next_native_name("static_property_metadata_ok");
         self.body
             .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
         self.body.push(format!(
-            "bool {ok} = phpc_native_static_property_storage_declare_property_bytes({handle}, {class_bytes}, {class_len}, {property_bytes}, {property_len}, (uint8_t){visibility}, {is_static}, {type_bytes}, {type_len}, &{diagnostic});"
+            "bool {ok} = phpc_native_static_property_storage_declare_properties_and_defaults_bytes({handle}, {class_bytes}, {class_len}, {}, {}, {}, {}, {}, {}, {}, {}, {}, &{diagnostic});",
+            property_metadata.names,
+            property_metadata.name_lens,
+            property_metadata.visibilities,
+            property_metadata.static_flags,
+            property_metadata.type_decls,
+            property_metadata.type_decl_lens,
+            property_defaults.values,
+            property_defaults.flags,
+            property_metadata.count,
         ));
         self.emit_report_native_diagnostic(&diagnostic);
         let error_exit = self.native_error_exit(failure_cleanup);
-        self.body.push(format!("if (!{ok}) {{ {error_exit} }}"));
-    }
-
-    fn emit_native_static_property_storage_defaults(
-        &mut self,
-        handle: &str,
-        failure_cleanup: &str,
-    ) -> CompileResult<()> {
-        let default_properties = self
-            .declared_class_order
-            .iter()
-            .flat_map(|key| {
-                let class = self
-                    .declared_classes
-                    .get(key)
-                    .expect("declared class order key has metadata");
-                class
-                    .own_static_properties
-                    .iter()
-                    .filter_map(|property| {
-                        property.default.as_ref().map(|default| {
-                            (class.name.clone(), property.name.clone(), default.clone())
-                        })
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-
-        for (class_name, property_name, default) in default_properties {
-            let value = self.materialize_native_value_result_operand(&default, failure_cleanup)?;
-            let aux_cleanup = native_value_aux_cleanup_after_consuming_handle(&value);
-            let registration_failure_cleanup =
-                format!("{}{}", c_cleanup_sequence(&aux_cleanup), failure_cleanup);
-            let (class_bytes, class_len) =
-                self.emit_call_type_static_bytes("static_property_class_name_bytes", &class_name);
-            let (property_bytes, property_len) =
-                self.emit_call_type_static_bytes("static_property_name_bytes", &property_name);
-            let diagnostic = self.next_native_name("static_property_default_diagnostic");
-            let ok = self.next_native_name("static_property_default_ok");
-            self.body
-                .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
-            self.body.push(format!(
-                "bool {ok} = phpc_native_static_property_storage_register_default_value_and_free({handle}, {class_bytes}, {class_len}, {property_bytes}, {property_len}, {}, &{diagnostic});",
-                value.handle
-            ));
-            self.emit_report_native_diagnostic(&diagnostic);
-            let error_exit = self.native_error_exit(&registration_failure_cleanup);
-            self.body.push(format!("if (!{ok}) {{ {error_exit} }}"));
-            self.body.extend(aux_cleanup);
-        }
-
+        self.body.push(format!(
+            "if (!{ok}) {{ {property_default_cleanup}{error_exit} }}"
+        ));
+        self.body.extend(property_defaults.cleanup_after_use);
         Ok(())
     }
 

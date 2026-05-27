@@ -1937,6 +1937,42 @@ fn emit_exe_links_and_runs_object_static_property_receiver_program() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_typed_static_property_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class TypedStaticBox {\n",
+        "    public static int $count = 1;\n",
+        "    public static ?string $label = null;\n",
+        "}\n",
+        "echo TypedStaticBox::$count, \":\", gettype(TypedStaticBox::$label), \"|\";\n",
+        "TypedStaticBox::$count = \"21\";\n",
+        "TypedStaticBox::$label = \"ok\";\n",
+        "echo TypedStaticBox::$count, \":\", TypedStaticBox::$label, \"\\n\";\n",
+    );
+    let (source_path, output_path) = compile_native_link_fixture("typed_static_property", source);
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run typed static-property executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"1:NULL|21:ok\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
 fn emit_exe_object_static_property_receiver_preserves_type_and_visibility_diagnostics() {
     if !has_cc() {
         return;
@@ -1984,6 +2020,42 @@ fn emit_exe_object_static_property_receiver_preserves_type_and_visibility_diagno
         let _ = fs::remove_file(source_path);
         let _ = fs::remove_file(output_path);
     }
+}
+
+#[test]
+fn emit_exe_typed_static_property_reports_type_failure() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class TypedStaticFailure {\n",
+        "    public static int $count = 1;\n",
+        "    public static function fail($value) { self::$count = $value; }\n",
+        "}\n",
+        "TypedStaticFailure::fail([]);\n",
+        "echo \"after\\n\";\n",
+    );
+    let (source_path, output_path) =
+        compile_native_link_fixture("typed_static_property_failure", source);
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run typed static-property failure executable: {error}")
+    });
+
+    assert!(
+        !run.status.success(),
+        "typed static-property failure should exit non-zero"
+    );
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains("typed property TypedStaticFailure::$count expects int, got array"),
+        "stderr:\n{stderr}"
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
 }
 
 #[test]
@@ -4165,6 +4237,7 @@ fn native_executable_c_source_routes_declared_static_property_reads_writes_throu
         "phpc_native_static_property_storage_declare_class_bytes",
         "phpc_native_static_property_storage_declare_class_parent_bytes",
         "phpc_native_static_property_storage_declare_property_bytes",
+        "phpc_native_static_property_storage_declare_properties_and_defaults_bytes",
         "phpc_native_static_property_storage_register_default_value_and_free",
         "phpc_native_static_property_storage_reset_with_diagnostic",
         "phpc_native_static_property_read_class_with_diagnostic",
@@ -4188,6 +4261,40 @@ fn native_executable_c_source_routes_declared_static_property_reads_writes_throu
     assert!(
         !body.contains("static-member lowering rejects"),
         "supported literal declared static-property access should not fall back to static-member rejection:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_typed_static_properties_through_shared_metadata_arrays() {
+    let program = parse(
+        "<?php\nclass TypedStaticBox { public int $id = 1; public static int $count = 5; protected static ?string $label = null; public static function write($value) { self::$count = $value; } }\nTypedStaticBox::$count = \"6\";\nTypedStaticBox::write(7);\necho TypedStaticBox::$count;\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_static_property_storage_declare_properties_and_defaults_bytes"),
+        "typed static properties should be declared through the bulk metadata ABI:\n{source}"
+    );
+    assert!(
+        source.contains("declared_class_property_type_decl_ptrs_")
+            && source.contains("declared_class_property_type_decl_lens_")
+            && source.contains("declared_class_property_default_values_")
+            && source.contains("declared_class_property_default_flags_")
+            && source.contains("declared_class_property_static_flags_"),
+        "static storage should consume declared-property metadata/default arrays, not per-property typed special cases:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_static_property_storage_declare_property_bytes")
+            && !body.contains("phpc_native_static_property_storage_register_default_value_and_free"),
+        "static storage initialization should not use the old per-property/default ABI path:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_static_property_write_class_with_diagnostic_and_free")
+            && source
+                .contains("phpc_native_static_property_write_relative_with_diagnostic_and_free"),
+        "literal and self:: writes should still use request-scoped static-property storage:\n{source}"
     );
 }
 
