@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 20:52 CEST
+Updated: 2026-05-27 20:58 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,14 +19,34 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `4602d028` reports live output-buffer
-status metadata from the runtime buffer stack. `ob_list_handlers()` and
-`ob_get_status()` now preserve handler names, levels, current byte counts, and
-configured chunk sizes for default buffers, callable-table handlers, runtime
-builtins, methods/constructors, and descriptor closures through shared callable
-dispatch metadata. Handler flags/mutability, shutdown/unwind ordering, exact
-SAPI interaction, broader binary string breadth, and LLVM/ASM parity remain
+Latest accounted source capability: `3cbaaf61` routes comparator sort
+callbacks through generalized callable writeback for `usort()`, `uasort()`,
+and `uksort()`. Runtime callable builtin metadata now exposes comparator
+signatures, generated C lowers comparator sorts through callable lookup and the
+array-lvalue writeback ABI, and the runtime invokes registered comparator
+callbacks while preserving the existing natural-sort writeback path. Full
+flag/diagnostic parity, object/ArrayAccess/resource owners, broader callable
+object/array families, broad reference/COW parity, and LLVM/ASM parity remain
 blocked.
+
+Recent source commit `3cbaaf61` advances comparator sort callback writeback
+without adding fixture-array production sorting, generated-C fake comparator
+orders, callable-dispatch bypasses, or exact-shape ladders. `usort()`,
+`uasort()`, and `uksort()` now participate in the shared runtime callable sort
+family with `array, callback` signatures, generated-C source calls route
+through `phpc_native_array_lvalue_owner_callable_sort_result`, and runtime
+tests prove registered comparator invocation plus writeback for value,
+associative, and key-sorting modes. The integration also removed a dead
+array-sort fallback pattern exposed by the refresh. Focused gates covered
+compile checking, runtime comparator writeback, runtime builtin signature
+metadata, generated-C source proof, linked comparator callback execution,
+existing runtime builtin sort writeback including `natsort()`/`natcasesort()`,
+output-buffer status regression, formatting, and diff checks. Full
+flag/diagnostic parity, object/ArrayAccess/resource owners, broader callable
+object/array families, broad reference/COW parity, and LLVM/ASM parity remain
+blocked. Primary rerun gate log:
+`state/logs/phpc-primary-comparator-sort-f47469b1-20260527.rerun.gates.log`
+sha256 `af147b7b8824c4ad2bd90bf493ec2baa4ce3b119263b732b952f67d5f283ad08`.
 
 Recent source commit `4602d028` advances generated-C output-buffer status
 metadata without adding production handler-name fixtures, generated-C snapshots,
