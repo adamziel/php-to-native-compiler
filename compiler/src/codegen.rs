@@ -17977,12 +17977,6 @@ impl NativeMethodStaticSourceCallArgumentPlan {
         native_function_variadic_param(&self.params)
     }
 
-    fn variadic_param_requires_entry_type_coercion(&self) -> bool {
-        self.variadic_param()
-            .and_then(|(_, param)| param.type_decl.as_ref())
-            .is_some_and(|decl| !native_function_type_decl_is_mixed(decl))
-    }
-
     fn semantically_matches(&self, other: &Self) -> bool {
         self.semantically_matches_with_options(other, false)
     }
@@ -22446,10 +22440,11 @@ impl CGenerator {
                     "if (phpc_closure_call_arg_count == {} && (phpc_closure_args[{index}].flags & PHPC_NATIVE_CLOSURE_ARGUMENT_VARIADIC) != 0) {{",
                     index + 1
                 ));
-                self.emit_frame_parameter_value_store(
+                self.emit_variadic_collection_type_coercion_assignment(
                     &handle,
                     &format!("phpc_closure_args[{index}].value"),
                     param,
+                    "Closure::__invoke()",
                     "",
                 );
                 self.body.push("} else {".to_string());
@@ -23383,6 +23378,7 @@ impl CGenerator {
             }
             if self.uses_native_call_type_helpers {
                 output.push_str("extern phpc_NativeValueHandle phpc_native_value_coerce_call_type_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *callable_ptr, size_t callable_len, const uint8_t *label_ptr, size_t label_len, const uint8_t *type_ptr, size_t type_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                output.push_str("extern phpc_NativeValueHandle phpc_native_value_coerce_variadic_collection_type_with_diagnostic(phpc_NativeValueHandle value, const uint8_t *callable_ptr, size_t callable_len, const uint8_t *label_ptr, size_t label_len, const uint8_t *type_ptr, size_t type_len, phpc_NativeDiagnosticHandle *diagnostic);\n");
             }
             if self.uses_native_dynamic_call_helpers {
                 output.push_str("extern phpc_NativeCallableArrayParts phpc_native_value_callable_array_parts(phpc_NativeValueHandle value);\n");
@@ -39558,12 +39554,6 @@ impl CGenerator {
         let callable_failure_cleanup = format!("{callee_cleanup}{failure_cleanup}");
         let call_arguments = if call_arguments_have_spread(args) {
             if let Some(plan) = descriptor_closure_argument_plan {
-                if plan.variadic_param_requires_entry_type_coercion() {
-                    return Err(self.unsupported(
-                        span,
-                        "unsupported argument unpacking for native descriptor closure lowering: typed variadic descriptor closures need finalized variadic collection entry coercion before spread calls can preserve the closure frame type ABI",
-                    ));
-                }
                 self.emit_materialized_native_source_call_arguments_handle(
                     "closure_source_call_args",
                     &plan.params,
@@ -39644,12 +39634,6 @@ impl CGenerator {
         let callable_failure_cleanup = format!("{callee_cleanup}{failure_cleanup}");
         let call_arguments = if call_arguments_have_spread(args) {
             if let Some(plan) = descriptor_closure_argument_plan {
-                if plan.variadic_param_requires_entry_type_coercion() {
-                    return Err(self.unsupported(
-                        span,
-                        "unsupported argument unpacking for native descriptor closure lowering: typed variadic descriptor closures need finalized variadic collection entry coercion before spread calls can preserve the closure frame type ABI",
-                    ));
-                }
                 self.emit_materialized_native_source_call_arguments_handle(
                     "closure_source_reference_args",
                     &plan.params,
@@ -41036,6 +41020,52 @@ impl CGenerator {
             handle: handle.clone(),
             cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
         }
+    }
+
+    fn emit_variadic_collection_type_coercion_assignment(
+        &mut self,
+        target_handle: &str,
+        source_handle: &str,
+        param: &FunctionParam,
+        callable_name: &str,
+        failure_cleanup: &str,
+    ) {
+        let Some(type_decl) = param
+            .type_decl
+            .as_ref()
+            .filter(|decl| !native_function_type_decl_is_mixed(decl))
+        else {
+            self.body.push(format!(
+                "{target_handle} = phpc_native_value_clone({source_handle});"
+            ));
+            let error_exit = self.native_error_exit(failure_cleanup);
+            self.body.push(format!(
+                "if ({target_handle}.ptr == NULL) {{ {error_exit} }}"
+            ));
+            return;
+        };
+
+        self.uses_native_string_helpers = true;
+        self.uses_native_call_type_helpers = true;
+
+        let (callable_bytes, callable_len) =
+            self.emit_call_type_static_bytes("call_type_callable_bytes", callable_name);
+        let (label_bytes, label_len) = self.emit_call_type_static_bytes(
+            "call_type_label_bytes",
+            &format!("parameter ${}", param.name),
+        );
+        let (type_bytes, type_len) =
+            self.emit_call_type_static_bytes("call_type_decl_bytes", &type_decl.text);
+        let diagnostic = self.next_native_name("variadic_collection_type_diagnostic");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "{target_handle} = phpc_native_value_coerce_variadic_collection_type_with_diagnostic({source_handle}, {callable_bytes}, {callable_len}, {label_bytes}, {label_len}, {type_bytes}, {type_len}, &{diagnostic});"
+        ));
+        let error_exit = self.native_error_exit(failure_cleanup);
+        self.body.push(format!(
+            "if ({diagnostic}.ptr != NULL || {target_handle}.ptr == NULL) {{ if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); {diagnostic}.ptr = NULL; }} if ({target_handle}.ptr != NULL) {{ phpc_native_value_free({target_handle}); }} {error_exit} }}"
+        ));
     }
 
     fn emit_variadic_argument_array_append_materialized(

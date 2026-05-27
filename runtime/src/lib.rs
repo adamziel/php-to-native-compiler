@@ -5723,6 +5723,47 @@ pub unsafe extern "C" fn phpc_native_value_coerce_call_type_with_diagnostic(
     }
 }
 
+/// # Safety
+///
+/// `handle` must be null or a value handle previously returned by the runtime
+/// ABI and not yet freed. The callable, label, and type byte ranges must be
+/// valid UTF-8 byte slices. The returned value handle owns a new PHP array
+/// whose entries preserve the input array order and keys while coercing each
+/// entry value through call-parameter type semantics; ownership of `handle`
+/// remains with the caller. On failure the helper stores a diagnostic handle
+/// that the caller owns and must release with `phpc_native_diagnostic_free`.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_value_coerce_variadic_collection_type_with_diagnostic(
+    handle: NativeValueHandle,
+    callable_ptr: *const u8,
+    callable_len: usize,
+    label_ptr: *const u8,
+    label_len: usize,
+    type_ptr: *const u8,
+    type_len: usize,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> NativeValueHandle {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+
+    match unsafe {
+        native_value_coerce_variadic_collection_type_result(
+            handle,
+            callable_ptr,
+            callable_len,
+            label_ptr,
+            label_len,
+            type_ptr,
+            type_len,
+        )
+    } {
+        Ok(value) => NativeValueHandle::from_value(value),
+        Err(error) => {
+            unsafe { native_store_diagnostic_message(diagnostic, error.message()) };
+            NativeValueHandle::null()
+        }
+    }
+}
+
 unsafe fn native_value_coerce_call_type_result(
     handle: NativeValueHandle,
     callable_ptr: *const u8,
@@ -5756,6 +5797,53 @@ unsafe fn native_value_coerce_call_type_result(
             format!("{label} expects {type_decl}, got {actual_type}"),
         )
     })
+}
+
+unsafe fn native_value_coerce_variadic_collection_type_result(
+    handle: NativeValueHandle,
+    callable_ptr: *const u8,
+    callable_len: usize,
+    label_ptr: *const u8,
+    label_len: usize,
+    type_ptr: *const u8,
+    type_len: usize,
+) -> RuntimeResult<Value> {
+    let callable = unsafe { native_abi_utf8(callable_ptr, callable_len, "callable name") }?;
+    let label = unsafe { native_abi_utf8(label_ptr, label_len, "type label") }?;
+    let type_decl = unsafe { native_abi_utf8(type_ptr, type_len, "type declaration") }?;
+    let Some(Value::Array(array)) = (unsafe { handle.as_ref() }).cloned() else {
+        let actual_type = unsafe { handle.as_ref() }
+            .map(Value::type_name)
+            .unwrap_or("null");
+        return Err(RuntimeError::unsupported_call(
+            callable,
+            format!(
+                "{label} type enforcement failed: variadic collection expects array, got {actual_type}"
+            ),
+        ));
+    };
+
+    let mut coerced_array = PhpArray::new();
+    for entry in array.entries() {
+        let value = entry.value_cloned();
+        let actual_type = value.type_name();
+        let coerced = coerce_property_value_with_object_type_resolver(
+            type_decl,
+            value,
+            callable,
+            label,
+            |object, type_name| object.is_instance_of_class_name(type_name),
+        )
+        .map_err(|_| {
+            RuntimeError::unsupported_call(
+                callable,
+                format!("{label} expects {type_decl}, got {actual_type}"),
+            )
+        })?;
+        coerced_array.insert(entry.key.clone(), coerced);
+    }
+
+    Ok(Value::Array(coerced_array))
 }
 
 /// # Safety
@@ -39939,6 +40027,41 @@ mod tests {
         unsafe { phpc_native_value_free(closure) };
         unsafe { phpc_native_materialized_call_arguments_free(materialized) };
         unsafe { phpc_native_string_free(first) };
+    }
+
+    #[test]
+    fn native_variadic_collection_call_type_coercion_preserves_keys() {
+        let mut variadic = PhpArray::new();
+        variadic.append(Value::String("2".to_string())).unwrap();
+        variadic.insert("name", Value::Bool(true));
+        let source = NativeValueHandle::from_value(Value::Array(variadic));
+
+        let callable = b"Closure::__invoke()";
+        let label = b"parameter $tail";
+        let type_decl = b"int";
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        let coerced = unsafe {
+            phpc_native_value_coerce_variadic_collection_type_with_diagnostic(
+                source,
+                callable.as_ptr(),
+                callable.len(),
+                label.as_ptr(),
+                label.len(),
+                type_decl.as_ptr(),
+                type_decl.len(),
+                &mut diagnostic,
+            )
+        };
+
+        assert!(diagnostic.is_null());
+        let Some(Value::Array(array)) = (unsafe { coerced.as_ref() }) else {
+            panic!("expected coerced variadic collection array");
+        };
+        assert_eq!(array.get(0), Some(&Value::Int(2)));
+        assert_eq!(array.get("name"), Some(&Value::Int(1)));
+
+        unsafe { phpc_native_value_free(coerced) };
+        unsafe { phpc_native_value_free(source) };
     }
 
     #[test]
