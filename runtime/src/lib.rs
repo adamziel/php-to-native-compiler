@@ -9751,6 +9751,49 @@ unsafe fn native_materialized_slot_value_clone(
     }
 }
 
+unsafe fn native_materialized_slot_forward_source_clone(
+    slot: NativeCallArgumentSlot,
+) -> Result<NativeCallArgumentSlot, String> {
+    match slot {
+        NativeCallArgumentSlot::Value(value) => {
+            let cloned = unsafe { phpc_native_value_clone(value) };
+            if cloned.is_null() {
+                Err(
+                    "native materialized call-argument source forwarding failed: value slot is null"
+                        .to_string(),
+                )
+            } else {
+                Ok(NativeCallArgumentSlot::Value(cloned))
+            }
+        }
+        NativeCallArgumentSlot::Reference(reference) => {
+            let cloned = unsafe { phpc_native_reference_clone(reference) };
+            if cloned.is_null() {
+                Err(
+                    "native materialized call-argument source forwarding failed: reference slot is null"
+                        .to_string(),
+                )
+            } else {
+                Ok(NativeCallArgumentSlot::Reference(cloned))
+            }
+        }
+    }
+}
+
+unsafe fn native_materialized_call_arguments_forward_source(
+    materialized: &NativeMaterializedCallArguments,
+    target: &mut NativeCallArguments,
+) -> Result<(), String> {
+    for (entry_index, entry) in materialized.entries.iter().enumerate() {
+        let slot = unsafe { native_materialized_slot_forward_source_clone(entry.slot) }
+            .map_err(|message| format!("{message} at materialized entry {entry_index}"))?;
+        target.slots.push(slot);
+        target.names.push(entry.name.clone());
+    }
+    target.finalized_variadic = false;
+    Ok(())
+}
+
 unsafe fn native_materialized_slot_reference_clone(
     slot: NativeCallArgumentSlot,
     parameter_name: &str,
@@ -9980,6 +10023,46 @@ pub unsafe extern "C" fn phpc_native_materialized_call_arguments_finalize_with_d
         Err(message) => {
             unsafe { native_store_diagnostic_message(diagnostic, message) };
             NativeCallArgumentsHandle::null()
+        }
+    }
+}
+
+/// # Safety
+///
+/// `entries` is borrowed. `target` must be a call-arguments handle.
+/// Materialized entries are cloned into `target` in source order, preserving
+/// named source keys for later magic `$args` packing.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_materialized_call_arguments_forward_source_to_call_arguments_with_diagnostic(
+    entries: NativeMaterializedCallArgumentsHandle,
+    mut target: NativeCallArgumentsHandle,
+    diagnostic: *mut NativeDiagnosticHandle,
+) -> bool {
+    unsafe { native_clear_diagnostic_slot(diagnostic) };
+    let Some(entries) = (unsafe { entries.as_ref() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native materialized call-argument source forwarding failed: entries handle is null",
+            )
+        };
+        return false;
+    };
+    let Some(target) = (unsafe { target.as_mut() }) else {
+        unsafe {
+            native_store_diagnostic_message(
+                diagnostic,
+                "native materialized call-argument source forwarding failed: target arguments handle is null",
+            )
+        };
+        return false;
+    };
+
+    match unsafe { native_materialized_call_arguments_forward_source(entries, target) } {
+        Ok(()) => true,
+        Err(message) => {
+            unsafe { native_store_diagnostic_message(diagnostic, message) };
+            false
         }
     }
 }
@@ -38251,6 +38334,70 @@ mod tests {
         unsafe { phpc_native_call_arguments_free(finalized) };
         unsafe { phpc_native_materialized_call_arguments_free(materialized) };
         unsafe { phpc_native_string_free(rest) };
+    }
+
+    #[test]
+    fn native_materialized_call_arguments_forward_source_slots_for_magic_packing() {
+        let materialized = phpc_native_materialized_call_arguments_new();
+        let reference = PhpReferenceCell::new(Value::String("N".to_string()));
+        let mut spread = PhpArray::new();
+        spread.append(Value::String("A".to_string())).unwrap();
+        spread.insert_reference("name", reference.clone());
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        assert!(unsafe {
+            phpc_native_materialized_call_arguments_unpack_array_value_and_free(
+                materialized,
+                NativeValueHandle::from_value(Value::Array(spread)),
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let forwarded = phpc_native_call_arguments_new();
+        assert!(unsafe {
+            phpc_native_materialized_call_arguments_forward_source_to_call_arguments_with_diagnostic(
+                materialized,
+                forwarded,
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+        let forwarded_ref = unsafe { forwarded.as_ref() }.expect("forwarded arguments");
+        assert!(
+            !forwarded_ref.finalized_variadic,
+            "forward-source magic carrier must not mark a packed variadic slot"
+        );
+        assert_eq!(forwarded_ref.slots.len(), 2);
+
+        let forwarded_reference =
+            unsafe { phpc_native_call_arguments_read_reference(forwarded, 1) };
+        assert!(!forwarded_reference.is_null());
+        let changed = NativeValueHandle::from_value(Value::String("changed".to_string()));
+        assert!(unsafe { phpc_native_reference_set_value(forwarded_reference, changed) });
+        assert_eq!(
+            reference.value_cloned(),
+            Value::String("changed".to_string())
+        );
+
+        let magic_arguments =
+            native_magic_call_arguments_from_method_and_arguments("missing", forwarded_ref)
+                .expect("magic packing should preserve forwarded source slots");
+        let magic_args = unsafe { phpc_native_call_arguments_read_value(magic_arguments, 1) };
+        let Some(Value::Array(array)) = (unsafe { magic_args.as_ref() }) else {
+            panic!("expected magic $args array");
+        };
+        assert_eq!(array.get_cloned(0), Some(Value::String("A".to_string())));
+        assert_eq!(
+            array.get_cloned("name"),
+            Some(Value::String("changed".to_string()))
+        );
+
+        unsafe { phpc_native_value_free(magic_args) };
+        unsafe { phpc_native_call_arguments_free(magic_arguments) };
+        unsafe { phpc_native_value_free(changed) };
+        unsafe { phpc_native_reference_free(forwarded_reference) };
+        unsafe { phpc_native_call_arguments_free(forwarded) };
+        unsafe { phpc_native_materialized_call_arguments_free(materialized) };
     }
 
     #[test]

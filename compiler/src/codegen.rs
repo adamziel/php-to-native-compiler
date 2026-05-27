@@ -23232,6 +23232,7 @@ impl CGenerator {
                     output.push_str("extern bool phpc_native_materialized_call_arguments_push_named_value_and_free(phpc_NativeMaterializedCallArgumentsHandle arguments, phpc_NativeStringHandle name, phpc_NativeValueHandle value);\n");
                     output.push_str("extern bool phpc_native_materialized_call_arguments_unpack_array_value_and_free(phpc_NativeMaterializedCallArgumentsHandle arguments, phpc_NativeValueHandle value, phpc_NativeDiagnosticHandle *diagnostic);\n");
                     output.push_str("extern phpc_NativeCallArgumentsHandle phpc_native_materialized_call_arguments_finalize_with_diagnostic(phpc_NativeMaterializedCallArgumentsHandle entries, const phpc_NativeStringHandle *parameter_names, const uint8_t *parameter_required, const uint8_t *parameter_by_reference, const phpc_NativeValueHandle *parameter_defaults, size_t fixed_count, phpc_NativeStringHandle variadic_parameter_name, bool has_variadic, bool variadic_by_reference, phpc_NativeDiagnosticHandle *diagnostic);\n");
+                    output.push_str("extern bool phpc_native_materialized_call_arguments_forward_source_to_call_arguments_with_diagnostic(phpc_NativeMaterializedCallArgumentsHandle entries, phpc_NativeCallArgumentsHandle target, phpc_NativeDiagnosticHandle *diagnostic);\n");
                     output.push_str("extern void phpc_native_materialized_call_arguments_free(phpc_NativeMaterializedCallArgumentsHandle handle);\n");
                 }
                 output.push_str("extern phpc_NativeValueHandle phpc_native_call_frame_read_value(phpc_NativeCallFrameHandle frame, size_t index);\n");
@@ -40354,14 +40355,11 @@ impl CGenerator {
         self.body.extend(value_aux_cleanup);
     }
 
-    fn emit_materialized_native_source_call_arguments_handle(
+    fn emit_materialized_call_argument_entries_handle(
         &mut self,
-        prefix: &str,
-        params: &[FunctionParam],
         args: &[Expr],
-        span: Span,
         owner_failure_cleanup: &str,
-    ) -> CompileResult<String> {
+    ) -> CompileResult<(String, String)> {
         self.uses_native_callable_helpers = true;
         self.uses_native_materialized_call_argument_helpers = true;
 
@@ -40411,6 +40409,20 @@ impl CGenerator {
                 }
             }
         }
+
+        Ok((materialized, materialized_failure_cleanup))
+    }
+
+    fn emit_materialized_native_source_call_arguments_handle(
+        &mut self,
+        prefix: &str,
+        params: &[FunctionParam],
+        args: &[Expr],
+        span: Span,
+        owner_failure_cleanup: &str,
+    ) -> CompileResult<String> {
+        let (materialized, materialized_failure_cleanup) =
+            self.emit_materialized_call_argument_entries_handle(args, owner_failure_cleanup)?;
 
         let fixed_count = native_function_fixed_param_count(params);
         let fixed_params = params.iter().take(fixed_count).collect::<Vec<_>>();
@@ -40527,6 +40539,30 @@ impl CGenerator {
 
         let _ = span;
         Ok(call_arguments)
+    }
+
+    fn emit_materialized_forwarded_native_source_call_arguments(
+        &mut self,
+        call_arguments: &str,
+        args: &[Expr],
+        owner_failure_cleanup: &str,
+    ) -> CompileResult<()> {
+        let (materialized, materialized_failure_cleanup) =
+            self.emit_materialized_call_argument_entries_handle(args, owner_failure_cleanup)?;
+        let diagnostic = self.next_native_name("materialized_forward_diagnostic");
+        self.body
+            .push(format!("phpc_NativeDiagnosticHandle {diagnostic} = {{0}};"));
+        self.body.push(format!(
+            "if (!phpc_native_materialized_call_arguments_forward_source_to_call_arguments_with_diagnostic({materialized}, {call_arguments}, &{diagnostic})) {{ {} }}",
+            self.native_error_exit(&format!(
+                "if ({diagnostic}.ptr != NULL) {{ phpc_native_diagnostic_report({diagnostic}); phpc_native_diagnostic_free({diagnostic}); {diagnostic}.ptr = NULL; }} {materialized_failure_cleanup}"
+            ))
+        ));
+        self.emit_report_native_diagnostic(&diagnostic);
+        self.body.push(format!(
+            "phpc_native_materialized_call_arguments_free({materialized});"
+        ));
+        Ok(())
     }
 
     fn emit_native_source_call_argument(
@@ -40994,40 +41030,47 @@ impl CGenerator {
         signature: Option<&CScopedCallableStringSignature>,
         preserve_named_source_keys_for_magic_args: bool,
     ) -> CompileResult<()> {
-        if preserve_named_source_keys_for_magic_args
-            && signature.is_none()
-            && call_arguments_have_named(args)
-        {
-            let plan = self.normalize_native_magic_source_call_arguments(args, span)?;
-            let (mut evaluated, mut consumed) = self.materialize_normalized_call_argument_sources(
-                args,
-                &plan,
-                span,
-                call_cleanup,
-                callee,
-            )?;
-            let Some(variadic) = &plan.variadic_slot else {
-                return Err(self.unsupported(
-                    span,
-                    "internal named magic argument lowering error: source-order variadic slot was not produced",
-                ));
-            };
-            for entry in &variadic.entries {
-                let source_name = match &entry.key {
-                    CallArgumentVariadicKey::NextInteger => None,
-                    CallArgumentVariadicKey::Named(name) => Some(name.as_str()),
-                };
-                self.emit_evaluated_call_argument_push(
+        if preserve_named_source_keys_for_magic_args && signature.is_none() {
+            if call_arguments_have_spread(args) {
+                return self.emit_materialized_forwarded_native_source_call_arguments(
                     call_arguments,
-                    &mut evaluated,
-                    &mut consumed,
-                    entry.source_index,
-                    source_name,
+                    args,
                     call_cleanup,
-                    span,
-                )?;
+                );
             }
-            return Ok(());
+            if call_arguments_have_named(args) {
+                let plan = self.normalize_native_magic_source_call_arguments(args, span)?;
+                let (mut evaluated, mut consumed) = self
+                    .materialize_normalized_call_argument_sources(
+                        args,
+                        &plan,
+                        span,
+                        call_cleanup,
+                        callee,
+                    )?;
+                let Some(variadic) = &plan.variadic_slot else {
+                    return Err(self.unsupported(
+                        span,
+                        "internal named magic argument lowering error: source-order variadic slot was not produced",
+                    ));
+                };
+                for entry in &variadic.entries {
+                    let source_name = match &entry.key {
+                        CallArgumentVariadicKey::NextInteger => None,
+                        CallArgumentVariadicKey::Named(name) => Some(name.as_str()),
+                    };
+                    self.emit_evaluated_call_argument_push(
+                        call_arguments,
+                        &mut evaluated,
+                        &mut consumed,
+                        entry.source_index,
+                        source_name,
+                        call_cleanup,
+                        span,
+                    )?;
+                }
+                return Ok(());
+            }
         }
         if call_arguments_have_named(args) {
             return Err(self.unsupported(span, NAMED_ARGUMENT_UNSUPPORTED_CALL_FAMILY_REJECTION));

@@ -836,6 +836,25 @@ const NATIVE_NAMED_DYNAMIC_MAGIC_SOURCE_CALL_SOURCE: &str = concat!(
     "echo $box->relay(), \"\\n\";\n",
 );
 
+const NATIVE_MAGIC_CALLABLE_SPREAD_SOURCE: &str = concat!(
+    "<?php\n",
+    "function magic_callable_spread_marker($label) { echo $label; return $label; }\n",
+    "class MagicCallableSpreadBox {\n",
+    "    private function hidden($first) { return \"hidden:\" . $first; }\n",
+    "    public function __call($name, $args) {\n",
+    "        $zero = array_key_exists(0, $args) ? $args[0] : \"-\";\n",
+    "        $first = array_key_exists(\"first\", $args) ? $args[\"first\"] : \"-\";\n",
+    "        $second = array_key_exists(\"second\", $args) ? $args[\"second\"] : \"-\";\n",
+    "        $tail = array_key_exists(\"tail\", $args) ? $args[\"tail\"] : \"-\";\n",
+    "        return \"magic:\" . $name . \":\" . $zero . \":\" . $first . \":\" . $second . \":\" . $tail;\n",
+    "    }\n",
+    "}\n",
+    "$box = new MagicCallableSpreadBox();\n",
+    "echo $box->missing(...[magic_callable_spread_marker(\"A\"), \"tail\" => magic_callable_spread_marker(\"T\")]), \"|\";\n",
+    "echo $box->hidden(...[\"first\" => magic_callable_spread_marker(\"H\")]), \"|\";\n",
+    "echo $box->other(...[\"first\" => magic_callable_spread_marker(\"F\"), \"second\" => magic_callable_spread_marker(\"S\")]), \"\\n\";\n",
+);
+
 const NATIVE_DIRECT_RECEIVER_MAGIC_SOURCE_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "class DirectReceiverMagicBox {\n",
@@ -3637,6 +3656,37 @@ fn emit_exe_links_and_runs_named_magic_dynamic_method_source_call_program() {
     assert_eq!(
         run.stdout,
         b"known:A:B|magic:missing:P:-:-:T:-|magic:hidden:-:H:-:-:-|magic:other:-:D:Q:-:-|magic:inside:-:-:-:-:I|known:K:S\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_magic_callable_spread_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "magic_callable_spread_arguments",
+        NATIVE_MAGIC_CALLABLE_SPREAD_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run magic callable spread executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"ATmagic:missing:A:-:-:T|Hmagic:hidden:-:H:-:-|FSmagic:other:-:F:S:-\n"
     );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
@@ -7114,6 +7164,32 @@ fn native_executable_c_source_preserves_named_direct_receiver_magic_fallback_arg
             && !source.contains("named argument lowering is only implemented")
             && !source.contains("method-call lowering rejects"),
         "named direct receiver magic fallback must avoid generated frame ladders and exact-shape blockers:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_magic_callable_spread_through_forward_source_carrier() {
+    let program = parse(NATIVE_MAGIC_CALLABLE_SPREAD_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains(
+                "phpc_native_materialized_call_arguments_forward_source_to_call_arguments_with_diagnostic"
+            )
+            && body.contains(
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+            ),
+        "magic fallback spread should materialize spread entries and forward source slots into the existing runtime magic invocation boundary:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && !source.contains("spread operands need a materialized-entry producer")
+            && !body.contains("dynamic_method_dispatch_status")
+            && !body.contains("phpc_native_value_dynamic_method_name_matches"),
+        "magic fallback spread must avoid finalized variadic packing, old blockers, and generated method-name ladders:\n{source}"
     );
 }
 
