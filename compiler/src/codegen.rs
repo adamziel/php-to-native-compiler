@@ -15683,6 +15683,7 @@ struct CGenerator {
     by_reference_foreach_linger_variables: HashSet<String>,
     global_import_names: HashSet<String>,
     native_value_variable_facts: HashMap<String, CNativeValueFacts>,
+    native_object_property_value_facts: HashMap<CNativeObjectPropertyFactKey, CNativeValueFacts>,
     native_callable_variable_identities: HashMap<String, HashSet<CNativeCallableIdentity>>,
     native_reference_fact_slots: HashMap<String, usize>,
     native_reference_slot_facts: HashMap<usize, CNativeValueFacts>,
@@ -15778,9 +15779,47 @@ enum CValue {
     Null,
 }
 
+#[derive(Clone, Copy)]
 enum CObjectPropertyOperand<'a> {
     Literal(&'a str),
     Dynamic(&'a Expr),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct CNativeObjectPropertyFactKey {
+    object: String,
+    property: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CNativeObjectPropertyFactTarget {
+    Key(CNativeObjectPropertyFactKey),
+    Object(String),
+    All,
+}
+
+#[derive(Clone)]
+enum CNativeObjectPropertyOwnerProperty {
+    Literal(String),
+    Dynamic(Expr),
+}
+
+impl CNativeObjectPropertyOwnerProperty {
+    fn borrowed(&self) -> CObjectPropertyOperand<'_> {
+        match self {
+            Self::Literal(property) => CObjectPropertyOperand::Literal(property),
+            Self::Dynamic(property) => CObjectPropertyOperand::Dynamic(property),
+        }
+    }
+}
+
+impl<'a> From<CObjectPropertyOperand<'a>> for CNativeObjectPropertyOwnerProperty {
+    fn from(value: CObjectPropertyOperand<'a>) -> Self {
+        match value {
+            CObjectPropertyOperand::Literal(property) => Self::Literal(property.to_string()),
+            CObjectPropertyOperand::Dynamic(property) => Self::Dynamic(property.clone()),
+        }
+    }
 }
 
 enum NativeObjectPropertyMutationOperation {
@@ -15834,6 +15873,7 @@ struct CGotoStateSnapshot {
     by_reference_foreach_linger_variables: HashSet<String>,
     global_import_names: HashSet<String>,
     native_value_variable_facts: HashMap<String, CNativeValueFacts>,
+    native_object_property_value_facts: HashMap<CNativeObjectPropertyFactKey, CNativeValueFacts>,
     native_callable_variable_identities: HashMap<String, HashSet<CNativeCallableIdentity>>,
     native_reference_fact_slots: HashMap<String, usize>,
     native_reference_slot_facts: HashMap<usize, CNativeValueFacts>,
@@ -16178,6 +16218,14 @@ enum CNativeValueOwnerSource {
         reference: String,
         facts: Option<CNativeValueFacts>,
     },
+    #[allow(dead_code)]
+    ObjectProperty {
+        object: Expr,
+        property: CNativeObjectPropertyOwnerProperty,
+        span: Span,
+        facts: Option<CNativeValueFacts>,
+        fact_target: CNativeObjectPropertyFactTarget,
+    },
 }
 
 enum CNativeValueOwnerCommit {
@@ -16189,6 +16237,12 @@ enum CNativeValueOwnerCommit {
     ReferenceSlot {
         reference: String,
         facts: Option<CNativeValueFacts>,
+    },
+    ObjectPropertyReferenceSlot {
+        reference: String,
+        facts: Option<CNativeValueFacts>,
+        fact_target: CNativeObjectPropertyFactTarget,
+        cleanup_after_use: Vec<String>,
     },
 }
 
@@ -16579,6 +16633,29 @@ struct CNativeValueOwnerMaterialization {
     commit: CNativeValueOwnerCommit,
 }
 
+impl CNativeValueOwnerCommit {
+    fn cleanup_after_use(&self) -> Vec<String> {
+        match self {
+            Self::ObjectPropertyReferenceSlot {
+                cleanup_after_use, ..
+            } => cleanup_after_use.clone(),
+            Self::DirectVariable { .. } | Self::ReferenceSlot { .. } => Vec::new(),
+        }
+    }
+}
+
+impl CNativeValueOwnerMaterialization {
+    fn subject_cleanup_after_use(&self) -> Vec<String> {
+        self.subject.cleanup_after_use.clone()
+    }
+
+    fn cleanup_after_abort(&self) -> Vec<String> {
+        let mut cleanup = self.subject.cleanup_after_use.clone();
+        cleanup.extend(self.commit.cleanup_after_use());
+        cleanup
+    }
+}
+
 struct CNativeArrayAccessOffsetMutationTarget {
     owner: CNativeValueOwnerMaterialization,
     offset: CNativeValueMaterialization,
@@ -16588,7 +16665,13 @@ struct CNativeArrayAccessOffsetMutationTarget {
 impl CNativeArrayAccessOffsetMutationTarget {
     fn cleanup_after_use(&self) -> Vec<String> {
         let mut cleanup = self.offset.cleanup_after_use.clone();
-        cleanup.extend(self.owner.subject.cleanup_after_use.clone());
+        cleanup.extend(self.owner.cleanup_after_abort());
+        cleanup
+    }
+
+    fn subject_cleanup_after_use(&self) -> Vec<String> {
+        let mut cleanup = self.offset.cleanup_after_use.clone();
+        cleanup.extend(self.owner.subject_cleanup_after_use());
         cleanup
     }
 
@@ -17723,6 +17806,7 @@ impl CGenerator {
                 == other.by_reference_foreach_linger_variables
             && self.global_import_names == other.global_import_names
             && self.native_value_variable_facts == other.native_value_variable_facts
+            && self.native_object_property_value_facts == other.native_object_property_value_facts
             && self.native_callable_variable_identities == other.native_callable_variable_identities
             && self.native_reference_fact_slots == other.native_reference_fact_slots
             && self.native_reference_slot_facts == other.native_reference_slot_facts
@@ -17747,6 +17831,7 @@ impl CGenerator {
                 .clone(),
             global_import_names: self.global_import_names.clone(),
             native_value_variable_facts: self.native_value_variable_facts.clone(),
+            native_object_property_value_facts: self.native_object_property_value_facts.clone(),
             native_callable_variable_identities: self.native_callable_variable_identities.clone(),
             native_reference_fact_slots: self.native_reference_fact_slots.clone(),
             native_reference_slot_facts: self.native_reference_slot_facts.clone(),
@@ -17869,6 +17954,11 @@ impl CGenerator {
         self.variable_order = then_branch.variable_order.clone();
         self.native_value_variable_facts =
             Self::join_native_value_variable_facts(then_branch, else_branch, &self.variables);
+        self.native_object_property_value_facts = Self::join_native_object_property_value_facts(
+            then_branch,
+            else_branch,
+            &self.variables,
+        );
         self.native_callable_variable_identities = Self::join_native_callable_variable_identities(
             then_branch,
             else_branch,
@@ -17902,6 +17992,29 @@ impl CGenerator {
             };
             if !facts.is_empty() {
                 joined.insert(name.clone(), facts);
+            }
+        }
+        joined
+    }
+
+    fn join_native_object_property_value_facts(
+        then_branch: &Self,
+        else_branch: &Self,
+        variables: &HashMap<String, CValue>,
+    ) -> HashMap<CNativeObjectPropertyFactKey, CNativeValueFacts> {
+        let mut joined = HashMap::new();
+        for (key, then_facts) in &then_branch.native_object_property_value_facts {
+            if !variables.contains_key(&key.object) {
+                continue;
+            }
+            let Some(else_facts) = else_branch.native_object_property_value_facts.get(key) else {
+                continue;
+            };
+            let Some(facts) = then_facts.intersection(else_facts) else {
+                continue;
+            };
+            if !facts.is_empty() {
+                joined.insert(key.clone(), facts);
             }
         }
         joined
@@ -21141,6 +21254,7 @@ impl CGenerator {
 
     fn release_variable_native_value_handle(&mut self, name: &str) {
         self.native_value_variable_facts.remove(name);
+        self.clear_native_object_property_facts_for_object(name);
         self.native_callable_variable_identities.remove(name);
         let value = self.variables.get(name).cloned();
         match value {
@@ -21963,6 +22077,7 @@ impl CGenerator {
         self.uses_native_string_helpers = true;
         self.uses_native_object_property_helpers = true;
 
+        let replacement_facts = self.native_value_facts_for_expr(expr);
         let (object_value, property_value) =
             self.materialize_object_property_operand(object, property, span, failure_cleanup)?;
         let property_cleanup = c_cleanup_sequence(&property_value.cleanup_after_use);
@@ -21999,6 +22114,7 @@ impl CGenerator {
             &assignment_result_failure_cleanup,
         );
         self.body.extend(mutation.cleanup_after_use);
+        self.record_native_object_property_write_facts(object, property, replacement_facts);
         Ok(assignment_result)
     }
 
@@ -22275,6 +22391,7 @@ impl CGenerator {
             failure_cleanup,
         );
         self.body.extend(value.cleanup_after_use);
+        self.record_native_object_property_write_facts(object, property, None);
         Ok(())
     }
 
@@ -26052,6 +26169,87 @@ impl CGenerator {
         }
     }
 
+    fn native_object_property_fact_target(
+        object: &Expr,
+        property: CObjectPropertyOperand<'_>,
+    ) -> CNativeObjectPropertyFactTarget {
+        match (object, property) {
+            (Expr::Variable(object, _), CObjectPropertyOperand::Literal(property)) => {
+                CNativeObjectPropertyFactTarget::Key(CNativeObjectPropertyFactKey {
+                    object: object.clone(),
+                    property: property.to_string(),
+                })
+            }
+            (Expr::Variable(object, _), CObjectPropertyOperand::Dynamic(_)) => {
+                CNativeObjectPropertyFactTarget::Object(object.clone())
+            }
+            _ => CNativeObjectPropertyFactTarget::All,
+        }
+    }
+
+    #[allow(dead_code)]
+    fn native_object_property_value_facts(
+        &self,
+        target: &CNativeObjectPropertyFactTarget,
+    ) -> Option<CNativeValueFacts> {
+        match target {
+            CNativeObjectPropertyFactTarget::Key(key) => {
+                self.native_object_property_value_facts.get(key).cloned()
+            }
+            CNativeObjectPropertyFactTarget::Object(_) | CNativeObjectPropertyFactTarget::All => {
+                None
+            }
+        }
+    }
+
+    fn set_native_object_property_value_facts(
+        &mut self,
+        key: CNativeObjectPropertyFactKey,
+        facts: Option<CNativeValueFacts>,
+    ) {
+        match facts.filter(|facts| !facts.is_empty()) {
+            Some(facts) => {
+                self.native_object_property_value_facts.insert(key, facts);
+            }
+            None => {
+                self.native_object_property_value_facts.remove(&key);
+            }
+        }
+    }
+
+    fn clear_native_object_property_facts_for_object(&mut self, object: &str) {
+        self.native_object_property_value_facts
+            .retain(|key, _| key.object != object);
+    }
+
+    fn apply_native_object_property_fact_target(
+        &mut self,
+        target: CNativeObjectPropertyFactTarget,
+        facts: Option<CNativeValueFacts>,
+    ) {
+        match target {
+            CNativeObjectPropertyFactTarget::Key(key) => {
+                self.set_native_object_property_value_facts(key, facts);
+            }
+            CNativeObjectPropertyFactTarget::Object(object) => {
+                self.clear_native_object_property_facts_for_object(&object);
+            }
+            CNativeObjectPropertyFactTarget::All => {
+                self.native_object_property_value_facts.clear();
+            }
+        }
+    }
+
+    fn record_native_object_property_write_facts(
+        &mut self,
+        object: &Expr,
+        property: CObjectPropertyOperand<'_>,
+        facts: Option<CNativeValueFacts>,
+    ) {
+        let target = Self::native_object_property_fact_target(object, property);
+        self.apply_native_object_property_fact_target(target, facts);
+    }
+
     fn native_value_facts_for_expr(&self, expr: &Expr) -> Option<CNativeValueFacts> {
         match expr {
             Expr::Variable(name, _) => self.native_value_facts_for_variable(name),
@@ -26111,6 +26309,24 @@ impl CGenerator {
         )
     }
 
+    #[allow(dead_code)]
+    fn native_object_property_owner_source(
+        &self,
+        object: &Expr,
+        property: CObjectPropertyOperand<'_>,
+        span: Span,
+    ) -> CNativeValueOwnerSource {
+        let fact_target = Self::native_object_property_fact_target(object, property);
+        let facts = self.native_object_property_value_facts(&fact_target);
+        CNativeValueOwnerSource::ObjectProperty {
+            object: object.clone(),
+            property: property.into(),
+            span,
+            facts,
+            fact_target,
+        }
+    }
+
     fn native_arrayaccess_variable_owner_source(
         &self,
         name: &str,
@@ -26161,6 +26377,41 @@ impl CGenerator {
                     commit: CNativeValueOwnerCommit::ReferenceSlot { reference, facts },
                 })
             }
+            CNativeValueOwnerSource::ObjectProperty {
+                object,
+                property,
+                span,
+                facts,
+                fact_target,
+            } => {
+                let reference = self.materialize_object_property_reference_source(
+                    &object,
+                    property.borrowed(),
+                    &[],
+                    false,
+                    span,
+                    failure_cleanup,
+                )?;
+                self.uses_native_reference_helpers = true;
+                let handle = self.clone_native_reference_value_handle(&reference.handle);
+                let reference_cleanup = c_cleanup_sequence(&reference.cleanup_after_use);
+                let error_exit =
+                    self.native_error_exit(&format!("{reference_cleanup}{failure_cleanup}"));
+                self.body
+                    .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
+                Ok(CNativeValueOwnerMaterialization {
+                    subject: CNativeValueMaterialization {
+                        handle: handle.clone(),
+                        cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
+                    },
+                    commit: CNativeValueOwnerCommit::ObjectPropertyReferenceSlot {
+                        reference: reference.handle,
+                        facts,
+                        fact_target,
+                        cleanup_after_use: reference.cleanup_after_use,
+                    },
+                })
+            }
         }
     }
 
@@ -26195,6 +26446,24 @@ impl CGenerator {
                     facts,
                     failure_cleanup,
                 )?;
+                self.body
+                    .push(format!("phpc_native_value_free({replacement});"));
+                Ok(())
+            }
+            CNativeValueOwnerCommit::ObjectPropertyReferenceSlot {
+                reference,
+                facts,
+                fact_target,
+                cleanup_after_use: _,
+            } => {
+                self.emit_native_reference_value_commit(
+                    &reference,
+                    replacement,
+                    facts.clone(),
+                    failure_cleanup,
+                )?;
+                self.apply_native_object_property_fact_target(fact_target, facts);
+                self.release_native_reference_fact_handle(&reference);
                 self.body
                     .push(format!("phpc_native_value_free({replacement});"));
                 Ok(())
@@ -26417,6 +26686,7 @@ impl CGenerator {
         self.remember_variable_order(name);
         if self.try_store_mutable_scalar_slot_value(name, &value) {
             self.native_value_variable_facts.remove(name);
+            self.clear_native_object_property_facts_for_object(name);
             self.native_callable_variable_identities.remove(name);
             return;
         }
@@ -38139,14 +38409,17 @@ impl CGenerator {
             failure_cleanup,
         )?;
         self.body.push("}".to_string());
-        self.body.extend(target.cleanup_after_use());
+        let owner_commit_cleanup = target.owner.commit.cleanup_after_use();
+        let owner_commit_cleanup_sequence = c_cleanup_sequence(&owner_commit_cleanup);
+        self.body.extend(target.subject_cleanup_after_use());
         self.emit_native_value_owner_commit(
             target.owner.commit,
             &selected_subject,
             &format!(
-                "phpc_native_value_free({result}); phpc_native_value_free({selected_subject}); {failure_cleanup}"
+                "phpc_native_value_free({result}); phpc_native_value_free({selected_subject}); {owner_commit_cleanup_sequence}{failure_cleanup}"
             ),
         )?;
+        self.body.extend(owner_commit_cleanup);
 
         Ok(Some(CNativeValueMaterialization {
             handle: result.clone(),
@@ -44400,12 +44673,12 @@ impl CGenerator {
         self.uses_native_arrayaccess_offset_write_helpers = true;
 
         let owner = self.materialize_native_value_owner(source, failure_cleanup)?;
-        let subject_cleanup = c_cleanup_sequence(&owner.subject.cleanup_after_use);
-        let offset_failure_cleanup = format!("{subject_cleanup}{failure_cleanup}");
+        let owner_cleanup = c_cleanup_sequence(&owner.cleanup_after_abort());
+        let offset_failure_cleanup = format!("{owner_cleanup}{failure_cleanup}");
         let offset =
             self.materialize_native_value_result_operand(index, &offset_failure_cleanup)?;
         let mut operand_cleanup = offset.cleanup_after_use.clone();
-        operand_cleanup.extend(owner.subject.cleanup_after_use.clone());
+        operand_cleanup.extend(owner.cleanup_after_abort());
         let operand_cleanup_sequence = c_cleanup_sequence(&operand_cleanup);
         let callable_table = self
             .ensure_native_callable_table(&format!("{operand_cleanup_sequence}{failure_cleanup}"));
@@ -44488,8 +44761,8 @@ impl CGenerator {
         self.uses_native_arrayaccess_offset_write_helpers = true;
 
         let owner = self.materialize_native_value_owner(source, failure_cleanup)?;
-        let subject_cleanup = c_cleanup_sequence(&owner.subject.cleanup_after_use);
-        let offset_failure_cleanup = format!("{subject_cleanup}{failure_cleanup}");
+        let owner_cleanup = c_cleanup_sequence(&owner.cleanup_after_abort());
+        let offset_failure_cleanup = format!("{owner_cleanup}{failure_cleanup}");
         let offset = match operation {
             CNativeArrayAccessOffsetWriteOperation::Append => CNativeValueMaterialization {
                 handle: "(phpc_NativeValueHandle){0}".to_string(),
@@ -44505,7 +44778,7 @@ impl CGenerator {
         };
         let offset_cleanup = c_cleanup_sequence(&offset.cleanup_after_use);
         let replacement_failure_cleanup =
-            format!("{offset_cleanup}{subject_cleanup}{failure_cleanup}");
+            format!("{offset_cleanup}{owner_cleanup}{failure_cleanup}");
         let replacement = match operation {
             CNativeArrayAccessOffsetWriteOperation::Unset => CNativeValueMaterialization {
                 handle: "(phpc_NativeValueHandle){0}".to_string(),
@@ -44547,7 +44820,7 @@ impl CGenerator {
 
         let mut operand_cleanup = replacement.cleanup_after_use;
         operand_cleanup.extend(offset.cleanup_after_use);
-        operand_cleanup.extend(owner.subject.cleanup_after_use);
+        operand_cleanup.extend(owner.cleanup_after_abort());
         let operand_cleanup_sequence = c_cleanup_sequence(&operand_cleanup);
         let table = self
             .ensure_native_callable_table(&format!("{operand_cleanup_sequence}{failure_cleanup}"));
@@ -44632,8 +44905,8 @@ impl CGenerator {
             CNativeArrayAccessOffsetWriteOperation::Append
         };
         let owner = self.materialize_native_value_owner(source, failure_cleanup)?;
-        let subject_cleanup = c_cleanup_sequence(&owner.subject.cleanup_after_use);
-        let offset_failure_cleanup = format!("{subject_cleanup}{failure_cleanup}");
+        let owner_cleanup = c_cleanup_sequence(&owner.cleanup_after_abort());
+        let offset_failure_cleanup = format!("{owner_cleanup}{failure_cleanup}");
         let offset = if let Some(index) = index.as_ref() {
             self.materialize_native_value_result_operand(index, &offset_failure_cleanup)?
         } else {
@@ -44644,7 +44917,7 @@ impl CGenerator {
         };
         let offset_cleanup = c_cleanup_sequence(&offset.cleanup_after_use);
         let replacement_failure_cleanup =
-            format!("{offset_cleanup}{subject_cleanup}{failure_cleanup}");
+            format!("{offset_cleanup}{owner_cleanup}{failure_cleanup}");
         let (replacement_value, replacement) = self
             .materialize_assignment_expression_replacement_value(
                 replacement_expr,
@@ -49461,6 +49734,157 @@ mod tests {
             implemented_interface_keys: HashSet::from([interface_key.to_string()]),
         })
         .expect("test object facts are non-empty")
+    }
+
+    #[test]
+    fn native_object_property_owner_materializes_reference_slot_commit_boundary() {
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            uses_native_value_clone: true,
+            ..CGenerator::default()
+        };
+        generator.variables.insert(
+            "holder".to_string(),
+            CValue::NativeValueHandle("holder_value".to_string()),
+        );
+        let key = CNativeObjectPropertyFactKey {
+            object: "holder".to_string(),
+            property: "items".to_string(),
+        };
+        let facts = test_native_object_facts("arrayaccess_items", "arrayaccess");
+        generator
+            .native_object_property_value_facts
+            .insert(key.clone(), facts.clone());
+
+        let source = generator.native_object_property_owner_source(
+            &variable("holder", 1),
+            CObjectPropertyOperand::Literal("items"),
+            span(7),
+        );
+        match &source {
+            CNativeValueOwnerSource::ObjectProperty {
+                facts: Some(source_facts),
+                fact_target: CNativeObjectPropertyFactTarget::Key(source_key),
+                ..
+            } => {
+                assert_eq!(source_facts, &facts);
+                assert_eq!(source_key, &key);
+            }
+            _ => panic!("literal direct property should produce an object-property owner source"),
+        }
+
+        let owner = generator
+            .materialize_native_value_owner(source, "cleanup_failure();")
+            .expect("object-property owner should materialize through a reference slot");
+        assert!(matches!(
+            &owner.commit,
+            CNativeValueOwnerCommit::ObjectPropertyReferenceSlot { .. }
+        ));
+        let owner_cleanup = owner.cleanup_after_abort();
+        assert!(owner_cleanup
+            .iter()
+            .any(|cleanup| cleanup.contains("phpc_native_value_free(")));
+        assert!(owner_cleanup
+            .iter()
+            .any(|cleanup| cleanup.contains("phpc_native_reference_free(")));
+
+        generator
+            .emit_native_value_owner_commit(owner.commit, "replacement_value", "commit_failure();")
+            .expect("object-property owner commit should write through the reference slot");
+        let body = generator.body.join("\n");
+        assert!(
+            body.contains("phpc_native_value_public_property_reference_with_diagnostic_and_free")
+        );
+        assert!(body.contains("phpc_native_reference_value_clone("));
+        assert!(body.contains("phpc_native_reference_set_value("));
+        assert!(body.contains("phpc_native_value_free(replacement_value);"));
+        assert_eq!(
+            generator.native_object_property_value_facts.get(&key),
+            Some(&facts)
+        );
+    }
+
+    #[test]
+    fn native_object_property_owner_facts_invalidate_literal_dynamic_and_unknown_operands() {
+        let mut generator = CGenerator::default();
+        let items_key = CNativeObjectPropertyFactKey {
+            object: "holder".to_string(),
+            property: "items".to_string(),
+        };
+        let other_key = CNativeObjectPropertyFactKey {
+            object: "holder".to_string(),
+            property: "other".to_string(),
+        };
+        let external_key = CNativeObjectPropertyFactKey {
+            object: "other_holder".to_string(),
+            property: "items".to_string(),
+        };
+        let items_facts = test_native_object_facts("items_class", "arrayaccess");
+        let replacement_facts = test_native_object_facts("replacement_class", "arrayaccess");
+        let other_facts = test_native_object_facts("other_class", "arrayaccess");
+
+        generator
+            .native_object_property_value_facts
+            .insert(items_key.clone(), items_facts);
+        generator
+            .native_object_property_value_facts
+            .insert(other_key.clone(), other_facts.clone());
+        generator
+            .native_object_property_value_facts
+            .insert(external_key.clone(), other_facts.clone());
+
+        generator.record_native_object_property_write_facts(
+            &variable("holder", 1),
+            CObjectPropertyOperand::Literal("items"),
+            Some(replacement_facts.clone()),
+        );
+        assert_eq!(
+            generator.native_object_property_value_facts.get(&items_key),
+            Some(&replacement_facts)
+        );
+        assert!(generator
+            .native_object_property_value_facts
+            .contains_key(&other_key));
+
+        let dynamic_source = generator.native_object_property_owner_source(
+            &variable("holder", 1),
+            CObjectPropertyOperand::Dynamic(&variable("slot", 5)),
+            span(10),
+        );
+        match dynamic_source {
+            CNativeValueOwnerSource::ObjectProperty {
+                facts: None,
+                fact_target: CNativeObjectPropertyFactTarget::Object(object),
+                ..
+            } => assert_eq!(object, "holder"),
+            _ => panic!("dynamic property owners should be factless and object-invalidating"),
+        }
+
+        generator.record_native_object_property_write_facts(
+            &variable("holder", 1),
+            CObjectPropertyOperand::Dynamic(&variable("slot", 5)),
+            Some(replacement_facts),
+        );
+        assert!(!generator
+            .native_object_property_value_facts
+            .contains_key(&items_key));
+        assert!(!generator
+            .native_object_property_value_facts
+            .contains_key(&other_key));
+        assert!(generator
+            .native_object_property_value_facts
+            .contains_key(&external_key));
+
+        generator.record_native_object_property_write_facts(
+            &Expr::Call {
+                name: "make_holder".to_string(),
+                args: Vec::new(),
+                span: span(20),
+            },
+            CObjectPropertyOperand::Literal("items"),
+            Some(other_facts),
+        );
+        assert!(generator.native_object_property_value_facts.is_empty());
     }
 
     fn test_descriptor_closure_summary(
