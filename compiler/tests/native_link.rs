@@ -551,6 +551,68 @@ const NATIVE_STATIC_PROPERTY_OFFSET_REFERENCE_SOURCE: &str = concat!(
     "echo \"\\n\";\n",
 );
 
+const NATIVE_STATIC_PROPERTY_ARRAYACCESS_REFERENCE_SOURCE: &str = concat!(
+    "<?php\n",
+    "function static_aa_ref_set(&$slot, $value) { $slot = $value; return $slot; }\n",
+    "class StaticArrayAccessReferenceBag implements ArrayAccess {\n",
+    "    public $slot = \"seed\";\n",
+    "    public function &offsetGet($offset) { return $this->slot; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class StaticArrayAccessReferenceRoot {\n",
+    "    public static $literal;\n",
+    "    public static $object;\n",
+    "    public static $className;\n",
+    "    public static $self;\n",
+    "    public static $parent;\n",
+    "    public static $late;\n",
+    "    public static function selfBits($key) {\n",
+    "        self::$self = new StaticArrayAccessReferenceBag();\n",
+    "        echo static_aa_ref_set(self::$self[$key], \"self-arg\"), \":\";\n",
+    "        $selfAlias =& self::$self[$key];\n",
+    "        echo ($selfAlias = \"self-alias\");\n",
+    "    }\n",
+    "    public static function lateBits($key) {\n",
+    "        static::$late = new StaticArrayAccessReferenceBag();\n",
+    "        echo static_aa_ref_set(static::$late[$key], \"late-arg\"), \":\";\n",
+    "        $lateAlias =& static::$late[$key];\n",
+    "        echo ($lateAlias = \"late-alias\");\n",
+    "    }\n",
+    "}\n",
+    "class StaticArrayAccessReferenceChild extends StaticArrayAccessReferenceRoot {\n",
+    "    public static $late;\n",
+    "    public static function parentBits($key) {\n",
+    "        parent::$parent = new StaticArrayAccessReferenceBag();\n",
+    "        echo static_aa_ref_set(parent::$parent[$key], \"parent-arg\"), \":\";\n",
+    "        $parentAlias =& parent::$parent[$key];\n",
+    "        echo ($parentAlias = \"parent-alias\");\n",
+    "    }\n",
+    "}\n",
+    "$key = \"k\";\n",
+    "$class = \"StaticArrayAccessReferenceChild\";\n",
+    "StaticArrayAccessReferenceRoot::$literal = new StaticArrayAccessReferenceBag();\n",
+    "StaticArrayAccessReferenceRoot::$object = new StaticArrayAccessReferenceBag();\n",
+    "$class::$className = new StaticArrayAccessReferenceBag();\n",
+    "$object = new StaticArrayAccessReferenceRoot();\n",
+    "echo static_aa_ref_set(StaticArrayAccessReferenceRoot::$literal[$key], \"lit-arg\"), \":\";\n",
+    "$literalAlias =& StaticArrayAccessReferenceRoot::$literal[$key];\n",
+    "echo ($literalAlias = \"lit-alias\"), \"|\";\n",
+    "echo static_aa_ref_set($object::$object[$key], \"object-arg\"), \":\";\n",
+    "$objectAlias =& $object::$object[$key];\n",
+    "echo ($objectAlias = \"object-alias\"), \"|\";\n",
+    "echo static_aa_ref_set($class::$className[$key], \"class-arg\"), \":\";\n",
+    "$classAlias =& $class::$className[$key];\n",
+    "echo ($classAlias = \"class-alias\"), \"|\";\n",
+    "StaticArrayAccessReferenceRoot::selfBits($key);\n",
+    "echo \"|\";\n",
+    "StaticArrayAccessReferenceChild::parentBits($key);\n",
+    "echo \"|\";\n",
+    "StaticArrayAccessReferenceChild::lateBits($key);\n",
+    "echo \"\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_PROPERTY_UNSET_SOURCE: &str = concat!(
     "<?php\n",
     "class Box { public $name; public $peer; private $secret; }\n",
@@ -2562,6 +2624,80 @@ fn emit_exe_links_and_runs_static_property_offset_reference_program() {
     assert_eq!(
         run.stdout,
         b"lit-arg:lit-alias|object-arg:object-alias|class-arg:class-alias|self-arg|parent-arg|late-alias\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn native_executable_c_source_routes_static_property_arrayaccess_references_through_offsetget_reference(
+) {
+    let program = parse(NATIVE_STATIC_PROPERTY_ARRAYACCESS_REFERENCE_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    for required in [
+        "phpc_native_static_property_reference_class_with_diagnostic",
+        "phpc_native_static_property_reference_relative_with_diagnostic",
+        "phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free",
+        "phpc_native_value_arrayaccess_offset_get_reference_with_diagnostic",
+        "phpc_native_reference_value_clone",
+        "phpc_native_call_arguments_push_reference_and_free",
+        "static_property_arrayaccess_reference_subject_",
+        "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_SELF",
+        "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_PARENT",
+        "PHPC_NATIVE_STATIC_PROPERTY_RECEIVER_LATE_STATIC",
+    ] {
+        assert!(source.contains(required), "missing {required}:\n{source}");
+    }
+    assert!(
+        source
+            .matches("phpc_native_value_arrayaccess_offset_get_reference_with_diagnostic")
+            .count()
+            >= 12,
+        "literal, object/class-string, self, parent, and late-static references should all bind through ArrayAccess offsetGet references:\n{source}"
+    );
+    assert!(
+        body.matches("phpc_native_static_property_scope_from_receiver_with_diagnostic_and_free")
+            .count()
+            >= 4,
+        "object and class-string static-property ArrayAccess receivers should preserve receiver-scope cleanup:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_reference_from_value_and_free(static_property")
+            && !source.contains("= phpc_native_static_property_array_path_reference_")
+            && !source
+                .contains("= phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic"),
+        "static-property ArrayAccess reference sources must not fake references, use native array-path references, or commit through offsetSet:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_static_property_arrayaccess_reference_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "static_property_arrayaccess_reference",
+        NATIVE_STATIC_PROPERTY_ARRAYACCESS_REFERENCE_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run static-property ArrayAccess reference executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"lit-arg:lit-alias|object-arg:object-alias|class-arg:class-alias|self-arg:self-alias|parent-arg:parent-alias|late-arg:late-alias\n"
     );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
@@ -5803,19 +5939,20 @@ fn native_executable_c_source_keeps_unsupported_static_property_dynamic_shapes_b
             "<?php\nfunction take(&$slot) {}\nclass Counter { public static $items = [\"k\" => 1]; }\ntake(static::$items[\"k\"]);\n",
         ),
         (
-            "static-property ArrayAccess offset reference source",
+            "static-property ArrayAccess multi-hop reference source",
             concat!(
                 "<?php\n",
                 "function take(&$slot) {}\n",
                 "class StaticOffsetReferenceBag implements ArrayAccess {\n",
-                "    public function offsetGet($offset) { return \"bad\"; }\n",
+                "    public function &offsetGet($offset) { return $this->slot; }\n",
+                "    public $slot = [\"leaf\" => \"bad\"];\n",
                 "    public function offsetExists($offset) { return true; }\n",
                 "    public function offsetSet($offset, $value) { return null; }\n",
                 "    public function offsetUnset($offset) { return null; }\n",
                 "}\n",
                 "class StaticOffsetReferenceBlocked { public static $bag; }\n",
                 "StaticOffsetReferenceBlocked::$bag = new StaticOffsetReferenceBag();\n",
-                "take(StaticOffsetReferenceBlocked::$bag[\"k\"]);\n",
+                "take(StaticOffsetReferenceBlocked::$bag[\"k\"][\"leaf\"]);\n",
             ),
         ),
     ] {

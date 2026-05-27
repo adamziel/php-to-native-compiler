@@ -25237,7 +25237,12 @@ impl CGenerator {
             .native_static_property_owner_source_for_expr(expr)
             .is_some()
         {
-            return Err(self.unsupported(span, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION));
+            return self.materialize_static_property_arrayaccess_reference_source(
+                expr,
+                indices,
+                span,
+                failure_cleanup,
+            );
         }
         let Some(target) = Self::static_property_lvalue_target_from_expr(expr) else {
             return Err(self.unsupported(span, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION));
@@ -25300,6 +25305,67 @@ impl CGenerator {
             handle: reference.clone(),
             cleanup_after_use: vec![format!("phpc_native_reference_free({reference});")],
         })
+    }
+
+    fn materialize_static_property_arrayaccess_reference_source(
+        &mut self,
+        expr: &Expr,
+        indices: &[&Expr],
+        span: Span,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeReferenceMaterialization> {
+        let [index] = indices else {
+            return Err(self.unsupported(span, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION));
+        };
+        let Some(root_reference) =
+            self.materialize_static_property_expr_reference_source(expr, failure_cleanup)?
+        else {
+            return Err(self.unsupported(span, ASSEMBLY_REFERENCE_ASSIGNMENT_REJECTION));
+        };
+
+        self.uses_native_arrayaccess_offset_read_helpers = true;
+        self.uses_native_callable_helpers = true;
+        self.uses_native_reference_helpers = true;
+
+        let root_reference_cleanup = c_cleanup_sequence(&root_reference.cleanup_after_use);
+        let subject = self.next_native_name("static_property_arrayaccess_reference_subject");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {subject} = phpc_native_reference_value_clone({});",
+            root_reference.handle
+        ));
+        let subject_error_exit =
+            self.native_error_exit(&format!("{root_reference_cleanup}{failure_cleanup}"));
+        self.body.push(format!(
+            "if ({subject}.ptr == NULL) {{ {subject_error_exit} }}"
+        ));
+
+        let subject_cleanup = vec![format!("phpc_native_value_free({subject});")];
+        let mut operand_cleanup = subject_cleanup.clone();
+        operand_cleanup.extend(root_reference.cleanup_after_use.clone());
+        let offset_failure_cleanup = format!(
+            "{}{}",
+            c_cleanup_sequence(&operand_cleanup),
+            failure_cleanup
+        );
+        let offset =
+            self.materialize_native_value_result_operand(index, &offset_failure_cleanup)?;
+        operand_cleanup = offset.cleanup_after_use.clone();
+        operand_cleanup.extend(subject_cleanup);
+        operand_cleanup.extend(root_reference.cleanup_after_use);
+        let operand_cleanup_sequence = c_cleanup_sequence(&operand_cleanup);
+        let callable_table = self
+            .ensure_native_callable_table(&format!("{operand_cleanup_sequence}{failure_cleanup}"));
+        let operands = CNativeArrayAccessOffsetReadOperands {
+            subject_handle: subject,
+            offset_handle: offset.handle,
+            callable_table,
+            cleanup_after_use: operand_cleanup.clone(),
+        };
+        let reference =
+            self.emit_native_arrayaccess_offset_get_reference_operation(&operands, failure_cleanup);
+        self.body.extend(operand_cleanup);
+
+        Ok(reference)
     }
 
     fn materialize_object_property_reference_source(
@@ -59737,6 +59803,68 @@ mod tests {
             body.contains("phpc_native_static_property_array_path_reference_class_with_diagnostic")
         );
         assert!(body.contains("static_property_lvalue_name_bytes"));
+        assert!(!body.contains("phpc_native_reference_from_value_and_free(static_property"));
+    }
+
+    #[test]
+    fn static_property_arrayaccess_reference_materialization_selects_offsetget_reference_owner() {
+        let program = crate::parse(concat!(
+            "<?php\n",
+            "class StaticArrayAccessReferenceUnitBag implements ArrayAccess {\n",
+            "    public $slot = \"v\";\n",
+            "    public function &offsetGet($offset) { return $this->slot; }\n",
+            "    public function offsetExists($offset) { return true; }\n",
+            "    public function offsetSet($offset, $value) { return null; }\n",
+            "    public function offsetUnset($offset) { return null; }\n",
+            "}\n",
+            "class StaticArrayAccessReferenceUnit { public static $bag; }\n",
+        ))
+        .unwrap();
+        let mut generator = CGenerator {
+            uses_native_string_helpers: true,
+            uses_native_value_clone: true,
+            ..CGenerator::default()
+        };
+        generator
+            .register_top_level_declared_classes(&program.statements)
+            .unwrap();
+        generator.emit_declared_class_method_definitions().unwrap();
+        generator.native_static_property_value_facts.insert(
+            CStaticPropertyFactKey {
+                receiver: format!(
+                    "class:{}",
+                    CGenerator::declared_class_key("StaticArrayAccessReferenceUnit")
+                ),
+                property: "bag".to_string(),
+            },
+            test_declared_class_facts(&generator, "StaticArrayAccessReferenceUnitBag"),
+        );
+
+        let root = Expr::StaticProperty {
+            class_name: "StaticArrayAccessReferenceUnit".to_string(),
+            property: "bag".to_string(),
+            span: span(20),
+        };
+        let indices = [Expr::String("k".to_string(), span(21))];
+        let index_refs = indices.iter().collect::<Vec<_>>();
+        let materialized = generator
+            .materialize_static_property_array_path_reference_source(
+                &root,
+                &index_refs,
+                span(20),
+                "cleanup_failure();",
+            )
+            .expect("static-property ArrayAccess reference should select offsetGet reference");
+
+        assert!(materialized
+            .handle
+            .starts_with("arrayaccess_offset_get_reference_"));
+        assert_eq!(materialized.cleanup_after_use.len(), 1);
+        let body = generator.body.join("\n");
+        assert!(body.contains("phpc_native_static_property_reference_class_with_diagnostic"));
+        assert!(body.contains("phpc_native_reference_value_clone("));
+        assert!(body.contains("phpc_native_value_arrayaccess_offset_get_reference_with_diagnostic"));
+        assert!(!body.contains("phpc_native_static_property_array_path_reference_"));
         assert!(!body.contains("phpc_native_reference_from_value_and_free(static_property"));
     }
 
