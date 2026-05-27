@@ -8735,7 +8735,7 @@ echo first(...$items);
 
 #[test]
 fn named_arguments_are_rejected_with_stable_parse_error() {
-    let error = parse_error(
+    let error = runtime_error(
         r#"<?php
 function greet($name) {
     return $name;
@@ -8748,7 +8748,7 @@ echo greet(name: "Ada");
     assert_eq!(error.column, 12);
     assert_eq!(
         error.message,
-        "unsupported named argument: call argument names require parameter-name metadata, duplicate and unknown-name diagnostics, positional/named ordering, by-reference binding, variadic collection, unpacking interaction, and native lowering"
+        "unsupported call named argument: interpreter call consumers have not been wired to shared named-argument normalization"
     );
 }
 

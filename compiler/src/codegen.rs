@@ -61862,6 +61862,19 @@ mod tests {
             }),
             "ExternalCallableProduct",
         );
+        let public_invoke_contract = generator
+            .callable_object_source_call_signature_contract(
+                &test_variable_expr("public_invokable"),
+                0,
+            )
+            .expect("public __invoke should expose the callable-object source-call boundary");
+        assert_eq!(
+            public_invoke_contract.availability,
+            NativeMethodStaticSignatureAvailability::Known(CScopedCallableStringSignature {
+                fixed_param_by_reference: Vec::new(),
+                returns_by_reference: false,
+            })
+        );
 
         set_method_visibility(
             &mut generator,
@@ -61874,14 +61887,26 @@ mod tests {
             "hidden_invokable",
             "HiddenInvokeExternalCallableFactory",
         );
-        assert_native_object_fact_contains_class(
-            generator.native_value_facts_for_expr(&Expr::DynamicCall {
-                callee: Box::new(test_variable_expr("hidden_invokable")),
-                args: Vec::new(),
-                span,
-            }),
-            "ExternalCallableProduct",
+        assert!(
+            generator
+                .native_value_facts_for_expr(&Expr::DynamicCall {
+                    callee: Box::new(test_variable_expr("hidden_invokable")),
+                    args: Vec::new(),
+                    span,
+                })
+                .is_none(),
+            "object callable identities must not publish facts for private __invoke metadata"
         );
+        let hidden_invoke_contract = generator
+            .callable_object_source_call_signature_contract(
+                &test_variable_expr("hidden_invokable"),
+                0,
+            )
+            .expect("private __invoke should still route to runtime rejection");
+        assert!(matches!(
+            hidden_invoke_contract.availability,
+            NativeMethodStaticSignatureAvailability::RuntimeFallback(_)
+        ));
 
         set_method_staticness(
             &mut generator,
@@ -61904,6 +61929,16 @@ mod tests {
                 .is_none(),
             "object callable identities must not publish facts for static __invoke metadata"
         );
+        let static_invoke_contract = generator
+            .callable_object_source_call_signature_contract(
+                &test_variable_expr("static_invokable"),
+                0,
+            )
+            .expect("static __invoke should still route to runtime rejection");
+        assert!(matches!(
+            static_invoke_contract.availability,
+            NativeMethodStaticSignatureAvailability::RuntimeFallback(_)
+        ));
     }
 
     #[test]
