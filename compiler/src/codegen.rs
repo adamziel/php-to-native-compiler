@@ -10195,6 +10195,7 @@ struct LlvmGenerator {
     uses_native_user_class_declaration: bool,
     uses_native_class_metadata_exists: bool,
     uses_native_value_class_relationship_operation: bool,
+    uses_native_value_dynamic_class_relationship_operation: bool,
     uses_native_diagnostic_result_producers: bool,
     uses_native_diagnostic_result_consumers: bool,
 }
@@ -10542,7 +10543,9 @@ impl LlvmGenerator {
                 "%phpc.NativeDiagnosticHandle = type { ptr }",
             );
         }
-        if self.uses_native_value_class_relationship_operation {
+        if self.uses_native_value_class_relationship_operation
+            || self.uses_native_value_dynamic_class_relationship_operation
+        {
             emit_llvm_type_once(
                 &mut output,
                 &mut emitted_native_value_handle,
@@ -10705,6 +10708,9 @@ impl LlvmGenerator {
             output.push_str(&format!(
                 "declare i1 @phpc_native_value_class_relationship_matches_with_diagnostic(%phpc.NativeValueHandle, ptr, {usize_type}, i8, ptr)\n"
             ));
+        }
+        if self.uses_native_value_dynamic_class_relationship_operation {
+            output.push_str("declare i1 @phpc_native_value_dynamic_class_relationship_matches_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i8, ptr)\n");
         }
         if self.uses_native_value_comparison_operation {
             output.push_str("declare i1 @phpc_native_value_comparison_with_diagnostic(%phpc.NativeValueHandle, %phpc.NativeValueHandle, i8, ptr)\n");
@@ -12782,37 +12788,84 @@ impl LlvmGenerator {
         class_name: &NewClassName,
         span: Span,
     ) -> CompileResult<IrValue> {
-        let NewClassName::Named(class_name) = class_name else {
+        if matches!(
+            class_name,
+            NewClassName::SelfClass | NewClassName::ParentClass | NewClassName::StaticClass
+        ) {
             return Err(self.unsupported(span, LLVM_INSTANCEOF_REJECTION));
-        };
+        }
 
         let value = self.emit_value_operand_expr(expr)?;
         let value = self
             .emit_native_value_for_ir_value(value, span)
             .map_err(|_| self.unsupported(span, LLVM_INSTANCEOF_REJECTION))?;
-        let class_name_global = self.add_string(class_name);
         let diagnostic_slot = self.next_temp();
         let result = self.next_temp();
         let usize_type = NativeRuntimeIrTarget::host().usize_ir_type();
 
         self.uses_native_string_int_operation = true;
-        self.uses_native_value_class_relationship_operation = true;
         self.body.push(format!(
             "{diagnostic_slot} = alloca %phpc.NativeDiagnosticHandle"
         ));
         self.body.push(format!(
             "store %phpc.NativeDiagnosticHandle zeroinitializer, ptr {diagnostic_slot}"
         ));
-        self.body.push(format!(
-            "{result} = call i1 @phpc_native_value_class_relationship_matches_with_diagnostic(%phpc.NativeValueHandle {value}, ptr @{class_name_global}, {usize_type} {}, i8 0, ptr {diagnostic_slot})",
-            class_name.len()
-        ));
+        let mut cleanup_after_use = Vec::new();
+        match class_name {
+            NewClassName::Named(class_name) => {
+                self.uses_native_value_class_relationship_operation = true;
+                let class_name_global = self.add_string(class_name);
+                self.body.push(format!(
+                    "{result} = call i1 @phpc_native_value_class_relationship_matches_with_diagnostic(%phpc.NativeValueHandle {value}, ptr @{class_name_global}, {usize_type} {}, i8 0, ptr {diagnostic_slot})",
+                    class_name.len()
+                ));
+            }
+            NewClassName::DynamicVariable(_) | NewClassName::DynamicExpression(_) => {
+                self.uses_native_value_dynamic_class_relationship_operation = true;
+                let target = self.emit_llvm_dynamic_class_name_value(class_name, span)?;
+                self.body.push(format!(
+                    "{result} = call i1 @phpc_native_value_dynamic_class_relationship_matches_with_diagnostic(%phpc.NativeValueHandle {value}, %phpc.NativeValueHandle {target}, i8 0, ptr {diagnostic_slot})"
+                ));
+                cleanup_after_use.push(target);
+            }
+            NewClassName::SelfClass | NewClassName::ParentClass | NewClassName::StaticClass => {
+                unreachable!("relative instanceof class names rejected before lowering")
+            }
+        }
         self.emit_report_native_diagnostic_slot(&diagnostic_slot);
+        for handle in cleanup_after_use {
+            self.body.push(format!(
+                "call void @phpc_native_value_free(%phpc.NativeValueHandle {handle})"
+            ));
+        }
         self.body.push(format!(
             "call void @phpc_native_value_free(%phpc.NativeValueHandle {value})"
         ));
 
         Ok(IrValue::BoolExpr(result))
+    }
+
+    fn emit_llvm_dynamic_class_name_value(
+        &mut self,
+        class_name: &NewClassName,
+        span: Span,
+    ) -> CompileResult<String> {
+        let value = match class_name {
+            NewClassName::DynamicVariable(name) => {
+                let expr = Expr::Variable(name.clone(), span);
+                self.emit_value_operand_expr(&expr)?
+            }
+            NewClassName::DynamicExpression(expr) => self.emit_value_operand_expr(expr)?,
+            NewClassName::Named(_)
+            | NewClassName::SelfClass
+            | NewClassName::ParentClass
+            | NewClassName::StaticClass => {
+                unreachable!("only dynamic class names are materialized here")
+            }
+        };
+
+        self.emit_native_value_for_ir_value(value, span)
+            .map_err(|_| self.unsupported(span, LLVM_INSTANCEOF_REJECTION))
     }
 
     fn emit_native_relationship_metadata_call(

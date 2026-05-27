@@ -3,7 +3,9 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 use php_compiler::error::Phase;
-use php_compiler::{emit_asm_source, emit_ir_source, run_source};
+use php_compiler::{
+    codegen::emit_native_executable_c_source, emit_asm_source, emit_ir_source, parse, run_source,
+};
 
 const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
 const ASSEMBLY_OBJECT_CLASS_REJECTION: &str = "assembly object/class lowering rejects class declarations outside the bounded generated-C declared-object subset, including inheritance metadata, unsupported constructor dispatch, unsupported public property and instance method forms, object metadata builtins, visibility contexts, references/copy-on-write, and exact native object errors; generated-native C lowers supported declared object allocation, public properties, named instanceof, public declared instance methods, and supported constructors";
@@ -357,6 +359,36 @@ fn emit_ir_routes_named_instanceof_through_runtime_relationship_abi() {
 }
 
 #[test]
+fn emit_ir_routes_dynamic_instanceof_targets_through_runtime_relationship_abi() {
+    let ir = emit_ir_source(
+        "<?php\n$class = \"Countable\";\n$value = 7;\n$is = $value instanceof $class;\n$expr = $value instanceof (\"Countable\");\necho $is ? \"Y\" : \"N\";\necho $expr ? \"Y\" : \"N\";\n",
+    )
+    .unwrap();
+
+    assert!(
+        ir.contains(
+            "declare i1 @phpc_native_value_dynamic_class_relationship_matches_with_diagnostic"
+        ),
+        "{ir}"
+    );
+    assert_eq!(
+        ir.matches("call i1 @phpc_native_value_dynamic_class_relationship_matches_with_diagnostic")
+            .count(),
+        2,
+        "{ir}"
+    );
+    assert!(
+        !ir.contains("call i1 @phpc_native_value_class_relationship_matches_with_diagnostic"),
+        "dynamic instanceof should not fall back to named class-name lowering:\n{ir}"
+    );
+    assert!(
+        !ir.contains("phpc_native_text_membership"),
+        "dynamic instanceof should not use text-membership tables:\n{ir}"
+    );
+    assert!(!ir.contains("instanceof lowering rejects"), "{ir}");
+}
+
+#[test]
 fn emit_ir_routes_instanceof_operand_calls_through_call_boundary() {
     let error = emit_ir_source("<?php\n$is = missing_value() instanceof Countable;\n").unwrap_err();
 
@@ -391,16 +423,14 @@ fn emit_ir_keeps_object_instanceof_blocked_until_llvm_new_produces_object_handle
 }
 
 #[test]
-fn emit_ir_keeps_dynamic_instanceof_targets_at_parse_boundary() {
-    let error =
-        emit_ir_source("<?php\n$class = \"Box\";\n$value = 7;\necho $value instanceof $class;\n")
-            .unwrap_err();
+fn emit_ir_routes_dynamic_instanceof_operand_calls_through_call_boundary() {
+    let error = emit_ir_source("<?php\n$value = 7;\necho $value instanceof (target_name());\n")
+        .unwrap_err();
 
-    assert_eq!(error.phase, Phase::Parse);
-    assert_eq!(
-        error.message,
-        "unsupported instanceof class expression: dynamic class names are not implemented"
-    );
+    assert_eq!(error.phase, Phase::Codegen);
+    assert_eq!(error.line, 3);
+    assert_eq!(error.column, 25);
+    assert_eq!(error.message, LLVM_FUNCTION_CALL_REJECTION);
 }
 
 #[test]
@@ -421,6 +451,52 @@ fn emit_asm_routes_named_instanceof_through_llvm_relationship_abi() {
     assert!(
         asm.contains("phpc_native_value_class_relationship_matches_with_diagnostic"),
         "{asm}"
+    );
+}
+
+#[test]
+fn emit_asm_routes_dynamic_instanceof_through_llvm_relationship_abi() {
+    let asm = emit_asm_source(
+        "<?php\n$class = \"Countable\";\n$value = 7;\n$is = $value instanceof $class;\necho $is ? \"Y\" : \"N\";\n",
+    )
+    .unwrap();
+
+    assert!(
+        asm.contains("phpc_native_value_dynamic_class_relationship_matches_with_diagnostic"),
+        "{asm}"
+    );
+    assert!(
+        !asm.contains("phpc_native_text_membership"),
+        "dynamic instanceof assembly should not use text-membership helpers:\n{asm}"
+    );
+}
+
+#[test]
+fn native_source_routes_dynamic_instanceof_targets_through_runtime_relationship_abi() {
+    let program = parse(
+        "<?php\nclass DynBox {}\n$box = new DynBox();\n$target = \"DynBox\";\necho $box instanceof $target ? \"Y\" : \"N\";\necho $box instanceof (\"dynbox\") ? \"Y\" : \"N\";\n",
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = source
+        .split_once("int main(void)")
+        .map(|(_, body)| body)
+        .unwrap_or(&source);
+
+    assert!(
+        body.matches("phpc_native_value_dynamic_class_relationship_matches_with_diagnostic")
+            .count()
+            >= 2,
+        "dynamic instanceof generated C should use the dynamic relationship ABI:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_text_membership")
+            && !body.contains("phpc_native_text_membership_candidates"),
+        "dynamic instanceof generated C should not use text-membership tables:\n{source}"
+    );
+    assert!(
+        !body.contains("strcmp(") && !body.contains("strcasecmp("),
+        "dynamic instanceof generated C should not lower to class-name ladders:\n{source}"
     );
 }
 
