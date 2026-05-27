@@ -38245,6 +38245,7 @@ impl CGenerator {
                 cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
             }
         };
+        self.emit_active_finally_bodies_before_terminal_transfer()?;
         let local_cleanup = c_cleanup_sequence(&native_value_aux_cleanup_after_consuming_handle(
             &materialized,
         ));

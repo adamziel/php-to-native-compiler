@@ -452,6 +452,56 @@ fn emit_exe_links_and_runs_include_once_return_value_and_duplicate_true() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_include_unit_return_through_finally() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("execution-return-finally-exe");
+    let root = dir.join("root.php");
+    let included = dir.join("value.php");
+    let output = dir.join("program");
+    fs::write(
+        &included,
+        concat!(
+            "<?php\n",
+            "try {\n",
+            "    echo 'try|';\n",
+            "    return 'loaded';\n",
+            "} finally {\n",
+            "    echo 'finally|';\n",
+            "}\n",
+        ),
+    )
+    .expect("write include return-through-finally fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "$value = include __DIR__ . '/value.php';\n",
+            "echo $value, '|after', \"\\n\";\n",
+        ),
+    )
+    .expect("write include return-through-finally root fixture");
+
+    let output = compile_exe(&root, &output, "include return-through-finally executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run include return-through-finally executable");
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "try|finally|loaded|after\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+}
+
+#[test]
 fn native_executable_c_source_uses_include_execution_state_for_function_scope() {
     let dir = include_discovery_fixture_dir("execution-function-scope-c-source");
     let root = dir.join("root.php");
