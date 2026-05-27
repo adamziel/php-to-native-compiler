@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 22:18 CEST
+Updated: 2026-05-27 22:20 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,14 +19,37 @@ Overall integrated-roadmap progress: **93%** `[##################--]`
 
 Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `182cb33a` scopes already-compiled
-literal include units to the active generated user-function caller. Include
-units now receive a reusable execution-state packet carrying the caller symbol
-scope, so included top-level assignments, direct variable reads, and include
-return values are visible inside function frames instead of being routed
-through the request root symbol table. Runtime-only source activation, broader
-dynamic include execution, exit/exception propagation parity, and non-C backend
-include execution remain blocked.
+Latest accounted source capability: `c9e97085` routes selected nested
+ArrayAccess reference owners through a real runtime reference-array-path ABI.
+Reference-returning `offsetGet()` roots can now feed nested array-key
+by-reference consumers and reference assignments for direct variables and
+property-held roots without `offsetSet()` substitution or fake reference
+cloning. Broader unknown owner facts, arbitrary object/property reference
+paths, full COW/reference parity, and LLVM/ASM parity remain blocked.
+
+Recent source commit `c9e97085` advances nested ArrayAccess reference owner
+coverage without adding object-name ladders, generated-C source-shape
+recognizers, or cloned reference writeback. Runtime
+`phpc_native_reference_array_path_reference_with_diagnostic` materializes nested
+array cells from an existing native reference and returns an aliasing reference
+handle; generated C routes selected nested ArrayAccess reference consumers
+through `offsetGet()` reference acquisition for the root segment and the shared
+reference-array-path ABI for remaining keys. Focused gates covered runtime
+reference-array-path mutation, generated-C source proof, linked executable
+nested reference write-through, adjacent static-property ArrayAccess reference
+sources, owner-stack reference-returning `offsetGet()` contracts, compile
+checking, formatting, and diff checks. Primary gate log:
+`state/logs/phpc-primary-arrayaccess-nested-ref-d4af514d-20260527.gates.log`
+sha256 `5aa85e27ddb02b3bb9da356908e6850f66c29d8159a5742685e8091bac75b0c3`.
+
+Recent source commit `182cb33a` scopes already-compiled literal include units
+to the active generated user-function caller. Include units now receive a
+reusable execution-state packet carrying the caller symbol scope, so included
+top-level assignments, direct variable reads, and include return values are
+visible inside function frames instead of being routed through the request root
+symbol table. Runtime-only source activation, broader dynamic include
+execution, exit/exception propagation parity, and non-C backend include
+execution remain blocked.
 
 Recent source commit `182cb33a` advances compiled include/require execution
 without adding include-path tables as production shortcuts, source-name
