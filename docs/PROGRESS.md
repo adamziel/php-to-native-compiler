@@ -4,6 +4,25 @@
 
 Implemented:
 
+- Added generated-C named-argument preservation for selected static
+  `__callStatic` fallback calls. Source-order call arguments now carry optional
+  source names through the shared `NativeCallArgumentsHandle`, and the runtime
+  magic `$args` packer inserts string keys for named arguments while appending
+  positional entries normally. Missing or inaccessible static calls with a
+  public static `__callStatic` preserve named `$args` keys for literal class,
+  object-static receiver, `self::`, and declared method-frame `static::`
+  calls, while normal declared static method hits still bind through declared
+  parameter metadata before magic fallback. Focused primary gates cover the
+  normalizer unit, generated-C and linked executable named magic static
+  proofs, the named dynamic receiver blocker, magic static, named arguments,
+  descriptor closures, static-property filters, nested and property-held
+  `ArrayAccess`, constructors, source-call references, exact imports, class
+  aliases, and namespace imports. Named dynamic receiver `__call`, spread and
+  unpack, constructor named-argument breadth, unknown dynamic callables,
+  malformed magic signatures, traits/interfaces, aliases/autoload,
+  callable-object magic shapes, full `$args` reference/COW parity, and LLVM
+  IR/assembly parity remain unsupported.
+
 - Added generated-C static-property `unset()` production through the shared
   static-property lvalue/storage boundary. Literal class, object/class-string,
   `self`, `parent`, and declared method-frame `static` receivers now route to
@@ -65,8 +84,8 @@ Implemented:
   static-property mutation, object static-property receiver, nested
   `ArrayAccess`, constructor, descriptor closure, magic static,
   source-call reference, exact import, and class-alias filters. Computed
-  static-property names, top-level `static::$prop`, references, `unset`,
-  `??=`, array-offset mutation, magic/static overloading, traits/interfaces,
+  static-property names, top-level `static::$prop`, references, array-offset
+  mutation, magic/static overloading, traits/interfaces,
   autoload breadth, broad references/COW, and LLVM IR/assembly parity remain
   unsupported.
 
