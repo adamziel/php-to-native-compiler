@@ -1312,6 +1312,21 @@ const NATIVE_OBJECT_PROPERTY_MAGIC_SOURCE: &str = concat!(
     "echo $box->events, \"\\n\";\n",
 );
 
+const NATIVE_OBJECT_PROPERTY_DYNAMIC_MAGIC_SET_SOURCE: &str = concat!(
+    "<?php\n",
+    "class DynamicObjectPropertyMagicSetBox {\n",
+    "    public $events = \"\";\n",
+    "    public function __set(string $name, $value) {\n",
+    "        $this->events = $this->events . \"set:\" . $name . \"=\" . $value . \";\";\n",
+    "    }\n",
+    "}\n",
+    "$box = new DynamicObjectPropertyMagicSetBox();\n",
+    "$flag = $box instanceof DynamicObjectPropertyMagicSetBox;\n",
+    "$name = $flag ? \"dynamic\" : \"other\";\n",
+    "$box->$name = \"D1\";\n",
+    "echo $box->events, \"\\n\";\n",
+);
+
 const NATIVE_OBJECT_PROPERTY_MALFORMED_MAGIC_SOURCE: &str = concat!(
     "<?php\n",
     "class MalformedObjectPropertyMagicBox {\n",
@@ -4699,6 +4714,34 @@ fn emit_exe_links_and_runs_object_property_magic_program() {
         run.stdout,
         b"V0|G:missing|G:hidden|V1|TTFT|get:missing;get:hidden;set:missing=M1;set:hidden=H1;set:dynamic=D1;isset:present;isset:absent;isset:hidden;unset:absent;unset:hidden;unset:dynamic;\n"
     );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_dynamic_name_object_property_magic_set_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "dynamic_name_object_property_magic_set",
+        NATIVE_OBJECT_PROPERTY_DYNAMIC_MAGIC_SET_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run dynamic-name object-property-magic executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"set:dynamic=D1;\n");
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
     let _ = fs::remove_file(source_path);
@@ -8755,6 +8798,28 @@ fn native_executable_c_source_routes_object_property_magic_through_callable_prop
             && !source.contains("magic_dynamic")
             && !source.contains("magic_static"),
         "object property magic lowering should not rely on exact-shape generated blockers or method-magic substring routes:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_routes_dynamic_name_magic_set_through_runtime_property_boundary() {
+    let program = parse(NATIVE_OBJECT_PROPERTY_DYNAMIC_MAGIC_SET_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_value_object_property_mutation_operation_with_magic_diagnostic")
+            && body.contains("object_property_write_value")
+            && source.contains("PHPC_NATIVE_CALLABLE_MAGIC_SIGNATURE_VALID")
+            && source.contains("__set"),
+        "dynamic-name __set writes should use the shared runtime property mutation boundary:\n{source}"
+    );
+    assert!(
+        !source.contains("object-property lowering rejects")
+            && !source.contains("magic_dynamic")
+            && !source.contains("magic_static")
+            && !body.contains("strcmp("),
+        "dynamic-name __set writes should avoid generated property-name ladders and old blockers:\n{source}"
     );
 }
 

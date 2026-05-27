@@ -33592,12 +33592,7 @@ impl CGenerator {
                 property,
                 span,
             } => {
-                let Some(property_name) = self.single_static_known_string_value_for_expr(property)
-                else {
-                    return Ok(None);
-                };
                 let object_expr = Expr::Variable(object.clone(), *span);
-                let _ = property_name;
                 if let Some(value) = self
                     .materialize_object_property_reference_owner_assignment_result(
                         &object_expr,
