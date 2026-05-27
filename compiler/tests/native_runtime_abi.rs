@@ -27,13 +27,14 @@ use php_runtime::{
     phpc_native_diagnostic_result_operation_blocker_list_and_free,
     phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free,
     phpc_native_diagnostic_result_report_stderr_list_and_free,
+    phpc_native_diagnostic_result_return_take_value_and_free,
     phpc_native_diagnostic_result_terminal_kind,
     phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free,
     phpc_native_diagnostic_result_terminal_value_transfer_cleanup_and_free,
     phpc_native_diagnostic_result_value_required_operation_blocker_list_and_free,
-    phpc_native_string_free, phpc_native_value_cast_result, NativeDiagnosticHandle,
-    NativeDiagnosticOperandRequirement, NativeDiagnosticResult, NativeDiagnosticSeverity,
-    NativeStringHandle, NativeValueHandle, PhpArray, Value,
+    phpc_native_string_free, phpc_native_value_cast_result, phpc_native_value_free,
+    NativeDiagnosticHandle, NativeDiagnosticOperandRequirement, NativeDiagnosticResult,
+    NativeDiagnosticSeverity, NativeStringHandle, NativeValueHandle, PhpArray, Value,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ARGUMENT_EVALUATION_CLEANUP,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_KEY_EVALUATION,
     PHPC_NATIVE_DIAGNOSTIC_OPERAND_ASSIGNMENT_TARGET_PROPERTY_EVALUATION,
@@ -1010,6 +1011,34 @@ fn native_diagnostic_result_terminal_kind_transfer_sequences_cleanup_for_all_kin
         );
         unsafe { phpc_native_diagnostic_result_free(transferred) };
     }
+}
+
+#[test]
+fn native_diagnostic_result_return_handoff_preserves_value_after_cleanup_transfer() {
+    let terminal_result = phpc_native_diagnostic_result_from_value(NativeValueHandle::from_value(
+        Value::String("return-value".to_string()),
+    ));
+    let cleanup_results = [phpc_native_diagnostic_result_from_value(
+        NativeValueHandle::from_value(Value::Int(7)),
+    )];
+    let transferred = unsafe {
+        phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free(
+            PHPC_NATIVE_TERMINAL_KIND_RETURN,
+            terminal_result,
+            cleanup_results.as_ptr(),
+            cleanup_results.len(),
+        )
+    };
+
+    assert!(unsafe { phpc_native_diagnostic_result_has_value(transferred) });
+    assert_eq!(
+        unsafe { phpc_native_diagnostic_result_terminal_kind(transferred) },
+        PHPC_NATIVE_TERMINAL_KIND_RETURN
+    );
+
+    let value = unsafe { phpc_native_diagnostic_result_return_take_value_and_free(transferred) };
+    assert!(!value.is_null());
+    unsafe { phpc_native_value_free(value) };
 }
 
 #[test]

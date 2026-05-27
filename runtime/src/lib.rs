@@ -20513,6 +20513,56 @@ pub unsafe extern "C" fn phpc_native_diagnostic_result_terminal_kind(
 
 /// # Safety
 ///
+/// `result` must be a diagnostic result returned by the runtime ABI and not
+/// yet freed. The helper consumes it, reports any pending diagnostics in result
+/// order, and returns the owned PHP value only when the result is a return
+/// terminal. Non-return terminals, terminal diagnostics, missing values, and
+/// missing ownership are reported and return a null value handle.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_diagnostic_result_return_take_value_and_free(
+    result: NativeDiagnosticResult,
+) -> NativeValueHandle {
+    let Some(mut state) = (unsafe { result.into_state() }) else {
+        native_diagnostic_report_blocker_message(
+            "native diagnostic result return handoff requires return terminal result ownership at operand 0",
+        );
+        return NativeValueHandle::null();
+    };
+
+    let terminal_kind = state.terminal_kind;
+    let has_terminal_diagnostic = native_diagnostic_result_state_has_terminal_diagnostic(&state);
+    for diagnostic in &state.diagnostics {
+        native_diagnostic_report_stderr(diagnostic);
+    }
+    state.diagnostics.clear();
+
+    if terminal_kind != Some(NativeTerminalKind::Return) {
+        native_diagnostic_report_blocker_message(
+            "native diagnostic result return handoff requires return terminal kind at operand 0",
+        );
+        unsafe { phpc_native_value_free(state.value) };
+        return NativeValueHandle::null();
+    }
+
+    if has_terminal_diagnostic {
+        unsafe { phpc_native_value_free(state.value) };
+        return NativeValueHandle::null();
+    }
+
+    if state.value.is_null() {
+        native_diagnostic_report_blocker_message(
+            "native diagnostic result return handoff requires return terminal value ownership at operand 0",
+        );
+        return NativeValueHandle::null();
+    }
+
+    let value = state.value;
+    state.value = NativeValueHandle::null();
+    value
+}
+
+/// # Safety
+///
 /// `results` must point to `result_count` contiguous `NativeDiagnosticResult`
 /// values returned by the runtime ABI, or be null with a zero length. This
 /// helper only inspects the results; ownership remains with the caller. A null

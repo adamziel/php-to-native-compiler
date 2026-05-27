@@ -110,6 +110,20 @@ const NATIVE_DIAGNOSTIC_RESULT_OUTPUT_OPERANDS_SOURCE: &str = concat!(
     "print \"|done\\n\";\n",
 );
 
+const NATIVE_RETURN_TERMINAL_KIND_HANDOFF_SOURCE: &str = concat!(
+    "<?php\n",
+    "function finish($value) {\n",
+    "    try { return $value; } finally { echo \"f\"; }\n",
+    "}\n",
+    "class ReturnTerminalBox {\n",
+    "    public function label($value) {\n",
+    "        try { return $value; } finally { echo \"m\"; }\n",
+    "    }\n",
+    "}\n",
+    "$box = new ReturnTerminalBox();\n",
+    "echo finish(\"GO\"), \"|\", $box->label(\"hi\");\n",
+);
+
 const NATIVE_DECLARED_CLASS_OBJECT_SOURCE: &str = concat!(
     "<?php\n",
     "class Box { public $name; private $secret; }\n",
@@ -4631,6 +4645,37 @@ fn native_executable_c_source_runs_finally_inside_user_function_frames() {
 }
 
 #[test]
+fn native_executable_c_source_routes_function_and_method_returns_through_terminal_kind_handoff() {
+    let program = parse(NATIVE_RETURN_TERMINAL_KIND_HANDOFF_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source
+            .matches("phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free(1")
+            .count()
+            >= 2,
+        "function and method returns should transfer return terminal kind through the diagnostic-result ABI:\n{source}"
+    );
+    assert!(
+        source
+            .matches("phpc_native_diagnostic_result_return_take_value_and_free")
+            .count()
+            >= 2,
+        "function and method returns should hand the transferred return value back to caller frames:\n{source}"
+    );
+    assert!(
+        source.contains("return phpc_native_call_result_from_value(phpc_call_result);"),
+        "callable wrappers should preserve the existing call-result frame handoff after terminal return extraction:\n{source}"
+    );
+    assert!(
+        !source.contains("try/catch/finally lowering rejects")
+            && !source.contains("assembly user-function lowering rejects")
+            && !source.contains("assembly method-call lowering rejects"),
+        "bounded return terminal-kind handoff should not widen unsupported frame shapes:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_runs_finally_before_loop_transfers() {
     let program = parse(NATIVE_TRY_FINALLY_LOOP_TRANSFER_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -5971,6 +6016,34 @@ fn emit_exe_links_and_runs_function_try_finally_frame_program() {
         run.stdout,
         b"try:finally:GO|body:cleanup:cba|inner:outer:done|after"
     );
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_return_terminal_kind_handoff_function_and_method_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "return_terminal_kind_handoff",
+        NATIVE_RETURN_TERMINAL_KIND_HANDOFF_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run return terminal-kind handoff executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"fGO|mhi");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&source_path);
@@ -19669,8 +19742,9 @@ fn native_executable_c_source_lowers_direct_user_function_frames() {
     );
     assert!(
         source.contains("phpc_native_value_clone(arg_0)")
-            && source.contains("*phpc_call_status = 1; return"),
-        "callee frames should clone by-value parameters and return owned handles:\n{source}"
+            && source.contains("phpc_native_diagnostic_result_terminal_kind_transfer_cleanup_and_free(1")
+            && source.contains("phpc_native_diagnostic_result_return_take_value_and_free"),
+        "callee frames should clone by-value parameters and hand off owned return handles through terminal results:\n{source}"
     );
     assert!(
         body.contains("phpc_native_call_arguments_new()")

@@ -690,6 +690,7 @@ fn llvm_native_diagnostic_result_declarations() -> &'static str {
         "declare %phpc.NativeDiagnosticResult @phpc_native_diagnostic_result_from_diagnostic_and_free(%phpc.NativeDiagnosticHandle)\n",
         "declare i1 @phpc_native_diagnostic_result_can_continue(%phpc.NativeDiagnosticResult)\n",
         "declare i8 @phpc_native_diagnostic_result_terminal_kind(%phpc.NativeDiagnosticResult)\n",
+        "declare %phpc.NativeValueHandle @phpc_native_diagnostic_result_return_take_value_and_free(%phpc.NativeDiagnosticResult)\n",
         "declare void @phpc_native_diagnostic_result_free(%phpc.NativeDiagnosticResult)\n",
     )
 }
@@ -718,6 +719,7 @@ fn c_native_diagnostic_result_declarations() -> &'static str {
         "extern phpc_NativeDiagnosticResult phpc_native_diagnostic_result_from_diagnostic_and_free(phpc_NativeDiagnosticHandle diagnostic);\n",
         "extern bool phpc_native_diagnostic_result_can_continue(phpc_NativeDiagnosticResult result);\n",
         "extern uint8_t phpc_native_diagnostic_result_terminal_kind(phpc_NativeDiagnosticResult result);\n",
+        "extern phpc_NativeValueHandle phpc_native_diagnostic_result_return_take_value_and_free(phpc_NativeDiagnosticResult result);\n",
         "extern bool phpc_native_diagnostic_result_list_contains_terminal(const phpc_NativeDiagnosticResult *results, size_t result_count);\n",
         "extern size_t phpc_native_diagnostic_result_report_stderr_list_and_free(const phpc_NativeDiagnosticResult *results, size_t result_count);\n",
         "extern size_t phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free(const phpc_NativeDiagnosticResult *results, size_t result_count);\n",
@@ -17869,6 +17871,15 @@ impl CGenerator {
         terminal_kind
     }
 
+    fn emit_native_diagnostic_result_return_value_handoff(&mut self, result: &str) -> String {
+        self.uses_native_diagnostic_result_consumers = true;
+        let value = self.next_native_name("return_value_handoff");
+        self.body.push(format!(
+            "phpc_NativeValueHandle {value} = phpc_native_diagnostic_result_return_take_value_and_free({result});"
+        ));
+        value
+    }
+
     fn emit_native_diagnostic_result_report_sink(
         &mut self,
         sink: NativeDiagnosticResultReportSink,
@@ -30027,6 +30038,18 @@ impl CGenerator {
         };
         self.emit_active_finally_bodies_before_terminal_transfer()?;
         materialized = self.emit_function_return_type_coercion(materialized);
+        let terminal_result =
+            self.emit_native_diagnostic_result_operand(NativeDiagnosticResultProducer::value(
+                NativeDiagnosticResultOperandSurface::Terminal,
+                &materialized.handle,
+            ));
+        let transferred_return = self.emit_native_diagnostic_result_terminal_kind_transfer(
+            NativeTerminalKind::Return,
+            &terminal_result,
+            &[],
+        );
+        let return_value =
+            self.emit_native_diagnostic_result_return_value_handoff(&transferred_return);
         let local_cleanup = c_cleanup_sequence(&native_value_aux_cleanup_after_consuming_handle(
             &materialized,
         ));
@@ -30035,21 +30058,33 @@ impl CGenerator {
             .function_return_status
             .as_ref()
             .expect("function return status is present in function context");
-        let result = match self.function_return_mode {
-            CFunctionReturnMode::NativeValue => materialized.handle,
+        let null_result = match self.function_return_mode {
+            CFunctionReturnMode::NativeValue => "(phpc_NativeValueHandle){0}".to_string(),
             CFunctionReturnMode::NativeReference => {
                 unreachable!("native reference returns are handled before value materialization")
             }
             CFunctionReturnMode::ClosureValue => {
-                format!(
-                    "phpc_native_closure_result_from_value({})",
-                    materialized.handle
-                )
+                "(phpc_NativeClosureInvocationResult){0}".to_string()
             }
             CFunctionReturnMode::ClosureReference => {
                 unreachable!("closure reference returns are handled before value materialization")
             }
         };
+        let result = match self.function_return_mode {
+            CFunctionReturnMode::NativeValue => return_value.clone(),
+            CFunctionReturnMode::NativeReference => {
+                unreachable!("native reference returns are handled before value materialization")
+            }
+            CFunctionReturnMode::ClosureValue => {
+                format!("phpc_native_closure_result_from_value({return_value})")
+            }
+            CFunctionReturnMode::ClosureReference => {
+                unreachable!("closure reference returns are handled before value materialization")
+            }
+        };
+        self.body.push(format!(
+            "if ({return_value}.ptr == NULL) {{ {cleanup} *{status} = 0; return {null_result}; }}"
+        ));
         self.body
             .push(format!("{cleanup} *{status} = 1; return {result};"));
         Ok(())
