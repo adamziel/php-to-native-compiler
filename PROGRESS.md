@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 15:40 CEST
+Updated: 2026-05-27 15:45 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,7 +19,18 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **90%** `[##################--]`
 
-Latest accounted source capability: `b07e2407` routes selected generated-C
+Latest accounted source capability: `aed8d3e7` routes selected
+descriptor-backed closure spread calls through preserved closure parameter
+contracts. Descriptor-closure-only callable values can now derive a reusable
+source-call argument plan, materialize unpacked entries, finalize them through
+`NativeCallArgumentsHandle`, and invoke via the existing closure argument
+carrier without guessing implementation signatures. Variadic descriptor
+closures remain explicitly blocked because the current closure-frame ABI would
+double-pack finalized variadic slots; runtime callable strings, magic fallback,
+unknown-signature spread, and by-reference unpack still require broader
+signature/materialized-entry boundaries.
+
+Recent source commit `b07e2407` routes selected generated-C
 trait constructors through the existing trait composition and declared
 constructor frame machinery. Trait-composed public non-static `__construct`
 methods that pass constructor frame validation can fill the normal class
