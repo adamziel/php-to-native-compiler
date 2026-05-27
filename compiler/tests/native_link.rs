@@ -20244,24 +20244,36 @@ fn native_executable_c_source_lowers_runtime_string_dynamic_builtin_calls() {
     let source = emit_native_executable_c_source(&program).unwrap();
 
     assert!(
-        source.contains("phpc_native_value_dynamic_call_name_matches")
-            && source.contains("phpc_native_value_dynamic_call_failure_with_diagnostic"),
-        "runtime dynamic builtins should use the shared dynamic-call lookup ABI:\n{source}"
+        source.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && source.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
+            && source.contains("phpc_native_call_arguments_new")
+            && source.contains("phpc_native_call_arguments_push_value_and_free"),
+        "runtime dynamic builtins should use the shared callable-value source-call ABI:\n{source}"
     );
     assert!(
-        source.matches("phpc_native_value_dynamic_call_name_matches(").count() >= 8
-            && source.contains("phpc_native_value_to_string_bytes")
-            && source.contains("phpc_native_value_string_result_operation_with_diagnostic")
-            && source.contains("phpc_native_value_string_predicate_with_diagnostic")
-            && source.contains("phpc_native_value_cast_result")
-            && source.contains("phpc_native_value_type_name_result")
-            && source.contains("phpc_native_value_type_predicate"),
-        "runtime dynamic builtins should dispatch across multiple existing builtin semantic families:\n{source}"
+        source
+            .matches("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic(")
+            .count()
+            >= 6
+            && source
+                .matches("phpc_native_callable_value_invoke_value_with_diagnostic_and_free(")
+                .count()
+                >= 6
+            && source
+                .matches("phpc_native_call_arguments_push_value_and_free")
+                .count()
+                >= 7,
+        "runtime dynamic builtins should build source-call arguments for each selected builtin family:\n{source}"
     );
     assert!(
         !source.contains("assembly dynamic function-call lowering rejects")
             && !source.contains("unsupported runtime callable builtin families"),
         "supported runtime string-valued dynamic builtins should not hit the dynamic-call blocker:\n{source}"
+    );
+    assert!(
+        !source.contains("phpc_native_value_dynamic_call_name_matches")
+            && !source.contains("dynamic_user_function_matched_"),
+        "runtime dynamic builtins should not fall back to the legacy generated-C name-match ladder:\n{source}"
     );
 }
 
@@ -20617,15 +20629,29 @@ fn emit_exe_links_and_runs_callable_object_invocation_program() {
 }
 
 #[test]
-fn native_executable_c_source_keeps_unsupported_dynamic_builtin_targets_blocked() {
+fn native_executable_c_source_preserves_unsupported_dynamic_builtin_lookup_boundary() {
     for source in [
         "<?php\n$call = \"count\";\necho $call([1]);\n",
         "<?php\n$flag = isset($_GET[\"x\"]);\n$call = $flag ? \"strlen\" : \"count\";\necho $call(\"abc\");\n",
     ] {
         let program = parse(source).unwrap();
-        let error = emit_native_executable_c_source(&program).unwrap_err();
+        let generated = emit_native_executable_c_source(&program).unwrap();
+        let lookup = generated
+            .find("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic(")
+            .expect("unsupported runtime builtin should lower through callable lookup");
+        let arguments = generated
+            .find("phpc_native_call_arguments_new")
+            .expect("dynamic callable source call should still construct arguments after lookup");
 
-        assert_eq!(error.message, ASSEMBLY_DYNAMIC_FUNCTION_CALL_REJECTION);
+        assert!(
+            lookup < arguments,
+            "unsupported runtime builtin lookup must happen before argument construction:\n{generated}"
+        );
+        assert!(
+            generated.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
+                && !generated.contains("phpc_native_value_dynamic_call_name_matches"),
+            "unsupported runtime builtins should use callable lookup/invoke boundaries without the legacy generated-C name ladder:\n{generated}"
+        );
     }
 }
 
@@ -21388,8 +21414,9 @@ fn emit_exe_reports_runtime_dynamic_builtin_call_failures() {
 
     let source = concat!(
         "<?php\n",
+        "function count_arg() { echo \"arg\"; return [1]; }\n",
         "$call = isset($_GET[\"call\"]) ? $_GET[\"call\"] : \"count\";\n",
-        "echo $call([1]), \"after\";\n",
+        "echo $call(count_arg()), \"after\";\n",
     );
     let (source_path, output_path) =
         compile_native_link_fixture("runtime_dynamic_builtin_unsupported", source);

@@ -16022,7 +16022,6 @@ enum CNativeCallableIdentity {
 enum CNativeCallableResultKind {
     NativeValue,
     Reference,
-    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16899,6 +16898,54 @@ impl CScopedCallableStringSignature {
             .get(index)
             .copied()
             .unwrap_or(false)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CNativeBuiltinSignatureSourceCallSupport {
+    RuntimeCallableValue,
+    Blocked(CNativeBuiltinSignatureBlocker),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CNativeBuiltinSignatureBlocker {
+    MissingRuntimeCallableFamily,
+    ByReferenceArgumentWriteback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CNativeBuiltinSignature {
+    canonical_name: &'static str,
+    required_arg_count: usize,
+    fixed_param_by_reference: &'static [bool],
+    accepts_variadic_args: bool,
+    returns_by_reference: bool,
+    source_call_support: CNativeBuiltinSignatureSourceCallSupport,
+}
+
+impl CNativeBuiltinSignature {
+    fn fixed_param_count(self) -> usize {
+        self.fixed_param_by_reference.len()
+    }
+
+    fn accepts_arg_count(self, arg_count: usize) -> bool {
+        arg_count >= self.required_arg_count
+            && (self.accepts_variadic_args || arg_count <= self.fixed_param_count())
+    }
+
+    fn source_call_signature(self, arg_count: usize) -> Option<CScopedCallableStringSignature> {
+        if !self.accepts_arg_count(arg_count) {
+            return None;
+        }
+        if self.source_call_support
+            != CNativeBuiltinSignatureSourceCallSupport::RuntimeCallableValue
+        {
+            return None;
+        }
+        Some(CScopedCallableStringSignature {
+            fixed_param_by_reference: self.fixed_param_by_reference.to_vec(),
+            returns_by_reference: self.returns_by_reference,
+        })
     }
 }
 
@@ -25966,10 +26013,21 @@ impl CGenerator {
                 CNativeCallableDeclaredMethodStaticness::Static,
                 arg_count,
             ),
-            CNativeCallableIdentity::RuntimeBuiltin { .. } => Some(CNativeCallableReturnSummary {
-                result_kind: CNativeCallableResultKind::Unknown,
-                facts: None,
-            }),
+            CNativeCallableIdentity::RuntimeBuiltin { name } => {
+                let signature = native_builtin_signature_for_name(name)?;
+                if !signature.accepts_arg_count(arg_count) {
+                    return None;
+                }
+                let result_kind = if signature.returns_by_reference {
+                    CNativeCallableResultKind::Reference
+                } else {
+                    CNativeCallableResultKind::NativeValue
+                };
+                Some(CNativeCallableReturnSummary {
+                    result_kind,
+                    facts: None,
+                })
+            }
             CNativeCallableIdentity::DescriptorClosure { closure_key } => self
                 .native_descriptor_closure_return_summaries
                 .get(closure_key)
@@ -26315,6 +26373,18 @@ impl CGenerator {
     ) -> Option<CScopedCallableStringSignature> {
         let values = self.static_known_string_values_for_expr(expr)?;
         self.scoped_callable_string_signature_for_values(&values)
+    }
+
+    fn callable_string_signature_for_expr(
+        &self,
+        expr: &Expr,
+        arg_count: usize,
+    ) -> Option<CScopedCallableStringSignature> {
+        if let Some(signature) = self.scoped_callable_string_signature_for_expr(expr) {
+            return Some(signature);
+        }
+        let values = self.static_known_string_values_for_expr(expr)?;
+        native_builtin_runtime_source_call_signature_for_values(&values, arg_count)
     }
 
     fn receiver_method_signature_fallback_contract(
@@ -31920,7 +31990,7 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let scoped_signature = self.scoped_callable_string_signature_for_expr(callee);
+        let scoped_signature = self.callable_string_signature_for_expr(callee, args.len());
         let callee_value = self.emit_expr(callee)?;
         self.materialize_runtime_callable_value_call(
             callee_value,
@@ -33532,7 +33602,7 @@ impl CGenerator {
         callee: &Expr,
         args: &[Expr],
     ) -> Option<Option<CScopedCallableStringSignature>> {
-        let scoped_signature = self.scoped_callable_string_signature_for_expr(callee);
+        let scoped_signature = self.callable_string_signature_for_expr(callee, args.len());
         if scoped_signature
             .as_ref()
             .is_some_and(|signature| signature.returns_by_reference)
@@ -49657,6 +49727,128 @@ fn native_dynamic_callable_builtin_canonical_name(name: &str) -> Option<&'static
     }
 }
 
+const NATIVE_BUILTIN_BY_VALUE_1: &[bool] = &[false];
+const NATIVE_BUILTIN_BY_VALUE_2: &[bool] = &[false, false];
+const NATIVE_BUILTIN_BY_REF_THEN_VALUE_DEFAULT: &[bool] = &[true, false];
+const NATIVE_BUILTIN_BY_REF_VARIADIC: &[bool] = &[true];
+
+fn native_builtin_signature_for_name(name: &str) -> Option<CNativeBuiltinSignature> {
+    use CNativeBuiltinSignatureBlocker::{
+        ByReferenceArgumentWriteback, MissingRuntimeCallableFamily,
+    };
+    use CNativeBuiltinSignatureSourceCallSupport::{Blocked, RuntimeCallableValue};
+
+    let signature = match name.to_ascii_lowercase().as_str() {
+        "strlen" => CNativeBuiltinSignature {
+            canonical_name: "strlen",
+            required_arg_count: 1,
+            fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
+            accepts_variadic_args: false,
+            returns_by_reference: false,
+            source_call_support: RuntimeCallableValue,
+        },
+        "strtolower" => CNativeBuiltinSignature {
+            canonical_name: "strtolower",
+            required_arg_count: 1,
+            fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
+            accepts_variadic_args: false,
+            returns_by_reference: false,
+            source_call_support: RuntimeCallableValue,
+        },
+        "strtoupper" => CNativeBuiltinSignature {
+            canonical_name: "strtoupper",
+            required_arg_count: 1,
+            fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
+            accepts_variadic_args: false,
+            returns_by_reference: false,
+            source_call_support: RuntimeCallableValue,
+        },
+        "strval" => CNativeBuiltinSignature {
+            canonical_name: "strval",
+            required_arg_count: 1,
+            fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
+            accepts_variadic_args: false,
+            returns_by_reference: false,
+            source_call_support: RuntimeCallableValue,
+        },
+        "gettype" => CNativeBuiltinSignature {
+            canonical_name: "gettype",
+            required_arg_count: 1,
+            fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
+            accepts_variadic_args: false,
+            returns_by_reference: false,
+            source_call_support: RuntimeCallableValue,
+        },
+        "is_numeric" => CNativeBuiltinSignature {
+            canonical_name: "is_numeric",
+            required_arg_count: 1,
+            fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
+            accepts_variadic_args: false,
+            returns_by_reference: false,
+            source_call_support: RuntimeCallableValue,
+        },
+        "str_contains" => CNativeBuiltinSignature {
+            canonical_name: "str_contains",
+            required_arg_count: 2,
+            fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_2,
+            accepts_variadic_args: false,
+            returns_by_reference: false,
+            source_call_support: RuntimeCallableValue,
+        },
+        "count" => CNativeBuiltinSignature {
+            canonical_name: "count",
+            required_arg_count: 1,
+            fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_1,
+            accepts_variadic_args: false,
+            returns_by_reference: false,
+            source_call_support: Blocked(MissingRuntimeCallableFamily),
+        },
+        "sort" => CNativeBuiltinSignature {
+            canonical_name: "sort",
+            required_arg_count: 1,
+            fixed_param_by_reference: NATIVE_BUILTIN_BY_REF_THEN_VALUE_DEFAULT,
+            accepts_variadic_args: false,
+            returns_by_reference: false,
+            source_call_support: Blocked(ByReferenceArgumentWriteback),
+        },
+        "array_push" => CNativeBuiltinSignature {
+            canonical_name: "array_push",
+            required_arg_count: 2,
+            fixed_param_by_reference: NATIVE_BUILTIN_BY_REF_VARIADIC,
+            accepts_variadic_args: true,
+            returns_by_reference: false,
+            source_call_support: Blocked(ByReferenceArgumentWriteback),
+        },
+        "trim" => CNativeBuiltinSignature {
+            canonical_name: "trim",
+            required_arg_count: 1,
+            fixed_param_by_reference: NATIVE_BUILTIN_BY_VALUE_2,
+            accepts_variadic_args: false,
+            returns_by_reference: false,
+            source_call_support: Blocked(MissingRuntimeCallableFamily),
+        },
+        _ => return None,
+    };
+    Some(signature)
+}
+
+fn native_builtin_runtime_source_call_signature_for_values(
+    values: &KnownString,
+    arg_count: usize,
+) -> Option<CScopedCallableStringSignature> {
+    let mut signature = None;
+    for value in values.values() {
+        let value_signature =
+            native_builtin_signature_for_name(value)?.source_call_signature(arg_count)?;
+        match &signature {
+            Some(previous) if previous != &value_signature => return None,
+            Some(_) => {}
+            None => signature = Some(value_signature),
+        }
+    }
+    signature
+}
+
 fn native_dynamic_callable_builtin_runtime_candidates(
 ) -> &'static [(&'static str, CDynamicCallableBuiltinRuntimeCandidate)] {
     use CDynamicCallableBuiltinRuntimeCandidate::{
@@ -54782,6 +54974,178 @@ echo " 10" < "zeta";
             )
         );
         assert_eq!(runtime_dynamic.signature(), None);
+    }
+
+    #[test]
+    fn native_builtin_signature_metadata_maps_runtime_source_calls_and_blockers() {
+        let strlen = native_builtin_signature_for_name("STRLEN")
+            .expect("strlen should have native builtin signature metadata");
+        assert_eq!(strlen.canonical_name, "strlen");
+        assert_eq!(strlen.required_arg_count, 1);
+        assert_eq!(strlen.fixed_param_by_reference, &[false]);
+        assert!(strlen.accepts_arg_count(1));
+        assert!(!strlen.accepts_arg_count(0));
+        assert!(!strlen.accepts_arg_count(2));
+        assert_eq!(
+            strlen.source_call_support,
+            CNativeBuiltinSignatureSourceCallSupport::RuntimeCallableValue
+        );
+        assert!(!strlen.returns_by_reference);
+
+        let contains = native_builtin_signature_for_name("str_contains")
+            .expect("str_contains should have native builtin signature metadata");
+        assert_eq!(contains.required_arg_count, 2);
+        assert_eq!(contains.fixed_param_by_reference, &[false, false]);
+        assert!(contains.accepts_arg_count(2));
+        assert!(!contains.accepts_arg_count(1));
+
+        let count = native_builtin_signature_for_name("count")
+            .expect("count should be mapped as a blocked runtime builtin signature");
+        assert_eq!(count.canonical_name, "count");
+        assert_eq!(count.required_arg_count, 1);
+        assert_eq!(count.fixed_param_by_reference, &[false]);
+        assert!(count.accepts_arg_count(1));
+        assert!(!count.accepts_arg_count(2));
+        assert_eq!(
+            count.source_call_support,
+            CNativeBuiltinSignatureSourceCallSupport::Blocked(
+                CNativeBuiltinSignatureBlocker::MissingRuntimeCallableFamily,
+            )
+        );
+
+        let sort = native_builtin_signature_for_name("sort")
+            .expect("sort should be mapped as a blocked native builtin signature");
+        assert_eq!(sort.required_arg_count, 1);
+        assert_eq!(sort.fixed_param_by_reference, &[true, false]);
+        assert!(sort.required_arg_count < sort.fixed_param_count());
+        assert!(sort.accepts_arg_count(1));
+        assert!(sort.accepts_arg_count(2));
+        assert!(!sort.accepts_arg_count(3));
+        assert_eq!(
+            sort.source_call_support,
+            CNativeBuiltinSignatureSourceCallSupport::Blocked(
+                CNativeBuiltinSignatureBlocker::ByReferenceArgumentWriteback,
+            )
+        );
+
+        let push = native_builtin_signature_for_name("array_push")
+            .expect("array_push should be mapped as a blocked variadic signature");
+        assert_eq!(push.required_arg_count, 2);
+        assert_eq!(push.fixed_param_by_reference, &[true]);
+        assert!(push.accepts_variadic_args);
+        assert!(!push.accepts_arg_count(1));
+        assert!(push.accepts_arg_count(2));
+        assert!(push.accepts_arg_count(4));
+        assert_eq!(
+            push.source_call_support,
+            CNativeBuiltinSignatureSourceCallSupport::Blocked(
+                CNativeBuiltinSignatureBlocker::ByReferenceArgumentWriteback,
+            )
+        );
+
+        let trim = native_builtin_signature_for_name("trim")
+            .expect("trim should be mapped as a blocked default-arity signature");
+        assert!(trim.required_arg_count < trim.fixed_param_count());
+        assert_eq!(
+            trim.source_call_support,
+            CNativeBuiltinSignatureSourceCallSupport::Blocked(
+                CNativeBuiltinSignatureBlocker::MissingRuntimeCallableFamily,
+            )
+        );
+    }
+
+    #[test]
+    fn native_builtin_signatures_feed_dynamic_source_call_argument_binding() {
+        let mut generator = CGenerator::default();
+        generator
+            .variables
+            .insert("call".to_string(), CValue::String("strlen".to_string()));
+        let strlen_signature = generator
+            .callable_string_signature_for_expr(&variable("call", 1), 1)
+            .expect("runtime builtin signature should feed source-call binding");
+        assert_eq!(
+            strlen_signature,
+            CScopedCallableStringSignature {
+                fixed_param_by_reference: vec![false],
+                returns_by_reference: false,
+            }
+        );
+
+        let mixed_same_shape = Expr::Ternary {
+            condition: Box::new(Expr::Bool(true, span(2))),
+            if_true: Box::new(Expr::String("strlen".to_string(), span(3))),
+            if_false: Box::new(Expr::String("strtolower".to_string(), span(4))),
+            span: span(1),
+        };
+        assert_eq!(
+            generator.callable_string_signature_for_expr(&mixed_same_shape, 1),
+            Some(strlen_signature)
+        );
+
+        let contains_signature = generator
+            .callable_string_signature_for_expr(
+                &Expr::String("str_contains".to_string(), span(5)),
+                2,
+            )
+            .expect("two-argument builtin signature should feed source-call binding");
+        assert_eq!(
+            contains_signature.fixed_param_by_reference,
+            vec![false, false]
+        );
+        assert!(
+            generator
+                .callable_string_signature_for_expr(
+                    &Expr::String("str_contains".to_string(), span(6)),
+                    1,
+                )
+                .is_none(),
+            "arity-incompatible runtime builtin signatures must not be faked"
+        );
+        assert!(
+            generator
+                .callable_string_signature_for_expr(&Expr::String("sort".to_string(), span(7)), 1,)
+                .is_none(),
+            "blocked by-reference builtin signatures must not opt into runtime source calls"
+        );
+        assert!(
+            generator
+                .callable_string_signature_for_expr(&Expr::String("count".to_string(), span(8)), 1,)
+                .is_none(),
+            "blocked runtime builtins must preserve the unsupported-native boundary"
+        );
+    }
+
+    #[test]
+    fn native_builtin_return_summary_uses_signature_reference_facts() {
+        let generator = CGenerator::default();
+        let strlen_identity = CNativeCallableIdentity::RuntimeBuiltin {
+            name: "strlen".to_string(),
+        };
+        let strlen_summary = generator
+            .native_callable_return_summary_for_identity(&strlen_identity, 1)
+            .expect("arity-compatible runtime builtin should publish return facts");
+        assert_eq!(
+            strlen_summary.result_kind,
+            CNativeCallableResultKind::NativeValue
+        );
+        assert!(strlen_summary.facts.is_none());
+        assert!(
+            generator
+                .native_callable_return_summary_for_identity(&strlen_identity, 2)
+                .is_none(),
+            "arity-incompatible builtin signatures must not publish return facts"
+        );
+
+        let push_identity = CNativeCallableIdentity::RuntimeBuiltin {
+            name: "array_push".to_string(),
+        };
+        let push_summary = generator
+            .native_callable_return_summary_for_identity(&push_identity, 3)
+            .expect("blocked variadic builtin still has true return-reference facts");
+        assert_eq!(
+            push_summary.result_kind,
+            CNativeCallableResultKind::NativeValue
+        );
     }
 
     #[test]

@@ -1335,6 +1335,14 @@ enum NativeCallableBuiltin {
     TypePredicate(u8),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NativeCallableBuiltinSignature {
+    required_arg_count: usize,
+    fixed_param_by_reference: &'static [bool],
+    accepts_variadic_args: bool,
+    returns_by_reference: bool,
+}
+
 impl NativeCallableBuiltin {
     fn name(self) -> &'static str {
         match self {
@@ -1373,15 +1381,39 @@ impl NativeCallableBuiltin {
         }
     }
 
-    fn expected_arg_count(self) -> usize {
+    fn signature(self) -> NativeCallableBuiltinSignature {
+        const BY_VALUE_1: &[bool] = &[false];
+        const BY_VALUE_2: &[bool] = &[false, false];
+
         match self {
-            Self::StringPredicate(_) => 2,
+            Self::StringPredicate(_) => NativeCallableBuiltinSignature {
+                required_arg_count: 2,
+                fixed_param_by_reference: BY_VALUE_2,
+                accepts_variadic_args: false,
+                returns_by_reference: false,
+            },
             Self::StringLength
             | Self::StringResult(_)
             | Self::Cast(_)
             | Self::TypeName(_)
-            | Self::TypePredicate(_) => 1,
+            | Self::TypePredicate(_) => NativeCallableBuiltinSignature {
+                required_arg_count: 1,
+                fixed_param_by_reference: BY_VALUE_1,
+                accepts_variadic_args: false,
+                returns_by_reference: false,
+            },
         }
+    }
+}
+
+impl NativeCallableBuiltinSignature {
+    fn fixed_param_count(self) -> usize {
+        self.fixed_param_by_reference.len()
+    }
+
+    fn accepts_arg_count(self, arg_count: usize) -> bool {
+        arg_count >= self.required_arg_count
+            && (self.accepts_variadic_args || arg_count <= self.fixed_param_count())
     }
 }
 
@@ -7930,6 +7962,28 @@ fn native_callable_builtin_for_function_name(name: &str) -> Option<NativeCallabl
     }
 }
 
+const RUNTIME_DYNAMIC_GENERATED_C_UNSUPPORTED_NATIVE_BUILTIN_REASON: &str =
+    "runtime dynamic generated-C lookup did not find a registered user-function frame or supported native builtin family";
+
+fn native_callable_unsupported_runtime_builtin_canonical_name(name: &str) -> Option<&'static str> {
+    match name.to_ascii_lowercase().as_str() {
+        "count" => Some("count"),
+        _ => None,
+    }
+}
+
+fn native_callable_unsupported_runtime_builtin_boundary_message(name: &str) -> Option<String> {
+    let canonical_name = native_callable_unsupported_runtime_builtin_canonical_name(name)?;
+    Some(
+        RuntimeError::unsupported_call(
+            format!("{canonical_name}()"),
+            RUNTIME_DYNAMIC_GENERATED_C_UNSUPPORTED_NATIVE_BUILTIN_REASON,
+        )
+        .message()
+        .to_string(),
+    )
+}
+
 fn native_callable_value_lookup(
     table: Option<&NativeCallableTable>,
     callable_value: &Value,
@@ -7982,12 +8036,22 @@ fn native_callable_value_lookup(
                         if let Some(builtin) = native_callable_builtin_for_function_name(&name) {
                             return Ok(NativeCallableValueDispatch::Builtin(builtin));
                         }
+                        if let Some(message) =
+                            native_callable_unsupported_runtime_builtin_boundary_message(&name)
+                        {
+                            return Err(message);
+                        }
                         return Err(error);
                     }
                 }
             }
             if let Some(builtin) = native_callable_builtin_for_function_name(&name) {
                 return Ok(NativeCallableValueDispatch::Builtin(builtin));
+            }
+            if let Some(message) =
+                native_callable_unsupported_runtime_builtin_boundary_message(&name)
+            {
+                return Err(message);
             }
             Err("native callable lookup failed: table is null for string callable".to_string())
         }
@@ -9652,17 +9716,18 @@ unsafe fn native_callable_builtin_argument_values(
             builtin.name()
         ));
     };
-    let expected = builtin.expected_arg_count();
+    let signature = builtin.signature();
     let actual = arguments_ref.slots.len();
-    if actual != expected {
+    if !signature.accepts_arg_count(actual) {
+        let expected = signature.required_arg_count;
         return Err(format!(
             "native callable builtin invocation failed: {} expected {expected} argument(s), got {actual}",
             builtin.name()
         ));
     }
 
-    let mut values = Vec::with_capacity(expected);
-    for index in 0..expected {
+    let mut values = Vec::with_capacity(actual);
+    for index in 0..actual {
         let value = unsafe { phpc_native_call_arguments_read_value(arguments, index) };
         if value.is_null() {
             for value in values {
@@ -33813,6 +33878,48 @@ mod tests {
             unsafe { phpc_native_value_free(callable_value) };
         }
 
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
+    fn native_callable_builtin_signatures_record_arity_reference_and_return_metadata() {
+        let one_arg = NativeCallableBuiltin::StringLength.signature();
+        assert_eq!(one_arg.required_arg_count, 1);
+        assert_eq!(one_arg.fixed_param_count(), 1);
+        assert_eq!(one_arg.fixed_param_by_reference, &[false]);
+        assert!(one_arg.accepts_arg_count(1));
+        assert!(!one_arg.accepts_arg_count(0));
+        assert!(!one_arg.accepts_arg_count(2));
+        assert!(!one_arg.returns_by_reference);
+
+        let two_arg =
+            NativeCallableBuiltin::StringPredicate(NativeStringPredicate::Contains).signature();
+        assert_eq!(two_arg.required_arg_count, 2);
+        assert_eq!(two_arg.fixed_param_count(), 2);
+        assert_eq!(two_arg.fixed_param_by_reference, &[false, false]);
+        assert!(two_arg.accepts_arg_count(2));
+        assert!(!two_arg.accepts_arg_count(1));
+        assert!(!two_arg.accepts_arg_count(3));
+        assert!(!two_arg.returns_by_reference);
+    }
+
+    #[test]
+    fn native_callable_lookup_preserves_unsupported_runtime_builtin_boundary() {
+        let table = phpc_native_callable_table_new();
+        let callable_value = NativeValueHandle::from_value(Value::String("count".to_string()));
+        let (callable, diagnostic) =
+            unsafe { lookup_callable_value_for_test(table, callable_value, None) };
+
+        assert!(callable.is_null());
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "unsupported call count(): runtime dynamic generated-C lookup did not find a registered user-function frame or supported native builtin family"
+            )
+        );
+
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+        unsafe { phpc_native_value_free(callable_value) };
         unsafe { phpc_native_callable_table_free(table) };
     }
 
