@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 22:04 CEST
+Updated: 2026-05-27 22:18 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,13 +19,27 @@ Overall integrated-roadmap progress: **93%** `[##################--]`
 
 Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `f4ebc3f2` routes generated-C
-`call_user_func()` and `call_user_func_array()` calls with descriptor closure
-captures through the shared callable-value/source-call machinery. Captured
-by-value closures now execute through materialized argument handles both at
-top-level and inside generated user-function frames, while by-reference closure
-parameters and unsupported builtin spread families remain explicit blockers
-until reference-aware callable argument containers are available.
+Latest accounted source capability: `182cb33a` scopes already-compiled
+literal include units to the active generated user-function caller. Include
+units now receive a reusable execution-state packet carrying the caller symbol
+scope, so included top-level assignments, direct variable reads, and include
+return values are visible inside function frames instead of being routed
+through the request root symbol table. Runtime-only source activation, broader
+dynamic include execution, exit/exception propagation parity, and non-C backend
+include execution remain blocked.
+
+Recent source commit `182cb33a` advances compiled include/require execution
+without adding include-path tables as production shortcuts, source-name
+recognizers, source-loader synthesis, or one-fixture lowering. Generated C now
+splits root `$GLOBALS` handoff from function-local include scope requirements,
+creates function-local symbol tables only for frames that execute includes, and
+passes `phpc_NativeIncludeExecutionState` to compiled include units. Focused
+gates covered generated-C source proof, linked executable function-scope
+include execution, the full native include/require boundary suite, user-function
+frame environment requirements, compile checking, formatting, and diff checks.
+Primary gate log:
+`state/logs/phpc-primary-include-return-once-d3f49f5e-20260527.gates.log`
+sha256 `2cde7effd690e2dc87de88adaffd8d782a8b900bf1450771095aec3083b4d7c4`.
 
 Recent source commit `f4ebc3f2` advances generated-C closure/callable
 interoperability without adding closure-name ladders, one-fixture closure
