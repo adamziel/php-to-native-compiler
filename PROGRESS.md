@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 22:01 CEST
+Updated: 2026-05-27 22:04 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -15,18 +15,39 @@ changes the roadmap position.
 
 ## Executive Read
 
-Overall integrated-roadmap progress: **92%** `[##################--]`
+Overall integrated-roadmap progress: **93%** `[##################--]`
 
-Selected executable PHP semantics: **98%** `[###################-]`
+Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `78a03ae7` publishes trait-composed class
-members through the generated-C runtime metadata registry. Method/property
-introspection, callable-spread contracts, declared method frames, constructor
-frames, `instanceof` regressions, destructor-risk regressions, and class
-metadata consumers now share the validated declared-class metadata boundary
-instead of raw class member scans. Full trait conflict/precedence parity,
-visibility edge cases, aliases beyond the selected metadata surface, and
-non-C backend parity remain blocked.
+Latest accounted source capability: `f4ebc3f2` routes generated-C
+`call_user_func()` and `call_user_func_array()` calls with descriptor closure
+captures through the shared callable-value/source-call machinery. Captured
+by-value closures now execute through materialized argument handles both at
+top-level and inside generated user-function frames, while by-reference closure
+parameters and unsupported builtin spread families remain explicit blockers
+until reference-aware callable argument containers are available.
+
+Recent source commit `f4ebc3f2` advances generated-C closure/callable
+interoperability without adding closure-name ladders, one-fixture closure
+structs, callable-dispatch bypasses, or fake by-reference capture mutation.
+Direct `call_user_func()`/`call_user_func_array()` builtins now lower through
+existing callable lookup and descriptor closure invocation paths when the
+callback contract accepts ordinary value arguments, and unsupported builtin
+spread families share the materialized-entry producer blocker. Focused gates
+covered `call_user_func` source/link proof, descriptor closure regressions,
+runtime builtin callable-string spread regressions, unsupported spread blocker
+proof, compile checking, formatting, and diff checks. Primary gate log:
+`state/logs/phpc-primary-closure-captures-5af0524a-20260527.gates.log`
+sha256 `4d2cd67782613da4c8d83138ee6b4e3e728fabf72fe6e05858733c6ec1961c1b`.
+
+Recent source commit `78a03ae7` publishes trait-composed class members through
+the generated-C runtime metadata registry. Method/property introspection,
+callable-spread contracts, declared method frames, constructor frames,
+`instanceof` regressions, destructor-risk regressions, and class metadata
+consumers now share the validated declared-class metadata boundary instead of
+raw class member scans. Full trait conflict/precedence parity, visibility edge
+cases, aliases beyond the selected metadata surface, and non-C backend parity
+remain blocked.
 
 Recent source commit `78a03ae7` advances trait-composed class metadata without
 adding one-trait fixture lowering, method-name production ladders, or
