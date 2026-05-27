@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 07:50 CEST
+Updated: 2026-05-27 08:06 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,17 +19,27 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **85%** `[#################---]`
 
-Latest accounted source capability: `eedd0879` routes generated-C dynamic
-receiver method calls on compiler-known object receivers with declared instance
-`__call($name, $args)` through the shared runtime lookup-plus-invoke
-dispatcher. Normal method hits still win, missing or inaccessible receiver
-methods fall back to public non-static `__call`, and runtime packs the original
-method name plus value snapshots of original argument slots into the magic
-`$args` array while preserving class-context private method dispatch.
-`__callStatic`, malformed magic signature warning/fatal parity,
-traits/interfaces/effective method tables, aliases/autoload, callable-object
-fallbacks, full reference/COW alias behavior for `$args`, and LLVM/direct
-assembly parity remain blocked. Recent source commits also lower exact
+Latest accounted source capability: `425f1ef5` adds parser/AST source-ordered
+named call-argument nodes plus shared call-argument normalization that binds
+source-order positional/named arguments to parameter-order slots across
+required, optional/default, by-reference, and variadic parameters. Generated C
+now lowers selected compiler-known direct user-function calls and
+method/static/dynamic source-call carriers through that normalizer before
+building shared `NativeCallArgumentsHandle` values. Named builtins,
+constructors, unknown dynamic callables, magic `__call` fallback named-argument
+parity, `__callStatic`, spread/unpack, malformed magic signatures, broader
+runtime/inherited/trait/interface signatures, LLVM/direct assembly parity, and
+backend-wide named-argument parity remain blocked. Recent source commits also
+route generated-C dynamic receiver method calls on compiler-known object
+receivers with declared instance `__call($name, $args)` through the shared
+runtime lookup-plus-invoke dispatcher. Normal method hits still win, missing or
+inaccessible receiver methods fall back to public non-static `__call`, and
+runtime packs the original method name plus value snapshots of original
+argument slots into the magic `$args` array while preserving class-context
+private method dispatch. `__callStatic`, malformed magic signature warning/fatal
+parity, traits/interfaces/effective method tables, aliases/autoload,
+callable-object fallbacks, full reference/COW alias behavior for `$args`, and
+LLVM/direct assembly parity remain blocked. Recent source commits also lower exact
 parser-resolved generated-C `use const` aliases for same-compilation-unit scalar
 user constants and supported builtin constants through shared constant
 metadata/import markers.
@@ -159,7 +169,12 @@ namespace/import/class-name/autoload-policy boundary (`cb8457f1`), and
 terminal-kind diagnostic-result ABI support (`ac5004a3`).
 
 Why the headline bars moved: the new source removes primary blockers
-across object/class execution and backend parity: generated method frames can
+across object/class execution and backend parity: source-ordered named
+arguments now parse into explicit AST nodes and selected generated-C direct
+user-function plus method/static/dynamic source-call carriers bind them through
+shared parameter-order normalization instead of treating them as unsupported
+syntax or exact-shape call lowering,
+generated method frames can
 write `$this` properties, selected constructors with supported bodies and bare
 early returns run, constructor value returns now fail through an explicit
 generated-C runtime diagnostic with cleanup, method/static source calls handle
@@ -237,7 +252,8 @@ ArrayAccess production. The bars remain far from 100% because nested
 `??=`/append/increment/decrement ArrayAccess owners, static magic dispatch,
 malformed magic signature parity, remaining override-visible late-static and
 broader magic method shapes,
-named/spread arguments, broader const discovery/lookup and function-import
+spread arguments and unsupported named builtin/constructor/fallback call
+families, broader const discovery/lookup and function-import
 coverage, broader
 constructor execution, late-static binding,
 arbitrary alias roots, LLVM and remaining generated-C static-property producers,
@@ -267,7 +283,8 @@ Current critical path to 100%:
    shutdown cleanup, source-ordered diagnostics, and custom handler behavior.
 6. Broaden namespace/const import production breadth, function-import
    discovery/fallback breadth, namespace fallback, autoload, broader aliases,
-   visibility/magic, constructors, named/spread arguments,
+   visibility/magic, constructors, spread arguments, unsupported named
+   builtin/constructor/fallback call families,
    descriptor/method/closure return references, and backend parity.
 
 ## Roadmap Bars
@@ -280,7 +297,7 @@ Current critical path to 100%:
 | Strings and byte semantics | **60%** | `[############--------]` | Byte-backed values and selected byte-preserving string-array slots are integrated. Binary source bytes, byte-exact interpreter/session/debug output, `mb_str_split()`, request/global byte keys, and exact diagnostics remain open. |
 | Arrays, lvalues, references, COW | **85%** | `[#################---]` | Selected lvalue/reference-source extraction, ReferenceSlot owner facts, object-property owner/fact/commit prerequisites, selected non-local object-property assignment commits, reference-cell predicates, membership helpers, RMW array-lvalue owner/writeback, selected direct/generated-object ArrayAccess RMW/`??=` paths, selected property-held ArrayAccess read/write/RMW/`??=`/unset/append/increment owners, and selected nested ArrayAccess assignment and compound-assignment owner stacks are integrated. Nested ArrayAccess `??=`/append/increment/decrement, arbitrary alias roots, foreach breadth, broader writeback, and full COW remain incomplete. |
 | Symbols, globals, request state | **70%** | `[##############------]` | Selected globals, root-symbol consumers, active symbol-table consumers, request-key blockers, append-shaped symbol reference-source materialization, direct generated-C request-state frame handoff, and dynamic user-function handoff proof exist. `$GLOBALS` self-cells, closure request-state handoff, request/global alias parity, request writeback, includes, variable variables, and exact unset/global behavior remain incomplete. |
-| Calls, functions, frames | **90%** | `[##################--]` | Runtime callable table/value dispatch, selected runtime builtin source-call signatures/blockers, call arguments/frame/result ABI, conditional handoff, generated-C direct/dynamic callable consumers, declared-method registration/wrapper frames, callable return facts, by-reference argument transport, descriptor closures, closure returns, request-state frame handoff, access-context lookup ABI, lookup-plus-invoke exactly-once argument ownership helpers, source-call result carrier selectors, selected production source-call carrier emission, direct generated user-function lookup-plus-invoke production, direct user-function reference-return frames, exact generated-C `use function` aliases for same-unit user functions and selected runtime callable builtins, explicit by-value return terminal handoff, method/static source-call target operands, method/static source-call binding operands, method/static signature fallback selection, selected direct/dynamic/receiver/static/self/parent reference-return source-call alias transfer into by-reference arguments, executable receiver/static/self/parent/object-static/late-static method source-call production for exact, default, and variadic frame-compatible arities where class context or receiver/called scope is known, selected generated-C dynamic receiver-method source-call production for known string and runtime-produced method names including declared receiver `__call` fallback, explicit generated-C constructor value-return diagnostics, and interpreter/generated-C exact function/const import islands are integrated. Unknown runtime callables, `__callStatic`, malformed magic signature parity, broader late-static override resolution, broader builtin/native/inherited/trait/interface signature metadata, broader by-reference alias transfer, broader const-import discovery/fallback and function-import discovery/fallback, named/spread breadth, descriptor/method/closure and broader return references, broader constructor allocation/execution, cleanup/unwind, and backend parity remain open. |
+| Calls, functions, frames | **90%** | `[##################--]` | Runtime callable table/value dispatch, selected runtime builtin source-call signatures/blockers, call arguments/frame/result ABI, source-order/parameter-order named call-argument normalization, conditional handoff, generated-C direct/dynamic callable consumers, declared-method registration/wrapper frames, callable return facts, by-reference argument transport, descriptor closures, closure returns, request-state frame handoff, access-context lookup ABI, lookup-plus-invoke exactly-once argument ownership helpers, source-call result carrier selectors, selected production source-call carrier emission, direct generated user-function lookup-plus-invoke production, direct user-function reference-return frames, exact generated-C `use function` aliases for same-unit user functions and selected runtime callable builtins, explicit by-value return terminal handoff, method/static source-call target operands, method/static source-call binding operands, method/static signature fallback selection, selected direct/dynamic/receiver/static/self/parent reference-return source-call alias transfer into by-reference arguments, executable receiver/static/self/parent/object-static/late-static method source-call production for exact, default, variadic, and selected named-argument frame-compatible arities where class context or receiver/called scope is known, selected generated-C dynamic receiver-method source-call production for known string and runtime-produced method names including declared receiver `__call` fallback, explicit generated-C constructor value-return diagnostics, and interpreter/generated-C exact function/const import islands are integrated. Unknown runtime callables, `__callStatic`, malformed magic signature parity, broader late-static override resolution, broader builtin/native/inherited/trait/interface signature metadata, broader by-reference alias transfer, broader const-import discovery/fallback and function-import discovery/fallback, spread and unsupported named builtin/constructor/fallback breadth, descriptor/method/closure and broader return references, broader constructor allocation/execution, cleanup/unwind, and backend parity remain open. |
 | Objects, properties, methods | **85%** | `[#################---]` | Selected object metadata, value-returning class metadata consumers, LLVM/generated-C user-class metadata consumers, generated-C namespace/import class policy, generated-C class alias metadata and canonical class/member lookup, public property reference-source extraction, method-frame `$this` property assignment, selected non-local object-property assignment commits, object-property owner/fact/commit prerequisites, object-property reference-slot mutation, selected property-held ArrayAccess read/write/RMW/`??=`/unset/append/increment owners, selected nested ArrayAccess assignment and compound-assignment owner stacks, request-scoped runtime static-property storage plus generated-C declared literal and relative `self`/`parent`/`static` static-property read/write producers, generated-C declared typed instance-property allocation/default/write diagnostics, generated-C ArrayAccess consumers for compiler-known generated objects, dynamic generated class-name producers, object-call argument handles, declared-method callable-table publication, bounded executable receiver/static/self/parent/object-static/dynamic/late-static method production through access-context source-call carriers, selected declared receiver `__call` fallback dispatch, selected constructor bodies with bare early returns and explicit value-return diagnostics, allocatable class metadata, user-class metadata registry consumers, and access-context preflights exist. Nested ArrayAccess `??=`/append/increment breadth, `__callStatic`/malformed-magic/mixed-runtime-dynamic-call/clone/static-property breadth, full late-static override/interface/trait binding, object-static/dynamic static-property breadth, broader class-alias/autoload parity, broader visibility parity, typed static/dynamic/magic property breadth, destructors, interfaces/traits execution, references/COW, broader constructor allocation/execution, and backend parity remain open. |
 | Control flow, cleanup, diagnostics | **70%** | `[##############------]` | Selected branches, loops, transfers, finalizers, output buffers, diagnostic blockers, owned diagnostic-result list contracts, consumer contracts, backend family consumers, deferred-cleanup blockers, control-transfer cleanup result consumers, terminal cleanup transfer ABI, terminal-kind ABI, explicit by-value return terminal handoff, bounded function/method return-through-finally cleanup operands, cleanup-frame producers/source metadata/report bridges, cleanup-frame stack aggregation, cleanup-frame enqueue validation, try-body call-boundary preflight, report sinks, continuation helpers, discarded statement-expression operands, and echo/print output operands exist. Broad unwind/finally/destructor/shutdown execution, cleanup result production from arbitrary control flow, executable reference binding, remaining semantic diagnostic-result producer migration, and source-ordered diagnostics remain open. |
 | Broad integrated verification | **75%** | `[###############-----]` | Focused gates around recent source work are strong, with several primary integration gates now covering linked generated-C class/method/constructor programs, LLVM class metadata routing, terminal-kind ABI behavior, and owner-boundary regressions. Broad verification is still constrained by lane extraction cost, stale candidate expectations, heavy formatter/log pressure, and backend parity gaps. |
@@ -289,6 +306,7 @@ Current critical path to 100%:
 
 | Commit | Capability | Proof shape |
 | --- | --- | --- |
+| `425f1ef5` | Generated C now lowers selected named call arguments for compiler-known direct user functions and method/static/dynamic source-call carriers through shared source-order/parameter-order normalization. The normalizer preserves source-order evaluation, binds named values to required/optional/default/by-reference/variadic parameters, rejects duplicate/unknown/positional-after-named/unpack shapes at explicit boundaries, and then feeds parameter-order `NativeCallArgumentsHandle` construction. Named builtins, constructors, unsupported dynamic callables, magic fallback named-argument parity, spread/unpack, broader signature metadata, and LLVM/direct-assembly parity remain blocked. | Primary integration gates passed with `SUMMARY passes=38 failures=0`, covering parser/AST named-argument boundaries, shared normalizer unit proof, generated-C source proof for direct user functions and method/static/dynamic source-call carriers, linked named function/method/dynamic-method executable proof, explicit unsupported builtin/dynamic fallback/unpack blockers, magic dynamic method regressions, exact function/const imports, late/static properties, typed properties, nested and property-held ArrayAccess, source-call references, class aliases, runtime magic lookup, fmt, diff check, cargo check, and cached diff check. |
 | `eedd0879` | Generated-C dynamic receiver method calls on compiler-known receivers with declared instance `__call($name, $args)` now use the shared runtime lookup-plus-invoke dispatcher. Normal method hits still win, missing or inaccessible methods fall back to public non-static `__call`, and magic arguments pack the original method name plus value snapshots of the original call arguments. `__callStatic`, malformed magic signature parity, traits/interfaces/effective tables, aliases/autoload, callable-object fallbacks, full `$args` reference/COW alias behavior, and LLVM/direct-assembly parity remain blocked. | Primary integration gates passed with `SUMMARY passes=18 failures=0`, covering runtime magic `__call` lookup-plus-invoke, method lookup filtering, generated-C magic dynamic source proof, linked magic dynamic executable proof, dynamic/class-context/object-static/late-static/static-property/typed-property/nested ArrayAccess/exact const/source-call reference/class-alias regressions, fmt, diff check, and cached diff check. |
 | `a4d151b8` | Generated C now lowers exact parser-resolved `use const` aliases for same-compilation-unit scalar user constants and supported builtin constants through shared constant metadata/import markers. Exact imported misses reject without namespace/global fallback; ordinary bare constants, arrays/dynamic constant expressions, class constants, include/autoload discovery, dynamic alias roots, function-frame constant lookup, LLVM constant lowering, and broad backend/global constant parity remain blocked. | Primary integration gates passed with `SUMMARY passes=23 failures=0`, covering const-import generated-C source proof, exact-miss and declaration-shape blockers, parser/runtime exact lookup rules, namespace/import focused module, linked exact imported-const executable proof, LLVM constant blockers, function-import regressions, runtime dynamic methods, late-static properties, nested ArrayAccess RMW, typed properties, class aliases, try/finally cleanup, fmt, diff check, and cached diff check. |
 | `bf8fd335` | Generated C now routes declared-frame `static::$prop` reads/writes through shared relative static-property runtime storage using the active called-scope receiver, so inherited static-property methods update descendant storage instead of lexical `self`. Top-level `static::$prop`, object static-property receivers, dynamic class/property names, static-property references, compound mutation/unset/isset/empty, magic/static overloading, traits/interfaces, autoload breadth, LLVM parity, and reference/COW static-property breadth remain blocked. | Primary integration gates passed with `SUMMARY passes=15 failures=0`, covering generated-C source proof, linked late-static property executable proof, static-property native-link and runtime filters, runtime dynamic method and late-static method filters, typed declared instance-property and object-static regressions, nested ArrayAccess RMW source and executable regressions, runtime dynamic method linked executable proof, typed-property failure proof, fmt, diff check, and cached diff check. |
@@ -365,7 +383,7 @@ Primary-integrated capability and candidate/lane-local work are separated.
 | Item | Primary Integrated | Candidate Readiness | Toward Full Feature | Status |
 | --- | ---: | ---: | ---: | --- |
 | Diagnostic-result carrier stack | **100%** `[####################]` | **100%** `[####################]` | **60%** `[############--------]` | Runtime/result contracts, family consumers, continuation helpers, report sinks, discarded statement-expression operands, echo/print output operands, source-call result conversion, control-transfer cleanup result consumers/report bridges, and cleanup-frame producers are integrated. Terminal producers, semantic cleanup result production from real control flow, lvalue, reference, RMW, and call-argument operands still need exact ownership and ordering migrations. |
-| Callable access context and class metadata | **100%** `[####################]` | **100%** `[####################]` | **65%** `[#############-------]` | Shared runtime access-context policy, lookup-plus-invoke argument ownership, source-call result carrier selectors, selected production source-call carrier emission, direct generated user-function lookup-plus-invoke production, direct user-function reference-return frame consumers, bounded generated-C method/static source-call production including default and variadic frame-compatible arities, method/static source-call target and binding operands, method/static signature fallback selection, allocatable-class metadata, generated-C user-class metadata-exists consumers, and value-returning class metadata consumers are integrated for selected function/method/static/constructor/class lookup preflights. Constructor execution, dynamic method names, named/spread arguments, runtime/builtin/inherited/trait/interface signature metadata, closure argument-handle ownership, namespace/function/const fallback, autoload, magic, and full visibility parity remain open. |
+| Callable access context and class metadata | **100%** `[####################]` | **100%** `[####################]` | **65%** `[#############-------]` | Shared runtime access-context policy, lookup-plus-invoke argument ownership, source-call result carrier selectors, selected production source-call carrier emission, direct generated user-function lookup-plus-invoke production, direct user-function reference-return frame consumers, bounded generated-C method/static source-call production including default, variadic, and selected named-argument frame-compatible arities, method/static source-call target and binding operands, method/static signature fallback selection, allocatable-class metadata, generated-C user-class metadata-exists consumers, and value-returning class metadata consumers are integrated for selected function/method/static/constructor/class lookup preflights. Constructor execution, dynamic method names, spread and unsupported named call families, runtime/builtin/inherited/trait/interface signature metadata, closure argument-handle ownership, namespace/function/const fallback, autoload, magic, and full visibility parity remain open. |
 | ArrayAccess compiler consumers | **100%** `[####################]` | **100%** `[####################]` | **65%** `[#############-------]` | Generated-C direct-object/direct-variable read, `isset`, `empty`, `??`, write, append, unset, compound assignment, `??=`, and selected property-held literal/single-known dynamic object-property read/write/RMW/`??=`/unset owners are integrated for compiler-known generated declared `ArrayAccess` objects. Nested property owners, append RMW, increment/decrement, reference-returning `offsetGet`, references/COW, cleanup/unwind, and backend parity remain open. |
 | ReferenceSlot owner facts | **100%** `[####################]` | **100%** `[####################]` | **50%** `[##########----------]` | Compiler-visible native reference handles can recover facts, source owners, and commit writeback for selected variable, non-local object-property assignment, and property-held ArrayAccess paths. Arbitrary alias roots, request/superglobal path facts, broader property-held reference binding, closure callback fact transport, references/COW, and backend parity remain open. |
 | Callable identity return summaries | **100%** `[####################]` | **100%** `[####################]` | **60%** `[############--------]` | Generated functions, declared methods/static methods, descriptor closures, known strings, definite `__invoke` objects, compiler-known callable arrays, and selected direct user-function reference-return frames can publish or consume selected return facts. Unknown runtime callables, builtins, non-descriptor closures, recursive summaries, descriptor/method/closure reference returns, property/magic producers, references/COW, and backend parity remain open. |
@@ -376,6 +394,10 @@ Primary-integrated capability and candidate/lane-local work are separated.
 ## Done
 
 - Runtime callable table plus call arguments/frame/result ABI.
+- Parser/AST named call-argument nodes plus shared call-argument normalization
+  bind source-order positional/named arguments to parameter-order required,
+  optional/default, by-reference, and variadic slots for selected generated-C
+  direct user-function and method/static/dynamic source-call carriers.
 - Runtime callable-value dispatch for selected function names, callable arrays,
   descriptor closures, inherited methods, bound receivers, and object
   `__invoke`.
@@ -544,15 +566,16 @@ Primary-integrated capability and candidate/lane-local work are separated.
   discovery/fallback, broader function-import discovery/fallback,
   broader namespace/function/const fallback, broader visibility,
   `__callStatic`, malformed magic signature parity, broader magic-call
-  coverage, broader constructor allocation/execution, named/spread arguments,
-  and return references.
+  coverage, broader constructor allocation/execution, spread arguments,
+  unsupported named builtin/constructor/fallback call families, and return
+  references.
 - Broader source-call production lowering over expression-owned
   `NativeCallResultHandle` carriers, including remaining dynamic/magic method
   shapes, object-static receiver calls, late-static binding, constructor allocation,
   closure argument-handle invocation ownership, direct function/method/static produced-call
   by-reference alias transfer, unknown runtime callable reference returns,
-  runtime/builtin/inherited/trait/interface signature metadata, named/spread
-  argument metadata, and spread ownership.
+  runtime/builtin/inherited/trait/interface signature metadata, unsupported
+  named argument consumers, and spread ownership.
 - Remaining semantic diagnostic-result operand migration for throw/exit/default
   return terminals, cleanup frame/result production from real control flow,
   lvalue, reference, RMW, and call-argument families; exact PHP diagnostics,
@@ -563,6 +586,23 @@ Primary-integrated capability and candidate/lane-local work are separated.
   `finally`/destructor/shutdown sequencing.
 
 ## Latest Focused Verification
+
+For `425f1ef5`:
+
+- `cargo fmt -- --check`
+- `git diff --check`
+- `cargo test -q -p phpc --lib call_arguments::tests:: --`
+- `cargo test -q -p phpc --test syntax_boundaries named_arguments_parse_as_source_ordered_call_argument_nodes -- --exact --nocapture`
+- `cargo test -q -p phpc --test syntax_boundaries emit_ir_rejects_named_builtin_arguments_at_codegen_boundary -- --exact --nocapture`
+- `cargo test -q -p phpc --test native_link native_executable_c_source_lowers_named_user_function_arguments_through_shared_normalization -- --exact --nocapture`
+- `cargo test -q -p phpc --test native_link native_executable_c_source_lowers_named_method_source_call_arguments_through_carriers -- --exact --nocapture`
+- `cargo test -q -p phpc --test native_link emit_exe_links_and_runs_named_dynamic_method_source_call_argument_program -- --exact --nocapture`
+- Focused adjacent regressions for magic dynamic methods, exact function/const
+  imports, late/static properties, typed properties, nested/property-held
+  ArrayAccess, source-call references, class aliases, runtime magic lookup, and
+  native source-call carrier contracts. Primary integration log:
+  `/tmp/phpc-primary-named-callargs-r15-integration-20260527.gates.log`
+  (`SUMMARY passes=38 failures=0`).
 
 For `eedd0879`:
 
