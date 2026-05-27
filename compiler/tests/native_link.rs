@@ -16095,6 +16095,38 @@ const ARRAYACCESS_NESTED_RMW_OWNER_STACK_SOURCE: &str = concat!(
     "echo ($holder->bag[\"pouter\"][\"pmiddle\"][\"pleaf\"] *= 1 + 1);\n",
 );
 
+const ARRAYACCESS_NESTED_INCREMENT_DECREMENT_OWNER_STACK_SOURCE: &str = concat!(
+    "<?php\n",
+    "class NestedIncrementLeafBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"leaf-get:\", $offset, \";\"; return 4; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"leaf-set:\", $offset, \"=\", $value, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class NestedIncrementMiddleBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"middle-get:\", $offset, \";\"; return new NestedIncrementLeafBag(); }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"middle-set:\", $offset, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class NestedIncrementRootBag implements ArrayAccess {\n",
+    "    public function offsetGet($offset) { echo \"root-get:\", $offset, \";\"; return new NestedIncrementMiddleBag(); }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"root-set:\", $offset, \";\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class NestedIncrementHolder { public $bag; public function __construct() { $this->bag = new NestedIncrementRootBag(); } }\n",
+    "$direct = new NestedIncrementRootBag();\n",
+    "echo ($direct[\"outer\"][\"middle\"][\"post\"]++);\n",
+    "echo \"|\";\n",
+    "--$direct[\"outer2\"][\"middle2\"][\"predec\"];\n",
+    "echo \"|\";\n",
+    "$holder = new NestedIncrementHolder();\n",
+    "echo ++$holder->bag[\"pouter\"][\"pmiddle\"][\"pre\"];\n",
+    "echo \"|\";\n",
+    "echo ($holder->bag[\"douter\"][\"dmiddle\"][\"postdec\"]--);\n",
+);
+
 #[test]
 fn native_executable_c_source_routes_arrayaccess_reference_slot_owners_through_value_owner_boundary(
 ) {
@@ -16385,6 +16417,70 @@ fn emit_exe_links_and_runs_nested_arrayaccess_rmw_owner_stack_program() {
 }
 
 #[test]
+fn native_executable_c_source_routes_nested_arrayaccess_increment_decrement_owner_stack_for_direct_and_property_roots(
+) {
+    let program = parse(ARRAYACCESS_NESTED_INCREMENT_DECREMENT_OWNER_STACK_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_READ_GET")
+            && source.contains("PHPC_NATIVE_ARRAYACCESS_OFFSET_WRITE_SET")
+            && source.contains("PHPC_NATIVE_VALUE_INCREMENT")
+            && source.contains("PHPC_NATIVE_VALUE_DECREMENT")
+            && source.contains("phpc_native_value_increment_decrement_result")
+            && source
+                .matches("phpc_native_value_arrayaccess_offset_read_operation_with_diagnostic")
+                .count()
+                >= 12
+            && source
+                .matches("phpc_native_value_arrayaccess_offset_write_operation_with_diagnostic")
+                .count()
+                >= 12
+            && source.matches("nested_arrayaccess_leaf_write").count() >= 4
+            && source.matches("nested_arrayaccess_parent_writeback").count() >= 8
+            && source.matches("nested_arrayaccess_root_commit").count() >= 4
+            && source.contains("phpc_native_value_public_property_reference_with_diagnostic_and_free")
+            && source.contains("phpc_native_reference_set_value("),
+        "nested ArrayAccess increment/decrement should emit owner-stack descent, leaf reads, native increment/decrement updates, reverse parent writebacks, and direct/property root commits:\n{source}"
+    );
+    assert!(
+        !source.contains("ArrayAccess lowering rejects")
+            && !source.contains("assembly mutation lowering rejects")
+            && !source.contains("non-local assignment lowering rejects"),
+        "nested ArrayAccess increment/decrement production must not fall back to rejection paths:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_nested_arrayaccess_increment_decrement_owner_stack_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "nested_arrayaccess_increment_decrement_owner_stack_production",
+        ARRAYACCESS_NESTED_INCREMENT_DECREMENT_OWNER_STACK_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native nested ArrayAccess increment/decrement executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(
+        run.stdout,
+        b"root-get:outer;middle-get:middle;leaf-get:post;leaf-set:post=5;middle-set:middle;root-set:outer;4|root-get:outer2;middle-get:middle2;leaf-get:predec;leaf-set:predec=3;middle-set:middle2;root-set:outer2;|root-get:pouter;middle-get:pmiddle;leaf-get:pre;leaf-set:pre=5;middle-set:pmiddle;root-set:pouter;5|root-get:douter;middle-get:dmiddle;leaf-get:postdec;leaf-set:postdec=3;middle-set:dmiddle;root-set:douter;4"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn native_executable_c_source_rejects_nested_arrayaccess_reference_returning_offsetget() {
     let program = parse(concat!(
         "<?php\n",
@@ -16439,35 +16535,6 @@ fn native_executable_c_source_rejects_nested_arrayaccess_non_assignment_mutation
                 "$bag[\"outer\"][] = 1;\n",
             ),
         ),
-        (
-            "nested ArrayAccess increment",
-            concat!(
-                "<?php\n",
-                "class Bag implements ArrayAccess {\n",
-                "    public function offsetGet($offset) { return new Bag(); }\n",
-                "    public function offsetExists($offset) { return true; }\n",
-                "    public function offsetSet($offset, $value) { return null; }\n",
-                "    public function offsetUnset($offset) { return null; }\n",
-                "}\n",
-                "$bag = new Bag();\n",
-                "$bag[\"outer\"][\"leaf\"]++;\n",
-            ),
-        ),
-        (
-            "property-held nested ArrayAccess decrement",
-            concat!(
-                "<?php\n",
-                "class Bag implements ArrayAccess {\n",
-                "    public function offsetGet($offset) { return new Bag(); }\n",
-                "    public function offsetExists($offset) { return true; }\n",
-                "    public function offsetSet($offset, $value) { return null; }\n",
-                "    public function offsetUnset($offset) { return null; }\n",
-                "}\n",
-                "class Box { public $bag; public function __construct() { $this->bag = new Bag(); } }\n",
-                "$box = new Box();\n",
-                "$box->bag[\"outer\"][\"leaf\"]--;\n",
-            ),
-        ),
     ];
 
     for (label, source) in sources {
@@ -16507,21 +16574,6 @@ fn native_executable_c_source_rejects_property_held_arrayaccess_increment_unsupp
                 "$box = new Box();\n",
                 "$slot = 1;\n",
                 "$box->{$slot}[\"k\"]++;\n",
-            ),
-        ),
-        (
-            "nested property-held ArrayAccess increment owner",
-            concat!(
-                "<?php\n",
-                "class Bag implements ArrayAccess {\n",
-                "    public function offsetGet($offset) { return new Bag(); }\n",
-                "    public function offsetExists($offset) { return true; }\n",
-                "    public function offsetSet($offset, $value) { return null; }\n",
-                "    public function offsetUnset($offset) { return null; }\n",
-                "}\n",
-                "class Box { public $bag; public function __construct() { $this->bag = new Bag(); } }\n",
-                "$box = new Box();\n",
-                "$box->bag[\"outer\"][\"leaf\"]++;\n",
             ),
         ),
         (
@@ -16667,20 +16719,6 @@ fn native_executable_c_source_rejects_arrayaccess_rmw_unsupported_owner_shapes()
                 "$box = new Box();\n",
                 "$slot = 1;\n",
                 "$box->{$slot}[\"k\"] += 1;\n",
-            ),
-        ),
-        (
-            "nested ArrayAccess RMW owner",
-            concat!(
-                "<?php\n",
-                "class Bag implements ArrayAccess {\n",
-                "    public function offsetGet($offset) { return new Bag(); }\n",
-                "    public function offsetExists($offset) { return true; }\n",
-                "    public function offsetSet($offset, $value) { return null; }\n",
-                "    public function offsetUnset($offset) { return null; }\n",
-                "}\n",
-                "$bag = new Bag();\n",
-                "$bag[\"outer\"][\"leaf\"] += 1;\n",
             ),
         ),
         (

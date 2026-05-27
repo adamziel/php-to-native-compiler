@@ -43034,6 +43034,18 @@ impl CGenerator {
         position: IncrementDecrementPosition,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        if let Some(context) =
+            self.materialize_native_nested_arrayaccess_write_context(target, failure_cleanup)?
+        {
+            let value = self.materialize_native_nested_arrayaccess_increment_decrement_result(
+                context,
+                op,
+                position,
+                failure_cleanup,
+            )?;
+            return Ok(Some(value));
+        }
+
         let Some(target) = self
             .materialize_property_held_native_arrayaccess_offset_mutation_target_for_assign_target(
                 target,
@@ -43098,6 +43110,68 @@ impl CGenerator {
         )?;
 
         Ok(Some(result))
+    }
+
+    fn materialize_native_nested_arrayaccess_increment_decrement_result(
+        &mut self,
+        context: CNativeNestedArrayAccessWriteContext,
+        op: IncrementDecrementOp,
+        position: IncrementDecrementPosition,
+        failure_cleanup: &str,
+    ) -> CompileResult<CNativeValueMaterialization> {
+        let context_cleanup = context.cleanup_sequence();
+        let current = self.emit_native_nested_arrayaccess_leaf_read_operation(
+            &context,
+            CNativeArrayAccessOffsetReadOperation::Get,
+            failure_cleanup,
+        );
+        let current_cleanup = c_cleanup_sequence(&current.cleanup_after_use);
+        let update_input_handle = self.checked_clone_native_value_handle(
+            &current.handle,
+            &format!("{current_cleanup}{context_cleanup}{failure_cleanup}"),
+        );
+        let update_input = CNativeValueMaterialization {
+            handle: update_input_handle.clone(),
+            cleanup_after_use: vec![format!("phpc_native_value_free({update_input_handle});")],
+        };
+        let updated = self.emit_native_value_increment_decrement_result_handle(
+            update_input,
+            native_value_increment_decrement_op_tag(op),
+            &format!("{current_cleanup}{context_cleanup}{failure_cleanup}"),
+        );
+
+        let (result, replacement, write_failure_cleanup) = match position {
+            IncrementDecrementPosition::Pre => {
+                self.body.extend(current.cleanup_after_use);
+                let updated_cleanup = c_cleanup_sequence(&updated.cleanup_after_use);
+                let replacement_handle = self.checked_clone_native_value_handle(
+                    &updated.handle,
+                    &format!("{updated_cleanup}{context_cleanup}{failure_cleanup}"),
+                );
+                (
+                    updated,
+                    CNativeValueMaterialization {
+                        handle: replacement_handle.clone(),
+                        cleanup_after_use: vec![format!(
+                            "phpc_native_value_free({replacement_handle});"
+                        )],
+                    },
+                    format!("{updated_cleanup}{failure_cleanup}"),
+                )
+            }
+            IncrementDecrementPosition::Post => {
+                let write_failure_cleanup = format!("{current_cleanup}{failure_cleanup}");
+                (current, updated, write_failure_cleanup)
+            }
+        };
+
+        self.emit_native_nested_arrayaccess_write_context(
+            context,
+            replacement,
+            &write_failure_cleanup,
+        )?;
+
+        Ok(result)
     }
 
     fn materialize_native_arrayaccess_offset_null_coalesce_assignment_result_for_target(
