@@ -32275,11 +32275,14 @@ impl CGenerator {
         value: CNativeValueMaterialization,
         span: Span,
         failure_cleanup: &str,
+        facts: Option<CNativeValueFacts>,
+        callable_identities: Option<HashSet<CNativeCallableIdentity>>,
     ) -> CompileResult<()> {
         self.remember_variable_order(name);
         let path = self.materialize_static_globals_symbol_path_key(name, span, failure_cleanup)?;
         self.release_variable_native_value_handle(name);
         self.variables.remove(name);
+        self.record_symbol_table_variable_metadata(name, facts, callable_identities);
         self.emit_globals_symbol_path_write_from_materialized(path, value, span, failure_cleanup)
     }
 
@@ -32289,6 +32292,8 @@ impl CGenerator {
         expr: &Expr,
         span: Span,
         failure_cleanup: &str,
+        facts: Option<CNativeValueFacts>,
+        callable_identities: Option<HashSet<CNativeCallableIdentity>>,
     ) -> CompileResult<()> {
         self.remember_variable_order(name);
         let path = self.materialize_static_globals_symbol_path_key(name, span, failure_cleanup)?;
@@ -32299,7 +32304,27 @@ impl CGenerator {
         )?;
         self.release_variable_native_value_handle(name);
         self.variables.remove(name);
+        self.record_symbol_table_variable_metadata(name, facts, callable_identities);
         self.emit_globals_symbol_path_write_from_materialized(path, value, span, failure_cleanup)
+    }
+
+    fn record_symbol_table_variable_metadata(
+        &mut self,
+        name: &str,
+        facts: Option<CNativeValueFacts>,
+        callable_identities: Option<HashSet<CNativeCallableIdentity>>,
+    ) {
+        self.clear_native_object_property_facts_for_object(name);
+        match facts.filter(|facts| !facts.is_empty()) {
+            Some(facts) => {
+                self.native_value_variable_facts
+                    .insert(name.to_string(), facts);
+            }
+            None => {
+                self.native_value_variable_facts.remove(name);
+            }
+        }
+        self.store_native_callable_variable_identities(name, callable_identities);
     }
 
     fn emit_symbol_table_variable_unset(
@@ -32312,6 +32337,7 @@ impl CGenerator {
         let name_bytes = self.emit_symbol_name_static_bytes(name);
         self.release_variable_native_value_handle(name);
         self.variables.remove(name);
+        self.record_symbol_table_variable_metadata(name, None, None);
         let unset = self.next_native_name("symbol_table_unset");
         self.body.push(format!(
             "bool {unset} = phpc_native_symbol_table_unset({table}, {name_bytes}, {});",
@@ -45166,7 +45192,16 @@ impl CGenerator {
                 if self.direct_variables_route_through_global_symbol_table()
                     && !is_globals_superglobal_name(name) =>
             {
-                self.emit_symbol_table_variable_assignment(name, expr, span, failure_cleanup)?;
+                let native_value_facts = self.native_value_facts_for_expr(expr);
+                let native_callable_identities = self.native_callable_identities_for_expr(expr);
+                self.emit_symbol_table_variable_assignment(
+                    name,
+                    expr,
+                    span,
+                    failure_cleanup,
+                    native_value_facts,
+                    native_callable_identities,
+                )?;
                 self.emit_symbol_table_variable_value_read(name, span, failure_cleanup)
                     .map(|value| {
                         self.retain_native_value_cleanup_handle(&value.handle);
@@ -51744,23 +51779,14 @@ impl CGenerator {
                     } else {
                         self.known_strings.remove(name);
                     }
-                    let assignment =
-                        self.emit_symbol_table_variable_assignment(name, expr, target.span(), "");
-                    if assignment.is_ok() {
-                        match native_value_facts.filter(|facts| !facts.is_empty()) {
-                            Some(facts) => {
-                                self.native_value_variable_facts.insert(name.clone(), facts);
-                            }
-                            None => {
-                                self.native_value_variable_facts.remove(name);
-                            }
-                        }
-                        self.store_native_callable_variable_identities(
-                            name,
-                            native_callable_identities,
-                        );
-                    }
-                    return assignment;
+                    return self.emit_symbol_table_variable_assignment(
+                        name,
+                        expr,
+                        target.span(),
+                        "",
+                        native_value_facts,
+                        native_callable_identities,
+                    );
                 }
                 if (self.uses_native_string_helpers || native_string_search_result_expr(expr))
                     && !self.mutable_scalar_slots.contains_key(name)
@@ -51774,6 +51800,8 @@ impl CGenerator {
                                 value,
                                 target.span(),
                                 "",
+                                native_value_facts.clone(),
+                                native_callable_identities.clone(),
                             );
                         }
                         self.store_native_value_result_variable_with_native_value_facts(
@@ -51803,6 +51831,8 @@ impl CGenerator {
                         value,
                         target.span(),
                         "",
+                        native_value_facts,
+                        native_callable_identities,
                     );
                 }
                 self.store_variable_value_with_native_value_facts(name, value, native_value_facts);

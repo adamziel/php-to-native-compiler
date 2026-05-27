@@ -24577,6 +24577,29 @@ const NATIVE_SPREAD_BYREF_VARIADIC_UNPACK_SOURCE: &str = concat!(
     "echo \"done\";\n",
 );
 
+const NATIVE_SPREAD_CALLABLE_FAMILY_BYREF_UNPACK_SOURCE: &str = concat!(
+    "<?php\n",
+    "class SpreadCallableFamilyByRefBox {\n",
+    "    public static function stat(&$slot) { $slot = $slot . \"S\"; return $slot; }\n",
+    "    public function inst(&$slot) { $slot = $slot . \"I\"; return $slot; }\n",
+    "    public function __invoke(&$slot) { $slot = $slot . \"O\"; return $slot; }\n",
+    "}\n",
+    "$box = new SpreadCallableFamilyByRefBox();\n",
+    "$static = [SpreadCallableFamilyByRefBox::class, \"stat\"];\n",
+    "$value = \"a\";\n",
+    "$args = [];\n",
+    "$args[] =& $value;\n",
+    "echo $static(...$args), \":\", $value, \"|\";\n",
+    "$value = \"b\";\n",
+    "$args = [];\n",
+    "$args[] =& $value;\n",
+    "echo [$box, \"inst\"](...$args), \":\", $value, \"|\";\n",
+    "$value = \"c\";\n",
+    "$args = [];\n",
+    "$args[] =& $value;\n",
+    "echo $box(...$args), \":\", $value;\n",
+);
+
 const NATIVE_SPREAD_CALLABLE_FAMILY_ARGUMENT_SOURCE: &str = concat!(
     "<?php\n",
     "function spread_callable_family_marker($label) { echo $label; return $label; }\n",
@@ -24694,6 +24717,40 @@ const NATIVE_RUNTIME_CALLABLE_VARIABLE_SPREAD_SOURCE: &str = concat!(
     "$objectCall = $_GET[\"left\"] ? new RuntimeCallableVariableSpreadLeft() : new RuntimeCallableVariableSpreadRight();\n",
     "echo $arrayCall(...[runtime_callable_variable_spread_marker(\"A\"), runtime_callable_variable_spread_marker(\"B\")], ...[runtime_callable_variable_spread_marker(\"C\"), \"name\" => runtime_callable_variable_spread_marker(\"N\")]), \"|\";\n",
     "echo $objectCall(...[runtime_callable_variable_spread_marker(\"X\"), runtime_callable_variable_spread_marker(\"Y\")], ...[runtime_callable_variable_spread_marker(\"Z\"), \"name\" => runtime_callable_variable_spread_marker(\"M\")]);\n",
+);
+
+const NATIVE_RUNTIME_CALLABLE_VARIABLE_BYREF_SPREAD_SOURCE: &str = concat!(
+    "<?php\n",
+    "class RuntimeCallableVariableByRefSpreadBox {\n",
+    "    public static function stat(&$slot) {\n",
+    "        $slot = $slot . \"S\";\n",
+    "        return \"stat:\" . $slot;\n",
+    "    }\n",
+    "    public function inst(&$slot) {\n",
+    "        $slot = $slot . \"I\";\n",
+    "        return \"inst:\" . $slot;\n",
+    "    }\n",
+    "    public function __invoke(&$slot) {\n",
+    "        $slot = $slot . \"O\";\n",
+    "        return \"invoke:\" . $slot;\n",
+    "    }\n",
+    "}\n",
+    "$value = \"a\";\n",
+    "$args = [];\n",
+    "$args[] =& $value;\n",
+    "$cb = [RuntimeCallableVariableByRefSpreadBox::class, \"stat\"];\n",
+    "echo $cb(...$args), \":\", $value, \"|\";\n",
+    "$obj = new RuntimeCallableVariableByRefSpreadBox();\n",
+    "$value = \"b\";\n",
+    "$args = [];\n",
+    "$args[] =& $value;\n",
+    "$cb = [$obj, \"inst\"];\n",
+    "echo $cb(...$args), \":\", $value, \"|\";\n",
+    "$value = \"c\";\n",
+    "$args = [];\n",
+    "$args[] =& $value;\n",
+    "$cb = $obj;\n",
+    "echo $cb(...$args), \":\", $value;\n",
 );
 
 const NATIVE_SPREAD_VARIADIC_DESCRIPTOR_CLOSURE_ARGUMENT_SOURCE: &str = concat!(
@@ -25575,6 +25632,33 @@ fn native_executable_c_source_lowers_callable_family_spread_through_materialized
 }
 
 #[test]
+fn native_executable_c_source_lowers_callable_family_byref_unpack_through_materialized_bridge() {
+    let program = parse(NATIVE_SPREAD_CALLABLE_FAMILY_BYREF_UNPACK_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && body.contains("phpc_NativeCallArgumentsHandle dynamic_callable_args_")
+            && body.contains("callable_object_invoke_args_")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
+            && body.contains(
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+            ),
+        "callable-family by-reference unpack should reuse materialized reference slots and existing callable invoke boundaries:\n{source}"
+    );
+    assert!(
+        !source.contains("spread operands need a materialized-entry producer")
+            && !source.contains("by-reference parameter $slot requires reference materialization")
+            && !source.contains("callable_array_matched")
+            && !source.contains("callable_object_matched"),
+        "supported callable-family by-reference unpack should not hit old spread/byref blockers or legacy callable ladders:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_lowers_interface_only_callable_spread_through_materialized_bridge() {
     let program = parse(NATIVE_INTERFACE_ONLY_CALLABLE_SPREAD_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -25690,6 +25774,37 @@ fn native_executable_c_source_lowers_runtime_callable_variable_spread_through_id
             && !source.contains("callable_array_matched")
             && !source.contains("callable_object_matched"),
         "runtime-held callable variable spread should not hit old spread blockers or legacy ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_runtime_callable_variable_byref_spread_through_identity_contract(
+) {
+    let program = parse(NATIVE_RUNTIME_CALLABLE_VARIABLE_BYREF_SPREAD_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && body.contains("uint8_t materialized_parameter_by_reference_")
+            && body.contains(" = { 1 };")
+            && body.contains("phpc_NativeCallArgumentsHandle dynamic_callable_args_")
+            && body.contains("phpc_NativeCallArgumentsHandle callable_object_invoke_args_")
+            && body.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free")
+            && body.contains(
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+            ),
+        "runtime-held callable variable byref spread should use identity-derived parameter metadata, materialized argument finalization, and existing callable invoke helpers:\n{source}"
+    );
+    assert!(
+        !source.contains("spread operands need a materialized-entry producer")
+            && !source.contains("by-reference parameter received unpacked value")
+            && !source.contains("callable_array_matched")
+            && !source.contains("callable_object_matched"),
+        "runtime-held callable variable byref spread should not fall back to old blockers or legacy ladders:\n{source}"
     );
 }
 
@@ -27710,6 +27825,34 @@ fn emit_exe_links_and_runs_callable_family_spread_argument_program() {
 }
 
 #[test]
+fn emit_exe_links_and_runs_callable_family_spread_by_reference_unpack_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "spread_callable_family_by_reference_unpack",
+        NATIVE_SPREAD_CALLABLE_FAMILY_BYREF_UNPACK_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native callable-family by-reference spread executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"aS:aS|bI:bI|cO:cO");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
 fn emit_exe_links_and_runs_interface_only_callable_spread_argument_program() {
     if !has_cc() {
         return;
@@ -27815,6 +27958,34 @@ fn emit_exe_links_and_runs_runtime_callable_variable_spread_argument_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"ABCNRSABCN|XYZMROXYZM");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_runtime_callable_variable_byref_spread_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "runtime_callable_variable_byref_spread_arguments",
+        NATIVE_RUNTIME_CALLABLE_VARIABLE_BYREF_SPREAD_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native runtime callable variable byref spread executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"stat:aS:aS|inst:bI:bI|invoke:cO:cO");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
