@@ -8734,7 +8734,7 @@ echo first(...$items);
 }
 
 #[test]
-fn named_arguments_are_rejected_with_stable_parse_error() {
+fn named_arguments_are_rejected_at_source_order_call_argument_boundary() {
     let error = runtime_error(
         r#"<?php
 function greet($name) {
@@ -8748,7 +8748,7 @@ echo greet(name: "Ada");
     assert_eq!(error.column, 12);
     assert_eq!(
         error.message,
-        "unsupported call named argument: interpreter call consumers have not been wired to shared named-argument normalization"
+        "unsupported call source-order call argument: interpreter call consumers have not been wired to shared source-order call-argument normalization"
     );
 }
 

@@ -1,2 +1,1 @@
-parse error at 5:12: unsupported named argument: call argument names require parameter-name metadata, duplicate and unknown-name diagnostics, positional/named ordering, by-reference binding, variadic collection, unpacking interaction, and native lowering
-
+runtime error at 5:12: unsupported call source-order call argument: interpreter call consumers have not been wired to shared source-order call-argument normalization
