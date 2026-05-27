@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 19:46 CEST
+Updated: 2026-05-27 19:51 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,16 +19,38 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `e74e365a` extends the shared runtime
-callable sorting writeback family from `sort()` / `rsort()` to key-preserving
-`asort()` / `arsort()`. Runtime callable strings, unknown callable string
-branches, named/spread finalization, and generated-C linked execution now share
-the same builtin signature metadata, by-reference array materialization,
-defaulted flags, and array writeback path across the selected ascending and
-descending value-sort family. Comparator callbacks, key-sort families,
-full flag/diagnostic parity, heterogeneous callable-family policy, broader
-callable object/array/external families, broad reference/COW parity, and
-LLVM/ASM parity remain blocked.
+Latest accounted source capability: `f1b58b52` adds a runtime-only,
+request-local SPL autoload registry ABI that stores normalized
+`NativeCallableValueDispatch` values, supports ordered register/prepend and
+unregister operations, invokes callbacks through the shared callable-value
+runtime path, and exposes a registry-aware class/trait metadata lookup sibling
+with same-class recursion diagnostics. Generated-C lowering for SPL autoload
+builtins and class-like metadata calls, `spl_autoload_functions()`,
+interface-specific metadata autoload, arbitrary runtime PHP source loading,
+Composer/PSR/path-table behavior, and LLVM/ASM parity remain blocked.
+
+Recent source commit `f1b58b52` advances generalized SPL autoload runtime
+semantics without adding generated-C lowering, runtime PHP parsing, or
+framework/path-shape adapters. The runtime now has a request-local
+`NativeSplAutoloadRegistryHandle`, stores callbacks as normalized
+`NativeCallableValueDispatch` values, supports ordered register/prepend and
+unregister by callable-value equality, invokes callbacks with the requested
+class-like name through
+`phpc_native_callable_value_invoke_discard_with_diagnostic_and_free`, and adds
+`phpc_native_value_class_metadata_exists_with_autoload_registry_and_diagnostic`
+as a class/trait metadata lookup sibling. The existing generated-native
+autoload-policy blocker remains in place for current compiler callers until
+compiler lowering deliberately migrates to the registry-aware ABI. Focused
+gates covered compile checking, runtime registry ordering across callable
+shapes, class and trait miss autoload, reentrant loading diagnostics,
+callable-dispatch regression, existing autoload-policy blocker regression,
+formatting, and diff checks. Generated-C `spl_autoload_register`,
+`spl_autoload_unregister`, `spl_autoload_call`, `class_exists(..., true)` /
+`trait_exists(..., true)` / `interface_exists(..., true)` lowering,
+`spl_autoload_functions()`, arbitrary runtime source loading, Composer/PSR
+adapters, and LLVM/ASM parity remain blocked. Primary gate log:
+`state/logs/phpc-primary-spl-autoload-registry-d6047206-20260527.gates.log`
+sha256 `114528df8e2bf463099dbd06e091c961afd67f9566c8f7847d5a83bc55e80023`.
 
 Recent source commit `e74e365a` advances selected runtime callable sorting
 writeback without adding callable-name or fixture-shape lowering. The runtime
