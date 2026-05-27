@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 15:20 CEST
+Updated: 2026-05-27 15:31 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,13 +19,23 @@ Overall integrated-roadmap progress: **80%** `[################----]`
 
 Selected executable PHP semantics: **90%** `[##################--]`
 
-Latest accounted source capability: `10b40ead` routes selected generated-C
-trait method execution through declared method frame carriers. Trait-composed
-effective methods that pass declared-method frame validation now become normal
-declared method metadata, so trait methods, aliases, visibility adaptations,
-direct class overrides, and included trait declarations reuse the shared
-callable table, receiver/source-call invocation, declared frame setup, called
-scope, `$this`, named-argument, cleanup, and by-reference boundaries. Trait
+Latest accounted source capability: `b14186bc` routes selected generated-C
+`interface_exists()` checks through declared generated-native interface
+metadata. Literal and dynamic interface names now reuse the shared native text
+membership helper against `declared_interfaces` / `declared_interface_order`,
+including case-insensitive canonical and leading-backslash spellings, while
+classes, missing no-autoload names, core/external interfaces, and autoload-only
+interfaces remain outside this bounded generated-declaration surface.
+Generated-C `get_declared_interfaces()` and `class_implements()` still need
+shared runtime value registries before they can be claimed.
+
+Recent source commit `10b40ead` routes selected generated-C trait method
+execution through declared method frame carriers. Trait-composed effective
+methods that pass declared-method frame validation now become normal declared
+method metadata, so trait methods, aliases, visibility adaptations, direct
+class overrides, and included trait declarations reuse the shared callable
+table, receiver/source-call invocation, declared frame setup, called scope,
+`$this`, named-argument, cleanup, and by-reference boundaries. Trait
 constructors, destructor execution, trait properties/constants, unsupported
 method bodies, autoload-discovered traits, broad reference/COW parity, and
 LLVM/ASM parity remain blocked instead of gaining trait-specific dispatch
