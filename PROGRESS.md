@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 18:13 CEST
+Updated: 2026-05-27 18:16 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,13 +19,27 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `967181fd` routes selected imported/direct
-runtime builtin aliases through the same source-call and materialized argument
-contract used by runtime callable builtin strings. Imported `array_push()` /
-`array_unshift()` aliases now derive `RuntimeBuiltin` metadata, materialize
-fixed by-reference owner arguments as references, finalize spread tails through
-`NativeCallArgumentsHandle`, and write mutations back through the shared
-runtime builtin path.
+Latest accounted source capability: `22964e72` adds a generated include-unit
+registry plus runtime lookup ABI for non-finite generated-C
+`include`/`require` path values over declared generated include units. Runtime
+path operands can now be converted to bytes, looked up against generated
+request/canonical aliases, and dispatched through the same include unit,
+include_once/require_once, and result propagation helpers as literal and finite
+dynamic include paths.
+
+Recent source commit `22964e72` moves selected non-finite runtime
+include/require operands past the old compile-time blocker without parsing
+arbitrary PHP at runtime. Executable include discovery still discovers only
+literal/finite declared units, but generated C now emits a compact registry of
+request-path and canonical-path aliases and calls
+`phpc_native_include_unit_registry_lookup()` to choose the declared include
+unit at runtime. Focused gates cover generated-C source proof, linked
+request-path/canonical-path include_once and require_once dispatch, include
+path/missing/require regressions, runtime registry lookup, and diagnostic
+severity regression. Fully arbitrary filesystem/source loading, dynamic
+runtime `include_path` mutation, stream wrappers, file URLs, non-UTF-8 path
+handling, open_basedir/stat-cache parity, exact warning/source-map fidelity,
+and LLVM/ASM parity remain blocked.
 
 Recent source commit `967181fd` removes the old imported/direct runtime
 builtin split for represented function imports and aliases. Materialized call
@@ -45,8 +59,8 @@ signature metadata now exposes the shared by-reference `$array` parameter and
 variadic `$values` tail, and runtime invocation mutates the referenced owner
 through the existing array mutation semantics rather than a generated-C shape
 path. Sorting builtins, object/ArrayAccess/resource mutation operands, exact
-imported direct builtin spread routing, unknown or heterogeneous callable
-families, magic fallback, broad COW parity, and LLVM/ASM parity remain
+literal leading-global builtin namespace syntax, unknown or heterogeneous
+callable families, magic fallback, broad COW parity, and LLVM/ASM parity remain
 blocked.
 
 Recent source commit `9a00643a` collects direct generated user-function and
