@@ -24627,6 +24627,16 @@ const NATIVE_RUNTIME_CALLABLE_VARIABLE_SPREAD_SOURCE: &str = concat!(
     "echo $objectCall(...[runtime_callable_variable_spread_marker(\"X\"), runtime_callable_variable_spread_marker(\"Y\")], ...[runtime_callable_variable_spread_marker(\"Z\"), \"name\" => runtime_callable_variable_spread_marker(\"M\")]);\n",
 );
 
+const NATIVE_SPREAD_VARIADIC_DESCRIPTOR_CLOSURE_ARGUMENT_SOURCE: &str = concat!(
+    "<?php\n",
+    "function spread_variadic_descriptor_closure_marker($label) { echo $label; return $label; }\n",
+    "$join = function ($first, ...$tail) {\n",
+    "    return $first . \":\" . ($tail[0] ?? \"empty\") . \":\" . ($tail[\"name\"] ?? \"none\");\n",
+    "};\n",
+    "echo $join(...[spread_variadic_descriptor_closure_marker(\"A\"), spread_variadic_descriptor_closure_marker(\"B\")], ...[\"name\" => spread_variadic_descriptor_closure_marker(\"N\")]), \"|\";\n",
+    "echo $join(...[\"first\" => spread_variadic_descriptor_closure_marker(\"X\"), \"name\" => spread_variadic_descriptor_closure_marker(\"Y\")]);\n",
+);
+
 const NATIVE_NAMED_METHOD_SOURCE_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "function named_method_marker($label) { echo $label; return $label; }\n",
@@ -25467,6 +25477,31 @@ fn native_executable_c_source_lowers_runtime_callable_string_spread_through_mate
 }
 
 #[test]
+fn native_executable_c_source_lowers_variadic_descriptor_closure_spread_through_finalized_frame_slot(
+) {
+    let program = parse(NATIVE_SPREAD_VARIADIC_DESCRIPTOR_CLOSURE_ARGUMENT_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && source.contains("PHPC_NATIVE_CLOSURE_ARGUMENT_VARIADIC")
+            && source
+                .contains("phpc_closure_args[1].flags & PHPC_NATIVE_CLOSURE_ARGUMENT_VARIADIC")
+            && body.contains(
+                "phpc_native_closure_invoke_value_with_diagnostic_and_free_arguments"
+            ),
+        "variadic descriptor closure spread should pass a finalized variadic slot through the closure-frame ABI:\n{source}"
+    );
+    assert!(
+        !source.contains("closure-frame variadic ABI before spread calls")
+            && !source.contains("spread operands need a materialized-entry producer")
+            && !source.contains(ASSEMBLY_CLOSURE_REJECTION),
+        "supported variadic descriptor closure spread should not hit spread or closure blockers:\n{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_lowers_runtime_callable_variable_spread_through_identity_contract() {
     let program = parse(NATIVE_RUNTIME_CALLABLE_VARIABLE_SPREAD_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -25518,12 +25553,12 @@ fn native_executable_c_source_blocks_runtime_callable_variable_spread_with_heter
 }
 
 #[test]
-fn native_executable_c_source_blocks_variadic_descriptor_closure_spread_at_closure_frame_boundary()
+fn native_executable_c_source_blocks_typed_variadic_descriptor_closure_spread_until_entry_coercion()
 {
     let program = parse(concat!(
         "<?php\n",
-        "$join = function ($first, ...$tail) { return $first . ($tail[0] ?? \"\"); };\n",
-        "echo $join(...[\"A\", \"B\"]);\n",
+        "$join = function ($first, int ...$tail) { return $first . $tail[0]; };\n",
+        "echo $join(...[\"A\", \"2\"]);\n",
     ))
     .unwrap();
     let error = emit_native_executable_c_source(&program).unwrap_err();
@@ -25532,7 +25567,7 @@ fn native_executable_c_source_blocks_variadic_descriptor_closure_spread_at_closu
     assert!(
         error
             .message
-            .contains("closure-frame variadic ABI before spread calls"),
+            .contains("finalized variadic collection entry coercion"),
         "{}",
         error.message
     );
@@ -27306,6 +27341,34 @@ fn emit_exe_links_and_runs_runtime_callable_variable_spread_argument_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"ABCNRSABCN|XYZMROXYZM");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_variadic_descriptor_closure_spread_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "spread_variadic_descriptor_closure_arguments",
+        NATIVE_SPREAD_VARIADIC_DESCRIPTOR_CLOSURE_ARGUMENT_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native variadic descriptor-closure spread executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ABNA:B:N|XYX:empty:Y");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);

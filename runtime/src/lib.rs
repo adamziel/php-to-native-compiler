@@ -1560,6 +1560,7 @@ struct NativeCallableKey {
 struct NativeCallArguments {
     slots: Vec<NativeCallArgumentSlot>,
     names: Vec<Option<String>>,
+    finalized_variadic: bool,
 }
 
 #[derive(Debug)]
@@ -3918,6 +3919,7 @@ impl NativeCallArgumentsHandle {
             ptr: Box::into_raw(Box::new(NativeCallArguments {
                 slots: Vec::new(),
                 names: Vec::new(),
+                finalized_variadic: false,
             })),
         }
     }
@@ -5132,6 +5134,19 @@ pub unsafe extern "C" fn phpc_native_closure_invoke_result(
         unsafe { std::slice::from_raw_parts(args, arg_count) }
     };
     for (index, arg) in args_slice.iter().enumerate() {
+        if arg.is_variadic_collection()
+            && (!descriptor.is_variadic()
+                || index + 1 != descriptor.param_count
+                || index + 1 != arg_count)
+        {
+            return NativeClosureInvocationResult::diagnostic(
+                RuntimeError::unsupported_call(
+                    "Closure::__invoke()",
+                    "finalized variadic closure argument must be the descriptor variadic slot",
+                )
+                .message(),
+            );
+        }
         if descriptor.param_is_by_reference(index) && !arg.is_reference() {
             return NativeClosureInvocationResult::diagnostic(
                 RuntimeError::unsupported_call(
@@ -9743,7 +9758,11 @@ unsafe fn native_materialized_call_arguments_finalize(
     }
 
     Ok(NativeCallArgumentsHandle {
-        ptr: Box::into_raw(Box::new(NativeCallArguments { slots, names })),
+        ptr: Box::into_raw(Box::new(NativeCallArguments {
+            slots,
+            names,
+            finalized_variadic: has_variadic,
+        })),
     })
 }
 
@@ -11148,6 +11167,10 @@ unsafe fn native_closure_arguments_from_call_arguments(
 
     let mut closure_args = Vec::with_capacity(arguments.slots.len());
     for (index, slot) in arguments.slots.iter().enumerate() {
+        let is_finalized_variadic_slot = arguments.finalized_variadic
+            && descriptor.is_variadic()
+            && arguments.slots.len() == descriptor.param_count
+            && index + 1 == descriptor.param_count;
         let argument = match *slot {
             NativeCallArgumentSlot::Value(value) => {
                 if descriptor.param_is_by_reference(index) {
@@ -11171,7 +11194,11 @@ unsafe fn native_closure_arguments_from_call_arguments(
                             .to_string(),
                     );
                 }
-                NativeClosureArgument::from_value(value)
+                if is_finalized_variadic_slot {
+                    NativeClosureArgument::from_variadic_value(value)
+                } else {
+                    NativeClosureArgument::from_value(value)
+                }
             }
             NativeCallArgumentSlot::Reference(reference) => {
                 let value = unsafe { phpc_native_reference_value_clone(reference) };
@@ -11464,6 +11491,7 @@ fn native_magic_call_arguments_from_method_and_arguments(
                 ))),
             ],
             names: vec![None, None],
+            finalized_variadic: false,
         })),
     })
 }
@@ -31876,8 +31904,20 @@ impl NativeClosureArgument {
         }
     }
 
+    pub const fn from_variadic_value(value: NativeValueHandle) -> Self {
+        Self {
+            value,
+            reference: NativeReferenceHandle::null(),
+            flags: NATIVE_CLOSURE_ARGUMENT_VARIADIC,
+        }
+    }
+
     fn is_reference(&self) -> bool {
         self.flags & NATIVE_CLOSURE_ARGUMENT_BY_REFERENCE != 0 && !self.reference.is_null()
+    }
+
+    fn is_variadic_collection(&self) -> bool {
+        self.flags & NATIVE_CLOSURE_ARGUMENT_VARIADIC != 0
     }
 }
 
@@ -35506,6 +35546,7 @@ fn native_property_magic_arguments(
         ptr: Box::into_raw(Box::new(NativeCallArguments {
             names: vec![None; slots.len()],
             slots,
+            finalized_variadic: false,
         })),
     }
 }
@@ -39805,6 +39846,99 @@ mod tests {
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_value_free(not_closure) };
         unsafe { phpc_native_value_free(closure) };
+    }
+
+    #[test]
+    fn native_closure_invoke_consumes_finalized_variadic_call_argument_slot() {
+        unsafe extern "C" fn finalized_variadic_closure_callback(
+            _call_depth: c_int,
+            args: *const NativeClosureArgument,
+            arg_count: usize,
+            status: *mut c_int,
+        ) -> NativeClosureInvocationResult {
+            assert_eq!(arg_count, 2);
+            let fixed = unsafe { *args };
+            let tail = unsafe { *args.add(1) };
+            assert!(!fixed.is_variadic_collection());
+            assert!(tail.is_variadic_collection());
+            let Some(Value::Array(array)) = (unsafe { tail.value.as_ref() }) else {
+                panic!("expected finalized variadic array");
+            };
+            assert_eq!(array.get(0), Some(&Value::String("B".to_string())));
+            assert_eq!(array.get("name"), Some(&Value::String("N".to_string())));
+            unsafe { *status = 1 };
+            phpc_native_closure_result_from_value(NativeValueHandle::from_value(Value::String(
+                "ok".to_string(),
+            )))
+        }
+
+        let materialized = phpc_native_materialized_call_arguments_new();
+        assert!(unsafe {
+            phpc_native_materialized_call_arguments_push_value_and_free(
+                materialized,
+                NativeValueHandle::from_value(Value::String("A".to_string())),
+            )
+        });
+        let mut spread = PhpArray::new();
+        spread.append(Value::String("B".to_string())).unwrap();
+        spread.insert("name", Value::String("N".to_string()));
+        let mut diagnostic = NativeDiagnosticHandle::null();
+        assert!(unsafe {
+            phpc_native_materialized_call_arguments_unpack_array_value_and_free(
+                materialized,
+                NativeValueHandle::from_value(Value::Array(spread)),
+                &mut diagnostic,
+            )
+        });
+        assert!(diagnostic.is_null());
+
+        let first = native_string_for_test("first");
+        let required = [1];
+        let by_reference = [0];
+        let defaults = [NativeValueHandle::null()];
+        let finalized = unsafe {
+            phpc_native_materialized_call_arguments_finalize_with_diagnostic(
+                materialized,
+                &first,
+                required.as_ptr(),
+                by_reference.as_ptr(),
+                defaults.as_ptr(),
+                1,
+                true,
+                false,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert!(!finalized.is_null());
+
+        static PARAM_FLAGS: [u8; 2] = [0, NATIVE_CLOSURE_ARGUMENT_VARIADIC];
+        let closure = phpc_native_value_from_closure_descriptor(
+            NativeClosureDescriptor::new_with_param_flags(
+                finalized_variadic_closure_callback,
+                1,
+                2,
+                PARAM_FLAGS.as_ptr(),
+            ),
+        );
+        let value = unsafe {
+            phpc_native_closure_invoke_value_with_diagnostic_and_free_arguments(
+                closure,
+                1,
+                finalized,
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(
+            unsafe { value.as_ref() },
+            Some(&Value::String("ok".to_string()))
+        );
+
+        unsafe { phpc_native_value_free(value) };
+        unsafe { phpc_native_value_free(closure) };
+        unsafe { phpc_native_materialized_call_arguments_free(materialized) };
+        unsafe { phpc_native_string_free(first) };
     }
 
     #[test]

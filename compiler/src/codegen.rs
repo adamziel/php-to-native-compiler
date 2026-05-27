@@ -17893,6 +17893,12 @@ impl NativeMethodStaticSourceCallArgumentPlan {
         native_function_variadic_param(&self.params)
     }
 
+    fn variadic_param_requires_entry_type_coercion(&self) -> bool {
+        self.variadic_param()
+            .and_then(|(_, param)| param.type_decl.as_ref())
+            .is_some_and(|decl| !native_function_type_decl_is_mixed(decl))
+    }
+
     fn semantically_matches(&self, other: &Self) -> bool {
         self.semantically_matches_with_options(other, false)
     }
@@ -22268,20 +22274,35 @@ impl CGenerator {
     fn bind_closure_frame_parameters(&mut self, params: &[FunctionParam]) -> CompileResult<()> {
         for (index, param) in params.iter().enumerate() {
             if param.is_variadic {
+                let handle = self.next_native_name("frame_param");
+                self.body.push(format!(
+                    "phpc_NativeValueHandle {handle} = (phpc_NativeValueHandle){{0}};"
+                ));
+                self.body.push(format!(
+                    "if (phpc_closure_call_arg_count == {} && (phpc_closure_args[{index}].flags & PHPC_NATIVE_CLOSURE_ARGUMENT_VARIADIC) != 0) {{",
+                    index + 1
+                ));
+                self.emit_frame_parameter_value_store(
+                    &handle,
+                    &format!("phpc_closure_args[{index}].value"),
+                    param,
+                    "",
+                );
+                self.body.push("} else {".to_string());
                 let array = self.emit_empty_variadic_argument_array("");
                 let loop_index = self.next_native_name("closure_variadic_index");
                 self.body.push(format!(
-                    "for (size_t {loop_index} = {index}; {loop_index} < phpc_closure_call_arg_count; ++{loop_index}) {{"
+                    "  for (size_t {loop_index} = {index}; {loop_index} < phpc_closure_call_arg_count; ++{loop_index}) {{"
                 ));
                 let value = self.next_native_name("closure_variadic_arg");
                 self.uses_native_value_clone = true;
                 self.body.push(format!(
-                    "  phpc_NativeValueHandle {value} = phpc_native_value_clone(phpc_closure_args[{loop_index}].value);"
+                    "    phpc_NativeValueHandle {value} = phpc_native_value_clone(phpc_closure_args[{loop_index}].value);"
                 ));
                 let clone_failure_cleanup = format!("phpc_native_array_free({array});");
                 let error_exit = self.native_error_exit(&clone_failure_cleanup);
                 self.body
-                    .push(format!("  if ({value}.ptr == NULL) {{ {error_exit} }}"));
+                    .push(format!("    if ({value}.ptr == NULL) {{ {error_exit} }}"));
                 let value = CNativeValueMaterialization {
                     handle: value.clone(),
                     cleanup_after_use: vec![format!("phpc_native_value_free({value});")],
@@ -22293,13 +22314,14 @@ impl CGenerator {
                     "Closure::__invoke()",
                     "",
                 );
-                self.body.push("}".to_string());
+                self.body.push("  }".to_string());
                 let variadic_value = self.materialize_variadic_argument_array_value(array, "");
-                self.retain_native_value_cleanup_handle(&variadic_value.handle);
-                self.variables.insert(
-                    param.name.clone(),
-                    CValue::NativeValueHandle(variadic_value.handle),
-                );
+                self.body
+                    .push(format!("{handle} = {};", variadic_value.handle));
+                self.body.push("}".to_string());
+                self.retain_native_value_cleanup_handle(&handle);
+                self.variables
+                    .insert(param.name.clone(), CValue::NativeValueHandle(handle));
                 self.remember_variable_order(&param.name);
                 continue;
             }
@@ -39146,10 +39168,10 @@ impl CGenerator {
         let callable_failure_cleanup = format!("{callee_cleanup}{failure_cleanup}");
         let call_arguments = if call_arguments_have_spread(args) {
             if let Some(plan) = descriptor_closure_argument_plan {
-                if plan.variadic_param().is_some() {
+                if plan.variadic_param_requires_entry_type_coercion() {
                     return Err(self.unsupported(
                         span,
-                        "unsupported argument unpacking for native descriptor closure lowering: variadic descriptor closures need a finalized NativeCallArgumentsHandle to closure-frame variadic ABI before spread calls can be invoked without double-packing the variadic slot",
+                        "unsupported argument unpacking for native descriptor closure lowering: typed variadic descriptor closures need finalized variadic collection entry coercion before spread calls can preserve the closure frame type ABI",
                     ));
                 }
                 self.emit_materialized_native_source_call_arguments_handle(
@@ -39232,10 +39254,10 @@ impl CGenerator {
         let callable_failure_cleanup = format!("{callee_cleanup}{failure_cleanup}");
         let call_arguments = if call_arguments_have_spread(args) {
             if let Some(plan) = descriptor_closure_argument_plan {
-                if plan.variadic_param().is_some() {
+                if plan.variadic_param_requires_entry_type_coercion() {
                     return Err(self.unsupported(
                         span,
-                        "unsupported argument unpacking for native descriptor closure lowering: variadic descriptor closures need a finalized NativeCallArgumentsHandle to closure-frame variadic ABI before spread calls can be invoked without double-packing the variadic slot",
+                        "unsupported argument unpacking for native descriptor closure lowering: typed variadic descriptor closures need finalized variadic collection entry coercion before spread calls can preserve the closure frame type ABI",
                     ));
                 }
                 self.emit_materialized_native_source_call_arguments_handle(
