@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 23:59 CEST
+Updated: 2026-05-27 23:09 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,14 +19,26 @@ Overall integrated-roadmap progress: **93%** `[##################--]`
 
 Selected executable PHP semantics: **99%** `[###################-]`
 
-Latest accounted source capability: `bbffaab4` clones direct array variable
-assignments in generated C before storing the destination variable. Nested
-lvalue writes through `$copy` after `$copy = $items` now mutate the copied
-array handle without corrupting `$items`, preserving PHP array copy-on-write
-behavior for this direct-variable path. Broader array COW/reference edges,
-foreach by-reference lifetime, include exception/diagnostic propagation,
-visibility-context rules, trait conflict/precedence parity, destructor-risk
-cleanup, and non-C backend parity remain blocked.
+Latest accounted source capability: `1186e46a` finalizes request destructors on
+generated-C fatal cleanup paths before freeing the finalizer registry and before
+unwinding output buffers. Destructor-bearing native objects now run their
+registered destructors even when execution aborts through a runtime dynamic-call
+fatal diagnostic. Broader array COW/reference edges, foreach by-reference
+lifetime, include exception/diagnostic propagation, visibility-context rules,
+trait conflict/precedence parity, remaining cleanup ordering, and non-C backend
+parity remain blocked.
+
+Recent source commit `1186e46a` advances fatal cleanup/destructor parity without
+adding destructor-name production ladders, source-shape recognizers, or
+fixture-only lowering. Generated-C scope cleanup now calls
+`phpc_native_request_destructor_finalizers_finalize_with_callable_table()` before
+freeing request finalizers on fatal cleanup, then unwinds output buffers after
+destructors have emitted observable output. Focused gates covered linked native
+fatal cleanup output/error behavior, adjacent destructor finalization programs,
+native output-buffer shutdown unwind, shutdown function builtin regressions,
+formatting, and diff checks. Primary gate log:
+`state/logs/phpc-primary-destructor-cleanup-8cb864fa-20260527.gates.log`
+sha256 `974f1fef9124c482fd2069dc6e7edc5f03f4195a298b22181b45cbf5a761222b`.
 
 Recent source commit `bbffaab4` advances direct array COW without adding
 ArrayAccess overlap, object-property owner overlap, source-shape recognizers,
