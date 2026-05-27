@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 19:56 CEST
+Updated: 2026-05-27 20:00 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,16 +19,35 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `43975e79` adds generalized output-buffer
-chunk-threshold flushing to the runtime output-buffer data model and shared
-native stdout write path. Plain buffers and callback buffers now flush
-automatically when accumulated bytes reach the configured `ob_start` chunk
-size, callback chunk dispatch reuses the existing
-`NativeCallableValueDispatch` path and phase handling, and recursive lower
-buffer writes can trigger lower buffer thresholds. Handler flags/mutability,
-shutdown ordering, exact warning/fatal parity, SAPI interaction,
-`ob_get_status()` chunk metadata, binary string breadth, and LLVM/ASM parity
-remain blocked.
+Latest accounted source capability: `abe650f4` extends the selected runtime
+callable sorting writeback family to key-preserving `ksort()` and `krsort()`.
+The same runtime callable builtin lookup, builtin signature metadata,
+generated-C callable string canonicalization, by-reference array
+materialization, defaulted flags, and runtime source-call support now cover
+`sort()` / `rsort()` / `asort()` / `arsort()` / `ksort()` / `krsort()`.
+Comparator sort families, natural sort callable writeback, full flag and
+diagnostic parity, object/ArrayAccess/resource owners, broad callable
+object/array families, broad reference/COW parity, and LLVM/ASM parity remain
+blocked.
+
+Recent source commit `abe650f4` advances selected callable key-sort writeback
+without adding source-fixture, local-variable, literal-only, generated-C
+substring-only, or backend special-case lowering. `NativeArraySortOperation`
+now marks `ksort()` / `krsort()` as supported through the shared runtime
+callable writeback family, runtime builtin lookup and names expose both
+functions, and compiler callable-string metadata recognizes them with the same
+by-reference `$array`, defaulted `$flags`, and source-call support as the
+already integrated value-sort family. Focused gates covered compile checking,
+runtime builtin signature metadata, direct runtime callable sort invocation,
+native array lvalue sort regression, compiler builtin signature planning,
+generated-C and linked known/unknown callable string sort writeback, output
+buffer chunk regression, formatting, and diff checks. Comparator callback
+families (`usort`, `uasort`, `uksort`), natural sort callable writeback, full
+flag/diagnostic parity, object/ArrayAccess/resource owners, broad callable
+object/array families, broad reference/COW parity, and LLVM/ASM parity remain
+blocked. Primary gate log:
+`state/logs/phpc-primary-key-sort-after-output-buffer-eb22c760-20260527.gates.log`
+sha256 `63c90a741fe0512066c1672de962425cf55431ebd42837d8c80252779fd2a47f`.
 
 Recent source commit `43975e79` advances selected output-buffer chunk-size
 semantics without adding handler-name, output-string, fixture-shape, or
