@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io::{self, Write};
 use std::os::raw::c_int;
+use std::path::{Path, PathBuf};
 use std::ptr;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering as AtomicOrdering};
@@ -338,9 +339,21 @@ pub struct NativeIncludeUnitLookupResult {
     pub unit_index: usize,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeIncludeRuntimeNoMatchResult {
+    pub status: u8,
+    pub warning: NativeDiagnosticHandle,
+    pub fatal: NativeDiagnosticHandle,
+}
+
 const NATIVE_INCLUDE_LOOKUP_STATUS_FOUND: u8 = 1;
 const NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED: u8 = 2;
 const NATIVE_INCLUDE_LOOKUP_STATUS_AMBIGUOUS: u8 = 3;
+const NATIVE_INCLUDE_RUNTIME_NO_MATCH_MISSING: u8 = 1;
+const NATIVE_INCLUDE_RUNTIME_NO_MATCH_SOURCE_LOAD_REQUIRED: u8 = 2;
+const NATIVE_INCLUDE_RUNTIME_NO_MATCH_UNSUPPORTED: u8 = 3;
+const NATIVE_INCLUDE_PATH_SEPARATOR: char = ':';
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -5607,6 +5620,138 @@ pub unsafe extern "C" fn phpc_native_include_unit_registry_lookup(
             unit_index: 0,
         }
     }
+}
+
+fn native_include_runtime_no_match_result(
+    status: u8,
+    warning: NativeDiagnosticHandle,
+    fatal: NativeDiagnosticHandle,
+) -> NativeIncludeRuntimeNoMatchResult {
+    NativeIncludeRuntimeNoMatchResult {
+        status,
+        warning,
+        fatal,
+    }
+}
+
+fn native_include_runtime_no_match_unsupported(
+    message: impl Into<String>,
+) -> NativeIncludeRuntimeNoMatchResult {
+    native_include_runtime_no_match_result(
+        NATIVE_INCLUDE_RUNTIME_NO_MATCH_UNSUPPORTED,
+        NativeDiagnosticHandle::null(),
+        NativeDiagnosticHandle::from_message(message),
+    )
+}
+
+fn native_include_runtime_path_exists(
+    requested_path: &str,
+    source_file: &str,
+    include_path: &str,
+) -> bool {
+    let raw_path = PathBuf::from(requested_path);
+    if raw_path.is_absolute() {
+        return raw_path.exists();
+    }
+
+    for entry in include_path.split(NATIVE_INCLUDE_PATH_SEPARATOR) {
+        let entry = if entry.is_empty() { "." } else { entry };
+        if PathBuf::from(entry).join(&raw_path).exists() {
+            return true;
+        }
+    }
+
+    Path::new(source_file)
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .join(raw_path)
+        .exists()
+}
+
+fn native_include_missing_warning(
+    construct: &str,
+    requested_path: &str,
+    source_file: &str,
+    include_path: &str,
+    line: usize,
+) -> NativeDiagnosticHandle {
+    NativeDiagnosticHandle::from_message_with_severity(
+        NativeDiagnosticSeverity::Warning,
+        format!(
+            "PHP Warning:  {construct}({requested_path}): Failed to open stream: No such file or directory in {source_file} on line {line}\nPHP Warning:  {construct}(): Failed opening '{requested_path}' for inclusion (include_path='{include_path}') in {source_file} on line {line}\n",
+        ),
+    )
+}
+
+fn native_include_missing_fatal(
+    construct: &str,
+    requested_path: &str,
+    source_file: &str,
+    include_path: &str,
+    line: usize,
+) -> NativeDiagnosticHandle {
+    NativeDiagnosticHandle::from_message(format!(
+        "PHP Fatal error:  {construct}(): Failed opening required '{requested_path}' (include_path='{include_path}') in {source_file} on line {line}\n",
+    ))
+}
+
+/// # Safety
+///
+/// All `ptr..ptr+len` pairs must either be valid byte slices or null with a
+/// zero length. This ABI handles generated include-unit registry misses only:
+/// it distinguishes missing paths from existing runtime filesystem source that
+/// still requires a broader native source-loader/parser boundary.
+#[no_mangle]
+pub unsafe extern "C" fn phpc_native_include_runtime_no_match_diagnostic(
+    path_ptr: *const u8,
+    path_len: usize,
+    include_path_ptr: *const u8,
+    include_path_len: usize,
+    source_file_ptr: *const u8,
+    source_file_len: usize,
+    construct_ptr: *const u8,
+    construct_len: usize,
+    required: bool,
+    line: usize,
+) -> NativeIncludeRuntimeNoMatchResult {
+    let requested_path = match unsafe { native_abi_utf8(path_ptr, path_len, "include path") } {
+        Ok(path) => path,
+        Err(error) => return native_include_runtime_no_match_unsupported(error.message()),
+    };
+    let include_path =
+        match unsafe { native_abi_utf8(include_path_ptr, include_path_len, "include_path") } {
+            Ok(path) => path,
+            Err(error) => return native_include_runtime_no_match_unsupported(error.message()),
+        };
+    let source_file =
+        match unsafe { native_abi_utf8(source_file_ptr, source_file_len, "source file") } {
+            Ok(file) => file,
+            Err(error) => return native_include_runtime_no_match_unsupported(error.message()),
+        };
+    let construct = match unsafe { native_abi_utf8(construct_ptr, construct_len, "construct") } {
+        Ok(construct) => construct,
+        Err(error) => return native_include_runtime_no_match_unsupported(error.message()),
+    };
+
+    if native_include_runtime_path_exists(requested_path, source_file, include_path) {
+        return native_include_runtime_no_match_result(
+            NATIVE_INCLUDE_RUNTIME_NO_MATCH_SOURCE_LOAD_REQUIRED,
+            NativeDiagnosticHandle::null(),
+            NativeDiagnosticHandle::from_message(format!(
+                "unsupported runtime include/require path: resolved '{requested_path}' to existing filesystem source outside the generated include-unit registry; native source loading/parsing ABI is required before arbitrary runtime include execution",
+            )),
+        );
+    }
+
+    native_include_runtime_no_match_result(
+        NATIVE_INCLUDE_RUNTIME_NO_MATCH_MISSING,
+        native_include_missing_warning(construct, requested_path, source_file, include_path, line),
+        if required {
+            native_include_missing_fatal(construct, requested_path, source_file, include_path, line)
+        } else {
+            NativeDiagnosticHandle::null()
+        },
+    )
 }
 
 /// # Safety
@@ -49094,6 +49239,121 @@ mod tests {
             )
         };
         assert_eq!(result.status, NATIVE_INCLUDE_LOOKUP_STATUS_AMBIGUOUS);
+    }
+
+    fn include_no_match_message_for_test(handle: NativeDiagnosticHandle) -> String {
+        let message = unsafe { handle.as_ref() }
+            .expect("diagnostic")
+            .message
+            .clone();
+        unsafe { phpc_native_diagnostic_free(handle) };
+        message
+    }
+
+    fn include_no_match_test_dir(name: &str) -> PathBuf {
+        let mut dir = std::env::temp_dir();
+        dir.push(format!(
+            "phpc-native-include-no-match-{name}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create no-match include test dir");
+        dir
+    }
+
+    #[test]
+    fn native_include_runtime_no_match_diagnostic_reports_missing_include_warning() {
+        let dir = include_no_match_test_dir("missing-include");
+        let source_file = dir.join("root.php").to_string_lossy().into_owned();
+
+        let result = unsafe {
+            phpc_native_include_runtime_no_match_diagnostic(
+                b"missing.php".as_ptr(),
+                b"missing.php".len(),
+                b".".as_ptr(),
+                1,
+                source_file.as_ptr(),
+                source_file.len(),
+                b"include".as_ptr(),
+                b"include".len(),
+                false,
+                9,
+            )
+        };
+
+        assert_eq!(result.status, NATIVE_INCLUDE_RUNTIME_NO_MATCH_MISSING);
+        assert!(result.fatal.is_null());
+        let warning = include_no_match_message_for_test(result.warning);
+        assert!(warning.contains("PHP Warning"), "{warning}");
+        assert!(warning.contains("include(missing.php)"), "{warning}");
+        assert!(warning.contains("include_path='.'"), "{warning}");
+        assert!(warning.contains("on line 9"), "{warning}");
+    }
+
+    #[test]
+    fn native_include_runtime_no_match_diagnostic_reports_missing_require_fatal() {
+        let dir = include_no_match_test_dir("missing-require");
+        let source_file = dir.join("root.php").to_string_lossy().into_owned();
+
+        let result = unsafe {
+            phpc_native_include_runtime_no_match_diagnostic(
+                b"required.php".as_ptr(),
+                b"required.php".len(),
+                b".".as_ptr(),
+                1,
+                source_file.as_ptr(),
+                source_file.len(),
+                b"require".as_ptr(),
+                b"require".len(),
+                true,
+                11,
+            )
+        };
+
+        assert_eq!(result.status, NATIVE_INCLUDE_RUNTIME_NO_MATCH_MISSING);
+        let warning = include_no_match_message_for_test(result.warning);
+        let fatal = include_no_match_message_for_test(result.fatal);
+        assert!(warning.contains("require(required.php)"), "{warning}");
+        assert!(fatal.contains("PHP Fatal error"), "{fatal}");
+        assert!(
+            fatal.contains("Failed opening required 'required.php'"),
+            "{fatal}"
+        );
+    }
+
+    #[test]
+    fn native_include_runtime_no_match_diagnostic_blocks_existing_undeclared_source() {
+        let dir = include_no_match_test_dir("existing-source");
+        std::fs::write(dir.join("extra.php"), "<?php echo 'extra';\n")
+            .expect("write undeclared source fixture");
+        let source_file = dir.join("root.php").to_string_lossy().into_owned();
+
+        let result = unsafe {
+            phpc_native_include_runtime_no_match_diagnostic(
+                b"extra.php".as_ptr(),
+                b"extra.php".len(),
+                b".".as_ptr(),
+                1,
+                source_file.as_ptr(),
+                source_file.len(),
+                b"include".as_ptr(),
+                b"include".len(),
+                false,
+                13,
+            )
+        };
+
+        assert_eq!(
+            result.status,
+            NATIVE_INCLUDE_RUNTIME_NO_MATCH_SOURCE_LOAD_REQUIRED
+        );
+        assert!(result.warning.is_null());
+        let fatal = include_no_match_message_for_test(result.fatal);
+        assert!(fatal.contains("existing filesystem source"), "{fatal}");
+        assert!(
+            fatal.contains("native source loading/parsing ABI"),
+            "{fatal}"
+        );
     }
 
     #[test]

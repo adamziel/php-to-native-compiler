@@ -23058,9 +23058,15 @@ impl CGenerator {
                 output.push_str("#define PHPC_NATIVE_INCLUDE_LOOKUP_STATUS_FOUND 1\n");
                 output.push_str("#define PHPC_NATIVE_INCLUDE_LOOKUP_STATUS_UNSUPPORTED 2\n");
                 output.push_str("#define PHPC_NATIVE_INCLUDE_LOOKUP_STATUS_AMBIGUOUS 3\n");
+                output.push_str("#define PHPC_NATIVE_INCLUDE_RUNTIME_NO_MATCH_MISSING 1\n");
+                output.push_str(
+                    "#define PHPC_NATIVE_INCLUDE_RUNTIME_NO_MATCH_SOURCE_LOAD_REQUIRED 2\n",
+                );
+                output.push_str("#define PHPC_NATIVE_INCLUDE_RUNTIME_NO_MATCH_UNSUPPORTED 3\n");
                 output.push_str("typedef struct { uint8_t tag; phpc_NativeValueHandle value; int32_t exit_code; } phpc_NativeIncludeResult;\n");
                 output.push_str("typedef struct { const uint8_t *key_ptr; size_t key_len; size_t unit_index; } phpc_NativeIncludeUnitLookupEntry;\n");
                 output.push_str("typedef struct { uint8_t status; size_t unit_index; } phpc_NativeIncludeUnitLookupResult;\n");
+                output.push_str("typedef struct { uint8_t status; phpc_NativeDiagnosticHandle warning; phpc_NativeDiagnosticHandle fatal; } phpc_NativeIncludeRuntimeNoMatchResult;\n");
             }
             if self.uses_native_string_helpers || self.uses_native_array_helpers {
                 output.push_str(
@@ -23666,6 +23672,7 @@ impl CGenerator {
             if self.uses_native_include_unit_helpers {
                 output.push_str("extern phpc_NativeDiagnosticHandle phpc_native_diagnostic_from_severity_message_bytes(uint8_t severity, const uint8_t *ptr, size_t len);\n");
                 output.push_str("extern phpc_NativeIncludeUnitLookupResult phpc_native_include_unit_registry_lookup(const uint8_t *path_ptr, size_t path_len, const phpc_NativeIncludeUnitLookupEntry *entries, size_t entry_count);\n");
+                output.push_str("extern phpc_NativeIncludeRuntimeNoMatchResult phpc_native_include_runtime_no_match_diagnostic(const uint8_t *path_ptr, size_t path_len, const uint8_t *include_path_ptr, size_t include_path_len, const uint8_t *source_file_ptr, size_t source_file_len, const uint8_t *construct_ptr, size_t construct_len, bool required, size_t line);\n");
             }
             output.push_str("extern size_t phpc_native_diagnostic_message_stderr(phpc_NativeDiagnosticHandle diagnostic);\n");
             output.push_str("extern size_t phpc_native_diagnostic_report(phpc_NativeDiagnosticHandle diagnostic);\n");
@@ -35752,23 +35759,6 @@ impl CGenerator {
         self.ensure_globals_symbol_table("", span)?;
         let operand = self.emit_include_path_runtime_operand(path, span)?;
         let lookup = self.next_native_name("include_unit_lookup");
-        self.uses_native_include_unit_helpers = true;
-        self.body.push(format!(
-            "phpc_NativeIncludeUnitLookupResult {lookup} = phpc_native_include_unit_registry_lookup({}, {}, {entries}, {entry_count});",
-            operand.bytes, operand.byte_len
-        ));
-        self.body.push(format!(
-            "if ({lookup}.status != PHPC_NATIVE_INCLUDE_LOOKUP_STATUS_FOUND) {{"
-        ));
-        self.emit_include_diagnostic_message(
-            RUNTIME_INCLUDE_REGISTRY_LOOKUP_REJECTION,
-            "PHPC_NATIVE_DIAGNOSTIC_SEVERITY_ERROR",
-        );
-        let lookup_failure_exit = self
-            .native_error_exit_with_code(&c_cleanup_sequence(&operand.cleanup_after_use), "255");
-        self.body.push(format!("  {lookup_failure_exit}"));
-        self.body.push("}".to_string());
-
         let dynamic_value = if keep_value {
             let dynamic_value = self.next_native_name("runtime_registry_include_value");
             self.body
@@ -35777,6 +35767,73 @@ impl CGenerator {
         } else {
             None
         };
+        self.uses_native_include_unit_helpers = true;
+        self.body.push(format!(
+            "phpc_NativeIncludeUnitLookupResult {lookup} = phpc_native_include_unit_registry_lookup({}, {}, {entries}, {entry_count});",
+            operand.bytes, operand.byte_len
+        ));
+        self.body.push(format!(
+            "if ({lookup}.status != PHPC_NATIVE_INCLUDE_LOOKUP_STATUS_FOUND) {{"
+        ));
+        let include_path = self.next_native_name("runtime_include_path");
+        let source_file = self.next_native_name("runtime_include_source_file");
+        let construct_name = self.next_native_name("runtime_include_construct");
+        let no_match = self.next_native_name("runtime_include_no_match");
+        let current_include_path = self.current_native_include_path().to_string();
+        let active_source_file = self
+            .active_source_file
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        self.static_data.push(format!(
+            "static const uint8_t {include_path}[] = {{{}}};",
+            c_byte_array(current_include_path.as_bytes())
+        ));
+        self.static_data.push(format!(
+            "static const uint8_t {source_file}[] = {{{}}};",
+            c_byte_array(active_source_file.as_bytes())
+        ));
+        self.static_data.push(format!(
+            "static const uint8_t {construct_name}[] = {{{}}};",
+            c_byte_array(construct.as_bytes())
+        ));
+        self.body.push(format!(
+            "  phpc_NativeIncludeRuntimeNoMatchResult {no_match} = phpc_native_include_runtime_no_match_diagnostic({}, {}, {include_path}, {}, {source_file}, {}, {construct_name}, {}, {}, {});",
+            operand.bytes,
+            operand.byte_len,
+            current_include_path.len(),
+            active_source_file.len(),
+            construct.len(),
+            if required { "true" } else { "false" },
+            span.line
+        ));
+        self.body.push(format!(
+            "  if ({no_match}.warning.ptr != NULL) {{ phpc_native_diagnostic_report({no_match}.warning); }}"
+        ));
+        self.body.push(format!(
+            "  if ({no_match}.fatal.ptr != NULL) {{ phpc_native_diagnostic_report({no_match}.fatal);"
+        ));
+        let lookup_failure_exit = self
+            .native_error_exit_with_code(&c_cleanup_sequence(&operand.cleanup_after_use), "255");
+        self.body.push(format!("  {lookup_failure_exit}"));
+        self.body.push("}".to_string());
+        self.body.push(format!(
+            "  if ({no_match}.status != PHPC_NATIVE_INCLUDE_RUNTIME_NO_MATCH_MISSING) {{"
+        ));
+        self.emit_include_diagnostic_message(
+            RUNTIME_INCLUDE_REGISTRY_LOOKUP_REJECTION,
+            "PHPC_NATIVE_DIAGNOSTIC_SEVERITY_ERROR",
+        );
+        let unsupported_exit = self
+            .native_error_exit_with_code(&c_cleanup_sequence(&operand.cleanup_after_use), "255");
+        self.body.push(format!("    {unsupported_exit}"));
+        self.body.push("  }".to_string());
+        if let Some(dynamic_value) = &dynamic_value {
+            let false_value = self.emit_native_value_for_cvalue(CValue::Bool(false), span)?;
+            self.body
+                .push(format!("  {dynamic_value} = {false_value};"));
+        }
+        self.body.push("} else {".to_string());
 
         let unit_paths = self.include_unit_order.clone();
         for (index, include_path) in unit_paths.iter().enumerate() {
@@ -35815,6 +35872,7 @@ impl CGenerator {
         let stale_index_exit = self
             .native_error_exit_with_code(&c_cleanup_sequence(&operand.cleanup_after_use), "255");
         self.body.push(format!("  {stale_index_exit}"));
+        self.body.push("}".to_string());
         self.body.push("}".to_string());
         self.body.extend(operand.cleanup_after_use);
 

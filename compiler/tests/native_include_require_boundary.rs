@@ -881,6 +881,172 @@ fn emit_exe_links_and_runs_runtime_include_registry_canonical_path_lookup() {
 }
 
 #[test]
+fn native_executable_c_source_uses_runtime_include_no_match_diagnostic_boundary() {
+    let dir = include_discovery_fixture_dir("runtime-no-match-c-source");
+    fs::write(dir.join("declared.php"), "<?php\necho 'declared|';\n")
+        .expect("write runtime no-match declared include");
+    let root = dir.join("root.php");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "function runtime_path() { return 'missing.php'; }\n",
+            "require_once 'declared.php';\n",
+            "$path = runtime_path();\n",
+            "$value = include $path;\n",
+            "echo $value === false ? 'false' : 'bad';\n",
+            "echo \"\\n\";\n",
+        ),
+    )
+    .expect("write runtime no-match c-source root");
+
+    let unit = executable_compilation_unit_with_literal_include_units(
+        &fs::read_to_string(&root).expect("read runtime no-match c-source root"),
+        &root,
+        workspace_root(),
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source_for_include_units(&unit).unwrap();
+
+    assert!(
+        source.contains("phpc_native_include_unit_registry_lookup")
+            && source.contains("phpc_native_include_runtime_no_match_diagnostic")
+            && source.contains("PHPC_NATIVE_INCLUDE_RUNTIME_NO_MATCH_MISSING"),
+        "registry no-match should route through the shared runtime diagnostic/source-loader boundary:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_runtime_registry_no_match_include_warns_returns_false_and_continues() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("runtime-no-match-include-exe");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(dir.join("declared.php"), "<?php\necho 'declared|';\n")
+        .expect("write runtime no-match include declared fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "function runtime_path() { return 'missing.php'; }\n",
+            "require_once 'declared.php';\n",
+            "$path = runtime_path();\n",
+            "$value = include $path;\n",
+            "echo $value === false ? 'false' : 'bad';\n",
+            "echo '|continued', \"\\n\";\n",
+        ),
+    )
+    .expect("write runtime no-match include root");
+
+    let output = compile_exe(&root, &output, "runtime no-match include executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run runtime no-match include executable");
+
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout),
+        "declared|false|continued\n"
+    );
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains("PHP Warning"), "{stderr}");
+    assert!(stderr.contains("include(missing.php)"), "{stderr}");
+}
+
+#[test]
+fn emit_exe_runtime_registry_no_match_require_warns_fatals() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("runtime-no-match-require-exe");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(dir.join("declared.php"), "<?php\necho 'declared|';\n")
+        .expect("write runtime no-match require declared fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "function runtime_path() { return 'missing-required.php'; }\n",
+            "echo 'before|';\n",
+            "require_once 'declared.php';\n",
+            "$path = runtime_path();\n",
+            "require $path;\n",
+            "echo 'after';\n",
+        ),
+    )
+    .expect("write runtime no-match require root");
+
+    let output = compile_exe(&root, &output, "runtime no-match require executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run runtime no-match require executable");
+
+    assert!(!run.status.success());
+    assert_eq!(run.status.code(), Some(255));
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "before|declared|");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains("PHP Warning"), "{stderr}");
+    assert!(stderr.contains("require(missing-required.php)"), "{stderr}");
+    assert!(stderr.contains("PHP Fatal error"), "{stderr}");
+    assert!(
+        stderr.contains("Failed opening required 'missing-required.php'"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn emit_exe_runtime_registry_no_match_existing_source_blocks_on_loader_abi() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("runtime-no-match-existing-source-exe");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(dir.join("declared.php"), "<?php\necho 'declared|';\n")
+        .expect("write runtime existing-source declared fixture");
+    fs::write(dir.join("extra.php"), "<?php\necho 'extra|';\n")
+        .expect("write undeclared runtime source fixture");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "function runtime_path() { return 'extra.php'; }\n",
+            "require_once 'declared.php';\n",
+            "$path = runtime_path();\n",
+            "include $path;\n",
+            "echo 'after';\n",
+        ),
+    )
+    .expect("write runtime existing-source root");
+
+    let output = compile_exe(&root, &output, "runtime existing-source blocker executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run runtime existing-source blocker executable");
+
+    assert!(!run.status.success());
+    assert_eq!(run.status.code(), Some(255));
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "declared|");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains("existing filesystem source"), "{stderr}");
+    assert!(
+        stderr.contains("native source loading/parsing ABI"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn emit_exe_blocks_dynamic_include_path_search_before_native_link() {
     if !has_cc() {
         return;
