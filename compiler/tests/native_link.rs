@@ -20661,6 +20661,27 @@ const ARRAYACCESS_OFFSETGET_REFERENCE_SOURCE_OWNER_SOURCE: &str = concat!(
     "echo ($propAlias = \"prop-alias\"), \"=\", $holder->bag->slot;\n",
 );
 
+const ARRAYACCESS_REFERENCE_RETURN_SOURCE_OWNER_SOURCE: &str = concat!(
+    "<?php\n",
+    "function aa_return_ref_write(&$slot, $value) { $slot = $value; return $slot; }\n",
+    "class ReturnSourceOwnerBag implements ArrayAccess {\n",
+    "    public $slot = \"seed\";\n",
+    "    public function &offsetGet($offset) { return $this->slot; }\n",
+    "    public function offsetExists($offset) { return true; }\n",
+    "    public function offsetSet($offset, $value) { echo \"bad-set;\"; return null; }\n",
+    "    public function offsetUnset($offset) { return null; }\n",
+    "}\n",
+    "class ReturnSourceOwnerHolder {\n",
+    "    public $bag;\n",
+    "    public function __construct() { $this->bag = new ReturnSourceOwnerBag(); }\n",
+    "    public function &borrowBag() { return $this->bag; }\n",
+    "}\n",
+    "$holder = new ReturnSourceOwnerHolder();\n",
+    "echo aa_return_ref_write($holder->borrowBag()[\"slot\"], \"method-arg\"), \":\";\n",
+    "$methodAlias =& $holder->borrowBag()[\"slot\"];\n",
+    "echo ($methodAlias = \"method-alias\"), \"=\", $holder->bag->slot;\n",
+);
+
 #[test]
 fn native_executable_c_source_routes_arrayaccess_reference_slot_owners_through_value_owner_boundary(
 ) {
@@ -21503,6 +21524,52 @@ fn emit_exe_links_and_runs_arrayaccess_offsetget_reference_source_owner_program(
     assert!(
         !String::from_utf8_lossy(&run.stdout).contains("bad-set"),
         "offsetGet reference sources must not write through ArrayAccess::offsetSet"
+    );
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_executable_c_source_routes_reference_return_arrayaccess_subjects_through_owner_boundary()
+{
+    let program = parse(ARRAYACCESS_REFERENCE_RETURN_SOURCE_OWNER_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+
+    assert!(
+        source.contains("source_reference_receiver_result")
+            && source.contains("phpc_native_reference_value_clone(")
+            && source.contains("phpc_native_value_arrayaccess_offset_get_reference_with_diagnostic")
+            && source.matches("phpc_native_call_arguments_push_reference_and_free").count() >= 1
+            && !source.contains("ArrayAccess lowering rejects"),
+        "reference-returning method calls that produce ArrayAccess subjects should feed by-reference consumers and reference assignments through the shared owner/reference boundary:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_reference_return_arrayaccess_subject_owner_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "arrayaccess_reference_return_subject_owner",
+        ARRAYACCESS_REFERENCE_RETURN_SOURCE_OWNER_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native ArrayAccess reference-return subject owner executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(run.status.success(), "native executable failed");
+    assert_eq!(run.stdout, b"method-arg:method-alias=method-alias");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+    assert!(
+        !String::from_utf8_lossy(&run.stdout).contains("bad-set"),
+        "reference-return ArrayAccess owners must not substitute offsetSet() for offsetGet() references"
     );
 
     let _ = fs::remove_file(&source_path);

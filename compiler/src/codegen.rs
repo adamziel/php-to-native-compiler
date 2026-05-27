@@ -17783,6 +17783,10 @@ enum CNativeValueOwnerSource {
         reference: String,
         facts: Option<CNativeValueFacts>,
     },
+    ReferenceCall {
+        expr: Expr,
+        facts: Option<CNativeValueFacts>,
+    },
     #[allow(dead_code)]
     ObjectProperty {
         object: Expr,
@@ -17803,6 +17807,7 @@ enum CNativeValueOwnerSource {
 enum CNativeValueOwnerSourceKind {
     DirectVariable,
     ReferenceSlot,
+    ReferenceCall,
     ObjectProperty,
     StaticProperty,
 }
@@ -17812,6 +17817,7 @@ impl CNativeValueOwnerSource {
         match self {
             Self::DirectVariable { .. } => CNativeValueOwnerSourceKind::DirectVariable,
             Self::ReferenceSlot { .. } => CNativeValueOwnerSourceKind::ReferenceSlot,
+            Self::ReferenceCall { .. } => CNativeValueOwnerSourceKind::ReferenceCall,
             Self::ObjectProperty { .. } => CNativeValueOwnerSourceKind::ObjectProperty,
             Self::StaticProperty { .. } => CNativeValueOwnerSourceKind::StaticProperty,
         }
@@ -17821,6 +17827,7 @@ impl CNativeValueOwnerSource {
         match self {
             Self::DirectVariable { facts, .. }
             | Self::ReferenceSlot { facts, .. }
+            | Self::ReferenceCall { facts, .. }
             | Self::ObjectProperty { facts, .. }
             | Self::StaticProperty { facts, .. } => facts.as_ref(),
         }
@@ -17836,6 +17843,11 @@ enum CNativeValueOwnerCommit {
     ReferenceSlot {
         reference: String,
         facts: Option<CNativeValueFacts>,
+    },
+    ReferenceMaterialization {
+        reference: String,
+        facts: Option<CNativeValueFacts>,
+        cleanup_after_use: Vec<String>,
     },
     ObjectPropertyReferenceSlot {
         reference: String,
@@ -18262,7 +18274,10 @@ struct CNativeValueOwnerMaterialization {
 impl CNativeValueOwnerCommit {
     fn cleanup_after_use(&self) -> Vec<String> {
         match self {
-            Self::ObjectPropertyReferenceSlot {
+            Self::ReferenceMaterialization {
+                cleanup_after_use, ..
+            }
+            | Self::ObjectPropertyReferenceSlot {
                 cleanup_after_use, ..
             } => cleanup_after_use.clone(),
             Self::StaticProperty { target, .. } => target.cleanup_after_use.clone(),
@@ -29335,6 +29350,30 @@ impl CGenerator {
             .is_some_and(|function| function.decl.returns_by_reference)
     }
 
+    fn can_emit_reference_call_arrayaccess_source_assignment(
+        &self,
+        target: &AssignTarget,
+        source: &ReferenceSource,
+    ) -> bool {
+        if self
+            .c_symbol_reference_path_for_assign_target(target)
+            .is_none()
+        {
+            return false;
+        }
+
+        let ReferenceSource::ExpressionArrayIndex {
+            target, indices, ..
+        } = source
+        else {
+            return false;
+        };
+        indices.len() == 1
+            && self
+                .native_arrayaccess_reference_call_owner_source_for_expr(target)
+                .is_some()
+    }
+
     fn can_emit_dynamic_descriptor_closure_reference_assignment(
         &self,
         target: &AssignTarget,
@@ -30819,6 +30858,23 @@ impl CGenerator {
         }
     }
 
+    fn native_facts_for_callable_identities_with_result_kind<I>(
+        &self,
+        identities: I,
+        arg_count: usize,
+        expected_result_kind: CNativeCallableResultKind,
+    ) -> Option<CNativeValueFacts>
+    where
+        I: IntoIterator<Item = CNativeCallableIdentity>,
+    {
+        self.intersect_native_value_fact_iter(identities.into_iter().map(|identity| {
+            let summary = self.native_callable_return_summary_for_identity(&identity, arg_count)?;
+            (summary.result_kind == expected_result_kind)
+                .then_some(summary.facts)
+                .flatten()
+        }))
+    }
+
     fn native_value_facts_for_callable_identities<I>(
         &self,
         identities: I,
@@ -30827,12 +30883,26 @@ impl CGenerator {
     where
         I: IntoIterator<Item = CNativeCallableIdentity>,
     {
-        self.intersect_native_value_fact_iter(identities.into_iter().map(|identity| {
-            let summary = self.native_callable_return_summary_for_identity(&identity, arg_count)?;
-            (summary.result_kind == CNativeCallableResultKind::NativeValue)
-                .then_some(summary.facts)
-                .flatten()
-        }))
+        self.native_facts_for_callable_identities_with_result_kind(
+            identities,
+            arg_count,
+            CNativeCallableResultKind::NativeValue,
+        )
+    }
+
+    fn native_reference_return_facts_for_callable_identities<I>(
+        &self,
+        identities: I,
+        arg_count: usize,
+    ) -> Option<CNativeValueFacts>
+    where
+        I: IntoIterator<Item = CNativeCallableIdentity>,
+    {
+        self.native_facts_for_callable_identities_with_result_kind(
+            identities,
+            arg_count,
+            CNativeCallableResultKind::Reference,
+        )
     }
 
     fn native_callable_identities_for_user_function_call(
@@ -32575,6 +32645,81 @@ impl CGenerator {
         )
     }
 
+    fn native_reference_return_facts_for_user_function_call(
+        &self,
+        name: &str,
+        args: &[Expr],
+    ) -> Option<CNativeValueFacts> {
+        self.native_reference_return_facts_for_callable_identities(
+            self.native_callable_identities_for_user_function_call(name)?,
+            args.len(),
+        )
+    }
+
+    fn native_reference_return_facts_for_declared_method_candidates(
+        &self,
+        candidates: Vec<(CDeclaredClass, CDeclaredClassMethod)>,
+        staticness: CNativeCallableDeclaredMethodStaticness,
+        args: &[Expr],
+    ) -> Option<CNativeValueFacts> {
+        self.native_reference_return_facts_for_callable_identities(
+            self.native_callable_identities_for_declared_method_candidates(candidates, staticness)?,
+            args.len(),
+        )
+    }
+
+    fn native_reference_return_facts_for_declared_class_method_call(
+        &self,
+        method_name: &str,
+        args: &[Expr],
+    ) -> Option<CNativeValueFacts> {
+        self.native_reference_return_facts_for_declared_method_candidates(
+            self.declared_class_method_candidates(method_name),
+            CNativeCallableDeclaredMethodStaticness::Instance,
+            args,
+        )
+    }
+
+    fn native_reference_return_facts_for_declared_object_static_method_call(
+        &self,
+        method_name: &str,
+        args: &[Expr],
+    ) -> Option<CNativeValueFacts> {
+        self.native_reference_return_facts_for_declared_method_candidates(
+            self.declared_class_static_method_candidates(method_name),
+            CNativeCallableDeclaredMethodStaticness::Static,
+            args,
+        )
+    }
+
+    fn native_reference_return_facts_for_declared_class_static_method_call(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        args: &[Expr],
+    ) -> Option<CNativeValueFacts> {
+        let (class, method) = self.declared_class_static_method(class_name, method_name)?;
+        if method.visibility != ClassVisibility::Public {
+            return None;
+        }
+        let identity = CNativeCallableIdentity::DeclaredStaticMethod {
+            class_key: Self::declared_class_key(&class.name),
+            method_key: Self::declared_method_key(&method.decl.name),
+        };
+        self.native_reference_return_facts_for_callable_identities(vec![identity], args.len())
+    }
+
+    fn native_reference_return_facts_for_dynamic_callable_expr(
+        &self,
+        callee: &Expr,
+        args: &[Expr],
+    ) -> Option<CNativeValueFacts> {
+        self.native_reference_return_facts_for_callable_identities(
+            self.native_callable_identities_for_expr(callee)?,
+            args.len(),
+        )
+    }
+
     fn native_value_facts_for_variable(&self, name: &str) -> Option<CNativeValueFacts> {
         match self.variables.get(name) {
             Some(CValue::NativeReferenceHandle(reference)) => {
@@ -32740,6 +32885,31 @@ impl CGenerator {
                 Self::static_property_lvalue_target_from_expr(expr)
                     .and_then(|target| self.static_property_fact_key_for_assign_target(&target))
                     .and_then(|key| self.native_static_property_value_facts.get(&key).cloned())
+            }
+            _ => None,
+        }
+    }
+
+    fn native_reference_return_facts_for_expr(&self, expr: &Expr) -> Option<CNativeValueFacts> {
+        match expr {
+            Expr::Call { name, args, .. } => {
+                self.native_reference_return_facts_for_user_function_call(name, args)
+            }
+            Expr::MethodCall { method, args, .. } => {
+                self.native_reference_return_facts_for_declared_class_method_call(method, args)
+            }
+            Expr::StaticMethodCall {
+                class_name,
+                method,
+                args,
+                ..
+            } => self.native_reference_return_facts_for_declared_class_static_method_call(
+                class_name, method, args,
+            ),
+            Expr::ObjectStaticMethodCall { method, args, .. } => self
+                .native_reference_return_facts_for_declared_object_static_method_call(method, args),
+            Expr::DynamicCall { callee, args, .. } => {
+                self.native_reference_return_facts_for_dynamic_callable_expr(callee, args)
             }
             _ => None,
         }
@@ -32926,6 +33096,40 @@ impl CGenerator {
         }
     }
 
+    fn native_arrayaccess_reference_call_owner_source_for_expr(
+        &self,
+        expr: &Expr,
+    ) -> Option<CNativeValueOwnerSource> {
+        if !self.source_call_reference_argument_is_supported(expr) {
+            return None;
+        }
+        let facts = self.native_reference_return_facts_for_expr(expr)?;
+        facts
+            .has_definite_native_object_interface("ArrayAccess")
+            .then_some(CNativeValueOwnerSource::ReferenceCall {
+                expr: expr.clone(),
+                facts: Some(facts),
+            })
+    }
+
+    fn native_arrayaccess_owner_source_for_expr(
+        &self,
+        expr: &Expr,
+    ) -> Option<CNativeValueOwnerSource> {
+        self.native_arrayaccess_object_property_owner_source_for_expr(expr)
+            .or_else(|| self.native_arrayaccess_reference_call_owner_source_for_expr(expr))
+    }
+
+    fn reference_call_arrayaccess_argument_is_supported(&self, arg: &Expr) -> bool {
+        matches!(
+            arg,
+            Expr::Index { target, .. }
+                if self
+                    .native_arrayaccess_reference_call_owner_source_for_expr(target)
+                    .is_some()
+        )
+    }
+
     fn native_arrayaccess_offset_get_may_return_reference_from_facts(
         &self,
         facts: &CNativeValueFacts,
@@ -33023,6 +33227,7 @@ impl CGenerator {
         let facts = match source {
             CNativeValueOwnerSource::DirectVariable { facts, .. }
             | CNativeValueOwnerSource::ReferenceSlot { facts, .. }
+            | CNativeValueOwnerSource::ReferenceCall { facts, .. }
             | CNativeValueOwnerSource::ObjectProperty { facts, .. }
             | CNativeValueOwnerSource::StaticProperty { facts, .. } => facts.as_ref(),
         };
@@ -33041,6 +33246,7 @@ impl CGenerator {
             ),
             CNativeValueOwnerSource::DirectVariable { .. }
             | CNativeValueOwnerSource::ReferenceSlot { .. }
+            | CNativeValueOwnerSource::ReferenceCall { .. }
             | CNativeValueOwnerSource::StaticProperty { .. } => false,
         }
     }
@@ -34208,6 +34414,31 @@ impl CGenerator {
                     commit: CNativeValueOwnerCommit::ReferenceSlot { reference, facts },
                 })
             }
+            CNativeValueOwnerSource::ReferenceCall { expr, facts } => {
+                self.uses_native_reference_helpers = true;
+                let reference = self
+                    .try_materialize_source_call_reference_argument(&expr, failure_cleanup)?
+                    .ok_or_else(|| {
+                        self.unsupported(expr.span(), ASSEMBLY_ARRAY_ACCESS_REJECTION)
+                    })?;
+                let handle = self.clone_native_reference_value_handle(&reference.handle);
+                let reference_cleanup = c_cleanup_sequence(&reference.cleanup_after_use);
+                let error_exit =
+                    self.native_error_exit(&format!("{reference_cleanup}{failure_cleanup}"));
+                self.body
+                    .push(format!("if ({handle}.ptr == NULL) {{ {error_exit} }}"));
+                Ok(CNativeValueOwnerMaterialization {
+                    subject: CNativeValueMaterialization {
+                        handle: handle.clone(),
+                        cleanup_after_use: vec![format!("phpc_native_value_free({handle});")],
+                    },
+                    commit: CNativeValueOwnerCommit::ReferenceMaterialization {
+                        reference: reference.handle,
+                        facts,
+                        cleanup_after_use: reference.cleanup_after_use,
+                    },
+                })
+            }
             CNativeValueOwnerSource::ObjectProperty {
                 object,
                 property,
@@ -34291,6 +34522,19 @@ impl CGenerator {
                 Ok(())
             }
             CNativeValueOwnerCommit::ReferenceSlot { reference, facts } => {
+                self.emit_native_reference_value_commit(
+                    &reference,
+                    replacement,
+                    facts,
+                    failure_cleanup,
+                )?;
+                self.body
+                    .push(format!("phpc_native_value_free({replacement});"));
+                Ok(())
+            }
+            CNativeValueOwnerCommit::ReferenceMaterialization {
+                reference, facts, ..
+            } => {
                 self.emit_native_reference_value_commit(
                     &reference,
                     replacement,
@@ -38309,6 +38553,7 @@ impl CGenerator {
             ));
             return Ok(());
         };
+        self.record_function_return_facts_for_value(Some(value));
         let reference = self.materialize_call_reference_argument(
             value,
             value.span(),
@@ -40350,9 +40595,15 @@ impl CGenerator {
                 Stmt::ReferenceAssign { target, source, .. }
                     if self.can_emit_direct_user_function_reference_assignment(target, source)
             );
+            let reference_call_arrayaccess_source = matches!(
+                stmt,
+                Stmt::ReferenceAssign { target, source, .. }
+                    if self.can_emit_reference_call_arrayaccess_source_assignment(target, source)
+            );
             if !closure_reference_source
                 && !scoped_callable_reference_source
                 && !direct_user_function_reference_source
+                && !reference_call_arrayaccess_source
             {
                 if let Some(operation) = native_statement_operand_call_operation(stmt) {
                     return Err(self.unsupported_call_operation(operation));
@@ -40396,6 +40647,11 @@ impl CGenerator {
                 if self.emit_dynamic_descriptor_closure_reference_assignment(
                     target, source, *span, "",
                 )? {
+                    return Ok(());
+                }
+                if self.can_emit_reference_call_arrayaccess_source_assignment(target, source)
+                    && self.emit_c_reference_source_assignment(target, source, *span, "")?
+                {
                     return Ok(());
                 }
                 if let Some(operation) = native_reference_assignment_call_operation(target, source)
@@ -45486,6 +45742,9 @@ impl CGenerator {
         if self.source_call_reference_argument_is_supported(arg) {
             return true;
         }
+        if self.reference_call_arrayaccess_argument_is_supported(arg) {
+            return true;
+        }
 
         if let Expr::Variable(name, _) = arg {
             if matches!(
@@ -46365,6 +46624,7 @@ impl CGenerator {
                         let arg = call_argument_expr(&args[source_index]);
                         native_expr_contains_call_result(arg)
                             && !self.source_call_reference_argument_is_supported(arg)
+                            && !self.reference_call_arrayaccess_argument_is_supported(arg)
                     }
                     CallArgumentSlotSource::Default => false,
                 }
@@ -60138,7 +60398,8 @@ impl CGenerator {
         index: &Expr,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeArrayAccessOffsetReadOperands>> {
-        if !self.expr_is_native_arrayaccess_subject(target) {
+        let owner_source = self.native_arrayaccess_owner_source_for_expr(target);
+        if owner_source.is_none() && !self.expr_is_native_arrayaccess_subject(target) {
             return Ok(None);
         }
 
@@ -60146,9 +60407,7 @@ impl CGenerator {
         self.uses_native_callable_helpers = true;
         self.uses_native_arrayaccess_offset_read_helpers = true;
 
-        let (subject_handle, subject_cleanup) = if let Some(source) =
-            self.native_arrayaccess_object_property_owner_source_for_expr(target)
-        {
+        let (subject_handle, subject_cleanup) = if let Some(source) = owner_source {
             let owner = self.materialize_native_value_owner(source, failure_cleanup)?;
             (owner.subject.handle.clone(), owner.cleanup_after_abort())
         } else {
@@ -60217,8 +60476,7 @@ impl CGenerator {
         index: &Expr,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeReferenceMaterialization>> {
-        if let Some(source) = self.native_arrayaccess_object_property_owner_source_for_expr(target)
-        {
+        if let Some(source) = self.native_arrayaccess_owner_source_for_expr(target) {
             return self
                 .materialize_native_arrayaccess_offset_get_reference_from_owner(
                     source,
