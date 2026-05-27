@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 18:01 CEST
+Updated: 2026-05-27 18:13 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,12 +19,25 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `e297477b` routes selected runtime
-callable builtin `array_push()` / `array_unshift()` variadic writeback through
-the shared source-call argument contract. Runtime callable strings now
-finalize a by-reference array owner plus by-value variadic tail into
-`NativeCallArgumentsHandle`, expand only finalized variadic collections, and
-write the mutated array back through the reference cell.
+Latest accounted source capability: `967181fd` routes selected imported/direct
+runtime builtin aliases through the same source-call and materialized argument
+contract used by runtime callable builtin strings. Imported `array_push()` /
+`array_unshift()` aliases now derive `RuntimeBuiltin` metadata, materialize
+fixed by-reference owner arguments as references, finalize spread tails through
+`NativeCallArgumentsHandle`, and write mutations back through the shared
+runtime builtin path.
+
+Recent source commit `967181fd` removes the old imported/direct runtime
+builtin split for represented function imports and aliases. Materialized call
+arguments now have reusable reference-entry helpers, and source-call
+materialization consults fixed parameter metadata to push ordinary or named
+by-reference parameters as references before spread finalization. The focused
+gates cover imported alias source/link execution, runtime callable builtin
+writeback regressions, callable spread regressions, and by-reference variadic
+regressions. Literal leading-global `\foo()` parsing in namespaces,
+object/ArrayAccess/resource mutation operands, sorting comparators/flags,
+unknown or heterogeneous callable builtin families, magic fallback, broad COW
+parity, and LLVM/ASM parity remain blocked.
 
 Recent source commit `e297477b` adds the selected runtime callable builtin
 variadic writeback family for `array_push()` and `array_unshift()`. Builtin
