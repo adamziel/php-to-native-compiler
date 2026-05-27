@@ -38368,6 +38368,7 @@ impl CGenerator {
         self.emit_include_diagnostic_message(&warning, "PHPC_NATIVE_DIAGNOSTIC_SEVERITY_WARNING");
 
         if required {
+            self.emit_active_finally_bodies_before_terminal_transfer()?;
             let fatal = format!(
                 "PHP Fatal error:  {construct}(): Failed opening required '{}' (include_path='{}') in {source_file} on line {}\n",
                 requested_path, missing.include_path, span.line

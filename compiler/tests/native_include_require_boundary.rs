@@ -1793,6 +1793,96 @@ fn emit_exe_missing_require_statement_exits_after_warning_and_fatal() {
 }
 
 #[test]
+fn native_executable_c_source_runs_active_finally_before_missing_required_include_fatal() {
+    let dir = include_discovery_fixture_dir("missing-require-finally-c-source");
+    let root = dir.join("root.php");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "try {\n",
+            "    echo 'before|';\n",
+            "    require 'required.php';\n",
+            "} finally {\n",
+            "    echo 'finally|';\n",
+            "}\n",
+            "echo 'after';\n",
+        ),
+    )
+    .expect("write missing require finally c-source fixture");
+
+    let unit = executable_compilation_unit_with_literal_include_units(
+        &fs::read_to_string(&root).expect("read missing require finally c-source fixture"),
+        &root,
+        workspace_root(),
+    )
+    .unwrap();
+    let source = emit_native_executable_c_source_for_include_units(&unit).unwrap();
+    let body = main_body(&source);
+
+    let warning = body
+        .find("PHPC_NATIVE_DIAGNOSTIC_SEVERITY_WARNING")
+        .unwrap_or_else(|| panic!("missing include warning diagnostic:\n{source}"));
+    let finally_output = warning
+        + body[warning..]
+            .find("phpc_native_diagnostic_result_report_stderr_echo_stdout_list_and_free")
+            .unwrap_or_else(|| panic!("missing active finally output after warning:\n{source}"));
+    let fatal = body
+        .find("PHPC_NATIVE_DIAGNOSTIC_SEVERITY_ERROR")
+        .unwrap_or_else(|| panic!("missing required include fatal diagnostic:\n{source}"));
+    let exit = fatal
+        + body[fatal..]
+            .find("return 255;")
+            .unwrap_or_else(|| panic!("missing required include fatal exit:\n{source}"));
+
+    assert!(
+        warning < finally_output && finally_output < fatal && fatal < exit,
+        "active finally output must be emitted after the warning and before the fatal/255 exit:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_missing_require_statement_runs_active_finally_before_fatal() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("execution-missing-require-finally-exe");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "try {\n",
+            "    echo 'before|';\n",
+            "    require 'required.php';\n",
+            "} finally {\n",
+            "    echo 'finally|';\n",
+            "}\n",
+            "echo 'after';\n",
+        ),
+    )
+    .expect("write missing require finally root fixture");
+
+    let output = compile_exe(&root, &output, "missing require finally executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run missing require finally executable");
+    assert!(!run.status.success());
+    assert_eq!(run.status.code(), Some(255));
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "before|finally|");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains("PHP Warning"), "{stderr}");
+    assert!(stderr.contains("require(required.php)"), "{stderr}");
+    assert!(stderr.contains("PHP Fatal error"), "{stderr}");
+    assert!(
+        stderr.contains("Failed opening required 'required.php'"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn emit_exe_missing_require_once_expression_exits_after_warning_and_fatal() {
     if !has_cc() {
         return;
@@ -1819,6 +1909,48 @@ fn emit_exe_missing_require_once_expression_exits_after_warning_and_fatal() {
     assert!(!run.status.success());
     assert_eq!(run.status.code(), Some(255));
     assert_eq!(String::from_utf8_lossy(&run.stdout), "start|");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains("PHP Warning"), "{stderr}");
+    assert!(stderr.contains("require_once("), "{stderr}");
+    assert!(stderr.contains("PHP Fatal error"), "{stderr}");
+    assert!(
+        stderr.contains("Failed opening required"),
+        "stderr should report require_once fatal opening failure:\n{stderr}"
+    );
+}
+
+#[test]
+fn emit_exe_missing_require_once_expression_runs_active_finally_before_fatal() {
+    if !has_cc() {
+        return;
+    }
+
+    let dir = include_discovery_fixture_dir("execution-missing-require-once-finally-exe");
+    let root = dir.join("root.php");
+    let output = dir.join("program");
+    fs::write(
+        &root,
+        concat!(
+            "<?php\n",
+            "try {\n",
+            "    echo 'start|';\n",
+            "    $value = require_once __DIR__ . '/required-once.php';\n",
+            "    echo 'unreachable';\n",
+            "} finally {\n",
+            "    echo 'finally|';\n",
+            "}\n",
+            "echo 'after';\n",
+        ),
+    )
+    .expect("write missing require_once finally root fixture");
+
+    let output = compile_exe(&root, &output, "missing require_once finally executable");
+    let run = Command::new(&output)
+        .output()
+        .expect("run missing require_once finally executable");
+    assert!(!run.status.success());
+    assert_eq!(run.status.code(), Some(255));
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "start|finally|");
     let stderr = String::from_utf8_lossy(&run.stderr);
     assert!(stderr.contains("PHP Warning"), "{stderr}");
     assert!(stderr.contains("require_once("), "{stderr}");
@@ -2256,6 +2388,13 @@ fn workspace_root() -> PathBuf {
 
 fn has_cc() -> bool {
     Command::new("cc").arg("--version").output().is_ok()
+}
+
+fn main_body(source: &str) -> &str {
+    source
+        .split_once("int main(void)")
+        .map(|(_, body)| body)
+        .unwrap_or(source)
 }
 
 fn render_cli_snapshot(output: &Output) -> String {
