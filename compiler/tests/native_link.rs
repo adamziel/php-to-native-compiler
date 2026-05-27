@@ -855,6 +855,81 @@ const NATIVE_MAGIC_CALLABLE_SPREAD_SOURCE: &str = concat!(
     "echo $box->other(...[\"first\" => magic_callable_spread_marker(\"F\"), \"second\" => magic_callable_spread_marker(\"S\")]), \"\\n\";\n",
 );
 
+const NATIVE_MAGIC_BYREF_SPREAD_SOURCE: &str = concat!(
+    "<?php\n",
+    "class MagicByRefSpreadBox {\n",
+    "    public function __call($name, $args) {\n",
+    "        $args[0] = $name . \":pos\";\n",
+    "        $args[\"name\"] = $name . \":named\";\n",
+    "        return $args[0] . \":\" . $args[\"name\"];\n",
+    "    }\n",
+    "}\n",
+    "class MagicByRefSpreadStaticBox {\n",
+    "    public static function __callStatic($name, $args) {\n",
+    "        $args[0] = $name . \":static-pos\";\n",
+    "        $args[\"name\"] = $name . \":static-named\";\n",
+    "        return $args[0] . \":\" . $args[\"name\"];\n",
+    "    }\n",
+    "}\n",
+    "$pos = \"pos\";\n",
+    "$named = \"named\";\n",
+    "$args = [];\n",
+    "$args[] =& $pos;\n",
+    "$args[\"name\"] =& $named;\n",
+    "$box = new MagicByRefSpreadBox();\n",
+    "echo $box->missing(...$args), \"|\", $pos, \"|\", $named, \"|\";\n",
+    "$dynPos = \"dyn-pos\";\n",
+    "$dynNamed = \"dyn-named\";\n",
+    "$dynArgs = [];\n",
+    "$dynArgs[] =& $dynPos;\n",
+    "$dynArgs[\"name\"] =& $dynNamed;\n",
+    "$method = strtolower(\"DYNAMIC\");\n",
+    "echo $box->{$method}(...$dynArgs), \"|\", $dynPos, \"|\", $dynNamed, \"|\";\n",
+    "$staticPos = \"static-pos\";\n",
+    "$staticNamed = \"static-named\";\n",
+    "$staticArgs = [];\n",
+    "$staticArgs[] =& $staticPos;\n",
+    "$staticArgs[\"name\"] =& $staticNamed;\n",
+    "echo MagicByRefSpreadStaticBox::absent(...$staticArgs), \"|\", $staticPos, \"|\", $staticNamed, \"|\";\n",
+    "$dynamicStaticPos = \"dyn-static-pos\";\n",
+    "$dynamicStaticNamed = \"dyn-static-named\";\n",
+    "$dynamicStaticArgs = [];\n",
+    "$dynamicStaticArgs[] =& $dynamicStaticPos;\n",
+    "$dynamicStaticArgs[\"name\"] =& $dynamicStaticNamed;\n",
+    "$static = strtolower(\"DYNAMICSTATIC\");\n",
+    "echo MagicByRefSpreadStaticBox::{$static}(...$dynamicStaticArgs), \"|\", $dynamicStaticPos, \"|\", $dynamicStaticNamed, \"\\n\";\n",
+);
+
+const NATIVE_DYNAMIC_MAGIC_METHOD_SPREAD_SOURCE: &str = concat!(
+    "<?php\n",
+    "function dynamic_magic_spread_marker($label) { echo $label; return $label; }\n",
+    "class DynamicMagicMethodSpreadBox {\n",
+    "    private function hidden($first) { return \"hidden:\" . $first; }\n",
+    "    public function __call($name, $args) {\n",
+    "        $zero = array_key_exists(0, $args) ? $args[0] : \"-\";\n",
+    "        $first = array_key_exists(\"first\", $args) ? $args[\"first\"] : \"-\";\n",
+    "        $tail = array_key_exists(\"tail\", $args) ? $args[\"tail\"] : \"-\";\n",
+    "        return \"call:\" . $name . \":\" . $zero . \":\" . $first . \":\" . $tail;\n",
+    "    }\n",
+    "    public static function __callStatic($name, $args) {\n",
+    "        $zero = array_key_exists(0, $args) ? $args[0] : \"-\";\n",
+    "        $first = array_key_exists(\"first\", $args) ? $args[\"first\"] : \"-\";\n",
+    "        $tail = array_key_exists(\"tail\", $args) ? $args[\"tail\"] : \"-\";\n",
+    "        return \"static:\" . $name . \":\" . $zero . \":\" . $first . \":\" . $tail;\n",
+    "    }\n",
+    "}\n",
+    "$box = new DynamicMagicMethodSpreadBox();\n",
+    "$method = strtolower(\"MISSING\");\n",
+    "echo $box->{$method}(...[dynamic_magic_spread_marker(\"A\"), \"tail\" => dynamic_magic_spread_marker(\"T\")]), \"|\";\n",
+    "$method = \"hidden\";\n",
+    "echo $box->{$method}(...[\"first\" => dynamic_magic_spread_marker(\"H\")]), \"|\";\n",
+    "$static = strtolower(\"ABSENT\");\n",
+    "echo DynamicMagicMethodSpreadBox::{$static}(...[\"first\" => dynamic_magic_spread_marker(\"S\"), \"tail\" => dynamic_magic_spread_marker(\"Q\")]), \"|\";\n",
+    "$boxStatic = new DynamicMagicMethodSpreadBox();\n",
+    "$static = strtolower(\"OBJECTMISS\");\n",
+    "echo $boxStatic::{$static}(...[dynamic_magic_spread_marker(\"O\"), \"tail\" => dynamic_magic_spread_marker(\"P\")]), \"\\n\";\n",
+);
+
 const NATIVE_DIRECT_RECEIVER_MAGIC_SOURCE_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "class DirectReceiverMagicBox {\n",
@@ -3687,6 +3762,68 @@ fn emit_exe_links_and_runs_magic_callable_spread_argument_program() {
     assert_eq!(
         run.stdout,
         b"ATmagic:missing:A:-:-:T|Hmagic:hidden:-:H:-:-|FSmagic:other:-:F:S:-\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_magic_byref_spread_cow_visibility_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "magic_byref_spread_cow_visibility",
+        NATIVE_MAGIC_BYREF_SPREAD_SOURCE,
+    );
+
+    let run = Command::new(&output_path)
+        .output()
+        .unwrap_or_else(|error| panic!("failed to run magic byref spread COW executable: {error}"));
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"missing:pos:missing:named|pos|named|dynamic:pos:dynamic:named|dyn-pos|dyn-named|absent:static-pos:absent:static-named|static-pos|static-named|dynamicstatic:static-pos:dynamicstatic:static-named|dyn-static-pos|dyn-static-named\n"
+    );
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_dynamic_magic_method_spread_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "dynamic_magic_method_spread_arguments",
+        NATIVE_DYNAMIC_MAGIC_METHOD_SPREAD_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run dynamic magic method spread executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"ATcall:missing:A:-:T|Hcall:hidden:-:H:-|SQstatic:absent:-:S:Q|OPstatic:objectmiss:O:-:P\n"
     );
     assert_eq!(String::from_utf8_lossy(&run.stderr), "");
 
@@ -7190,6 +7327,70 @@ fn native_executable_c_source_lowers_magic_callable_spread_through_forward_sourc
             && !body.contains("dynamic_method_dispatch_status")
             && !body.contains("phpc_native_value_dynamic_method_name_matches"),
         "magic fallback spread must avoid finalized variadic packing, old blockers, and generated method-name ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_magic_byref_spread_through_forward_source_carrier() {
+    let program = parse(NATIVE_MAGIC_BYREF_SPREAD_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains(
+                "phpc_native_materialized_call_arguments_forward_source_to_call_arguments_with_diagnostic"
+            )
+            && body.contains(
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+            )
+            && body.contains(
+                "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments"
+            ),
+        "magic byref spread should forward materialized reference entries into instance and static magic invocation carriers:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && !source.contains("spread operands need a materialized-entry producer")
+            && !body.contains("dynamic_method_dispatch_status")
+            && !body.contains("dynamic_static_method_dispatch_status"),
+        "magic byref spread must avoid finalized variadic packing, old spread blockers, and generated method/static dispatch ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_dynamic_magic_method_spread_through_forward_source_carrier() {
+    let program = parse(NATIVE_DYNAMIC_MAGIC_METHOD_SPREAD_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("dynamic_receiver_method_source_call_args_")
+            && body.contains("dynamic_static_method_source_call_args_")
+            && body.contains("dynamic_object_static_method_source_call_args_")
+            && body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains(
+                "phpc_native_materialized_call_arguments_forward_source_to_call_arguments_with_diagnostic"
+            )
+            && body.contains(
+                "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments"
+            )
+            && body.contains(
+                "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments"
+            ),
+        "runtime dynamic instance/static magic spread should route through shared runtime lookup and materialized source forwarding carriers:\n{source}"
+    );
+    assert!(
+        !body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && !body.contains("dynamic_method_dispatch_status")
+            && !body.contains("static_method_status")
+            && !body.contains("object_static_method_status")
+            && !source.contains("spread operands need a materialized-entry producer")
+            && !source.contains("named argument lowering is only implemented")
+            && !source.contains("method-call lowering rejects"),
+        "runtime dynamic magic spread must avoid finalized variadic packing, generated dispatch ladders, and old exact-shape blockers:\n{source}"
     );
 }
 

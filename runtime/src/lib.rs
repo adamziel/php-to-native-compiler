@@ -12553,18 +12553,36 @@ unsafe fn native_callable_value_invoke_closure_result(
     }
 }
 
-fn native_call_argument_slot_value_cloned(slot: &NativeCallArgumentSlot) -> Result<Value, String> {
+fn native_magic_argument_array_insert_slot(
+    array: &mut PhpArray,
+    key: Option<ArrayKey>,
+    slot: &NativeCallArgumentSlot,
+) -> Result<(), String> {
     match slot {
         NativeCallArgumentSlot::Value(value) => {
-            unsafe { value.as_ref() }.cloned().ok_or_else(|| {
-                "native magic __call argument packing failed: value slot is null".to_string()
-            })
+            let value = unsafe { value.as_ref() }
+                .cloned()
+                .ok_or_else(|| "value slot is null".to_string())?;
+            if let Some(key) = key {
+                array.insert_checked(key, value)
+            } else {
+                array.append(value)
+            }
+            .map(|_| ())
+            .map_err(|error| error.message().to_string())
         }
-        NativeCallArgumentSlot::Reference(reference) => unsafe { reference.as_ref() }
-            .map(|reference| reference.cell.value_cloned())
-            .ok_or_else(|| {
-                "native magic __call argument packing failed: reference slot is null".to_string()
-            }),
+        NativeCallArgumentSlot::Reference(reference) => {
+            let value = unsafe { reference.as_ref() }
+                .map(|reference| reference.cell.value_cloned())
+                .ok_or_else(|| "reference slot is null".to_string())?;
+            if let Some(key) = key {
+                array.insert_checked(key, value)
+            } else {
+                array.append(value)
+            }
+            .map(|_| ())
+            .map_err(|error| error.message().to_string())
+        }
     }
 }
 
@@ -12574,18 +12592,13 @@ fn native_magic_call_arguments_from_method_and_arguments(
 ) -> Result<NativeCallArgumentsHandle, String> {
     let mut argument_array = PhpArray::new();
     for (index, slot) in arguments.slots.iter().enumerate() {
-        let value = native_call_argument_slot_value_cloned(slot)?;
-        if let Some(name) = arguments.names.get(index).and_then(|name| name.as_ref()) {
-            argument_array.insert_checked(ArrayKey::string(name.clone()), value)
+        let key = if let Some(name) = arguments.names.get(index).and_then(|name| name.as_ref()) {
+            Some(ArrayKey::string(name.clone()))
         } else {
-            argument_array.append(value)
-        }
-        .map_err(|error| {
-            format!(
-                "native magic __call argument packing failed: {}",
-                error.message()
-            )
-        })?;
+            None
+        };
+        native_magic_argument_array_insert_slot(&mut argument_array, key, slot)
+            .map_err(|error| format!("native magic __call argument packing failed: {}", error))?;
     }
 
     Ok(NativeCallArgumentsHandle {
@@ -39258,6 +39271,22 @@ mod tests {
             array.get_cloned("name"),
             Some(Value::String("changed".to_string()))
         );
+        assert!(
+            array
+                .get_slot("name")
+                .is_some_and(|slot| slot.reference_cell().is_none()),
+            "magic $args should receive a COW value entry, not the caller reference slot"
+        );
+        let mut magic_array = array.clone();
+        magic_array
+            .get_slot_mut("name")
+            .expect("packed named magic argument")
+            .set_value(Value::String("magic-changed".to_string()));
+        assert_eq!(
+            reference.value_cloned(),
+            Value::String("changed".to_string()),
+            "mutating magic $args must not write through to the forwarded caller reference"
+        );
 
         unsafe { phpc_native_value_free(magic_args) };
         unsafe { phpc_native_call_arguments_free(magic_arguments) };
@@ -39265,6 +39294,146 @@ mod tests {
         unsafe { phpc_native_reference_free(forwarded_reference) };
         unsafe { phpc_native_call_arguments_free(forwarded) };
         unsafe { phpc_native_materialized_call_arguments_free(materialized) };
+    }
+
+    #[test]
+    fn native_magic_call_arguments_pack_reference_slots_as_cow_args_array_values() {
+        let arguments = phpc_native_call_arguments_new();
+        let positional = PhpReferenceCell::new(Value::String("pos".to_string()));
+        assert!(unsafe {
+            phpc_native_call_arguments_push_reference_and_free(
+                arguments,
+                NativeReferenceHandle::from_cell(positional.clone()),
+            )
+        });
+
+        let named = PhpReferenceCell::new(Value::String("named".to_string()));
+        let name = native_string_for_test("name");
+        assert!(unsafe {
+            phpc_native_call_arguments_push_named_reference_and_free(
+                arguments,
+                name,
+                NativeReferenceHandle::from_cell(named.clone()),
+            )
+        });
+        unsafe { phpc_native_string_free(name) };
+
+        let (magic_arguments, magic_static_arguments) = {
+            let arguments_ref = unsafe { arguments.as_ref() }.expect("call arguments");
+            (
+                native_magic_call_arguments_from_method_and_arguments("missing", arguments_ref)
+                    .expect("magic arguments should pack"),
+                native_magic_callstatic_arguments_from_method_and_arguments(
+                    "absent",
+                    arguments_ref,
+                )
+                .expect("magic static arguments should pack"),
+            )
+        };
+
+        for (label, handle) in [
+            ("__call", magic_arguments),
+            ("__callStatic", magic_static_arguments),
+        ] {
+            let args = unsafe { phpc_native_call_arguments_read_value(handle, 1) };
+            let Some(Value::Array(array)) = (unsafe { args.as_ref() }) else {
+                panic!("expected packed {label} argument array");
+            };
+
+            assert_eq!(array.get_cloned(0), Some(Value::String("pos".to_string())));
+            assert_eq!(
+                array.get_cloned("name"),
+                Some(Value::String("named".to_string()))
+            );
+            assert!(
+                array
+                    .get_slot(0)
+                    .is_some_and(|slot| slot.reference_cell().is_none()),
+                "{label} positional magic arg should be a COW value slot"
+            );
+            assert!(
+                array
+                    .get_slot("name")
+                    .is_some_and(|slot| slot.reference_cell().is_none()),
+                "{label} named magic arg should be a COW value slot"
+            );
+
+            let mut local_args = array.clone();
+            local_args
+                .get_slot_mut(0)
+                .expect("positional magic arg")
+                .set_value(Value::String(format!("{label}:changed")));
+            local_args
+                .get_slot_mut("name")
+                .expect("named magic arg")
+                .set_value(Value::String(format!("{label}:renamed")));
+            assert_eq!(positional.value_cloned(), Value::String("pos".to_string()));
+            assert_eq!(named.value_cloned(), Value::String("named".to_string()));
+
+            unsafe { phpc_native_value_free(args) };
+            unsafe { phpc_native_call_arguments_free(handle) };
+        }
+
+        unsafe { phpc_native_call_arguments_free(arguments) };
+    }
+
+    #[test]
+    fn native_magic_call_arguments_preserve_nested_references_inside_cow_value_entries() {
+        let leaf = PhpReferenceCell::new(Value::String("leaf".to_string()));
+        let mut nested = PhpArray::new();
+        nested.append_reference(leaf.clone()).unwrap();
+        let source = PhpReferenceCell::new(Value::Array(nested));
+
+        let arguments = phpc_native_call_arguments_new();
+        assert!(unsafe {
+            phpc_native_call_arguments_push_reference_and_free(
+                arguments,
+                NativeReferenceHandle::from_cell(source.clone()),
+            )
+        });
+
+        let magic_arguments = {
+            let arguments_ref = unsafe { arguments.as_ref() }.expect("call arguments");
+            native_magic_call_arguments_from_method_and_arguments("missing", arguments_ref)
+                .expect("magic arguments should pack")
+        };
+        let args = unsafe { phpc_native_call_arguments_read_value(magic_arguments, 1) };
+        let Some(Value::Array(array)) = (unsafe { args.as_ref() }) else {
+            panic!("expected packed magic argument array");
+        };
+        assert!(
+            array
+                .get_slot(0)
+                .is_some_and(|slot| slot.reference_cell().is_none()),
+            "top-level referenced argument should be packed as a COW value"
+        );
+
+        let mut top_level_mutation = array.clone();
+        top_level_mutation
+            .get_slot_mut(0)
+            .expect("top-level magic arg")
+            .set_value(Value::String("replaced".to_string()));
+        assert!(
+            matches!(source.value_cloned(), Value::Array(_)),
+            "replacing magic $args[0] should not replace the caller reference value"
+        );
+
+        let Some(Value::Array(mut nested_from_magic)) = array.get_cloned(0) else {
+            panic!("expected nested array value in magic arg");
+        };
+        nested_from_magic
+            .get_slot_mut(0)
+            .expect("nested magic arg reference")
+            .set_value(Value::String("nested-changed".to_string()));
+        assert_eq!(
+            leaf.value_cloned(),
+            Value::String("nested-changed".to_string()),
+            "nested reference cells inside the copied value must remain shared"
+        );
+
+        unsafe { phpc_native_value_free(args) };
+        unsafe { phpc_native_call_arguments_free(magic_arguments) };
+        unsafe { phpc_native_call_arguments_free(arguments) };
     }
 
     #[test]
