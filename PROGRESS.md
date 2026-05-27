@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 16:49 CEST
+Updated: 2026-05-27 16:53 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,7 +19,18 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `e7d22c9c` coerces selected typed variadic
+Latest accounted source capability: `2d1144a4` preserves reference-backed
+unpacked slots inside selected by-reference variadic calls. The materialized
+call-argument finalizer can now build a finalized by-reference variadic array
+from unpacked reference slots for generated user functions and method-backed
+callable arrays, so mutations to `$values[0]` or named variadic entries are
+visible through the caller's original cells. Value-backed unpack entries still
+reject by-reference variadic parameters, and callable-object by-reference
+variadic spread, non-spread by-reference variadics, runtime builtins, magic
+fallback, unknown signatures, broad COW parity, and LLVM/ASM parity remain
+blocked.
+
+Recent source commit `e7d22c9c` coerces selected typed variadic
 descriptor-closure spread entries through a reusable variadic collection
 call-type helper. Descriptor-closure spread still uses the shared materialized
 call-argument finalizer and finalized variadic slot, but closure-frame binding
