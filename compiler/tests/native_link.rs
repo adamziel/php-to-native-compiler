@@ -4360,6 +4360,98 @@ fn native_executable_c_source_routes_self_parent_static_calls_through_class_cont
 }
 
 #[test]
+fn native_executable_c_source_routes_non_public_method_calls_through_class_context() {
+    let program = parse(concat!(
+        "<?php\n",
+        "class NativeVisibilityBox {\n",
+        "    public function reveal($value) {\n",
+        "        return $this->secret($value) . \":\" . NativeVisibilityBox::guard($value);\n",
+        "    }\n",
+        "    private function secret($value) { return \"p\" . strtoupper($value); }\n",
+        "    protected static function guard($value) { return \"s\" . strtolower($value); }\n",
+        "}\n",
+        "$box = new NativeVisibilityBox();\n",
+        "echo $box->reveal(\"Go\"), \"\\n\";\n",
+    ))
+    .unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("PHPC_NATIVE_CALLABLE_VISIBILITY_PRIVATE")
+            && source.contains("PHPC_NATIVE_CALLABLE_VISIBILITY_PROTECTED")
+            && source.contains("phpc_native_callable_table_register_visibility_staticness_frame_callback_and_free"),
+        "non-public generated method frames must be registered with runtime visibility metadata:\n{source}"
+    );
+    assert!(
+        body.contains("PHPC_NATIVE_CALLABLE_ACCESS_OBJECT_RECEIVER")
+            && source.contains("PHPC_NATIVE_CALLABLE_ACCESS_CLASS_CONTEXT")
+            && source.contains("phpc_native_string_free(method_call_caller_scope_"),
+        "caller-side source calls should distinguish external object access from method-frame class context and clean the caller-scope carrier:\n{source}"
+    );
+    let method_invoke_count = source
+        .matches(
+            "phpc_native_method_invoke_value_with_access_context_diagnostic_and_free_receiver_method_arguments",
+        )
+        .count();
+    assert!(
+        method_invoke_count >= 2
+            && source.contains(
+                "phpc_native_static_method_invoke_value_with_access_context_diagnostic_and_free_scope_method_arguments"
+            ),
+        "instance and static non-public calls should share lookup-plus-invoke carriers with owned arguments:\n{source}"
+    );
+    assert!(
+        !body.contains("method_dispatch_status")
+            && !body.contains("static_method_status")
+            && !source.contains("method-call lowering rejects"),
+        "non-public visibility must not bypass the runtime lookup diagnostic boundary via direct frame ladders:\n{source}"
+    );
+}
+
+#[test]
+fn emit_exe_links_and_runs_non_public_method_class_context_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "non_public_method_class_context",
+        concat!(
+            "<?php\n",
+            "class NativeVisibilityBoxRun {\n",
+            "    public function reveal($value) {\n",
+            "        return $this->secret($value) . \":\" . NativeVisibilityBoxRun::guard($value);\n",
+            "    }\n",
+            "    private function secret($value) { return \"p\" . strtoupper($value); }\n",
+            "    protected static function guard($value) { return \"s\" . strtolower($value); }\n",
+            "}\n",
+            "$box = new NativeVisibilityBoxRun();\n",
+            "echo $box->reveal(\"Go\"), \"\\n\";\n",
+        ),
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run native non-public method class-context executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(
+        run.status.success(),
+        "native executable failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"pGO:sgo\n");
+    assert_eq!(String::from_utf8_lossy(&run.stderr), "");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
 fn native_executable_c_source_routes_declared_constructors_through_frame_dispatch() {
     let program = parse(NATIVE_DECLARED_CLASS_CONSTRUCTOR_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();

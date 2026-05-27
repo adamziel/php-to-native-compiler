@@ -34217,6 +34217,79 @@ mod tests {
     }
 
     #[test]
+    fn native_method_lookup_plus_invoke_uses_access_context_for_private_diagnostics() {
+        let table = phpc_native_callable_table_new();
+        unsafe {
+            register_callable_for_test(
+                table,
+                NativeCallableKind::Method,
+                Some("PrivateInvoke"),
+                "secret",
+                NativeCallableVisibility::Private,
+                native_receiver_method_callback,
+            );
+        }
+
+        let mut classes = PhpClassTable::new();
+        let class_id = classes.declare_class("PrivateInvoke").unwrap();
+        let mut diagnostic = NativeDiagnosticHandle::null();
+
+        reset_call_arguments_free_count_for_test();
+        let blocked_receiver = NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+            classes.get(class_id).unwrap(),
+        )));
+        let blocked_method = NativeValueHandle::from_value(Value::String("secret".to_string()));
+        let blocked = unsafe {
+            phpc_native_method_invoke_result_with_access_context_diagnostic_and_free_receiver_method_arguments(
+                table,
+                blocked_receiver,
+                blocked_method,
+                NativeCallableAccessContextTag::ObjectReceiver,
+                NativeStringHandle::null(),
+                call_arguments_from_ints_for_test(&[5]),
+                &mut diagnostic,
+            )
+        };
+        assert!(blocked.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        assert_eq!(
+            unsafe { diagnostic.as_ref() }.map(|diagnostic| diagnostic.message.as_str()),
+            Some(
+                "native method invocation failed: Private method PrivateInvoke::secret is not visible from <global>"
+            )
+        );
+        unsafe { phpc_native_diagnostic_free(diagnostic) };
+
+        reset_call_arguments_free_count_for_test();
+        let receiver = NativeValueHandle::from_value(Value::Object(PhpObject::from_class(
+            classes.get(class_id).unwrap(),
+        )));
+        let method = NativeValueHandle::from_value(Value::String("secret".to_string()));
+        let caller_scope = native_string_for_test("PrivateInvoke");
+        let invoked = unsafe {
+            phpc_native_method_invoke_result_with_access_context_diagnostic_and_free_receiver_method_arguments(
+                table,
+                receiver,
+                method,
+                NativeCallableAccessContextTag::ClassContext,
+                caller_scope,
+                call_arguments_from_ints_for_test(&[7]),
+                &mut diagnostic,
+            )
+        };
+        assert!(diagnostic.is_null());
+        assert_eq!(call_arguments_free_count_for_test(), 1);
+        let value = unsafe { phpc_native_call_result_take_value_and_free(invoked) };
+        assert_eq!(
+            unsafe { value.as_ref() },
+            Some(&Value::String("PrivateInvoke:7".to_string()))
+        );
+        unsafe { phpc_native_value_free(value) };
+        unsafe { phpc_native_string_free(caller_scope) };
+        unsafe { phpc_native_callable_table_free(table) };
+    }
+
+    #[test]
     fn native_constructor_lookup_uses_allocatable_class_metadata_and_visibility_context() {
         let table = phpc_native_callable_table_new();
         unsafe {

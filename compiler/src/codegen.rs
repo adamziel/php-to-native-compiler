@@ -19293,8 +19293,7 @@ impl CGenerator {
         &self,
         method: &ClassMethodDecl,
     ) -> CompileResult<()> {
-        if (method.visibility != ClassVisibility::Public && !method.is_static)
-            || method.is_abstract
+        if method.is_abstract
             || stmt_list_contains_global_import(&method.function.body)
             || method.function.is_nested
             || (method.function.returns_by_reference && method.function.return_type.is_some())
@@ -20436,6 +20435,13 @@ impl CGenerator {
         self.variables
             .insert("this".to_string(), CValue::NativeValueHandle(handle));
         self.remember_variable_order("this");
+        if let Some(class_name) = &self.active_declared_class_name {
+            let class_key = Self::declared_class_key(class_name);
+            if let Some(facts) = self.native_value_facts_for_declared_class_key(&class_key) {
+                self.native_value_variable_facts
+                    .insert("this".to_string(), facts);
+            }
+        }
     }
 
     fn bind_function_frame_parameters(&mut self, function: &FunctionDecl) {
@@ -26157,7 +26163,8 @@ impl CGenerator {
                 method.visibility == ClassVisibility::Public
             }
             CNativeCallableDeclaredMethodExternalContext::InvokableObject => {
-                !method.is_static
+                method.visibility == ClassVisibility::Public
+                    && !method.is_static
                     && Self::declared_method_key(&method.decl.name)
                         == Self::declared_method_key("__invoke")
             }
@@ -32834,6 +32841,15 @@ impl CGenerator {
         }
     }
 
+    fn current_declared_class_access_context<'a>(
+        caller_scope: Option<&'a str>,
+        fallback: NativeSourceCallAccessContext<'a>,
+    ) -> NativeSourceCallAccessContext<'a> {
+        caller_scope
+            .map(|caller_scope| NativeSourceCallAccessContext::ClassContext { caller_scope })
+            .unwrap_or(fallback)
+    }
+
     fn emit_native_static_text_source_call_string_operand(
         &mut self,
         prefix: &str,
@@ -33580,8 +33596,16 @@ impl CGenerator {
         matched: &str,
         result: &str,
     ) -> CompileResult<()> {
-        let instance_candidates = self.declared_class_dynamic_method_candidates();
-        let static_candidates = self.declared_class_dynamic_static_method_candidates();
+        let instance_candidates = self
+            .declared_class_dynamic_method_candidates()
+            .into_iter()
+            .filter(|(_, method)| method.visibility == ClassVisibility::Public)
+            .collect::<Vec<_>>();
+        let static_candidates = self
+            .declared_class_dynamic_static_method_candidates()
+            .into_iter()
+            .filter(|(_, _, method)| method.visibility == ClassVisibility::Public)
+            .collect::<Vec<_>>();
         if instance_candidates.is_empty() && static_candidates.is_empty() {
             return Ok(());
         }
@@ -33788,7 +33812,11 @@ impl CGenerator {
         matched: &str,
         result: &str,
     ) -> CompileResult<()> {
-        let candidates = self.declared_class_callable_object_candidates();
+        let candidates = self
+            .declared_class_callable_object_candidates()
+            .into_iter()
+            .filter(|(_, method)| method.visibility == ClassVisibility::Public)
+            .collect::<Vec<_>>();
         if candidates.is_empty() {
             return Ok(());
         }
@@ -35777,10 +35805,15 @@ impl CGenerator {
         )?;
         let method_cleanup = c_cleanup_sequence(&method.cleanup_after_use);
         let target_failure_cleanup = format!("{method_cleanup}{receiver_cleanup}{failure_cleanup}");
+        let caller_scope = self.active_declared_class_name.clone();
+        let access_context = Self::current_declared_class_access_context(
+            caller_scope.as_deref(),
+            NativeSourceCallAccessContext::ObjectReceiver,
+        );
         let target = self.emit_native_receiver_method_source_call_target_operands(
             receiver,
             method,
-            NativeSourceCallAccessContext::ObjectReceiver,
+            access_context,
             &target_failure_cleanup,
         );
         let binding = self.emit_native_method_static_source_call_binding_operands(
@@ -35830,13 +35863,18 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
+        let caller_scope = self.active_declared_class_name.clone();
+        let access_context = Self::current_declared_class_access_context(
+            caller_scope.as_deref(),
+            NativeSourceCallAccessContext::Static,
+        );
         self.try_materialize_static_method_source_call_with_access_context(
             class_name,
             method_name,
             args,
             span,
             failure_cleanup,
-            NativeSourceCallAccessContext::Static,
+            access_context,
         )
     }
 
@@ -36042,7 +36080,11 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let candidates = self.declared_class_method_candidates(method_name);
+        let candidates = self
+            .declared_class_method_candidates(method_name)
+            .into_iter()
+            .filter(|(_, method)| method.visibility == ClassVisibility::Public)
+            .collect::<Vec<_>>();
         if candidates.is_empty() {
             return Ok(None);
         }
@@ -36159,7 +36201,11 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let candidates = self.declared_class_dynamic_method_candidates();
+        let candidates = self
+            .declared_class_dynamic_method_candidates()
+            .into_iter()
+            .filter(|(_, method)| method.visibility == ClassVisibility::Public)
+            .collect::<Vec<_>>();
         if candidates.is_empty() {
             return Ok(None);
         }
@@ -36289,7 +36335,11 @@ impl CGenerator {
         span: Span,
         failure_cleanup: &str,
     ) -> CompileResult<Option<CNativeValueMaterialization>> {
-        let candidates = self.declared_class_static_method_candidates(method_name);
+        let candidates = self
+            .declared_class_static_method_candidates(method_name)
+            .into_iter()
+            .filter(|(_, method)| method.visibility == ClassVisibility::Public)
+            .collect::<Vec<_>>();
         if candidates.is_empty() {
             return Ok(None);
         }
