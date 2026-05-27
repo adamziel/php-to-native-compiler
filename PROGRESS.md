@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-27 18:36 CEST
+Updated: 2026-05-27 18:42 CEST
 Evaluation marker: `20260526T040843Z`
 Strategy evaluator marker: `20260526T040843Z`
 
@@ -19,12 +19,30 @@ Overall integrated-roadmap progress: **85%** `[#################---]`
 
 Selected executable PHP semantics: **95%** `[###################-]`
 
-Latest accounted source capability: `792f9d3f` accepts leading-global
-fully-qualified direct function calls such as `\strlen(...)`,
-`\array_push(...)`, and `\App\Demo\local_value(...)` inside namespaces. The
-parser preserves the leading global qualifier, namespace resolution keeps it
-out of namespace-relative fallback, and generated-C execution routes selected
-global builtins plus generated user functions through the shared exact callable
+Latest accounted source capability: `5735906e` adds the next honest runtime
+include boundary for generated-C registry no-matches. Runtime path values that
+miss the generated include-unit registry now distinguish missing paths from
+existing undeclared PHP source: missing `include` warns and returns false,
+missing `require` warns then fatals with exit 255, and existing undeclared
+source reports an explicit native source-loader/parser ABI blocker instead of
+pretending the file is missing.
+
+Recent source commit `5735906e` keeps arbitrary runtime PHP source loading
+blocked while improving selected runtime include/require fidelity. Generated-C
+runtime registry dispatch now calls a shared runtime no-match diagnostic ABI
+when no declared include unit matches the runtime path. Focused gates cover the
+full generated-C native include/require boundary suite, runtime native include
+helpers, formatting, and diff checks. Runtime PHP source parsing/execution,
+fully dynamic `include_path` mutation, stream wrappers, file URLs, non-UTF-8
+path fidelity, Windows separators, open_basedir/stat-cache parity, source maps,
+and LLVM/ASM parity remain blocked.
+
+Recent source commit `792f9d3f` accepts leading-global fully-qualified direct
+function calls such as `\strlen(...)`, `\array_push(...)`, and
+`\App\Demo\local_value(...)` inside namespaces. The parser preserves the
+leading global qualifier, namespace resolution keeps it out of
+namespace-relative fallback, and generated-C execution routes selected global
+builtins plus generated user functions through the shared exact callable
 lookup/invocation paths instead of adding a one-builtin parser branch.
 
 Recent source commit `792f9d3f` removes the parser boundary for selected
