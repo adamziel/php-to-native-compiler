@@ -428,6 +428,20 @@ const NATIVE_DECLARED_CLASS_DYNAMIC_CONSTRUCTOR_NEW_SOURCE: &str = concat!(
     "echo (new $class(\"Grace\"))->name, \"\\n\";\n",
 );
 
+const NATIVE_DECLARED_CLASS_CONSTRUCTOR_VALUE_RETURN_SOURCE: &str = concat!(
+    "<?php\n",
+    "class ReturnedValue {}\n",
+    "class Box {\n",
+    "    public $name;\n",
+    "    public function __construct($value = \"bad\") {\n",
+    "        $this->name = \"before\";\n",
+    "        return new ReturnedValue();\n",
+    "    }\n",
+    "}\n",
+    "new Box(\"x\");\n",
+    "echo \"after\\n\";\n",
+);
+
 const NATIVE_DECLARED_CLASS_INHERITANCE_SOURCE: &str = concat!(
     "<?php\n",
     "class Other {}\n",
@@ -1992,6 +2006,37 @@ fn emit_exe_declared_class_constructor_reports_runtime_arity_misses() {
             .contains("native method dispatch for Box::__construct is not supported"),
         "stderr:\n{}",
         String::from_utf8_lossy(&run.stderr)
+    );
+
+    let _ = fs::remove_file(source_path);
+    let _ = fs::remove_file(output_path);
+}
+
+#[test]
+fn emit_exe_declared_class_constructor_value_return_reports_diagnostic() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "declared_class_constructor_value_return",
+        NATIVE_DECLARED_CLASS_CONSTRUCTOR_VALUE_RETURN_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run declared-class-constructor value-return executable: {error}")
+    });
+
+    assert!(
+        !run.status.success(),
+        "constructor value return should fail through the shared runtime diagnostic"
+    );
+    assert_eq!(run.stdout, b"");
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains("native method dispatch for Box::__construct is not supported")
+            && stderr.contains("constructor value returns are not implemented"),
+        "stderr:\n{stderr}"
     );
 
     let _ = fs::remove_file(source_path);
@@ -4015,6 +4060,35 @@ fn native_executable_c_source_routes_dynamic_declared_constructors_through_frame
 }
 
 #[test]
+fn native_executable_c_source_reports_constructor_value_returns_without_dropping_value() {
+    let program = parse(NATIVE_DECLARED_CLASS_CONSTRUCTOR_VALUE_RETURN_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        source.contains("*phpc_call_status = 2; return"),
+        "constructor value-return statements should leave a distinct frame status:\n{source}"
+    );
+    assert!(
+        body.contains("constructor_status")
+            && body.contains("== 2")
+            && body.contains("method_dispatch_reason_bytes"),
+        "constructor callers should diagnose value returns explicitly:\n{source}"
+    );
+    assert!(
+        body.contains("phpc_native_value_free(constructor_result")
+            && body.contains("phpc_native_value_object_method_failure_with_diagnostic")
+            && body.contains("phpc_native_value_free(declared_class_object"),
+        "constructor value-return diagnostics must free the returned value and receiver instead of dropping through:\n{source}"
+    );
+    assert!(
+        !source.contains("object-instantiation lowering rejects")
+            && !source.contains("method-call lowering rejects"),
+        "{source}"
+    );
+}
+
+#[test]
 fn native_executable_c_source_routes_declared_inheritance_through_ancestor_metadata() {
     let program = parse(NATIVE_DECLARED_CLASS_INHERITANCE_SOURCE).unwrap();
     let source = emit_native_executable_c_source(&program).unwrap();
@@ -4074,7 +4148,8 @@ fn native_executable_c_source_keeps_unsupported_declared_class_features_blocked(
 fn native_executable_c_source_keeps_unsupported_constructor_shapes_blocked() {
     for source in [
         "<?php\nclass Box { private function __construct() {} }\nnew Box();\n",
-        "<?php\nclass Box { public function __construct() { return 1; } }\nnew Box();\n",
+        "<?php\nclass Box { protected function __construct() {} }\nnew Box();\n",
+        "<?php\nclass Box { public static function __construct() {} }\nnew Box();\n",
         "<?php\nclass Box { public function __construct() { global $x; } }\nnew Box();\n",
         "<?php\nclass Box { private function __construct() {} }\n$class = \"Box\";\nnew $class();\n",
     ] {

@@ -127,7 +127,7 @@ const ASSEMBLY_GLOBAL_DECLARATION_REJECTION: &str = "assembly global-declaration
 const LLVM_OBJECT_CLASS_REJECTION: &str = "LLVM object/class lowering rejects class declarations, inheritance metadata, object instantiation, constructor dispatch, public property reads/writes, instance method calls, and object metadata builtins until native object layout, handles, visibility, method dispatch, and exact native error behavior exist; phpc run handles current object/class behavior";
 const ASSEMBLY_OBJECT_CLASS_REJECTION: &str = "assembly object/class lowering rejects class declarations outside the bounded generated-C declared-object subset, including inheritance metadata, unsupported constructor dispatch, unsupported public property and instance method forms, object metadata builtins, visibility contexts, references/copy-on-write, and exact native object errors; generated-native C lowers supported declared object allocation, public properties, named instanceof, public declared instance methods, and supported constructors";
 const LLVM_OBJECT_INSTANTIATION_REJECTION: &str = "LLVM object-instantiation lowering rejects new expressions and constructor dispatch until native object allocation, object handles, constructor calls, visibility checks, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors exist; phpc run handles current bounded new behavior";
-const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions outside the bounded generated-C declared-object constructor subset, including unsupported constructor declarations, non-public constructors, constructor returns, destructor-observable cleanup, visibility contexts, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors; generated-native C lowers supported named and runtime string-valued declared object allocation for destructor-free declared classes, constructorless argument evaluation, and public constructors with $this frame binding";
+const ASSEMBLY_OBJECT_INSTANTIATION_REJECTION: &str = "assembly object-instantiation lowering rejects new expressions outside the bounded generated-C declared-object constructor subset, including unsupported constructor declarations, non-public/static constructors, destructor-observable cleanup, visibility contexts, autoload/class lookup, references/copy-on-write, and exact native object-instantiation errors; generated-native C lowers supported named and runtime string-valued declared object allocation for destructor-free declared classes, constructorless argument evaluation, public constructors with $this frame binding, and explicit constructor value-return diagnostics";
 const LLVM_OBJECT_PROPERTY_REJECTION: &str = "LLVM object-property lowering rejects instance property reads/writes and dynamic property-name access until native object layout, property tables/slots, visibility checks, magic property hooks, dynamic property policy, references/copy-on-write, and exact native object-property errors exist; phpc run handles current bounded object-property behavior";
 const ASSEMBLY_OBJECT_PROPERTY_REJECTION: &str = "assembly object-property lowering rejects instance property reads/writes and dynamic property-name access until native object layout, property tables/slots, visibility checks, magic property hooks, dynamic property policy, references/copy-on-write, and exact native object-property errors exist; phpc run handles current bounded object-property behavior";
 const LLVM_OBJECT_METADATA_REJECTION: &str = "LLVM object-metadata lowering rejects object/class metadata builtins until native class metadata tables, object handles, inheritance/interface/trait/enum registries, property/method tables, autoload interaction, references/copy-on-write, and exact native object-metadata errors exist; phpc run handles current bounded object metadata behavior";
@@ -4520,10 +4520,6 @@ fn function_body_contains_native_frame_blocker(statements: &[Stmt]) -> bool {
         || statements.iter().any(stmt_contains_function_frame_blocker)
 }
 
-fn stmt_list_contains_value_return_statement(statements: &[Stmt]) -> bool {
-    statements.iter().any(stmt_contains_value_return_statement)
-}
-
 fn function_reference_return_sources_are_supported(function: &FunctionDecl) -> bool {
     if !function.returns_by_reference {
         return true;
@@ -4610,36 +4606,6 @@ fn stmt_always_returns(stmt: &Stmt) -> bool {
                 .as_ref()
                 .is_some_and(|body| stmt_list_always_returns(body))
                 || stmt_list_always_returns(body)
-        }
-        _ => false,
-    }
-}
-
-fn stmt_contains_value_return_statement(stmt: &Stmt) -> bool {
-    match stmt {
-        Stmt::Return { value, .. } => value.is_some(),
-        Stmt::If {
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            stmt_list_contains_value_return_statement(then_branch)
-                || stmt_list_contains_value_return_statement(else_branch)
-        }
-        Stmt::While { body, .. } | Stmt::DoWhile { body, .. } | Stmt::Foreach { body, .. } => {
-            stmt_list_contains_value_return_statement(body)
-        }
-        Stmt::For { body, .. } => stmt_list_contains_value_return_statement(body),
-        Stmt::Switch { cases, .. } => cases
-            .iter()
-            .any(|case| stmt_list_contains_value_return_statement(&case.body)),
-        Stmt::Try {
-            body, finally_body, ..
-        } => {
-            stmt_list_contains_value_return_statement(body)
-                || finally_body
-                    .as_ref()
-                    .is_some_and(|body| stmt_list_contains_value_return_statement(body))
         }
         _ => false,
     }
@@ -15837,6 +15803,7 @@ struct CGenerator {
     function_call_depth: Option<String>,
     function_callable_name: Option<String>,
     function_return_type: Option<String>,
+    constructor_value_return_diagnostic: bool,
     generated_method_frame_this_property_assignment: bool,
 }
 
@@ -19195,7 +19162,6 @@ impl CGenerator {
             || method.is_static
             || method.is_abstract
             || stmt_list_contains_global_import(&method.function.body)
-            || stmt_list_contains_value_return_statement(&method.function.body)
             || method.function.is_nested
             || method.function.returns_by_reference
             || method.function.return_type.is_some()
@@ -20278,6 +20244,10 @@ impl CGenerator {
                     .as_ref()
                     .map(|decl| decl.text.clone())
             },
+            constructor_value_return_diagnostic: method
+                .decl
+                .name
+                .eq_ignore_ascii_case("__construct"),
             next_static_data: self.next_static_data,
             next_native_temp: self.next_native_temp,
             generated_method_frame_this_property_assignment: !method.is_static,
@@ -22214,6 +22184,18 @@ impl CGenerator {
             failure_cleanup
         );
         let error_exit = self.native_error_exit(&call_failure_cleanup);
+        self.body.push(format!("if ({status} == 2) {{"));
+        self.body.push(format!(
+            "  if ({result}.ptr != NULL) {{ phpc_native_value_free({result}); }}"
+        ));
+        self.emit_method_dispatch_failure(
+            receiver_handle,
+            "__construct",
+            "constructor value returns are not implemented",
+            &call_failure_cleanup,
+            "  ",
+        );
+        self.body.push("}".to_string());
         self.body.push(format!(
             "if ({status} != 1 || {result}.ptr == NULL) {{ {error_exit} }}"
         ));
@@ -30026,6 +30008,11 @@ impl CGenerator {
         if self.function_return_mode == CFunctionReturnMode::NativeReference {
             return self.emit_native_reference_return_statement(value);
         }
+        if self.constructor_value_return_diagnostic {
+            if let Some(value) = value {
+                return self.emit_constructor_value_return_statement(value);
+            }
+        }
 
         self.record_function_return_facts_for_value(value);
 
@@ -30065,6 +30052,24 @@ impl CGenerator {
         };
         self.body
             .push(format!("{cleanup} *{status} = 1; return {result};"));
+        Ok(())
+    }
+
+    fn emit_constructor_value_return_statement(&mut self, value: &Expr) -> CompileResult<()> {
+        let materialized = self.materialize_native_value_result_operand(value, "")?;
+        self.emit_active_finally_bodies_before_terminal_transfer()?;
+        let local_cleanup = c_cleanup_sequence(&native_value_aux_cleanup_after_consuming_handle(
+            &materialized,
+        ));
+        let cleanup = self.native_scope_cleanup_sequence(&local_cleanup);
+        let status = self
+            .function_return_status
+            .as_ref()
+            .expect("function return status is present in constructor context");
+        self.body.push(format!(
+            "{cleanup} *{status} = 2; return {};",
+            materialized.handle
+        ));
         Ok(())
     }
 
