@@ -29947,6 +29947,24 @@ impl CGenerator {
         if let Expr::Array { items, .. } = expr {
             return self.native_callable_identities_for_callable_array_items(items);
         }
+        if let Expr::Ternary {
+            if_true, if_false, ..
+        } = expr
+        {
+            let mut identities = self.native_callable_identities_for_expr(if_true)?;
+            identities.extend(self.native_callable_identities_for_expr(if_false)?);
+            return (!identities.is_empty()).then_some(identities);
+        }
+        if let Expr::ShortTernary {
+            condition,
+            if_false,
+            ..
+        } = expr
+        {
+            let mut identities = self.native_callable_identities_for_expr(condition)?;
+            identities.extend(self.native_callable_identities_for_expr(if_false)?);
+            return (!identities.is_empty()).then_some(identities);
+        }
 
         let string_values = match expr {
             Expr::String(value, _) => Some(KnownString::one(value.clone())),

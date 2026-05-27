@@ -24601,6 +24601,32 @@ const NATIVE_RUNTIME_CALLABLE_STRING_SPREAD_SOURCE: &str = concat!(
     "echo $method(...[\"second\" => runtime_callable_string_spread_marker(\"Y\"), \"first\" => runtime_callable_string_spread_marker(\"X\")]);\n",
 );
 
+const NATIVE_RUNTIME_CALLABLE_VARIABLE_SPREAD_SOURCE: &str = concat!(
+    "<?php\n",
+    "function runtime_callable_variable_spread_marker($label) { echo $label; return $label; }\n",
+    "class RuntimeCallableVariableSpreadLeft {\n",
+    "    public static function stat($first, $second = \"D\", ...$tail) {\n",
+    "        return \"LS\" . $first . $second . ($tail[0] ?? \"\") . ($tail[\"name\"] ?? \"\");\n",
+    "    }\n",
+    "    public function __invoke($first, $second = \"D\", ...$tail) {\n",
+    "        return \"LO\" . $first . $second . ($tail[0] ?? \"\") . ($tail[\"name\"] ?? \"\");\n",
+    "    }\n",
+    "}\n",
+    "class RuntimeCallableVariableSpreadRight {\n",
+    "    public static function stat($first, $second = \"D\", ...$tail) {\n",
+    "        return \"RS\" . $first . $second . ($tail[0] ?? \"\") . ($tail[\"name\"] ?? \"\");\n",
+    "    }\n",
+    "    public function __invoke($first, $second = \"D\", ...$tail) {\n",
+    "        return \"RO\" . $first . $second . ($tail[0] ?? \"\") . ($tail[\"name\"] ?? \"\");\n",
+    "    }\n",
+    "}\n",
+    "$_GET[\"left\"] = \"\";\n",
+    "$arrayCall = $_GET[\"left\"] ? [RuntimeCallableVariableSpreadLeft::class, \"stat\"] : [RuntimeCallableVariableSpreadRight::class, \"stat\"];\n",
+    "$objectCall = $_GET[\"left\"] ? new RuntimeCallableVariableSpreadLeft() : new RuntimeCallableVariableSpreadRight();\n",
+    "echo $arrayCall(...[runtime_callable_variable_spread_marker(\"A\"), runtime_callable_variable_spread_marker(\"B\")], ...[runtime_callable_variable_spread_marker(\"C\"), \"name\" => runtime_callable_variable_spread_marker(\"N\")]), \"|\";\n",
+    "echo $objectCall(...[runtime_callable_variable_spread_marker(\"X\"), runtime_callable_variable_spread_marker(\"Y\")], ...[runtime_callable_variable_spread_marker(\"Z\"), \"name\" => runtime_callable_variable_spread_marker(\"M\")]);\n",
+);
+
 const NATIVE_NAMED_METHOD_SOURCE_CALL_SOURCE: &str = concat!(
     "<?php\n",
     "function named_method_marker($label) { echo $label; return $label; }\n",
@@ -25392,6 +25418,57 @@ fn native_executable_c_source_lowers_runtime_callable_string_spread_through_mate
         !source.contains("spread operands need a materialized-entry producer")
             && !source.contains("phpc_native_value_dynamic_call_name_matches"),
         "runtime callable-string spread should not use the old spread blocker or finite string dispatch ladder:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_lowers_runtime_callable_variable_spread_through_identity_contract() {
+    let program = parse(NATIVE_RUNTIME_CALLABLE_VARIABLE_SPREAD_SOURCE).unwrap();
+    let source = emit_native_executable_c_source(&program).unwrap();
+    let body = main_body(&source);
+
+    assert!(
+        body.contains("phpc_native_materialized_call_arguments_new")
+            && body.contains("phpc_native_materialized_call_arguments_unpack_array_value_and_free")
+            && body.contains("phpc_native_materialized_call_arguments_finalize_with_diagnostic")
+            && body.contains("phpc_NativeCallArgumentsHandle dynamic_callable_args_")
+            && body.contains("phpc_native_callable_lookup_value_or_closure_with_context_diagnostic")
+            && body.contains("phpc_native_callable_value_invoke_value_with_diagnostic_and_free"),
+        "runtime-held callable array/object spread should preserve finite homogeneous identities through materialized argument finalization and existing callable-value invoke helpers:\n{source}"
+    );
+    assert!(
+        !source.contains("spread operands need a materialized-entry producer")
+            && !source.contains("callable_array_matched")
+            && !source.contains("callable_object_matched"),
+        "runtime-held callable variable spread should not hit old spread blockers or legacy ladders:\n{source}"
+    );
+}
+
+#[test]
+fn native_executable_c_source_blocks_runtime_callable_variable_spread_with_heterogeneous_metadata()
+{
+    let program = parse(concat!(
+        "<?php\n",
+        "class RuntimeCallableVariableSpreadHeterogeneousLeft {\n",
+        "    public static function stat($first, $second = \"D\") { return $first . $second; }\n",
+        "}\n",
+        "class RuntimeCallableVariableSpreadHeterogeneousRight {\n",
+        "    public static function stat($other, $second = \"D\") { return $other . $second; }\n",
+        "}\n",
+        "$_GET[\"left\"] = \"\";\n",
+        "$call = $_GET[\"left\"] ? [RuntimeCallableVariableSpreadHeterogeneousLeft::class, \"stat\"] : [RuntimeCallableVariableSpreadHeterogeneousRight::class, \"stat\"];\n",
+        "echo $call(...[\"first\" => \"A\"]);\n",
+    ))
+    .unwrap();
+    let error = emit_native_executable_c_source(&program).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error
+            .message
+            .contains("spread operands need a materialized-entry producer"),
+        "{}",
+        error.message
     );
 }
 
@@ -27040,6 +27117,34 @@ fn emit_exe_links_and_runs_runtime_callable_string_spread_argument_program() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(run.stdout, b"ABCNLABCN|YXMAXY");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_file(&source_path);
+}
+
+#[test]
+fn emit_exe_links_and_runs_runtime_callable_variable_spread_argument_program() {
+    if !has_cc() {
+        return;
+    }
+
+    let (source_path, output_path) = compile_native_link_fixture(
+        "runtime_callable_variable_spread_arguments",
+        NATIVE_RUNTIME_CALLABLE_VARIABLE_SPREAD_SOURCE,
+    );
+
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!("failed to run native runtime callable variable spread executable: {error}")
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"ABCNRSABCN|XYZMROXYZM");
     assert_eq!(run.stderr, b"");
 
     let _ = fs::remove_file(&output_path);
