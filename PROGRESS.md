@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 06:36 CEST
+Updated: 2026-05-28 06:39 CEST
 Primary branch: `master`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
@@ -99,6 +99,7 @@ Gate status and parked candidates:
 | Magic visibility warnings | PR #3 is `REBASE-NEEDED` for Batch 002 after r81/stack10 due docs conflict; production/test hunks replay |
 | Foreach `$GLOBALS` lane | PASS-NO-PATCH accepted by reviewer; accepted stack10 passes `foreach_unset_globals`, `foreach_reference`, and `foreach_temp_array_expr_with_refs` |
 | Foreach object-property by-reference lane | GO-CANDIDATE after independent review; focused PHPT `Zend/tests/foreach/foreach_by_ref_to_property.phpt` plus foreach anchors passed 3/3, with PR #3/#4 stack compatibility checks |
+| `Zend/tests/foreach/foreach_by_ref_repacking_insert.phpt` by-reference foreach packed-to-hash repacking PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing foreach/reference behavior handles packed-to-hash insert/repacking at the end of by-reference iteration and passes wrapper PHPT `Zend/tests/foreach/foreach_by_ref_repacking_insert.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/foreach/foreach_005.phpt` nested by-reference foreach PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing foreach/reference behavior passes wrapper PHPT `Zend/tests/foreach/foreach_005.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/foreach/foreach_006.phpt` repeated by-reference foreach constant-array PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing foreach/reference behavior passes wrapper PHPT `Zend/tests/foreach/foreach_006.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/foreach/foreach_007.phpt` by-reference foreach append-at-end PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing foreach/reference behavior visits the newly inserted element and passes wrapper PHPT `Zend/tests/foreach/foreach_007.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
@@ -131,7 +132,7 @@ public-progress watch targets are magic `bug47801` and foreach `foreach_018`
 successor reviews, the next p7-reviewed candidate plus p14 `SAFE-FOR-PROGRESS`
 audit, current coder lane artifacts, and any new full-suite PHPT row. Known
 no-go/not-safe items, including unsuffixed `bug44899`, `bug46238`, `foreach_010`,
-and `foreach_016`, remain excluded. Extra sessions
+`foreach_016`, and `foreach_list_001`, remain excluded. Extra sessions
 `phpc-22` and stale `phpc-2` are killed/not active roster capacity.
 
 ## Current Rules
