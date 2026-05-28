@@ -39713,6 +39713,9 @@ impl Interpreter {
         let mut indexed_array_copy_source_bindings = Vec::new();
         for (index, arg) in args.iter().enumerate() {
             let (value, source) = self.evaluate_value_with_array_copy_source(arg, caller_scope)?;
+            let source = source.or_else(|| {
+                Self::direct_variable_array_copy_source_for_magic_argument(arg, &value)
+            });
             let value = caller_scope.value_with_object_property_aliases_from_array_copy(
                 value,
                 source.clone(),
@@ -39753,6 +39756,30 @@ impl Interpreter {
             by_value_array_copy_source_bindings,
         )
         .map(Some)
+    }
+
+    fn direct_variable_array_copy_source_for_magic_argument(
+        arg: &Expr,
+        value: &Value,
+    ) -> Option<ArrayCopySource> {
+        if !matches!(value, Value::Array(_)) {
+            return None;
+        }
+
+        let Expr::Variable(source_name, _) = arg else {
+            return None;
+        };
+        if source_name == "GLOBALS" {
+            return None;
+        }
+
+        Some(ArrayCopySource::alias_path(
+            ArrayOffsetAliasRoot::StaticArray {
+                name: source_name.clone(),
+            },
+            Vec::new(),
+            true,
+        ))
     }
 
     fn call_missing_instance_method_via_magic(
@@ -79702,6 +79729,41 @@ mod tests {
                 "}\n",
             )
         );
+    }
+
+    #[test]
+    fn magic_call_direct_variable_array_args_preserve_reference_cow_leaves() {
+        let program = parse_source(
+            r#"<?php
+class Forwarder {
+    public function __call($name, $args) {
+        $args[0]["shared"]["leaf"] = "changed";
+        $args[0]["plain"]["leaf"] = "copy-only";
+        $args[1]["leaf"] = "second-copy-only";
+    }
+}
+
+$shared = "original";
+$items = array(
+    "shared" => array("leaf" => "original"),
+    "plain" => array("leaf" => "plain-original"),
+);
+$items["shared"]["leaf"] =& $shared;
+$other = array("leaf" => "second-original");
+(new Forwarder())->missing($items, $other);
+echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . "|" . $other["leaf"];
+"#,
+        )
+        .expect("magic __call COW fixture should parse");
+
+        let execution = run_program(&program).expect("magic __call COW fixture should run");
+
+        assert_eq!(
+            execution.stdout,
+            "changed|changed|plain-original|second-original"
+        );
+        assert_eq!(execution.stderr, "");
+        assert_eq!(execution.exit_code, 0);
     }
 
     #[test]
