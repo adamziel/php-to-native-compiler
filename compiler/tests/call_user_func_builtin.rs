@@ -197,6 +197,33 @@ echo call_user_func_array("count", $count);
 }
 
 #[test]
+fn call_user_func_array_binds_named_reference_arguments_for_builtin_callbacks() {
+    let execution = run_source(
+        r#"<?php
+$values = array(10, 20, 30);
+echo call_user_func_array("array_pop", array("array" => &$values)), "|";
+echo count($values), "|", $values[0], ":", $values[1], "
+";
+
+$assoc = array(2 => "two", 1 => "one");
+echo call_user_func_array("ksort", array("array" => &$assoc, "flags" => 1)) ? "sorted" : "not";
+echo "|";
+foreach ($assoc as $key => $value) {
+    echo $key, "=", $value, ";";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "30|2|10:20
+sorted|1=one;2=two;"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn closure_values_invoke_directly_and_through_callback_dispatch() {
     let execution = run_source(
         r#"<?php

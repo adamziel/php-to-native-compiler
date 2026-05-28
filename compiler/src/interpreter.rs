@@ -45766,16 +45766,12 @@ impl Interpreter {
             return self.call_builtin(key, values, span);
         }
 
-        for entry in argument_array.entries() {
-            if matches!(entry.key, ArrayKey::String(_)) {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "call_user_func_array()",
-                        "string-keyed named arguments are not implemented in the current subset",
-                    ),
-                ));
-            }
+        if Self::call_user_func_array_value_has_string_keys(argument_array) {
+            return self.call_reference_builtin_callback_with_named_argument_array(
+                key,
+                argument_array,
+                span,
+            );
         }
 
         let Some(first) = argument_array.entries().first() else {
@@ -45797,6 +45793,71 @@ impl Interpreter {
             .map(|entry| entry.value_cloned())
             .collect::<Vec<_>>();
         self.call_builtin_callback_with_values(key, positional_args, span, true)
+    }
+
+    fn call_reference_builtin_callback_with_named_argument_array(
+        &mut self,
+        key: &str,
+        argument_array: &PhpArray,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let Some(function) = reflection_internal_function_state(key) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{key}()"),
+                    "string-keyed call_user_func_array() arguments require builtin parameter metadata in the current subset",
+                ),
+            ));
+        };
+
+        let Some(first_param) = function.params.first().filter(|param| param.by_reference) else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{key}()"),
+                    "string-keyed call_user_func_array() reference builtin callbacks require first-parameter metadata in the current subset",
+                ),
+            ));
+        };
+
+        let mut values = Self::call_user_func_array_values_from_reflection_params(
+            key,
+            &function.params,
+            argument_array,
+            span,
+        )?;
+
+        let Some(first_value) = values.first() else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    callable_name(key),
+                    Self::reflection_params_arity_expectation(&function.params),
+                    argument_array.len(),
+                ),
+            ));
+        };
+
+        let first_reference = argument_array
+            .entries()
+            .iter()
+            .find_map(|entry| match &entry.key {
+                ArrayKey::String(name) if name == &first_param.name => {
+                    entry.slot().reference_cell()
+                }
+                ArrayKey::Int(_) if values.first() == Some(first_value) => {
+                    entry.slot().reference_cell()
+                }
+                _ => None,
+            });
+
+        if let Some(reference) = first_reference {
+            let rest = values.drain(1..).collect::<Vec<_>>();
+            return self.call_builtin_callback_with_first_reference(key, reference, rest, span);
+        }
+
+        self.call_builtin_callback_with_values(key, values, span, true)
     }
 
     fn call_user_func_array_builtin_callback_values(
@@ -71953,6 +72014,28 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_param("array", "array"),
             ],
         ),
+        "array_pop" => (
+            "mixed",
+            vec![reflection_internal_reference_param("array", "array")],
+        ),
+        "array_unshift" => (
+            "int",
+            vec![
+                reflection_internal_reference_param("array", "array"),
+                reflection_internal_variadic_param("values", "mixed"),
+            ],
+        ),
+        "ksort" => (
+            "bool",
+            vec![
+                reflection_internal_reference_param("array", "array"),
+                reflection_internal_optional_int_param("flags", 0),
+            ],
+        ),
+        "next" => (
+            "mixed",
+            vec![reflection_internal_reference_param("array", "array")],
+        ),
         "is_callable" => (
             "bool",
             vec![
@@ -71998,6 +72081,12 @@ fn reflection_internal_param(name: &str, type_decl: &str) -> ReflectionParameter
         is_variadic: false,
         default: None,
     }
+}
+
+fn reflection_internal_reference_param(name: &str, type_decl: &str) -> ReflectionParameterMetadata {
+    let mut param = reflection_internal_param(name, type_decl);
+    param.by_reference = true;
+    param
 }
 
 fn reflection_internal_optional_int_param(name: &str, default: i64) -> ReflectionParameterMetadata {
