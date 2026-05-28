@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 06:33 CEST
+Updated: 2026-05-28 06:35 CEST
 Primary branch: `master`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
@@ -103,6 +103,7 @@ Gate status and parked candidates:
 | `Zend/tests/foreach/foreach_007.phpt` by-reference foreach append-at-end PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing foreach/reference behavior visits the newly inserted element and passes wrapper PHPT `Zend/tests/foreach/foreach_007.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/foreach/foreach_008.phpt` nested by-reference foreach unset PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing foreach/reference behavior handles nested by-reference foreach while elements are unset and passes wrapper PHPT `Zend/tests/foreach/foreach_008.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/foreach/foreach_009.phpt` nested by-reference foreach sparsified-array PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing foreach/reference behavior handles nested by-reference foreach over a sparsified/resized array while inserting during inner iteration and passes wrapper PHPT `Zend/tests/foreach/foreach_009.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
+| `Zend/tests/foreach/foreach_014.phpt` by-reference foreach `array_pop()` pointer PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing foreach/reference behavior handles by-reference foreach iterator pointer behavior when `array_pop()` removes the last element during iteration and passes wrapper PHPT `Zend/tests/foreach/foreach_014.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | Anonymous-class dynamic-call blocker | AO scout classified this as NO-GO for Batch 001 PR 10; deferred as a broader parser/interpreter/native feature |
 | PHPT focused queue | `tests/classes/__set__get_002.phpt` passes on the 9/10 stack; r85 queue now feeds additional coder lanes |
 | Codex thread-store permissions | Fixed current session directory execute bit; smoke passed |
@@ -125,11 +126,11 @@ Required live roles:
 Current AO snapshot: `phpc-orchestrator` supervising; `phpc-14` critic;
 `phpc-7` reviewer; `phpc-8` progress reporter; active coder/support lanes
 `phpc-15`, `phpc-16`, `phpc-17`, `phpc-18`, and `phpc-19`. Current
-public-progress watch targets are magic `bug45186` / `bug45186_2`
-successors and foreach `foreach_011` / `foreach_012` / `foreach_013` reviews,
-the next p7-reviewed candidate plus p14 `SAFE-FOR-PROGRESS` audit, current
-coder lane artifacts, and any new full-suite PHPT row. Known no-go/not-safe
-items, including unsuffixed `bug44899` and `foreach_010`, remain excluded. Extra sessions
+public-progress watch targets are foreach `foreach_015` / `foreach_016` /
+`foreach_017` and magic `bug45186` / `bug45186_2` / `bug46409` successor
+reviews, the next p7-reviewed candidate plus p14 `SAFE-FOR-PROGRESS` audit,
+current coder lane artifacts, and any new full-suite PHPT row. Known no-go/not-safe
+items, including unsuffixed `bug44899`, `bug46238`, and `foreach_010`, remain excluded. Extra sessions
 `phpc-22` and stale `phpc-2` are killed/not active roster capacity.
 
 ## Current Rules
