@@ -75,7 +75,7 @@ or an explicit sharded publication gate.
 - exported integration patch:
   `/home/claude/supervised-php-compiler/state/patches/ao-integration-php-eol-plus-bug74444-stack-24026a54-20260528.patch`
 - exported integration patch SHA256:
-  `2bf16744b2969dfc8621d6d158088e713247f201fdfaa9e78f965f630a07704d`
+  `a9c93ea6f704bcc978f93b628a6b2fcafbfc0aea4498325fd969ea152c693274`
 - source candidate patch SHA256s:
   `307dd349d809af80dd2f405594e06b0cd511cecb2dd063362e82d26c5174c50a`
   (`PHP_EOL` constant support) and
@@ -83,11 +83,15 @@ or an explicit sharded publication gate.
   (bug74444 RuntimeException multicatch successor3)
 - reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
   STACK SOURCE REVIEW ACCEPT / FOCUSED-GATES-PASS / PHPT-PASS` with
-  `FINAL_FAIL=0` on `24026a54`
-- critic gate: supervisor recorded `SAFE-FOR-INTEGRATION` after phpc-26 hit a
-  context-limit exit, using the exact durable p7 status/report/gates
-- integration gate: supervisor applied the exact reviewed two-patch stack after
-  p28 stayed in a stale watch loop
+  `FINAL_FAIL=0` on `24026a54`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch004-review-php-eol-plus-bug74444-stack-24026a54-20260528.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION` after phpc-26 hit a
+  context-limit exit; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch004-critic-php-eol-plus-bug74444-stack-24026a54-20260528.{status.md,report.md}`
+- integration gate: p28 recorded `FINAL-HANDOFF / FOCUSED-GATES-PASS /
+  READY-FOR-SUPERVISOR-APPLY`, then the supervisor applied the exact reviewed
+  two-patch stack; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-php-eol-plus-bug74444-stack-24026a54-20260528.{status.md,report.md}`
 - focused gates: PASS for `git diff --check`, docs/PROGRESS exclusion,
   production exact-shape audit, `cargo fmt --all -- --check`, focused Rust
   constant and exception/class-table tests, `cargo build -p phpc`, and wrapper
