@@ -27669,6 +27669,12 @@ impl RuntimeError {
         })
     }
 
+    pub fn forbidden_dynamic_call(callable: impl Into<String>) -> Self {
+        Self::from_kind(RuntimeErrorKind::ForbiddenDynamicCall {
+            callable: callable.into(),
+        })
+    }
+
     pub fn duplicate_function(callable: impl Into<String>) -> Self {
         Self::from_kind(RuntimeErrorKind::DuplicateFunction {
             callable: callable.into(),
@@ -27866,6 +27872,9 @@ pub enum RuntimeErrorKind {
     UndefinedFunction {
         callable: String,
     },
+    ForbiddenDynamicCall {
+        callable: String,
+    },
     DuplicateFunction {
         callable: String,
     },
@@ -28060,6 +28069,9 @@ fn format_runtime_error(kind: &RuntimeErrorKind) -> String {
         RuntimeErrorKind::UndefinedVariable { name } => format!("undefined variable '${name}'"),
         RuntimeErrorKind::UndefinedFunction { callable } => {
             format!("undefined function {callable}")
+        }
+        RuntimeErrorKind::ForbiddenDynamicCall { callable } => {
+            format!("Cannot call {callable} dynamically")
         }
         RuntimeErrorKind::DuplicateFunction { callable } => {
             format!("function {callable} is already defined")
@@ -30786,9 +30798,18 @@ impl PhpClassTable {
         classes
             .declare_class("Exception")
             .expect("core class table should start empty");
+        let error_id = classes
+            .declare_class("Error")
+            .expect("core class table should contain only Exception before Error");
+        let error = classes
+            .get_mut(error_id)
+            .expect("core Error class id should resolve");
+        error
+            .add_property(PhpPropertyMetadata::instance("message", Visibility::Public))
+            .expect("Error core metadata should not duplicate message");
         classes
             .declare_class("stdClass")
-            .expect("core class table should contain only Exception before stdClass");
+            .expect("core class table should contain Exception and Error before stdClass");
         let mysqli_id = classes
             .declare_class("mysqli")
             .expect("core class table should contain Exception and stdClass before mysqli");

@@ -111,6 +111,98 @@ echo $length("native",), "\n";
 }
 
 #[test]
+fn forbidden_scope_introspection_builtins_report_dynamic_call_error() {
+    let execution = run_source(
+        r#"<?php
+try {
+    $call = "extract";
+    $call(["a" => 1]);
+} catch (\Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $call = "compact";
+    $call("a");
+} catch (\Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $call = "get_defined_vars";
+    $call();
+} catch (\Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $call = "func_get_args";
+    $call();
+} catch (\Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $call = "func_get_arg";
+    $call(0);
+} catch (\Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $call = "func_num_args";
+    $call();
+} catch (\Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Cannot call extract() dynamically\n",
+            "Cannot call compact() dynamically\n",
+            "Cannot call get_defined_vars() dynamically\n",
+            "Cannot call func_get_args() dynamically\n",
+            "Cannot call func_get_arg() dynamically\n",
+            "Cannot call func_num_args() dynamically\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn forbidden_dynamic_builtins_are_rejected_through_callback_dispatchers() {
+    let execution = run_source(
+        r#"<?php
+try {
+    array_map("extract", [["i" => 1]]);
+} catch (\Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    call_user_func("extract", ["i" => 1]);
+} catch (\Error $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    call_user_func_array("extract", [["i" => 1]]);
+} catch (\Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        concat!(
+            "Cannot call extract() dynamically\n",
+            "Cannot call extract() dynamically\n",
+            "Cannot call extract() dynamically\n",
+        )
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn unresolved_dynamic_function_name_has_stable_runtime_error() {
     let error = runtime_error(
         r#"<?php

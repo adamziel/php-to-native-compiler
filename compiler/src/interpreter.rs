@@ -10106,7 +10106,18 @@ impl Interpreter {
                 ..
             } => {
                 self.tick(stmt.span())?;
-                let try_flow = self.execute_array_copy_return_statement_list(body, scope)?;
+                let try_flow = match self.execute_array_copy_return_statement_list(body, scope) {
+                    Ok(flow) => flow,
+                    Err(error) if is_forbidden_dynamic_builtin_call_diagnostic(&error) => {
+                        match self.execute_forbidden_dynamic_builtin_array_copy_return_catch_flow(
+                            &error, catches, scope,
+                        )? {
+                            Some(flow) => flow,
+                            None => return Err(error),
+                        }
+                    }
+                    Err(error) => return Err(error),
+                };
                 let try_flow = match try_flow {
                     ArrayCopyReturnBodyFlow::Throw { object, span } => {
                         self.execute_array_copy_return_catch_flow(object, span, catches, scope)?
@@ -10175,6 +10186,30 @@ impl Interpreter {
         }
 
         Ok(ArrayCopyReturnBodyFlow::Throw { object, span })
+    }
+
+    fn execute_forbidden_dynamic_builtin_array_copy_return_catch_flow(
+        &mut self,
+        error: &Diagnostic,
+        catches: &[CatchClause],
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<ArrayCopyReturnBodyFlow>> {
+        let Some(error_class_id) = self.classes.lookup_class_id("Error") else {
+            return Ok(None);
+        };
+        let error_object = self.create_core_error_object(error.message.clone(), error_class_id)?;
+        for catch in catches {
+            if !self.catch_matches_class(error_class_id, catch)? {
+                continue;
+            }
+            if let Some(variable) = &catch.variable {
+                scope.write_static(variable, Value::Object(error_object.clone()));
+            }
+            return self
+                .execute_array_copy_return_statement_list(&catch.body, scope)
+                .map(Some);
+        }
+        Ok(None)
     }
 
     fn execute_foreach_by_reference_with_array_copy_return_source(
@@ -13741,12 +13776,18 @@ impl Interpreter {
         finally_body: Option<&[Stmt]>,
         scope: &mut SymbolTable,
     ) -> CompileResult<Flow> {
-        let try_flow = self.execute_statements(body, scope)?;
-        let try_flow = match try_flow {
-            Flow::Throw { object, span } => {
+        let try_flow = match self.execute_statements(body, scope) {
+            Ok(Flow::Throw { object, span }) => {
                 self.execute_catch_flow(object, span, catches, scope)?
             }
-            flow => flow,
+            Ok(flow) => flow,
+            Err(error) if is_forbidden_dynamic_builtin_call_diagnostic(&error) => {
+                match self.execute_forbidden_dynamic_builtin_catch_flow(&error, catches, scope)? {
+                    Some(flow) => flow,
+                    None => return Err(error),
+                }
+            }
+            Err(error) => return Err(error),
         };
         if let Some(finally_body) = finally_body {
             let finally_flow = self.execute_statements(finally_body, scope)?;
@@ -13775,6 +13816,28 @@ impl Interpreter {
         }
 
         Ok(Flow::Throw { object, span })
+    }
+
+    fn execute_forbidden_dynamic_builtin_catch_flow(
+        &mut self,
+        error: &Diagnostic,
+        catches: &[CatchClause],
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<Flow>> {
+        let Some(error_class_id) = self.classes.lookup_class_id("Error") else {
+            return Ok(None);
+        };
+        let error_object = self.create_core_error_object(error.message.clone(), error_class_id)?;
+        for catch in catches {
+            if !self.catch_matches_class(error_class_id, catch)? {
+                continue;
+            }
+            if let Some(variable) = &catch.variable {
+                scope.write_static(variable, Value::Object(error_object.clone()));
+            }
+            return self.execute_statements(&catch.body, scope).map(Some);
+        }
+        Ok(None)
     }
 
     fn throwable_object_from_expr(
@@ -13849,6 +13912,36 @@ impl Interpreter {
         Ok(false)
     }
 
+    fn catch_matches_class(&self, class_id: ClassId, catch: &CatchClause) -> CompileResult<bool> {
+        for catch_type in &catch.types {
+            let catch_name = catch_type
+                .name
+                .strip_prefix('\\')
+                .unwrap_or(&catch_type.name);
+            if catch_name.eq_ignore_ascii_case("Throwable") {
+                if let Some(class) = self.classes.get(class_id) {
+                    if class.name().eq_ignore_ascii_case("Exception")
+                        || class.name().eq_ignore_ascii_case("Error")
+                    {
+                        return Ok(true);
+                    }
+                }
+                continue;
+            }
+
+            let Some(class) = self.classes.lookup_class(&catch_type.name) else {
+                return Err(runtime_error(
+                    catch_type.span,
+                    RuntimeError::undefined_class(&catch_type.name),
+                ));
+            };
+            if class_id == class.id() || self.classes.is_subclass_of(class_id, class.id()) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     fn uncaught_throw_error(&self, object: &PhpObject, span: Span) -> Diagnostic {
         runtime_error(
             span,
@@ -13860,6 +13953,34 @@ impl Interpreter {
                 ),
             ),
         )
+    }
+
+    fn create_core_error_object(
+        &mut self,
+        message: String,
+        class_id: ClassId,
+    ) -> CompileResult<PhpObject> {
+        let inherited_properties = self.inherited_instance_properties(class_id);
+        let mut ancestor_class_names = self.inherited_class_names(class_id);
+        ancestor_class_names.extend(self.class_alias_names(class_id));
+        let interface_names = self.class_implements_interface_names(class_id);
+        let object_id = self.allocate_object_id();
+        let class = self
+            .classes
+            .get(class_id)
+            .expect("core Error class id should resolve");
+        let object = PhpObject::from_class_with_relationship_metadata_with_id(
+            class,
+            &inherited_properties,
+            ancestor_class_names,
+            interface_names,
+            object_id,
+        );
+        object
+            .write_public_property("message", Value::String(message))
+            .map_err(|error| runtime_error(Span { line: 0, column: 0 }, error))?;
+        self.track_allocated_object(&object);
+        Ok(object)
     }
 
     fn execute_for_action(
@@ -37170,6 +37291,11 @@ impl Interpreter {
                 ));
             }
         };
+        if object.class_name().eq_ignore_ascii_case("Error") {
+            return self
+                .call_core_error_method(object, method_name, args, span)
+                .map(|value| (value, None));
+        }
         if object.class_name().eq_ignore_ascii_case("ReflectionClass") {
             return self
                 .call_reflection_class_method(object, method_name, args, span, caller_scope)
@@ -37319,6 +37445,27 @@ impl Interpreter {
             Some(called_class_id),
             Vec::new(),
         )
+    }
+
+    fn call_core_error_method(
+        &mut self,
+        object: PhpObject,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+    ) -> CompileResult<Value> {
+        match method_name.to_ascii_lowercase().as_str() {
+            "getmessage" => {
+                expect_expr_arity("Error::getMessage", args.len(), 0, span)?;
+                Ok(object
+                    .read_current_public_property("message")
+                    .unwrap_or_else(|| Value::String(String::new())))
+            }
+            _ => Err(runtime_error(
+                span,
+                RuntimeError::undefined_function(format!("Error::{method_name}()")),
+            )),
+        }
     }
 
     fn call_reflection_class_method(
@@ -42970,6 +43117,10 @@ impl Interpreter {
             }
         };
 
+        if let Some(error) = forbidden_dynamic_builtin_call_error(&name, span) {
+            return Err(error);
+        }
+
         self.call_named_function(&name, args, span, caller_scope)
     }
 
@@ -42983,6 +43134,9 @@ impl Interpreter {
         let callee_value = self.evaluate(callee, caller_scope)?;
         match callee_value {
             Value::String(name) => {
+                if let Some(error) = forbidden_dynamic_builtin_call_error(&name, span) {
+                    return Err(error);
+                }
                 self.call_named_function_with_array_copy_source(&name, args, span, caller_scope)
             }
             Value::Closure(closure) => self.invoke_closure_value_direct_with_array_copy_source(
@@ -43339,6 +43493,10 @@ impl Interpreter {
             }
         };
 
+        if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+            return Err(error);
+        }
+
         if let Some((class_name, method_name)) = static_method_callable_string(callback_name) {
             let callback = static_method_array_callable_value(class_name, method_name, span)?;
             return self.call_user_func_array_callable_direct(
@@ -43428,6 +43586,10 @@ impl Interpreter {
                 ));
             }
         };
+        if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+            return Err(error);
+        }
+
         if let Some((class_name, method_name)) = static_method_callable_string(callback_name) {
             let callback = static_method_array_callable_value(class_name, method_name, span)?;
             return self.call_user_func_array_callable_direct_with_array_copy_source(
@@ -43437,6 +43599,7 @@ impl Interpreter {
                 caller_scope,
             );
         }
+
         let callable = self.lookup_function(callback_name).ok_or_else(|| {
             runtime_error(
                 span,
@@ -44893,6 +45056,10 @@ impl Interpreter {
                         caller_scope,
                     );
                 }
+
+                if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+                    return Err(error);
+                }
                 let callable = self.lookup_function(callback_name).ok_or_else(|| {
                     runtime_error(
                         span,
@@ -44986,6 +45153,10 @@ impl Interpreter {
                         span,
                         caller_scope,
                     );
+                }
+
+                if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+                    return Err(error);
                 }
                 let callable = self.lookup_function(callback_name).ok_or_else(|| {
                     runtime_error(
@@ -53300,8 +53471,20 @@ impl Interpreter {
             ..
         } = stmt
         {
-            let try_flow =
-                self.execute_reference_return_assignment_statement_list(function, body, scope)?;
+            let try_flow = match self
+                .execute_reference_return_assignment_statement_list(function, body, scope)
+            {
+                Ok(flow) => flow,
+                Err(error) if is_forbidden_dynamic_builtin_call_diagnostic(&error) => {
+                    match self.execute_forbidden_dynamic_builtin_reference_return_catch_flow(
+                        function, &error, catches, scope,
+                    )? {
+                        Some(flow) => flow,
+                        None => return Err(error),
+                    }
+                }
+                Err(error) => return Err(error),
+            };
             let try_flow = match try_flow {
                 ReferenceReturnBodyFlow::Throw { object, span } => self
                     .execute_reference_return_assignment_catch_flow(
@@ -53372,6 +53555,31 @@ impl Interpreter {
         }
 
         Ok(ReferenceReturnBodyFlow::Throw { object, span })
+    }
+
+    fn execute_forbidden_dynamic_builtin_reference_return_catch_flow(
+        &mut self,
+        function: &FunctionDecl,
+        error: &Diagnostic,
+        catches: &[CatchClause],
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Option<ReferenceReturnBodyFlow>> {
+        let Some(error_class_id) = self.classes.lookup_class_id("Error") else {
+            return Ok(None);
+        };
+        let error_object = self.create_core_error_object(error.message.clone(), error_class_id)?;
+        for catch in catches {
+            if !self.catch_matches_class(error_class_id, catch)? {
+                continue;
+            }
+            if let Some(variable) = &catch.variable {
+                scope.write_static(variable, Value::Object(error_object.clone()));
+            }
+            return self
+                .execute_reference_return_assignment_statement_list(function, &catch.body, scope)
+                .map(Some);
+        }
+        Ok(None)
     }
 
     fn execute_reference_return_assignment_foreach_flow(
@@ -63174,6 +63382,10 @@ impl Interpreter {
             return self.call_array_callable_with_values(&callback, args[1..].to_vec(), span);
         }
 
+        if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+            return Err(error);
+        }
+
         let callable = self.lookup_function(callback_name).ok_or_else(|| {
             runtime_error(
                 span,
@@ -63230,6 +63442,10 @@ impl Interpreter {
                     let callback =
                         static_method_array_callable_value(class_name, method_name, span)?;
                     return self.call_array_callable_with_values(&callback, positional_args, span);
+                }
+
+                if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+                    return Err(error);
                 }
                 let callable = self.lookup_function(callback_name).ok_or_else(|| {
                     runtime_error(
@@ -64041,6 +64257,9 @@ impl Interpreter {
                 ));
             }
         };
+        if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+            return Err(error);
+        }
         self.lookup_function(callback_name).ok_or_else(|| {
             runtime_error(
                 span,
@@ -64191,6 +64410,9 @@ impl Interpreter {
                 ));
             }
         };
+        if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+            return Err(error);
+        }
         let callable = self.lookup_function(callback_name).ok_or_else(|| {
             runtime_error(
                 span,
@@ -64367,6 +64589,9 @@ impl Interpreter {
                 ));
             }
         };
+        if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+            return Err(error);
+        }
         self.lookup_function(callback_name).ok_or_else(|| {
             runtime_error(
                 span,
@@ -69612,6 +69837,45 @@ fn has_public_static_magic_call_static(classes: &PhpClassTable, class_id: ClassI
     find_method(classes, class_id, "__callStatic").is_some_and(|(_, _, method)| {
         method.visibility() == Visibility::Public && method.is_static()
     })
+}
+
+fn forbidden_dynamic_builtin_name(name: &str) -> Option<&'static str> {
+    let unqualified = name.strip_prefix('\\').unwrap_or(name);
+    if unqualified.contains('\\') {
+        return None;
+    }
+
+    match unqualified.to_ascii_lowercase().as_str() {
+        "extract" => Some("extract"),
+        "compact" => Some("compact"),
+        "get_defined_vars" => Some("get_defined_vars"),
+        "func_get_args" => Some("func_get_args"),
+        "func_get_arg" => Some("func_get_arg"),
+        "func_num_args" => Some("func_num_args"),
+        _ => None,
+    }
+}
+
+fn forbidden_dynamic_builtin_call_error(name: &str, span: Span) -> Option<Diagnostic> {
+    forbidden_dynamic_builtin_name(name).map(|canonical| {
+        runtime_error(
+            span,
+            RuntimeError::forbidden_dynamic_call(callable_name(canonical)),
+        )
+    })
+}
+
+fn is_forbidden_dynamic_builtin_call_diagnostic(error: &Diagnostic) -> bool {
+    error.phase == Phase::Runtime
+        && forbidden_dynamic_builtin_name(
+            error
+                .message
+                .strip_prefix("Cannot call ")
+                .and_then(|message| message.strip_suffix(" dynamically"))
+                .and_then(|callable| callable.strip_suffix("()"))
+                .unwrap_or(""),
+        )
+        .is_some()
 }
 
 fn array_callable_parts(array: &PhpArray) -> Option<(&Value, &str)> {
