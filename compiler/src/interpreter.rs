@@ -66198,6 +66198,14 @@ fn magic_method_startup_diagnostics(
     for stmt in &program.statements {
         match stmt {
             Stmt::Class(class) if !class.is_nested => {
+                if let Some(name) = reserved_special_class_name_segment(&class.name) {
+                    diagnostics.set_fatal(
+                        format!("Cannot use \"{name}\" as a class name as it is reserved"),
+                        source_file,
+                        class.span.line,
+                    );
+                    return diagnostics;
+                }
                 collect_class_magic_method_startup_diagnostics(
                     &mut diagnostics,
                     class,
@@ -66205,6 +66213,14 @@ fn magic_method_startup_diagnostics(
                 );
             }
             Stmt::Interface(interface) => {
+                if let Some(name) = reserved_special_class_name_segment(&interface.name) {
+                    diagnostics.set_fatal(
+                        format!("Cannot use \"{name}\" as an interface name as it is reserved"),
+                        source_file,
+                        interface.span.line,
+                    );
+                    return diagnostics;
+                }
                 collect_interface_magic_method_startup_diagnostics(
                     &mut diagnostics,
                     interface,
@@ -66212,11 +66228,47 @@ fn magic_method_startup_diagnostics(
                 );
             }
             Stmt::Trait(trait_decl) => {
+                if let Some(name) = reserved_special_class_name_segment(&trait_decl.name) {
+                    diagnostics.set_fatal(
+                        format!("Cannot use \"{name}\" as a trait name as it is reserved"),
+                        source_file,
+                        trait_decl.span.line,
+                    );
+                    return diagnostics;
+                }
                 collect_trait_magic_method_startup_diagnostics(
                     &mut diagnostics,
                     trait_decl,
                     source_file,
                 );
+            }
+            Stmt::Use { imports, .. } => {
+                for import in imports {
+                    if !matches!(import.kind, crate::ast::UseImportKind::Class) {
+                        continue;
+                    }
+                    if let Some(alias) = reserved_special_class_name_segment(&import.alias) {
+                        diagnostics.set_fatal(
+                            format!(
+                                "Cannot use {} as {} because '{}' is a special class name",
+                                import.name, import.alias, alias
+                            ),
+                            source_file,
+                            import.span.line,
+                        );
+                        return diagnostics;
+                    }
+                }
+            }
+            Stmt::Expr { expr, span } => {
+                if let Some(alias) = class_alias_literal_reserved_alias(expr) {
+                    diagnostics.set_fatal(
+                        format!("Cannot use \"{alias}\" as a class alias as it is reserved"),
+                        source_file,
+                        span.line,
+                    );
+                    return diagnostics;
+                }
             }
             _ => {}
         }
@@ -66225,6 +66277,63 @@ fn magic_method_startup_diagnostics(
         }
     }
     diagnostics
+}
+
+fn class_alias_literal_reserved_alias(expr: &Expr) -> Option<&str> {
+    let Expr::Call { name, args, .. } = expr else {
+        return None;
+    };
+    if !name.eq_ignore_ascii_case("class_alias") || args.len() < 2 {
+        return None;
+    }
+    match unwrap_named_argument(&args[1]) {
+        Expr::String(alias, _) => reserved_special_class_name_segment(alias),
+        _ => None,
+    }
+}
+
+fn unwrap_named_argument(expr: &Expr) -> &Expr {
+    match expr {
+        Expr::NamedArgument { expr, .. } => expr,
+        other => other,
+    }
+}
+
+fn reserved_special_class_name_segment(name: &str) -> Option<&str> {
+    let segment = name
+        .trim_start_matches('\\')
+        .rsplit('\\')
+        .next()
+        .unwrap_or(name)
+        .trim();
+    if is_reserved_special_class_name(segment) {
+        Some(segment)
+    } else {
+        None
+    }
+}
+
+fn is_reserved_special_class_name(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "array"
+            | "bool"
+            | "callable"
+            | "false"
+            | "float"
+            | "int"
+            | "iterable"
+            | "mixed"
+            | "never"
+            | "null"
+            | "object"
+            | "parent"
+            | "self"
+            | "static"
+            | "string"
+            | "true"
+            | "void"
+    )
 }
 
 fn collect_class_magic_method_startup_diagnostics(
