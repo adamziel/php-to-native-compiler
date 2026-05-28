@@ -797,6 +797,100 @@ var_dump($items);
 }
 
 #[test]
+fn missing_variable_reads_warn_and_reference_arguments_materialize_null_cells() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+function read_value($value) {
+    var_dump($value);
+}
+function write_reference(&$value) {
+    $value = "Ref changed";
+}
+function read_and_write($value, &$ref) {
+    var_dump($value);
+    $ref = "Ref changed";
+}
+class MissingVariableArgumentProbe {
+    static function static_read_and_write($value, &$ref) {
+        var_dump($value);
+        $ref = "Static changed";
+    }
+    function __construct($value, &$ref) {
+        var_dump($value);
+        $ref = "Construct changed";
+    }
+    function instance_write(&$ref) {
+        $ref = "Instance changed";
+    }
+}
+
+unset($u1, $u2);
+read_value($u1);
+echo isset($u1) ? "u1-set\n" : "u1-unset\n";
+write_reference($u2);
+var_dump($u2);
+
+unset($u1, $u2);
+read_and_write($u1, $u2);
+echo isset($u1) ? "u1-set\n" : "u1-unset\n";
+var_dump($u2);
+
+unset($u1, $u2);
+MissingVariableArgumentProbe::static_read_and_write($u1, $u2);
+var_dump($u1, $u2);
+
+unset($u1, $u2);
+$probe = new MissingVariableArgumentProbe($u1, $u2);
+var_dump($u1, $u2);
+
+unset($u1);
+$probe->instance_write($u1);
+var_dump($u1);
+
+unset($u1);
+var_dump($u1);
+echo isset($u1) ? "u1-set" : "u1-unset";
+"#,
+        "/tmp/pass005_missing_variable_read_bind.php",
+    )
+    .unwrap();
+
+    let warning_count = execution
+        .stdout
+        .lines()
+        .filter(|line| line.starts_with("Warning: Undefined variable $u1"))
+        .count();
+    assert_eq!(warning_count, 7);
+    let semantic_lines = execution
+        .stdout
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with("Warning:"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let expected = [
+        "NULL",
+        "u1-unset",
+        "string(11) \"Ref changed\"",
+        "NULL",
+        "u1-unset",
+        "string(11) \"Ref changed\"",
+        "NULL",
+        "NULL",
+        "string(14) \"Static changed\"",
+        "NULL",
+        "NULL",
+        "string(17) \"Construct changed\"",
+        "string(16) \"Instance changed\"",
+        "NULL",
+        "u1-unset",
+    ]
+    .join("\n");
+    assert_eq!(semantic_lines, expected);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_assignment_from_value_return_call_uses_detached_value() {
     let execution = run_source(
         r#"<?php

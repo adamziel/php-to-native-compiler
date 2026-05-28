@@ -12653,6 +12653,30 @@ impl Interpreter {
         self.emit_display_diagnostic("Warning", PHP_E_WARNING, message, span)
     }
 
+    fn emit_undefined_variable_warning(&mut self, name: &str, span: Span) -> CompileResult<()> {
+        self.emit_display_warning(format!("Undefined variable ${name}"), span)
+    }
+
+    fn materialize_or_read_reference_argument_cell(
+        &mut self,
+        caller_scope: &mut SymbolTable,
+        caller_name: &str,
+        span: Span,
+    ) -> CompileResult<VariableCell> {
+        if let Some(cell) = caller_scope.read_cell(caller_name) {
+            return Ok(cell);
+        }
+        if caller_name == "GLOBALS" || caller_name.eq_ignore_ascii_case("this") {
+            return Err(runtime_error(
+                span,
+                RuntimeError::undefined_variable(caller_name),
+            ));
+        }
+        let cell = value_cell(Value::Null);
+        caller_scope.bind_static_to_cell(caller_name, cell.clone());
+        Ok(cell)
+    }
+
     fn emit_display_diagnostic(
         &mut self,
         label: &str,
@@ -15139,7 +15163,13 @@ impl Interpreter {
                         ),
                     ));
                 }
-                scope.read_static(name, *span)
+                match scope.read_named(name) {
+                    Some(value) => Ok(value),
+                    None => {
+                        self.emit_undefined_variable_warning(name, *span)?;
+                        Ok(Value::Null)
+                    }
+                }
             }
             Expr::MagicLine { span } => Ok(Value::Int(span.line as i64)),
             Expr::MagicFile { .. } => {
@@ -43947,36 +43977,6 @@ impl Interpreter {
         })
     }
 
-    fn expr_is_definitely_by_value_reference_argument(arg: &Expr) -> bool {
-        matches!(
-            arg,
-            Expr::Null(_)
-                | Expr::Bool(_, _)
-                | Expr::Int(_, _)
-                | Expr::Float(_, _)
-                | Expr::String(_, _)
-                | Expr::InterpolatedString { .. }
-                | Expr::MagicLine { .. }
-                | Expr::MagicFile { .. }
-                | Expr::MagicDir { .. }
-                | Expr::MagicFunction { .. }
-                | Expr::MagicClass { .. }
-                | Expr::MagicMethod { .. }
-                | Expr::GlobalConstant { .. }
-                | Expr::ClassNameConstant { .. }
-                | Expr::SelfClassNameConstant { .. }
-                | Expr::ParentClassNameConstant { .. }
-                | Expr::StaticClassNameConstant { .. }
-                | Expr::ObjectClassNameConstant { .. }
-                | Expr::ClassConstant { .. }
-                | Expr::ObjectStaticClassConstant { .. }
-                | Expr::SelfClassConstant { .. }
-                | Expr::ParentClassConstant { .. }
-                | Expr::LateStaticClassConstant { .. }
-                | Expr::Array { .. }
-        )
-    }
-
     fn emit_reference_argument_fatal(
         &mut self,
         function: &FunctionDecl,
@@ -44044,9 +44044,11 @@ impl Interpreter {
                         array_copy_source_binding: None,
                     });
                 }
-                let caller_cell = caller_scope.read_cell(caller_name).ok_or_else(|| {
-                    runtime_error(arg.span(), RuntimeError::undefined_variable(caller_name))
-                })?;
+                let caller_cell = self.materialize_or_read_reference_argument_cell(
+                    caller_scope,
+                    caller_name,
+                    arg.span(),
+                )?;
                 let value = caller_cell.value_cloned();
                 let source = matches!(value, Value::Array(_))
                     .then(|| {
@@ -44272,22 +44274,12 @@ impl Interpreter {
                 });
             }
 
-            if Self::expr_is_definitely_by_value_reference_argument(arg) {
-                self.emit_reference_argument_fatal(function, param_index, param, arg.span());
-                return Ok(EvaluatedCallArgument {
-                    value: Value::Null,
-                    reference_binding: None,
-                    array_copy_source_binding: None,
-                });
-            }
-
-            return Err(runtime_error(
-                arg.span(),
-                RuntimeError::unsupported_call(
-                    callable_name(&function.name),
-                    "reference parameter invocation is only implemented for direct variable, direct array-offset, direct public object-property array-offset, and bounded magic __get reference arguments in the current subset",
-                ),
-            ));
+            self.emit_reference_argument_fatal(function, source_index, param, arg.span());
+            return Ok(EvaluatedCallArgument {
+                value: Value::Null,
+                reference_binding: None,
+                array_copy_source_binding: None,
+            });
         }
 
         let (value, array_copy_source) =
@@ -46334,12 +46326,11 @@ impl Interpreter {
                         });
                         continue;
                     }
-                    let caller_cell = caller_scope.read_cell(caller_name).ok_or_else(|| {
-                        runtime_error(
-                            item.value.span(),
-                            RuntimeError::undefined_variable(caller_name),
-                        )
-                    })?;
+                    let caller_cell = self.materialize_or_read_reference_argument_cell(
+                        caller_scope,
+                        caller_name,
+                        item.value.span(),
+                    )?;
                     values.push(caller_cell.value_cloned());
                     reference_bindings.push(ReferenceBinding {
                         param_name: param.name.clone(),
@@ -47218,12 +47209,11 @@ impl Interpreter {
                         });
                         continue;
                     }
-                    let caller_cell = caller_scope.read_cell(caller_name).ok_or_else(|| {
-                        runtime_error(
-                            item.value.span(),
-                            RuntimeError::undefined_variable(caller_name),
-                        )
-                    })?;
+                    let caller_cell = self.materialize_or_read_reference_argument_cell(
+                        caller_scope,
+                        caller_name,
+                        item.value.span(),
+                    )?;
                     values_by_param[param_index] = Some(caller_cell.value_cloned());
                     reference_bindings.push(ReferenceBinding {
                         param_name: param.name.clone(),
@@ -50075,6 +50065,9 @@ impl Interpreter {
 
         let frame =
             self.source_aware_expr_call_frame_bindings(function, args, span, caller_scope, false)?;
+        if self.exit_signal.is_some() {
+            return Ok((Value::Null, None));
+        }
 
         self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
             function,
@@ -50107,6 +50100,9 @@ impl Interpreter {
 
         let frame =
             self.source_aware_expr_call_frame_bindings(function, args, span, caller_scope, true)?;
+        if self.exit_signal.is_some() {
+            return Ok((Value::Null, None));
+        }
 
         self.call_reference_return_function_value_with_checked_values_and_locals_and_return_source(
             function,
