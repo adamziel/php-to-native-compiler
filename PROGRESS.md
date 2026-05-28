@@ -104,8 +104,10 @@ Current AO snapshot: `phpc-orchestrator` supervising; `phpc-14` critic;
 `phpc-15`, `phpc-16`, `phpc-17`, `phpc-18`, and `phpc-19`. Current
 public-progress watch targets are PR #16 / `returnByReference.004` review
 artifacts, p19 PR #9 / `passByReference_004` real-stack artifacts, p15
-`returnByReference.006` artifacts, and any new full-suite PHPT row. Old idle
-session `phpc-2` was killed after being rediscovered outside the active roster.
+`returnByReference.006`, p16 `magic_methods019`, p17
+`returnByReference008`, p18 `returnByReference009`, and any new full-suite
+PHPT row. Old idle session `phpc-2` was killed after being rediscovered outside
+the active roster.
 
 ## Current Rules
 
