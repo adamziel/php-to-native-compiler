@@ -17724,6 +17724,103 @@ impl Interpreter {
 
                 Err(unsupported())
             }
+            AssignTarget::Property {
+                object,
+                property,
+                span,
+            } => {
+                if let ReferenceSource::Variable {
+                    name: source_name, ..
+                } = source
+                {
+                    let source_cell = scope.read_cell(source_name).ok_or_else(|| {
+                        runtime_error(*span, RuntimeError::undefined_variable(source_name))
+                    })?;
+                    self.bind_context_object_property_reference_target_to_cell(
+                        object,
+                        property,
+                        source_cell,
+                        *span,
+                        scope,
+                    )?;
+                    return Ok(());
+                }
+
+                Err(unsupported())
+            }
+            AssignTarget::DynamicProperty {
+                object,
+                property,
+                span,
+            } => {
+                if let ReferenceSource::Variable {
+                    name: source_name, ..
+                } = source
+                {
+                    let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                    let source_cell = scope.read_cell(source_name).ok_or_else(|| {
+                        runtime_error(*span, RuntimeError::undefined_variable(source_name))
+                    })?;
+                    self.bind_context_object_property_reference_target_to_cell(
+                        object,
+                        &property,
+                        source_cell,
+                        *span,
+                        scope,
+                    )?;
+                    return Ok(());
+                }
+
+                Err(unsupported())
+            }
+            AssignTarget::NonDirectProperty {
+                holder,
+                property,
+                span,
+            } => {
+                if !matches!(source, ReferenceSource::Variable { .. }) {
+                    return Err(unsupported());
+                }
+                let temp_name =
+                    self.non_direct_object_holder_temp(holder, property, scope, *span)?;
+                let target = AssignTarget::Property {
+                    object: temp_name,
+                    property: property.clone(),
+                    span: *span,
+                };
+                self.execute_reference_assignment(&target, source, *span, scope)
+            }
+            AssignTarget::NonDirectDynamicProperty {
+                holder,
+                property,
+                span,
+            } => {
+                if !matches!(source, ReferenceSource::Variable { .. }) {
+                    return Err(unsupported());
+                }
+                let property = self.evaluate_dynamic_property_name(property, *span, scope)?;
+                let holder_value = self.evaluate(holder, scope)?;
+                let holder_object = match holder_value {
+                    Value::Object(object) => object,
+                    other => {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::invalid_property_access(format!(
+                                "cannot write dynamic property on {}",
+                                other.type_name()
+                            )),
+                        ));
+                    }
+                };
+                let temp_name = self.next_foreach_temporary_array_name();
+                scope.write_static(&temp_name, Value::Object(holder_object));
+                let target = AssignTarget::Property {
+                    object: temp_name,
+                    property,
+                    span: *span,
+                };
+                self.execute_reference_assignment(&target, source, *span, scope)
+            }
             AssignTarget::ObjectPropertyArrayIndex {
                 object,
                 property,
@@ -18178,6 +18275,56 @@ impl Interpreter {
                 Err(unsupported())
             }
             _ => Err(unsupported()),
+        }
+    }
+
+    fn bind_context_object_property_reference_target_to_cell(
+        &mut self,
+        object: &str,
+        property: &str,
+        source_cell: VariableCell,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        match scope.read_static(object, span)? {
+            Value::Object(object_value) => {
+                let boundary = scope.object_property_holder_storage_boundary(
+                    object,
+                    &object_value,
+                    property,
+                    &[],
+                    current_class_id,
+                    &protected_class_ids,
+                );
+                scope.pre_replace_holder_storage(&boundary);
+                let alias_fallbacks =
+                    scope.public_object_property_root_alias_fallbacks(object, property);
+                object_value
+                    .bind_property_reference_cell_to_context(
+                        property,
+                        source_cell,
+                        current_class_id,
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(span, error))?;
+                scope.post_replace_holder_storage(&boundary);
+                scope.remove_public_object_property_root_from_array_offset_aliases(
+                    object,
+                    property,
+                    &alias_fallbacks,
+                );
+                scope.sync_array_offset_aliases_for_object_property_root(object, property);
+                scope.remove_object_property_array_copy_source_paths(&object_value, property);
+                Ok(())
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::invalid_property_access(format!(
+                    "cannot write property ${property} on {}",
+                    other.type_name()
+                )),
+            )),
         }
     }
 
