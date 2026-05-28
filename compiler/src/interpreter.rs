@@ -8151,6 +8151,7 @@ enum ReferenceReturnBinding {
 enum ReferenceCallValueFallback {
     Assignment,
     Parameter,
+    Return,
 }
 
 #[derive(Debug, Clone)]
@@ -22546,6 +22547,9 @@ impl Interpreter {
                 "Only variables should be assigned by reference"
             }
             ReferenceCallValueFallback::Parameter => "Only variables should be passed by reference",
+            ReferenceCallValueFallback::Return => {
+                "Only variable references should be returned by reference"
+            }
         };
         self.emit_display_notice(message, span)
     }
@@ -22663,7 +22667,36 @@ impl Interpreter {
                 };
                 self.class_method_known_returns_by_reference(object.class_id(), method, expr.span())
             }
+            Expr::DynamicMethodCall { target, method, .. } => {
+                let Expr::Variable(receiver_name, _) = target.as_ref() else {
+                    return Ok(None);
+                };
+                let Some(Value::Object(object)) = scope.read_named(receiver_name) else {
+                    return Ok(None);
+                };
+                let Some(method) = Self::side_effect_free_dynamic_method_name(method, scope) else {
+                    return Ok(None);
+                };
+                self.class_method_known_returns_by_reference(
+                    object.class_id(),
+                    &method,
+                    expr.span(),
+                )
+            }
             _ => Ok(None),
+        }
+    }
+
+    fn side_effect_free_dynamic_method_name(method: &Expr, scope: &SymbolTable) -> Option<String> {
+        match method {
+            Expr::String(value, _) => Some(value.clone()),
+            Expr::Int(value, _) => Some(value.to_string()),
+            Expr::Variable(name, _) => match scope.read_named(name)? {
+                Value::String(value) => Some(value.clone()),
+                Value::Int(value) => Some(value.to_string()),
+                _ => None,
+            },
+            _ => None,
         }
     }
 
@@ -52816,7 +52849,12 @@ impl Interpreter {
             | Expr::LateStaticMethodCall { .. }
             | Expr::ObjectStaticMethodCall { .. }
             | Expr::DynamicCall { .. } => {
-                let binding = self.evaluate_reference_return_call_binding(value, span, scope)?;
+                let binding = self.evaluate_reference_or_value_return_call_binding(
+                    value,
+                    span,
+                    scope,
+                    ReferenceCallValueFallback::Return,
+                )?;
                 match binding {
                     ReferenceReturnBinding::Cell(cell) => Ok(ReferenceReturnLocalBinding::Cell(cell)),
                     ReferenceReturnBinding::ArrayOffset(alias) => {

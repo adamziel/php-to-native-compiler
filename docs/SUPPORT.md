@@ -754,6 +754,11 @@
   public by-reference `ArrayAccess::offsetGet()` and `__get()` bodies such as
   `return $this->pick($offset);` when the helper executes inside the current
   interpreter subset and returns a covered backed object-property lvalue.
+  Dynamic instance method calls with side-effect-free method-name expressions
+  in a reference-return body, such as `return $this->$method();`, reuse the
+  same reference-return dispatch: known by-value callees emit the PHP-shaped
+  returned-by-reference notice and produce a detached temporary, while
+  reference-returning callees can forward their returned cell.
   Normal by-value reads from those by-reference magic/`ArrayAccess` bodies
   preserve copied-array reference-slot provenance for direct roots, dynamic
   magic-property reads, non-direct holder magic-property reads, and the
