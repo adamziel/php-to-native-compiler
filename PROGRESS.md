@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 22:37 CEST
+Updated: 2026-05-28 22:54 CEST
 Primary branch: `master`
-Latest source head: `fd8be20d fix: report supported stream wrappers`
+Latest source head: `268ef6ea fix: generalize class metadata existence checks`
 
 ## Progress Score
 
@@ -76,13 +76,61 @@ stable pinned denominator and does not use the raw runner
 | Batch004 checkpoint8 regression-repair sharded gate | Done | 1369 / 20294 pinned runnable PHPTs passed (6.75%); 0 regressions from Batch003 PASS set; run id `phpt-full-batch004-regression-repair-sharded-20260528T192018Z-php-src-f97ff59-public-3c86fc6a-source-b75047df-stack8` |
 | Batch004 checkpoint10 sharded gate | Done | 1413 / 20294 pinned runnable PHPTs passed (6.96%); 0 regressions from checkpoint8 PASS set; run id `phpt-full-batch004-checkpoint10-sharded-20260528T195852Z-php-src-f97ff59-public-37941f23-source-241b8411-stack10` |
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
-| Batch005 source batch | In progress | Batch005 source checkpoints accepted: 2 / 10; public score unchanged until next full/sharded publication gate |
+| Batch005 source batch | In progress | Batch005 source checkpoints accepted: 3 / 10; public score unchanged until next full/sharded publication gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch005 source checkpoint 3 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1413 / 20294 pinned runnable PHPTs = 6.96%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
+
+- primary source head:
+  `268ef6ea fix: generalize class metadata existence checks`
+- reviewed patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-zend-type-class-metadata-namespace-current-8eb41150-20260528.patch`
+- reviewed patch SHA256:
+  `459f26dbb79cb6121130ce98483ffbb7f4322a7b88c99274f5d6c1e48f1978be`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  CURRENT-PUBLIC-9109ED01-SOURCE-EQUIVALENT / FOCUSED-GATES-PASS /
+  PHPT-PASS` with `FINAL_FAIL=0`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch005-review-zend-type-class-metadata-namespace-8eb41150-20260528.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded
+  `SAFE-FOR-INTEGRATION-ON-9109ED01 /
+  CURRENT-PUBLIC-SOURCE-EQUIVALENCE-VERIFIED / READ-ONLY`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch005-critic-zend-type-class-metadata-namespace-8eb41150-20260528.{status.md,report.md}`
+- integration handoff: p28 reached the handoff route but was blocked on stale
+  cargo-slot state; supervisor applied the exact p7+phpc-33 reviewed patch to
+  avoid stalling checkpoint3
+- supervisor focused gates: PASS for patch SHA, `git apply --check`,
+  `git diff --check`, docs/PROGRESS/examples exclusion, production
+  exact-shape marker audit, `cargo fmt --all -- --check`, focused Rust
+  `magic_namespace_constant_uses_current_namespace_context`, focused Rust
+  `metadata_exists_coerces_scalar_names_and_rejects_non_scalars`, `cargo build
+  -p phpc`, focused PHPT `class_exists_001.phpt` and `class_exists_002.phpt`,
+  and focused PHPT `interface_exists_001.phpt` plus
+  `traits/trait_exists_001.phpt`
+- supervisor primary gate log:
+  `/home/claude/supervised-php-compiler/state/workers/supervisor-primary-p38-zend-type-class-metadata-batch005-checkpoint3-20260528.gates.log`
+- full PHPT suite: not run for this single source checkpoint; next broad gate
+  is due after 10 accepted Batch005 source checkpoints or explicit regression
+  repair
+
+This checkpoint generalizes class-like metadata existence behavior. The parser
+now lowers `__NAMESPACE__` from namespace context, and shared runtime handling
+for `class_exists()`, `interface_exists()`, `trait_exists()`, and
+`enum_exists()` coerces string-compatible scalar names while rejecting
+non-scalars. The direct `enum_exists.phpt` row remains blocked by a separate
+nested-enum parser gap. Production code is not keyed to a PHPT filename,
+expected-output fixture, batch marker, public hash, or test-name branch.
+
+Previous Batch005 source checkpoint 2 was truthful stream wrapper capability
+reporting:
 
 Batch005 source checkpoint 2 is primary-integrated under AO supervision. This
 is a source checkpoint with focused proof, not a percentage change. The public
