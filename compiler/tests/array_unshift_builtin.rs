@@ -81,6 +81,25 @@ echo call_user_func("array_unshift", $items, "head"), "|", implode(",", $items);
 }
 
 #[test]
+fn array_push_and_shift_mutate_direct_variable_arrays() {
+    let execution = run_source(
+        r#"<?php
+$items = array(2 => "two", "name" => "Ada", 5 => "five");
+echo array_push($items, "tail", "end"), "|";
+echo $items[6], "|", $items[7], "|";
+echo array_shift($items), "|";
+echo implode(",", array_keys($items)), "|";
+echo array_push($items), "|";
+echo count($items);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "5|tail|end|two|name,0,1,2|4|4");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn emit_ir_folds_array_unshift_metadata_but_rejects_direct_calls() {
     let ir = emit_ir_source(
         r#"<?php

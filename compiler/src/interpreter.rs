@@ -11,9 +11,10 @@ use hmac::{Hmac, Mac};
 use php_runtime::{
     coerce_property_value_with_object_type_resolver, ArityExpectation, ArrayColumnKey, ArrayEntry,
     ArrayKey, ArrayKeyCase, ClassId, ClassMemberKind, Comparison, ObjectProperty, PhpArray,
-    PhpClassConstantMetadata, PhpClassTable, PhpClosure, PhpClosureCapture, PhpMethodMetadata,
-    PhpObject, PhpObjectPropertyInitializer, PhpPropertyMetadata, PhpReferenceCell,
-    PhpReferenceCellId, RuntimeError, RuntimeErrorKind, RuntimeResult, Value, Visibility,
+    PhpArraySortOperation, PhpClassConstantMetadata, PhpClassTable, PhpClosure, PhpClosureCapture,
+    PhpMethodMetadata, PhpObject, PhpObjectPropertyInitializer, PhpPropertyMetadata,
+    PhpReferenceCell, PhpReferenceCellId, RuntimeError, RuntimeErrorKind, RuntimeResult, Value,
+    Visibility,
 };
 use sha2::Sha256;
 
@@ -44240,17 +44241,26 @@ impl Interpreter {
                 if key == "compact" {
                     return self.call_compact(args, span, caller_scope);
                 }
-                if key == "ksort" {
-                    return self.call_ksort(args, span, caller_scope);
+                if let Some(operation) = Self::array_sort_operation_for_builtin(&key) {
+                    return self.call_array_sort(operation, args, span, caller_scope);
+                }
+                if key == "array_push" {
+                    return self.call_array_push(args, span, caller_scope);
                 }
                 if key == "array_unshift" {
                     return self.call_array_unshift(args, span, caller_scope);
+                }
+                if key == "array_shift" {
+                    return self.call_array_shift(args, span, caller_scope);
                 }
                 if key == "array_pop" {
                     return self.call_array_pop(args, span, caller_scope);
                 }
                 if key == "next" {
                     return self.call_next(args, span, caller_scope);
+                }
+                if matches!(key.as_str(), "prev" | "reset" | "end") {
+                    return self.call_array_pointer_mutation(&key, args, span, caller_scope);
                 }
                 if key == "headers_sent" {
                     return self.call_headers_sent_direct(args, span, caller_scope);
@@ -44279,6 +44289,31 @@ impl Interpreter {
                     .map(|(value, _)| value)
                 }
             }
+        }
+    }
+
+    fn array_sort_operation_for_builtin(name: &str) -> Option<PhpArraySortOperation> {
+        match name {
+            "sort" => Some(PhpArraySortOperation::Sort),
+            "rsort" => Some(PhpArraySortOperation::Rsort),
+            "asort" => Some(PhpArraySortOperation::Asort),
+            "arsort" => Some(PhpArraySortOperation::Arsort),
+            "ksort" => Some(PhpArraySortOperation::Ksort),
+            "krsort" => Some(PhpArraySortOperation::Krsort),
+            "natsort" => Some(PhpArraySortOperation::Natsort),
+            "natcasesort" => Some(PhpArraySortOperation::Natcasesort),
+            _ => None,
+        }
+    }
+
+    fn array_sort_arity_expectation(
+        operation: PhpArraySortOperation,
+    ) -> (usize, usize, ArityExpectation) {
+        match operation {
+            PhpArraySortOperation::Natsort | PhpArraySortOperation::Natcasesort => {
+                (1, 1, ArityExpectation::Exactly(1))
+            }
+            _ => (1, 2, ArityExpectation::Between { min: 1, max: 2 }),
         }
     }
 
@@ -44344,17 +44379,26 @@ impl Interpreter {
                 if key == "compact" {
                     return self.call_compact(args, span, caller_scope);
                 }
-                if key == "ksort" {
-                    return self.call_ksort(args, span, caller_scope);
+                if let Some(operation) = Self::array_sort_operation_for_builtin(&key) {
+                    return self.call_array_sort(operation, args, span, caller_scope);
+                }
+                if key == "array_push" {
+                    return self.call_array_push(args, span, caller_scope);
                 }
                 if key == "array_unshift" {
                     return self.call_array_unshift(args, span, caller_scope);
+                }
+                if key == "array_shift" {
+                    return self.call_array_shift(args, span, caller_scope);
                 }
                 if key == "array_pop" {
                     return self.call_array_pop(args, span, caller_scope);
                 }
                 if key == "next" {
                     return self.call_next(args, span, caller_scope);
+                }
+                if matches!(key.as_str(), "prev" | "reset" | "end") {
+                    return self.call_array_pointer_mutation(&key, args, span, caller_scope);
                 }
                 if key == "headers_sent" {
                     return self.call_headers_sent_direct(args, span, caller_scope);
@@ -46063,7 +46107,25 @@ impl Interpreter {
     }
 
     fn builtin_callback_has_first_reference_array_param(key: &str) -> bool {
-        matches!(key, "array_pop" | "array_unshift" | "ksort" | "next")
+        matches!(
+            key,
+            "sort"
+                | "rsort"
+                | "asort"
+                | "arsort"
+                | "ksort"
+                | "krsort"
+                | "natsort"
+                | "natcasesort"
+                | "array_push"
+                | "array_unshift"
+                | "array_shift"
+                | "array_pop"
+                | "next"
+                | "prev"
+                | "reset"
+                | "end"
+        )
     }
 
     fn emit_builtin_callback_reference_value_warning(
@@ -46086,6 +46148,107 @@ impl Interpreter {
         warn_for_reference_value: bool,
     ) -> CompileResult<Value> {
         match key {
+            key if Self::array_sort_operation_for_builtin(key).is_some() => {
+                let operation = Self::array_sort_operation_for_builtin(key)
+                    .expect("array sort operation checked above");
+                let (min, max, expectation) = Self::array_sort_arity_expectation(operation);
+                if args.len() < min || args.len() > max {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(operation.callable(), expectation, args.len()),
+                    ));
+                }
+                if warn_for_reference_value {
+                    self.emit_builtin_callback_reference_value_warning(key, span)?;
+                }
+                let mut array = match args.first() {
+                    Some(Value::Array(array)) => array.clone(),
+                    Some(other) => {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                operation.callable(),
+                                format!("first argument must be array, got {}", other.type_name()),
+                            ),
+                        ));
+                    }
+                    None => unreachable!("sort arity checked before array extraction"),
+                };
+                let flag = args.get(1);
+                array
+                    .sort_for_php_builtin(operation, flag)
+                    .map_err(|error| runtime_error(span, error))?;
+                Ok(Value::Bool(true))
+            }
+            "array_push" => {
+                if args.is_empty() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "array_push()",
+                            ArityExpectation::AtLeast(1),
+                            args.len(),
+                        ),
+                    ));
+                }
+                if warn_for_reference_value {
+                    self.emit_builtin_callback_reference_value_warning("array_push", span)?;
+                }
+                let Value::Array(mut array) = args[0].clone() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_push()",
+                            format!("first argument must be array, got {}", args[0].type_name()),
+                        ),
+                    ));
+                };
+                for value in &args[1..] {
+                    array
+                        .append(value.clone())
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+                Ok(Value::Int(
+                    i64::try_from(array.len()).expect("array length fits in i64"),
+                ))
+            }
+            "array_shift" => {
+                expect_arity("array_shift", &args, 1, span)?;
+                if warn_for_reference_value {
+                    self.emit_builtin_callback_reference_value_warning("array_shift", span)?;
+                }
+                let Value::Array(mut array) = args[0].clone() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_shift()",
+                            format!("argument must be array, got {}", args[0].type_name()),
+                        ),
+                    ));
+                };
+                Ok(array.shift_value())
+            }
+            "prev" | "reset" | "end" => {
+                expect_arity(key, &args, 1, span)?;
+                if warn_for_reference_value {
+                    self.emit_builtin_callback_reference_value_warning(key, span)?;
+                }
+                let Value::Array(mut array) = args[0].clone() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{key}()"),
+                            format!("argument must be array, got {}", args[0].type_name()),
+                        ),
+                    ));
+                };
+                Ok(match key {
+                    "prev" => array.prev_value(),
+                    "reset" => array.reset_value(),
+                    "end" => array.end_value(),
+                    _ => unreachable!("pointer callback key matched above"),
+                })
+            }
             "array_pop" => {
                 expect_arity("array_pop", &args, 1, span)?;
                 if warn_for_reference_value {
@@ -46196,6 +46359,115 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<Value> {
         match key {
+            key if Self::array_sort_operation_for_builtin(key).is_some() => {
+                let operation = Self::array_sort_operation_for_builtin(key)
+                    .expect("array sort operation checked above");
+                let (_, max, expectation) = Self::array_sort_arity_expectation(operation);
+                if rest.len() + 1 > max {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            operation.callable(),
+                            expectation,
+                            rest.len() + 1,
+                        ),
+                    ));
+                }
+                let mut array_value = reference.value_cloned();
+                let type_name = array_value.type_name();
+                let Value::Array(array) = &mut array_value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            operation.callable(),
+                            format!("first argument must be array, got {type_name}"),
+                        ),
+                    ));
+                };
+                array
+                    .sort_for_php_builtin(operation, rest.first())
+                    .map_err(|error| runtime_error(span, error))?;
+                reference.set_value(array_value);
+                Ok(Value::Bool(true))
+            }
+            "array_push" => {
+                let mut array_value = reference.value_cloned();
+                let type_name = array_value.type_name();
+                let Value::Array(array) = &mut array_value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_push()",
+                            format!("first argument must be array, got {type_name}"),
+                        ),
+                    ));
+                };
+                for value in rest {
+                    array
+                        .append(value)
+                        .map_err(|error| runtime_error(span, error))?;
+                }
+                let len = i64::try_from(array.len()).expect("array length fits in i64");
+                reference.set_value(array_value);
+                Ok(Value::Int(len))
+            }
+            "array_shift" => {
+                if !rest.is_empty() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            "array_shift()",
+                            ArityExpectation::Exactly(1),
+                            rest.len() + 1,
+                        ),
+                    ));
+                }
+                let mut array_value = reference.value_cloned();
+                let type_name = array_value.type_name();
+                let Value::Array(array) = &mut array_value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "array_shift()",
+                            format!("argument must be array, got {type_name}"),
+                        ),
+                    ));
+                };
+                let value = array.shift_value();
+                reference.set_value(array_value);
+                Ok(value)
+            }
+            "prev" | "reset" | "end" => {
+                if !rest.is_empty() {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            format!("{key}()"),
+                            ArityExpectation::Exactly(1),
+                            rest.len() + 1,
+                        ),
+                    ));
+                }
+                let mut array_value = reference.value_cloned();
+                let type_name = array_value.type_name();
+                let Value::Array(array) = &mut array_value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            format!("{key}()"),
+                            format!("argument must be array, got {type_name}"),
+                        ),
+                    ));
+                };
+                let value = match key {
+                    "prev" => array.prev_value(),
+                    "reset" => array.reset_value(),
+                    "end" => array.end_value(),
+                    _ => unreachable!("pointer callback key matched above"),
+                };
+                reference.set_value(array_value);
+                Ok(value)
+            }
             "array_pop" => {
                 if !rest.is_empty() {
                     return Err(runtime_error(
@@ -51260,6 +51532,267 @@ impl Interpreter {
         }
 
         Ok(Value::Array(compacted))
+    }
+
+    fn call_array_sort(
+        &mut self,
+        operation: PhpArraySortOperation,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        let (min, max, expectation) = Self::array_sort_arity_expectation(operation);
+        if args.len() < min || args.len() > max {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(operation.callable(), expectation, args.len()),
+            ));
+        }
+
+        let flag = args
+            .get(1)
+            .map(|flag| self.evaluate(flag, caller_scope))
+            .transpose()?;
+
+        match &args[0] {
+            Expr::Variable(name, _) => {
+                let mut value = caller_scope.read_static(name, span)?;
+                let type_name = value.type_name();
+                let Value::Array(array) = &mut value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            operation.callable(),
+                            format!("first argument must be array, got {type_name}"),
+                        ),
+                    ));
+                };
+                array
+                    .sort_for_php_builtin(operation, flag.as_ref())
+                    .map_err(|error| runtime_error(span, error))?;
+                caller_scope.write_static(name, value);
+                Ok(Value::Bool(true))
+            }
+            Expr::Property {
+                target,
+                property,
+                span: property_span,
+            } => {
+                let Expr::Variable(object_name, _) = target.as_ref() else {
+                    return Err(runtime_error(
+                        target.span(),
+                        RuntimeError::unsupported_call(
+                            operation.callable(),
+                            "only direct variable and direct object-property array arguments are implemented",
+                        ),
+                    ));
+                };
+                let object = match caller_scope.read_static(object_name, *property_span)? {
+                    Value::Object(object) => object,
+                    other => {
+                        return Err(runtime_error(
+                            *property_span,
+                            RuntimeError::invalid_property_access(format!(
+                                "cannot read property ${property} from {}",
+                                other.type_name()
+                            )),
+                        ));
+                    }
+                };
+                let (current_class_id, protected_class_ids) =
+                    self.current_property_access_context();
+                let mut value = object
+                    .read_property_from_context(property, current_class_id, &protected_class_ids)
+                    .map_err(|error| runtime_error(*property_span, error))?;
+                let type_name = value.type_name();
+                let Value::Array(array) = &mut value else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            operation.callable(),
+                            format!("first argument must be array, got {type_name}"),
+                        ),
+                    ));
+                };
+                array
+                    .sort_for_php_builtin(operation, flag.as_ref())
+                    .map_err(|error| runtime_error(span, error))?;
+                let boundary = caller_scope.object_property_holder_storage_boundary(
+                    object_name,
+                    &object,
+                    property,
+                    &[],
+                    current_class_id,
+                    &protected_class_ids,
+                );
+                caller_scope.pre_replace_holder_storage(&boundary);
+                object
+                    .write_property_from_context(
+                        property,
+                        value,
+                        current_class_id,
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(*property_span, error))?;
+                caller_scope.post_replace_holder_storage(&boundary);
+                Ok(Value::Bool(true))
+            }
+            other => Err(runtime_error(
+                other.span(),
+                RuntimeError::unsupported_call(
+                    operation.callable(),
+                    "only direct variable and direct object-property array arguments are implemented",
+                ),
+            )),
+        }
+    }
+
+    fn call_array_push(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "array_push()",
+                    ArityExpectation::AtLeast(1),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let Expr::Variable(array_name, _) = &args[0] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_push()",
+                    "first argument must be a direct variable array in the current subset",
+                ),
+            ));
+        };
+
+        let mut values = Vec::with_capacity(args.len().saturating_sub(1));
+        for arg in &args[1..] {
+            values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
+        }
+
+        let mut array_value = caller_scope.read_static(array_name, span)?;
+        let type_name = array_value.type_name();
+        let Value::Array(array) = &mut array_value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_push()",
+                    format!("first argument must be array, got {type_name}"),
+                ),
+            ));
+        };
+
+        for value in values {
+            array
+                .append(value)
+                .map_err(|error| runtime_error(span, error))?;
+        }
+        let len = i64::try_from(array.len()).expect("array length fits in i64");
+        caller_scope.write_static(array_name, array_value);
+        Ok(Value::Int(len))
+    }
+
+    fn call_array_shift(
+        &mut self,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "array_shift()",
+                    ArityExpectation::Exactly(1),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let Expr::Variable(array_name, _) = &args[0] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_shift()",
+                    "argument must be a direct variable array in the current subset",
+                ),
+            ));
+        };
+
+        let mut array_value = caller_scope.read_static(array_name, span)?;
+        let type_name = array_value.type_name();
+        let Value::Array(array) = &mut array_value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "array_shift()",
+                    format!("argument must be array, got {type_name}"),
+                ),
+            ));
+        };
+
+        let value = array.shift_value();
+        caller_scope.write_static(array_name, array_value);
+        Ok(value)
+    }
+
+    fn call_array_pointer_mutation(
+        &mut self,
+        key: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        if args.len() != 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    format!("{key}()"),
+                    ArityExpectation::Exactly(1),
+                    args.len(),
+                ),
+            ));
+        }
+
+        let Expr::Variable(array_name, _) = &args[0] else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{key}()"),
+                    "argument must be a direct variable array in the current subset",
+                ),
+            ));
+        };
+
+        let mut array_value = caller_scope.read_static(array_name, span)?;
+        let type_name = array_value.type_name();
+        let Value::Array(array) = &mut array_value else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    format!("{key}()"),
+                    format!("argument must be array, got {type_name}"),
+                ),
+            ));
+        };
+        let value = match key {
+            "next" => array.next_value(),
+            "prev" => array.prev_value(),
+            "reset" => array.reset_value(),
+            "end" => array.end_value(),
+            _ => unreachable!("array pointer mutation dispatch validates key"),
+        };
+        caller_scope.write_static(array_name, array_value);
+        Ok(value)
     }
 
     fn call_ksort(
@@ -63767,6 +64300,19 @@ impl Interpreter {
                     )),
                 }
             }
+            "key" => {
+                expect_arity(name, &args, 1, span)?;
+                match &args[0] {
+                    Value::Array(array) => Ok(array.key_value()),
+                    other => Err(runtime_error(
+                        span,
+                        RuntimeError::unsupported_call(
+                            "key()",
+                            format!("argument must be array, got {}", other.type_name()),
+                        ),
+                    )),
+                }
+            }
             "array_is_list" => {
                 expect_arity(name, &args, 1, span)?;
                 match &args[0] {
@@ -74832,6 +75378,10 @@ fn is_builtin(name: &str) -> bool {
             | "array_key_first"
             | "array_key_last"
             | "current"
+            | "key"
+            | "prev"
+            | "reset"
+            | "end"
             | "array_is_list"
             | "array_keys"
             | "array_change_key_case"
@@ -74856,8 +75406,17 @@ fn is_builtin(name: &str) -> bool {
             | "array_reduce"
             | "array_filter"
             | "array_map"
+            | "sort"
+            | "rsort"
+            | "asort"
+            | "arsort"
             | "ksort"
+            | "krsort"
+            | "natsort"
+            | "natcasesort"
+            | "array_push"
             | "array_unshift"
+            | "array_shift"
             | "array_pop"
             | "next"
             | "in_array"
@@ -75307,6 +75866,11 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "SORT_REGULAR" => Some(Value::Int(0)),
         "SORT_NUMERIC" => Some(Value::Int(1)),
         "SORT_STRING" => Some(Value::Int(2)),
+        "SORT_DESC" => Some(Value::Int(3)),
+        "SORT_ASC" => Some(Value::Int(4)),
+        "SORT_LOCALE_STRING" => Some(Value::Int(5)),
+        "SORT_NATURAL" => Some(Value::Int(6)),
+        "SORT_FLAG_CASE" => Some(Value::Int(8)),
         "STREAM_IS_URL" => Some(Value::Int(1)),
         "SEEK_SET" => Some(Value::Int(0)),
         "SEEK_CUR" => Some(Value::Int(1)),

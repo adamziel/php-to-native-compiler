@@ -653,6 +653,18 @@ enum NativeArrayPointerOperation {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhpArraySortOperation {
+    Sort,
+    Rsort,
+    Asort,
+    Arsort,
+    Ksort,
+    Krsort,
+    Natsort,
+    Natcasesort,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeArraySortOperation {
     Sort,
     Rsort,
@@ -734,6 +746,61 @@ impl NativeArrayPointerOperation {
 
     fn mutates_owner(self) -> bool {
         !matches!(self, Self::Current | Self::Key)
+    }
+}
+
+impl PhpArraySortOperation {
+    pub fn callable(self) -> &'static str {
+        match self {
+            Self::Sort => "sort()",
+            Self::Rsort => "rsort()",
+            Self::Asort => "asort()",
+            Self::Arsort => "arsort()",
+            Self::Ksort => "ksort()",
+            Self::Krsort => "krsort()",
+            Self::Natsort => "natsort()",
+            Self::Natcasesort => "natcasesort()",
+        }
+    }
+
+    fn native_operation(self) -> NativeArraySortOperation {
+        match self {
+            Self::Sort => NativeArraySortOperation::Sort,
+            Self::Rsort => NativeArraySortOperation::Rsort,
+            Self::Asort => NativeArraySortOperation::Asort,
+            Self::Arsort => NativeArraySortOperation::Arsort,
+            Self::Ksort => NativeArraySortOperation::Ksort,
+            Self::Krsort => NativeArraySortOperation::Krsort,
+            Self::Natsort => NativeArraySortOperation::Natsort,
+            Self::Natcasesort => NativeArraySortOperation::Natcasesort,
+        }
+    }
+
+    fn accepts_sort_flag(self) -> bool {
+        matches!(
+            self,
+            Self::Sort | Self::Rsort | Self::Asort | Self::Arsort | Self::Ksort | Self::Krsort
+        )
+    }
+
+    fn sorts_keys(self) -> bool {
+        matches!(self, Self::Ksort | Self::Krsort)
+    }
+
+    fn preserves_keys(self) -> bool {
+        matches!(
+            self,
+            Self::Asort
+                | Self::Arsort
+                | Self::Ksort
+                | Self::Krsort
+                | Self::Natsort
+                | Self::Natcasesort
+        )
+    }
+
+    fn reverses_order(self) -> bool {
+        matches!(self, Self::Rsort | Self::Arsort | Self::Krsort)
     }
 }
 
@@ -849,6 +916,64 @@ impl NativeArraySortOperation {
                 | Self::Uasort
                 | Self::Uksort
         )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PhpArraySortFlagMode {
+    Regular,
+    Numeric,
+    String { case_insensitive: bool },
+    Natural { case_insensitive: bool },
+}
+
+fn php_array_sort_mode_from_flag(
+    operation: PhpArraySortOperation,
+    flag: Option<&Value>,
+) -> RuntimeResult<PhpArraySortFlagMode> {
+    if !operation.accepts_sort_flag() {
+        if let Some(flag) = flag {
+            return Err(RuntimeError::unsupported_call(
+                operation.callable(),
+                format!(
+                    "{} does not accept a sort flag argument in the current subset, got {}",
+                    operation.callable(),
+                    flag.type_name()
+                ),
+            ));
+        }
+        return Ok(PhpArraySortFlagMode::Natural {
+            case_insensitive: matches!(operation, PhpArraySortOperation::Natcasesort),
+        });
+    }
+
+    let Some(flag) = flag else {
+        return Ok(PhpArraySortFlagMode::Regular);
+    };
+    let raw = native_array_sort_flag_integer(operation.native_operation(), flag)
+        .map_err(|message| RuntimeError::unsupported_call(operation.callable(), message))?;
+
+    match raw {
+        0 => Ok(PhpArraySortFlagMode::Regular),
+        1 => Ok(PhpArraySortFlagMode::Numeric),
+        2 => Ok(PhpArraySortFlagMode::String {
+            case_insensitive: false,
+        }),
+        6 => Ok(PhpArraySortFlagMode::Natural {
+            case_insensitive: false,
+        }),
+        10 => Ok(PhpArraySortFlagMode::String {
+            case_insensitive: true,
+        }),
+        14 => Ok(PhpArraySortFlagMode::Natural {
+            case_insensitive: true,
+        }),
+        other => Err(RuntimeError::unsupported_call(
+            operation.callable(),
+            format!(
+                "sort flag parameter {other} is not supported; only SORT_REGULAR (0), SORT_NUMERIC (1), SORT_STRING (2), SORT_NATURAL (6), and SORT_FLAG_CASE combinations with SORT_STRING/SORT_NATURAL are implemented"
+            ),
+        )),
     }
 }
 
@@ -28644,6 +28769,120 @@ impl PhpArray {
         Ok(())
     }
 
+    pub fn sort_for_php_builtin(
+        &mut self,
+        operation: PhpArraySortOperation,
+        flag: Option<&Value>,
+    ) -> RuntimeResult<()> {
+        let callable = operation.callable();
+        let mode = php_array_sort_mode_from_flag(operation, flag)?;
+        let reverse = operation.reverses_order();
+
+        let entries = match mode {
+            PhpArraySortFlagMode::Regular => {
+                if operation.sorts_keys() {
+                    self.sorted_entries_by(|left, right| {
+                        array_sort_key_ordering(
+                            callable,
+                            &left.key,
+                            &right.key,
+                            NativeArraySortMode::Regular,
+                        )
+                        .map(|ordering| array_sort_direction_ordering(ordering, reverse))
+                    })?
+                } else {
+                    self.sorted_entries_by(|left, right| {
+                        array_sort_value_ordering(
+                            callable,
+                            left,
+                            right,
+                            NativeArraySortMode::Regular,
+                        )
+                        .map(|ordering| array_sort_direction_ordering(ordering, reverse))
+                    })?
+                }
+            }
+            PhpArraySortFlagMode::Numeric => {
+                if operation.sorts_keys() {
+                    self.sorted_entries_by(|left, right| {
+                        array_sort_key_ordering(
+                            callable,
+                            &left.key,
+                            &right.key,
+                            NativeArraySortMode::Numeric,
+                        )
+                        .map(|ordering| array_sort_direction_ordering(ordering, reverse))
+                    })?
+                } else {
+                    self.sorted_entries_by(|left, right| {
+                        array_sort_value_ordering(
+                            callable,
+                            left,
+                            right,
+                            NativeArraySortMode::Numeric,
+                        )
+                        .map(|ordering| array_sort_direction_ordering(ordering, reverse))
+                    })?
+                }
+            }
+            PhpArraySortFlagMode::String { case_insensitive } => {
+                if operation.sorts_keys() {
+                    self.sorted_entries_by(|left, right| {
+                        array_sort_string_key_ordering(
+                            callable,
+                            &left.key,
+                            &right.key,
+                            case_insensitive,
+                        )
+                        .map(|ordering| array_sort_direction_ordering(ordering, reverse))
+                    })?
+                } else {
+                    self.sorted_entries_by(|left, right| {
+                        array_sort_string_value_ordering(callable, left, right, case_insensitive)
+                            .map(|ordering| array_sort_direction_ordering(ordering, reverse))
+                    })?
+                }
+            }
+            PhpArraySortFlagMode::Natural { case_insensitive } => {
+                if operation.sorts_keys() {
+                    self.sorted_entries_by(|left, right| {
+                        array_sort_natural_key_ordering(
+                            callable,
+                            &left.key,
+                            &right.key,
+                            case_insensitive,
+                        )
+                        .map(|ordering| array_sort_direction_ordering(ordering, reverse))
+                    })?
+                } else {
+                    self.sorted_entries_by(|left, right| {
+                        array_sort_natural_value_ordering(callable, left, right, case_insensitive)
+                            .map(|ordering| array_sort_direction_ordering(ordering, reverse))
+                    })?
+                }
+            }
+        };
+
+        self.entries = if operation.preserves_keys() {
+            entries
+        } else {
+            entries
+                .into_iter()
+                .enumerate()
+                .map(|(index, entry)| {
+                    let key = i64::try_from(index).expect("array length fits in i64");
+                    ArrayEntry::from_slot(ArrayKey::Int(key), entry.slot)
+                })
+                .collect()
+        };
+        if !operation.preserves_keys() {
+            self.next_auto_index = i64::try_from(self.entries.len()).expect("array length fits");
+            self.auto_index_exhausted = false;
+        }
+        self.cursor = 0;
+        Ok(())
+    }
+
     fn sort_values_for_native(
         &mut self,
         callable: &'static str,
@@ -28651,12 +28890,10 @@ impl PhpArray {
         preserve_keys: bool,
         reverse: bool,
     ) -> RuntimeResult<()> {
-        let mut entries = self.sorted_entries_by(|left, right| {
+        let entries = self.sorted_entries_by(|left, right| {
             array_sort_value_ordering(callable, left, right, mode)
+                .map(|ordering| array_sort_direction_ordering(ordering, reverse))
         })?;
-        if reverse {
-            entries.reverse();
-        }
         self.entries = if preserve_keys {
             entries
         } else {
@@ -28742,12 +28979,10 @@ impl PhpArray {
         mode: NativeArraySortMode,
         reverse: bool,
     ) -> RuntimeResult<()> {
-        let mut entries = self.sorted_entries_by(|left, right| {
+        let entries = self.sorted_entries_by(|left, right| {
             array_sort_key_ordering(callable, &left.key, &right.key, mode)
+                .map(|ordering| array_sort_direction_ordering(ordering, reverse))
         })?;
-        if reverse {
-            entries.reverse();
-        }
         self.entries = entries;
         self.cursor = 0;
         Ok(())
@@ -29895,6 +30130,71 @@ fn array_sort_natural_value_ordering(
             _ => Ordering::Greater,
         },
     )
+}
+
+fn array_sort_string_value_ordering(
+    callable: &'static str,
+    left: &ArrayEntry,
+    right: &ArrayEntry,
+    case_insensitive: bool,
+) -> RuntimeResult<Ordering> {
+    let left = left.value_cloned();
+    let right = right.value_cloned();
+    let left = array_scalar_string_comparison_value(callable, &left)?;
+    let right = array_scalar_string_comparison_value(callable, &right)?;
+    Ok(if case_insensitive {
+        ascii_case_insensitive_ordering(left.as_slice(), right.as_slice())
+    } else {
+        left.cmp(&right)
+    })
+}
+
+fn array_sort_string_key_ordering(
+    _callable: &'static str,
+    left: &ArrayKey,
+    right: &ArrayKey,
+    case_insensitive: bool,
+) -> RuntimeResult<Ordering> {
+    let left = array_key_to_value(left).echo_string();
+    let right = array_key_to_value(right).echo_string();
+    Ok(if case_insensitive {
+        ascii_case_insensitive_ordering(left.as_bytes(), right.as_bytes())
+    } else {
+        compare_binary_strings(&left, &right).unwrap_or(Ordering::Equal)
+    })
+}
+
+fn array_sort_natural_key_ordering(
+    _callable: &'static str,
+    left: &ArrayKey,
+    right: &ArrayKey,
+    case_insensitive: bool,
+) -> RuntimeResult<Ordering> {
+    let left = array_key_to_value(left).echo_string();
+    let right = array_key_to_value(right).echo_string();
+    Ok(
+        match php_strnatcmp_bytes(left.as_bytes(), right.as_bytes(), case_insensitive) {
+            value if value < 0 => Ordering::Less,
+            0 => Ordering::Equal,
+            _ => Ordering::Greater,
+        },
+    )
+}
+
+fn ascii_case_insensitive_ordering(left: &[u8], right: &[u8]) -> Ordering {
+    match ascii_case_insensitive_compare_bytes(left, right) {
+        value if value < 0 => Ordering::Less,
+        0 => Ordering::Equal,
+        _ => Ordering::Greater,
+    }
+}
+
+fn array_sort_direction_ordering(ordering: Ordering, reverse: bool) -> Ordering {
+    if reverse {
+        ordering.reverse()
+    } else {
+        ordering
+    }
 }
 
 fn array_sort_key_ordering(

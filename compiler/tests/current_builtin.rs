@@ -60,6 +60,28 @@ echo $call($more);
 }
 
 #[test]
+fn key_prev_reset_and_end_observe_and_mutate_array_pointers() {
+    let execution = run_source(
+        r#"<?php
+$items = array("first" => "a", "second" => "b", "third" => "c");
+echo key($items), "|", current($items), "|";
+next($items);
+echo key($items), "|", current($items), "|";
+echo end($items), "|", key($items), "|";
+echo prev($items), "|", key($items), "|";
+echo reset($items), "|", key($items);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "first|a|second|b|c|third|b|second|a|first"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn next_advances_direct_object_property_array_offsets() {
     let execution = run_source(
         r#"<?php

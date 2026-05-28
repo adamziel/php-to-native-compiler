@@ -54,12 +54,15 @@ $hook->register();
 
 #[test]
 fn ksort_rejects_unreached_sort_modes_and_non_array_targets() {
-    let flag_error = runtime_error("<?php\n$items = [];\nksort($items, SORT_REGULAR);\n");
+    let flag_error = runtime_error("<?php\n$items = [];\nksort($items, SORT_LOCALE_STRING);\n");
     assert_eq!(flag_error.line, 3);
     assert_eq!(flag_error.column, 1);
-    assert_eq!(
-        flag_error.message,
-        "unsupported call ksort(): only SORT_NUMERIC is implemented in the current subset"
+    assert!(
+        flag_error
+            .message
+            .contains("sort flag parameter 5 is not supported"),
+        "{}",
+        flag_error.message
     );
 
     let target_error = runtime_error("<?php\n$value = 42;\nksort($value, SORT_NUMERIC);\n");
