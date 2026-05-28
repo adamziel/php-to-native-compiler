@@ -156,6 +156,12 @@ impl<'a> Lexer<'a> {
 
             if self.starts_with("?>") {
                 let span = self.span();
+                if should_insert_close_tag_statement_terminator(&tokens) {
+                    tokens.push(Token {
+                        kind: TokenKind::Semicolon,
+                        span,
+                    });
+                }
                 if let Some(kind) = self.lex_inline_html_after_close_tag() {
                     tokens.push(Token { kind, span });
                 }
@@ -1038,6 +1044,42 @@ impl<'a> Lexer<'a> {
 
     fn error_at(&self, span: Span, message: impl Into<String>) -> Diagnostic {
         Diagnostic::new(Phase::Lex, span.line, span.column, message)
+    }
+}
+
+fn should_insert_close_tag_statement_terminator(tokens: &[Token]) -> bool {
+    let Some(previous) = tokens.last() else {
+        return false;
+    };
+
+    match &previous.kind {
+        TokenKind::Variable(_)
+        | TokenKind::Identifier(_)
+        | TokenKind::Int(_)
+        | TokenKind::Float(_)
+        | TokenKind::StringLiteral(_)
+        | TokenKind::InterpolatedString(_)
+        | TokenKind::Null
+        | TokenKind::True
+        | TokenKind::False
+        | TokenKind::RParen
+        | TokenKind::RBracket
+        | TokenKind::Return
+        | TokenKind::Break
+        | TokenKind::Continue => true,
+        TokenKind::Plus => matches!(
+            tokens
+                .get(tokens.len().saturating_sub(2))
+                .map(|token| &token.kind),
+            Some(TokenKind::Plus)
+        ),
+        TokenKind::Minus => matches!(
+            tokens
+                .get(tokens.len().saturating_sub(2))
+                .map(|token| &token.kind),
+            Some(TokenKind::Minus)
+        ),
+        _ => false,
     }
 }
 

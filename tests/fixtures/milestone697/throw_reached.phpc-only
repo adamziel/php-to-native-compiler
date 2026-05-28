@@ -1,1 +1,1 @@
-Project-specific exception boundary: phpc parses throw statements but reports a stable runtime boundary instead of constructing and throwing PHP Exception objects.
+Project-specific uncaught exception boundary: phpc can construct and propagate no-argument Exception objects through bounded catch/finally scopes, but uncaught fatal exception diagnostics and stack traces are not implemented.

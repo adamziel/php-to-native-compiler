@@ -1,6 +1,6 @@
 <?php
 try {
-    throw new Exception("boom");
+    throw new Exception();
 } catch (Exception $e) {
     echo "catch";
 } finally {

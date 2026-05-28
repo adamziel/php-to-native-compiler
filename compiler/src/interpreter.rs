@@ -59,25 +59,21 @@ pub struct RunOptions {
 }
 
 pub fn run_program(program: &Program) -> CompileResult<Execution> {
-    let mut interpreter = Interpreter::from_program(program, None, RunOptions::default())?;
-    interpreter.run(program)
+    run_program_with_optional_source_file(program, None, RunOptions::default())
 }
 
 pub fn run_program_with_source_file(
     program: &Program,
     source_file: impl Into<String>,
 ) -> CompileResult<Execution> {
-    let mut interpreter =
-        Interpreter::from_program(program, Some(source_file.into()), RunOptions::default())?;
-    interpreter.run(program)
+    run_program_with_optional_source_file(program, Some(source_file.into()), RunOptions::default())
 }
 
 pub fn run_program_with_options(
     program: &Program,
     options: RunOptions,
 ) -> CompileResult<Execution> {
-    let mut interpreter = Interpreter::from_program(program, None, options)?;
-    interpreter.run(program)
+    run_program_with_optional_source_file(program, None, options)
 }
 
 pub fn run_program_with_source_file_and_options(
@@ -85,7 +81,19 @@ pub fn run_program_with_source_file_and_options(
     source_file: impl Into<String>,
     options: RunOptions,
 ) -> CompileResult<Execution> {
-    let mut interpreter = Interpreter::from_program(program, Some(source_file.into()), options)?;
+    run_program_with_optional_source_file(program, Some(source_file.into()), options)
+}
+
+fn run_program_with_optional_source_file(
+    program: &Program,
+    source_file: Option<String>,
+    options: RunOptions,
+) -> CompileResult<Execution> {
+    if let Some(execution) = magic_method_signature_startup_fatal(program, source_file.as_deref()) {
+        return Ok(execution);
+    }
+
+    let mut interpreter = Interpreter::from_program(program, source_file, options)?;
     interpreter.run(program)
 }
 
@@ -121,6 +129,7 @@ struct Interpreter {
     required_once: HashSet<PathBuf>,
     static_locals: HashMap<(String, String), Value>,
     active_static_locals: Vec<Vec<String>>,
+    active_symbol_roots: Vec<SymbolStorage>,
     global_symbols: SymbolStorage,
     error_reporting_mask: i64,
     ignore_user_abort: bool,
@@ -169,6 +178,7 @@ struct Interpreter {
     call_depth: usize,
     next_object_id: i64,
     allocated_objects: Vec<PhpObject>,
+    finalized_objects: HashSet<i64>,
     next_closure_id: i64,
     next_resource_id: i64,
     streams: HashMap<i64, StreamResource>,
@@ -1625,7 +1635,7 @@ impl SymbolTable {
         matches!(self.read_named(name), Some(value) if !matches!(value, Value::Null))
     }
 
-    fn unset_static(&mut self, name: &str) {
+    fn unset_static(&mut self, name: &str) -> Option<Value> {
         self.clear_public_object_property_array_copy_source(name);
         self.clear_array_literal_copy_source_paths_for_root(name);
         let target_is_alias = self.array_offset_aliases.remove(name).is_some();
@@ -1640,15 +1650,18 @@ impl SymbolTable {
         if is_auto_global_name(name) {
             if let Some(global_symbols) = &self.global_symbols {
                 global_symbols.borrow_mut().remove(name);
-                return;
+                return None;
             }
         }
         if self.imported_globals.contains(name) {
             self.imported_globals.remove(name);
             self.symbols.borrow_mut().remove(name);
-            return;
+            return None;
         }
-        self.symbols.borrow_mut().remove(name);
+        self.symbols
+            .borrow_mut()
+            .remove(name)
+            .map(|cell| cell.value_cloned())
     }
 
     fn read_named(&self, name: &str) -> Option<Value> {
@@ -7613,6 +7626,178 @@ impl SymbolTable {
     }
 }
 
+#[derive(Default)]
+struct LiveRootVisit {
+    objects: HashSet<i64>,
+    closures: HashSet<i64>,
+}
+
+fn symbol_storage_contains_object_id(
+    storage: &SymbolStorage,
+    object_id: i64,
+    visited: &mut LiveRootVisit,
+) -> bool {
+    storage
+        .borrow()
+        .values()
+        .any(|cell| variable_cell_contains_object_id(cell, object_id, visited))
+}
+
+fn variable_cell_contains_object_id(
+    cell: &VariableCell,
+    object_id: i64,
+    visited: &mut LiveRootVisit,
+) -> bool {
+    value_contains_object_id(&cell.value_cloned(), object_id, visited)
+}
+
+fn object_contains_object_id(
+    object: &PhpObject,
+    object_id: i64,
+    visited: &mut LiveRootVisit,
+) -> bool {
+    if object.id() == object_id {
+        return true;
+    }
+    if !visited.objects.insert(object.id()) {
+        return false;
+    }
+    object.properties().iter().any(|property| {
+        property.is_initialized()
+            && value_contains_object_id(&property.value_cloned(), object_id, visited)
+    })
+}
+
+fn value_contains_object_id(value: &Value, object_id: i64, visited: &mut LiveRootVisit) -> bool {
+    match value {
+        Value::Object(object) => object_contains_object_id(object, object_id, visited),
+        Value::Array(array) => array
+            .entries()
+            .iter()
+            .any(|entry| value_contains_object_id(&entry.value_cloned(), object_id, visited)),
+        Value::Closure(closure) => {
+            if !visited.closures.insert(closure.id()) {
+                return false;
+            }
+            closure
+                .captures()
+                .iter()
+                .any(|capture| value_contains_object_id(&capture.value(), object_id, visited))
+        }
+        Value::Null
+        | Value::Bool(_)
+        | Value::Int(_)
+        | Value::Float(_)
+        | Value::String(_)
+        | Value::BinaryString(_)
+        | Value::Resource(_) => false,
+    }
+}
+
+fn symbol_table_contains_object_id(
+    symbols: &SymbolTable,
+    object_id: i64,
+    visited: &mut LiveRootVisit,
+) -> bool {
+    symbol_storage_contains_object_id(&symbols.symbols, object_id, visited)
+        || symbols
+            .global_symbols
+            .as_ref()
+            .is_some_and(|global_symbols| {
+                symbol_storage_contains_object_id(global_symbols, object_id, visited)
+            })
+}
+
+fn array_copy_source_contains_object_id(
+    source: &ArrayCopySource,
+    object_id: i64,
+    visited: &mut LiveRootVisit,
+) -> bool {
+    match &source.root {
+        ArrayCopySourceRoot::ObjectProperty { object, .. } => {
+            object_contains_object_id(object, object_id, visited)
+        }
+        ArrayCopySourceRoot::RuntimeCell(cell) => {
+            variable_cell_contains_object_id(cell, object_id, visited)
+        }
+        ArrayCopySourceRoot::AliasPath(_) => false,
+    }
+}
+
+fn shutdown_callback_contains_object_id(
+    callback: &ShutdownCallback,
+    object_id: i64,
+    visited: &mut LiveRootVisit,
+) -> bool {
+    value_contains_object_id(&callback.callback, object_id, visited)
+        || callback
+            .args
+            .iter()
+            .any(|value| value_contains_object_id(value, object_id, visited))
+}
+
+fn autoload_callback_contains_object_id(
+    callback: &AutoloadCallback,
+    object_id: i64,
+    visited: &mut LiveRootVisit,
+) -> bool {
+    match callback {
+        AutoloadCallback::ObjectMethod { object, .. }
+        | AutoloadCallback::InvokableObject { object } => {
+            object_contains_object_id(object, object_id, visited)
+        }
+        AutoloadCallback::Closure(closure) => {
+            value_contains_object_id(&Value::Closure(closure.clone()), object_id, visited)
+        }
+        AutoloadCallback::Function(_) | AutoloadCallback::StaticMethod { .. } => false,
+    }
+}
+
+fn mysqli_result_state_contains_object_id(
+    result: &MysqliResultState,
+    object_id: i64,
+    visited: &mut LiveRootVisit,
+) -> bool {
+    result
+        .rows
+        .iter()
+        .flatten()
+        .any(|(_, value)| value_contains_object_id(value, object_id, visited))
+}
+
+fn mysqli_pending_result_state_contains_object_id(
+    result: &MysqliPendingResultState,
+    object_id: i64,
+    visited: &mut LiveRootVisit,
+) -> bool {
+    result
+        .rows
+        .iter()
+        .flatten()
+        .any(|(_, value)| value_contains_object_id(value, object_id, visited))
+}
+
+fn mysqli_statement_state_contains_object_id(
+    statement: &MysqliStatementState,
+    object_id: i64,
+    visited: &mut LiveRootVisit,
+) -> bool {
+    statement
+        .bound_parameter_values
+        .iter()
+        .any(|value| value_contains_object_id(value, object_id, visited))
+        || statement
+            .attributes
+            .values()
+            .any(|value| value_contains_object_id(value, object_id, visited))
+        || statement.executed_result.as_ref().is_some_and(|result| {
+            mysqli_pending_result_state_contains_object_id(result, object_id, visited)
+        })
+        || statement.buffered_result.as_ref().is_some_and(|result| {
+            mysqli_pending_result_state_contains_object_id(result, object_id, visited)
+        })
+}
+
 fn value_cell(value: Value) -> VariableCell {
     PhpReferenceCell::new(value)
 }
@@ -7625,7 +7810,16 @@ fn bind_foreach_lingering_reference(
     span: Span,
 ) -> CompileResult<()> {
     if let Some(key) = key {
-        if let Some(aliases) = foreach_root_slot_aliases(scope, root, &key) {
+        if let Some(aliases) = foreach_reference_aliases_for_key(scope, root, &key) {
+            for alias in &aliases {
+                scope.materialize_array_offset_alias(alias, span)?;
+            }
+            if let Some(reference) =
+                scope.reference_cell_for_array_offset_alias_group_with_value_promotion(&aliases)
+            {
+                scope.bind_static_to_cell(value, reference);
+                return Ok(());
+            }
             scope.bind_static_to_existing_array_offset_aliases(value, aliases, span)?;
             return Ok(());
         }
@@ -7668,6 +7862,54 @@ fn bind_foreach_lingering_reference(
         }
     }
     Ok(())
+}
+
+fn foreach_reference_aliases_for_key(
+    scope: &SymbolTable,
+    root: &ForeachArrayRoot,
+    key: &ArrayKey,
+) -> Option<Vec<ArrayOffsetAlias>> {
+    if let Some(aliases) = foreach_root_slot_aliases(scope, root, key) {
+        return Some(aliases);
+    }
+
+    match root {
+        ForeachArrayRoot::Static { name, keys } => {
+            let mut alias_keys = keys.clone();
+            alias_keys.push(key.clone());
+            Some(vec![ArrayOffsetAlias {
+                root: ArrayOffsetAliasRoot::StaticArray { name: name.clone() },
+                keys: alias_keys,
+            }])
+        }
+        ForeachArrayRoot::Global { name, keys } => {
+            let mut alias_keys = keys.clone();
+            alias_keys.push(key.clone());
+            Some(vec![ArrayOffsetAlias {
+                root: ArrayOffsetAliasRoot::GlobalArray { name: name.clone() },
+                keys: alias_keys,
+            }])
+        }
+        ForeachArrayRoot::Alias { root, keys } => {
+            let mut alias_keys = keys.clone();
+            alias_keys.push(key.clone());
+            Some(vec![ArrayOffsetAlias {
+                root: root.clone(),
+                keys: alias_keys,
+            }])
+        }
+        ForeachArrayRoot::Aliases { aliases } => Some(
+            aliases
+                .iter()
+                .map(|alias| {
+                    let mut alias = alias.clone();
+                    alias.keys.push(key.clone());
+                    alias
+                })
+                .collect(),
+        ),
+        ForeachArrayRoot::ObjectProperties { .. } => None,
+    }
 }
 
 fn foreach_root_slot_aliases(
@@ -8060,6 +8302,7 @@ enum Flow {
     Break { depth: usize, span: Span },
     Continue { depth: usize, span: Span },
     Return(Value),
+    Throw { object: PhpObject, span: Span },
     Exit(i32),
     Goto { label: String, span: Span },
 }
@@ -8255,6 +8498,7 @@ impl Interpreter {
             required_once: HashSet::new(),
             static_locals: HashMap::new(),
             active_static_locals: Vec::new(),
+            active_symbol_roots: Vec::new(),
             global_symbols: Rc::new(RefCell::new(HashMap::new())),
             error_reporting_mask: PHP_E_ALL,
             ignore_user_abort: false,
@@ -8305,6 +8549,7 @@ impl Interpreter {
             call_depth: 0,
             next_object_id: 1,
             allocated_objects: Vec::new(),
+            finalized_objects: HashSet::new(),
             next_closure_id: 1,
             next_resource_id: 1,
             streams: HashMap::new(),
@@ -9072,7 +9317,10 @@ impl Interpreter {
                         span,
                     });
                 }
-                flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                flow @ (Flow::Return(_)
+                | Flow::Goto { .. }
+                | Flow::Throw { .. }
+                | Flow::Exit(_)) => {
                     return Ok(flow);
                 }
             }
@@ -9121,7 +9369,10 @@ impl Interpreter {
                         span,
                     });
                 }
-                flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                flow @ (Flow::Return(_)
+                | Flow::Goto { .. }
+                | Flow::Throw { .. }
+                | Flow::Exit(_)) => {
                     return Ok(flow);
                 }
             }
@@ -9232,6 +9483,7 @@ impl Interpreter {
 
         self.call_depth += 1;
         self.active_static_locals.push(Vec::new());
+        self.active_symbol_roots.push(local_scope.symbols.clone());
         let flow =
             self.execute_statements_with_array_copy_return_source(&function.body, &mut local_scope);
         let static_names = self.active_static_locals.pop().unwrap_or_default();
@@ -9242,6 +9494,7 @@ impl Interpreter {
                     .insert((function_key.clone(), name), value.clone());
             }
         }
+        self.active_symbol_roots.pop();
         self.call_depth -= 1;
         self.function_context.pop();
         self.class_context.pop();
@@ -9259,6 +9512,7 @@ impl Interpreter {
                 RuntimeError::invalid_loop_control("continue cannot be used outside a loop"),
             )),
             Flow::Return(value) => Ok((value, source)),
+            Flow::Throw { object, span } => Err(self.uncaught_throw_error(&object, span)),
             Flow::Exit(_) => Ok((Value::Null, None)),
             Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }
@@ -9521,19 +9775,7 @@ impl Interpreter {
             }
             Stmt::Throw { expr, span } => {
                 self.tick(stmt.span())?;
-                let thrown = self.evaluate(expr, scope)?;
-                let Value::Object(object) = thrown else {
-                    return Err(runtime_error(
-                        *span,
-                        RuntimeError::unsupported_call(
-                            "throw",
-                            format!(
-                                "throwing {} values during array-copy return evaluation is not implemented",
-                                thrown.type_name()
-                            ),
-                        ),
-                    ));
-                };
+                let object = self.throwable_object_from_expr(expr, *span, scope)?;
                 return Ok(ArrayCopyReturnBodyFlow::Throw {
                     object,
                     span: *span,
@@ -9591,6 +9833,7 @@ impl Interpreter {
                 value,
                 source: None,
             }),
+            Flow::Throw { object, span } => Ok(ArrayCopyReturnBodyFlow::Throw { object, span }),
             Flow::Exit(code) => Ok(ArrayCopyReturnBodyFlow::Exit(code)),
             Flow::Goto { label, span } => Ok(ArrayCopyReturnBodyFlow::Goto { label, span }),
         }
@@ -9604,7 +9847,7 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<ArrayCopyReturnBodyFlow> {
         for catch in catches {
-            if !self.reference_return_catch_matches(&object, catch)? {
+            if !self.catch_matches_thrown_object(&object, catch)? {
                 continue;
             }
             if let Some(variable) = &catch.variable {
@@ -11284,7 +11527,10 @@ impl Interpreter {
                         span,
                     });
                 }
-                flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                flow @ (Flow::Return(_)
+                | Flow::Goto { .. }
+                | Flow::Throw { .. }
+                | Flow::Exit(_)) => {
                     return Ok(flow);
                 }
             }
@@ -11817,6 +12063,7 @@ impl Interpreter {
                 span,
                 RuntimeError::invalid_loop_control("continue cannot be used outside a loop"),
             )),
+            Flow::Throw { object, span } => Err(self.uncaught_throw_error(&object, span)),
             Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }
     }
@@ -11847,6 +12094,7 @@ impl Interpreter {
                 flow @ (Flow::Break { .. }
                 | Flow::Continue { .. }
                 | Flow::Return(_)
+                | Flow::Throw { .. }
                 | Flow::Exit(_)) => return Ok(flow),
             }
             if let Some(code) = self.exit_signal {
@@ -12418,7 +12666,10 @@ impl Interpreter {
                                 span,
                             });
                         }
-                        flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                        flow @ (Flow::Return(_)
+                        | Flow::Goto { .. }
+                        | Flow::Throw { .. }
+                        | Flow::Exit(_)) => {
                             return Ok(flow);
                         }
                     }
@@ -12448,7 +12699,10 @@ impl Interpreter {
                                 span,
                             });
                         }
-                        flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                        flow @ (Flow::Return(_)
+                        | Flow::Goto { .. }
+                        | Flow::Throw { .. }
+                        | Flow::Exit(_)) => {
                             return Ok(flow);
                         }
                     }
@@ -12498,7 +12752,10 @@ impl Interpreter {
                                 span,
                             });
                         }
-                        flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => {
+                        flow @ (Flow::Return(_)
+                        | Flow::Goto { .. }
+                        | Flow::Throw { .. }
+                        | Flow::Exit(_)) => {
                             return Ok(flow);
                         }
                     }
@@ -12658,7 +12915,7 @@ impl Interpreter {
                                     span: flow_span,
                                 });
                             }
-                            flow @ (Flow::Return(_) | Flow::Exit(_)) => {
+                            flow @ (Flow::Return(_) | Flow::Throw { .. } | Flow::Exit(_)) => {
                                 return Ok(flow);
                             }
                         }
@@ -12677,7 +12934,8 @@ impl Interpreter {
                 self.execute_foreach_by_value_iterable(iterable, key, value, body, *span, scope)
             }
             Stmt::UnsetVariable { name, .. } => {
-                scope.unset_static(name);
+                let value = scope.unset_static(name);
+                self.finalize_released_value(value, scope)?;
                 Ok(Flow::Normal)
             }
             Stmt::UnsetArrayIndex { name, index, span } => {
@@ -12771,16 +13029,19 @@ impl Interpreter {
                 };
                 Ok(Flow::Return(value))
             }
-            Stmt::Throw { expr: _, span } => Err(runtime_error(
-                *span,
-                RuntimeError::unsupported_call(
-                    "throw",
-                    "exception objects and stack unwinding are not implemented",
-                ),
-            )),
+            Stmt::Throw { expr, span } => {
+                let object = self.throwable_object_from_expr(expr, *span, scope)?;
+                Ok(Flow::Throw {
+                    object,
+                    span: *span,
+                })
+            }
             Stmt::Try {
-                body, finally_body, ..
-            } => self.execute_try_statement(body, finally_body.as_deref(), scope),
+                body,
+                catches,
+                finally_body,
+                ..
+            } => self.execute_try_statement(body, catches, finally_body.as_deref(), scope),
             Stmt::Break { depth, span } => Ok(Flow::Break {
                 depth: *depth,
                 span: *span,
@@ -12879,10 +13140,17 @@ impl Interpreter {
     fn execute_try_statement(
         &mut self,
         body: &[Stmt],
+        catches: &[CatchClause],
         finally_body: Option<&[Stmt]>,
         scope: &mut SymbolTable,
     ) -> CompileResult<Flow> {
         let try_flow = self.execute_statements(body, scope)?;
+        let try_flow = match try_flow {
+            Flow::Throw { object, span } => {
+                self.execute_catch_flow(object, span, catches, scope)?
+            }
+            flow => flow,
+        };
         if let Some(finally_body) = finally_body {
             let finally_flow = self.execute_statements(finally_body, scope)?;
             if !matches!(finally_flow, Flow::Normal) {
@@ -12890,6 +13158,111 @@ impl Interpreter {
             }
         }
         Ok(try_flow)
+    }
+
+    fn execute_catch_flow(
+        &mut self,
+        object: PhpObject,
+        span: Span,
+        catches: &[CatchClause],
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Flow> {
+        for catch in catches {
+            if !self.catch_matches_thrown_object(&object, catch)? {
+                continue;
+            }
+            if let Some(variable) = &catch.variable {
+                scope.write_static(variable, Value::Object(object));
+            }
+            return self.execute_statements(&catch.body, scope);
+        }
+
+        Ok(Flow::Throw { object, span })
+    }
+
+    fn throwable_object_from_expr(
+        &mut self,
+        expr: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<PhpObject> {
+        let thrown = self.evaluate(expr, scope)?;
+        self.throwable_object_from_value(thrown, span)
+    }
+
+    fn throwable_object_from_value(&self, thrown: Value, span: Span) -> CompileResult<PhpObject> {
+        let Value::Object(object) = thrown else {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "throw",
+                    format!("throwing {} values is not implemented", thrown.type_name()),
+                ),
+            ));
+        };
+        if !Self::is_throwable_object(&object) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "throw",
+                    format!(
+                        "objects of class {} do not implement Throwable in the current subset",
+                        object.class_name()
+                    ),
+                ),
+            ));
+        }
+        Ok(object)
+    }
+
+    fn is_throwable_object(object: &PhpObject) -> bool {
+        object.is_instance_of_class_name("Exception")
+            || object.is_instance_of_class_name("Throwable")
+    }
+
+    fn catch_matches_thrown_object(
+        &self,
+        object: &PhpObject,
+        catch: &CatchClause,
+    ) -> CompileResult<bool> {
+        for catch_type in &catch.types {
+            let catch_name = catch_type
+                .name
+                .strip_prefix('\\')
+                .unwrap_or(&catch_type.name);
+            if catch_name.eq_ignore_ascii_case("Throwable") {
+                if Self::is_throwable_object(object) {
+                    return Ok(true);
+                }
+                continue;
+            }
+
+            let Some(class) = self.classes.lookup_class(&catch_type.name) else {
+                return Err(runtime_error(
+                    catch_type.span,
+                    RuntimeError::undefined_class(&catch_type.name),
+                ));
+            };
+            if object.class_id() == class.id()
+                || self.classes.is_subclass_of(object.class_id(), class.id())
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn uncaught_throw_error(&self, object: &PhpObject, span: Span) -> Diagnostic {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "throw",
+                format!(
+                    "uncaught {} propagation beyond catch/finally is not implemented",
+                    object.class_name()
+                ),
+            ),
+        )
     }
 
     fn execute_for_action(
@@ -12929,6 +13302,7 @@ impl Interpreter {
             Flow::Exit(code) => Ok(Flow::Exit(code)),
             Flow::Break { depth, span } => Ok(Flow::Break { depth, span }),
             Flow::Continue { depth, span } => Ok(Flow::Continue { depth, span }),
+            Flow::Throw { object, span } => Ok(Flow::Throw { object, span }),
             Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }
     }
@@ -13031,6 +13405,7 @@ impl Interpreter {
             Flow::Exit(code) => Ok((Flow::Exit(code), Value::Null)),
             Flow::Break { depth, span } => Ok((Flow::Break { depth, span }, Value::Null)),
             Flow::Continue { depth, span } => Ok((Flow::Continue { depth, span }, Value::Null)),
+            Flow::Throw { object, span } => Ok((Flow::Throw { object, span }, Value::Null)),
             Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }
     }
@@ -13326,7 +13701,10 @@ impl Interpreter {
                         span,
                     });
                 }
-                flow @ (Flow::Return(_) | Flow::Goto { .. } | Flow::Exit(_)) => return Ok(flow),
+                flow @ (Flow::Return(_)
+                | Flow::Goto { .. }
+                | Flow::Throw { .. }
+                | Flow::Exit(_)) => return Ok(flow),
             }
             index += 1;
         }
@@ -13342,7 +13720,8 @@ impl Interpreter {
     ) -> CompileResult<()> {
         match target {
             UnsetTarget::Variable { name, .. } => {
-                scope.unset_static(name);
+                let value = scope.unset_static(name);
+                self.finalize_released_value(value, scope)?;
                 Ok(())
             }
             UnsetTarget::ArrayIndex { name, index, .. } => {
@@ -14425,6 +14804,7 @@ impl Interpreter {
                             "continue cannot be used outside a loop",
                         ),
                     )),
+                    Flow::Throw { object, span } => Err(self.uncaught_throw_error(&object, span)),
                     Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
                 }
             }
@@ -14443,6 +14823,7 @@ impl Interpreter {
                             "continue cannot be used outside a loop",
                         ),
                     )),
+                    Flow::Throw { object, span } => Err(self.uncaught_throw_error(&object, span)),
                     Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
                 }
             }
@@ -14923,6 +15304,141 @@ impl Interpreter {
         }
     }
 
+    fn finalize_released_value(
+        &mut self,
+        value: Option<Value>,
+        scope: &SymbolTable,
+    ) -> CompileResult<()> {
+        let Some(Value::Object(object)) = value else {
+            return Ok(());
+        };
+
+        if self.live_roots_contain_object_id(object.id(), scope) {
+            return Ok(());
+        }
+
+        self.finalize_object_destructor(object)
+    }
+
+    fn live_roots_contain_object_id(&self, object_id: i64, current_scope: &SymbolTable) -> bool {
+        let mut visited = LiveRootVisit::default();
+
+        if symbol_table_contains_object_id(current_scope, object_id, &mut visited)
+            || symbol_storage_contains_object_id(&self.global_symbols, object_id, &mut visited)
+        {
+            return true;
+        }
+
+        if self
+            .active_symbol_roots
+            .iter()
+            .any(|storage| symbol_storage_contains_object_id(storage, object_id, &mut visited))
+        {
+            return true;
+        }
+
+        if self
+            .constants
+            .values
+            .values()
+            .any(|value| value_contains_object_id(value, object_id, &mut visited))
+            || self
+                .instance_property_defaults
+                .values()
+                .any(|value| value_contains_object_id(value, object_id, &mut visited))
+            || self
+                .static_locals
+                .values()
+                .any(|value| value_contains_object_id(value, object_id, &mut visited))
+            || self
+                .static_properties
+                .values()
+                .any(|cell| variable_cell_contains_object_id(cell, object_id, &mut visited))
+        {
+            return true;
+        }
+
+        if self
+            .shutdown_callbacks
+            .iter()
+            .any(|callback| shutdown_callback_contains_object_id(callback, object_id, &mut visited))
+            || self
+                .error_handlers
+                .iter()
+                .any(|handler| value_contains_object_id(&handler.callback, object_id, &mut visited))
+            || self.autoload_callbacks.iter().any(|callback| {
+                autoload_callback_contains_object_id(callback, object_id, &mut visited)
+            })
+        {
+            return true;
+        }
+
+        if self.closure_values.values().any(|closure| {
+            value_contains_object_id(&Value::Closure(closure.clone()), object_id, &mut visited)
+        }) || self
+            .closure_bound_contexts
+            .values()
+            .any(|context| object_contains_object_id(&context.this_object, object_id, &mut visited))
+            || self
+                .closure_alias_captures
+                .values()
+                .flatten()
+                .any(|capture| {
+                    symbol_table_contains_object_id(&capture.source_scope, object_id, &mut visited)
+                })
+            || self
+                .closure_array_copy_source_captures
+                .values()
+                .flatten()
+                .any(|(_, source, source_scope)| {
+                    array_copy_source_contains_object_id(source, object_id, &mut visited)
+                        || symbol_table_contains_object_id(source_scope, object_id, &mut visited)
+                })
+        {
+            return true;
+        }
+
+        if self.stream_contexts.values().any(|context| {
+            value_contains_object_id(
+                &Value::Array(context.options.clone()),
+                object_id,
+                &mut visited,
+            ) || value_contains_object_id(
+                &Value::Array(context.params.clone()),
+                object_id,
+                &mut visited,
+            )
+        }) || self.session_store.values().any(|array| {
+            value_contains_object_id(&Value::Array(array.clone()), object_id, &mut visited)
+        }) {
+            return true;
+        }
+
+        if self
+            .mysqli_options
+            .values()
+            .flat_map(|options| options.values())
+            .any(|value| value_contains_object_id(value, object_id, &mut visited))
+            || self.mysqli_results.values().any(|result| {
+                mysqli_result_state_contains_object_id(result, object_id, &mut visited)
+            })
+            || self.mysqli_pending_results.values().any(|result| {
+                mysqli_pending_result_state_contains_object_id(result, object_id, &mut visited)
+            })
+            || self.mysqli_pending_result_queues.values().flatten().any(|slot| {
+                matches!(slot, MysqliMultiResultSlot::Result(result)
+                    if mysqli_pending_result_state_contains_object_id(result, object_id, &mut visited))
+            })
+            || self.mysqli_statements.values().any(|statement| {
+                mysqli_statement_state_contains_object_id(statement, object_id, &mut visited)
+            })
+        {
+            return true;
+        }
+
+        false
+    }
+
     fn run_shutdown_callbacks(&mut self) -> CompileResult<()> {
         while self.shutdown_callback_index < self.shutdown_callbacks.len() {
             let callback = self.shutdown_callbacks[self.shutdown_callback_index].clone();
@@ -14967,55 +15483,54 @@ impl Interpreter {
         }
     }
 
-    fn run_shutdown_destructors(&mut self) -> CompileResult<()> {
-        let mut destructed = HashSet::new();
-        while let Some(object) = self.allocated_objects.pop() {
-            if !destructed.insert(object.id()) {
-                continue;
-            }
+    fn finalize_object_destructor(&mut self, object: PhpObject) -> CompileResult<()> {
+        if !self.finalized_objects.insert(object.id()) {
+            return Ok(());
+        }
 
-            let Some((class_id, class_name, method_name, visibility, is_static)) =
-                self.resolve_instance_method(object.class_id(), "__destruct")
-            else {
-                continue;
-            };
-            let span = self
-                .methods
-                .get(&(class_id, method_name.to_ascii_lowercase()))
-                .map(|function| function.span)
-                .unwrap_or(Span::new(1, 1));
+        let Some((class_id, class_name, method_name, visibility, is_static)) =
+            self.resolve_instance_method(object.class_id(), "__destruct")
+        else {
+            return Ok(());
+        };
+        let span = self
+            .methods
+            .get(&(class_id, method_name.to_ascii_lowercase()))
+            .map(|function| function.span)
+            .unwrap_or(Span::new(1, 1));
 
-            if is_static {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        format!("{class_name}::{method_name}()"),
-                        "static destructors are not implemented",
-                    ),
-                ));
-            }
-
-            self.ensure_instance_method_visible(
-                class_id,
-                &class_name,
-                &method_name,
-                visibility,
+        if is_static {
+            return Err(runtime_error(
                 span,
-            )?;
-            let function = self.method_function(class_id, &class_name, &method_name, span)?;
-            let function = function.as_ref();
-            ensure_user_function_arity(function, 0, span)?;
-            ensure_supported_function_signature(function, 0, span)?;
-            self.ensure_user_function_call_depth(function, span)?;
-            self.call_user_function_with_checked_values(
-                function,
-                Vec::new(),
-                Some(object),
-                Some(class_id),
-                Some(class_id),
-                Vec::new(),
-                None,
-            )?;
+                RuntimeError::unsupported_call(
+                    format!("{class_name}::{method_name}()"),
+                    "static destructors are not implemented",
+                ),
+            ));
+        }
+
+        self.ensure_instance_method_visible(class_id, &class_name, &method_name, visibility, span)?;
+        let function = self.method_function(class_id, &class_name, &method_name, span)?;
+        let function = function.as_ref();
+        ensure_user_function_arity(function, 0, span)?;
+        ensure_supported_function_signature(function, 0, span)?;
+        self.ensure_user_function_call_depth(function, span)?;
+        self.call_user_function_with_checked_values(
+            function,
+            Vec::new(),
+            Some(object),
+            Some(class_id),
+            Some(class_id),
+            Vec::new(),
+            None,
+        )?;
+
+        Ok(())
+    }
+
+    fn run_shutdown_destructors(&mut self) -> CompileResult<()> {
+        while let Some(object) = self.allocated_objects.pop() {
+            self.finalize_object_destructor(object)?;
         }
 
         Ok(())
@@ -46606,6 +47121,9 @@ impl Interpreter {
             match flow {
                 Flow::Normal => {}
                 Flow::Exit(_) | Flow::Break { .. } | Flow::Continue { .. } => break,
+                Flow::Throw { object, span } => {
+                    return Err(self.uncaught_throw_error(&object, span))
+                }
                 Flow::Goto { label, span } => return Err(undefined_goto_label_error(span, &label)),
                 Flow::Return(_) => unreachable!("file include normalizes return flow"),
             }
@@ -50173,6 +50691,7 @@ impl Interpreter {
 
         self.call_depth += 1;
         self.active_static_locals.push(Vec::new());
+        self.active_symbol_roots.push(local_scope.symbols.clone());
         let result =
             self.execute_reference_return_assignment_statements(function, &mut local_scope);
         let returned_value_copy_param_cell = match result.as_ref() {
@@ -50425,6 +50944,7 @@ impl Interpreter {
                     .insert((function_key.clone(), name), value.clone());
             }
         }
+        self.active_symbol_roots.pop();
         self.call_depth -= 1;
         self.function_context.pop();
         if class_context.is_some() {
@@ -50973,6 +51493,7 @@ impl Interpreter {
 
         self.call_depth += 1;
         self.active_static_locals.push(Vec::new());
+        self.active_symbol_roots.push(local_scope.symbols.clone());
         let local_binding_result =
             self.execute_reference_return_assignment_statements(function, &mut local_scope);
         let result = local_binding_result.and_then(|binding| {
@@ -51098,6 +51619,7 @@ impl Interpreter {
                     .insert((function_key.clone(), name), value.clone());
             }
         }
+        self.active_symbol_roots.pop();
         self.call_depth -= 1;
         self.function_context.pop();
         if class_context.is_some() {
@@ -51208,19 +51730,7 @@ impl Interpreter {
         }
 
         if let Stmt::Throw { expr, span } = stmt {
-            let thrown = self.evaluate(expr, scope)?;
-            let Value::Object(object) = thrown else {
-                return Err(runtime_error(
-                    *span,
-                    RuntimeError::unsupported_call(
-                        "throw",
-                        format!(
-                            "throwing {} values during reference-return evaluation is not implemented",
-                            thrown.type_name()
-                        ),
-                    ),
-                ));
-            };
+            let object = self.throwable_object_from_expr(expr, *span, scope)?;
             return Ok(ReferenceReturnBodyFlow::Throw {
                 object,
                 span: *span,
@@ -51488,6 +51998,7 @@ impl Interpreter {
             )),
             Flow::Break { depth, span } => Ok(ReferenceReturnBodyFlow::Break { depth, span }),
             Flow::Continue { depth, span } => Ok(ReferenceReturnBodyFlow::Continue { depth, span }),
+            Flow::Throw { object, span } => Ok(ReferenceReturnBodyFlow::Throw { object, span }),
             Flow::Exit(_) => Err(runtime_error(
                 stmt.span(),
                 RuntimeError::unsupported_call(
@@ -51508,7 +52019,7 @@ impl Interpreter {
         scope: &mut SymbolTable,
     ) -> CompileResult<ReferenceReturnBodyFlow> {
         for catch in catches {
-            if !self.reference_return_catch_matches(&object, catch)? {
+            if !self.catch_matches_thrown_object(&object, catch)? {
                 continue;
             }
             if let Some(variable) = &catch.variable {
@@ -51522,27 +52033,6 @@ impl Interpreter {
         }
 
         Ok(ReferenceReturnBodyFlow::Throw { object, span })
-    }
-
-    fn reference_return_catch_matches(
-        &self,
-        object: &PhpObject,
-        catch: &CatchClause,
-    ) -> CompileResult<bool> {
-        for catch_type in &catch.types {
-            let Some(class) = self.classes.lookup_class(&catch_type.name) else {
-                return Err(runtime_error(
-                    catch_type.span,
-                    RuntimeError::undefined_class(&catch_type.name),
-                ));
-            };
-            if object.class_id() == class.id()
-                || self.classes.is_subclass_of(object.class_id(), class.id())
-            {
-                return Ok(true);
-            }
-        }
-        Ok(false)
     }
 
     fn execute_reference_return_assignment_foreach_flow(
@@ -55336,6 +55826,7 @@ impl Interpreter {
 
         self.call_depth += 1;
         self.active_static_locals.push(Vec::new());
+        self.active_symbol_roots.push(local_scope.symbols.clone());
         let flow =
             self.execute_statements_with_array_copy_return_source(&function.body, &mut local_scope);
         let writeback_result = if matches!(
@@ -55457,6 +55948,7 @@ impl Interpreter {
                     .insert((function_key.clone(), name), value.clone());
             }
         }
+        self.active_symbol_roots.pop();
         self.call_depth -= 1;
         self.function_context.pop();
         if class_context.is_some() {
@@ -55502,6 +55994,7 @@ impl Interpreter {
                 };
                 Ok((value, array_copy_source))
             }
+            Flow::Throw { object, span } => Err(self.uncaught_throw_error(&object, span)),
             Flow::Exit(_) => Ok((Value::Null, None)),
             Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }
@@ -64199,6 +64692,236 @@ fn tree_walk_binary_string_utf8<'a>(
 
 fn tree_walk_binary_string_utf8_option(value: &[u8]) -> Option<&str> {
     std::str::from_utf8(value).ok()
+}
+
+#[derive(Clone, Copy)]
+enum MagicMethodStaticRequirement {
+    MustBeStatic,
+    MustNotBeStatic,
+}
+
+#[derive(Clone, Copy)]
+struct MagicMethodSignatureContract {
+    expected_arity: usize,
+    first_parameter_type: Option<&'static str>,
+    second_parameter_type: Option<&'static str>,
+    static_requirement: MagicMethodStaticRequirement,
+}
+
+fn magic_method_signature_startup_fatal(
+    program: &Program,
+    source_file: Option<&str>,
+) -> Option<Execution> {
+    for stmt in &program.statements {
+        match stmt {
+            Stmt::Class(class) if !class.is_nested => {
+                if let Some(fatal) = class_magic_method_signature_startup_fatal(class, source_file)
+                {
+                    return Some(fatal);
+                }
+            }
+            Stmt::Interface(interface) => {
+                if let Some(fatal) =
+                    interface_magic_method_signature_startup_fatal(interface, source_file)
+                {
+                    return Some(fatal);
+                }
+            }
+            Stmt::Trait(trait_decl) => {
+                if let Some(fatal) =
+                    trait_magic_method_signature_startup_fatal(trait_decl, source_file)
+                {
+                    return Some(fatal);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn class_magic_method_signature_startup_fatal(
+    class: &ClassDecl,
+    source_file: Option<&str>,
+) -> Option<Execution> {
+    for member in &class.members {
+        let ClassMember::Method(method) = member else {
+            continue;
+        };
+        if let Some(message) =
+            magic_method_signature_diagnostic(&class.name, &method.function, method.is_static)
+        {
+            return Some(magic_method_startup_fatal_execution(
+                message,
+                source_file,
+                method.function.span.line,
+            ));
+        }
+    }
+    None
+}
+
+fn interface_magic_method_signature_startup_fatal(
+    interface: &InterfaceDecl,
+    source_file: Option<&str>,
+) -> Option<Execution> {
+    for method in &interface.methods {
+        if let Some(message) =
+            magic_method_signature_diagnostic(&interface.name, &method.function, method.is_static)
+        {
+            return Some(magic_method_startup_fatal_execution(
+                message,
+                source_file,
+                method.function.span.line,
+            ));
+        }
+    }
+    None
+}
+
+fn trait_magic_method_signature_startup_fatal(
+    trait_decl: &TraitDecl,
+    source_file: Option<&str>,
+) -> Option<Execution> {
+    for method in &trait_decl.methods {
+        if let Some(message) =
+            magic_method_signature_diagnostic(&trait_decl.name, &method.function, method.is_static)
+        {
+            return Some(magic_method_startup_fatal_execution(
+                message,
+                source_file,
+                method.function.span.line,
+            ));
+        }
+    }
+    None
+}
+
+fn magic_method_startup_fatal_execution(
+    message: String,
+    source_file: Option<&str>,
+    line: usize,
+) -> Execution {
+    let file = source_file.unwrap_or("Command line code");
+    Execution {
+        stdout: String::new(),
+        stderr: format!("Fatal error: {message} in {file} on line {line}"),
+        exit_code: 255,
+    }
+}
+
+fn magic_method_signature_diagnostic(
+    class_name: &str,
+    function: &FunctionDecl,
+    is_static: bool,
+) -> Option<String> {
+    let method_name = function.name.as_str();
+    let contract = magic_method_signature_contract(method_name)?;
+    if function.params.len() != contract.expected_arity
+        || function.params.iter().any(|param| param.is_variadic)
+    {
+        return Some(format!(
+            "Method {class_name}::{method_name}() must take exactly {} {}",
+            contract.expected_arity,
+            if contract.expected_arity == 1 {
+                "argument"
+            } else {
+                "arguments"
+            }
+        ));
+    }
+    if function.params.iter().any(|param| param.by_reference) {
+        return Some(format!(
+            "Method {class_name}::{method_name}() cannot take arguments by reference"
+        ));
+    }
+    match contract.static_requirement {
+        MagicMethodStaticRequirement::MustBeStatic if !is_static => {
+            return Some(format!(
+                "Method {class_name}::{method_name}() must be static"
+            ));
+        }
+        MagicMethodStaticRequirement::MustNotBeStatic if is_static => {
+            return Some(format!(
+                "Method {class_name}::{method_name}() cannot be static"
+            ));
+        }
+        _ => {}
+    }
+    if let Some(expected_type) = contract.first_parameter_type {
+        let param = &function.params[0];
+        if !magic_method_signature_type_accepts(param.type_decl.as_ref(), expected_type) {
+            return Some(format!(
+                "{class_name}::{method_name}(): Parameter #1 (${}) must be of type {expected_type} when declared",
+                param.name
+            ));
+        }
+    }
+    if let Some(expected_type) = contract.second_parameter_type {
+        let param = &function.params[1];
+        if !magic_method_signature_type_accepts(param.type_decl.as_ref(), expected_type) {
+            return Some(format!(
+                "{class_name}::{method_name}(): Parameter #2 (${}) must be of type {expected_type} when declared",
+                param.name
+            ));
+        }
+    }
+    None
+}
+
+fn magic_method_signature_contract(name: &str) -> Option<MagicMethodSignatureContract> {
+    if name.eq_ignore_ascii_case("__call") {
+        Some(MagicMethodSignatureContract {
+            expected_arity: 2,
+            first_parameter_type: Some("string"),
+            second_parameter_type: Some("array"),
+            static_requirement: MagicMethodStaticRequirement::MustNotBeStatic,
+        })
+    } else if name.eq_ignore_ascii_case("__callStatic") {
+        Some(MagicMethodSignatureContract {
+            expected_arity: 2,
+            first_parameter_type: Some("string"),
+            second_parameter_type: Some("array"),
+            static_requirement: MagicMethodStaticRequirement::MustBeStatic,
+        })
+    } else if name.eq_ignore_ascii_case("__set") {
+        Some(MagicMethodSignatureContract {
+            expected_arity: 2,
+            first_parameter_type: Some("string"),
+            second_parameter_type: None,
+            static_requirement: MagicMethodStaticRequirement::MustNotBeStatic,
+        })
+    } else if name.eq_ignore_ascii_case("__get")
+        || name.eq_ignore_ascii_case("__isset")
+        || name.eq_ignore_ascii_case("__unset")
+    {
+        Some(MagicMethodSignatureContract {
+            expected_arity: 1,
+            first_parameter_type: Some("string"),
+            second_parameter_type: None,
+            static_requirement: MagicMethodStaticRequirement::MustNotBeStatic,
+        })
+    } else {
+        None
+    }
+}
+
+fn magic_method_signature_type_accepts(type_decl: Option<&TypeDecl>, expected: &str) -> bool {
+    let Some(type_decl) = type_decl else {
+        return true;
+    };
+    let mut text = type_decl.text.trim();
+    if let Some(nullable) = text.strip_prefix('?') {
+        text = nullable.trim();
+    }
+    text.split('|').any(|part| {
+        let normalized = part
+            .trim()
+            .strip_prefix('\\')
+            .unwrap_or(part.trim())
+            .to_ascii_lowercase();
+        normalized == expected || normalized == "mixed"
+    })
 }
 
 fn cast_float_to_int(value: f64, callable: &'static str, span: Span) -> CompileResult<Value> {
@@ -77805,11 +78528,7 @@ fn format_var_dump_with_indent(value: &Value, indent: usize, span: Span) -> Comp
                     "{padding}  [{}]=>\n",
                     format_var_dump_key(&entry.key)
                 ));
-                output.push_str(&format_var_dump_with_indent(
-                    entry.value(),
-                    indent + 1,
-                    span,
-                )?);
+                output.push_str(&format_var_dump_array_entry(entry, indent + 1, span)?);
             }
             output.push_str(&format!("{padding}}}\n"));
             output
@@ -77843,6 +78562,22 @@ fn format_var_dump_with_indent(value: &Value, indent: usize, span: Span) -> Comp
         }
         Value::Resource(id) => format!("{padding}resource({id}) of type (stream)\n"),
     })
+}
+
+fn format_var_dump_array_entry(
+    entry: &ArrayEntry,
+    indent: usize,
+    span: Span,
+) -> CompileResult<String> {
+    let value = entry.value_cloned();
+    let mut output = format_var_dump_with_indent(&value, indent, span)?;
+    if entry.slot().is_reference() {
+        let padding = "  ".repeat(indent);
+        if output.starts_with(&padding) {
+            output.insert(padding.len(), '&');
+        }
+    }
+    Ok(output)
 }
 
 fn format_var_dump_key(key: &ArrayKey) -> String {
@@ -77994,6 +78729,51 @@ mod tests {
         assert_eq!(
             source_cell.value_cloned(),
             Value::String("changed".to_string())
+        );
+    }
+
+    #[test]
+    fn foreach_by_reference_lingering_slot_formats_as_shared_reference() {
+        let source = concat!(
+            "<?php\n",
+            "$items = ['a', 'b', 'c'];\n",
+            "foreach ($items as &$value) {}\n",
+            "var_dump($items);\n",
+            "var_dump(array_values($items));\n",
+            "var_dump(array_reverse($items));\n",
+        );
+        let program = parse_source(source).unwrap();
+        let execution = run_program(&program).unwrap();
+
+        assert_eq!(execution.stderr, "");
+        assert_eq!(
+            execution.stdout,
+            concat!(
+                "array(3) {\n",
+                "  [0]=>\n",
+                "  string(1) \"a\"\n",
+                "  [1]=>\n",
+                "  string(1) \"b\"\n",
+                "  [2]=>\n",
+                "  &string(1) \"c\"\n",
+                "}\n",
+                "array(3) {\n",
+                "  [0]=>\n",
+                "  string(1) \"a\"\n",
+                "  [1]=>\n",
+                "  string(1) \"b\"\n",
+                "  [2]=>\n",
+                "  &string(1) \"c\"\n",
+                "}\n",
+                "array(3) {\n",
+                "  [0]=>\n",
+                "  &string(1) \"c\"\n",
+                "  [1]=>\n",
+                "  string(1) \"b\"\n",
+                "  [2]=>\n",
+                "  string(1) \"a\"\n",
+                "}\n",
+            )
         );
     }
 

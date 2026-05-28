@@ -1,6 +1,6 @@
 exit: 0
 stdout:
-catchfinallyafter
---- stdout end ---
+Vendor\Alpha
+Vendor\Beta--- stdout end ---
 stderr:
 --- stderr end ---

@@ -1928,7 +1928,9 @@ impl NativeCallableKey {
 
 impl NativeCallableMagicSignatureStatus {
     fn default_for(kind: NativeCallableKind, name: &str) -> Self {
-        if matches!(kind, NativeCallableKind::Method) && native_method_name_is_magic(name) {
+        if matches!(kind, NativeCallableKind::Method)
+            && native_method_magic_signature_contract(name).is_some()
+        {
             Self::Valid
         } else {
             Self::NotMagic
@@ -1936,14 +1938,8 @@ impl NativeCallableMagicSignatureStatus {
     }
 
     fn diagnostic_for(self, scope: &str, method_name: &str) -> Option<String> {
-        let expected_arity = if method_name.eq_ignore_ascii_case("__get")
-            || method_name.eq_ignore_ascii_case("__isset")
-            || method_name.eq_ignore_ascii_case("__unset")
-        {
-            1
-        } else {
-            2
-        };
+        let contract = native_method_magic_signature_contract(method_name);
+        let expected_arity = contract.map_or(2, |contract| contract.expected_arity);
         match self {
             Self::NotMagic | Self::Valid => None,
             Self::InvalidArity => Some(format!(
@@ -1956,11 +1952,9 @@ impl NativeCallableMagicSignatureStatus {
                 "{scope}::{method_name}(): Parameter #1 must be of type string when declared"
             )),
             Self::InvalidSecondParameterType => {
-                let expected_type = if method_name.eq_ignore_ascii_case("__set") {
-                    "mixed"
-                } else {
-                    "array"
-                };
+                let expected_type = contract
+                    .and_then(|contract| contract.second_parameter_type)
+                    .unwrap_or("array");
                 Some(format!(
                     "{scope}::{method_name}(): Parameter #2 must be of type {expected_type} when declared"
                 ))
@@ -1969,13 +1963,36 @@ impl NativeCallableMagicSignatureStatus {
     }
 }
 
-fn native_method_name_is_magic(name: &str) -> bool {
-    name.eq_ignore_ascii_case("__call")
-        || name.eq_ignore_ascii_case("__callStatic")
-        || name.eq_ignore_ascii_case("__get")
-        || name.eq_ignore_ascii_case("__set")
+#[derive(Clone, Copy)]
+struct NativeMethodMagicSignatureContract {
+    expected_arity: usize,
+    second_parameter_type: Option<&'static str>,
+}
+
+fn native_method_magic_signature_contract(
+    name: &str,
+) -> Option<NativeMethodMagicSignatureContract> {
+    if name.eq_ignore_ascii_case("__call") || name.eq_ignore_ascii_case("__callStatic") {
+        Some(NativeMethodMagicSignatureContract {
+            expected_arity: 2,
+            second_parameter_type: Some("array"),
+        })
+    } else if name.eq_ignore_ascii_case("__set") {
+        Some(NativeMethodMagicSignatureContract {
+            expected_arity: 2,
+            second_parameter_type: None,
+        })
+    } else if name.eq_ignore_ascii_case("__get")
         || name.eq_ignore_ascii_case("__isset")
         || name.eq_ignore_ascii_case("__unset")
+    {
+        Some(NativeMethodMagicSignatureContract {
+            expected_arity: 1,
+            second_parameter_type: None,
+        })
+    } else {
+        None
+    }
 }
 
 impl NativeCallableTable {
@@ -28703,7 +28720,7 @@ impl PhpArray {
         let mut array = Self::new();
         for (index, entry) in self.entries.iter().enumerate() {
             let key = i64::try_from(index).expect("array length fits in i64");
-            array.insert(key, entry.value_cloned());
+            array.insert_slot(key, entry.slot().clone());
         }
         array
     }
@@ -28992,11 +29009,11 @@ impl PhpArray {
             match &entry.key {
                 ArrayKey::Int(_) => {
                     array
-                        .append(entry.value_cloned())
+                        .append_slot(entry.slot().clone())
                         .expect("array length fits in i64");
                 }
                 ArrayKey::String(key) => {
-                    array.insert(key.clone(), entry.value_cloned());
+                    array.insert_slot(key.clone(), entry.slot().clone());
                 }
             }
         }
@@ -29006,7 +29023,7 @@ impl PhpArray {
     pub fn reversed_preserving_keys(&self) -> Self {
         let mut array = Self::new();
         for entry in self.entries.iter().rev() {
-            array.insert(entry.key.clone(), entry.value_cloned());
+            array.insert_slot(entry.key.clone(), entry.slot().clone());
         }
         array
     }
@@ -46458,31 +46475,31 @@ mod tests {
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_callable_table_free(table) };
 
-        let object = property_magic_object_for_test("MalformedSetPropertyMagic");
+        let object = property_magic_object_for_test("MalformedIssetPropertyMagic");
         let table = phpc_native_callable_table_new();
         unsafe {
             register_magic_signature_callable_for_test(
                 table,
-                "MalformedSetPropertyMagic",
-                "__set",
+                "MalformedIssetPropertyMagic",
+                "__isset",
                 false,
-                NativeCallableMagicSignatureStatus::InvalidSecondParameterType,
-                native_magic_set_property_callback,
+                NativeCallableMagicSignatureStatus::InvalidByReference,
+                native_magic_isset_property_callback,
             );
         }
         let (result, diagnostic) = unsafe {
-            object_property_mutation_for_test(
+            object_property_operation_for_test(
                 table,
                 &object,
                 "missing",
-                Some(Value::String("value".to_string())),
-                NATIVE_OBJECT_PROPERTY_MUTATION_WRITE,
+                None,
+                NATIVE_OBJECT_PUBLIC_PROPERTY_ISSET,
             )
         };
         assert!(result.is_null());
         let message = native_diagnostic_message_for_test(diagnostic);
         assert!(message.contains(
-            "MalformedSetPropertyMagic::__set(): Parameter #2 must be of type mixed when declared"
+            "Method MalformedIssetPropertyMagic::__isset() cannot take arguments by reference"
         ));
         unsafe { phpc_native_diagnostic_free(diagnostic) };
         unsafe { phpc_native_callable_table_free(table) };
@@ -74081,6 +74098,27 @@ mod tests {
     }
 
     #[test]
+    fn array_values_preserves_reference_backed_slots() {
+        let reference = PhpReferenceCell::new(Value::String("ref".to_string()));
+        let mut array = PhpArray::new();
+        array.insert("plain", Value::String("value".to_string()));
+        array.insert_reference("ref", reference.clone());
+
+        let values = array.values_reindexed();
+        let copied_reference = values
+            .get_slot(1)
+            .and_then(ArraySlot::reference_cell)
+            .expect("array_values should preserve reference-backed value slots");
+
+        assert!(copied_reference.shares_reference_with(&reference));
+        reference.set_value(Value::String("changed".to_string()));
+        assert_eq!(
+            values.get_cloned(1),
+            Some(Value::String("changed".to_string()))
+        );
+    }
+
+    #[test]
     fn array_unshift_prepends_values_and_reindexes_integer_keys() {
         let mut array = PhpArray::new();
         array.insert(2, Value::String("two".to_string()));
@@ -74477,6 +74515,27 @@ mod tests {
             array.get("name"),
             Some(&Value::String("Ada".to_string())),
             "array_reverse must not mutate the original array"
+        );
+    }
+
+    #[test]
+    fn array_reverse_preserves_reference_backed_slots() {
+        let reference = PhpReferenceCell::new(Value::String("ref".to_string()));
+        let mut array = PhpArray::new();
+        array.append(Value::String("first".to_string())).unwrap();
+        array.append_reference(reference.clone()).unwrap();
+
+        let reversed = array.reversed_reindexed();
+        let copied_reference = reversed
+            .get_slot(0)
+            .and_then(ArraySlot::reference_cell)
+            .expect("array_reverse should preserve reference-backed value slots");
+
+        assert!(copied_reference.shares_reference_with(&reference));
+        reference.set_value(Value::String("changed".to_string()));
+        assert_eq!(
+            reversed.get_cloned(0),
+            Some(Value::String("changed".to_string()))
         );
     }
 

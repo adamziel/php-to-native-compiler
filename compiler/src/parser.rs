@@ -1564,12 +1564,6 @@ impl Parser {
             if !self.match_token(|kind| matches!(kind, TokenKind::Comma)) {
                 break;
             }
-            if kind == UseImportKind::Class {
-                return Err(self.error_at(
-                    self.previous().span,
-                    unsupported_multiple_class_use_message(),
-                ));
-            }
         }
 
         self.consume_keyword(TokenKind::Semicolon, "expected ';' after use declaration")?;
@@ -8442,10 +8436,6 @@ fn unsupported_nested_namespace_message() -> &'static str {
 
 fn unsupported_use_message() -> &'static str {
     "unsupported use declaration: only simple class imports are implemented"
-}
-
-fn unsupported_multiple_class_use_message() -> &'static str {
-    "unsupported multiple class use declaration: multiple simple class imports in one use declaration require import-list metadata, alias handling, namespace resolution, and native lowering"
 }
 
 fn function_import_alias_conflict_message() -> &'static str {

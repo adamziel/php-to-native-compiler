@@ -2239,12 +2239,151 @@ fn native_c_source_direct_user_function_reference_returns_keep_alias_transfer_re
 }
 
 #[test]
-fn native_c_source_direct_user_function_reference_return_rejects_by_value_return_source() {
-    let source = "<?php\nfunction &borrow($slot) { return $slot; }\n";
+fn native_executable_direct_user_function_reference_return_promotes_by_value_local_source() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "function &borrow($slot) { return $slot; }\n",
+        "$value = \"caller\";\n",
+        "$alias =& borrow($value);\n",
+        "$alias = \"local\";\n",
+        "echo $value, \"|\", $alias;\n",
+    );
+
+    let generated = emit_native_executable_c_source(&parse(source).unwrap()).unwrap();
+    assert!(
+        generated.contains("phpc_native_reference_from_value_and_free"),
+        "by-value return sources should be promoted to native reference cells:\n{generated}"
+    );
+    assert!(
+        generated.contains("return_reference_source"),
+        "direct local return-reference promotion should use the dedicated source path:\n{generated}"
+    );
+    let promotion_slice = generated
+        .find("return_reference_source")
+        .and_then(|start| {
+            generated
+                .find("int main(void)")
+                .map(|end| &generated[start..end])
+        })
+        .expect("generated source should contain promoted return-reference function body");
+    assert!(
+        !promotion_slice.contains("phpc_native_symbol_table_reference_for_path"),
+        "ordinary function locals must not fall through to symbol-table reference lookup:\n{generated}"
+    );
+
+    let (source_path, output_path) =
+        compile_native_function_call_fixture("direct_reference_return_by_value_local", source);
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run by-value local reference-return executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(run.stdout, b"caller|local");
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_executable_reference_returns_reuse_property_static_and_source_call_sources() {
+    if !has_cc() {
+        return;
+    }
+
+    let source = concat!(
+        "<?php\n",
+        "class ReturnReferenceSourceBox {\n",
+        "    public $slot = \"object\";\n",
+        "    public static $stat = \"static\";\n",
+        "    public function &borrowObject() { return $this->slot; }\n",
+        "    public static function &borrowStatic() { return self::$stat; }\n",
+        "}\n",
+        "function &inner(&$slot) { return $slot; }\n",
+        "function &outer(&$slot) { return inner($slot); }\n",
+        "function set_ref(&$slot, $value) { $slot = $value; return $slot; }\n",
+        "$box = new ReturnReferenceSourceBox();\n",
+        "echo set_ref($box->borrowObject(), \"object-alias\"), \"|\";\n",
+        "echo set_ref(ReturnReferenceSourceBox::borrowStatic(), \"static-alias\"), \"|\";\n",
+        "$value = \"source\";\n",
+        "echo outer($value), \"|\";\n",
+        "echo set_ref(outer($value), \"source-alias\"), \"|\";\n",
+        "echo $box->slot, \"|\", ReturnReferenceSourceBox::$stat, \"|\", $value;\n",
+    );
+
+    let generated = emit_native_executable_c_source(&parse(source).unwrap()).unwrap();
+    assert!(
+        generated.contains("phpc_native_value_public_property_reference_with_diagnostic_and_free")
+            && generated.contains("phpc_native_static_property_reference_")
+            && generated.contains("user_function_reference_result"),
+        "return-reference sources should reuse property/static/source-call reference carriers:\n{generated}"
+    );
+
+    let (source_path, output_path) = compile_native_function_call_fixture(
+        "reference_return_property_static_source_call_sources",
+        source,
+    );
+    let run = Command::new(&output_path).output().unwrap_or_else(|error| {
+        panic!(
+            "failed to run property/static/source-call reference-return executable {}: {error}",
+            output_path.display()
+        )
+    });
+
+    assert!(
+        run.status.success(),
+        "run stdout:\n{}\nrun stderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        run.stdout,
+        b"object-alias|static-alias|source|source-alias|object-alias|static-alias|source-alias"
+    );
+    assert_eq!(run.stderr, b"");
+
+    let _ = fs::remove_file(&source_path);
+    let _ = fs::remove_file(&output_path);
+}
+
+#[test]
+fn native_c_source_direct_user_function_reference_return_rejects_temporary_return_source() {
+    let source = "<?php\nfunction &borrow() { return \"temporary\"; }\n";
     let error = emit_native_executable_c_source(&parse(source).unwrap()).unwrap_err();
 
     assert_eq!(error.phase, Phase::Codegen);
-    assert_eq!(error.message, ASSEMBLY_FUNCTION_DECLARATION_REJECTION);
+    assert!(
+        error
+            .message
+            .contains("assembly user-function lowering rejects function declarations"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn native_c_source_direct_user_function_reference_return_keeps_local_array_offsets_blocked() {
+    let source = "<?php\nfunction &pick($items, $key) { return $items[$key]; }\n";
+    let error = emit_native_executable_c_source(&parse(source).unwrap()).unwrap_err();
+
+    assert_eq!(error.phase, Phase::Codegen);
+    assert!(
+        error
+            .message
+            .contains("assembly user-function lowering rejects function declarations"),
+        "{error:?}"
+    );
 }
 
 #[test]

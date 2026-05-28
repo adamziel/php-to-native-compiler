@@ -1,3 +1,3 @@
 <?php
 echo "before";
-throw new Exception("boom");
+throw new Exception();

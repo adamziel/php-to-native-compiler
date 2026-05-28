@@ -5252,22 +5252,22 @@
   slice.
 - explicit parse diagnostics for unsupported direct `eval(...)` syntax
 - one unbracketed named `namespace` declaration per file, plus simple
-  top-level class `use` imports with optional `as` aliases. Class declarations
-  and class-like references in `extends`, `new`, `instanceof`, static
-  members, and `ClassName::class` resolve through the current namespace and
-  class-import table. Namespace-scoped function declarations register under
-  their resolved names, and unqualified direct calls inside a namespace resolve
-  to same-namespace functions with global builtin/user-function fallback.
+  top-level class `use` imports with optional `as` aliases, including
+  comma-separated class import lists. Class declarations and class-like
+  references in `extends`, `new`, `instanceof`, static members, and
+  `ClassName::class` resolve through the current namespace and class-import
+  table. Namespace-scoped function declarations register under their resolved
+  names, and unqualified direct calls inside a namespace resolve to
+  same-namespace functions with global builtin/user-function fallback.
 - explicit parse diagnostics for unsupported namespace forms and imports:
   bracketed/global/multiple namespaces, namespace-scoped constants, grouped
-  imports, multiple simple class imports in one `use` declaration, function
-  imports, constant imports, qualified function calls,
+  imports, function imports, constant imports, qualified function calls,
   namespace-qualified function calls such as `App\make()`, and
   leading-backslash fully-qualified function calls such as `\strlen()`.
-  Multiple class imports, function imports, const imports, and
-  fully-qualified function calls have dedicated diagnostics naming the
-  relevant missing import/function-table metadata, namespace-aware lookup or
-  fallback behavior, alias handling where applicable, and native lowering.
+  Function imports, const imports, and fully-qualified function calls have
+  dedicated diagnostics naming the relevant missing import/function-table
+  metadata, namespace-aware lookup or fallback behavior, alias handling where
+  applicable, and native lowering.
 - bounded magic class names in `new` expressions such as `new self()`,
   `new parent()`, and `new static()` in active class/method contexts;
   contextless magic class-name instantiation remains a stable runtime boundary
