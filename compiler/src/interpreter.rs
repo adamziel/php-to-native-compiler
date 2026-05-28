@@ -194,6 +194,7 @@ struct Interpreter {
     next_foreach_temp_id: i64,
     active_foreach_references: Vec<ActiveForeachReference>,
     function_context: Vec<String>,
+    pending_uncaught_call_frames: Vec<PendingUncaughtCallFrame>,
     class_context: Vec<ClassId>,
     called_class_context: Vec<ClassId>,
     trait_class_context: Vec<String>,
@@ -257,6 +258,14 @@ struct ActiveForeachReference {
     root: ForeachArrayRoot,
     value_name: String,
     key: ArrayKey,
+}
+
+#[derive(Debug, Clone)]
+struct PendingUncaughtCallFrame {
+    function_name: String,
+    function_line: usize,
+    call_line: usize,
+    args: Vec<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -8722,6 +8731,7 @@ impl Interpreter {
             next_foreach_temp_id: 1,
             active_foreach_references: Vec::new(),
             function_context: Vec::new(),
+            pending_uncaught_call_frames: Vec::new(),
             class_context: Vec::new(),
             called_class_context: Vec::new(),
             trait_class_context: Vec::new(),
@@ -10207,6 +10217,7 @@ impl Interpreter {
             if !self.catch_matches_class(error_class_id, catch)? {
                 continue;
             }
+            self.clear_pending_uncaught_call_frames();
             if let Some(variable) = &catch.variable {
                 scope.write_static(variable, Value::Object(error_object.clone()));
             }
@@ -13865,6 +13876,7 @@ impl Interpreter {
             if !self.catch_matches_class(error_class_id, catch)? {
                 continue;
             }
+            self.clear_pending_uncaught_call_frames();
             if let Some(variable) = &catch.variable {
                 scope.write_static(variable, Value::Object(error_object.clone()));
             }
@@ -14039,12 +14051,67 @@ impl Interpreter {
             .or_else(|| error.file.as_ref().map(|file| file.display().to_string()))
             .unwrap_or_else(|| "Command line code".to_string());
         let line = error.line;
-        if !self.stdout.is_empty() && !self.stdout.ends_with('\n') {
+        let stack_trace = self.formatted_pending_uncaught_call_trace(&file);
+        self.push_uncaught_fatal_separator();
+        self.stdout.push_str(&format!(
+            "Fatal error: Uncaught {error_class_name}: {error_message} in {file}:{line}\nStack trace:\n{stack_trace}\n  thrown in {file} on line {line}"
+        ));
+    }
+
+    fn push_uncaught_fatal_separator(&mut self) {
+        if self.stdout.is_empty() {
+            return;
+        }
+        if !self.stdout.ends_with('\n') {
             self.stdout.push('\n');
         }
-        self.stdout.push_str(&format!(
-            "Fatal error: Uncaught {error_class_name}: {error_message} in {file}:{line}\nStack trace:\n#0 {{main}}\n  thrown in {file} on line {line}"
+        if !self.stdout.ends_with("\n\n") {
+            self.stdout.push('\n');
+        }
+    }
+
+    fn formatted_pending_uncaught_call_trace(&self, file: &str) -> String {
+        if self.pending_uncaught_call_frames.is_empty() {
+            return "#0 {main}".to_string();
+        }
+
+        let mut trace = String::new();
+        for (index, frame) in self.pending_uncaught_call_frames.iter().enumerate() {
+            trace.push_str(&format!(
+                "#{index} {file}({}): {}({})\n",
+                frame.call_line,
+                frame.display_callable(file),
+                format_stack_trace_args(&frame.args)
+            ));
+        }
+        trace.push_str(&format!(
+            "#{} {{main}}",
+            self.pending_uncaught_call_frames.len()
         ));
+        trace
+    }
+
+    fn clear_pending_uncaught_call_frames(&mut self) {
+        self.pending_uncaught_call_frames.clear();
+    }
+
+    fn record_pending_uncaught_call_frame(
+        &mut self,
+        function: &FunctionDecl,
+        call_span: Span,
+        args: &[Value],
+        error: &Diagnostic,
+    ) {
+        if catchable_php_error_message(error).is_none() {
+            return;
+        }
+        self.pending_uncaught_call_frames
+            .push(PendingUncaughtCallFrame {
+                function_name: function.name.clone(),
+                function_line: function.span.line,
+                call_line: call_span.line,
+                args: args.to_vec(),
+            });
     }
 
     fn emit_uncaught_call_argument_type_error_fatal(
@@ -14060,9 +14127,7 @@ impl Interpreter {
             .unwrap_or_else(|| "Command line code".to_string());
         let line = error.line;
         let callable = call_argument_type_error_callable(error_message).unwrap_or("{main}");
-        if !self.stdout.is_empty() && !self.stdout.ends_with('\n') {
-            self.stdout.push('\n');
-        }
+        self.push_uncaught_fatal_separator();
         self.stdout.push_str(&format!(
             "Fatal error: Uncaught {error_class_name}: {error_message}, called in {file}:{line}\nStack trace:\n#0 {file}({line}): {callable}\n#1 {{main}}\n  thrown in {file} on line {line}"
         ));
@@ -45054,6 +45119,21 @@ impl Interpreter {
                     array_copy_source_binding: None,
                 });
             }
+            if let Some((caller_cell, value, name)) =
+                self.evaluate_nested_visible_object_property_reference_argument(arg, caller_scope)?
+            {
+                return Ok(EvaluatedCallArgument {
+                    value,
+                    reference_binding: Some(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::CallerCell {
+                            name,
+                            cell: caller_cell,
+                        },
+                    }),
+                    array_copy_source_binding: None,
+                });
+            }
             if let Some((caller_cell, value)) =
                 self.evaluate_magic_get_reference_argument(arg, caller_scope)?
             {
@@ -51207,7 +51287,8 @@ impl Interpreter {
             return Ok((Value::Null, None));
         }
 
-        self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
+        let trace_args = frame.values.clone();
+        let result = self.call_user_function_with_checked_values_and_locals_with_array_copy_source_and_arg_sources(
             function,
             frame.values,
             frame.argument_keys,
@@ -51219,7 +51300,11 @@ impl Interpreter {
             prebound_locals,
             frame.by_value_array_copy_bindings,
             frame.array_copy_source_bindings,
-        )
+        );
+        if let Err(error) = &result {
+            self.record_pending_uncaught_call_frame(function, span, &trace_args, error);
+        }
+        result
     }
 
     fn call_reference_return_user_function_with_expr_args_and_array_copy_source(
@@ -54443,6 +54528,7 @@ impl Interpreter {
             if !self.catch_matches_class(error_class_id, catch)? {
                 continue;
             }
+            self.clear_pending_uncaught_call_frames();
             if let Some(variable) = &catch.variable {
                 scope.write_static(variable, Value::Object(error_object.clone()));
             }
@@ -55857,6 +55943,62 @@ impl Interpreter {
                     source,
                     Some((object, property)),
                 )))
+            }
+            Err(error) if Self::is_magic_get_fallback_property_error(&error) => Ok(None),
+            Err(error) => Err(runtime_error(arg.span(), error)),
+        }
+    }
+
+    fn evaluate_nested_visible_object_property_reference_argument(
+        &mut self,
+        arg: &Expr,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(VariableCell, Value, String)>> {
+        let (target, property) = match arg {
+            Expr::Property {
+                target, property, ..
+            } => {
+                if matches!(target.as_ref(), Expr::Variable(_, _)) {
+                    return Ok(None);
+                }
+                (target.as_ref(), property.clone())
+            }
+            Expr::DynamicProperty {
+                target, property, ..
+            } => {
+                if matches!(target.as_ref(), Expr::Variable(_, _)) {
+                    return Ok(None);
+                }
+                let property =
+                    self.evaluate_dynamic_property_name(property, arg.span(), caller_scope)?;
+                (target.as_ref(), property)
+            }
+            _ => return Ok(None),
+        };
+
+        let holder = self.evaluate(target, caller_scope)?;
+        let Value::Object(object) = holder else {
+            return Err(runtime_error(
+                arg.span(),
+                RuntimeError::invalid_property_access(format!(
+                    "cannot read property ${property} on {}",
+                    holder.type_name()
+                )),
+            ));
+        };
+
+        let (current_class_id, protected_class_ids) = self.current_property_access_context();
+        match object.read_property_from_context(&property, current_class_id, &protected_class_ids) {
+            Ok(_) => {
+                let cell = object
+                    .bind_property_reference_cell_from_context(
+                        &property,
+                        current_class_id,
+                        &protected_class_ids,
+                    )
+                    .map_err(|error| runtime_error(arg.span(), error))?;
+                let value = cell.value_cloned();
+                Ok(Some((cell, value, format!("<object>->{property}"))))
             }
             Err(error) if Self::is_magic_get_fallback_property_error(&error) => Ok(None),
             Err(error) => Err(runtime_error(arg.span(), error)),
@@ -72043,6 +72185,44 @@ fn runtime_visibility(visibility: ClassVisibility) -> Visibility {
     }
 }
 
+impl PendingUncaughtCallFrame {
+    fn display_callable(&self, file: &str) -> String {
+        if self.function_name == "{closure}" {
+            format!("{{closure:{file}:{}}}", self.function_line)
+        } else {
+            self.function_name.clone()
+        }
+    }
+}
+
+fn format_stack_trace_args(args: &[Value]) -> String {
+    args.iter()
+        .map(format_stack_trace_arg)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn format_stack_trace_arg(value: &Value) -> String {
+    match value {
+        Value::Null => "NULL".to_string(),
+        Value::Bool(value) => {
+            if *value {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
+        }
+        Value::Int(value) => value.to_string(),
+        Value::Float(value) => value.to_string(),
+        Value::String(value) => format!("'{}'", value),
+        Value::BinaryString(value) => format!("'{}'", String::from_utf8_lossy(value)),
+        Value::Array(_) => "Array".to_string(),
+        Value::Object(object) => format!("Object({})", object.class_name()),
+        Value::Closure(_) => "Object(Closure)".to_string(),
+        Value::Resource(id) => format!("Resource id #{id}"),
+    }
+}
+
 fn runtime_error(span: Span, error: RuntimeError) -> Diagnostic {
     Diagnostic::new(Phase::Runtime, span.line, span.column, error.message())
 }
@@ -72320,10 +72500,36 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("Error", message));
     }
 
+    if let Some(message) = typed_property_reference_type_error_message(error) {
+        return Some(("TypeError", message));
+    }
+
     if let Some(message) = call_argument_type_error_message(error) {
         return Some(("TypeError", message));
     }
 
+    None
+}
+
+fn typed_property_reference_type_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    let mut message = error.message.as_str();
+    if let Some(reason) = message.strip_prefix("unsupported call ") {
+        if let Some((_, reason)) = reason.split_once(": ") {
+            message = reason;
+        }
+    }
+    let message = message
+        .strip_prefix("invalid property access: ")
+        .unwrap_or(message);
+    if message.starts_with("Cannot assign ")
+        && message.contains(" to reference held by property ")
+        && message.contains(" of type ")
+    {
+        return Some(message.to_string());
+    }
     None
 }
 

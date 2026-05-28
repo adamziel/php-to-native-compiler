@@ -30383,13 +30383,20 @@ impl PhpReferenceCell {
         let constraints = self.state.borrow().constraints.clone();
         let mut value = value;
         for constraint in constraints {
+            let actual = value.type_name();
             value = coerce_property_value_with_object_type_resolver(
                 &constraint.type_decl,
                 value,
                 &constraint.class_name,
                 &constraint.property_name,
                 &object_type_resolver,
-            )?;
+            )
+            .map_err(|_| {
+                RuntimeError::invalid_property_access(format!(
+                    "Cannot assign {actual} to reference held by property {}::${} of type {}",
+                    constraint.class_name, constraint.property_name, constraint.type_decl
+                ))
+            })?;
         }
         Ok(value)
     }
