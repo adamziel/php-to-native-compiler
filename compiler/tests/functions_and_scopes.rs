@@ -783,6 +783,27 @@ var_dump($u2);
 }
 
 #[test]
+fn missing_direct_variable_builtin_arguments_warn_null_without_materializing() {
+    let execution = run_source_with_source_file(
+        r#"<?php
+unset($u1, $u2);
+var_dump($u1, $u2);
+echo isset($u1) ? "u1-set\n" : "u1-unset\n";
+echo isset($u2) ? "u2-set\n" : "u2-unset\n";
+"#,
+        "/tmp/passByReference_005_builtin.php",
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Warning: Undefined variable $u1 in /tmp/passByReference_005_builtin.php on line 3\n\nWarning: Undefined variable $u2 in /tmp/passByReference_005_builtin.php on line 3\nNULL\nNULL\nu1-unset\nu2-unset\n"
+    );
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_parameters_share_direct_alias_and_array_slot_container_identity() {
     let execution = run_source(
         r#"<?php
