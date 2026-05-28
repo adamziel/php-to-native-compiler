@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 05:22 CEST
+Updated: 2026-05-28 05:29 CEST
 Primary branch: `master`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
@@ -80,6 +80,7 @@ Gate status and parked candidates:
 | PR #16 `returnByReference.004` uppercase `Class` declaration keyword | GO-CANDIDATE after independent review and p14 `SAFE-FOR-PROGRESS`; focused `object_model` Rust gate, `cargo build -p phpc`, and wrapper PHPTs `tests/lang/returnByReference.004.phpt`, `tests/lang/returnByReference.002.phpt`, and `tests/lang/returnByReference.003.phpt` passed 3/3; no full-suite run and no percent change |
 | PR #17 `returnByReference.006` dynamic-call return-by-reference fallback | GO-CANDIDATE after independent p7 review and p14 `SAFE-FOR-PROGRESS`; patch SHA `9cf5386634f214fb83e1517337ad4ea12f89662808f3c305143ebd3fcf1ec12e`; focused Rust gate, `cargo build -p phpc`, and wrapper PHPTs `tests/lang/returnByReference.006.phpt` plus `tests/lang/returnByReference.003.phpt` passed 2/2; no full-suite run and no percent change |
 | PR #10 `passByReference_006` real-stack `var_dump()` reference visibility | GO-CANDIDATE after independent review and p14 `SAFE-FOR-PROGRESS`; patch SHA `3c5a5ef37747de2a52374eabe35f674e4732cbe588bd742a4bc7ae6e0ca4304b`; focused Rust gate, `cargo build -p phpc`, and wrapper PHPTs `tests/lang/passByReference_006.phpt`, `tests/lang/passByReference_004.phpt`, and `tests/lang/passByReference_002.phpt` passed 3/3; no full-suite run and no percent change |
+| PR #19 `passByReference_003` undefined call-argument recovery | GO-CANDIDATE after independent review and p14 `SAFE-FOR-PROGRESS`; patch SHA `4f54ff6bd5517848b77f711e04373a1a571a6e8548dd7d2e31be9d7fab8a2ad6`; focused Rust gates, `cargo build -p phpc`, and wrapper PHPTs `tests/lang/passByReference_003.phpt`, `tests/lang/passByReference_001.phpt`, and `tests/lang/passByReference_007.phpt` passed 3/3; no full-suite run and no percent change |
 | `Zend/tests/bug39944.phpt` reference invocation | PR #2/r82 is parked/superseded for Batch002; do not stack it with PR #4 because both conflict in `compiler/src/interpreter.rs` and `compiler/tests/functions_and_scopes.rs` |
 | Magic visibility warnings | PR #3 is `REBASE-NEEDED` for Batch 002 after r81/stack10 due docs conflict; production/test hunks replay |
 | Foreach `$GLOBALS` lane | PASS-NO-PATCH accepted by reviewer; accepted stack10 passes `foreach_unset_globals`, `foreach_reference`, and `foreach_temp_array_expr_with_refs` |
@@ -106,11 +107,11 @@ Required live roles:
 Current AO snapshot: `phpc-orchestrator` supervising; `phpc-14` critic;
 `phpc-7` reviewer; `phpc-8` progress reporter; active coder/support lanes
 `phpc-15`, `phpc-16`, `phpc-17`, `phpc-18`, and `phpc-19`. Current
-public-progress watch targets are p15 PR #19 / `passByReference_003`, p17 PR
-#18 / `returnByReference.008`, p16 `magic_by_ref_004`, p18
-`magic_by_ref_005`, p19 `passByReference_005`, and any new full-suite PHPT
-row. Extra sessions `phpc-22` and stale `phpc-2` are killed/not active roster
-capacity.
+public-progress watch targets are p7 PR #18 / `returnByReference.008`, p15
+`returnByReference.005`, p16 `call_static` / magic map, p17
+`add_optional_by_ref_arg`, p18 `call_user_func_by_ref`, p19
+`passByReference_005`, and any new full-suite PHPT row. Extra sessions
+`phpc-22` and stale `phpc-2` are killed/not active roster capacity.
 
 ## Current Rules
 
