@@ -175,6 +175,7 @@ struct Interpreter {
     trace_includes: bool,
     request_time: i64,
     request_time_seeded: bool,
+    default_timezone: String,
     request_body: String,
     include_path: String,
     execution_steps: usize,
@@ -8798,6 +8799,7 @@ impl Interpreter {
                 .request_time
                 .unwrap_or(SESSION_CACHE_REFERENCE_TIMESTAMP),
             request_time_seeded: options.request_time.is_some(),
+            default_timezone: "UTC".to_string(),
             request_body: options.request_body.unwrap_or_default(),
             include_path: ".".to_string(),
             execution_steps: 0,
@@ -63540,7 +63542,20 @@ impl Interpreter {
             "abs" => call_abs(&args, span),
             "version_compare" => call_version_compare(&args, span),
             "microtime" => call_microtime(&args, span),
-            "date_default_timezone_set" => call_date_default_timezone_set(&args, span),
+            "time" => self.call_time(&args, span),
+            "mktime" => self.call_mktime(&args, span, false),
+            "gmmktime" => self.call_mktime(&args, span, true),
+            "date" => self.call_date(&args, span, false),
+            "gmdate" => self.call_date(&args, span, true),
+            "idate" => self.call_idate(&args, span),
+            "checkdate" => call_checkdate(&args, span),
+            "getdate" => self.call_getdate(&args, span),
+            "localtime" => self.call_localtime(&args, span),
+            "date_default_timezone_get" => {
+                expect_arity(name, &args, 0, span)?;
+                Ok(Value::String(self.default_timezone.clone()))
+            }
+            "date_default_timezone_set" => self.call_date_default_timezone_set(&args, span),
             "getenv" => self.call_getenv(&args, span),
             "ini_get" => self.call_ini_get(&args, span),
             "ini_set" => self.call_ini_set(&args, span),
@@ -74788,6 +74803,16 @@ fn is_builtin(name: &str) -> bool {
             | "abs"
             | "version_compare"
             | "microtime"
+            | "time"
+            | "mktime"
+            | "gmmktime"
+            | "date"
+            | "gmdate"
+            | "idate"
+            | "checkdate"
+            | "getdate"
+            | "localtime"
+            | "date_default_timezone_get"
             | "date_default_timezone_set"
             | "getenv"
             | "ini_get"
@@ -75245,6 +75270,8 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PHP_VERSION_ID" => Some(Value::Int(80300)),
         "PHP_INT_MAX" => Some(Value::Int(i64::MAX)),
         "PHP_SAPI" => Some(Value::String("cli".to_string())),
+        "PHP_OS" => Some(Value::String("Linux".to_string())),
+        "PHP_OS_FAMILY" => Some(Value::String("Linux".to_string())),
         "PHP_EOL" => Some(Value::String("\n".to_string())),
         "PATH_SEPARATOR" => Some(Value::String(INCLUDE_PATH_SEPARATOR.to_string())),
         "FILE_USE_INCLUDE_PATH" => Some(Value::Int(PHP_FILE_USE_INCLUDE_PATH)),
@@ -84785,26 +84812,203 @@ fn call_microtime(args: &[Value], span: Span) -> CompileResult<Value> {
     }
 }
 
-fn call_date_default_timezone_set(args: &[Value], span: Span) -> CompileResult<Value> {
-    expect_arity("date_default_timezone_set", args, 1, span)?;
-
-    match &args[0] {
-        Value::String(name) if name == "UTC" => Ok(Value::Bool(true)),
-        Value::String(_) => Ok(Value::Bool(false)),
-        other => Err(runtime_error(
-            span,
-            RuntimeError::unsupported_call(
-                "date_default_timezone_set()",
-                format!(
-                    "timezone identifier must be string in the current subset, got {}",
-                    other.type_name()
-                ),
-            ),
-        )),
-    }
-}
-
 impl Interpreter {
+    fn call_time(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("time", args, 0, span)?;
+        Ok(Value::Int(self.request_time))
+    }
+
+    fn call_mktime(&self, args: &[Value], span: Span, utc: bool) -> CompileResult<Value> {
+        let function = if utc { "gmmktime()" } else { "mktime()" };
+        if args.len() > 6 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    function,
+                    ArityExpectation::Between { min: 0, max: 6 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let timezone = if utc {
+            BoundedTimezone::utc()
+        } else {
+            bounded_timezone_from_name(&self.default_timezone)
+                .expect("stored default timezone should be bounded")
+        };
+        let current = bounded_datetime_parts(
+            self.request_time,
+            timezone.offset_at_timestamp(self.request_time),
+        );
+
+        let hour =
+            optional_date_int_arg(function, args.first(), "hour", span)?.unwrap_or(current.hour);
+        let minute =
+            optional_date_int_arg(function, args.get(1), "minute", span)?.unwrap_or(current.minute);
+        let second =
+            optional_date_int_arg(function, args.get(2), "second", span)?.unwrap_or(current.second);
+        let month =
+            optional_date_int_arg(function, args.get(3), "month", span)?.unwrap_or(current.month);
+        let day = optional_date_int_arg(function, args.get(4), "day", span)?.unwrap_or(current.day);
+        let year_argument = optional_date_int_arg(function, args.get(5), "year", span)?;
+        let year = normalize_mktime_year(
+            year_argument.unwrap_or(current.year),
+            year_argument.is_some(),
+        );
+
+        let offset = if utc {
+            0
+        } else {
+            timezone.offset_for_local_date(year, month, day)
+        };
+        Ok(Value::Int(timestamp_from_local_parts(
+            year, month, day, hour, minute, second, offset,
+        )))
+    }
+
+    fn call_date(&self, args: &[Value], span: Span, utc: bool) -> CompileResult<Value> {
+        let function = if utc { "gmdate()" } else { "date()" };
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    function,
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let format = expect_date_format_arg(function, &args[0], span)?;
+        let timestamp =
+            optional_timestamp_arg(function, args.get(1), span)?.unwrap_or(self.request_time);
+        let timezone = if utc {
+            BoundedTimezone::utc()
+        } else {
+            bounded_timezone_from_name(&self.default_timezone)
+                .expect("stored default timezone should be bounded")
+        };
+        Ok(Value::String(format_bounded_date(
+            &format, timestamp, &timezone,
+        )))
+    }
+
+    fn call_idate(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if !(1..=2).contains(&args.len()) {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "idate()",
+                    ArityExpectation::Between { min: 1, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        let format = args[0]
+            .try_echo_string()
+            .map_err(|error| runtime_error(span, error))?;
+        if format.chars().count() != 1 {
+            self.emit_warning("idate()", "idate format is one char", span)?;
+            return Ok(Value::Bool(false));
+        }
+        let token = format.chars().next().unwrap_or_default();
+        let timestamp =
+            optional_timestamp_arg("idate()", args.get(1), span)?.unwrap_or(self.request_time);
+        let timezone = bounded_timezone_from_name(&self.default_timezone)
+            .expect("stored default timezone should be bounded");
+        let Some(value) = bounded_idate_token(token, timestamp, &timezone) else {
+            self.emit_warning("idate()", "Unrecognized date format token", span)?;
+            return Ok(Value::Bool(false));
+        };
+        Ok(Value::Int(value))
+    }
+
+    fn call_getdate(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 1 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "getdate()",
+                    ArityExpectation::Between { min: 0, max: 1 },
+                    args.len(),
+                ),
+            ));
+        }
+        let timestamp =
+            optional_timestamp_arg("getdate()", args.first(), span)?.unwrap_or(self.request_time);
+        let timezone = bounded_timezone_from_name(&self.default_timezone)
+            .expect("stored default timezone should be bounded");
+        Ok(Value::Array(getdate_array(timestamp, &timezone)))
+    }
+
+    fn call_localtime(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "localtime()",
+                    ArityExpectation::Between { min: 0, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+        let timestamp =
+            optional_timestamp_arg("localtime()", args.first(), span)?.unwrap_or(self.request_time);
+        let associative = match args.get(1) {
+            Some(Value::Bool(value)) => *value,
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "localtime()",
+                        format!(
+                            "associative argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+            None => false,
+        };
+        let timezone = bounded_timezone_from_name(&self.default_timezone)
+            .expect("stored default timezone should be bounded");
+        Ok(Value::Array(localtime_array(
+            timestamp,
+            &timezone,
+            associative,
+        )))
+    }
+
+    fn call_date_default_timezone_set(
+        &mut self,
+        args: &[Value],
+        span: Span,
+    ) -> CompileResult<Value> {
+        expect_arity("date_default_timezone_set", args, 1, span)?;
+
+        match &args[0] {
+            Value::String(name) => {
+                let Some(timezone) = bounded_timezone_from_name(name) else {
+                    return Ok(Value::Bool(false));
+                };
+                self.default_timezone = timezone.name;
+                Ok(Value::Bool(true))
+            }
+            other => Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "date_default_timezone_set()",
+                    format!(
+                        "timezone identifier must be string in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
     fn call_getenv(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         if args.len() > 2 {
             return Err(runtime_error(
@@ -84961,6 +85165,664 @@ fn current_environment_array() -> PhpArray {
         );
     }
     env
+}
+
+#[derive(Debug, Clone)]
+struct BoundedTimezone {
+    name: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BoundedDateTimeParts {
+    year: i64,
+    month: i64,
+    day: i64,
+    hour: i64,
+    minute: i64,
+    second: i64,
+    weekday: i64,
+    yday: i64,
+    offset: i64,
+}
+
+impl BoundedTimezone {
+    fn utc() -> Self {
+        Self {
+            name: "UTC".to_string(),
+        }
+    }
+
+    fn offset_at_timestamp(&self, timestamp: i64) -> i64 {
+        let utc = bounded_datetime_parts(timestamp, 0);
+        self.offset_for_local_date(utc.year, utc.month, utc.day)
+    }
+
+    fn offset_for_local_date(&self, year: i64, month: i64, day: i64) -> i64 {
+        match self.name.as_str() {
+            "UTC" | "Etc/UTC" | "Etc/GMT" | "Etc/Universal" | "Etc/Zulu" | "GMT0" => 0,
+            "Asia/Jerusalem" => 10_800,
+            "Europe/London" => {
+                if bounded_month_is_in_dst_window(month, day, 3, 31, 10, 31) {
+                    3_600
+                } else {
+                    0
+                }
+            }
+            "America/Chicago" => {
+                if bounded_month_is_in_dst_window(month, day, 3, 8, 11, 7) {
+                    -18_000
+                } else {
+                    -21_600
+                }
+            }
+            "US/Eastern" | "America/New_York" => {
+                if bounded_month_is_in_dst_window(month, day, 3, 8, 11, 7) {
+                    -14_400
+                } else {
+                    -18_000
+                }
+            }
+            _ => {
+                let _ = year;
+                0
+            }
+        }
+    }
+
+    fn standard_offset(&self) -> i64 {
+        match self.name.as_str() {
+            "America/Chicago" => -21_600,
+            "US/Eastern" | "America/New_York" => -18_000,
+            "Europe/London" => 0,
+            "Asia/Jerusalem" => 7_200,
+            _ => self.offset_for_local_date(1970, 1, 1),
+        }
+    }
+
+    fn abbreviation(&self, parts: &BoundedDateTimeParts) -> &'static str {
+        match self.name.as_str() {
+            "GMT0" => "GMT",
+            "UTC" | "Etc/UTC" | "Etc/Universal" | "Etc/Zulu" => "UTC",
+            "Etc/GMT" => "GMT",
+            "Asia/Jerusalem" => {
+                if self.is_dst(parts) {
+                    "IDT"
+                } else {
+                    "IST"
+                }
+            }
+            "Europe/London" => {
+                if self.is_dst(parts) {
+                    "BST"
+                } else {
+                    "GMT"
+                }
+            }
+            "America/Chicago" => {
+                if self.is_dst(parts) {
+                    "CDT"
+                } else {
+                    "CST"
+                }
+            }
+            "US/Eastern" | "America/New_York" => {
+                if self.is_dst(parts) {
+                    "EDT"
+                } else {
+                    "EST"
+                }
+            }
+            _ => "UTC",
+        }
+    }
+
+    fn is_dst(&self, parts: &BoundedDateTimeParts) -> bool {
+        parts.offset != self.standard_offset()
+    }
+}
+
+fn bounded_timezone_from_name(name: &str) -> Option<BoundedTimezone> {
+    let canonical = match name {
+        "UTC" => "UTC",
+        "Etc/UTC" => "Etc/UTC",
+        "Etc/GMT" => "Etc/GMT",
+        "Etc/Universal" => "Etc/Universal",
+        "Etc/Zulu" => "Etc/Zulu",
+        "GMT0" => "GMT0",
+        "Asia/Jerusalem" => "Asia/Jerusalem",
+        "America/Chicago" => "America/Chicago",
+        "Europe/London" => "Europe/London",
+        "US/Eastern" => "US/Eastern",
+        "America/New_York" => "America/New_York",
+        _ => return None,
+    };
+    Some(BoundedTimezone {
+        name: canonical.to_string(),
+    })
+}
+
+fn bounded_month_is_in_dst_window(
+    month: i64,
+    day: i64,
+    start_month: i64,
+    start_day: i64,
+    end_month: i64,
+    end_day: i64,
+) -> bool {
+    (month > start_month || (month == start_month && day >= start_day))
+        && (month < end_month || (month == end_month && day < end_day))
+}
+
+fn optional_date_int_arg(
+    function: &str,
+    value: Option<&Value>,
+    label: &str,
+    span: Span,
+) -> CompileResult<Option<i64>> {
+    match value {
+        Some(Value::Int(value)) => Ok(Some(*value)),
+        Some(other) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "{label} argument must be int in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+        None => Ok(None),
+    }
+}
+
+fn optional_timestamp_arg(
+    function: &str,
+    value: Option<&Value>,
+    span: Span,
+) -> CompileResult<Option<i64>> {
+    match value {
+        Some(Value::Int(value)) => Ok(Some(*value)),
+        Some(Value::Null) | None => Ok(None),
+        Some(other) => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "timestamp argument must be int or null in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
+fn expect_date_format_arg(function: &str, value: &Value, span: Span) -> CompileResult<String> {
+    match value {
+        Value::String(value) => Ok(value.clone()),
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "format argument must be string in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
+fn normalize_mktime_year(year: i64, explicit: bool) -> i64 {
+    if !explicit {
+        return year;
+    }
+    match year {
+        0..=69 => 2000 + year,
+        70..=100 => 1900 + year,
+        _ => year,
+    }
+}
+
+fn timestamp_from_local_parts(
+    year: i64,
+    month: i64,
+    day: i64,
+    hour: i64,
+    minute: i64,
+    second: i64,
+    offset: i64,
+) -> i64 {
+    let (normalized_year, normalized_month) = normalize_year_month(year, month);
+    let days = days_from_civil(normalized_year, normalized_month, 1) + day - 1;
+    days * 86_400 + hour * 3_600 + minute * 60 + second - offset
+}
+
+fn normalize_year_month(year: i64, month: i64) -> (i64, i64) {
+    let zero_based = month - 1;
+    let year_delta = div_floor(zero_based, 12);
+    let normalized_month = zero_based - year_delta * 12 + 1;
+    (year + year_delta, normalized_month)
+}
+
+fn div_floor(value: i64, divisor: i64) -> i64 {
+    let mut quotient = value / divisor;
+    let remainder = value % divisor;
+    if remainder != 0 && ((remainder > 0) != (divisor > 0)) {
+        quotient -= 1;
+    }
+    quotient
+}
+
+fn div_mod_floor(value: i64, divisor: i64) -> (i64, i64) {
+    let quotient = div_floor(value, divisor);
+    (quotient, value - quotient * divisor)
+}
+
+fn days_from_civil(mut year: i64, month: i64, day: i64) -> i64 {
+    year -= i64::from(month <= 2);
+    let era = div_floor(year, 400);
+    let yoe = year - era * 400;
+    let month_prime = month + if month > 2 { -3 } else { 9 };
+    let doy = (153 * month_prime + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+fn bounded_datetime_parts(timestamp: i64, offset: i64) -> BoundedDateTimeParts {
+    let local = timestamp + offset;
+    let (days, seconds_of_day) = div_mod_floor(local, 86_400);
+    let (year, month, day) = civil_from_days(days);
+    let hour = seconds_of_day / 3_600;
+    let minute = (seconds_of_day % 3_600) / 60;
+    let second = seconds_of_day % 60;
+    let weekday = positive_mod(days + 4, 7);
+    let yday = days - days_from_civil(year, 1, 1);
+    BoundedDateTimeParts {
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        weekday,
+        yday,
+        offset,
+    }
+}
+
+fn positive_mod(value: i64, modulus: i64) -> i64 {
+    let result = value % modulus;
+    if result < 0 {
+        result + modulus
+    } else {
+        result
+    }
+}
+
+fn format_bounded_date(format: &str, timestamp: i64, timezone: &BoundedTimezone) -> String {
+    let offset = timezone.offset_at_timestamp(timestamp);
+    let parts = bounded_datetime_parts(timestamp, offset);
+    let mut output = String::new();
+    let mut escaped = false;
+    for ch in format.chars() {
+        if escaped {
+            output.push(ch);
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        output.push_str(&format_bounded_date_token(ch, timestamp, timezone, &parts));
+    }
+    if escaped {
+        output.push('\\');
+    }
+    output
+}
+
+fn format_bounded_date_token(
+    token: char,
+    timestamp: i64,
+    timezone: &BoundedTimezone,
+    parts: &BoundedDateTimeParts,
+) -> String {
+    match token {
+        'd' => zero_pad(parts.day, 2),
+        'D' => weekday_name(parts.weekday, false).to_string(),
+        'j' => parts.day.to_string(),
+        'l' => weekday_name(parts.weekday, true).to_string(),
+        'N' => {
+            if parts.weekday == 0 {
+                "7".to_string()
+            } else {
+                parts.weekday.to_string()
+            }
+        }
+        'S' => ordinal_suffix(parts.day).to_string(),
+        'w' => parts.weekday.to_string(),
+        'z' => parts.yday.to_string(),
+        'W' => zero_pad(iso_year_week(*parts).1, 2),
+        'F' => month_name(parts.month, true).to_string(),
+        'm' => zero_pad(parts.month, 2),
+        'M' => month_name(parts.month, false).to_string(),
+        'n' => parts.month.to_string(),
+        't' => days_in_month(parts.year, parts.month).to_string(),
+        'L' => {
+            if is_leap_year(parts.year) {
+                "1".to_string()
+            } else {
+                "0".to_string()
+            }
+        }
+        'o' => iso_year_week(*parts).0.to_string(),
+        'Y' => zero_pad(parts.year, 4),
+        'y' => zero_pad(positive_mod(parts.year, 100), 2),
+        'a' => {
+            if parts.hour < 12 {
+                "am".to_string()
+            } else {
+                "pm".to_string()
+            }
+        }
+        'A' => {
+            if parts.hour < 12 {
+                "AM".to_string()
+            } else {
+                "PM".to_string()
+            }
+        }
+        'B' => swatch_internet_time(timestamp).to_string(),
+        'g' => twelve_hour(parts.hour).to_string(),
+        'G' => parts.hour.to_string(),
+        'h' => zero_pad(twelve_hour(parts.hour), 2),
+        'H' => zero_pad(parts.hour, 2),
+        'i' => zero_pad(parts.minute, 2),
+        's' => zero_pad(parts.second, 2),
+        'u' => "000000".to_string(),
+        'v' => "000".to_string(),
+        'e' => timezone.name.clone(),
+        'I' => {
+            if timezone.is_dst(parts) {
+                "1".to_string()
+            } else {
+                "0".to_string()
+            }
+        }
+        'O' => format_timezone_offset(parts.offset, false),
+        'P' => format_timezone_offset(parts.offset, true),
+        'T' => timezone.abbreviation(parts).to_string(),
+        'Z' => parts.offset.to_string(),
+        'c' => format!(
+            "{}-{}-{}T{}:{}:{}{}",
+            zero_pad(parts.year, 4),
+            zero_pad(parts.month, 2),
+            zero_pad(parts.day, 2),
+            zero_pad(parts.hour, 2),
+            zero_pad(parts.minute, 2),
+            zero_pad(parts.second, 2),
+            format_timezone_offset(parts.offset, true)
+        ),
+        'r' => format!(
+            "{}, {} {} {} {}:{}:{} {}",
+            weekday_name(parts.weekday, false),
+            zero_pad(parts.day, 2),
+            month_name(parts.month, false),
+            zero_pad(parts.year, 4),
+            zero_pad(parts.hour, 2),
+            zero_pad(parts.minute, 2),
+            zero_pad(parts.second, 2),
+            format_timezone_offset(parts.offset, false)
+        ),
+        'U' => timestamp.to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn bounded_idate_token(token: char, timestamp: i64, timezone: &BoundedTimezone) -> Option<i64> {
+    let offset = timezone.offset_at_timestamp(timestamp);
+    let parts = bounded_datetime_parts(timestamp, offset);
+    match token {
+        'B' => Some(swatch_internet_time_value(timestamp)),
+        'd' => Some(parts.day),
+        'h' => Some(twelve_hour(parts.hour)),
+        'H' => Some(parts.hour),
+        'i' => Some(parts.minute),
+        'I' => Some(i64::from(timezone.is_dst(&parts))),
+        'L' => Some(i64::from(is_leap_year(parts.year))),
+        'm' => Some(parts.month),
+        's' => Some(parts.second),
+        't' => Some(days_in_month(parts.year, parts.month)),
+        'U' => Some(timestamp),
+        'w' => Some(parts.weekday),
+        'W' => Some(iso_year_week(parts).1),
+        'y' => Some(positive_mod(parts.year, 100)),
+        'Y' => Some(parts.year),
+        'z' => Some(parts.yday),
+        'Z' => Some(parts.offset),
+        _ => None,
+    }
+}
+
+fn getdate_array(timestamp: i64, timezone: &BoundedTimezone) -> PhpArray {
+    let offset = timezone.offset_at_timestamp(timestamp);
+    let parts = bounded_datetime_parts(timestamp, offset);
+    let mut array = PhpArray::new();
+    array.insert("seconds", Value::Int(parts.second));
+    array.insert("minutes", Value::Int(parts.minute));
+    array.insert("hours", Value::Int(parts.hour));
+    array.insert("mday", Value::Int(parts.day));
+    array.insert("wday", Value::Int(parts.weekday));
+    array.insert("mon", Value::Int(parts.month));
+    array.insert("year", Value::Int(parts.year));
+    array.insert("yday", Value::Int(parts.yday));
+    array.insert(
+        "weekday",
+        Value::String(weekday_name(parts.weekday, true).to_string()),
+    );
+    array.insert(
+        "month",
+        Value::String(month_name(parts.month, true).to_string()),
+    );
+    array.insert(0_i64, Value::Int(timestamp));
+    array
+}
+
+fn localtime_array(timestamp: i64, timezone: &BoundedTimezone, associative: bool) -> PhpArray {
+    let offset = timezone.offset_at_timestamp(timestamp);
+    let parts = bounded_datetime_parts(timestamp, offset);
+    let values = [
+        ("tm_sec", parts.second),
+        ("tm_min", parts.minute),
+        ("tm_hour", parts.hour),
+        ("tm_mday", parts.day),
+        ("tm_mon", parts.month - 1),
+        ("tm_year", parts.year - 1900),
+        ("tm_wday", parts.weekday),
+        ("tm_yday", parts.yday),
+        ("tm_isdst", i64::from(timezone.is_dst(&parts))),
+    ];
+    let mut array = PhpArray::new();
+    for (name, value) in values {
+        if associative {
+            array.insert(name, Value::Int(value));
+        } else {
+            array
+                .append(Value::Int(value))
+                .expect("bounded localtime array append should not exhaust integer keys");
+        }
+    }
+    array
+}
+
+fn call_checkdate(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("checkdate", args, 3, span)?;
+    let month = required_date_int_arg("checkdate()", &args[0], "month", span)?;
+    let day = required_date_int_arg("checkdate()", &args[1], "day", span)?;
+    let year = required_date_int_arg("checkdate()", &args[2], "year", span)?;
+    Ok(Value::Bool(
+        (1..=32767).contains(&year)
+            && (1..=12).contains(&month)
+            && day >= 1
+            && day <= days_in_month(year, month),
+    ))
+}
+
+fn required_date_int_arg(
+    function: &str,
+    value: &Value,
+    label: &str,
+    span: Span,
+) -> CompileResult<i64> {
+    match value {
+        Value::Int(value) => Ok(*value),
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "{label} argument must be int in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
+}
+
+fn weekday_name(weekday: i64, full: bool) -> &'static str {
+    const FULL: [&str; 7] = [
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+    ];
+    const SHORT: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    let index = usize::try_from(positive_mod(weekday, 7)).unwrap_or(0);
+    if full {
+        FULL[index]
+    } else {
+        SHORT[index]
+    }
+}
+
+fn month_name(month: i64, full: bool) -> &'static str {
+    const FULL: [&str; 12] = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+    const SHORT: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let index = usize::try_from((month - 1).clamp(0, 11)).unwrap_or(0);
+    if full {
+        FULL[index]
+    } else {
+        SHORT[index]
+    }
+}
+
+fn ordinal_suffix(day: i64) -> &'static str {
+    match day % 100 {
+        11..=13 => "th",
+        _ => match day % 10 {
+            1 => "st",
+            2 => "nd",
+            3 => "rd",
+            _ => "th",
+        },
+    }
+}
+
+fn twelve_hour(hour: i64) -> i64 {
+    let value = hour % 12;
+    if value == 0 {
+        12
+    } else {
+        value
+    }
+}
+
+fn zero_pad(value: i64, width: usize) -> String {
+    if value < 0 {
+        format!("-{:0width$}", value.abs(), width = width)
+    } else {
+        format!("{:0width$}", value, width = width)
+    }
+}
+
+fn format_timezone_offset(offset: i64, colon: bool) -> String {
+    let sign = if offset < 0 { '-' } else { '+' };
+    let absolute = offset.abs();
+    let hours = absolute / 3_600;
+    let minutes = (absolute % 3_600) / 60;
+    if colon {
+        format!("{sign}{hours:02}:{minutes:02}")
+    } else {
+        format!("{sign}{hours:02}{minutes:02}")
+    }
+}
+
+fn swatch_internet_time(timestamp: i64) -> String {
+    zero_pad(swatch_internet_time_value(timestamp), 3)
+}
+
+fn swatch_internet_time_value(timestamp: i64) -> i64 {
+    let seconds = positive_mod(timestamp + 3_600, 86_400);
+    seconds * 1_000 / 86_400
+}
+
+fn is_leap_year(year: i64) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
+fn days_in_month(year: i64, month: i64) -> i64 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if is_leap_year(year) => 29,
+        2 => 28,
+        _ => 0,
+    }
+}
+
+fn iso_year_week(parts: BoundedDateTimeParts) -> (i64, i64) {
+    let iso_weekday = if parts.weekday == 0 { 7 } else { parts.weekday };
+    let mut week = (parts.yday + 10 - iso_weekday) / 7;
+    let mut year = parts.year;
+    if week < 1 {
+        year -= 1;
+        week = iso_weeks_in_year(year);
+    } else {
+        let weeks_in_year = iso_weeks_in_year(year);
+        if week > weeks_in_year {
+            year += 1;
+            week = 1;
+        }
+    }
+    (year, week)
+}
+
+fn iso_weeks_in_year(year: i64) -> i64 {
+    let jan1_weekday = positive_mod(days_from_civil(year, 1, 1) + 4, 7);
+    if jan1_weekday == 4 || (jan1_weekday == 3 && is_leap_year(year)) {
+        53
+    } else {
+        52
+    }
 }
 
 fn normalize_ini_name(name: &str) -> String {
