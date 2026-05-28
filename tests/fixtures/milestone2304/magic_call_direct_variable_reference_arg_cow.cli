@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2304/magic_call_direct_variable_reference_arg_cow.php

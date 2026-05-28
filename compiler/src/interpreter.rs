@@ -38705,6 +38705,9 @@ impl Interpreter {
         let mut indexed_array_copy_source_bindings = Vec::new();
         for (index, arg) in args.iter().enumerate() {
             let (value, source) = self.evaluate_value_with_array_copy_source(arg, caller_scope)?;
+            let source = source.or_else(|| {
+                Self::direct_variable_array_copy_source_for_magic_argument(arg, &value)
+            });
             let value = caller_scope.value_with_object_property_aliases_from_array_copy(
                 value,
                 source.clone(),
@@ -38745,6 +38748,30 @@ impl Interpreter {
             by_value_array_copy_source_bindings,
         )
         .map(Some)
+    }
+
+    fn direct_variable_array_copy_source_for_magic_argument(
+        arg: &Expr,
+        value: &Value,
+    ) -> Option<ArrayCopySource> {
+        if !matches!(value, Value::Array(_)) {
+            return None;
+        }
+
+        let Expr::Variable(source_name, _) = arg else {
+            return None;
+        };
+        if source_name == "GLOBALS" {
+            return None;
+        }
+
+        Some(ArrayCopySource::alias_path(
+            ArrayOffsetAliasRoot::StaticArray {
+                name: source_name.clone(),
+            },
+            Vec::new(),
+            true,
+        ))
     }
 
     fn call_missing_instance_method_via_magic(
@@ -77787,28 +77814,51 @@ fn format_var_dump(value: &Value, span: Span) -> CompileResult<String> {
 }
 
 fn format_var_dump_with_indent(value: &Value, indent: usize, span: Span) -> CompileResult<String> {
+    format_var_dump_with_indent_and_reference_marker(value, indent, span, false)
+}
+
+fn format_var_dump_with_indent_and_reference_marker(
+    value: &Value,
+    indent: usize,
+    span: Span,
+    is_reference: bool,
+) -> CompileResult<String> {
     let padding = "  ".repeat(indent);
+    let reference_marker = if is_reference { "&" } else { "" };
     Ok(match value {
-        Value::Null => format!("{padding}NULL\n"),
-        Value::Bool(value) => format!("{padding}bool({})\n", if *value { "true" } else { "false" }),
-        Value::Int(value) => format!("{padding}int({value})\n"),
-        Value::Float(value) => format!("{padding}float({})\n", value),
-        Value::String(value) => format!("{padding}string({}) \"{}\"\n", value.len(), value),
+        Value::Null => format!("{padding}{reference_marker}NULL\n"),
+        Value::Bool(value) => format!(
+            "{padding}{reference_marker}bool({})\n",
+            if *value { "true" } else { "false" }
+        ),
+        Value::Int(value) => format!("{padding}{reference_marker}int({value})\n"),
+        Value::Float(value) => format!("{padding}{reference_marker}float({})\n", value),
+        Value::String(value) => format!(
+            "{padding}{reference_marker}string({}) \"{}\"\n",
+            value.len(),
+            value
+        ),
         Value::BinaryString(value) => {
             let value = tree_walk_binary_string_utf8(value, "var_dump()", span)?;
-            format!("{padding}string({}) \"{}\"\n", value.len(), value)
+            format!(
+                "{padding}{reference_marker}string({}) \"{}\"\n",
+                value.len(),
+                value
+            )
         }
         Value::Array(value) => {
-            let mut output = format!("{padding}array({}) {{\n", value.len());
+            let mut output = format!("{padding}{reference_marker}array({}) {{\n", value.len());
             for entry in value.entries() {
                 output.push_str(&format!(
                     "{padding}  [{}]=>\n",
                     format_var_dump_key(&entry.key)
                 ));
-                output.push_str(&format_var_dump_with_indent(
-                    entry.value(),
+                let entry_value = entry.value_cloned();
+                output.push_str(&format_var_dump_with_indent_and_reference_marker(
+                    &entry_value,
                     indent + 1,
                     span,
+                    entry.slot().is_reference(),
                 )?);
             }
             output.push_str(&format!("{padding}}}\n"));
@@ -77826,10 +77876,11 @@ fn format_var_dump_with_indent(value: &Value, indent: usize, span: Span) -> Comp
                     format_var_dump_object_property(&property)
                 ));
                 let property_value = property.value_cloned();
-                output.push_str(&format_var_dump_with_indent(
+                output.push_str(&format_var_dump_with_indent_and_reference_marker(
                     &property_value,
                     indent + 1,
                     span,
+                    false,
                 )?);
             }
             output.push_str(&format!("{padding}}}\n"));
@@ -77837,11 +77888,13 @@ fn format_var_dump_with_indent(value: &Value, indent: usize, span: Span) -> Comp
         }
         Value::Closure(value) => {
             format!(
-                "{padding}object(Closure)#{} (0) {{\n{padding}}}\n",
+                "{padding}{reference_marker}object(Closure)#{} (0) {{\n{padding}}}\n",
                 value.id()
             )
         }
-        Value::Resource(id) => format!("{padding}resource({id}) of type (stream)\n"),
+        Value::Resource(id) => {
+            format!("{padding}{reference_marker}resource({id}) of type (stream)\n")
+        }
     })
 }
 
@@ -77873,7 +77926,8 @@ fn format_print_r_array(array: &PhpArray, indent: usize) -> String {
     output.push_str(&format!("{padding}(\n"));
     for entry in array.entries() {
         output.push_str(&format!("{child_padding}[{}] => ", entry.key.display_key()));
-        match entry.value() {
+        let entry_value = entry.value_cloned();
+        match &entry_value {
             Value::Array(value) => {
                 output.push_str(&format_print_r_array(value, indent + 1));
             }
@@ -77949,6 +78003,56 @@ fn format_var_dump_object_property(property: &ObjectProperty) -> String {
 mod tests {
     use super::*;
     use crate::error::Phase;
+
+    #[test]
+    fn magic_call_direct_variable_array_args_preserve_reference_cow_leaves() {
+        let program = parse_source(
+            r#"<?php
+class MagicCallDirectVariableArgCow {
+    public function __call($name, $args) {
+        $args[0]["shared"]["leaf"] = "changed";
+        $args[0]["plain"]["leaf"] = "copy-only";
+        $args[1]["leaf"] = "second-copy-only";
+    }
+}
+
+$source = array(
+    "shared" => array("leaf" => "original"),
+    "plain" => array("leaf" => "plain-original"),
+);
+$leaf =& $source["shared"]["leaf"];
+$second = array("leaf" => "second-original");
+
+$object = new MagicCallDirectVariableArgCow();
+$object->missing($source, $second);
+
+echo $source["shared"]["leaf"], "|", $leaf, "|";
+echo $source["plain"]["leaf"], "|", $second["leaf"];
+"#,
+        )
+        .expect("magic __call COW fixture should parse");
+
+        let execution = run_program(&program).expect("magic __call COW fixture should run");
+
+        assert_eq!(
+            execution.stdout,
+            "changed|changed|plain-original|second-original"
+        );
+        assert_eq!(execution.stderr, "");
+        assert_eq!(execution.exit_code, 0);
+    }
+
+    #[test]
+    fn var_dump_formats_reference_backed_array_slots() {
+        let mut array = PhpArray::new();
+        array
+            .append_reference(PhpReferenceCell::new(Value::String("changed".to_string())))
+            .unwrap();
+
+        let output = format_var_dump(&Value::Array(array), Span::new(7, 3)).unwrap();
+
+        assert_eq!(output, "array(1) {\n  [0]=>\n  &string(7) \"changed\"\n}\n");
+    }
 
     #[test]
     fn symbol_table_static_reads_and_writes_use_named_storage() {

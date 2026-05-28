@@ -2857,8 +2857,11 @@
   `__call($name, $args)` when one is declared or inherited, with `$args`
   materialized from the evaluated call arguments. Positional arguments append
   with zero-based integer keys and named arguments preserve their source-order
-  string keys. Malformed public `__call` metadata is rejected by the shared
-  runtime callable validator before magic `$args` packing.
+  string keys. Direct variable array arguments imported into magic `$args`
+  preserve covered by-value COW reference leaves, so writes through a referenced
+  nested bucket in `__call()` update the original reference cell while plain
+  buckets remain copy-on-write. Malformed public `__call` metadata is rejected
+  by the shared runtime callable validator before magic `$args` packing.
 - bounded object string conversion through visible non-static `__toString()`
   for `echo $object`, `print $object`, `(string) $object`, binary
   concatenation, and concat compound assignment `.=` over the current

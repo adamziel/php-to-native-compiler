@@ -1,5 +1,21 @@
 # Progress Log
 
+## 2026-05-28
+
+Implemented:
+
+- Added interpreter magic `__call()` argument packing COW propagation for
+  direct variable array arguments. Missing direct receiver calls that dispatch
+  through public non-static `__call($name, $args)` now import covered
+  direct-variable array-offset alias metadata into the packed `$args` array,
+  so writes to referenced nested buckets update the original reference cell
+  while ordinary buckets remain copy-on-write. Focused evidence covers a
+  generalized fixture with referenced and plain buckets plus the pinned
+  `tests/classes/__call_003.phpt`/`__call_001.phpt` wrapper targets. Unknown
+  receiver identities, invalid magic signatures, arbitrary callable-object
+  magic, spread/unpack breadth, and native IR/assembly parity remain outside
+  this interpreter-focused slice.
+
 ## 2026-05-27
 
 Implemented:
