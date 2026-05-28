@@ -61954,6 +61954,9 @@ impl Interpreter {
                     .map_err(|error| runtime_error(span, error))?;
                 Ok(Value::Int(value.as_bytes().len() as i64))
             }
+            "chr" => self.call_chr(&args, span),
+            "bin2hex" => call_bin2hex(&args, span),
+            "str_repeat" => call_str_repeat(&args, span),
             "strtolower" => call_strtolower(&args, span),
             "trim" => call_trim(&args, span),
             "ltrim" => call_ltrim(&args, span),
@@ -67634,6 +67637,20 @@ impl Interpreter {
             .map_err(|error| runtime_error(span, error))
     }
 
+    fn value_to_echo_bytes(&mut self, value: Value, span: Span) -> CompileResult<Vec<u8>> {
+        if let Value::Object(object) = value.clone() {
+            if let Some(output) =
+                self.object_to_string_with_magic(object, "object-to-string", span)?
+            {
+                return Ok(output.into_bytes());
+            }
+        }
+
+        value
+            .try_echo_bytes()
+            .map_err(|error| runtime_error(span, error))
+    }
+
     fn value_to_string_cast(&mut self, value: Value, span: Span) -> CompileResult<String> {
         match value {
             Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_) => {
@@ -67685,9 +67702,9 @@ impl Interpreter {
         span: Span,
     ) -> CompileResult<Value> {
         if matches!(op, BinaryOp::Concat) {
-            let left = self.value_to_echo_string(left, span)?;
-            let right = self.value_to_echo_string(right, span)?;
-            return Ok(Value::String(format!("{left}{right}")));
+            let mut bytes = self.value_to_echo_bytes(left, span)?;
+            bytes.extend(self.value_to_echo_bytes(right, span)?);
+            return Ok(interpreter_value_from_php_string_bytes(bytes));
         }
 
         let result: RuntimeResult<Value> = match op {
@@ -71538,6 +71555,21 @@ fn reflection_closure_end_line(body: &[Stmt], span: Span) -> usize {
 fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionState> {
     let (return_type, params) = match name {
         "strlen" => ("int", vec![reflection_internal_param("string", "string")]),
+        "chr" => (
+            "string",
+            vec![reflection_internal_param("codepoint", "int")],
+        ),
+        "bin2hex" => (
+            "string",
+            vec![reflection_internal_param("string", "string")],
+        ),
+        "str_repeat" => (
+            "string",
+            vec![
+                reflection_internal_param("string", "string"),
+                reflection_internal_param("times", "int"),
+            ],
+        ),
         "strtolower" => (
             "string",
             vec![reflection_internal_param("string", "string")],
@@ -73024,6 +73056,23 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         return Some(("TypeError", message));
     }
 
+    if let Some(message) = value_error_message(error) {
+        return Some(("ValueError", message));
+    }
+
+    None
+}
+
+fn value_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    let message = error
+        .message
+        .strip_prefix("unsupported call str_repeat(): ")?;
+    if message == "Argument #2 ($times) must be greater than or equal to 0" {
+        return Some(format!("str_repeat(): {message}"));
+    }
     None
 }
 
@@ -73216,6 +73265,9 @@ fn is_builtin(name: &str) -> bool {
         name,
         "define"
             | "strlen"
+            | "chr"
+            | "bin2hex"
+            | "str_repeat"
             | "strtolower"
             | "trim"
             | "ltrim"
@@ -78927,6 +78979,152 @@ fn hex_bytes(bytes: &[u8]) -> String {
         value.push(HEX[(byte & 0x0f) as usize] as char);
     }
     value
+}
+
+fn parse_supported_integer_string(value: &str) -> Option<i64> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    value.parse::<i64>().ok().or_else(|| {
+        value
+            .parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite())
+            .and_then(|value| {
+                let truncated = value.trunc();
+                (truncated >= i64::MIN as f64 && truncated <= i64::MAX as f64)
+                    .then_some(truncated as i64)
+            })
+    })
+}
+
+fn integer_argument_current_subset(
+    function: &str,
+    label: &str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<i64> {
+    let parsed = match value {
+        Value::Null => Some(0),
+        Value::Bool(value) => Some(i64::from(*value)),
+        Value::Int(value) => Some(*value),
+        Value::Float(value) if value.is_finite() => Some(value.trunc() as i64),
+        Value::Float(_) => None,
+        Value::String(value) => parse_supported_integer_string(value),
+        Value::BinaryString(value) => std::str::from_utf8(value)
+            .ok()
+            .and_then(parse_supported_integer_string),
+        Value::Array(_) | Value::Object(_) | Value::Closure(_) | Value::Resource(_) => None,
+    };
+
+    parsed.ok_or_else(|| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function,
+                format!(
+                    "{label} argument must be int-compatible in the current subset, got {}",
+                    value.type_name()
+                ),
+            ),
+        )
+    })
+}
+
+impl Interpreter {
+    fn call_chr(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("chr", args, 1, span)?;
+
+        if let Value::Float(value) = &args[0] {
+            if value.is_finite() && value.trunc() != *value {
+                self.emit_display_diagnostic(
+                    "Deprecated",
+                    PHP_E_DEPRECATED,
+                    format!("Implicit conversion from float {value} to int loses precision"),
+                    span,
+                )?;
+            }
+        }
+
+        let codepoint = integer_argument_current_subset("chr()", "codepoint", &args[0], span)?;
+        Ok(interpreter_value_from_php_string_bytes(vec![
+            codepoint.rem_euclid(256) as u8,
+        ]))
+    }
+}
+
+fn call_bin2hex(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("bin2hex", args, 1, span)?;
+
+    if matches!(args[0], Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call("bin2hex()", "string argument arrays are not supported"),
+        ));
+    }
+
+    let value = args[0]
+        .try_echo_bytes()
+        .map_err(|error| runtime_error(span, error))?;
+
+    Ok(Value::String(hex_bytes(&value)))
+}
+
+fn call_str_repeat(args: &[Value], span: Span) -> CompileResult<Value> {
+    expect_arity("str_repeat", args, 2, span)?;
+
+    if matches!(args[0], Value::Array(_)) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "str_repeat()",
+                "string argument arrays are not supported",
+            ),
+        ));
+    }
+
+    let value = args[0]
+        .try_echo_bytes()
+        .map_err(|error| runtime_error(span, error))?;
+    let times = integer_argument_current_subset("str_repeat()", "times", &args[1], span)?;
+
+    if times < 0 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "str_repeat()",
+                "Argument #2 ($times) must be greater than or equal to 0",
+            ),
+        ));
+    }
+
+    let times = times as usize;
+    let output_len = value.len().checked_mul(times).ok_or_else(|| {
+        runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "str_repeat()",
+                "result length overflows the current subset",
+            ),
+        )
+    })?;
+    if output_len > 16 * 1024 * 1024 {
+        return Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                "str_repeat()",
+                "result length above 16MiB is not supported in the current subset",
+            ),
+        ));
+    }
+
+    let mut repeated = Vec::with_capacity(output_len);
+    for _ in 0..times {
+        repeated.extend_from_slice(&value);
+    }
+
+    Ok(interpreter_value_from_php_string_bytes(repeated))
 }
 
 fn call_strtolower(args: &[Value], span: Span) -> CompileResult<Value> {

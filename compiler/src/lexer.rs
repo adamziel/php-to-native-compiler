@@ -528,6 +528,25 @@ impl<'a> Lexer<'a> {
 
             if ch == '\\' {
                 self.advance();
+                if !interpolate {
+                    match self.peek() {
+                        Some('\\') => {
+                            self.advance();
+                            value.push('\\');
+                        }
+                        Some('\'') => {
+                            self.advance();
+                            value.push('\'');
+                        }
+                        Some(_) => {
+                            value.push('\\');
+                            value.push(self.advance());
+                        }
+                        None => return Err(self.error_at(span, "unterminated string literal")),
+                    }
+                    continue;
+                }
+
                 let escaped = match self.peek() {
                     Some('n') => {
                         self.advance();
@@ -541,6 +560,13 @@ impl<'a> Lexer<'a> {
                         self.advance();
                         '\t'
                     }
+                    Some('x') => {
+                        self.advance();
+                        self.consume_hex_escape_byte()
+                            .map(char::from)
+                            .unwrap_or('x')
+                    }
+                    Some('0'..='7') => char::from(self.consume_octal_escape_byte()),
                     Some('\\') => {
                         self.advance();
                         '\\'
@@ -902,11 +928,49 @@ impl<'a> Lexer<'a> {
                 self.advance();
                 '\t'
             }
+            'x' => {
+                self.advance();
+                self.consume_hex_escape_byte()
+                    .map(char::from)
+                    .unwrap_or('x')
+            }
+            '0'..='7' => char::from(self.consume_octal_escape_byte()),
             other => {
                 self.advance();
                 other
             }
         }
+    }
+
+    fn consume_hex_escape_byte(&mut self) -> Option<u8> {
+        let mut value = 0u8;
+        let mut digits = 0;
+        while digits < 2 {
+            let Some(ch) = self.peek() else {
+                break;
+            };
+            let Some(digit) = ch.to_digit(16) else {
+                break;
+            };
+            self.advance();
+            value = (value << 4) | digit as u8;
+            digits += 1;
+        }
+        (digits > 0).then_some(value)
+    }
+
+    fn consume_octal_escape_byte(&mut self) -> u8 {
+        let mut value = 0u16;
+        let mut digits = 0;
+        while digits < 3 {
+            let Some(ch @ '0'..='7') = self.peek() else {
+                break;
+            };
+            self.advance();
+            value = (value << 3) | (ch as u16 - '0' as u16);
+            digits += 1;
+        }
+        value as u8
     }
 
     fn lex_number(&mut self, first: char, span: Span) -> CompileResult<TokenKind> {

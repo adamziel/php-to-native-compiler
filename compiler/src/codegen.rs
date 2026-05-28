@@ -66179,6 +66179,9 @@ fn literal_include_path_setting_for_codegen(expr: &Expr, source_dir: &Path) -> O
 const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "define",
     "strlen",
+    "chr",
+    "bin2hex",
+    "str_repeat",
     "strtolower",
     "trim",
     "ltrim",

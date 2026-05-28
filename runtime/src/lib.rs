@@ -31115,9 +31115,15 @@ impl PhpClassTable {
         classes
             .set_parent(type_error_id, error_id)
             .expect("TypeError should extend Error");
+        let value_error_id = classes
+            .declare_class("ValueError")
+            .expect("core class table should contain TypeError before ValueError");
+        classes
+            .set_parent(value_error_id, error_id)
+            .expect("ValueError should extend Error");
         let runtime_exception_id = classes
             .declare_class("RuntimeException")
-            .expect("core class table should contain TypeError before RuntimeException");
+            .expect("core class table should contain ValueError before RuntimeException");
         let exception_id = classes
             .lookup_class_id("Exception")
             .expect("core Exception class id should resolve for RuntimeException");
