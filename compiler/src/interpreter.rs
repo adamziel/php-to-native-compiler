@@ -38874,19 +38874,26 @@ impl Interpreter {
             ));
         };
 
-        let parent_class = self
+        let parent_class_name = self
             .classes
             .get(parent_class_id)
-            .expect("parent class id should resolve to class metadata");
+            .expect("parent class id should resolve to class metadata")
+            .name()
+            .to_string();
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(parent_class_id, method_name)
         else {
+            if let Some(value) = self.call_missing_static_syntax_method_via_current_instance_magic(
+                method_name,
+                args,
+                span,
+                caller_scope,
+            )? {
+                return Ok(value);
+            }
             return Err(runtime_error(
                 span,
-                RuntimeError::undefined_function(format!(
-                    "{}::{method_name}()",
-                    parent_class.name()
-                )),
+                RuntimeError::undefined_function(format!("{parent_class_name}::{method_name}()")),
             ));
         };
 
@@ -38990,6 +38997,14 @@ impl Interpreter {
             is_static,
         )) = self.resolve_instance_method(class_id, method_name)
         else {
+            if let Some(value) = self.call_missing_static_syntax_method_via_current_instance_magic(
+                method_name,
+                args,
+                span,
+                caller_scope,
+            )? {
+                return Ok(value);
+            }
             return match self.call_missing_static_method_via_magic(
                 class_id,
                 method_name,
@@ -39125,6 +39140,14 @@ impl Interpreter {
             is_static,
         )) = self.resolve_instance_method(receiver_class_id, method_name)
         else {
+            if let Some(value) = self.call_missing_static_syntax_method_via_current_instance_magic(
+                method_name,
+                args,
+                span,
+                caller_scope,
+            )? {
+                return Ok(value);
+            }
             return match self.call_missing_static_method_via_magic(
                 receiver_class_id,
                 method_name,
@@ -39208,6 +39231,39 @@ impl Interpreter {
             Some(receiver_class_id),
             Vec::new(),
             None,
+        )
+    }
+
+    fn call_missing_static_syntax_method_via_current_instance_magic(
+        &mut self,
+        method_name: &str,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<Value>> {
+        let this_object = match caller_scope.read_named("this") {
+            Some(Value::Object(object)) => object.clone(),
+            _ => return Ok(None),
+        };
+
+        if let Some((value, _)) = self
+            .call_missing_instance_method_via_magic_with_array_copy_source(
+                this_object.clone(),
+                method_name,
+                args,
+                span,
+                caller_scope,
+            )?
+        {
+            return Ok(Some(value));
+        }
+
+        self.call_missing_instance_method_via_magic(
+            this_object,
+            method_name,
+            args,
+            span,
+            caller_scope,
         )
     }
 
@@ -40661,6 +40717,14 @@ impl Interpreter {
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(current_class_id, method_name)
         else {
+            if let Some(value) = self.call_missing_static_syntax_method_via_current_instance_magic(
+                method_name,
+                args,
+                span,
+                caller_scope,
+            )? {
+                return Ok(value);
+            }
             return match self.call_missing_static_method_via_magic(
                 current_class_id,
                 method_name,
@@ -40801,6 +40865,14 @@ impl Interpreter {
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(called_class_id, method_name)
         else {
+            if let Some(value) = self.call_missing_static_syntax_method_via_current_instance_magic(
+                method_name,
+                args,
+                span,
+                caller_scope,
+            )? {
+                return Ok(value);
+            }
             return match self.call_missing_static_method_via_magic(
                 called_class_id,
                 method_name,
@@ -77866,8 +77938,9 @@ fn format_var_dump_with_indent_and_reference_marker(
         }
         Value::Object(value) => {
             let mut output = format!(
-                "{padding}object({}) ({}) {{\n",
+                "{padding}{reference_marker}object({})#{} ({}) {{\n",
                 value.class_name(),
+                value.id(),
                 value.properties().len()
             );
             for property in value.properties() {
@@ -78052,6 +78125,68 @@ echo $source["plain"]["leaf"], "|", $second["leaf"];
         let output = format_var_dump(&Value::Array(array), Span::new(7, 3)).unwrap();
 
         assert_eq!(output, "array(1) {\n  [0]=>\n  &string(7) \"changed\"\n}\n");
+    }
+
+    #[test]
+    fn missing_static_syntax_methods_in_instance_context_use_current_magic_call() {
+        let program = parse_source(
+            r#"<?php
+class StaticSyntaxMagicBase {
+    public function __call($name, $args) {
+        echo "base:" . $name . ":" . implode(",", $args) . "\n";
+    }
+
+    public static function __callStatic($name, $args) {
+        echo "base-static:" . $name . "\n";
+    }
+}
+
+class StaticSyntaxMagicChild extends StaticSyntaxMagicBase {
+    public function __call($name, $args) {
+        echo "child:" . $name . ":" . implode(",", $args) . "\n";
+    }
+
+    public static function __callStatic($name, $args) {
+        echo "child-static:" . $name . "\n";
+    }
+
+    public function test() {
+        $class = "StaticSyntaxMagicBase";
+        $object = $this;
+
+        StaticSyntaxMagicBase::namedBase(1, "a");
+        StaticSyntaxMagicChild::namedChild(2, "b");
+        self::selfCall(3, "c");
+        parent::parentCall(4, "d");
+        static::lateCall(5, "e");
+        $class::dynamicClass(6, "f");
+        $object::dynamicObject(7, "g");
+    }
+}
+
+$child = new StaticSyntaxMagicChild();
+$child->test();
+"#,
+        )
+        .expect("static syntax magic __call fixture should parse");
+
+        let execution =
+            run_program(&program).expect("static syntax magic __call fixture should run");
+
+        assert_eq!(
+            execution.stdout,
+            "\
+child:namedBase:1,a
+child:namedChild:2,b
+child:selfCall:3,c
+child:parentCall:4,d
+child:lateCall:5,e
+child:dynamicClass:6,f
+child:dynamicObject:7,g
+"
+        );
+        assert_eq!(execution.stderr, "");
+        assert_eq!(execution.exit_code, 0);
     }
 
     #[test]
