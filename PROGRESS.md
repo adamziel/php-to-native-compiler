@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 13:25 CEST
+Updated: 2026-05-28 13:45 CEST
 Primary branch: `master`
-Latest source head: `fba6bd86 fix: coerce typed property reference assignments`
+Latest source head: `a69386f5 fix: diagnose protected typed property inheritance`
 
 ## Progress Score
 
@@ -51,10 +51,38 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Post-Batch002 source checkpoint 4 is now primary-integrated under AO. This is a
+Post-Batch002 source checkpoint 5 is now primary-integrated under AO. This is a
 source checkpoint with focused proof, not a percentage change. The public score
 remains **1193 / 20294 runnable PHPTs = 5.88%** until another pinned full-suite
 run is completed, parsed, regression-checked, and published here.
+
+- primary source head: `a69386f5 fix: diagnose protected typed property inheritance`
+- p28 final handoff head:
+  `5158aa5d70545863cf7d033664aea5c4817434bd fix: diagnose protected typed property inheritance`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p15-typed-properties-protected-inheritance-diagnostic-20260528.patch`
+- exported integration patch SHA256:
+  `b94379a1f646e7bc282adb15e26f6eaa4b061cc7c67123295e777d1b337ef95b`
+- source candidate patch SHA256:
+  `2261bb12a2539602e4ba7702d4869fce5c150e2e262faa113896db435ace0206`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION /
+  P15-TYPED-PROPERTIES-PROTECTED-INHERITANCE-DIAGNOSTIC`
+- focused gates: PASS for `git diff --check`, `cargo fmt --all --
+  --check`, `cargo test -p phpc --test typed_properties_protected_inheritance
+  -- --test-threads=1`, `cargo build -p phpc`, and wrapper PHPT
+  `Zend/tests/type_declarations/typed_properties_protected_inheritance_mismatch.phpt`
+- full PHPT suite: not run for this single source checkpoint
+
+This checkpoint generalizes typed-property inheritance startup diagnostics by
+walking declared class metadata and ancestor chains for inherited non-private
+properties, checking staticness, declared type invariance, and visibility
+compatibility. It is not keyed to a PHPT filename, exact output, class name, or
+property name.
+
+Previous post-Batch002 source checkpoint 4 was p15 typed-property reference
+coercion:
 
 - primary source head: `fba6bd86 fix: coerce typed property reference assignments`
 - p28 final handoff head:
@@ -77,7 +105,7 @@ run is completed, parsed, regression-checked, and published here.
   `Zend/tests/type_declarations/typed_properties_023.phpt`
 - full PHPT suite: not run for this single source checkpoint
 
-This checkpoint generalizes typed-property reference assignment/coercion
+That checkpoint generalizes typed-property reference assignment/coercion
 through interpreter object-property reference semantics. It is not keyed to a
 PHPT filename, exact output, or one fixture shape.
 
