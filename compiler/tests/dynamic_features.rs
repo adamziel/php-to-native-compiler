@@ -874,6 +874,37 @@ try {
 }
 
 #[test]
+fn static_object_array_callbacks_do_not_bind_this() {
+    let execution = run_source(
+        r#"<?php
+class StaticCallbackTarget {
+    public static function show($value = null) {
+        var_dump($this);
+    }
+}
+
+try {
+    array_map([new StaticCallbackTarget, "show"], [1]);
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    call_user_func([new StaticCallbackTarget, "show"]);
+} catch (Throwable $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Using $this when not in object context\nUsing $this when not in object context\n"
+    );
+}
+
+#[test]
 fn fully_qualified_function_calls_use_exact_global_lookup() {
     let execution = run_source(
         r#"<?php

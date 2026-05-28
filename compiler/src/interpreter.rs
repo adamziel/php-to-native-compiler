@@ -15345,13 +15345,7 @@ impl Interpreter {
                     return Ok(scope.materialized_globals_array_value());
                 }
                 if name.eq_ignore_ascii_case("this") && scope.read_named("this").is_none() {
-                    return Err(runtime_error(
-                        *span,
-                        RuntimeError::unsupported_call(
-                            "$this",
-                            "object context is only available during instance method execution",
-                        ),
-                    ));
+                    return Err(this_not_in_object_context_error(*span));
                 }
                 match scope.read_named(name) {
                     Some(value) => Ok(value),
@@ -44038,15 +44032,6 @@ impl Interpreter {
                         )),
                     ));
                 };
-                if is_static {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            format!("{class_name}::{method_name}()"),
-                            "static method dispatch through object array callables is not implemented",
-                        ),
-                    ));
-                }
                 if visibility != Visibility::Public {
                     return Err(runtime_error(
                         span,
@@ -44069,6 +44054,11 @@ impl Interpreter {
                     ensure_supported_function_metadata(function, span)?;
                 }
                 self.ensure_user_function_call_depth(function, span)?;
+                let this_object = if is_static {
+                    None
+                } else {
+                    Some(object.clone())
+                };
                 let frame = self.call_user_func_expr_call_frame_bindings(
                     function,
                     args,
@@ -44080,7 +44070,7 @@ impl Interpreter {
                     return self.call_reference_return_function_value_with_call_frame(
                         function,
                         frame,
-                        Some(object.clone()),
+                        this_object.clone(),
                         Some(class_id),
                         Some(object.class_id()),
                         caller_scope,
@@ -44090,7 +44080,7 @@ impl Interpreter {
                 self.call_user_function_with_call_frame(
                     function,
                     frame,
-                    Some(object.clone()),
+                    this_object,
                     Some(class_id),
                     Some(object.class_id()),
                     Some(caller_scope),
@@ -44229,15 +44219,6 @@ impl Interpreter {
                         )),
                     ));
                 };
-                if is_static {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            format!("{class_name}::{method_name}()"),
-                            "static method dispatch through object array callables is not implemented",
-                        ),
-                    ));
-                }
                 if visibility != Visibility::Public {
                     return Err(runtime_error(
                         span,
@@ -44251,6 +44232,11 @@ impl Interpreter {
                 let function =
                     self.method_function(class_id, &class_name, &resolved_method_name, span)?;
                 let function = function.as_ref();
+                let this_object = if is_static {
+                    None
+                } else {
+                    Some(object.clone())
+                };
                 if function.returns_by_reference {
                     ensure_supported_reference_return_function_metadata(function, span)?;
                     self.ensure_user_function_call_depth(function, span)?;
@@ -44265,7 +44251,7 @@ impl Interpreter {
                         .call_reference_return_function_value_with_call_frame_and_return_source(
                             function,
                             frame,
-                            Some(object.clone()),
+                            this_object.clone(),
                             Some(class_id),
                             Some(object.class_id()),
                             caller_scope,
@@ -44277,7 +44263,7 @@ impl Interpreter {
                     args,
                     span,
                     caller_scope,
-                    Some(object.clone()),
+                    this_object,
                     Some(class_id),
                     Some(object.class_id()),
                     Vec::new(),
@@ -46763,15 +46749,6 @@ impl Interpreter {
                         )),
                     ));
                 };
-                if is_static {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            format!("{class_name}::{method_name}()"),
-                            "static method dispatch through object array callables is not implemented",
-                        ),
-                    ));
-                }
                 if visibility != Visibility::Public {
                     return Err(runtime_error(
                         span,
@@ -46782,6 +46759,11 @@ impl Interpreter {
                     ));
                 }
 
+                let this_object = if is_static {
+                    None
+                } else {
+                    Some(object.clone())
+                };
                 let function =
                     self.method_function(class_id, &class_name, &resolved_method_name, span)?;
                 let function = function.as_ref();
@@ -46805,7 +46787,7 @@ impl Interpreter {
                 self.call_reference_return_function_with_call_frame_for_reference_assignment(
                     function,
                     frame,
-                    Some(object.clone()),
+                    this_object,
                     Some(class_id),
                     Some(object.class_id()),
                     caller_scope,
@@ -64030,14 +64012,8 @@ impl Interpreter {
 
         let callback_name = match &args[0] {
             Value::String(name) => name,
-            Value::Array(_) => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "call_user_func()",
-                        "array callables are not implemented in the current subset",
-                    ),
-                ));
+            Value::Array(callback) => {
+                return self.call_array_callable_with_values(callback, args[1..].to_vec(), span);
             }
             Value::Closure(closure) => {
                 return self.invoke_closure_value(
@@ -64202,15 +64178,6 @@ impl Interpreter {
                         )),
                     ));
                 };
-                if is_static {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            format!("{class_name}::{method_name}()"),
-                            "static method dispatch through object array callables is not implemented",
-                        ),
-                    ));
-                }
                 if visibility != Visibility::Public {
                     return Err(runtime_error(
                         span,
@@ -64221,6 +64188,11 @@ impl Interpreter {
                     ));
                 }
 
+                let this_object = if is_static {
+                    None
+                } else {
+                    Some(object.clone())
+                };
                 let function =
                     self.method_function(class_id, &class_name, &resolved_method_name, span)?;
                 let function = function.as_ref();
@@ -64237,7 +64209,7 @@ impl Interpreter {
                     return self.call_reference_return_function_value_with_call_frame(
                         function,
                         frame,
-                        Some(object.clone()),
+                        this_object.clone(),
                         Some(class_id),
                         Some(object.class_id()),
                         caller_scope,
@@ -64254,7 +64226,7 @@ impl Interpreter {
                 self.call_user_function_with_call_frame(
                     function,
                     frame,
-                    Some(object.clone()),
+                    this_object,
                     Some(class_id),
                     Some(object.class_id()),
                     Some(caller_scope),
@@ -64399,15 +64371,6 @@ impl Interpreter {
                         )),
                     ));
                 };
-                if is_static {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            format!("{class_name}::{method_name}()"),
-                            "static method dispatch through object array callables is not implemented",
-                        ),
-                    ));
-                }
                 if visibility != Visibility::Public {
                     return Err(runtime_error(
                         span,
@@ -64418,6 +64381,11 @@ impl Interpreter {
                     ));
                 }
 
+                let this_object = if is_static {
+                    None
+                } else {
+                    Some(object.clone())
+                };
                 let function =
                     self.method_function(class_id, &class_name, &resolved_method_name, span)?;
                 let function = function.as_ref();
@@ -64426,7 +64394,7 @@ impl Interpreter {
                     argument_expr,
                     span,
                     caller_scope,
-                    Some(object.clone()),
+                    this_object,
                     Some(class_id),
                     Some(object.class_id()),
                     Vec::new(),
@@ -64513,6 +64481,25 @@ impl Interpreter {
         args: Vec<Value>,
         span: Span,
     ) -> CompileResult<Value> {
+        self.call_array_callable_with_values_with_arity_policy(callback, args, span, false)
+    }
+
+    fn call_array_map_array_callable_with_values(
+        &mut self,
+        callback: &PhpArray,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        self.call_array_callable_with_values_with_arity_policy(callback, args, span, true)
+    }
+
+    fn call_array_callable_with_values_with_arity_policy(
+        &mut self,
+        callback: &PhpArray,
+        args: Vec<Value>,
+        span: Span,
+        allow_extra_user_args: bool,
+    ) -> CompileResult<Value> {
         let Some((target, method_name)) = array_callable_parts(callback) else {
             return Err(runtime_error(
                 span,
@@ -64540,15 +64527,6 @@ impl Interpreter {
                         )),
                     ));
                 };
-                if is_static {
-                    return Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            format!("{class_name}::{method_name}()"),
-                            "static method dispatch through object array callables is not implemented",
-                        ),
-                    ));
-                }
                 if visibility != Visibility::Public {
                     return Err(runtime_error(
                         span,
@@ -64562,13 +64540,23 @@ impl Interpreter {
                 let function =
                     self.method_function(class_id, &class_name, &resolved_method_name, span)?;
                 let function = function.as_ref();
-                ensure_user_function_arity(function, args.len(), span)?;
+                ensure_user_function_arity_with_extra_policy(
+                    function,
+                    args.len(),
+                    span,
+                    allow_extra_user_args,
+                )?;
                 ensure_supported_function_signature(function, args.len(), span)?;
                 self.ensure_user_function_call_depth(function, span)?;
+                let this_object = if is_static {
+                    None
+                } else {
+                    Some(object.clone())
+                };
                 self.call_user_function_with_checked_values(
                     function,
                     args,
-                    Some(object.clone()),
+                    this_object,
                     Some(class_id),
                     Some(object.class_id()),
                     Vec::new(),
@@ -64634,7 +64622,12 @@ impl Interpreter {
                     span,
                 )?;
                 let function = function.as_ref();
-                ensure_user_function_arity(function, args.len(), span)?;
+                ensure_user_function_arity_with_extra_policy(
+                    function,
+                    args.len(),
+                    span,
+                    allow_extra_user_args,
+                )?;
                 ensure_supported_function_signature(function, args.len(), span)?;
                 self.ensure_user_function_call_depth(function, span)?;
                 self.call_user_function_with_checked_values(
@@ -65179,12 +65172,13 @@ impl Interpreter {
         array: &PhpArray,
         span: Span,
     ) -> CompileResult<PhpArray> {
-        let callable = self.resolve_array_map_callback(callback, span)?;
-
         let mut mapped = PhpArray::new();
         for entry in array.entries() {
-            let value =
-                self.call_callable_with_values(callable.clone(), vec![entry.value_cloned()], span)?;
+            let value = self.call_array_map_callback_with_values(
+                callback,
+                vec![entry.value_cloned()],
+                span,
+            )?;
             mapped.insert(entry.key.clone(), value);
         }
 
@@ -65197,7 +65191,6 @@ impl Interpreter {
         arrays: &[&PhpArray],
         span: Span,
     ) -> CompileResult<PhpArray> {
-        let callable = self.resolve_array_map_callback(callback, span)?;
         let max_len = arrays
             .iter()
             .map(|array| array.entries().len())
@@ -65216,7 +65209,7 @@ impl Interpreter {
                         .unwrap_or(Value::Null)
                 })
                 .collect();
-            let value = self.call_callable_with_values(callable.clone(), values, span)?;
+            let value = self.call_array_map_callback_with_values(callback, values, span)?;
             mapped
                 .append(value)
                 .map_err(|error| runtime_error(span, error))?;
@@ -65257,31 +65250,74 @@ impl Interpreter {
         Ok(mapped)
     }
 
-    fn resolve_array_map_callback(&self, callback: &Value, span: Span) -> CompileResult<Callable> {
-        let callback_name = match callback {
-            Value::String(name) => name,
-            other => {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "array_map()",
-                        format!(
-                            "callback must evaluate to string, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                ));
+    fn call_array_map_resolved_callable_with_values(
+        &mut self,
+        callable: Callable,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match callable {
+            Callable::Builtin(key) => self.call_builtin(&key, args, span),
+            Callable::User(function) => {
+                let function = function.as_ref();
+                ensure_user_function_arity_with_extra_policy(function, args.len(), span, true)?;
+                ensure_supported_function_signature(function, args.len(), span)?;
+                self.ensure_user_function_call_depth(function, span)?;
+                self.call_user_function_with_checked_values(
+                    function,
+                    args,
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    None,
+                )
             }
-        };
-        if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
-            return Err(error);
         }
-        self.lookup_function(callback_name).ok_or_else(|| {
-            runtime_error(
+    }
+
+    fn call_array_map_callback_with_values(
+        &mut self,
+        callback: &Value,
+        args: Vec<Value>,
+        span: Span,
+    ) -> CompileResult<Value> {
+        match callback {
+            Value::String(callback_name) => {
+                if let Some((class_name, method_name)) =
+                    static_method_callable_string(callback_name)
+                {
+                    let callback =
+                        static_method_array_callable_value(class_name, method_name, span)?;
+                    return self.call_array_map_array_callable_with_values(&callback, args, span);
+                }
+
+                if let Some(error) = forbidden_dynamic_builtin_call_error(callback_name, span) {
+                    return Err(error);
+                }
+                let callable = self.lookup_function(callback_name).ok_or_else(|| {
+                    runtime_error(
+                        span,
+                        RuntimeError::undefined_function(callable_name(callback_name)),
+                    )
+                })?;
+                self.call_array_map_resolved_callable_with_values(callable, args, span)
+            }
+            Value::Array(callback) => self.call_array_map_array_callable_with_values(callback, args, span),
+            Value::Closure(closure) => {
+                self.invoke_closure_value(closure.clone(), args, span, "array_map()")
+            }
+            other => Err(runtime_error(
                 span,
-                RuntimeError::undefined_function(callable_name(callback_name)),
-            )
-        })
+                RuntimeError::unsupported_call(
+                    "array_map()",
+                    format!(
+                        "callback must evaluate to string, closure, or array callable in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
     }
 
     fn call_isset(
@@ -71638,6 +71674,15 @@ fn array_callable_shape_error(callback: &PhpArray, context: &str, span: Span) ->
     )
 }
 
+fn this_not_in_object_context_error(span: Span) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        "Using $this when not in object context",
+    )
+}
+
 fn undefined_goto_label_error(span: Span, label: &str) -> Diagnostic {
     Diagnostic::new(
         Phase::Runtime,
@@ -71800,6 +71845,10 @@ fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static
         }
 
         if error.message == "Array callback must have exactly two elements" {
+            return Some(("Error", error.message.clone()));
+        }
+
+        if error.message == "Using $this when not in object context" {
             return Some(("Error", error.message.clone()));
         }
 
@@ -82047,6 +82096,32 @@ fn ensure_user_function_arity(
     let required = required_param_count(function);
     let variadic = function.params.iter().any(|param| param.is_variadic);
     if actual < required || (!variadic && actual > function.params.len()) {
+        return Err(runtime_error(
+            span,
+            RuntimeError::arity_mismatch(
+                callable_name(&function.name),
+                arity_expectation(required, function.params.len(), variadic),
+                actual,
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
+fn ensure_user_function_arity_with_extra_policy(
+    function: &FunctionDecl,
+    actual: usize,
+    span: Span,
+    allow_extra_user_args: bool,
+) -> CompileResult<()> {
+    if !allow_extra_user_args {
+        return ensure_user_function_arity(function, actual, span);
+    }
+
+    let required = required_param_count(function);
+    if actual < required {
+        let variadic = function.params.iter().any(|param| param.is_variadic);
         return Err(runtime_error(
             span,
             RuntimeError::arity_mismatch(
