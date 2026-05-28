@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 03:04 CEST
+Updated: 2026-05-28 03:10 CEST
 Primary branch: `master`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
@@ -69,7 +69,7 @@ Gate status and parked candidates:
 | Anonymous-class dynamic-call blocker | AO scout classified this as NO-GO for Batch 001 PR 10; deferred as a broader parser/interpreter/native feature |
 | PHPT focused queue | `tests/classes/__set__get_002.phpt` passes on the 9/10 stack; r85 queue now feeds additional coder lanes |
 | Codex thread-store permissions | Fixed current session directory execute bit; smoke passed |
-| Disk/data cleanup | Reclaimed Codex SQLite WAL; `/home` free space is back above 290G |
+| Disk/data cleanup | Reclaimed Codex SQLite WAL; `/home` currently has 284G free |
 | Agent Orchestrator migration | AO is installed, configured, polling this project, and persistent critic/reviewer/progress-reporter/coder roles are active |
 
 ## AO Control Plane
@@ -85,12 +85,13 @@ Required live roles:
 | Progress reporter | Keeps this `PROGRESS.md` file and durable supervisor state current after material AO events |
 | Coders | Work disjoint focused PHPT lanes from the queue; each lane must produce a patch, PASS-NO-PATCH, or NO-GO artifact |
 
-Current AO snapshot: `phpc-orchestrator` supervising; `phpc-11` full-suite gate;
-`phpc-4` critic audit;
-`phpc-7` independent reviewer has accepted r81 as PR 10 and handed off;
-`phpc-8` progress reporter; `phpc-9` magic-signature coder; `phpc-10`
-by-reference coder. PR #2/r82 remains parked unless Batch 001 PR 10 selection
-is reopened.
+Current AO snapshot: `phpc-orchestrator` supervising; `phpc-11` full-suite gate
+running `run-tests.php`; `phpc-4` critic auditing PR #3/full-gate risk;
+`phpc-7` reviewing PR #3 only as a Batch 002 candidate; `phpc-8` progress
+reporter monitoring the gate; `phpc-10` by-reference coder; `phpc-12`
+foreach/GLOBALS coder. Completed PR #3 author session `phpc-9` was harvested
+and killed after artifacts were recorded. PR #2/r82 remains parked unless Batch
+001 PR 10 selection is reopened.
 
 ## Current Rules
 
