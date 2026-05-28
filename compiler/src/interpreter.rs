@@ -3345,6 +3345,14 @@ impl SymbolTable {
         self.array_offset_aliases.get(name).cloned()
     }
 
+    fn has_bound_array_offset_alias_group(&self, aliases: &[ArrayOffsetAlias]) -> bool {
+        self.array_offset_aliases.values().any(|existing_aliases| {
+            existing_aliases
+                .iter()
+                .any(|existing| aliases.iter().any(|alias| alias == existing))
+        })
+    }
+
     fn array_offset_alias_group_for_stored_array_slot(
         &self,
         array_name: &str,
@@ -6987,6 +6995,46 @@ impl SymbolTable {
         wrote
     }
 
+    fn replace_array_offset_alias_with_value_slot(
+        &mut self,
+        alias: &ArrayOffsetAlias,
+        value: Value,
+        span: Span,
+    ) -> CompileResult<bool> {
+        if alias.keys.is_empty() {
+            self.write_alias_root_value(alias, value, span)?;
+            return Ok(true);
+        }
+
+        let Some(Value::Array(mut array)) = self.read_alias_root_value(alias, span)? else {
+            return Ok(false);
+        };
+
+        let boundary = self.pre_replace_holder_storage_for_alias_write(&alias.root, &alias.keys);
+        if !Self::replace_nested_array_offset_alias_with_value_slot(&mut array, &alias.keys, value)
+        {
+            return Ok(false);
+        }
+        self.write_alias_root_value(alias, Value::Array(array), span)?;
+        self.post_replace_holder_storage_for_alias_write(boundary.as_ref());
+        Ok(true)
+    }
+
+    fn demote_array_offset_aliases_to_value_slots(
+        &mut self,
+        aliases: &[ArrayOffsetAlias],
+        span: Span,
+    ) -> CompileResult<()> {
+        for alias in aliases {
+            let Some(value) = self.read_array_offset_alias(alias) else {
+                continue;
+            };
+            self.replace_array_offset_alias_with_value_slot(alias, value, span)?;
+        }
+        self.sync_alias_roots(aliases);
+        Ok(())
+    }
+
     fn write_array_offset_aliases(&mut self, aliases: &[ArrayOffsetAlias], value: Value) -> bool {
         if aliases.is_empty() {
             return false;
@@ -7556,6 +7604,14 @@ impl SymbolTable {
         value: Value,
     ) -> bool {
         array.write_existing_path(keys, value)
+    }
+
+    fn replace_nested_array_offset_alias_with_value_slot(
+        array: &mut PhpArray,
+        keys: &[ArrayKey],
+        value: Value,
+    ) -> bool {
+        array.replace_existing_path_value_slot(keys, value)
     }
 
     fn write_nested_array_offset_alias_checked_with_object_type_resolver(
@@ -10376,6 +10432,154 @@ impl Interpreter {
         }
     }
 
+    fn evaluate_by_value_call_argument_with_array_copy_source(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        match expr {
+            Expr::Variable(name, span) => {
+                if name == "GLOBALS"
+                    || (name.eq_ignore_ascii_case("this") && scope.read_named("this").is_none())
+                {
+                    return self.evaluate_value_with_array_copy_source(expr, scope);
+                }
+
+                let Some(value) = scope.read_named(name) else {
+                    self.emit_display_warning(format!("Undefined variable ${name}"), *span)?;
+                    return Ok((Value::Null, None));
+                };
+                let source = if matches!(value, Value::Array(_)) {
+                    self.public_object_property_array_copy_source_for_value_expr(expr, scope)
+                } else {
+                    None
+                };
+                Ok((value, source))
+            }
+            Expr::Index {
+                target,
+                index,
+                span,
+            } => self.evaluate_by_value_call_argument_array_index_with_array_copy_source(
+                target, index, *span, scope,
+            ),
+            _ => self.evaluate_value_with_array_copy_source(expr, scope),
+        }
+    }
+
+    fn evaluate_by_value_call_argument_array_index_with_array_copy_source(
+        &mut self,
+        target: &Expr,
+        index: &Expr,
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        if matches!(target, Expr::Variable(name, _) if name == "GLOBALS") {
+            return self.evaluate_array_index_with_array_copy_source(target, index, span, scope);
+        }
+
+        if let Some(result) =
+            self.evaluate_expression_array_index_with_array_copy_source(target, index, span, scope)?
+        {
+            return Ok(result);
+        }
+
+        let (target_value, target_copy_source) =
+            self.evaluate_by_value_call_argument_with_array_copy_source(target, scope)?;
+
+        match target_value {
+            Value::Array(array) => {
+                let key = self.evaluate_array_key(index, scope)?;
+                let Some(value) = array.get_cloned(key.clone()) else {
+                    self.emit_display_warning(
+                        format!("Undefined array key {}", key.diagnostic_key()),
+                        span,
+                    )?;
+                    return Ok((Value::Null, None));
+                };
+                let source = if matches!(value, Value::Array(_)) {
+                    self.array_literal_copy_source_for_index_expr(target, index, scope)
+                        .or_else(|| {
+                            self.object_property_array_copy_source_for_index_expr(
+                                target, index, scope,
+                            )
+                        })
+                        .or_else(|| {
+                            target_copy_source.map(|mut source| {
+                                source.keys.push(key);
+                                source.include_exact_path = false;
+                                source
+                            })
+                        })
+                } else {
+                    None
+                };
+                let value = scope.value_with_object_property_aliases_from_array_copy(
+                    value,
+                    source.clone(),
+                    false,
+                );
+                Ok((value, source))
+            }
+            Value::String(value) => {
+                let key = self.evaluate_array_key(index, scope)?;
+                let value = self.read_ascii_string_offset(&value, &key, span)?;
+                Ok((value, None))
+            }
+            Value::Object(object) => {
+                let key_value = self.evaluate(index, scope)?;
+                let (offset_arg, copy_source_key) = if matches!(key_value, Value::Null) {
+                    (Value::Null, Some(Self::array_access_append_reference_key()))
+                } else {
+                    let key = ArrayKey::from_value(&key_value)
+                        .map_err(|error| runtime_error(index.span(), error))?;
+                    (Self::array_key_value(Some(key.clone())), Some(key))
+                };
+                let (value, executed_source) = self
+                    .call_array_access_offset_get_with_array_copy_source(
+                        object.clone(),
+                        offset_arg,
+                        span,
+                        scope,
+                    )?;
+                let source = if matches!(value, Value::Array(_)) {
+                    executed_source.or_else(|| {
+                        copy_source_key.and_then(|key| {
+                            self.array_access_array_copy_source_for_object(object, key, span)
+                        })
+                    })
+                } else {
+                    None
+                };
+                let value = scope.value_with_object_property_aliases_from_array_copy(
+                    value,
+                    source.clone(),
+                    false,
+                );
+                Ok((value, source))
+            }
+            other => {
+                let _ = self.evaluate_array_key(index, scope)?;
+                self.emit_display_warning(
+                    format!(
+                        "Trying to access array offset on {}",
+                        Self::array_offset_read_warning_container(&other)
+                    ),
+                    span,
+                )?;
+                Ok((Value::Null, None))
+            }
+        }
+    }
+
+    fn array_offset_read_warning_container(value: &Value) -> String {
+        match value {
+            Value::Bool(true) => "true".to_string(),
+            Value::Bool(false) => "false".to_string(),
+            _ => value.type_name().to_string(),
+        }
+    }
+
     fn array_copy_source_for_assignment_target_result(
         &self,
         target: &AssignTarget,
@@ -12141,15 +12345,29 @@ impl Interpreter {
     }
 
     fn emit_display_notice(&mut self, message: impl AsRef<str>, span: Span) -> CompileResult<()> {
+        self.emit_display_diagnostic("Notice", PHP_E_NOTICE, message, span)
+    }
+
+    fn emit_display_warning(&mut self, message: impl AsRef<str>, span: Span) -> CompileResult<()> {
+        self.emit_display_diagnostic("Warning", PHP_E_WARNING, message, span)
+    }
+
+    fn emit_display_diagnostic(
+        &mut self,
+        label: &str,
+        level: i64,
+        message: impl AsRef<str>,
+        span: Span,
+    ) -> CompileResult<()> {
         let message = message.as_ref().to_string();
         let file = self
             .source_file
             .clone()
             .unwrap_or_else(|| "Command line code".to_string());
-        if self.call_error_handler_for_diagnostic(PHP_E_NOTICE, &message, &file, span)? {
+        if self.call_error_handler_for_diagnostic(level, &message, &file, span)? {
             return Ok(());
         }
-        if self.error_reporting_mask & PHP_E_NOTICE == 0 {
+        if self.error_reporting_mask & level == 0 {
             return Ok(());
         }
 
@@ -12160,7 +12378,7 @@ impl Interpreter {
             output.push('\n');
         }
         output.push_str(&format!(
-            "Notice: {message} in {file} on line {}\n",
+            "{label}: {message} in {file} on line {}\n",
             span.line
         ));
         self.append_output_at(&output, span);
@@ -39393,7 +39611,8 @@ impl Interpreter {
         let mut argument_array = PhpArray::new();
         let mut indexed_array_copy_source_bindings = Vec::new();
         for (index, arg) in args.iter().enumerate() {
-            let (value, source) = self.evaluate_value_with_array_copy_source(arg, caller_scope)?;
+            let (value, source) =
+                self.evaluate_by_value_call_argument_with_array_copy_source(arg, caller_scope)?;
             let value = caller_scope.value_with_object_property_aliases_from_array_copy(
                 value,
                 source.clone(),
@@ -41403,7 +41622,7 @@ impl Interpreter {
 
             let mut values = Vec::with_capacity(args.len());
             for arg in args {
-                values.push(self.evaluate(arg, caller_scope)?);
+                values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
             }
 
             let this_object = match caller_scope.read_named("this") {
@@ -42386,7 +42605,9 @@ impl Interpreter {
                 if key == "preg_replace_callback" {
                     let mut values = Vec::with_capacity(args.len());
                     for arg in args {
-                        values.push(self.evaluate(arg, caller_scope)?);
+                        values.push(
+                            self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?,
+                        );
                     }
                     return self.call_preg_replace_callback(values, span);
                 }
@@ -42436,7 +42657,8 @@ impl Interpreter {
                 }
                 let mut values = Vec::with_capacity(args.len());
                 for arg in args {
-                    values.push(self.evaluate(arg, caller_scope)?);
+                    values
+                        .push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
                 }
                 self.call_builtin(&key, values, span)
             }
@@ -42487,7 +42709,9 @@ impl Interpreter {
                 if key == "preg_replace_callback" {
                     let mut values = Vec::with_capacity(args.len());
                     for arg in args {
-                        values.push(self.evaluate(arg, caller_scope)?);
+                        values.push(
+                            self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?,
+                        );
                     }
                     return self.call_preg_replace_callback(values, span);
                 }
@@ -42537,7 +42761,8 @@ impl Interpreter {
                 }
                 let mut values = Vec::with_capacity(args.len());
                 for arg in args {
-                    values.push(self.evaluate(arg, caller_scope)?);
+                    values
+                        .push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
                 }
                 self.call_builtin(&key, values, span)
             }
@@ -43434,7 +43659,7 @@ impl Interpreter {
     ) -> CompileResult<Value> {
         let mut values = Vec::with_capacity(args.len());
         for arg in args {
-            values.push(self.evaluate(arg, caller_scope)?);
+            values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
         }
         self.call_builtin_callback_with_values(key, values, span, true)
     }
@@ -48693,7 +48918,7 @@ impl Interpreter {
 
         let mut values = Vec::with_capacity(args.len().saturating_sub(1));
         for arg in &args[1..] {
-            values.push(self.evaluate(arg, caller_scope)?);
+            values.push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
         }
 
         let mut array_value = caller_scope.read_static(array_name, span)?;
@@ -49454,7 +49679,7 @@ impl Interpreter {
             };
 
             let (value, array_copy_source) =
-                self.evaluate_value_with_array_copy_source(arg, caller_scope)?;
+                self.evaluate_by_value_call_argument_with_array_copy_source(arg, caller_scope)?;
             let value = caller_scope.value_with_object_property_aliases_from_array_copy(
                 value,
                 array_copy_source.clone(),
@@ -53490,7 +53715,7 @@ impl Interpreter {
                 }
             } else {
                 let (value, array_copy_source) =
-                    self.evaluate_value_with_array_copy_source(arg, caller_scope)?;
+                    self.evaluate_by_value_call_argument_with_array_copy_source(arg, caller_scope)?;
                 let value = caller_scope.value_with_object_property_aliases_from_array_copy(
                     value,
                     array_copy_source.clone(),
@@ -53626,7 +53851,7 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let (value, array_copy_source) =
-            self.evaluate_value_with_array_copy_source(arg, caller_scope)?;
+            self.evaluate_by_value_call_argument_with_array_copy_source(arg, caller_scope)?;
         Ok(
             caller_scope.value_with_object_property_aliases_from_array_copy(
                 value,
@@ -54750,12 +54975,14 @@ impl Interpreter {
 
     fn write_back_reference_bindings(
         &mut self,
-        array_offset_binding_cells: &[(String, Vec<ArrayOffsetAlias>, VariableCell)],
+        array_offset_binding_cells: &[(String, Vec<ArrayOffsetAlias>, VariableCell, bool)],
         local_scope: &SymbolTable,
         caller_scope: &mut SymbolTable,
         span: Span,
     ) -> CompileResult<()> {
-        for (param_name, aliases, original_cell) in array_offset_binding_cells {
+        for (param_name, aliases, original_cell, had_existing_reference) in
+            array_offset_binding_cells
+        {
             let value = match local_scope.read_cell(param_name) {
                 Some(local_cell) if local_cell.shares_reference_with(original_cell) => {
                     local_scope.read_named(param_name).unwrap_or(Value::Null)
@@ -54763,6 +54990,9 @@ impl Interpreter {
                 _ => original_cell.value_cloned(),
             };
             self.write_back_array_offset_aliases(aliases, value, caller_scope, span)?;
+            if !had_existing_reference {
+                caller_scope.demote_array_offset_aliases_to_value_slots(aliases, span)?;
+            }
         }
         Ok(())
     }
@@ -55302,17 +55532,17 @@ impl Interpreter {
     }
 
     fn matching_array_offset_binding_cell(
-        array_offset_binding_cells: &[(String, Vec<ArrayOffsetAlias>, VariableCell)],
+        array_offset_binding_cells: &[(String, Vec<ArrayOffsetAlias>, VariableCell, bool)],
         aliases: &[ArrayOffsetAlias],
-    ) -> Option<VariableCell> {
-        array_offset_binding_cells
-            .iter()
-            .find_map(|(_, existing_aliases, cell)| {
+    ) -> Option<(VariableCell, bool)> {
+        array_offset_binding_cells.iter().find_map(
+            |(_, existing_aliases, cell, had_existing_reference)| {
                 existing_aliases
                     .iter()
                     .any(|existing| aliases.iter().any(|alias| alias == existing))
-                    .then(|| cell.clone())
-            })
+                    .then(|| (cell.clone(), *had_existing_reference))
+            },
+        )
     }
 
     fn call_user_function_with_checked_values(
@@ -55728,38 +55958,51 @@ impl Interpreter {
                                 unreachable!("matched array offset binding");
                             };
                             let aliases = vec![alias.clone()];
-                            if let Some(cell) = Self::matching_array_offset_binding_cell(
-                                &array_offset_binding_cells,
-                                &aliases,
-                            ) {
+                            if let Some((cell, had_existing_reference)) =
+                                Self::matching_array_offset_binding_cell(
+                                    &array_offset_binding_cells,
+                                    &aliases,
+                                )
+                            {
                                 local_scope.bind_static_to_cell(&param.name, cell.clone());
                                 array_offset_binding_cells.push((
                                     param.name.clone(),
                                     aliases,
                                     cell,
+                                    had_existing_reference,
                                 ));
                             } else {
-                                let bound_to_caller_cell = if let Some(scope) =
-                                    reference_scope.as_deref_mut()
-                                {
-                                    if let Some(cell) =
+                                let had_existing_reference =
+                                    reference_scope.as_deref().is_some_and(|scope| {
+                                        scope.has_bound_array_offset_alias_group(&aliases)
+                                            || aliases.iter().any(|alias| {
+                                                scope
+                                                    .read_array_offset_alias_reference_cell(alias)
+                                                    .is_some()
+                                            })
+                                    });
+                                let bound_caller_cell =
+                                    if let Some(scope) = reference_scope.as_deref_mut() {
                                         scope.reference_cell_for_array_literal_alias_group(&aliases)
-                                    {
-                                        local_scope.bind_static_to_cell(&param.name, cell.clone());
-                                        true
                                     } else {
-                                        false
-                                    }
+                                        None
+                                    };
+                                if let Some(cell) = bound_caller_cell {
+                                    local_scope.bind_static_to_cell(&param.name, cell.clone());
+                                    array_offset_binding_cells.push((
+                                        param.name.clone(),
+                                        aliases,
+                                        cell,
+                                        had_existing_reference,
+                                    ));
                                 } else {
-                                    false
-                                };
-                                if !bound_to_caller_cell {
                                     local_scope.write_static(&param.name, arg.clone());
                                     if let Some(cell) = local_scope.read_cell(&param.name) {
                                         array_offset_binding_cells.push((
                                             param.name.clone(),
                                             aliases,
                                             cell,
+                                            false,
                                         ));
                                     }
                                 }
@@ -55772,38 +56015,51 @@ impl Interpreter {
                             else {
                                 unreachable!("matched array offset binding list");
                             };
-                            if let Some(cell) = Self::matching_array_offset_binding_cell(
-                                &array_offset_binding_cells,
-                                aliases,
-                            ) {
+                            if let Some((cell, had_existing_reference)) =
+                                Self::matching_array_offset_binding_cell(
+                                    &array_offset_binding_cells,
+                                    aliases,
+                                )
+                            {
                                 local_scope.bind_static_to_cell(&param.name, cell.clone());
                                 array_offset_binding_cells.push((
                                     param.name.clone(),
                                     aliases.clone(),
                                     cell,
+                                    had_existing_reference,
                                 ));
                             } else {
-                                let bound_to_caller_cell = if let Some(scope) =
-                                    reference_scope.as_deref_mut()
-                                {
-                                    if let Some(cell) =
+                                let had_existing_reference =
+                                    reference_scope.as_deref().is_some_and(|scope| {
+                                        scope.has_bound_array_offset_alias_group(aliases)
+                                            || aliases.iter().any(|alias| {
+                                                scope
+                                                    .read_array_offset_alias_reference_cell(alias)
+                                                    .is_some()
+                                            })
+                                    });
+                                let bound_caller_cell =
+                                    if let Some(scope) = reference_scope.as_deref_mut() {
                                         scope.reference_cell_for_array_literal_alias_group(aliases)
-                                    {
-                                        local_scope.bind_static_to_cell(&param.name, cell.clone());
-                                        true
                                     } else {
-                                        false
-                                    }
+                                        None
+                                    };
+                                if let Some(cell) = bound_caller_cell {
+                                    local_scope.bind_static_to_cell(&param.name, cell.clone());
+                                    array_offset_binding_cells.push((
+                                        param.name.clone(),
+                                        aliases.clone(),
+                                        cell,
+                                        had_existing_reference,
+                                    ));
                                 } else {
-                                    false
-                                };
-                                if !bound_to_caller_cell {
                                     local_scope.write_static(&param.name, arg.clone());
                                     if let Some(cell) = local_scope.read_cell(&param.name) {
                                         array_offset_binding_cells.push((
                                             param.name.clone(),
                                             aliases.clone(),
                                             cell,
+                                            false,
                                         ));
                                     }
                                 }
