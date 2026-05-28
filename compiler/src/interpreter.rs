@@ -43984,11 +43984,11 @@ impl Interpreter {
                 if key == "headers_sent" {
                     return self.call_headers_sent_direct(args, span, caller_scope);
                 }
-                let mut values = Vec::with_capacity(args.len());
-                for arg in args {
-                    values
-                        .push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
-                }
+                let values = self.evaluate_builtin_value_call_arguments(
+                    &callable_name(name),
+                    args,
+                    caller_scope,
+                )?;
                 self.call_builtin(&key, values, span)
             }
             Callable::User(function) => {
@@ -44088,11 +44088,11 @@ impl Interpreter {
                 if key == "headers_sent" {
                     return self.call_headers_sent_direct(args, span, caller_scope);
                 }
-                let mut values = Vec::with_capacity(args.len());
-                for arg in args {
-                    values
-                        .push(self.evaluate_by_value_argument_with_cow_source(arg, caller_scope)?);
-                }
+                let values = self.evaluate_builtin_value_call_arguments(
+                    &callable_name(name),
+                    args,
+                    caller_scope,
+                )?;
                 self.call_builtin(&key, values, span)
             }
             Callable::User(function) => {
@@ -44113,6 +44113,77 @@ impl Interpreter {
                 }
             }
         }
+    }
+
+    fn evaluate_builtin_value_call_arguments(
+        &mut self,
+        callable: &str,
+        args: &[Expr],
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Vec<Value>> {
+        let mut values = Vec::with_capacity(args.len());
+        let mut saw_spread = false;
+
+        for arg in args {
+            match arg {
+                Expr::SpreadArgument { expr, span } => {
+                    saw_spread = true;
+                    let value =
+                        self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?;
+                    let Value::Array(array) = value else {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                callable,
+                                format!(
+                                    "argument unpacking requires an array in the current subset, got {}",
+                                    value.type_name()
+                                ),
+                            ),
+                        ));
+                    };
+
+                    for entry in array.entries() {
+                        if matches!(entry.key, ArrayKey::String(_)) {
+                            return Err(runtime_error(
+                                *span,
+                                RuntimeError::unsupported_call(
+                                    callable,
+                                    "string-keyed argument unpacking for builtin calls is not implemented in the current subset",
+                                ),
+                            ));
+                        }
+                        values.push(entry.value_cloned());
+                    }
+                }
+                Expr::NamedArgument { name, span, .. } => {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            callable,
+                            format!(
+                                "named argument ${name} for builtin calls is not implemented in the current subset"
+                            ),
+                        ),
+                    ));
+                }
+                expr => {
+                    if saw_spread {
+                        return Err(runtime_error(
+                            expr.span(),
+                            RuntimeError::unsupported_call(
+                                callable,
+                                "positional arguments after argument unpacking are not implemented in the current subset",
+                            ),
+                        ));
+                    }
+                    values
+                        .push(self.evaluate_by_value_argument_with_cow_source(expr, caller_scope)?);
+                }
+            }
+        }
+
+        Ok(values)
     }
 
     fn call_callable_with_values(

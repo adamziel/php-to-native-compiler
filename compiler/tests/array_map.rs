@@ -263,6 +263,31 @@ if ($dynamic[2][3] === null) {
 }
 
 #[test]
+fn array_map_null_callback_accepts_unpacked_array_argument_list() {
+    let source = r#"<?php
+$arrays = [
+    [1, 2, 3],
+    [4, 5, 6],
+    [7, 8, 9],
+];
+
+$mapped = array_map(null, ...$arrays);
+echo count($mapped), "|", count($mapped[0]), "\n";
+echo $mapped[0][0], ":", $mapped[0][1], ":", $mapped[0][2], "\n";
+echo $mapped[1][0], ":", $mapped[1][1], ":", $mapped[1][2], "\n";
+echo $mapped[2][0], ":", $mapped[2][1], ":", $mapped[2][2], "\n";
+
+$call = "array_map";
+$dynamic = $call(null, ...$arrays);
+echo $dynamic[0][0], ":", $dynamic[1][1], ":", $dynamic[2][2];
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(execution.stdout, "3|3\n1:4:7\n2:5:8\n3:6:9\n1:5:9");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn array_map_invokes_string_named_callback_with_variadic_arrays_and_null_padding() {
     let source = r#"<?php
 function combine_three($left, $middle, $right) {
