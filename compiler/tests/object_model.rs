@@ -48,30 +48,59 @@ echo "ready\n";
     assert_eq!(execution.stdout, "ready\n");
 
     let classes = class_metadata_source(source).unwrap();
-    assert_eq!(classes.classes().len(), 18);
-    assert_eq!(classes.classes()[0].name(), "Exception");
+    let class_names = classes
+        .classes()
+        .iter()
+        .map(|class| class.name())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        class_names,
+        vec![
+            "Exception",
+            "Error",
+            "stdClass",
+            "mysqli",
+            "mysqli_result",
+            "mysqli_stmt",
+            "PDO",
+            "PDOStatement",
+            "ReflectionException",
+            "ReflectionClass",
+            "ReflectionFunction",
+            "ReflectionMethod",
+            "ReflectionParameter",
+            "ReflectionType",
+            "ReflectionNamedType",
+            "ReflectionUnionType",
+            "ReflectionIntersectionType",
+            "ReflectionProperty",
+            "TypeError",
+            "RuntimeException",
+            "Box",
+        ]
+    );
+    let mut normalized_class_names = class_names
+        .iter()
+        .map(|name| name.to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    normalized_class_names.sort();
+    normalized_class_names.dedup();
+    assert_eq!(normalized_class_names.len(), class_names.len());
+
     let exception = classes.lookup_class("Exception").unwrap();
     for property in ["message", "code", "previous"] {
         let metadata = exception.property(property).unwrap();
         assert_eq!(metadata.visibility(), Visibility::Protected);
         assert!(!metadata.is_static());
     }
-    assert_eq!(classes.classes()[1].name(), "stdClass");
-    assert_eq!(classes.classes()[2].name(), "mysqli");
-    assert_eq!(classes.classes()[3].name(), "mysqli_result");
-    assert_eq!(classes.classes()[4].name(), "mysqli_stmt");
-    assert_eq!(classes.classes()[5].name(), "PDO");
-    assert_eq!(classes.classes()[6].name(), "PDOStatement");
-    assert_eq!(classes.classes()[7].name(), "ReflectionException");
-    assert_eq!(classes.classes()[8].name(), "ReflectionClass");
-    assert_eq!(classes.classes()[9].name(), "ReflectionFunction");
-    assert_eq!(classes.classes()[10].name(), "ReflectionMethod");
-    assert_eq!(classes.classes()[11].name(), "ReflectionParameter");
-    assert_eq!(classes.classes()[12].name(), "ReflectionType");
-    assert_eq!(classes.classes()[13].name(), "ReflectionNamedType");
-    assert_eq!(classes.classes()[14].name(), "ReflectionUnionType");
-    assert_eq!(classes.classes()[15].name(), "ReflectionIntersectionType");
-    assert_eq!(classes.classes()[16].name(), "ReflectionProperty");
+    let error = classes.lookup_class("Error").unwrap();
+    let message = error.property("message").unwrap();
+    assert_eq!(message.visibility(), Visibility::Public);
+    assert!(!message.is_static());
+    let type_error = classes.lookup_class("TypeError").unwrap();
+    assert_eq!(type_error.parent_id(), Some(error.id()));
+    let runtime_exception = classes.lookup_class("RuntimeException").unwrap();
+    assert_eq!(runtime_exception.parent_id(), Some(exception.id()));
 
     let class = classes.lookup_class("box").unwrap();
     assert_eq!(class.name(), "Box");

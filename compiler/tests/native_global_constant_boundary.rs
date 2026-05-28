@@ -19,12 +19,16 @@ const NAME = "compiler", MODE = ARRAY_FILTER_USE_KEY;
 echo ARRAY_FILTER_USE_BOTH, "|", FROM_DEFINE, "|", NAME, "|", MODE, "\n";
 echo PHP_VERSION_ID, "|", defined("PHP_VERSION_ID"), "\n";
 echo defined("PHP_VERSION"), "|", PHP_VERSION === constant("PHP_VERSION"), "\n";
+echo defined("PHP_EOL"), "|", constant("PHP_EOL") === "\n", "|", PHP_EOL, "after", "\n";
 echo constant("RUNTIME_BASE"), "|", defined("RUNTIME_BASE"), "|", defined("MISSING_CONST");
 "#,
     )
     .unwrap();
 
-    assert_eq!(execution.stdout, "1|4|compiler|2\n80300|1\n1|1\n3|1|");
+    assert_eq!(
+        execution.stdout,
+        "1|4|compiler|2\n80300|1\n1|1\n1|1|\nafter\n3|1|"
+    );
     assert_eq!(execution.exit_code, 0);
 }
 
@@ -131,6 +135,7 @@ echo defined("ARRAY_FILTER_USE_KEY") ? "1" : "0";
 echo defined("PHP_VERSION") ? "1" : "0";
 echo defined("PHP_VERSION_ID") ? "1" : "0";
 echo defined("PHP_SAPI") ? "1" : "0";
+echo defined("PHP_EOL") ? "1" : "0";
 echo defined("SORT_STRING") ? "1" : "0";
 echo defined("MISSING_CONST") ? "1" : "0";
 echo defined($mode) ? "1" : "0";

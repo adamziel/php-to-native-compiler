@@ -13943,11 +13943,8 @@ impl Interpreter {
                 continue;
             }
 
-            let Some(class) = self.classes.lookup_class(&catch_type.name) else {
-                return Err(runtime_error(
-                    catch_type.span,
-                    RuntimeError::undefined_class(&catch_type.name),
-                ));
+            let Some(class) = self.classes.lookup_class(catch_name) else {
+                continue;
             };
             if object.class_id() == class.id()
                 || self.classes.is_subclass_of(object.class_id(), class.id())
@@ -13977,11 +13974,8 @@ impl Interpreter {
                 continue;
             }
 
-            let Some(class) = self.classes.lookup_class(&catch_type.name) else {
-                return Err(runtime_error(
-                    catch_type.span,
-                    RuntimeError::undefined_class(&catch_type.name),
-                ));
+            let Some(class) = self.classes.lookup_class(catch_name) else {
+                continue;
             };
             if class_id == class.id() || self.classes.is_subclass_of(class_id, class.id()) {
                 return Ok(true);
@@ -73689,6 +73683,7 @@ fn builtin_global_constant_value(name: &str) -> Option<Value> {
         "PHP_VERSION_ID" => Some(Value::Int(80300)),
         "PHP_INT_MAX" => Some(Value::Int(i64::MAX)),
         "PHP_SAPI" => Some(Value::String("cli".to_string())),
+        "PHP_EOL" => Some(Value::String("\n".to_string())),
         "PATH_SEPARATOR" => Some(Value::String(INCLUDE_PATH_SEPARATOR.to_string())),
         "PHP_SESSION_DISABLED" => Some(Value::Int(PHP_SESSION_DISABLED)),
         "PHP_SESSION_NONE" => Some(Value::Int(PHP_SESSION_NONE)),

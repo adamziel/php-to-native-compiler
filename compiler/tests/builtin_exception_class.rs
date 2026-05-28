@@ -26,6 +26,24 @@ echo is_subclass_of($custom, "Exception") ? "yes" : "no", "\n";
 }
 
 #[test]
+fn builtin_runtime_exception_catches_after_unresolved_multicatch_arm() {
+    let execution = run_source(
+        r#"<?php
+try {
+    throw new RuntimeException();
+} catch (\FooEx | \RuntimeException $e) {
+    echo get_class($e), "\n";
+}
+echo "after";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "RuntimeException\nafter");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn user_code_cannot_redeclare_builtin_exception_class() {
     let error = run_source(
         r#"<?php

@@ -66736,6 +66736,7 @@ fn native_builtin_global_constant_c_value(name: &str) -> Option<CValue> {
         "PHP_VERSION_ID" => Some(CValue::Int("80300".to_string())),
         "PHP_INT_MAX" => Some(CValue::Int(i64::MAX.to_string())),
         "PHP_SAPI" => Some(CValue::String("cli".to_string())),
+        "PHP_EOL" => Some(CValue::String("\n".to_string())),
         "PATH_SEPARATOR" => Some(CValue::String(
             if cfg!(windows) { ";" } else { ":" }.to_string(),
         )),

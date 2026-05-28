@@ -1101,6 +1101,7 @@ fn constant_builtin_resolves_the_current_builtin_constant_slice() {
 echo constant("ARRAY_FILTER_USE_KEY"), "|", constant("ARRAY_FILTER_USE_BOTH"), "\n";
 echo constant("PHP_VERSION_ID"), "|", constant("PHP_VERSION_ID") >= 80000, "\n";
 echo defined("PHP_VERSION"), "|", PHP_VERSION === constant("PHP_VERSION"), "\n";
+echo defined("PHP_EOL"), "|", constant("PHP_EOL") === "\n", "|", PHP_EOL, "after", "\n";
 define("Sodium\\CRYPTO_AUTH_BYTES", 32);
 echo constant("\\Sodium\\CRYPTO_AUTH_BYTES"), "\n";
 $name = "ARRAY_FILTER_USE_KEY";
@@ -1122,7 +1123,7 @@ echo count($filtered), "|", $filtered["name"], "\n";
 
     assert_eq!(
         execution.stdout,
-        "2|1\n80300|1\n1|1\n32\n2\n1\nArray\n(\n    [0] => name\n)\n1|Ada\n"
+        "2|1\n80300|1\n1|1\n1|1|\nafter\n32\n2\n1\nArray\n(\n    [0] => name\n)\n1|Ada\n"
     );
     assert_eq!(execution.exit_code, 0);
 }
