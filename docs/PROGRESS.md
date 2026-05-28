@@ -1,5 +1,22 @@
 # Progress Log
 
+## 2026-05-28
+
+Implemented:
+
+- Added interpreter by-reference parameter binding for proven
+  reference-return call expressions. Direct user-function, object-method,
+  static/self/parent/late-static/dynamic-static, dynamic callable, and covered
+  `call_user_func()`/`call_user_func_array()` reference-return sources can now
+  feed by-reference helper parameters by binding the callee parameter to the
+  returned reference cell instead of requiring a direct lvalue. Focused gates
+  cover scalar/global reference-return calls, array append helpers, object
+  method source calls, method helpers such as
+  `$this->append($this->items(), $value)`, and the pinned php-src
+  `Zend/tests/bug39944.phpt`. Non-reference-returning call expressions,
+  arbitrary temporary expressions, broad reference/COW parity, and native
+  lowering remain unsupported.
+
 ## 2026-05-27
 
 Implemented:

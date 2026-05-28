@@ -8083,6 +8083,9 @@ enum ReferenceBindingTarget {
         name: String,
         cell: VariableCell,
     },
+    ReferenceReturnCell {
+        cell: VariableCell,
+    },
     CallerCellWithStaticArrayCopySource {
         name: String,
         cell: VariableCell,
@@ -44101,6 +44104,7 @@ impl Interpreter {
                     Vec::new(),
                     caller_scope.public_or_dirty_object_property_array_copy_source_for_static(name),
                 ),
+                ReferenceBindingTarget::ReferenceReturnCell { .. } => (Vec::new(), None),
                 ReferenceBindingTarget::CallerCellWithStaticArrayCopySource { source, .. }
                 | ReferenceBindingTarget::CallerCellWithArrayCopySource { source, .. } => {
                     (Vec::new(), Some(source.clone()))
@@ -50533,6 +50537,9 @@ impl Interpreter {
                             cell.clone(),
                         ));
                     }
+                    ReferenceBindingTarget::ReferenceReturnCell { cell } => {
+                        local_scope.bind_static_to_cell(&param.name, cell.clone());
+                    }
                     ReferenceBindingTarget::CallerCellWithStaticArrayCopySource {
                         cell,
                         source,
@@ -51339,6 +51346,9 @@ impl Interpreter {
             {
                 match &binding.target {
                     ReferenceBindingTarget::CallerCell { cell, .. } => {
+                        local_scope.bind_static_to_cell(&param.name, cell.clone());
+                    }
+                    ReferenceBindingTarget::ReferenceReturnCell { cell } => {
                         local_scope.bind_static_to_cell(&param.name, cell.clone());
                     }
                     ReferenceBindingTarget::CallerCellWithStaticArrayCopySource {
@@ -53128,6 +53138,21 @@ impl Interpreter {
                         target,
                     });
                 } else {
+                    if let Some((value, target)) = self
+                        .evaluate_reference_return_call_reference_argument(
+                            function,
+                            arg,
+                            caller_scope,
+                        )?
+                    {
+                        values.push(value);
+                        reference_bindings.push(ReferenceBinding {
+                            param_name: param.name.clone(),
+                            target,
+                        });
+                        continue;
+                    }
+
                     let allow_by_value_overloaded_reference_argument =
                         !function.returns_by_reference || allow_reference_return_array_bindings;
                     if allow_by_value_overloaded_reference_argument {
@@ -53342,6 +53367,41 @@ impl Interpreter {
             reference_bindings,
             by_value_array_copy_source_bindings,
         ))
+    }
+
+    fn is_reference_return_call_argument_expr(arg: &Expr) -> bool {
+        matches!(
+            arg,
+            Expr::Call { .. }
+                | Expr::MethodCall { .. }
+                | Expr::DynamicMethodCall { .. }
+                | Expr::StaticMethodCall { .. }
+                | Expr::SelfMethodCall { .. }
+                | Expr::ParentMethodCall { .. }
+                | Expr::LateStaticMethodCall { .. }
+                | Expr::ObjectStaticMethodCall { .. }
+                | Expr::DynamicCall { .. }
+        )
+    }
+
+    fn evaluate_reference_return_call_reference_argument(
+        &mut self,
+        function: &FunctionDecl,
+        arg: &Expr,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<Option<(Value, ReferenceBindingTarget)>> {
+        if !Self::is_reference_return_call_argument_expr(arg) {
+            return Ok(None);
+        }
+
+        let binding = self.evaluate_reference_return_call_binding(arg, arg.span(), caller_scope)?;
+        let cell =
+            self.reference_return_binding_cell(function, binding, arg.span(), caller_scope)?;
+        let value = cell.value_cloned();
+        Ok(Some((
+            value,
+            ReferenceBindingTarget::ReferenceReturnCell { cell },
+        )))
     }
 
     fn evaluate_visible_object_property_reference_argument(
@@ -54788,6 +54848,7 @@ impl Interpreter {
                 ReferenceBindingTarget::ValueWithArrayCopySource { .. } => {}
                 ReferenceBindingTarget::ValueWithArrayCopySourceAtPath { .. } => {}
                 ReferenceBindingTarget::ValueCopy => {}
+                ReferenceBindingTarget::ReferenceReturnCell { .. } => {}
                 ReferenceBindingTarget::ArrayOffset(_)
                 | ReferenceBindingTarget::ArrayOffsets(_) => {}
             }
@@ -54842,6 +54903,7 @@ impl Interpreter {
                 ReferenceBindingTarget::ValueWithArrayCopySource { .. }
                 | ReferenceBindingTarget::ValueWithArrayCopySourceAtPath { .. }
                 | ReferenceBindingTarget::ValueCopy
+                | ReferenceBindingTarget::ReferenceReturnCell { .. }
                 | ReferenceBindingTarget::ArrayOffset(_)
                 | ReferenceBindingTarget::ArrayOffsets(_) => {}
             }
@@ -54893,6 +54955,7 @@ impl Interpreter {
                 ReferenceBindingTarget::ValueWithArrayCopySource { .. } => {}
                 ReferenceBindingTarget::ValueWithArrayCopySourceAtPath { .. } => {}
                 ReferenceBindingTarget::ValueCopy => {}
+                ReferenceBindingTarget::ReferenceReturnCell { .. } => {}
                 ReferenceBindingTarget::ArrayOffset(_)
                 | ReferenceBindingTarget::ArrayOffsets(_) => {}
             }
@@ -55431,6 +55494,9 @@ impl Interpreter {
                                 }
                             }
                         }
+                    }
+                    ReferenceBindingTarget::ReferenceReturnCell { cell } => {
+                        local_scope.bind_static_to_cell(&param.name, cell.clone());
                     }
                     ReferenceBindingTarget::CallerCellWithStaticArrayCopySource {
                         cell,
