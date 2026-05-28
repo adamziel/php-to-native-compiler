@@ -60610,6 +60610,19 @@ impl Interpreter {
         }
     }
 
+    fn call_stream_get_wrappers(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        expect_arity("stream_get_wrappers", args, 0, span)?;
+
+        let mut wrappers = PhpArray::new();
+        for wrapper in ["file", "php"] {
+            wrappers
+                .append(Value::String(wrapper.to_string()))
+                .map_err(|error| runtime_error(span, error))?;
+        }
+
+        Ok(Value::Array(wrappers))
+    }
+
     fn call_stream_get_meta_data(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("stream_get_meta_data", args, 1, span)?;
         match self.stream_mut("stream_get_meta_data", &args[0], span)? {
@@ -63750,6 +63763,7 @@ impl Interpreter {
             "fseek" => self.call_fseek(&args, span),
             "fstat" => self.call_fstat(&args, span),
             "stream_get_meta_data" => self.call_stream_get_meta_data(&args, span),
+            "stream_get_wrappers" => self.call_stream_get_wrappers(&args, span),
             "fclose" => self.call_fclose(&args, span),
             "opendir" => self.call_opendir(&args, span),
             "readdir" => self.call_readdir(&args, span),
@@ -71793,6 +71807,7 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_bool_param("local_only", false),
             ],
         ),
+        "stream_get_wrappers" => ("array", vec![]),
         "is_array" | "is_object" | "is_string" | "is_scalar" => {
             ("bool", vec![reflection_internal_param("value", "mixed")])
         }
@@ -73627,6 +73642,7 @@ fn is_builtin(name: &str) -> bool {
             | "fseek"
             | "fstat"
             | "stream_get_meta_data"
+            | "stream_get_wrappers"
             | "fclose"
             | "opendir"
             | "readdir"

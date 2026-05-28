@@ -5,7 +5,7 @@ use php_compiler::error::Phase;
 use php_compiler::interpreter::{run_program_with_options, RunOptions};
 use php_compiler::{emit_asm_source, emit_ir_source, parse, run_source};
 
-const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_params(), fwrite(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), fclose(), opendir(), readdir(), rewinddir(), closedir(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, directory handle state, upload provenance state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, local file stream resources, stream context resources, local directory handles, and PHPC_FILES upload provenance";
+const LLVM_STREAM_RESOURCE_REJECTION: &str = "LLVM stream-resource lowering rejects fopen(), stream_context_create(), stream_context_get_options(), stream_context_get_params(), stream_context_get_default(), stream_context_set_default(), stream_context_set_option(), stream_context_set_params(), fwrite(), fread(), rewind(), stream_get_contents(), feof(), ftell(), fseek(), fstat(), stream_get_meta_data(), stream_get_wrappers(), fclose(), opendir(), readdir(), rewinddir(), closedir(), is_uploaded_file(), and move_uploaded_file() until native PHP resource handles, stream wrapper state, stream context state, stream wrapper registry state, upload provenance state, binary string byte fidelity, warning plus false recovery, references/copy-on-write, and exact native stream diagnostics exist; phpc run handles current bounded php://memory, php://temp, php://input, local file stream resources, stream wrapper capability metadata, stream context resources, local directory handles, and PHPC_FILES upload provenance";
 
 #[test]
 fn php_memory_and_temp_stream_resources_round_trip_buffer_contents() {
@@ -148,6 +148,39 @@ echo file_get_contents($dest);
     );
     let _ = fs::remove_file(source_path);
     let _ = fs::remove_file(destination_path);
+}
+
+#[test]
+fn stream_get_wrappers_reports_truthful_current_stream_subset() {
+    let execution = run_source(
+        r#"<?php
+$wrappers = stream_get_wrappers();
+echo function_exists("stream_get_wrappers") ? "exists" : "missing";
+echo "|";
+echo is_callable("stream_get_wrappers") ? "callable" : "missing";
+echo "|";
+echo is_array($wrappers) ? "array" : "not-array";
+echo "|";
+echo in_array("file", $wrappers) ? "file" : "no-file";
+echo "|";
+echo in_array("php", $wrappers) ? "php" : "no-php";
+echo "|";
+echo in_array("ftp", $wrappers) ? "ftp" : "no-ftp";
+echo "|";
+echo in_array("glob", $wrappers) ? "glob" : "no-glob";
+echo "|";
+echo in_array("phar", $wrappers) ? "phar" : "no-phar";
+echo "|";
+echo count($wrappers);
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "exists|callable|array|file|php|no-ftp|no-glob|no-phar|2"
+    );
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -836,6 +869,7 @@ echo is_callable("stream_get_contents") ? "1" : "0";
 echo defined("SEEK_END") ? "1" : "0";
 echo function_exists("fstat") ? "1" : "0";
 echo is_callable("stream_get_meta_data") ? "1" : "0";
+echo function_exists("stream_get_wrappers") ? "1" : "0";
 echo function_exists("opendir") ? "1" : "0";
 echo is_callable("readdir") ? "1" : "0";
 echo function_exists("is_uploaded_file") ? "1" : "0";
@@ -844,7 +878,7 @@ echo is_callable("move_uploaded_file") ? "1" : "0";
     )
     .unwrap();
 
-    assert_eq!(ir.matches("c\"1\\00\"").count(), 16, "{ir}");
+    assert_eq!(ir.matches("c\"1\\00\"").count(), 17, "{ir}");
 
     let error = emit_ir_source("<?php\nis_uploaded_file('/tmp/phpc-upload');\n").unwrap_err();
     assert_eq!(error.phase, Phase::Codegen);
