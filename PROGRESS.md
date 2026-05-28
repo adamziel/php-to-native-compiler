@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 06:42 CEST
+Updated: 2026-05-28 06:46 CEST
 Primary branch: `master`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
@@ -91,15 +91,21 @@ Gate status and parked candidates:
 | `Zend/tests/magic_methods/bug38146.phpt` `__get` array-return foreach PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing runtime iterates over an array returned by `__get` in foreach/read context and passes wrapper PHPT `Zend/tests/magic_methods/bug38146.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/magic_methods/bug44899_2.phpt` `__isset` / `empty()` / `__get` PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing magic-property behavior handles the `__isset`/`empty()`/`__get` interaction and passes wrapper PHPT `Zend/tests/magic_methods/bug44899_2.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/magic_methods/bug47353.phpt` destructor object-allocation loop PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing destructor/object-allocation handling passes wrapper PHPT `Zend/tests/magic_methods/bug47353.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
+| `Zend/tests/magic_methods/bug51822.phpt` static-property destructor ordering PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing static-property object lifetime/destructor ordering handles the target and passes wrapper PHPT `Zend/tests/magic_methods/bug51822.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | p15 `returnByReference.005` rebased object-receiver static reference-return dispatch | GO-CANDIDATE after independent p7 review and p14 `SAFE-FOR-PROGRESS`; patch SHA `9487557714a456f2b3f416af7db1ed9866c6428dd6072bd143afe6a86dd27895`; focused Rust gate, `cargo build -p phpc`, and wrapper PHPTs `tests/lang/returnByReference.005.phpt`, `tests/lang/returnByReference.004.phpt`, and `tests/lang/returnByReference.003.phpt` passed 3/3; no full-suite run and no percent change |
 | `Zend/tests/dereference/dereference_005.phpt` array dereference PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing generalized ArrayAccess/object dereference handling passes wrapper PHPT `Zend/tests/dereference/dereference_005.phpt` 1/1; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/dereference/dereference_008.phpt` dynamic-method array dereference PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing dynamic-method dereference/reference behavior passes wrapper PHPT `Zend/tests/dereference/dereference_008.phpt` 1/1; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `tests/lang/passByReference_008.phpt` / `tests/lang/passByReference_009.phpt` duplicate by-reference/by-value call-frame PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing call-frame argument binding/evaluation semantics pass wrapper PHPTs 2/2; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/type_declarations/typed_properties_011.phpt` typed-property array reference fetch PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing typed-property/reference behavior allows fetching a typed property by reference into an array and passes wrapper PHPT `Zend/tests/type_declarations/typed_properties_011.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
+| `Zend/tests/list/list_004.phpt` `list()` assignment from array reference PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing list-assignment/reference behavior reads from an aliased array and passes wrapper PHPT `Zend/tests/list/list_004.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
+| `Zend/tests/variadic/basic.phpt` basic variadic argument packing PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing variadic call binding packs surplus arguments and passes wrapper PHPT `Zend/tests/variadic/basic.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
+| `Zend/tests/variadic/optional_params.phpt` optional-parameter-before-variadic PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and durable p14 `SAFE-FOR-PROGRESS`; existing variadic call binding preserves optional defaults before collecting surplus arguments and passes wrapper PHPT `Zend/tests/variadic/optional_params.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/bug39944.phpt` reference invocation | PR #2/r82 is parked/superseded for Batch002; do not stack it with PR #4 because both conflict in `compiler/src/interpreter.rs` and `compiler/tests/functions_and_scopes.rs` |
 | Magic visibility warnings | PR #3 is `REBASE-NEEDED` for Batch 002 after r81/stack10 due docs conflict; production/test hunks replay |
 | Foreach `$GLOBALS` lane | PASS-NO-PATCH accepted by reviewer; accepted stack10 passes `foreach_unset_globals`, `foreach_reference`, and `foreach_temp_array_expr_with_refs` |
 | Foreach object-property by-reference lane | GO-CANDIDATE after independent review; focused PHPT `Zend/tests/foreach/foreach_by_ref_to_property.phpt` plus foreach anchors passed 3/3, with PR #3/#4 stack compatibility checks |
+| `Zend/tests/foreach/foreach_reference.phpt` by-reference foreach lingering alias PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing foreach/reference behavior preserves the last-element alias through `array_values()` and `array_reverse()` and passes wrapper PHPT `Zend/tests/foreach/foreach_reference.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
+| `Zend/tests/foreach/foreach_temp_array_expr_with_refs.phpt` temporary array references foreach PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing foreach/reference behavior iterates temporary arrays containing references by reference and mutates the original variables, passing wrapper PHPT `Zend/tests/foreach/foreach_temp_array_expr_with_refs.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/foreach/foreach_by_ref_repacking_insert.phpt` by-reference foreach packed-to-hash repacking PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing foreach/reference behavior handles packed-to-hash insert/repacking at the end of by-reference iteration and passes wrapper PHPT `Zend/tests/foreach/foreach_by_ref_repacking_insert.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/foreach/foreach_005.phpt` nested by-reference foreach PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing foreach/reference behavior passes wrapper PHPT `Zend/tests/foreach/foreach_005.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/foreach/foreach_006.phpt` repeated by-reference foreach constant-array PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing foreach/reference behavior passes wrapper PHPT `Zend/tests/foreach/foreach_006.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
@@ -129,12 +135,13 @@ Required live roles:
 Current AO snapshot: `phpc-orchestrator` supervising; `phpc-14` critic;
 `phpc-7` reviewer; `phpc-8` progress reporter; active coder/support lanes
 `phpc-15`, `phpc-16`, `phpc-17`, `phpc-18`, and `phpc-19`. Current
-public-progress watch targets are typed-properties `typed_properties_012`,
-magic `bug51421`, arg-unpack, foreach, and list successor reviews, the next
-p7-reviewed candidate plus p14 `SAFE-FOR-PROGRESS` audit, current coder lane
-artifacts, and any new full-suite PHPT row. Known no-go/not-safe items,
-including unsuffixed `bug44899`, `bug46238`, `bug48248`, `foreach_010`,
-`foreach_016`, and `foreach_list_001`, remain excluded. Extra sessions
+public-progress watch targets are variadic `by_ref`, typed-properties
+`typed_properties_013`, magic `bug52361`/`bug52484`, foreach `foreach_undefined`,
+list `list_011`, the next p7-reviewed candidate plus p14
+`SAFE-FOR-PROGRESS` audit, current coder lane artifacts, and any new full-suite
+PHPT row. Known no-go/not-safe items, including unsuffixed `bug44899`,
+`bug46238`, `bug48248`, `foreach_010`, `foreach_016`, and `foreach_list_001`,
+remain excluded. Extra sessions
 `phpc-22` and stale `phpc-2` are killed/not active roster capacity.
 
 ## Current Rules
