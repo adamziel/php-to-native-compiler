@@ -271,6 +271,34 @@ echo $items[0], "|", $items[1], "|", $items[2], "|", $item;
 }
 
 #[test]
+fn print_r_reads_reference_backed_array_slots_after_foreach_mutation() {
+    let source = r#"<?php
+$items = ["alpha" => "A", "beta" => "B"];
+
+foreach ($items as $key => $value) {
+    $value = $key;
+}
+
+echo $items["alpha"], "|", $items["beta"], "\n";
+
+foreach ($items as $key => &$value) {
+    $value = $key;
+}
+
+print_r($items);
+$value = "tail";
+echo $items["beta"], "|", $value;
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "A|B\nArray\n(\n    [alpha] => alpha\n    [beta] => beta\n)\ntail|tail"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn foreach_by_reference_accepts_temporary_array_literals() {
     let source = r#"<?php
 foreach (["a", "b"] as &$value) {
