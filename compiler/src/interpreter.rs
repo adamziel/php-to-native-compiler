@@ -70334,6 +70334,14 @@ fn catchable_php_error_message(error: &Diagnostic) -> Option<String> {
         return Some(error.message.clone());
     }
 
+    if let Some(callable) = error
+        .message
+        .strip_prefix("undefined function ")
+        .filter(|_| error.phase == Phase::Runtime)
+    {
+        return Some(format!("Call to undefined function {callable}"));
+    }
+
     if is_uninitialized_typed_property_diagnostic(error) {
         return Some(capitalize_initial_ascii(&error.message));
     }

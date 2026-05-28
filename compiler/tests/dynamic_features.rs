@@ -781,6 +781,23 @@ App\make();
 }
 
 #[test]
+fn dynamic_undefined_function_calls_are_catchable_errors() {
+    let execution = run_source(
+        r#"<?php
+namespace Foo;
+try {
+    ('\\bar')();
+} catch (\Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "Call to undefined function bar()\n");
+}
+
+#[test]
 fn fully_qualified_function_calls_use_exact_global_lookup() {
     let execution = run_source(
         r#"<?php
