@@ -6332,7 +6332,10 @@
   by-reference parameter and a definite value expression such as a scalar,
   constant, or array literal now report the bounded PHP fatal `Error` shape
   and stop call evaluation instead of falling through to the unsupported
-  reference-binding diagnostic.
+  reference-binding diagnostic. Direct user-function calls also handle missing
+  direct-variable arguments for this bounded path: by-value arguments warn and
+  pass `NULL` without materializing the variable, while by-reference arguments
+  materialize a `NULL` caller cell that the callee may mutate.
   `foreach ($array as $value)` iterates array values in
   insertion order over a snapshot of the current entries and writes the current
   value to the direct loop variable in the active scope. `foreach ($array as
