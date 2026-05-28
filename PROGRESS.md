@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 20:03 CEST
+Updated: 2026-05-28 20:23 CEST
 Primary branch: `master`
-Latest source head: `0e7f0cd6 fix: validate dynamic static method calls`
+Latest source head: `5240b156 fix: add PHP_EOL and runtime multicatch metadata`
 
 ## Progress Score
 
@@ -56,13 +56,57 @@ score uses the stable pinned denominator and does not use the raw runner
 | First full-suite baseline | Done | 1118 / 20294 runnable PHPTs passed (5.51%); run id `phpt-full-batch001-20260528T010422Z-php-src-f97ff59-base-3e702be4-stack10` |
 | Batch002 full-suite gate | Done | 1193 / 20294 runnable PHPTs passed (5.88%); 0 regressions from Batch001 PASS set; run id `phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11` |
 | Batch003 full-suite gate | Done | 1311 / 20294 pinned runnable PHPTs passed (6.46%); 0 regressions from Batch002 PASS set; run id `phpt-full-batch003-20260528T154907Z-php-src-f97ff59-public-20f3be4c-source-202dd1ec-stack21` |
-| Next source batch | Open | Batch004 source checkpoints accepted: 6 / 10; route remaining checkpoints toward broad PHPT failures with focused PHPT proof; run the next full suite after 10 accepted source checkpoints |
+| Next source batch | Open | Batch004 source checkpoints accepted: 7 / 10; route remaining checkpoints toward broad PHPT failures with focused PHPT proof; run the next full suite after 10 accepted source checkpoints or an explicit sharded publication gate |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch004 source checkpoint 7 is primary-integrated under AO supervision.
+This is a source checkpoint with focused proof, not a percentage change. The
+public PHPT score remains **1311 / 20294 pinned runnable PHPTs = 6.46%** until
+the next pinned full-suite run after 10 accepted Batch004 source checkpoints
+or an explicit sharded publication gate.
+
+- primary source head:
+  `5240b156 fix: add PHP_EOL and runtime multicatch metadata`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-php-eol-plus-bug74444-stack-24026a54-20260528.patch`
+- exported integration patch SHA256:
+  `2bf16744b2969dfc8621d6d158088e713247f201fdfaa9e78f965f630a07704d`
+- source candidate patch SHA256s:
+  `307dd349d809af80dd2f405594e06b0cd511cecb2dd063362e82d26c5174c50a`
+  (`PHP_EOL` constant support) and
+  `0e7d39cb70ec6a8ae685b58c99a1de2c2cedc038aa72832cd135f81b5afcb837`
+  (bug74444 RuntimeException multicatch successor3)
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  STACK SOURCE REVIEW ACCEPT / FOCUSED-GATES-PASS / PHPT-PASS` with
+  `FINAL_FAIL=0` on `24026a54`
+- critic gate: supervisor recorded `SAFE-FOR-INTEGRATION` after phpc-26 hit a
+  context-limit exit, using the exact durable p7 status/report/gates
+- integration gate: supervisor applied the exact reviewed two-patch stack after
+  p28 stayed in a stale watch loop
+- focused gates: PASS for `git diff --check`, docs/PROGRESS exclusion,
+  production exact-shape audit, `cargo fmt --all -- --check`, focused Rust
+  constant and exception/class-table tests, `cargo build -p phpc`, and wrapper
+  PHPT cluster `Zend/tests/try/bug74444.phpt` plus
+  `Zend/tests/try/try_multicatch_001.phpt` through
+  `Zend/tests/try/try_multicatch_007.phpt`
+- supervisor primary gate log:
+  `/home/claude/supervised-php-compiler/state/workers/supervisor-primary-php-eol-plus-bug74444-stack-checkpoint7-20260528.gates.log`
+- full PHPT suite: not run for this single source checkpoint; due after
+  Batch004 reaches 10 accepted source checkpoints or an explicit sharded
+  publication gate
+
+This checkpoint adds `PHP_EOL` to the shared builtin constant tables and adds
+runtime `RuntimeException` class metadata/catch compatibility needed for broad
+multicatch behavior. It is not keyed to a PHPT filename or exact output shape:
+the `PHP_EOL` path is a general builtin constant path, and the multicatch work
+is covered by runtime class-table and exception-focused Rust gates.
+
+Previous Batch004 source checkpoint 6 was dynamic static-method diagnostics:
 
 Batch004 source checkpoint 6 is now primary-integrated under AO supervision.
 This is a source checkpoint with focused proof, not a percentage change. The
