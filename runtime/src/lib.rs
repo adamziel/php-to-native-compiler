@@ -31089,6 +31089,12 @@ impl PhpClassTable {
                 .add_method(PhpMethodMetadata::instance(method, Visibility::Public))
                 .expect("ReflectionProperty core metadata should not duplicate methods");
         }
+        let type_error_id = classes
+            .declare_class("TypeError")
+            .expect("core class table should contain ReflectionProperty before TypeError");
+        classes
+            .set_parent(type_error_id, error_id)
+            .expect("TypeError should extend Error");
         classes
     }
 
@@ -77831,6 +77837,15 @@ mod tests {
         assert!(reflection_property.properties().is_empty());
         assert!(reflection_property.constant("IS_PUBLIC").is_some());
         assert!(reflection_property.method("getDefaultValue").is_some());
+
+        let type_error = classes.lookup_class("typeerror").unwrap();
+        assert_eq!(type_error.name(), "TypeError");
+        assert_eq!(type_error.id().index(), 17);
+        assert_eq!(
+            type_error.parent_id(),
+            Some(classes.lookup_class("error").unwrap().id())
+        );
+        assert!(type_error.properties().is_empty());
     }
 
     #[test]

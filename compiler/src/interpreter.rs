@@ -10194,10 +10194,11 @@ impl Interpreter {
         catches: &[CatchClause],
         scope: &mut SymbolTable,
     ) -> CompileResult<Option<ArrayCopyReturnBodyFlow>> {
-        let Some(error_message) = catchable_php_error_message(error) else {
+        let Some((error_class_name, error_message)) = catchable_php_error_class_and_message(error)
+        else {
             return Ok(None);
         };
-        let Some(error_class_id) = self.classes.lookup_class_id("Error") else {
+        let Some(error_class_id) = self.classes.lookup_class_id(error_class_name) else {
             return Ok(None);
         };
         let error_object = self.create_core_error_object(error_message, error_class_id)?;
@@ -12586,7 +12587,26 @@ impl Interpreter {
 
     fn run(&mut self, program: &Program) -> CompileResult<Execution> {
         let mut scope = SymbolTable::from_root(self.global_symbols.clone());
-        match self.execute_statements(&program.statements, &mut scope)? {
+        let flow = match self.execute_statements(&program.statements, &mut scope) {
+            Ok(flow) => flow,
+            Err(error) => {
+                if let Some((error_class_name, error_message)) =
+                    catchable_php_error_class_and_message(&error)
+                {
+                    if error_class_name == "TypeError"
+                        && is_call_argument_type_error_message(&error_message)
+                    {
+                        return self.uncaught_call_argument_type_error_execution(
+                            &error,
+                            error_class_name,
+                            &error_message,
+                        );
+                    }
+                }
+                return Err(error);
+            }
+        };
+        match flow {
             Flow::Normal | Flow::Return(_) => {
                 self.run_shutdown_callbacks()?;
                 self.run_shutdown_destructors()?;
@@ -13827,10 +13847,11 @@ impl Interpreter {
         catches: &[CatchClause],
         scope: &mut SymbolTable,
     ) -> CompileResult<Option<Flow>> {
-        let Some(error_message) = catchable_php_error_message(error) else {
+        let Some((error_class_name, error_message)) = catchable_php_error_class_and_message(error)
+        else {
             return Ok(None);
         };
-        let Some(error_class_id) = self.classes.lookup_class_id("Error") else {
+        let Some(error_class_id) = self.classes.lookup_class_id(error_class_name) else {
             return Ok(None);
         };
         let error_object = self.create_core_error_object(error_message, error_class_id)?;
@@ -13883,6 +13904,7 @@ impl Interpreter {
 
     fn is_throwable_object(object: &PhpObject) -> bool {
         object.is_instance_of_class_name("Exception")
+            || object.is_instance_of_class_name("Error")
             || object.is_instance_of_class_name("Throwable")
     }
 
@@ -13925,12 +13947,14 @@ impl Interpreter {
                 .strip_prefix('\\')
                 .unwrap_or(&catch_type.name);
             if catch_name.eq_ignore_ascii_case("Throwable") {
-                if let Some(class) = self.classes.get(class_id) {
-                    if class.name().eq_ignore_ascii_case("Exception")
-                        || class.name().eq_ignore_ascii_case("Error")
-                    {
-                        return Ok(true);
-                    }
+                let exception_id = self.classes.lookup_class_id("Exception");
+                let error_id = self.classes.lookup_class_id("Error");
+                if exception_id.is_some_and(|exception_id| {
+                    class_id == exception_id || self.classes.is_subclass_of(class_id, exception_id)
+                }) || error_id.is_some_and(|error_id| {
+                    class_id == error_id || self.classes.is_subclass_of(class_id, error_id)
+                }) {
+                    return Ok(true);
                 }
                 continue;
             }
@@ -13959,6 +13983,45 @@ impl Interpreter {
                 ),
             ),
         )
+    }
+
+    fn uncaught_call_argument_type_error_execution(
+        &mut self,
+        error: &Diagnostic,
+        error_class_name: &str,
+        error_message: &str,
+    ) -> CompileResult<Execution> {
+        self.emit_uncaught_call_argument_type_error_fatal(error, error_class_name, error_message);
+        self.exit_signal = Some(255);
+        self.run_shutdown_callbacks()?;
+        self.run_shutdown_destructors()?;
+        self.flush_output_buffers();
+        Ok(Execution {
+            stdout: self.stdout.clone(),
+            stderr: self.stderr.clone(),
+            exit_code: self.exit_signal.unwrap_or(255),
+        })
+    }
+
+    fn emit_uncaught_call_argument_type_error_fatal(
+        &mut self,
+        error: &Diagnostic,
+        error_class_name: &str,
+        error_message: &str,
+    ) {
+        let file = self
+            .source_file
+            .clone()
+            .or_else(|| error.file.as_ref().map(|file| file.display().to_string()))
+            .unwrap_or_else(|| "Command line code".to_string());
+        let line = error.line;
+        let callable = call_argument_type_error_callable(error_message).unwrap_or("{main}");
+        if !self.stdout.is_empty() && !self.stdout.ends_with('\n') {
+            self.stdout.push('\n');
+        }
+        self.stdout.push_str(&format!(
+            "Fatal error: Uncaught {error_class_name}: {error_message}, called in {file}:{line}\nStack trace:\n#0 {file}({line}): {callable}\n#1 {{main}}\n  thrown in {file} on line {line}"
+        ));
     }
 
     fn create_core_error_object(
@@ -37531,7 +37594,7 @@ impl Interpreter {
                 ));
             }
         };
-        if object.class_name().eq_ignore_ascii_case("Error") {
+        if object.is_instance_of_class_name("Error") {
             return self
                 .call_core_error_method(object, method_name, args, span)
                 .map(|value| (value, None));
@@ -53989,10 +54052,11 @@ impl Interpreter {
         catches: &[CatchClause],
         scope: &mut SymbolTable,
     ) -> CompileResult<Option<ReferenceReturnBodyFlow>> {
-        let Some(error_message) = catchable_php_error_message(error) else {
+        let Some((error_class_name, error_message)) = catchable_php_error_class_and_message(error)
+        else {
             return Ok(None);
         };
-        let Some(error_class_id) = self.classes.lookup_class_id("Error") else {
+        let Some(error_class_id) = self.classes.lookup_class_id(error_class_name) else {
             return Ok(None);
         };
         let error_object = self.create_core_error_object(error_message, error_class_id)?;
@@ -57702,7 +57766,7 @@ impl Interpreter {
                     }
                 }
             };
-            let value = match self.coerce_call_argument_value(function, param, value) {
+            let value = match self.coerce_call_argument_value(function, index, param, value) {
                 Ok(value) => value,
                 Err(error) => {
                     self.function_context.pop();
@@ -58029,10 +58093,12 @@ impl Interpreter {
         args.into_iter()
             .enumerate()
             .map(|(index, value)| {
-                let Some(param) = Self::call_argument_param_for_index(function, index) else {
+                let Some((param_index, param)) =
+                    Self::call_argument_param_for_index(function, index)
+                else {
                     return Ok(value);
                 };
-                self.coerce_call_argument_value(function, param, value)
+                self.coerce_call_argument_value(function, param_index, param, value)
             })
             .collect()
     }
@@ -58040,20 +58106,22 @@ impl Interpreter {
     fn call_argument_param_for_index(
         function: &FunctionDecl,
         index: usize,
-    ) -> Option<&FunctionParam> {
+    ) -> Option<(usize, &FunctionParam)> {
         if let Some(param) = function.params.get(index) {
-            return Some(param);
+            return Some((index, param));
         }
         function
             .params
             .iter()
+            .enumerate()
             .next_back()
-            .filter(|param| param.is_variadic)
+            .filter(|(_, param)| param.is_variadic)
     }
 
     fn coerce_call_argument_value(
         &self,
         function: &FunctionDecl,
+        param_index: usize,
         param: &FunctionParam,
         value: Value,
     ) -> CompileResult<Value> {
@@ -58063,12 +58131,28 @@ impl Interpreter {
         if type_decl_is_exact(type_decl, "mixed") {
             return Ok(value);
         }
-        self.coerce_call_value_for_type_decl(
-            function,
-            type_decl,
-            &format!("parameter ${}", param.name),
+        let actual_type = value.type_name();
+        coerce_property_value_with_object_type_resolver(
+            &type_decl.text,
             value,
+            &function.name,
+            &format!("parameter ${}", param.name),
+            |object, type_name| object.is_instance_of_class_name(type_name),
         )
+        .map_err(|_| {
+            runtime_error(
+                function.span,
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    format!(
+                        "Argument #{} (${}) must be of type {}, {actual_type} given",
+                        param_index + 1,
+                        param.name,
+                        type_decl.text
+                    ),
+                ),
+            )
+        })
     }
 
     fn coerce_call_return_value(
@@ -71235,25 +71319,29 @@ fn is_forbidden_dynamic_builtin_call_diagnostic(error: &Diagnostic) -> bool {
 }
 
 fn catchable_php_error_message(error: &Diagnostic) -> Option<String> {
+    catchable_php_error_class_and_message(error).map(|(_, message)| message)
+}
+
+fn catchable_php_error_class_and_message(error: &Diagnostic) -> Option<(&'static str, String)> {
     if is_forbidden_dynamic_builtin_call_diagnostic(error) {
-        return Some(error.message.clone());
+        return Some(("Error", error.message.clone()));
     }
 
     if error.phase == Phase::Runtime {
         if error.message.starts_with("Non-static method ")
             && error.message.ends_with(" cannot be called statically")
         {
-            return Some(error.message.clone());
+            return Some(("Error", error.message.clone()));
         }
 
         if error.message == "Array callback must have exactly two elements" {
-            return Some(error.message.clone());
+            return Some(("Error", error.message.clone()));
         }
 
         if error.message.starts_with("Object of type ")
             && error.message.ends_with(" is not callable")
         {
-            return Some(error.message.clone());
+            return Some(("Error", error.message.clone()));
         }
     }
 
@@ -71263,9 +71351,9 @@ fn catchable_php_error_message(error: &Diagnostic) -> Option<String> {
         .filter(|_| error.phase == Phase::Runtime)
     {
         if callable.contains("::") {
-            return Some(format!("Call to undefined method {callable}"));
+            return Some(("Error", format!("Call to undefined method {callable}")));
         }
-        return Some(format!("Call to undefined function {callable}"));
+        return Some(("Error", format!("Call to undefined function {callable}")));
     }
 
     if let Some(class_name) = error
@@ -71273,14 +71361,39 @@ fn catchable_php_error_message(error: &Diagnostic) -> Option<String> {
         .strip_prefix("undefined class ")
         .filter(|_| error.phase == Phase::Runtime)
     {
-        return Some(format!("Class \"{class_name}\" not found"));
+        return Some(("Error", format!("Class \"{class_name}\" not found")));
     }
 
     if is_uninitialized_typed_property_diagnostic(error) {
-        return Some(capitalize_initial_ascii(&error.message));
+        return Some(("Error", capitalize_initial_ascii(&error.message)));
+    }
+
+    if let Some(message) = call_argument_type_error_message(error) {
+        return Some(("TypeError", message));
     }
 
     None
+}
+
+fn call_argument_type_error_message(error: &Diagnostic) -> Option<String> {
+    if error.phase != Phase::Runtime {
+        return None;
+    }
+    let reason = error.message.strip_prefix("unsupported call ")?;
+    if !is_call_argument_type_error_message(reason) {
+        return None;
+    }
+    Some(reason.to_string())
+}
+
+fn is_call_argument_type_error_message(message: &str) -> bool {
+    message.contains("(): Argument #") && message.contains(" must be of type ")
+}
+
+fn call_argument_type_error_callable(message: &str) -> Option<&str> {
+    message
+        .split_once(": Argument #")
+        .map(|(callable, _)| callable)
 }
 
 fn is_uninitialized_typed_property_diagnostic(error: &Diagnostic) -> bool {
