@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 15:52 CEST
+Updated: 2026-05-28 16:08 CEST
 Primary branch: `master`
-Latest source head: `30e8e734 fix: expand argument unpacking for calls`
+Latest source head: `8d4f1971 fix: validate method override attributes`
 
 ## Progress Score
 
@@ -51,7 +51,53 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Post-Batch002 source checkpoint 14 is now primary-integrated under AO
+Post-Batch002 source checkpoint 15 is now primary-integrated under AO
+supervision. This is a source checkpoint with focused proof, not a percentage
+change. The public score remains **1193 / 20294 runnable PHPTs = 5.88%** until
+another pinned full-suite run is completed, parsed, regression-checked, and
+published here.
+
+- primary source head:
+  `8d4f1971 fix: validate method override attributes`
+- p28 final handoff head:
+  `549fd3d8fc62efd87d8f85af89d71cdfb909a482 fix: validate attributes override 021`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p17-override-021-source-20260528.patch`
+- exported integration patch SHA256:
+  `775f6afd15942a28e8d2ac56fbe2c6b269f1ba5296bd714f2ced6d811e938805`
+- source candidate patch SHA256:
+  `3cac2c0bd27415529f4e0a294b3a5590a444cb24357cfe4bb9319ec69142ebd6`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION /
+  P17-ATTRIBUTES-OVERRIDE-021`
+- focused gates: PASS for `git diff --check`, `cargo fmt --all --
+  --check`, `cargo test -p phpc --test object_model
+  method_override_attribute_validates_class_interface_trait_and_constructor_methods
+  -- --exact --test-threads=1`, `cargo build -p phpc`, and wrapper PHPTs
+  `Zend/tests/attributes/override/001.phpt`,
+  `Zend/tests/attributes/override/003.phpt`,
+  `Zend/tests/attributes/override/006.phpt`,
+  `Zend/tests/attributes/override/008.phpt`,
+  `Zend/tests/attributes/override/017.phpt`,
+  `Zend/tests/attributes/override/018.phpt`,
+  `Zend/tests/attributes/override/021.phpt`,
+  `Zend/tests/attributes/override/022.phpt`,
+  `Zend/tests/attributes/override/023.phpt`, and
+  `Zend/tests/attributes/override/024.phpt`
+- full PHPT suite: not run for this single source checkpoint
+
+This checkpoint generalizes method-level `#[\Override]` metadata and startup
+validation across parent class methods, implemented interface methods, parent
+interface methods, trait-provided methods, and constructor-specific method
+relationships. It preserves parser/AST method attributes and emits startup
+fatal diagnostics through the existing attribute validation path. It is not
+keyed to PHPT filenames, fixture class names, method names, constructor names,
+or exact output rows.
+
+Previous post-Batch002 source checkpoint 14 was p31 call-argument unpack:
+
+Post-Batch002 source checkpoint 14 is primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
 change. The public score remains **1193 / 20294 runnable PHPTs = 5.88%** until
 another pinned full-suite run is completed, parsed, regression-checked, and
