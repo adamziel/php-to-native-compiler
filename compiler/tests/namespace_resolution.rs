@@ -345,6 +345,70 @@ echo function_exists("label") ? "yes" : "no";
 }
 
 #[test]
+fn multiple_unbracketed_namespaces_update_declaration_and_call_context() {
+    let execution = run_source(
+        r#"<?php
+namespace Alpha;
+
+class One {}
+function label() {
+    return __FUNCTION__;
+}
+echo One::class, "\n";
+echo label(), "\n";
+
+namespace Beta;
+
+class Two {}
+function label() {
+    return __FUNCTION__;
+}
+echo Two::class, "\n";
+echo label(), "\n";
+echo strlen("abc"), "\n";
+
+namespace Alpha;
+
+echo One::class, "\n";
+echo label();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Alpha\\One\nAlpha\\label\nBeta\\Two\nBeta\\label\n3\nAlpha\\One\nAlpha\\label"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn multiple_unbracketed_namespaces_reset_segment_imports() {
+    let execution = run_source(
+        r#"<?php
+namespace Alpha;
+use Vendor\First\Thing as Tool;
+echo Tool::class, "\n";
+
+namespace Beta;
+echo Tool::class, "\n";
+use Vendor\Second\Thing as Tool;
+echo Tool::class, "\n";
+
+namespace Alpha;
+echo Tool::class;
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Vendor\\First\\Thing\nBeta\\Tool\nVendor\\Second\\Thing\nAlpha\\Tool"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn unqualified_namespaced_calls_try_local_function_before_global_builtin_fallback() {
     let execution = run_source(
         r#"<?php
@@ -490,6 +554,57 @@ echo \App\Demo\Sub\helper("exact");
     assert_eq!(
         execution.stdout,
         "App\\Demo\\helper:namespace\nApp\\Demo\\Sub\\helper:relative\nApp\\Demo\\Sub\\helper:exact"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let _ = fs::remove_file(lib);
+    let _ = fs::remove_file(main);
+    let _ = fs::remove_dir(root);
+}
+
+#[test]
+fn class_import_aliases_prefix_qualified_function_calls() {
+    let root = std::env::temp_dir().join(format!(
+        "phpc-namespace-resolution-{}-{}",
+        std::process::id(),
+        "qualified-function-call-import-prefix"
+    ));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).expect("create qualified import-prefix fixture directory");
+    let main = root.join("index.php");
+    let lib = root.join("functions.php");
+
+    fs::write(
+        &lib,
+        r#"<?php
+namespace Vendor\Alpha;
+function label() {
+    return __FUNCTION__;
+}
+
+namespace Vendor\Beta;
+function label() {
+    return __FUNCTION__;
+}
+"#,
+    )
+    .expect("write qualified import-prefix library fixture");
+
+    let source = r#"<?php
+namespace App;
+use Vendor\Alpha as tools, Vendor\Beta;
+require 'functions.php';
+
+echo Tools\label(), "\n";
+echo Beta\label();
+"#;
+    fs::write(&main, source).expect("write qualified import-prefix main fixture");
+
+    let execution = run_source_with_source_file(source, main.display().to_string()).unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "Vendor\\Alpha\\label\nVendor\\Beta\\label"
     );
     assert_eq!(execution.exit_code, 0);
 
@@ -810,15 +925,6 @@ namespace App\Demo {
             2,
             1,
             "unsupported namespace declaration: bracketed namespace blocks are not implemented",
-        ),
-        (
-            r#"<?php
-namespace App;
-namespace Other;
-"#,
-            3,
-            1,
-            "unsupported namespace declaration: multiple namespace declarations are not implemented",
         ),
         (
             r#"<?php

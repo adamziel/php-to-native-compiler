@@ -5251,23 +5251,19 @@
   Declaration-order dependencies across included files remain outside this
   slice.
 - explicit parse diagnostics for unsupported direct `eval(...)` syntax
-- one unbracketed named `namespace` declaration per file, plus simple
+- multiple unbracketed named `namespace` declarations per file, plus simple
   top-level class `use` imports with optional `as` aliases, including
-  comma-separated class import lists. Class declarations and class-like
-  references in `extends`, `new`, `instanceof`, static members, and
-  `ClassName::class` resolve through the current namespace and class-import
-  table. Namespace-scoped function declarations register under their resolved
-  names, and unqualified direct calls inside a namespace resolve to
-  same-namespace functions with global builtin/user-function fallback.
+  comma-separated class import lists and class-import prefix expansion for
+  qualified function calls. Each namespace declaration starts a fresh lexical
+  import segment. Class declarations and class-like references in `extends`,
+  `new`, `instanceof`, static members, and `ClassName::class` resolve through
+  the current namespace and class-import table. Namespace-scoped function and
+  supported constant declarations register under their resolved names;
+  unqualified, qualified, namespace-relative, fully-qualified, and imported
+  direct function calls resolve through the bounded namespace/function tables.
 - explicit parse diagnostics for unsupported namespace forms and imports:
-  bracketed/global/multiple namespaces, namespace-scoped constants, grouped
-  imports, function imports, constant imports, qualified function calls,
-  namespace-qualified function calls such as `App\make()`, and
-  leading-backslash fully-qualified function calls such as `\strlen()`.
-  Function imports, const imports, and fully-qualified function calls have
-  dedicated diagnostics naming the relevant missing import/function-table
-  metadata, namespace-aware lookup or fallback behavior, alias handling where
-  applicable, and native lowering.
+  bracketed/global namespaces, grouped imports, namespace-qualified constant
+  reads, and leading-backslash fully-qualified constant reads.
 - bounded magic class names in `new` expressions such as `new self()`,
   `new parent()`, and `new static()` in active class/method contexts;
   contextless magic class-name instantiation remains a stable runtime boundary
@@ -5528,28 +5524,26 @@
   namespaces/use declarations, opcache behavior, and PHP's exact warning/fatal
   recovery behavior are not implemented.
 - Namespaces/imports: `phpc run` supports a bounded class-name plus
-  same-namespace function slice: one
-  unbracketed named namespace per file, simple top-level class imports with
-  optional aliases, namespace-qualified class declarations, and class-like
-  references for declarations, `extends`, `new`, `instanceof`, static
-  members, and `ClassName::class`. Namespace-scoped function declarations
-  register under resolved names, and unqualified direct calls inside a
-  namespace resolve to same-namespace functions with global builtin/user-function
-  fallback. String class names and dynamic string callable names remain literal and are
-  not import-expanded. A namespaced `class Child extends Parent {}` resolves
+  namespace function/constant slice: multiple unbracketed named namespaces per
+  file, simple top-level class imports with optional aliases, including
+  comma-separated class import lists and class-import prefix expansion for
+  qualified function calls, namespace-qualified class declarations, and
+  class-like references for declarations, `extends`, `new`, `instanceof`,
+  static members, and `ClassName::class`. Namespace-scoped function and
+  supported constant declarations register under resolved names; unqualified,
+  qualified, namespace-relative, fully-qualified, and imported direct function
+  calls resolve through the bounded namespace/function tables. String class
+  names and dynamic string callable names remain literal and are not
+  import-expanded. A namespaced `class Child extends Parent {}` resolves
   the parent name through the same lexical namespace/import table, but the
   parent must already be declared in the current program, an executed
   include/require path, or an include/require-triggered string autoload
   dependency path.
-  Bracketed namespace blocks, global namespace blocks,
-  multiple namespaces in one file, namespace-scoped constants,
-  namespace-qualified function calls, grouped imports, function imports,
-  constant imports, trait `use` execution, `__NAMESPACE__`, autoload
-  interaction, exact PHP diagnostics, partial-output behavior, and
-  namespace-aware native lowering are not implemented. Unsupported function and
-  const imports are rejected at parse time with diagnostics that name the
-  missing import metadata, namespace-aware function/constant lookup, alias
-  handling, fallback lookup, and native lowering.
+  Bracketed namespace blocks, global namespace blocks, grouped imports,
+  namespace-qualified and fully-qualified constant read syntax, trait `use`
+  execution, `__NAMESPACE__`, autoload interaction, exact PHP diagnostics,
+  partial-output behavior, and namespace-aware native lowering are not
+  implemented.
 - Object/class model: `php_runtime` has a small metadata and object-value model
   for the first object slice. It records an ordered class table with stable
   `ClassId` handles, declared class names with case-insensitive class lookup,
@@ -7390,7 +7384,7 @@
 - Function calls: user-defined positional calls are supported in `phpc run`,
   including optional trailing commas in argument lists. Top-level and
   namespace-scoped function declarations register under their resolved names in
-  the current one-unbracketed namespace slice. Unqualified direct calls inside a
+  the current unbracketed namespace slice. Unqualified direct calls inside a
   namespace first look for a same-namespace function and then fall back to the
   global builtin/user-function table.
   Dynamic function calls are supported only when the callee expression evaluates
@@ -9376,11 +9370,10 @@
   unsupported
 - `eval` execution; direct `eval(...)` currently fails with a stable parse
   diagnostic
-- namespace forms outside the current one-unbracketed-namespace/simple-class-use
-  plus same-namespace function slice: bracketed/global/multiple namespaces,
-  namespace-scoped constants, grouped imports, function imports, constant
-  imports, namespace-qualified function calls, leading-backslash
-  fully-qualified function calls, `__NAMESPACE__`, string-name import
+- namespace forms outside the current unbracketed-namespace/imported
+  class-name plus function/constant slice: bracketed/global namespaces,
+  grouped imports, namespace-qualified constant reads, leading-backslash
+  fully-qualified constant reads, `__NAMESPACE__`, string-name import
   expansion, autoload-aware lookup, and namespace-aware native lowering
 - dynamic method names; `$object->$method()` currently fails with a stable
   parse diagnostic. Dynamic property-name support is limited to existing
@@ -10245,14 +10238,12 @@
   `__LINE__`, `__FILE__`, `__DIR__`, `__FUNCTION__`, and `__METHOD__`,
   reference/copy-on-write behavior for constant values, and native lowering
   remain unsupported
-- namespace-aware behavior beyond the current class-name and same-namespace
-  function declaration/call slice, including namespace-scoped constants,
-  qualified function calls, fully-qualified function calls with a dedicated
-  parse diagnostic for leading-backslash call syntax, grouped imports with a
-  dedicated parse diagnostic, namespace-qualified constant reads,
-  fully-qualified constant reads, function/constant imports, string-name import
-  expansion, `__NAMESPACE__`, autoload-aware
-  lookup, and native lowering
+- namespace-aware behavior beyond the current class-name plus
+  function/constant declaration/import/call slice, including bracketed/global
+  namespaces, grouped imports with a dedicated parse diagnostic,
+  namespace-qualified constant reads, fully-qualified constant reads,
+  string-name import expansion, `__NAMESPACE__`, autoload-aware lookup, and
+  native lowering
 - closure invocation, explicit and implicit capture binding/execution, and
   callable integration
 - configurable recursion/call-stack limits matching PHP deployments

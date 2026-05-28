@@ -3596,26 +3596,28 @@ code.
 
 ## Namespace/Import Boundary
 
-The first executable namespace/import slice is class-name only. The parser
-accepts one unbracketed named `namespace` declaration per file and simple
-top-level class `use` imports with optional aliases. Class declarations and
-class-like references in `extends`, `new`, `instanceof`, static members, and
-`ClassName::class` are stored as canonical names without a leading slash and
-resolved through the lexical namespace/import table. Namespace and `use`
-statements are execution no-ops in `phpc run` because the parser has already
-resolved the class-like names in the AST.
+The first executable namespace/import slice covers class names,
+namespace-scoped functions, supported constants, and direct function imports.
+The parser accepts multiple unbracketed named `namespace` declarations per file
+and simple top-level class `use` imports with optional aliases, including
+comma-separated class import lists and class-import prefix expansion for
+qualified function calls. Each namespace declaration starts a fresh lexical
+import segment. Class declarations and class-like references in `extends`,
+`new`, `instanceof`, static members, and `ClassName::class` are stored as
+canonical names without a leading slash and resolved through the lexical
+namespace/import table. Namespace and `use` statements are execution no-ops in
+`phpc run` because the parser has already resolved the covered names in the
+AST.
 Class inheritance uses the same resolved class-like names. Parent classes must
 already be present in the interpreter's class metadata table from the current
 program or from an executed include/require path; class lookup does not invoke
 autoload callbacks.
 
 Unsupported namespace/import behavior remains: bracketed namespace blocks,
-global namespace blocks, multiple namespaces in one file, namespace-scoped
-functions/constants, namespace-qualified function calls, leading-backslash
-fully-qualified function calls, namespace-qualified constant reads,
-leading-backslash fully-qualified constant reads, grouped imports, function
-imports, constant imports, string-name import expansion, trait `use`
-execution, `__NAMESPACE__`, autoload interaction, exact PHP diagnostics,
+global namespace blocks, namespace-qualified constant reads,
+leading-backslash fully-qualified constant reads, grouped imports, string-name
+import expansion, trait `use` execution, `__NAMESPACE__`, autoload interaction,
+exact PHP diagnostics,
 partial-output behavior, and namespace-aware native lowering. The native path
 rejects namespace declarations/imports before scalar folding or backend
 execution until native symbol tables and namespace context exist.

@@ -1,5 +1,22 @@
 # Progress Log
 
+## 2026-05-28
+
+Implemented:
+
+- Added parser/runtime-path support for multiple unbracketed named namespace
+  declarations in one file. Each declaration starts a fresh lexical import
+  segment while class/function/constant declarations continue to resolve under
+  the active namespace. Qualified function calls now apply class-import prefix
+  aliases before same-namespace fallback, which covers included PHP files that
+  declare functions across multiple namespaces and are called through imported
+  namespace prefixes. Focused namespace tests cover declaration/call context
+  across three namespace segments, import reset behavior across repeated
+  namespace declarations, and imported-prefix qualified function calls.
+  Bracketed and global namespace blocks remain
+  unsupported, and native lowering continues to reject namespace-aware programs
+  at the existing boundary.
+
 ## 2026-05-27
 
 Implemented:
