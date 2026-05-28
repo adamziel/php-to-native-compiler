@@ -40709,12 +40709,10 @@ impl Interpreter {
             span,
         )?;
 
-        Err(runtime_error(
+        Err(non_static_method_called_statically_error(
+            &declaring_class_name,
+            method_name,
             span,
-            RuntimeError::unsupported_call(
-                format!("{declaring_class_name}::{method_name}()"),
-                "non-static method dispatch through named static receivers is not implemented",
-            ),
         ))
     }
 
@@ -40786,12 +40784,10 @@ impl Interpreter {
         )?;
 
         if !is_static {
-            return Err(runtime_error(
+            return Err(non_static_method_called_statically_error(
+                &declaring_class_name,
+                method_name,
                 span,
-                RuntimeError::unsupported_call(
-                    format!("{declaring_class_name}::{method_name}()"),
-                    "non-static method dispatch through dynamic static receivers is not implemented",
-                ),
             ));
         }
 
@@ -40857,6 +40853,19 @@ impl Interpreter {
         let Some((class_id, class_name, resolved_method_name, visibility, is_static)) =
             self.resolve_instance_method(receiver_class_id, "__callStatic")
         else {
+            if has_public_non_static_magic_call(&self.classes, receiver_class_id) {
+                let receiver_class_name = self
+                    .classes
+                    .get(receiver_class_id)
+                    .expect("receiver class id should resolve to class metadata")
+                    .name()
+                    .to_string();
+                return Err(non_static_method_called_statically_error(
+                    &receiver_class_name,
+                    method_name,
+                    span,
+                ));
+            }
             return Ok(None);
         };
 
@@ -40912,6 +40921,19 @@ impl Interpreter {
             .resolve_instance_method(receiver_class_id, "__callStatic")
             .is_none()
         {
+            if has_public_non_static_magic_call(&self.classes, receiver_class_id) {
+                let receiver_class_name = self
+                    .classes
+                    .get(receiver_class_id)
+                    .expect("receiver class id should resolve to class metadata")
+                    .name()
+                    .to_string();
+                return Err(non_static_method_called_statically_error(
+                    &receiver_class_name,
+                    method_name,
+                    span,
+                ));
+            }
             return Ok(None);
         }
 
@@ -40948,6 +40970,19 @@ impl Interpreter {
             .resolve_instance_method(receiver_class_id, "__callStatic")
             .is_none()
         {
+            if has_public_non_static_magic_call(&self.classes, receiver_class_id) {
+                let receiver_class_name = self
+                    .classes
+                    .get(receiver_class_id)
+                    .expect("receiver class id should resolve to class metadata")
+                    .name()
+                    .to_string();
+                return Err(non_static_method_called_statically_error(
+                    &receiver_class_name,
+                    method_name,
+                    span,
+                ));
+            }
             return Ok(None);
         }
 
@@ -43334,6 +43369,9 @@ impl Interpreter {
                     caller_scope,
                 );
             }
+            Value::Object(object) => {
+                return Err(object_not_callable_error(object.class_name(), span));
+            }
             other => {
                 return Err(runtime_error(
                     span,
@@ -43352,6 +43390,11 @@ impl Interpreter {
             return Err(error);
         }
 
+        if let Some((class_name, method_name)) = static_method_callable_string(&name) {
+            let callback = static_method_array_callable_value(class_name, method_name, span)?;
+            return self.call_user_func_array_callable_direct(&callback, args, span, caller_scope);
+        }
+
         self.call_named_function(&name, args, span, caller_scope)
     }
 
@@ -43367,6 +43410,16 @@ impl Interpreter {
             Value::String(name) => {
                 if let Some(error) = forbidden_dynamic_builtin_call_error(&name, span) {
                     return Err(error);
+                }
+                if let Some((class_name, method_name)) = static_method_callable_string(&name) {
+                    let callback =
+                        static_method_array_callable_value(class_name, method_name, span)?;
+                    return self.call_user_func_array_callable_direct_with_array_copy_source(
+                        &callback,
+                        args,
+                        span,
+                        caller_scope,
+                    );
                 }
                 self.call_named_function_with_array_copy_source(&name, args, span, caller_scope)
             }
@@ -43384,6 +43437,7 @@ impl Interpreter {
                     span,
                     caller_scope,
                 ),
+            Value::Object(object) => Err(object_not_callable_error(object.class_name(), span)),
             other => Err(runtime_error(
                 span,
                 RuntimeError::unsupported_call(
@@ -43893,12 +43947,10 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<Value> {
         let Some((target, method_name)) = array_callable_parts(callback) else {
-            return Err(runtime_error(
+            return Err(array_callable_shape_error(
+                callback,
+                "call_user_func()",
                 span,
-                RuntimeError::unsupported_call(
-                    "call_user_func()",
-                    "array callback must be [object-or-class, method] in the current subset",
-                ),
             ));
         };
 
@@ -43942,7 +43994,9 @@ impl Interpreter {
                 let function =
                     self.method_function(class_id, &class_name, &resolved_method_name, span)?;
                 let function = function.as_ref();
-                ensure_user_function_arity(function, args.len(), span)?;
+                if !call_arguments_have_spread(args) {
+                    ensure_user_function_arity(function, args.len(), span)?;
+                }
                 if function.returns_by_reference {
                     ensure_supported_reference_return_function_metadata(function, span)?;
                 } else {
@@ -44012,12 +44066,10 @@ impl Interpreter {
                     };
                 };
                 if !is_static {
-                    return Err(runtime_error(
+                    return Err(non_static_method_called_statically_error(
+                        &declaring_class_name,
+                        method_name,
                         span,
-                        RuntimeError::unsupported_call(
-                            format!("{declaring_class_name}::{method_name}()"),
-                            "non-static method array callables require an object receiver in the current subset",
-                        ),
                     ));
                 }
                 if visibility != Visibility::Public {
@@ -44037,7 +44089,9 @@ impl Interpreter {
                     span,
                 )?;
                 let function = function.as_ref();
-                ensure_user_function_arity(function, args.len(), span)?;
+                if !call_arguments_have_spread(args) {
+                    ensure_user_function_arity(function, args.len(), span)?;
+                }
                 if function.returns_by_reference {
                     ensure_supported_reference_return_function_metadata(function, span)?;
                 } else {
@@ -44084,12 +44138,10 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
         let Some((target, method_name)) = array_callable_parts(callback) else {
-            return Err(runtime_error(
+            return Err(array_callable_shape_error(
+                callback,
+                "call_user_func()",
                 span,
-                RuntimeError::unsupported_call(
-                    "call_user_func()",
-                    "array callback must be [object-or-class, method] in the current subset",
-                ),
             ));
         };
 
@@ -44200,12 +44252,10 @@ impl Interpreter {
                     };
                 };
                 if !is_static {
-                    return Err(runtime_error(
+                    return Err(non_static_method_called_statically_error(
+                        &declaring_class_name,
+                        method_name,
                         span,
-                        RuntimeError::unsupported_call(
-                            format!("{declaring_class_name}::{method_name}()"),
-                            "non-static method array callables require an object receiver in the current subset",
-                        ),
                     ));
                 }
                 if visibility != Visibility::Public {
@@ -44460,7 +44510,9 @@ impl Interpreter {
         called_class_context: Option<ClassId>,
         prebound_locals: Vec<PreboundLocal>,
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
-        ensure_user_function_arity(function, args.len(), span)?;
+        if !call_arguments_have_spread(args) {
+            ensure_user_function_arity(function, args.len(), span)?;
+        }
         ensure_supported_function_metadata(function, span)?;
         self.ensure_user_function_call_depth(function, span)?;
 
@@ -44494,13 +44546,23 @@ impl Interpreter {
         caller_scope: &mut SymbolTable,
         bind_value_copy_reference_params: bool,
     ) -> CompileResult<CallFrameArgumentBindings> {
-        let (values, array_copy_source_bindings) = self
-            .evaluate_by_value_call_arguments_with_array_copy_sources(
+        let has_spread = call_arguments_have_spread(args);
+        let (values, array_copy_source_bindings) = if has_spread {
+            self.evaluate_call_user_func_spread_arguments_with_array_copy_sources(
+                function,
+                args,
+                span,
+                caller_scope,
+            )?
+        } else {
+            self.evaluate_by_value_call_arguments_with_array_copy_sources(
                 function,
                 args,
                 caller_scope,
-            )?;
-        self.emit_call_user_func_reference_parameter_warnings(function, args.len(), span)?;
+            )?
+        };
+        ensure_user_function_arity(function, values.len(), span)?;
+        self.emit_call_user_func_reference_parameter_warnings(function, values.len(), span)?;
         let reference_bindings = if bind_value_copy_reference_params {
             Self::reference_bindings_for_call_frame_array_copy_sources(
                 function,
@@ -44510,8 +44572,11 @@ impl Interpreter {
         } else {
             Vec::new()
         };
-        let by_value_array_copy_bindings =
-            Self::by_value_array_copy_bindings_for_call_user_func_value(function, args);
+        let by_value_array_copy_bindings = if has_spread {
+            Vec::new()
+        } else {
+            Self::by_value_array_copy_bindings_for_call_user_func_value(function, args)
+        };
 
         Ok(CallFrameArgumentBindings {
             values,
@@ -44519,6 +44584,89 @@ impl Interpreter {
             array_copy_source_bindings,
             by_value_array_copy_bindings,
         })
+    }
+
+    fn evaluate_call_user_func_spread_arguments_with_array_copy_sources(
+        &mut self,
+        function: &FunctionDecl,
+        args: &[Expr],
+        _span: Span,
+        caller_scope: &mut SymbolTable,
+    ) -> CompileResult<(Vec<Value>, Vec<ArrayCopySourceBinding>)> {
+        let mut values = Vec::new();
+        let mut copy_source_bindings = Vec::new();
+
+        for arg in args {
+            match arg {
+                Expr::NamedArgument { span, .. } => {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            "source-order call argument",
+                            "named arguments mixed with spread arguments are not implemented in the current subset",
+                        ),
+                    ));
+                }
+                Expr::SpreadArgument {
+                    expr,
+                    span: spread_span,
+                } => {
+                    let value = self.evaluate(expr, caller_scope)?;
+                    let Value::Array(array) = value else {
+                        return Err(runtime_error(
+                            *spread_span,
+                            RuntimeError::unsupported_call(
+                                "source-order call argument",
+                                format!(
+                                    "spread argument must evaluate to array in the current subset, got {}",
+                                    value.type_name()
+                                ),
+                            ),
+                        ));
+                    };
+
+                    for entry in array.entries() {
+                        if matches!(entry.key, ArrayKey::String(_)) {
+                            return Err(runtime_error(
+                                *spread_span,
+                                RuntimeError::unsupported_call(
+                                    "source-order call argument",
+                                    "string-keyed spread arguments are not implemented in the current subset",
+                                ),
+                            ));
+                        }
+                        values.push(entry.value_cloned());
+                    }
+                }
+                expr => {
+                    let value_index = values.len();
+                    let (value, array_copy_source) = self
+                        .evaluate_by_value_call_argument_with_array_copy_source(
+                            expr,
+                            caller_scope,
+                        )?;
+                    let value = caller_scope.value_with_object_property_aliases_from_array_copy(
+                        value,
+                        array_copy_source.clone(),
+                        true,
+                    );
+                    if matches!(value, Value::Array(_)) {
+                        if let (Some(source), Some((param, variadic_offset))) = (
+                            array_copy_source,
+                            Self::positional_argument_param_for_index(function, value_index),
+                        ) {
+                            let target_keys = variadic_offset
+                                .map(|offset| vec![ArrayKey::Int(offset as i64)])
+                                .unwrap_or_default();
+                            copy_source_bindings.push((param.name.clone(), target_keys, source));
+                        }
+                    }
+                    values.push(value);
+                }
+            }
+        }
+
+        Ok((values, copy_source_bindings))
     }
 
     fn emit_reference_argument_fatal(
@@ -51168,6 +51316,9 @@ impl Interpreter {
                     "dynamic function call",
                 );
             }
+            Value::Object(object) => {
+                return Err(object_not_callable_error(object.class_name(), span));
+            }
             other => {
                 return Err(runtime_error(
                     span,
@@ -51181,6 +51332,17 @@ impl Interpreter {
                 ));
             }
         };
+
+        if let Some((class_name, method_name)) = static_method_callable_string(&name) {
+            let callback = static_method_array_callable_value(class_name, method_name, span)?;
+            return self.call_reference_return_array_callable_for_reference_assignment(
+                &callback,
+                args,
+                span,
+                caller_scope,
+                "dynamic function call",
+            );
+        }
 
         let callable = self.lookup_function_exact(&name).ok_or_else(|| {
             runtime_error(span, RuntimeError::undefined_function(callable_name(&name)))
@@ -51955,6 +52117,19 @@ impl Interpreter {
             .resolve_instance_method(receiver_class_id, "__callStatic")
             .is_none()
         {
+            if has_public_non_static_magic_call(&self.classes, receiver_class_id) {
+                let receiver_class_name = self
+                    .classes
+                    .get(receiver_class_id)
+                    .expect("receiver class id should resolve to class metadata")
+                    .name()
+                    .to_string();
+                return Err(non_static_method_called_statically_error(
+                    &receiver_class_name,
+                    method_name,
+                    span,
+                ));
+            }
             return Ok(None);
         }
 
@@ -60540,6 +60715,36 @@ impl Interpreter {
             .unwrap_or(0)
     }
 
+    fn call_printf(&mut self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.is_empty() {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch("printf()", ArityExpectation::AtLeast(1), args.len()),
+            ));
+        }
+
+        let format = match &args[0] {
+            Value::String(value) => value,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "printf()",
+                        format!(
+                            "format argument must be string in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        let output = bounded_sprintf("printf()", format, &args[1..], span)?;
+        let length = output.as_bytes().len() as i64;
+        self.append_output_at(&output, span);
+        Ok(Value::Int(length))
+    }
+
     fn call_builtin(&mut self, name: &str, args: Vec<Value>, span: Span) -> CompileResult<Value> {
         match name {
             "define" => {
@@ -60650,6 +60855,7 @@ impl Interpreter {
             "error_reporting" => self.call_error_reporting(args, span),
             "ignore_user_abort" => self.call_ignore_user_abort(args, span),
             "php_sapi_name" => call_php_sapi_name(&args, span),
+            "printf" => self.call_printf(&args, span),
             "sprintf" => call_sprintf(&args, span),
             "vsprintf" => call_vsprintf(&args, span),
             "call_user_func" => self.call_user_func_builtin(args, span),
@@ -69645,6 +69851,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
                 reflection_internal_optional_null_param("length", "int"),
             ],
         ),
+        "printf" => (
+            "int",
+            vec![
+                reflection_internal_param("format", "string"),
+                reflection_internal_variadic_param("values", "mixed"),
+            ],
+        ),
         "sprintf" => (
             "string",
             vec![
@@ -70733,6 +70946,47 @@ fn runtime_error(span: Span, error: RuntimeError) -> Diagnostic {
     Diagnostic::new(Phase::Runtime, span.line, span.column, error.message())
 }
 
+fn object_not_callable_error(class_name: &str, span: Span) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!("Object of type {class_name} is not callable"),
+    )
+}
+
+fn non_static_method_called_statically_error(
+    class_name: &str,
+    method_name: &str,
+    span: Span,
+) -> Diagnostic {
+    Diagnostic::new(
+        Phase::Runtime,
+        span.line,
+        span.column,
+        format!("Non-static method {class_name}::{method_name}() cannot be called statically"),
+    )
+}
+
+fn array_callable_shape_error(callback: &PhpArray, context: &str, span: Span) -> Diagnostic {
+    if callback.entries().len() != 2 {
+        return Diagnostic::new(
+            Phase::Runtime,
+            span.line,
+            span.column,
+            "Array callback must have exactly two elements",
+        );
+    }
+
+    runtime_error(
+        span,
+        RuntimeError::unsupported_call(
+            context,
+            "array callback must be [object-or-class, method] in the current subset",
+        ),
+    )
+}
+
 fn undefined_goto_label_error(span: Span, label: &str) -> Diagnostic {
     Diagnostic::new(
         Phase::Runtime,
@@ -70883,12 +71137,41 @@ fn catchable_php_error_message(error: &Diagnostic) -> Option<String> {
         return Some(error.message.clone());
     }
 
+    if error.phase == Phase::Runtime {
+        if error.message.starts_with("Non-static method ")
+            && error.message.ends_with(" cannot be called statically")
+        {
+            return Some(error.message.clone());
+        }
+
+        if error.message == "Array callback must have exactly two elements" {
+            return Some(error.message.clone());
+        }
+
+        if error.message.starts_with("Object of type ")
+            && error.message.ends_with(" is not callable")
+        {
+            return Some(error.message.clone());
+        }
+    }
+
     if let Some(callable) = error
         .message
         .strip_prefix("undefined function ")
         .filter(|_| error.phase == Phase::Runtime)
     {
+        if callable.contains("::") {
+            return Some(format!("Call to undefined method {callable}"));
+        }
         return Some(format!("Call to undefined function {callable}"));
+    }
+
+    if let Some(class_name) = error
+        .message
+        .strip_prefix("undefined class ")
+        .filter(|_| error.phase == Phase::Runtime)
+    {
+        return Some(format!("Class \"{class_name}\" not found"));
     }
 
     if is_uninitialized_typed_property_diagnostic(error) {
@@ -70988,6 +71271,11 @@ fn static_method_callable_string(name: &str) -> Option<(&str, &str)> {
     Some((class_name, method_name))
 }
 
+fn call_arguments_have_spread(args: &[Expr]) -> bool {
+    args.iter()
+        .any(|arg| matches!(arg, Expr::SpreadArgument { .. }))
+}
+
 fn static_method_array_callable_value(
     class_name: &str,
     method_name: &str,
@@ -71035,6 +71323,7 @@ fn is_builtin(name: &str) -> bool {
             | "error_reporting"
             | "ignore_user_abort"
             | "php_sapi_name"
+            | "printf"
             | "sprintf"
             | "vsprintf"
             | "call_user_func"
