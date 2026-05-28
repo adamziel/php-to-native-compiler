@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 11:34 CEST
+Updated: 2026-05-28 11:47 CEST
 Primary branch: `master`
-Latest source head: `4fa93bd2 fix: dispatch static magic callbacks`
+Latest source head: `ff8961a3 fix: reject reserved scalar special class names` (p28 reviewed checkpoint; primary source remains `4fa93bd2`)
 
 ## Progress Score
 
@@ -38,44 +38,42 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Batch002 `STACK-CLEAN-10` source integration is primary-integrated on
-`master`. The public primary commit `4fa93bd2 fix: dispatch static magic
-callbacks` is the cherry-picked equivalent of the internal p28 reviewed stack
-head `6f4e36a0`; independent p7 review and phpc-26 critic approval made the
-checkpoint safe to publish.
+Batch002 `STACK-CLEAN-11` is the latest reviewed source-integration checkpoint
+under AO. This is a source checkpoint with focused proof, not a PASS-NO-PATCH
+row. Primary/public `master` currently contains source through
+`4fa93bd2 fix: dispatch static magic callbacks`; the p28 internal integration
+stack advanced to `ff8961a3 fix: reject reserved scalar special class names`,
+and phpc-26 marked that corrected checkpoint safe for public progress reporting.
 
-- primary-integrated head: `4fa93bd2 fix: dispatch static magic callbacks`
-- internal reviewed stack head: `6f4e36a0 fix: dispatch static magic callbacks`
+- primary source head: `4fa93bd2 fix: dispatch static magic callbacks`
+- internal p28 stack head: `ff8961a3 fix: reject reserved scalar special class names`
 - exported patch:
   `/home/claude/supervised-php-compiler/state/patches/ao-integration-batch002-stack-20260528.patch`
 - exported patch SHA256:
-  `651f9a0472858f8a7492c32fc9d82057ff02b713840df572f59018e2b659dd3b`
-- applied/gated stack: r81 plus Batch002 candidates 1-10
-- focused gates: PASS for clean apply with `docs/PROGRESS.md` excluded,
-  diff/fmt checks, focused Rust test
-  `call_user_func_dispatches_missing_static_methods_through_callstatic`,
-  `cargo build -p phpc`, and focused PHPT
-  `Zend/tests/magic_methods/call_static.phpt`
-- review gate: p7 restored candidate10 as `GO-CANDIDATE` with `FINAL_FAIL=0`
-  after confirming `call_static_002.phpt` is a baseline pre-existing
-  non-regression
-- critic gate: phpc-26 recorded `SAFE-INTEGRATION-CHECKPOINT /
-  SAFE-FOR-PROGRESS` for `STACK-CLEAN-10` only
+  `7d34af1693435b902951e6650eb57666f4176cbdc36e3b9d3e36548d9e9c143e`
+- applied/gated stack: r81 plus Batch002 candidates 1-11
+- focused gates: PASS for apply/diff/fmt checks, `cargo test -p phpc --test
+  scalar_reserved_names`, `cargo build -p phpc`, and corrected scalar-reserved
+  PHPT proof 6/6:
+  `scalar_reserved2_class_alias.phpt`, `scalar_reserved2_use.phpt`,
+  `scalar_reserved3.phpt`, `scalar_reserved3_class_alias.phpt`,
+  `scalar_reserved3_use.phpt`, and `scalar_reserved4.phpt`
+- independent review: p29 stack10 refresh recorded PASS for the scalar-reserved
+  candidate and matching patch SHA
+- critic gate: phpc-26 recorded `SAFE-FOR-PROGRESS /
+  STACK-CLEAN-11-SCALAR-RESERVED-GATED` with `FINAL_FAIL=0`
 - full PHPT suite: not rerun; public score remains 1118 / 20294 runnable PHPTs
   (5.51%)
 
-Candidate 10 integrates the p16 static magic callback dispatch source patch. It
-generalizes interpreter dispatch for static-method callable strings, array static
-callbacks, and missing static methods through the existing `__callStatic` path;
-it is not keyed to PHPT filenames, expected output transcripts, or one
-class/method literal. The nearby `call_static_002.phpt` anchor remains a known
-baseline `PRE_EXISTING_FAIL`, not a candidate regression.
+Candidate 11 adds generalized startup diagnostics for reserved scalar/special
+class names via a reusable reserved-name predicate. It is not keyed to PHPT
+file names or expected output transcripts; expected-message literals remain
+confined to focused tests.
 
 Next source integration remains gated on fresh FINAL GO plus phpc-26 SAFE and a
-clean primary/p28 apply-gate cycle. Current watches include the p30 dynamic-call
-source candidate behind the primary `STACK-CLEAN-10` integration, plus the p17
-property-hooks parser review after auxiliary checks. Public PASS-NO-PATCH probe
-rows remain frozen while source integration is active.
+clean p28 apply/gate cycle. Current watches are p19 dynamic-call repair, p7
+candidate11 follow-up, and the next p28 stack checkpoint. Public PASS-NO-PATCH
+probe rows remain frozen while source integration is active.
 
 ## Batch 001
 
