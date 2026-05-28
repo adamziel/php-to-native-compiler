@@ -46654,12 +46654,13 @@ impl Interpreter {
             return Ok(frame);
         }
 
-        let (values, reference_bindings) = self.evaluate_call_user_func_array_checked_arguments(
-            function,
-            argument_expr,
-            span,
-            caller_scope,
-        )?;
+        let (values, argument_keys, reference_bindings) = self
+            .evaluate_call_user_func_array_checked_arguments(
+                function,
+                argument_expr,
+                span,
+                caller_scope,
+            )?;
         let array_copy_source_bindings = Self::array_copy_source_bindings_for_reference_bindings(
             &reference_bindings,
             caller_scope,
@@ -46690,6 +46691,7 @@ impl Interpreter {
         Ok(Self::call_user_func_array_frame_from_value_sources(
             function,
             values,
+            argument_keys,
             reference_bindings,
             array_copy_source_bindings,
             by_value_array_copy_bindings,
@@ -46700,6 +46702,7 @@ impl Interpreter {
     fn call_user_func_array_frame_from_value_sources(
         function: &FunctionDecl,
         values: Vec<Value>,
+        argument_keys: Vec<Option<ArrayKey>>,
         reference_bindings: Vec<ReferenceBinding>,
         array_copy_source_bindings: Vec<ArrayCopySourceBinding>,
         by_value_array_copy_bindings: Vec<(String, String, Vec<ArrayKey>)>,
@@ -46724,7 +46727,7 @@ impl Interpreter {
 
         CallFrameArgumentBindings {
             values,
-            argument_keys: Vec::new(),
+            argument_keys,
             reference_bindings,
             array_copy_source_bindings,
             by_value_array_copy_bindings,
@@ -47507,7 +47510,7 @@ impl Interpreter {
         argument_expr: &Expr,
         span: Span,
         caller_scope: &mut SymbolTable,
-    ) -> CompileResult<(Vec<Value>, Vec<ReferenceBinding>)> {
+    ) -> CompileResult<(Vec<Value>, Vec<Option<ArrayKey>>, Vec<ReferenceBinding>)> {
         let Expr::Array { items, .. } = argument_expr else {
             let stored_argument = match argument_expr {
                 Expr::Variable(array_name, _) => Some(StoredArgumentArrayEvaluation {
@@ -47552,17 +47555,19 @@ impl Interpreter {
                     ensure_supported_function_metadata(function, span)?;
                 }
                 if Self::call_user_func_array_value_has_string_keys(argument_array) {
-                    let values = self.evaluate_call_user_func_array_named_value_arguments(
-                        function,
-                        argument_array,
-                        argument_array.len(),
-                        span,
-                    )?;
-                    return Ok((values, Vec::new()));
+                    let (values, argument_keys) = self
+                        .evaluate_call_user_func_array_named_value_arguments_with_keys(
+                            function,
+                            argument_array,
+                            argument_array.len(),
+                            span,
+                        )?;
+                    return Ok((values, argument_keys, Vec::new()));
                 }
                 let positional_args =
                     Self::call_user_func_array_positional_values(argument_array, span)?;
-                return Ok((positional_args, Vec::new()));
+                let argument_keys = vec![None; positional_args.len()];
+                return Ok((positional_args, argument_keys, Vec::new()));
             }
             if function.returns_by_reference {
                 ensure_supported_reference_return_function_metadata(function, span)?;
@@ -47591,14 +47596,17 @@ impl Interpreter {
                     ),
                 ));
             };
-            return self.evaluate_stored_call_user_func_array_reference_arguments(
-                function,
-                argument_expr,
-                &argument_array,
-                stored_argument.root,
-                caller_scope,
-                false,
-            );
+            let (values, reference_bindings) = self
+                .evaluate_stored_call_user_func_array_reference_arguments(
+                    function,
+                    argument_expr,
+                    &argument_array,
+                    stored_argument.root,
+                    caller_scope,
+                    false,
+                )?;
+            let argument_keys = vec![None; values.len()];
+            return Ok((values, argument_keys, reference_bindings));
         };
 
         ensure_user_function_arity(function, items.len(), span)?;
@@ -47615,18 +47623,21 @@ impl Interpreter {
             }
             let argument_array =
                 self.evaluate_literal_call_user_func_array_value_array(items, span, caller_scope)?;
-            let positional_args =
+            let (values, argument_keys) =
                 if Self::call_user_func_array_value_has_string_keys(&argument_array) {
-                    self.evaluate_call_user_func_array_named_value_arguments(
+                    self.evaluate_call_user_func_array_named_value_arguments_with_keys(
                         function,
                         &argument_array,
                         items.len(),
                         span,
                     )?
                 } else {
-                    Self::call_user_func_array_positional_values(&argument_array, span)?
+                    let positional_args =
+                        Self::call_user_func_array_positional_values(&argument_array, span)?;
+                    let argument_keys = vec![None; positional_args.len()];
+                    (positional_args, argument_keys)
                 };
-            return Ok((positional_args, Vec::new()));
+            return Ok((values, argument_keys, Vec::new()));
         }
         if function.returns_by_reference {
             ensure_supported_reference_return_function_metadata(function, span)?;
@@ -47659,13 +47670,16 @@ impl Interpreter {
             })
         });
         if uses_named_arguments {
-            return self.evaluate_literal_call_user_func_array_named_reference_arguments(
-                function,
-                items,
-                span,
-                caller_scope,
-                false,
-            );
+            let (values, reference_bindings) = self
+                .evaluate_literal_call_user_func_array_named_reference_arguments(
+                    function,
+                    items,
+                    span,
+                    caller_scope,
+                    false,
+                )?;
+            let argument_keys = vec![None; values.len()];
+            return Ok((values, argument_keys, reference_bindings));
         }
         for (index, item) in items.iter().enumerate() {
             if let Some(key_expr) = &item.key {
@@ -47772,7 +47786,8 @@ impl Interpreter {
             }
         }
 
-        Ok((values, reference_bindings))
+        let argument_keys = vec![None; values.len()];
+        Ok((values, argument_keys, reference_bindings))
     }
 
     fn call_user_func_value_copy_reference_bindings(
@@ -47815,6 +47830,12 @@ impl Interpreter {
                     )
                 })
         })
+    }
+
+    fn literal_call_user_func_array_has_string_key(items: &[ArrayItem]) -> bool {
+        items
+            .iter()
+            .any(|item| matches!(item.key.as_ref(), Some(Expr::String(_, _))))
     }
 
     fn evaluate_literal_call_user_func_array_value_arguments_with_array_copy_sources(
@@ -47921,6 +47942,13 @@ impl Interpreter {
                 &stored_root,
                 caller_scope,
             )
+        {
+            return Ok(None);
+        }
+        if matches!(argument_expr, Expr::Variable(_, _))
+            && function.params.iter().any(|param| param.is_variadic)
+            && Self::call_user_func_array_value_has_string_keys(argument_array)
+            && !include_reference_params
         {
             return Ok(None);
         }
@@ -48373,46 +48401,83 @@ impl Interpreter {
         Ok(array)
     }
 
-    fn evaluate_call_user_func_array_named_value_arguments(
+    fn evaluate_call_user_func_array_named_value_arguments_with_keys(
         &mut self,
         function: &FunctionDecl,
         argument_array: &PhpArray,
         actual: usize,
         span: Span,
-    ) -> CompileResult<Vec<Value>> {
-        if function.params.iter().any(|param| param.is_variadic) {
-            return Err(runtime_error(
-                span,
-                RuntimeError::unsupported_call(
-                    callable_name(&function.name),
-                    "call_user_func_array() string-keyed named arguments with variadic parameters are not implemented in the current subset",
-                ),
-            ));
-        }
-
+    ) -> CompileResult<(Vec<Value>, Vec<Option<ArrayKey>>)> {
+        let variadic_param_index = function.params.iter().position(|param| param.is_variadic);
         let mut values_by_param = vec![None; function.params.len()];
         let mut next_positional_index = 0usize;
         let mut named_seen = false;
+        let mut highest_named_index = None;
+        let mut variadic_values: Vec<(Value, Option<ArrayKey>)> = Vec::new();
+        let mut variadic_named_keys = HashSet::new();
 
         for entry in argument_array.entries() {
-            let param_index = match &entry.key {
+            match &entry.key {
                 ArrayKey::String(name) => {
                     named_seen = true;
-                    function
-                        .params
-                        .iter()
-                        .position(|param| param.name == *name)
-                        .ok_or_else(|| {
-                            runtime_error(
-                                span,
-                                RuntimeError::unsupported_call(
-                                    callable_name(&function.name),
-                                    format!(
-                                        "call_user_func_array() named argument ${name} does not match a declared parameter in the current subset"
+                    match function.params.iter().position(|param| param.name == *name) {
+                        Some(param_index) if !function.params[param_index].is_variadic => {
+                            let param = &function.params[param_index];
+                            if values_by_param[param_index].is_some() {
+                                return Err(runtime_error(
+                                    span,
+                                    RuntimeError::unsupported_call(
+                                        callable_name(&function.name),
+                                        format!(
+                                            "call_user_func_array() duplicate argument for parameter ${} is not implemented in the current subset",
+                                            param.name
+                                        ),
                                     ),
-                                ),
-                            )
-                        })?
+                                ));
+                            }
+                            if param.by_reference {
+                                return Err(runtime_error(
+                                    span,
+                                    RuntimeError::unsupported_call(
+                                        callable_name(&function.name),
+                                        "call_user_func_array() reference parameter invocation requires a by-reference array element in the current subset",
+                                    ),
+                                ));
+                            }
+                            values_by_param[param_index] = Some(entry.value_cloned());
+                            highest_named_index = Some(
+                                highest_named_index
+                                    .map(|current: usize| current.max(param_index))
+                                    .unwrap_or(param_index),
+                            );
+                        }
+                        Some(_) | None => {
+                            if variadic_param_index.is_none() {
+                                return Err(runtime_error(
+                                    span,
+                                    RuntimeError::unsupported_call(
+                                        callable_name(&function.name),
+                                        format!(
+                                            "call_user_func_array() named argument ${name} does not match a declared parameter in the current subset"
+                                        ),
+                                    ),
+                                ));
+                            }
+                            if !variadic_named_keys.insert(name.clone()) {
+                                return Err(runtime_error(
+                                    span,
+                                    RuntimeError::unsupported_call(
+                                        callable_name(&function.name),
+                                        format!(
+                                            "call_user_func_array() duplicate argument for parameter ${name} is not implemented in the current subset"
+                                        ),
+                                    ),
+                                ));
+                            }
+                            variadic_values
+                                .push((entry.value_cloned(), Some(ArrayKey::String(name.clone()))));
+                        }
+                    }
                 }
                 ArrayKey::Int(_) => {
                     if named_seen {
@@ -48424,52 +48489,63 @@ impl Interpreter {
                             ),
                         ));
                     }
-                    let index = next_positional_index;
+                    let param_index = next_positional_index;
                     next_positional_index += 1;
-                    index
+                    let Some((param, variadic_offset)) =
+                        Self::positional_argument_param_for_index(function, param_index)
+                    else {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::arity_mismatch(
+                                callable_name(&function.name),
+                                arity_expectation(
+                                    required_param_count(function),
+                                    function.params.len(),
+                                    false,
+                                ),
+                                actual,
+                            ),
+                        ));
+                    };
+                    if param.by_reference {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                callable_name(&function.name),
+                                "call_user_func_array() reference parameter invocation requires a by-reference array element in the current subset",
+                            ),
+                        ));
+                    }
+                    if variadic_offset.is_some() {
+                        variadic_values.push((entry.value_cloned(), None));
+                        continue;
+                    }
+                    if values_by_param[param_index].is_some() {
+                        return Err(runtime_error(
+                            span,
+                            RuntimeError::unsupported_call(
+                                callable_name(&function.name),
+                                format!(
+                                    "call_user_func_array() duplicate argument for parameter ${} is not implemented in the current subset",
+                                    param.name
+                                ),
+                            ),
+                        ));
+                    }
+                    values_by_param[param_index] = Some(entry.value_cloned());
                 }
-            };
-
-            let Some(param) = function.params.get(param_index) else {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::arity_mismatch(
-                        callable_name(&function.name),
-                        arity_expectation(
-                            required_param_count(function),
-                            function.params.len(),
-                            false,
-                        ),
-                        actual,
-                    ),
-                ));
-            };
-            if values_by_param[param_index].is_some() {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        callable_name(&function.name),
-                        format!(
-                            "call_user_func_array() duplicate argument for parameter ${} is not implemented in the current subset",
-                            param.name
-                        ),
-                    ),
-                ));
             }
-            if param.by_reference {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        callable_name(&function.name),
-                        "call_user_func_array() reference parameter invocation requires a by-reference array element in the current subset",
-                    ),
-                ));
-            }
-
-            values_by_param[param_index] = Some(entry.value_cloned());
         }
 
-        self.finalize_call_user_func_array_named_values(function, values_by_param, actual, span)
+        self.finalize_call_user_func_array_named_values_with_keys(
+            function,
+            values_by_param,
+            variadic_param_index,
+            variadic_values,
+            highest_named_index,
+            actual,
+            span,
+        )
     }
 
     fn evaluate_literal_call_user_func_array_named_reference_arguments(
@@ -49403,35 +49479,82 @@ impl Interpreter {
         actual: usize,
         span: Span,
     ) -> CompileResult<Vec<Value>> {
-        let mut values = Vec::with_capacity(function.params.len());
-        for (index, param) in function.params.iter().enumerate() {
-            if let Some(value) = values_by_param
-                .get(index)
-                .and_then(|value| value.as_ref())
-                .cloned()
-            {
-                values.push(value);
-                continue;
+        let (values, _) = self.finalize_call_user_func_array_named_values_with_keys(
+            function,
+            values_by_param,
+            None,
+            Vec::new(),
+            None,
+            actual,
+            span,
+        )?;
+        Ok(values)
+    }
+
+    fn finalize_call_user_func_array_named_values_with_keys(
+        &mut self,
+        function: &FunctionDecl,
+        mut values_by_param: Vec<Option<Value>>,
+        variadic_param_index: Option<usize>,
+        variadic_values: Vec<(Value, Option<ArrayKey>)>,
+        highest_named_index: Option<usize>,
+        actual: usize,
+        span: Span,
+    ) -> CompileResult<(Vec<Value>, Vec<Option<ArrayKey>>)> {
+        let mut highest_index = highest_named_index
+            .map(|index| index.max(values_by_param.len().saturating_sub(1)))
+            .or_else(|| values_by_param.iter().rposition(|value| value.is_some()));
+        if !variadic_values.is_empty() {
+            if let Some(index) = variadic_param_index.and_then(|index| index.checked_sub(1)) {
+                highest_index = Some(
+                    highest_index
+                        .map(|current| current.max(index))
+                        .unwrap_or(index),
+                );
             }
-            let Some(default) = param.default.as_ref() else {
-                return Err(runtime_error(
-                    span,
-                    RuntimeError::arity_mismatch(
-                        callable_name(&function.name),
-                        arity_expectation(
-                            required_param_count(function),
-                            function.params.len(),
-                            false,
-                        ),
-                        actual,
-                    ),
-                ));
-            };
-            let mut default_scope = SymbolTable::new();
-            values.push(self.evaluate(default, &mut default_scope)?);
         }
 
-        Ok(values)
+        let mut values = Vec::with_capacity(function.params.len() + variadic_values.len());
+        let mut argument_keys = Vec::with_capacity(function.params.len() + variadic_values.len());
+        if let Some(highest_index) = highest_index {
+            for index in 0..=highest_index {
+                let Some(param) = function.params.get(index) else {
+                    break;
+                };
+                if param.is_variadic {
+                    break;
+                }
+                if let Some(value) = values_by_param.get_mut(index).and_then(Option::take) {
+                    values.push(value);
+                    argument_keys.push(None);
+                    continue;
+                }
+                let Some(default) = param.default.as_ref() else {
+                    return Err(runtime_error(
+                        span,
+                        RuntimeError::arity_mismatch(
+                            callable_name(&function.name),
+                            arity_expectation(
+                                required_param_count(function),
+                                function.params.len(),
+                                false,
+                            ),
+                            actual,
+                        ),
+                    ));
+                };
+                let mut default_scope = SymbolTable::new();
+                values.push(self.evaluate(default, &mut default_scope)?);
+                argument_keys.push(None);
+            }
+        }
+
+        for (value, key) in variadic_values {
+            values.push(value);
+            argument_keys.push(key);
+        }
+
+        Ok((values, argument_keys))
     }
 
     fn call_spl_autoload_register(
@@ -51955,6 +52078,12 @@ impl Interpreter {
             if !Self::literal_call_user_func_array_can_preserve_copy_sources(items) {
                 return Ok(None);
             }
+            if function.params.iter().any(|param| param.is_variadic)
+                && Self::literal_call_user_func_array_has_string_key(items)
+                && !include_reference_params
+            {
+                return Ok(None);
+            }
 
             ensure_user_function_arity(function, items.len(), span)?;
             let (values, by_value_array_copy_source_bindings) = self
@@ -51973,6 +52102,7 @@ impl Interpreter {
             return Ok(Some(Self::call_user_func_array_frame_from_value_sources(
                 function,
                 values,
+                Vec::new(),
                 Vec::new(),
                 by_value_array_copy_source_bindings,
                 by_value_array_copy_bindings,
@@ -52004,6 +52134,7 @@ impl Interpreter {
                 function,
                 values,
                 Vec::new(),
+                Vec::new(),
                 by_value_array_copy_source_bindings,
                 Vec::new(),
                 include_reference_params,
@@ -52017,6 +52148,7 @@ impl Interpreter {
         Ok(Some(Self::call_user_func_array_frame_from_value_sources(
             function,
             values,
+            Vec::new(),
             Vec::new(),
             by_value_array_copy_source_bindings,
             by_value_array_copy_bindings,
@@ -87187,6 +87319,7 @@ echo $items["shared"]["leaf"] . "|" . $shared . "|" . $items["plain"]["leaf"] . 
         let frame = Interpreter::call_user_func_array_frame_from_value_sources(
             &function,
             vec![Value::Array(PhpArray::new())],
+            Vec::new(),
             Vec::new(),
             vec![("param".to_string(), Vec::new(), source.clone())],
             Vec::new(),

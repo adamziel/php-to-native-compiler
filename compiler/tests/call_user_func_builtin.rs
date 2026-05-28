@@ -149,6 +149,34 @@ echo $call("strlen", array("four"));
 }
 
 #[test]
+fn call_user_func_array_preserves_named_variadic_argument_keys() {
+    let execution = run_source(
+        r#"<?php
+$with_defaults = function ($a = "a", $b = "b", $c = "c") {
+    echo "a=$a,b=$b,c=$c
+";
+};
+$variadic = function (...$args) {
+    foreach ($args as $key => $value) {
+        echo $key, "=", $value, ";";
+    }
+};
+
+call_user_func_array($with_defaults, array("A", "c" => "C"));
+call_user_func_array($variadic, array("A", "c" => "C"));
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "a=A,b=b,c=C
+0=A;c=C;"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn closure_values_invoke_directly_and_through_callback_dispatch() {
     let execution = run_source(
         r#"<?php
