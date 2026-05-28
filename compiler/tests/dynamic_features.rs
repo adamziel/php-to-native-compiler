@@ -798,6 +798,56 @@ try {
 }
 
 #[test]
+fn dynamic_static_method_string_calls_are_dispatched() {
+    let execution = run_source(
+        r#"<?php
+class DynamicTarget {
+    public static function ping() {
+        echo "ping\n";
+    }
+
+    public static function withArgs($left, $middle, $right) {
+        $length = printf("args:%s,%s,%s\n", $left, $middle, $right);
+        echo "length=", $length, "\n";
+    }
+}
+
+$callback = "DynamicTarget::ping";
+$callback();
+
+$callback = "dynamictarget::PING";
+$callback();
+
+$callback = "DynamicTarget::withArgs";
+$callback("left", "middle", "right");
+
+$args = ["left", "middle", "right"];
+$callback(...$args);
+
+$callback = "DynamicTarget::missing";
+try {
+    $callback();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$callback = "MissingDynamicTarget::ping";
+try {
+    $callback();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "ping\nping\nargs:left,middle,right\nlength=23\nargs:left,middle,right\nlength=23\nCall to undefined method DynamicTarget::missing()\nClass \"MissingDynamicTarget\" not found\n"
+    );
+}
+
+#[test]
 fn fully_qualified_function_calls_use_exact_global_lookup() {
     let execution = run_source(
         r#"<?php
