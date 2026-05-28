@@ -798,6 +798,66 @@ echo "static=", $a, "/", $b;
 }
 
 #[test]
+fn reference_returning_dynamic_instance_method_calls_detach_or_bind() {
+    let execution = run_source(
+        r#"<?php
+class DynamicReferenceReturnBox {
+    function value() {
+        return 100;
+    }
+    function &constant() {
+        return 200;
+    }
+    function &global_ref() {
+        return $GLOBALS['a'];
+    }
+    function &call($method) {
+        return $this->$method();
+    }
+}
+
+$box = new DynamicReferenceReturnBox();
+
+$a = 4;
+$b =& $box->call('value');
+$a++;
+$b = 101;
+echo "value=", $a, "/", $b, "\n";
+
+$a = 4;
+$b =& $box->call('constant');
+$a++;
+$b = 201;
+echo "constant=", $a, "/", $b, "\n";
+
+$a = 4;
+$b =& $box->call('global_ref');
+$a++;
+echo "global=", $a, "/", $b;
+"#,
+    )
+    .unwrap();
+
+    let notices = execution
+        .stdout
+        .lines()
+        .filter(|line| {
+            line.starts_with("Notice: Only variable references should be returned by reference")
+        })
+        .count();
+    assert_eq!(notices, 2);
+    let semantic_lines = execution
+        .stdout
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with("Notice:"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_eq!(semantic_lines, "value=5/101\nconstant=5/201\nglobal=5/5");
+    assert_eq!(execution.stderr, "");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn reference_parameter_call_arguments_accept_reference_returns_and_value_temporaries() {
     let execution = run_source(
         r#"<?php
