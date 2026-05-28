@@ -89,12 +89,15 @@ fn run_program_with_optional_source_file(
     source_file: Option<String>,
     options: RunOptions,
 ) -> CompileResult<Execution> {
-    if let Some(execution) = magic_method_signature_startup_fatal(program, source_file.as_deref()) {
+    let startup_diagnostics = magic_method_startup_diagnostics(program, source_file.as_deref());
+    if let Some(execution) = startup_diagnostics.fatal_execution() {
         return Ok(execution);
     }
 
     let mut interpreter = Interpreter::from_program(program, source_file, options)?;
-    interpreter.run(program)
+    let mut execution = interpreter.run(program)?;
+    startup_diagnostics.prepend_warnings_to_execution(&mut execution);
+    Ok(execution)
 }
 
 pub fn class_metadata(program: &Program) -> CompileResult<PhpClassTable> {
@@ -64708,42 +64711,104 @@ struct MagicMethodSignatureContract {
     static_requirement: MagicMethodStaticRequirement,
 }
 
-fn magic_method_signature_startup_fatal(
+#[derive(Default)]
+struct MagicMethodStartupDiagnostics {
+    warnings: Vec<String>,
+    fatal: Option<String>,
+}
+
+impl MagicMethodStartupDiagnostics {
+    fn push_warning(&mut self, message: String, source_file: Option<&str>, line: usize) {
+        self.warnings.push(magic_method_startup_diagnostic_message(
+            "Warning",
+            message,
+            source_file,
+            line,
+        ));
+    }
+
+    fn set_fatal(&mut self, message: String, source_file: Option<&str>, line: usize) {
+        self.fatal = Some(magic_method_startup_diagnostic_message(
+            "Fatal error",
+            message,
+            source_file,
+            line,
+        ));
+    }
+
+    fn has_fatal(&self) -> bool {
+        self.fatal.is_some()
+    }
+
+    fn fatal_execution(&self) -> Option<Execution> {
+        let fatal = self.fatal.as_ref()?;
+        let mut stderr = self.warnings.join("\n");
+        if !stderr.is_empty() {
+            stderr.push('\n');
+        }
+        stderr.push_str(fatal);
+        Some(Execution {
+            stdout: String::new(),
+            stderr,
+            exit_code: 255,
+        })
+    }
+
+    fn prepend_warnings_to_execution(self, execution: &mut Execution) {
+        if self.warnings.is_empty() {
+            return;
+        }
+        let mut stderr = self.warnings.join("\n");
+        if !execution.stderr.is_empty() {
+            stderr.push('\n');
+            stderr.push_str(&execution.stderr);
+        }
+        execution.stderr = stderr;
+    }
+}
+
+fn magic_method_startup_diagnostics(
     program: &Program,
     source_file: Option<&str>,
-) -> Option<Execution> {
+) -> MagicMethodStartupDiagnostics {
+    let mut diagnostics = MagicMethodStartupDiagnostics::default();
     for stmt in &program.statements {
         match stmt {
             Stmt::Class(class) if !class.is_nested => {
-                if let Some(fatal) = class_magic_method_signature_startup_fatal(class, source_file)
-                {
-                    return Some(fatal);
-                }
+                collect_class_magic_method_startup_diagnostics(
+                    &mut diagnostics,
+                    class,
+                    source_file,
+                );
             }
             Stmt::Interface(interface) => {
-                if let Some(fatal) =
-                    interface_magic_method_signature_startup_fatal(interface, source_file)
-                {
-                    return Some(fatal);
-                }
+                collect_interface_magic_method_startup_diagnostics(
+                    &mut diagnostics,
+                    interface,
+                    source_file,
+                );
             }
             Stmt::Trait(trait_decl) => {
-                if let Some(fatal) =
-                    trait_magic_method_signature_startup_fatal(trait_decl, source_file)
-                {
-                    return Some(fatal);
-                }
+                collect_trait_magic_method_startup_diagnostics(
+                    &mut diagnostics,
+                    trait_decl,
+                    source_file,
+                );
             }
             _ => {}
         }
+        if diagnostics.has_fatal() {
+            break;
+        }
     }
-    None
+    diagnostics
 }
 
-fn class_magic_method_signature_startup_fatal(
+fn collect_class_magic_method_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
     class: &ClassDecl,
     source_file: Option<&str>,
-) -> Option<Execution> {
+) {
     for member in &class.members {
         let ClassMember::Method(method) = member else {
             continue;
@@ -64751,63 +64816,60 @@ fn class_magic_method_signature_startup_fatal(
         if let Some(message) =
             magic_method_signature_diagnostic(&class.name, &method.function, method.is_static)
         {
-            return Some(magic_method_startup_fatal_execution(
-                message,
-                source_file,
-                method.function.span.line,
-            ));
+            diagnostics.set_fatal(message, source_file, method.function.span.line);
+            return;
+        }
+        if let Some(message) =
+            magic_method_visibility_warning(&class.name, &method.function, method.visibility)
+        {
+            diagnostics.push_warning(message, source_file, method.function.span.line);
         }
     }
-    None
 }
 
-fn interface_magic_method_signature_startup_fatal(
+fn collect_interface_magic_method_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
     interface: &InterfaceDecl,
     source_file: Option<&str>,
-) -> Option<Execution> {
+) {
     for method in &interface.methods {
         if let Some(message) =
             magic_method_signature_diagnostic(&interface.name, &method.function, method.is_static)
         {
-            return Some(magic_method_startup_fatal_execution(
-                message,
-                source_file,
-                method.function.span.line,
-            ));
+            diagnostics.set_fatal(message, source_file, method.function.span.line);
+            return;
         }
     }
-    None
 }
 
-fn trait_magic_method_signature_startup_fatal(
+fn collect_trait_magic_method_startup_diagnostics(
+    diagnostics: &mut MagicMethodStartupDiagnostics,
     trait_decl: &TraitDecl,
     source_file: Option<&str>,
-) -> Option<Execution> {
+) {
     for method in &trait_decl.methods {
         if let Some(message) =
             magic_method_signature_diagnostic(&trait_decl.name, &method.function, method.is_static)
         {
-            return Some(magic_method_startup_fatal_execution(
-                message,
-                source_file,
-                method.function.span.line,
-            ));
+            diagnostics.set_fatal(message, source_file, method.function.span.line);
+            return;
+        }
+        if let Some(message) =
+            magic_method_visibility_warning(&trait_decl.name, &method.function, method.visibility)
+        {
+            diagnostics.push_warning(message, source_file, method.function.span.line);
         }
     }
-    None
 }
 
-fn magic_method_startup_fatal_execution(
+fn magic_method_startup_diagnostic_message(
+    label: &str,
     message: String,
     source_file: Option<&str>,
     line: usize,
-) -> Execution {
+) -> String {
     let file = source_file.unwrap_or("Command line code");
-    Execution {
-        stdout: String::new(),
-        stderr: format!("Fatal error: {message} in {file} on line {line}"),
-        exit_code: 255,
-    }
+    format!("{label}: {message} in {file} on line {line}")
 }
 
 fn magic_method_signature_diagnostic(
@@ -64867,6 +64929,21 @@ fn magic_method_signature_diagnostic(
         }
     }
     None
+}
+
+fn magic_method_visibility_warning(
+    class_name: &str,
+    function: &FunctionDecl,
+    visibility: ClassVisibility,
+) -> Option<String> {
+    magic_method_signature_contract(function.name.as_str())?;
+    if visibility == ClassVisibility::Public {
+        return None;
+    }
+    Some(format!(
+        "The magic method {class_name}::{}() must have public visibility",
+        function.name
+    ))
 }
 
 fn magic_method_signature_contract(name: &str) -> Option<MagicMethodSignatureContract> {
