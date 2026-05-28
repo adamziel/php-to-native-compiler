@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 13:06 CEST
+Updated: 2026-05-28 13:18 CEST
 Primary branch: `master`
-Latest source head: `57b32f28 fix: reject forbidden builtins in dynamic calls`
+Latest source head: `0c23019b fix: parse interface property hooks`
 
 ## Progress Score
 
@@ -51,10 +51,35 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Post-Batch002 source checkpoint 2 is now primary-integrated under AO. This is a
+Post-Batch002 source checkpoint 3 is now primary-integrated under AO. This is a
 source checkpoint with focused proof, not a percentage change. The public score
 remains **1193 / 20294 runnable PHPTs = 5.88%** until another pinned full-suite
 run is completed, parsed, regression-checked, and published here.
+
+- primary source head: `0c23019b fix: parse interface property hooks`
+- p28 final handoff head:
+  `02238dfa1210ea6e91f2aaa6b33cf809ff1a452a fix: parse interface property hooks`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p17-property-hooks-parser-20260528.patch`
+- exported integration patch SHA256:
+  `4670dab66c27ef85676279cace2451124140e22b3068b887544dbdf6e2a3603f`
+- source candidate patch SHA256:
+  `cbebb748e738425310190de5e9cc68d36b3f2afe87cafa044fef4d9e451e2252`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  PARSER-SCOPE-FOCUSED-GATES-PASS` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION /
+  P17-PROPERTY-HOOKS-PARSER-FINAL`
+- focused gates: PASS for `git diff --check`, `cargo fmt --all -- --check`,
+  `cargo test -p phpc --test syntax_boundaries property_hook -- --nocapture
+  --test-threads=1`, `cargo build -p phpc`, and wrapper PHPT
+  `Zend/tests/attributes/override/properties_01.phpt`
+- full PHPT suite: not run for this single source checkpoint
+
+This checkpoint adds parser and AST support for public interface property
+hooks. It is not claiming `properties_02.phpt`: p7 recorded that downstream
+override-validation failure as pre-existing against the reviewed public binary.
+
+Previous post-Batch002 source checkpoint 2 was p19:
 
 - primary source head: `57b32f28 fix: reject forbidden builtins in dynamic calls`
 - p28 final handoff head:
@@ -78,7 +103,7 @@ run is completed, parsed, regression-checked, and published here.
   `Zend/tests/dynamic_call/dynamic_call_008.phpt`
 - full PHPT suite: not run for this single source checkpoint
 
-This checkpoint generalizes rejection of forbidden dynamic introspection
+That checkpoint generalizes rejection of forbidden dynamic introspection
 builtins through the shared dynamic callback dispatcher paths, including
 `call_user_func` variants, before ordinary dynamic function lookup. It is not
 keyed to dynamic-call PHPT filenames, expected output text, line numbers, or a
