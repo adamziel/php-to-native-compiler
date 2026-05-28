@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 18:20 CEST
+Updated: 2026-05-28 18:33 CEST
 Primary branch: `master`
-Latest source head: `202dd1ec fix: reject disallowed property types`
+Latest source head: `15ea036b fix: preserve typed property reference type errors`
 
 ## Progress Score
 
@@ -56,13 +56,51 @@ score uses the stable pinned denominator and does not use the raw runner
 | First full-suite baseline | Done | 1118 / 20294 runnable PHPTs passed (5.51%); run id `phpt-full-batch001-20260528T010422Z-php-src-f97ff59-base-3e702be4-stack10` |
 | Batch002 full-suite gate | Done | 1193 / 20294 runnable PHPTs passed (5.88%); 0 regressions from Batch001 PASS set; run id `phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11` |
 | Batch003 full-suite gate | Done | 1311 / 20294 pinned runnable PHPTs passed (6.46%); 0 regressions from Batch002 PASS set; run id `phpt-full-batch003-20260528T154907Z-php-src-f97ff59-public-20f3be4c-source-202dd1ec-stack21` |
-| Next source batch | Open | Route the next bounded source batch toward broad PHPT failures with focused PHPT proof; run the next full suite after 10 accepted source checkpoints |
+| Next source batch | Open | Batch004 source checkpoints accepted: 1 / 10; route remaining checkpoints toward broad PHPT failures with focused PHPT proof; run the next full suite after 10 accepted source checkpoints |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Batch004 source checkpoint 1 is now primary-integrated under AO supervision.
+This is a source checkpoint with focused proof, not a percentage change. The
+public PHPT score remains **1311 / 20294 pinned runnable PHPTs = 6.46%** until
+the next pinned full-suite run after 10 accepted Batch004 source checkpoints.
+
+- primary source head:
+  `15ea036b fix: preserve typed property reference type errors`
+- p28 final handoff head:
+  `476912f52c7ad032e66b5edfc5808b3ed9ac3ca1`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p15-typed-properties-reference-held-typeerror-successor5-20260528.patch`
+- exported integration patch SHA256:
+  `d614d437986d41e527741d83181cfc31f0d8af424ee53dbc9665b8f6c650841a`
+- source candidate patch SHA256:
+  `93a2b65509ab3e1e145a52d6b706258cdbfc0899350cb8f069976196a9c96077`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION` and audited
+  `ace4177d..480e32ab` as `PROGRESS.md`-only/source-equivalent for this
+  candidate
+- focused gates: PASS for `git diff --check`, docs/PROGRESS exclusion,
+  production exact-shape audit, `cargo fmt --all -- --check`, `cargo test -p
+  phpc --test typed_properties_reference_held_type_errors -- --test-threads=1`,
+  `cargo build -p phpc`, and wrapper PHPT
+  `Zend/tests/type_declarations/typed_properties_055.phpt`
+- full PHPT suite: not run for this single source checkpoint; due after
+  Batch004 reaches 10 accepted source checkpoints
+
+This checkpoint generalizes typed-property reference TypeError handling for
+by-reference calls. The interpreter now preserves pending user/closure call
+frames for uncaught catchable PHP errors, converts reference-held typed
+property assignment failures into catchable `TypeError`, formats the uncaught
+trace through the shared fatal path, and supports nested visible object
+property reference arguments. It is not keyed to PHPT filenames, fixture class
+names, property names, output rows, or one exact source shape.
+
+Previous post-Batch002 source checkpoint 21 was p15 disallowed property types:
 
 Post-Batch002 source checkpoint 21 is now primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
