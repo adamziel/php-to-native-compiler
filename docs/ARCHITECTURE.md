@@ -2881,7 +2881,10 @@ lowering remain outside the model.
 slice tracks the first non-empty write that reaches unbuffered stdout. Echo,
 print, `exit("message")`, `var_dump()`, `print_r()`, and outermost
 `ob_get_flush()`/`ob_flush()`/`ob_end_flush()` stamp that state with the current source filename
-and source line; output held only inside active output buffers does not. Direct
+and source line; output held only inside active output buffers does not. The
+interpreter-side `print_r()` array formatter traverses cloned slot values so
+reference-backed leaves created by supported by-reference foreach paths remain
+readable without exposing direct borrows from reference cells. Direct
 variable, direct array-offset, direct object-property, and direct
 object-property array-offset filename/line output arguments are written with
 `""`/`0` before output starts and the stamped file/line after it starts.

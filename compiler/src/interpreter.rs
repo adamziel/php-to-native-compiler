@@ -79534,12 +79534,13 @@ fn format_print_r_array(array: &PhpArray, indent: usize) -> String {
     output.push_str(&format!("{padding}(\n"));
     for entry in array.entries() {
         output.push_str(&format!("{child_padding}[{}] => ", entry.key.display_key()));
-        match entry.value() {
+        let value = entry.value_cloned();
+        match value {
             Value::Array(value) => {
-                output.push_str(&format_print_r_array(value, indent + 1));
+                output.push_str(&format_print_r_array(&value, indent + 1));
             }
             Value::Object(value) => {
-                output.push_str(&format_print_r_object(value, indent + 1));
+                output.push_str(&format_print_r_object(&value, indent + 1));
             }
             value => {
                 output.push_str(&value.echo_string());
