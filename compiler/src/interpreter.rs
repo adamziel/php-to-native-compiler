@@ -61610,6 +61610,7 @@ impl Interpreter {
             "version_compare" => call_version_compare(&args, span),
             "microtime" => call_microtime(&args, span),
             "date_default_timezone_set" => call_date_default_timezone_set(&args, span),
+            "getenv" => self.call_getenv(&args, span),
             "ini_get" => self.call_ini_get(&args, span),
             "ini_set" => self.call_ini_set(&args, span),
             "get_include_path" => {
@@ -71137,6 +71138,13 @@ fn reflection_internal_function_state(name: &str) -> Option<ReflectionFunctionSt
             "bool",
             vec![reflection_internal_param("function", "string")],
         ),
+        "getenv" => (
+            "array|string|false",
+            vec![
+                reflection_internal_optional_null_param("name", "string"),
+                reflection_internal_optional_bool_param("local_only", false),
+            ],
+        ),
         "is_array" | "is_object" | "is_string" | "is_scalar" => {
             ("bool", vec![reflection_internal_param("value", "mixed")])
         }
@@ -72733,6 +72741,7 @@ fn is_builtin(name: &str) -> bool {
             | "version_compare"
             | "microtime"
             | "date_default_timezone_set"
+            | "getenv"
             | "ini_get"
             | "ini_set"
             | "get_include_path"
@@ -82483,6 +82492,74 @@ fn call_date_default_timezone_set(args: &[Value], span: Span) -> CompileResult<V
 }
 
 impl Interpreter {
+    fn call_getenv(&self, args: &[Value], span: Span) -> CompileResult<Value> {
+        if args.len() > 2 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::arity_mismatch(
+                    "getenv()",
+                    ArityExpectation::Between { min: 0, max: 2 },
+                    args.len(),
+                ),
+            ));
+        }
+
+        match args.get(1) {
+            Some(Value::Bool(_)) | None => {}
+            Some(other) => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "getenv()",
+                        format!(
+                            "local_only argument must be bool in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        }
+
+        let Some(name_value) = args.first() else {
+            return Ok(Value::Array(current_environment_array()));
+        };
+
+        let name = match name_value {
+            Value::Null => return Ok(Value::Array(current_environment_array())),
+            Value::String(name) => name,
+            other => {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::unsupported_call(
+                        "getenv()",
+                        format!(
+                            "name argument must be string or null in the current subset, got {}",
+                            other.type_name()
+                        ),
+                    ),
+                ));
+            }
+        };
+
+        if name.as_bytes().contains(&b'\0') {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_call(
+                    "getenv()",
+                    "name argument cannot contain null bytes in the current subset",
+                ),
+            ));
+        }
+
+        if name.contains('=') {
+            return Ok(Value::Bool(false));
+        }
+
+        Ok(std::env::var_os(name)
+            .map(|value| Value::String(value.to_string_lossy().into_owned()))
+            .unwrap_or(Value::Bool(false)))
+    }
+
     fn call_ini_get(&self, args: &[Value], span: Span) -> CompileResult<Value> {
         expect_arity("ini_get", args, 1, span)?;
 
@@ -82560,6 +82637,17 @@ impl Interpreter {
             .cloned()
             .or_else(|| compat_ini_value(&normalized).map(str::to_string))
     }
+}
+
+fn current_environment_array() -> PhpArray {
+    let mut env = PhpArray::new();
+    for (key, value) in std::env::vars_os() {
+        env.insert(
+            key.to_string_lossy().into_owned(),
+            Value::String(value.to_string_lossy().into_owned()),
+        );
+    }
+    env
 }
 
 fn normalize_ini_name(name: &str) -> String {

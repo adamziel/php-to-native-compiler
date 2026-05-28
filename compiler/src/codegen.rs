@@ -66216,6 +66216,7 @@ const NATIVE_KNOWN_FUNCTION_NAMES: &[&str] = &[
     "version_compare",
     "microtime",
     "date_default_timezone_set",
+    "getenv",
     "ini_get",
     "ini_set",
     "get_include_path",
