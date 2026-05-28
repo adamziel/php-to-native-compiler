@@ -28453,6 +28453,29 @@ impl PhpArray {
         true
     }
 
+    pub fn replace_existing_path_value_slot(&mut self, keys: &[ArrayKey], value: Value) -> bool {
+        let Some((key, rest)) = keys.split_first() else {
+            return false;
+        };
+
+        if rest.is_empty() {
+            if self.get_slot(key.clone()).is_none() {
+                return false;
+            }
+            self.insert_slot(key.clone(), ArraySlot::new(value));
+            return true;
+        }
+
+        let Some(Value::Array(mut child)) = self.get_cloned(key.clone()) else {
+            return false;
+        };
+        if !child.replace_existing_path_value_slot(rest, value) {
+            return false;
+        }
+        self.insert(key.clone(), Value::Array(child));
+        true
+    }
+
     pub fn write_existing_path_checked_with_object_type_resolver<F>(
         &mut self,
         keys: &[ArrayKey],
