@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 15:39 CEST
+Updated: 2026-05-28 15:52 CEST
 Primary branch: `master`
-Latest source head: `ed7fbc6b fix: throw type errors for constant defaults`
+Latest source head: `30e8e734 fix: expand argument unpacking for calls`
 
 ## Progress Score
 
@@ -51,7 +51,44 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Post-Batch002 source checkpoint 13 is now primary-integrated under AO
+Post-Batch002 source checkpoint 14 is now primary-integrated under AO
+supervision. This is a source checkpoint with focused proof, not a percentage
+change. The public score remains **1193 / 20294 runnable PHPTs = 5.88%** until
+another pinned full-suite run is completed, parsed, regression-checked, and
+published here.
+
+- primary source head:
+  `30e8e734 fix: expand argument unpacking for calls`
+- source candidate patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-call-argument-unpack-source-candidate-20260528.patch`
+- source candidate patch SHA256:
+  `262c711cbe59ae51d5a89c49050538b0a156f8232f78818f507233f4f8dde530`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION /
+  P31-CALL-ARGUMENT-UNPACK`
+- focused gates: PASS for `git diff --check`, `cargo fmt --all --
+  --check`, `cargo test -p phpc --test dynamic_features
+  dynamic_callable_array_and_closure_spread_arguments_are_expanded -- --exact
+  --test-threads=1`, `cargo test -p phpc --test functions_and_scopes
+  variadic_argument_unpacking_expands_array_values_for_user_functions --
+  --exact --test-threads=1`, `cargo build -p phpc`, and wrapper PHPTs
+  `Zend/tests/arg_unpack/dynamic.phpt`, `Zend/tests/arg_unpack/method.phpt`,
+  and `Zend/tests/arg_unpack/new.phpt`
+- full PHPT suite: not run for this single source checkpoint
+
+This checkpoint generalizes positional array spread expansion for user
+functions, method calls, dynamic callables, and `new` expression call frames. It
+delays arity checks when spread arguments are present, expands numeric array
+entries into positional call values, and keeps unsupported named/string-keyed
+and by-reference spread shapes behind explicit diagnostics. It is not keyed to
+PHPT filenames, fixture class names, method names, argument values, or exact
+output rows.
+
+Previous post-Batch002 source checkpoint 13 was p15 scalar constant-default
+TypeError:
+
+Post-Batch002 source checkpoint 13 is primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
 change. The public score remains **1193 / 20294 runnable PHPTs = 5.88%** until
 another pinned full-suite run is completed, parsed, regression-checked, and
