@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 13:58 CEST
+Updated: 2026-05-28 14:20 CEST
 Primary branch: `master`
-Latest source head: `219d2c41 fix: route unset typed properties through __set`
+Latest source head: `7ba72ffd fix: make dynamic call undefined errors catchable`
 
 ## Progress Score
 
@@ -51,10 +51,43 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Post-Batch002 source checkpoint 6 is now primary-integrated under AO. This is a
+Post-Batch002 source checkpoint 7 is now primary-integrated under AO. This is a
 source checkpoint with focused proof, not a percentage change. The public score
 remains **1193 / 20294 runnable PHPTs = 5.88%** until another pinned full-suite
 run is completed, parsed, regression-checked, and published here.
+
+- primary source head:
+  `7ba72ffd fix: make dynamic call undefined errors catchable`
+- p28 final handoff head:
+  `92a2be8aef15e62e609ac09431e9046ee75cb6bc fix: make dynamic call undefined errors catchable`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p19-dynamic-call-catchable-errors-20260528.patch`
+- exported integration patch SHA256:
+  `890a7cb898fc81986cc8b29e2743b688f9b10a6ab8101bda8db3051483114123`
+- source candidate patch SHA256:
+  `81c9ff108197f782ff699cddd36356b7da3137ab31ccb1039a0a2953c135766f`
+- reviewer gate: p7 recorded a clean rerun `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS` with `FINAL_FAIL=0` after the supervisor rejected an
+  earlier malformed review artifact.
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION /
+  P19-DYNAMIC-CALL-CATCHABLE-ERRORS-81C9-CLEAN-P7`
+- focused gates: PASS for `git diff --check`, `cargo fmt --all --
+  --check`, `cargo test -p phpc --test dynamic_features
+  dynamic_undefined_function_calls_are_catchable_errors -- --exact
+  --test-threads=1`, `cargo build -p phpc`, and wrapper PHPTs
+  `Zend/tests/dynamic_call/dynamic_fully_qualified_call.phpt`,
+  `Zend/tests/dynamic_call/dynamic_call_005.phpt`,
+  `Zend/tests/dynamic_call/dynamic_call_006.phpt`,
+  `Zend/tests/dynamic_call/dynamic_call_007.phpt`, and
+  `Zend/tests/dynamic_call/dynamic_call_008.phpt`
+- full PHPT suite: not run for this single source checkpoint
+
+This checkpoint generalizes dynamic undefined-function diagnostics into
+catchable PHP `Error` flow through the existing runtime diagnostic path. It is
+not keyed to a PHPT filename, exact output, function name, namespace, or fixture
+shape.
+
+Previous post-Batch002 source checkpoint 6 was p15 typed-properties magic-set:
 
 - primary source head: `219d2c41 fix: route unset typed properties through __set`
 - p28 final handoff head:
