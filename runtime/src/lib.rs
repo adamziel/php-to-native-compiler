@@ -30822,9 +30822,22 @@ impl PhpClassTable {
 
     pub fn with_core_classes() -> Self {
         let mut classes = Self::new();
-        classes
+        let exception_id = classes
             .declare_class("Exception")
             .expect("core class table should start empty");
+        {
+            let exception = classes
+                .get_mut(exception_id)
+                .expect("core Exception class id should resolve");
+            for property in ["message", "code", "previous"] {
+                exception
+                    .add_property(PhpPropertyMetadata::instance(
+                        property,
+                        Visibility::Protected,
+                    ))
+                    .expect("Exception core metadata should not duplicate constructor state");
+            }
+        }
         let error_id = classes
             .declare_class("Error")
             .expect("core class table should contain only Exception before Error");

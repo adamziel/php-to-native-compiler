@@ -50,6 +50,12 @@ echo "ready\n";
     let classes = class_metadata_source(source).unwrap();
     assert_eq!(classes.classes().len(), 18);
     assert_eq!(classes.classes()[0].name(), "Exception");
+    let exception = classes.lookup_class("Exception").unwrap();
+    for property in ["message", "code", "previous"] {
+        let metadata = exception.property(property).unwrap();
+        assert_eq!(metadata.visibility(), Visibility::Protected);
+        assert!(!metadata.is_static());
+    }
     assert_eq!(classes.classes()[1].name(), "stdClass");
     assert_eq!(classes.classes()[2].name(), "mysqli");
     assert_eq!(classes.classes()[3].name(), "mysqli_result");
@@ -1965,6 +1971,46 @@ echo empty(make_box()->name);
         error.message,
         "unsupported call empty(): only direct variables, direct array offset operands, direct object property operands, direct object-property array offset operands, and supported static property operands are supported"
     );
+}
+
+#[test]
+fn core_exception_constructor_initializes_bounded_state_for_subclasses() {
+    let execution = run_source(
+        r#"<?php
+class InspectableException extends Exception {
+    public function describe() {
+        return $this->message . "|" . $this->code . "|" . get_class($this->previous);
+    }
+}
+$previous = new Exception("root", 4);
+$exception = new InspectableException("leaf", 7, $previous);
+echo $exception->describe(), "\n";
+echo $exception instanceof Exception ? "exception" : "missing";
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "leaf|7|Exception\nexception");
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
+fn core_exception_constructor_initializes_default_state() {
+    let execution = run_source(
+        r#"<?php
+class InspectableDefaultException extends Exception {
+    public function describe() {
+        return $this->message . "|" . $this->code . "|" . ($this->previous === null ? "null" : "object");
+    }
+}
+$exception = new InspectableDefaultException;
+echo $exception->describe();
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(execution.stdout, "|0|null");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
@@ -13737,4 +13783,44 @@ echo $this;
         top_level_this.message,
         "unsupported call $this: object context is only available during instance method execution"
     );
+}
+
+#[test]
+fn uncaught_exception_fatal_renders_message_and_throw_site() {
+    let source = r#"<?php
+throw new Exception("boom");
+"#;
+
+    let execution = run_source_with_source_file(source, "/tmp/uncaught_exception.php").unwrap();
+    assert_eq!(execution.exit_code, 255);
+    assert_eq!(execution.stderr, "");
+    assert_eq!(
+        execution.stdout,
+        "Fatal error: Uncaught Exception: boom in /tmp/uncaught_exception.php:2\nStack trace:\n#0 {main}\n  thrown in /tmp/uncaught_exception.php on line 2"
+    );
+}
+
+#[test]
+fn throwing_finally_overrides_pending_exception_for_uncaught_fatal() {
+    let source = r#"<?php
+try {
+    $e = new Exception("outer");
+    try {
+        throw new Exception("inner", 0, $e);
+    } finally {
+        throw $e;
+    }
+} finally {}
+"#;
+
+    let execution = run_source_with_source_file(source, "/tmp/finally_override.php").unwrap();
+    assert_eq!(execution.exit_code, 255);
+    assert_eq!(execution.stderr, "");
+    assert!(execution
+        .stdout
+        .contains("Fatal error: Uncaught Exception: outer in /tmp/finally_override.php:"));
+    assert!(execution
+        .stdout
+        .contains("\nStack trace:\n#0 {main}\n  thrown in /tmp/finally_override.php on line "));
+    assert!(!execution.stdout.contains("inner"));
 }

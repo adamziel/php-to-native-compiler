@@ -12652,7 +12652,7 @@ impl Interpreter {
                 span,
                 RuntimeError::invalid_loop_control("continue cannot be used outside a loop"),
             )),
-            Flow::Throw { object, span } => Err(self.uncaught_throw_error(&object, span)),
+            Flow::Throw { object, span } => self.uncaught_throw_execution(&object, span),
             Flow::Goto { label, span } => Err(undefined_goto_label_error(span, &label)),
         }
     }
@@ -13988,6 +13988,57 @@ impl Interpreter {
             }
         }
         Ok(false)
+    }
+
+    fn uncaught_throw_execution(
+        &mut self,
+        object: &PhpObject,
+        span: Span,
+    ) -> CompileResult<Execution> {
+        self.emit_uncaught_throw_fatal(object, span);
+        self.exit_signal = Some(255);
+        self.run_shutdown_callbacks()?;
+        self.run_shutdown_destructors()?;
+        self.flush_output_buffers();
+        Ok(Execution {
+            stdout: self.stdout.clone(),
+            stderr: self.stderr.clone(),
+            exit_code: self.exit_signal.unwrap_or(255),
+        })
+    }
+
+    fn emit_uncaught_throw_fatal(&mut self, object: &PhpObject, span: Span) {
+        let class_name = object.class_name();
+        let message = self.throwable_message_for_fatal(object);
+        let file = self
+            .source_file
+            .clone()
+            .unwrap_or_else(|| "Command line code".to_string());
+        if !self.stdout.is_empty() && !self.stdout.ends_with('\n') {
+            self.stdout.push('\n');
+        }
+        let message_suffix = if message.is_empty() {
+            String::new()
+        } else {
+            format!(": {message}")
+        };
+        self.stdout.push_str(&format!(
+            "Fatal error: Uncaught {class_name}{message_suffix} in {file}:{}\nStack trace:\n#0 {{main}}\n  thrown in {file} on line {}",
+            span.line, span.line
+        ));
+    }
+
+    fn throwable_message_for_fatal(&self, object: &PhpObject) -> String {
+        let class_id = object.class_id();
+        let protected_class_ids = self.protected_class_ids_for_context(class_id);
+        match object.read_property_from_context("message", Some(class_id), &protected_class_ids) {
+            Ok(Value::String(message)) => message,
+            Ok(Value::Int(message)) => message.to_string(),
+            Ok(Value::Float(message)) => message.to_string(),
+            Ok(Value::Bool(true)) => "1".to_string(),
+            Ok(Value::Bool(false) | Value::Null) | Err(_) => String::new(),
+            Ok(other) => other.type_name().to_string(),
+        }
     }
 
     fn uncaught_throw_error(&self, object: &PhpObject, span: Span) -> Diagnostic {
@@ -15895,6 +15946,18 @@ impl Interpreter {
             constructor_is_static,
         )) = constructor
         else {
+            if self.is_exception_class_or_subclass(class_id) {
+                self.initialize_core_exception_object(
+                    &object,
+                    class_id,
+                    &declared_class_name,
+                    args,
+                    span,
+                    scope,
+                )?;
+                self.track_allocated_object(&object);
+                return Ok(Value::Object(object));
+            }
             if !args.is_empty() {
                 return Err(runtime_error(
                     span,
@@ -16502,6 +16565,138 @@ impl Interpreter {
 
         self.track_allocated_object(&clone);
         Ok(Value::Object(clone))
+    }
+
+    fn is_exception_class_or_subclass(&self, class_id: ClassId) -> bool {
+        let Some(exception_id) = self.classes.lookup_class_id("Exception") else {
+            return false;
+        };
+        class_id == exception_id || self.classes.is_subclass_of(class_id, exception_id)
+    }
+
+    fn initialize_core_exception_object(
+        &mut self,
+        object: &PhpObject,
+        class_id: ClassId,
+        declared_class_name: &str,
+        args: &[Expr],
+        span: Span,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<()> {
+        if args.len() > 3 {
+            return Err(runtime_error(
+                span,
+                RuntimeError::unsupported_object_instantiation(
+                    declared_class_name,
+                    "Exception constructor supports message, code, and previous arguments only in the current subset",
+                ),
+            ));
+        }
+
+        let message = match args.first() {
+            Some(expr) => self.evaluate_exception_message_argument(expr, scope)?,
+            None => String::new(),
+        };
+        let code = match args.get(1) {
+            Some(expr) => self.evaluate_exception_code_argument(expr, scope)?,
+            None => 0,
+        };
+        let previous = match args.get(2) {
+            Some(expr) => self.evaluate_exception_previous_argument(expr, scope)?,
+            None => Value::Null,
+        };
+        let protected_class_ids = self.protected_class_ids_for_context(class_id);
+        object
+            .write_property_from_context(
+                "message",
+                Value::String(message),
+                Some(class_id),
+                &protected_class_ids,
+            )
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_property_from_context(
+                "code",
+                Value::Int(code),
+                Some(class_id),
+                &protected_class_ids,
+            )
+            .map_err(|error| runtime_error(span, error))?;
+        object
+            .write_property_from_context("previous", previous, Some(class_id), &protected_class_ids)
+            .map_err(|error| runtime_error(span, error))?;
+        Ok(())
+    }
+
+    fn evaluate_exception_message_argument(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<String> {
+        match self.evaluate(expr, scope)? {
+            Value::Null => Ok(String::new()),
+            Value::Bool(false) => Ok(String::new()),
+            Value::Bool(true) => Ok("1".to_string()),
+            Value::Int(value) => Ok(value.to_string()),
+            Value::Float(value) => Ok(value.to_string()),
+            Value::String(value) => Ok(value),
+            Value::BinaryString(bytes) => Ok(String::from_utf8_lossy(&bytes).into_owned()),
+            other => Err(runtime_error(
+                expr.span(),
+                RuntimeError::unsupported_object_instantiation(
+                    "Exception",
+                    format!(
+                        "message argument must be scalar in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn evaluate_exception_code_argument(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<i64> {
+        match self.evaluate(expr, scope)? {
+            Value::Null | Value::Bool(false) => Ok(0),
+            Value::Bool(true) => Ok(1),
+            Value::Int(value) => Ok(value),
+            other => Err(runtime_error(
+                expr.span(),
+                RuntimeError::unsupported_object_instantiation(
+                    "Exception",
+                    format!(
+                        "code argument must be int in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
+    }
+
+    fn evaluate_exception_previous_argument(
+        &mut self,
+        expr: &Expr,
+        scope: &mut SymbolTable,
+    ) -> CompileResult<Value> {
+        match self.evaluate(expr, scope)? {
+            Value::Null => Ok(Value::Null),
+            Value::Object(object) if self.is_exception_class_or_subclass(object.class_id()) => {
+                Ok(Value::Object(object))
+            }
+            other => Err(runtime_error(
+                expr.span(),
+                RuntimeError::unsupported_object_instantiation(
+                    "Exception",
+                    format!(
+                        "previous argument must be Exception or null in the current subset, got {}",
+                        other.type_name()
+                    ),
+                ),
+            )),
+        }
     }
 
     fn inherited_instance_properties(
