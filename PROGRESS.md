@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 18:52 CEST
+Updated: 2026-05-28 19:14 CEST
 Primary branch: `master`
-Latest source head: `ac3ea46c fix: add getenv runtime builtin`
+Latest source head: `0f98ed84 fix: preserve uncaught throwing finally state`
 
 ## Progress Score
 
@@ -56,7 +56,7 @@ score uses the stable pinned denominator and does not use the raw runner
 | First full-suite baseline | Done | 1118 / 20294 runnable PHPTs passed (5.51%); run id `phpt-full-batch001-20260528T010422Z-php-src-f97ff59-base-3e702be4-stack10` |
 | Batch002 full-suite gate | Done | 1193 / 20294 runnable PHPTs passed (5.88%); 0 regressions from Batch001 PASS set; run id `phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11` |
 | Batch003 full-suite gate | Done | 1311 / 20294 pinned runnable PHPTs passed (6.46%); 0 regressions from Batch002 PASS set; run id `phpt-full-batch003-20260528T154907Z-php-src-f97ff59-public-20f3be4c-source-202dd1ec-stack21` |
-| Next source batch | Open | Batch004 source checkpoints accepted: 2 / 10; route remaining checkpoints toward broad PHPT failures with focused PHPT proof; run the next full suite after 10 accepted source checkpoints |
+| Next source batch | Open | Batch004 source checkpoints accepted: 3 / 10; route remaining checkpoints toward broad PHPT failures with focused PHPT proof; run the next full suite after 10 accepted source checkpoints |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -64,7 +64,52 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Batch004 source checkpoint 2 is now primary-integrated under AO supervision.
+Batch004 source checkpoint 3 is now primary-integrated under AO supervision.
+This is a source checkpoint with focused proof, not a percentage change. The
+public PHPT score remains **1311 / 20294 pinned runnable PHPTs = 6.46%** until
+the next pinned full-suite run after 10 accepted Batch004 source checkpoints.
+
+- primary source head:
+  `0f98ed84 fix: preserve uncaught throwing finally state`
+- p28 final handoff head:
+  `b24feac856f4d21d1d2e04aba0fd9ccf89c2c524`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p18-try-finally-8ff12ea3-20260528.patch`
+- exported integration patch SHA256:
+  `6b669b39d6b2188168dbfc73e28eb8c34ba3c13a13cf0df8e4259de1f48942f5`
+- source candidate patch SHA256:
+  `7946a88fc3eed3046c3c287de0a6b6876e32c45be5cd450e2bf4d8acbbf77280`
+- prerequisite patch SHA256:
+  `46f4519dcb9e3e9914aa419261c1a6ea6783d4acab28d764561c65b9419605d1`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS / PHPT-PASS` with `FINAL_FAIL=0` on `8ff12ea3`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION` for the exact
+  prerequisite plus successor2 stack on `8ff12ea3`
+- integration gate: p28 recorded `FINAL-HANDOFF / FOCUSED-GATES-PASS /
+  READY-FOR-SUPERVISOR-APPLY`
+- focused gates: PASS for `git diff --check`, docs/PROGRESS exclusion,
+  production exact-shape audit, `cargo fmt --all -- --check`, `cargo test -p
+  phpc --test object_model uncaught_exception_fatal_renders_message_and_throw_site
+  -- --exact --test-threads=1`, `cargo test -p phpc --test object_model
+  throwing_finally_overrides_pending_exception_for_uncaught_fatal -- --exact
+  --test-threads=1`, `cargo build -p phpc`, and wrapper PHPT
+  `Zend/tests/try/try_finally_recursive_previous.phpt`
+- supervisor primary gate log:
+  `/home/claude/supervised-php-compiler/state/workers/supervisor-primary-p18-try-finally-checkpoint3-20260528.gates.log`
+- full PHPT suite: not run for this single source checkpoint; due after
+  Batch004 reaches 10 accepted source checkpoints
+
+This checkpoint generalizes bounded Exception/Throwable constructor state and
+uncaught fatal emission for throwing `finally` paths. Core exception subclasses
+now initialize protected `message`, `code`, and `previous` state, uncaught
+throws use the shared execution shutdown/fatal path, and throwing `finally`
+overrides pending exceptions without recursive `previous` output. It is not
+keyed to PHPT filenames, fixture names, expected output rows, or one exact
+source shape.
+
+Previous Batch004 source checkpoint 2 was getenv runtime builtin support:
+
+Batch004 source checkpoint 2 is primary-integrated under AO supervision.
 This is a source checkpoint with focused proof, not a percentage change. The
 public PHPT score remains **1311 / 20294 pinned runnable PHPTs = 6.46%** until
 the next pinned full-suite run after 10 accepted Batch004 source checkpoints.
