@@ -4,6 +4,21 @@
 
 Implemented:
 
+- Added interpreter call-expression reference fallback for direct
+  free-function, direct variable receiver object-method, and named static
+  method calls. Statement-form reference assignment from calls known to return
+  by value now emits the PHP-shaped "Only variables should be assigned by
+  reference" notice and binds the target to a detached temporary, while
+  by-reference parameters can consume classified call expressions: returned
+  reference cells are shared, and by-value returns emit "Only variables should
+  be passed by reference" before passing an isolated temporary. Focused gates
+  cover direct function, static method, and object method value/reference
+  combinations plus pinned PHPTs `tests/lang/returnByReference.002.phpt`,
+  `tests/lang/passByReference_001.phpt`, and
+  `tests/lang/passByReference_007.phpt`. Dynamic/callback call expressions,
+  side-effecting receiver classification, broader reference/COW parity, and
+  native lowering remain unsupported.
+
 - Added parser/runtime-path support for multiple unbracketed named namespace
   declarations in one file. Each declaration starts a fresh lexical import
   segment while class/function/constant declarations continue to resolve under
