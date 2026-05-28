@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 18:33 CEST
+Updated: 2026-05-28 18:52 CEST
 Primary branch: `master`
-Latest source head: `15ea036b fix: preserve typed property reference type errors`
+Latest source head: `ac3ea46c fix: add getenv runtime builtin`
 
 ## Progress Score
 
@@ -56,7 +56,7 @@ score uses the stable pinned denominator and does not use the raw runner
 | First full-suite baseline | Done | 1118 / 20294 runnable PHPTs passed (5.51%); run id `phpt-full-batch001-20260528T010422Z-php-src-f97ff59-base-3e702be4-stack10` |
 | Batch002 full-suite gate | Done | 1193 / 20294 runnable PHPTs passed (5.88%); 0 regressions from Batch001 PASS set; run id `phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11` |
 | Batch003 full-suite gate | Done | 1311 / 20294 pinned runnable PHPTs passed (6.46%); 0 regressions from Batch002 PASS set; run id `phpt-full-batch003-20260528T154907Z-php-src-f97ff59-public-20f3be4c-source-202dd1ec-stack21` |
-| Next source batch | Open | Batch004 source checkpoints accepted: 1 / 10; route remaining checkpoints toward broad PHPT failures with focused PHPT proof; run the next full suite after 10 accepted source checkpoints |
+| Next source batch | Open | Batch004 source checkpoints accepted: 2 / 10; route remaining checkpoints toward broad PHPT failures with focused PHPT proof; run the next full suite after 10 accepted source checkpoints |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -64,7 +64,50 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Batch004 source checkpoint 1 is now primary-integrated under AO supervision.
+Batch004 source checkpoint 2 is now primary-integrated under AO supervision.
+This is a source checkpoint with focused proof, not a percentage change. The
+public PHPT score remains **1311 / 20294 pinned runnable PHPTs = 6.46%** until
+the next pinned full-suite run after 10 accepted Batch004 source checkpoints.
+
+- primary source head:
+  `ac3ea46c fix: add getenv runtime builtin`
+- p28 final handoff head:
+  `7e92e4ca588f093e6afd934224cc6677a1d0c6c6`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-getenv-borked-skipif-source-candidate-20260528.patch`
+- exported integration patch SHA256:
+  `45031061695aabd5f6b0c8387b4c1a6c16acf2d6563bc61b4618e88d70ffcb44`
+- source candidate patch SHA256:
+  `8ef899fd5e6bd496c9734adb01b4b6c254f96063b0a01e3be918fe20c620d856`
+- reviewer gate: p7 current-head gates recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS / PHPT-SKIPIF-NON-BORKED-PASS` with `FINAL_FAIL=0`
+  on `c1b1a5ca`
+- critic gate: `SAFE-FOR-INTEGRATION / GETENV-C1B1A5CA`; supervisor
+  finalized the critic status from p7/p26 durable artifacts after both TUI
+  sessions stalled before their final status rewrite
+- focused gates: PASS for `git diff --check`, docs/PROGRESS exclusion,
+  production exact-shape audit, `cargo fmt --all -- --check`, `cargo test -p
+  phpc --test getenv_builtin -- --test-threads=1`, `cargo build -p phpc`, and
+  wrapper PHPTs `tests/basic/GHSA-9pqp-7h25-4f32.phpt`,
+  `tests/basic/gh16998.phpt`, and `ext/mbstring/tests/cp936_encoding.phpt`
+  as SKIP/non-BORKED checks
+- supervisor primary gate log:
+  `/home/claude/supervised-php-compiler/state/workers/supervisor-primary-getenv-borked-checkpoint2-20260528.gates.log`
+- full PHPT suite: not run for this single source checkpoint; due after
+  Batch004 reaches 10 accepted source checkpoints
+
+This checkpoint generalizes `getenv()` runtime/interpreter builtin support for
+environment-based PHPT SKIPIF/runtime evaluation. It adds callable metadata and
+interpreter behavior for direct and dynamic string calls, present/missing/empty
+environment values, no-arg/null environment snapshots, and `local_only`
+validation while preserving direct native `getenv()` lowering rejection. It is
+not keyed to PHPT filenames, skipif source text, expected output rows, or one
+exact source shape.
+
+Previous Batch004 source checkpoint 1 was p15 typed-properties reference-held
+TypeError:
+
+Batch004 source checkpoint 1 is primary-integrated under AO supervision.
 This is a source checkpoint with focused proof, not a percentage change. The
 public PHPT score remains **1311 / 20294 pinned runnable PHPTs = 6.46%** until
 the next pinned full-suite run after 10 accepted Batch004 source checkpoints.
