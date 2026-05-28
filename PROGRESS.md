@@ -2,7 +2,7 @@
 
 Updated: 2026-05-28 11:25 CEST
 Primary branch: `master`
-Latest source head: 
+Latest source head: `6f4e36a0 fix: dispatch static magic callbacks`
 
 ## Progress Score
 
