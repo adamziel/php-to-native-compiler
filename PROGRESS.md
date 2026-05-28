@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 07:45 CEST
+Updated: 2026-05-28 07:47 CEST
 Primary branch: `master`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
@@ -114,6 +114,7 @@ Gate status and parked candidates:
 | `Zend/tests/type_declarations/typed_properties_027.phpt` float typed-property widening PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing typed-property assignment/read behavior widens an integer assignment into a float typed property, passing wrapper PHPT `Zend/tests/type_declarations/typed_properties_027.phpt` 1/1 using the rebuilt reviewed public binary `/tmp/phpc-reviewed-public-687fcc41-20260528-target2/debug/phpc`; no source patch, no cargo gate beyond the authorized binary recovery, no full-suite run, and no percent change |
 | `Zend/tests/type_declarations/typed_properties_028.phpt` weak-mode typed-property coercion PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing typed-property assignment/read behavior coerces a string value into an int typed property when strict types are off, passing wrapper PHPT `Zend/tests/type_declarations/typed_properties_028.phpt` 1/1 using the rebuilt reviewed public binary `/tmp/phpc-reviewed-public-687fcc41-20260528-target2/debug/phpc`; no source patch, no cargo gate beyond the authorized binary recovery, no full-suite run, and no percent change |
 | `Zend/tests/type_declarations/typed_properties_041.phpt` weak string conversion into typed property PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing typed-property assignment behavior converts the string `"10"` into the declared integer property value in weak mode, passing wrapper PHPT `Zend/tests/type_declarations/typed_properties_041.phpt` 1/1 using the replacement reviewed public binary `/tmp/phpc-reviewed-public-1b459adf-20260528-target/debug/phpc`; no source patch, no cargo gate beyond the reviewed binary recovery, no full-suite run, and no percent change |
+| `Zend/tests/type_declarations/typed_properties_042.phpt` typed-property assignment source duplication PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing typed-property assignment behavior duplicates the source value correctly while assigning into the typed property, passing wrapper PHPT `Zend/tests/type_declarations/typed_properties_042.phpt` 1/1 using the replacement reviewed public binary `/tmp/phpc-reviewed-public-1b459adf-20260528-target/debug/phpc`; no source patch, no cargo gate beyond the reviewed binary recovery, no full-suite run, and no percent change |
 | `Zend/tests/list/list_004.phpt` `list()` assignment from array reference PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing list-assignment/reference behavior reads from an aliased array and passes wrapper PHPT `Zend/tests/list/list_004.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/list/bug65969.phpt` chain assignment with `list()` PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing chain assignment behavior lets `list()` destructure the same array assigned to an object property, passing wrapper PHPT `Zend/tests/list/bug65969.phpt` 1/1 using the rebuilt reviewed public binary `/tmp/phpc-reviewed-public-687fcc41-20260528-target2/debug/phpc`; no source patch, no cargo gate beyond the authorized binary recovery, no full-suite run, and no percent change |
 | `Zend/tests/list/bug72395.phpt` `list()` regression PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing list/foreach behavior covers the php-src regression target, passing wrapper PHPT `Zend/tests/list/bug72395.phpt` 1/1 using the rebuilt reviewed public binary `/tmp/phpc-reviewed-public-687fcc41-20260528-target2/debug/phpc`; no source patch, no cargo gate beyond the authorized binary recovery, no full-suite run, and no percent change |
@@ -165,10 +166,10 @@ Current AO snapshot: `phpc-orchestrator` supervising; `phpc-14` critic;
 `phpc-7` reviewer; `phpc-8` progress reporter; active coder/support lanes
 `phpc-15`, `phpc-16`, `phpc-17`, `phpc-18`, and `phpc-19`. Current
 public-progress watch targets are typed-properties
-`typed_properties_042`/successors, magic `bug74053`/successors, attributes
-`allow_dynamic_properties_on_trait`/successors, try/finally goto successors,
-asymmetric-visibility/reference successors, the next p7-reviewed candidate plus
-p14 `SAFE-FOR-PROGRESS` audit, current coder lane artifacts, and any new full-suite
+`typed_properties_044`/successors, magic `bug74862`/successors, attributes
+`ossfuzz371445205`/successors, `finally_goto_003`/successors, asymmetric
+visibility/reference successors, the next p7-reviewed candidate plus p14
+`SAFE-FOR-PROGRESS` audit, current coder lane artifacts, and any new full-suite
 PHPT row. Known no-go/not-safe items,
 including unsuffixed `bug44899`, `bug46238`, `bug48248`, `foreach_010`,
 `foreach_016` and `foreach_list_001`, remain excluded. Extra sessions `phpc-22` and stale `phpc-2` are
