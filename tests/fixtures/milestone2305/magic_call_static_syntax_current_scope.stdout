@@ -1,0 +1,7 @@
+child:namedBase:1,a
+child:namedChild:2,b
+child:selfCall:3,c
+child:parentCall:4,d
+child:lateCall:5,e
+child:dynamicClass:6,f
+child:dynamicObject:7,g

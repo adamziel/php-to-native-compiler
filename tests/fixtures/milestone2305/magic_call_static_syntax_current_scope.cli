@@ -1,0 +1,1 @@
+$ phpc run tests/fixtures/milestone2305/magic_call_static_syntax_current_scope.php

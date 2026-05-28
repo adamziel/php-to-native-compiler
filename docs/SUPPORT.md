@@ -2860,8 +2860,13 @@
   string keys. Direct variable array arguments imported into magic `$args`
   preserve covered by-value COW reference leaves, so writes through a referenced
   nested bucket in `__call()` update the original reference cell while plain
-  buckets remain copy-on-write. Malformed public `__call` metadata is rejected
-  by the shared runtime callable validator before magic `$args` packing.
+  buckets remain copy-on-write. Missing static-syntax method calls (`Name::`,
+  `self::`, `parent::`, `static::`, and supported dynamic static receivers)
+  made from an instance method context first dispatch through the current
+  `$this` object's visible non-static `__call()` before falling back to
+  `__callStatic()` or an undefined-method diagnostic. Malformed public `__call`
+  metadata is rejected by the shared runtime callable validator before magic
+  `$args` packing.
 - bounded object string conversion through visible non-static `__toString()`
   for `echo $object`, `print $object`, `(string) $object`, binary
   concatenation, and concat compound assignment `.=` over the current

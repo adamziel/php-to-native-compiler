@@ -15,6 +15,14 @@ Implemented:
   receiver identities, invalid magic signatures, arbitrary callable-object
   magic, spread/unpack breadth, and native IR/assembly parity remain outside
   this interpreter-focused slice.
+- Added interpreter static-syntax missing-method fallback to current instance
+  magic `__call()`. Missing `Name::`, `self::`, `parent::`, `static::`, and
+  supported dynamic static receiver calls made from an instance method now
+  route through the current `$this` object's visible non-static `__call()`
+  before considering `__callStatic()` or undefined-method diagnostics. Focused
+  evidence covers the pinned `tests/classes/__call_004.phpt` target plus a
+  generalized fixture that keeps `__callStatic()` present to prove instance
+  magic is favored.
 
 ## 2026-05-27
 
