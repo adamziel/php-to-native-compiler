@@ -1,68 +1,101 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 01:29 CEST
+Updated: 2026-05-28 02:49 CEST
+Primary source head: `3e702be4 docs: account enum autoload lookup`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
-Evaluation marker: `20260526T040843Z`
 
-Progress counts only generalized, tested, committed primary source work.
-Dirty WIP, lane-local claims, docs-only substitutions, tests-only GO,
-exact-shape production lowering, and broad gates without focused proof do not
-move the bars.
+## Progress Score
 
-## Snapshot
+This file is the public progress report for the project. AO workers and the
+supervisor must update this file before claiming public progress.
 
-| Area | Integrated | Current read |
-| --- | ---: | --- |
-| Overall roadmap | **93%** `[##################--]` | Generated C covers many selected calls, includes, classes, refs, traits, magic access, buffers, destructors, shutdown callbacks, and cleanup transfers. |
-| Executable PHP semantics | **99%** `[###################-]` | Latest source work routes interpreter `enum_exists()` misses through SPL autoload callbacks. |
-| Runtime/ABI foundations | **91%** `[##################--]` | Remaining pressure is arbitrary alias transfer, broader autoload/import fallback, malformed magic signatures, cleanup parity, and broader lookup parity. |
-| Compiler/backend consumers | **85%** `[#################---]` | Generated C is primary; LLVM has selected parity; direct assembly lags newer ABIs. |
-| Arrays/refs/COW | **86%** `[#################---]` | Direct reference-slot `foreach` owners are integrated; arbitrary alias roots, broader owners, and backend parity remain. |
-| Classes/traits/objects | **91%** `[##################--]` | Selected metadata, traits, typed props, aliases, enum autoload lookup, visibility, and magic reads/writes are integrated. |
-| Cleanup/lifecycle | **41%** `[########------------]` | Selected output-buffer, destructor, shutdown, include/require, comparison-abort, and bounded throw cleanup exist; real exceptions remain. |
-| Backend parity | **45%** `[#########-----------]` | Active LLVM watch: output buffers, property metadata, callable membership; reference write-through waits on LLVM/ASM tooling. |
+Progress is the pinned php-src PHPT full-suite pass rate:
 
-## Recent Source Ledger
+`passed runnable PHPTs / total runnable PHPTs`
 
-| Commit | Capability | Proof anchor |
+Current score: **unmeasured; 0% claimed**.
+
+No baseline full-suite run has been recorded yet. The harness is bootstrapped,
+but the project percent does not move until a full-suite result is written to
+`/home/claude/supervised-php-compiler/state/php-core-suite-history.tsv`.
+
+## PHPT Harness
+
+| Item | State | Evidence |
 | --- | --- | --- |
-| `0fa7b666` | Interpreter `enum_exists()` now uses the existing SPL autoload callback/recheck path for enum misses while keeping generated-native enum metadata blocked. | `state/logs/phpc-primary-enum-autoload-a5abdbb5-20260528.gates.log`, sha256 `3554aa11ec5e148a73f3e8fd73d5ce6ef5f113e926d8e65f99ce72698b91707f`. |
-| `2ef16e0d` | Request-scope `throw` inside active generated-C `finally` replays `finally` before the current unsupported-throw fatal boundary. | `state/logs/phpc-primary-throw-finally-fd52417e-20260528.gates.log`, sha256 `766c5ff4c79567a7874fa34f171ab049a0ae8549abf9aedffd50b354c1ca074d`. |
-| `9c49c29b` | Generic generated-C comparison aborts now use cleanup-aware native error exits instead of direct abort-code returns. | `state/logs/phpc-primary-comparison-abort-cleanup-4ed1624e-20260528.gates.log`, sha256 `fe7f708e74134428048c31a12b8e642070bea30228b576a28062c8ea6ee3db33`. |
-| `d97a9fcf` | Dynamic runtime-registry missing required include paths run active generated-C `finally` before fatal diagnostics/exit. | `state/logs/phpc-primary-dynamic-include-finally-8a0a982f-20260528.gates.log`, sha256 `f2b7fc3cc6527e3b4b5b91488e5bd409fb568a07f71eba01416ca8e2b2861cd0`. |
+| php-src pin | Done | `/home/claude/php-src-phpt` at `f97ff597429a2fe633665a7e02d97c8077f9f90f` |
+| Static inventory | Done | 21,827 PHPT files; 12,777 static runnable candidates |
+| `phpc` PHPT wrapper | Done | `/home/claude/supervised-php-compiler/tools/phpc-phpt-wrapper` |
+| Skip/xfail ledger | Started | `/home/claude/supervised-php-compiler/state/php-core-suite-skip-ledger.tsv` |
+| First full-suite baseline | Not run | Required before any percent claim |
 
-Older committed source work is intentionally summarized by the bars. Use
-`git log --oneline` and gate logs under
-`/home/claude/supervised-php-compiler/state/logs/` for historical proof.
+Focused PHPT history is tracked separately in
+`/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
+Focused passes prove candidate direction; they do not define project percent.
 
-## Remaining Gaps
+## Batch 001
 
-- Reference/COW identity: arbitrary alias-root writeback, broader `foreach`
-  owners, reference-returning ArrayAccess, and backend parity.
-- Object model: broader object/static-property shapes, magic/constructor
-  breadth, return references, spread breadth, metadata diagnostics, and full
-  SPL/autoload/class-alias/import fallback.
-- Cleanup/control flow: real Throwable propagation, catch binding, broad
-  `finally` transfer semantics, dynamic include/require fatal cleanup, exact
-  destructor/shutdown/output-buffer ordering, and object lifetime cleanup.
-- Diagnostics/backend parity: malformed magic signatures, source ordering,
-  suppression/custom handlers, and generated-C/LLVM/ASM parity.
+Policy: stage 10 accepted generalized source PRs, run focused gates per PR, run
+the full PHPT suite once after PR 10, repair regressions, then merge the whole
+batch.
 
-## Current Queue Read
+Current batch status: **9/10 accepted, not merged**.
 
-- Do not requeue consumed shutdown, missing-required-include finally,
-  dynamic-registry require/finally, reference-slot `foreach`, or
-  include-return-finally variants. Do not requeue interpreter `enum_exists()`
-  SPL-autoload lookup.
-- Source watch: next current-head queue or scout source candidate that survives
-  non-repeat guards.
-- Backend watch: LLVM output-buffer, property metadata, and callable
-  membership; LLVM references stay parked until LLVM/ASM tooling is available.
-- Reject: docs-only, tests-only, empty patches, stale artifacts, recursive
-  source recognizers, and broad tests without focused proof.
+Accepted for staging:
 
-## Verification Policy
+| # | Candidate | Main proof |
+| ---: | --- | --- |
+| 1 | Magic-method signature diagnostics | Current-head review, focused diagnostics gates |
+| 2 | Symbol-table foreach owners | Current-head review, focused native-link gates |
+| 3 | Exception/catch/finally propagation | Current-head review, focused exception gates |
+| 4 | Generated-C return-reference sources | Current-head review, accepted-stack compatibility, focused reference-return gates |
+| 5 | Closing-tag statement terminator | Focused `tests/basic/001.phpt`, invalid-syntax review, accepted-stack compatibility |
+| 6 | Object lifecycle live roots | Caller-frame live-root review, accepted-stack compatibility, focused destructor gates |
+| 7 | Grouped namespace class imports | Current-head review, accepted-stack compatibility, focused compiler gates, wrapper PHPT proof |
+| 8 | By-reference foreach lingering slots | Accepted-stack review, focused `Zend/tests/foreach/foreach_reference.phpt`, slot-preserving array-copy gates |
+| 9 | Magic method startup signature fatals | Accepted-stack review, focused `tests/classes/__call_002.phpt`, generalized magic contract gates |
 
-Keep this file compact: update bars only when behavior moves, add at most one
-short row per source capability, cite one gate-log path and hash, and keep
-detailed command transcripts in supervisor logs instead of embedding them here.
+Pending candidates:
+
+| Candidate | State |
+| --- | --- |
+| Multiple namespace declarations | AO rebased the candidate on the 9/10 stack, opened PR #1, and passed focused `Zend/tests/namespaces/ns_065.phpt`; independent reviewer/critic acceptance still pending before this becomes PR 10 |
+| `Zend/tests/bug39944.phpt` reference invocation | AO produced PR #2 with focused PASS and patch/report artifacts; independent reviewer/critic acceptance still pending before this can become PR 10 |
+| Anonymous-class dynamic-call blocker | AO scout classified this as NO-GO for Batch 001 PR 10; deferred as a broader parser/interpreter/native feature |
+| PHPT focused queue | `tests/classes/__set__get_002.phpt` passes on the 9/10 stack; r85 queue now feeds additional coder lanes |
+| Codex thread-store permissions | Fixed current session directory execute bit; smoke passed |
+| Disk/data cleanup | Reclaimed Codex SQLite WAL; `/home` free space is back above 290G |
+| Agent Orchestrator migration | AO is installed, configured, polling this project, and is being handed persistent critic/reviewer/progress-reporter/coder control |
+
+## AO Control Plane
+
+AO dashboard: `http://localhost:3000/projects/php-to-native-compiler`.
+
+Required live roles:
+
+| Role | Responsibility |
+| --- | --- |
+| Critic | Read-only audit for exact-shape lowering, shallow evidence, stale artifacts, and premature completion |
+| Reviewer | Independent candidate apply/review/focused-gate proof before Batch 001 acceptance |
+| Progress reporter | Keeps this `PROGRESS.md` file and durable supervisor state current after material AO events |
+| Coders | Work disjoint focused PHPT lanes from the queue; each lane must produce a patch, PASS-NO-PATCH, or NO-GO artifact |
+
+## Current Rules
+
+- No exact-shape production lowering for individual PHPTs.
+- No docs-only or tests-only progress.
+- No full PHPT suite for every change.
+- No batch merge before 10 accepted PRs, a full PHPT run, and regression repair.
+- Legacy roadmap bars are retired; use PHPT pass rate as the only percent.
+
+## Recent Source Anchors
+
+| Commit | Capability | Gate log |
+| --- | --- | --- |
+| `0fa7b666` | Interpreter `enum_exists()` now uses SPL autoload callback/recheck for enum misses. | `state/logs/phpc-primary-enum-autoload-a5abdbb5-20260528.gates.log` |
+| `2ef16e0d` | Request-scope `throw` inside active generated-C `finally` replays `finally` before the current unsupported-throw fatal boundary. | `state/logs/phpc-primary-throw-finally-fd52417e-20260528.gates.log` |
+| `9c49c29b` | Generated-C comparison aborts now use cleanup-aware native error exits. | `state/logs/phpc-primary-comparison-abort-cleanup-4ed1624e-20260528.gates.log` |
+| `d97a9fcf` | Dynamic runtime-registry missing required includes run active generated-C `finally` before fatal diagnostics. | `state/logs/phpc-primary-dynamic-include-finally-8a0a982f-20260528.gates.log` |
+
+Detailed worker logs, PHPT inventory, batch review reports, and skip policy live
+under `/home/claude/supervised-php-compiler/state/`.
