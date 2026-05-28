@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 15:10 CEST
+Updated: 2026-05-28 15:14 CEST
 Primary branch: `master`
-Latest source head: `fbeed70d fix: dispatch dynamic static method strings`
+Latest source head: `229c38cf test: cover dynamic static method strings`
 
 ## Progress Score
 
@@ -57,13 +57,15 @@ remains **1193 / 20294 runnable PHPTs = 5.88%** until another pinned full-suite
 run is completed, parsed, regression-checked, and published here.
 
 - primary source head:
+  `229c38cf test: cover dynamic static method strings`
+- primary implementation head:
   `fbeed70d fix: dispatch dynamic static method strings`
 - p28 final handoff head:
-  `1766700ef3445894d8fe16e3efbaa8c1b503b683 fix: dispatch dynamic static method strings`
+  `f6b59ce0d504f116d1263b7d3cc83d7489643277 fix: dispatch dynamic static method strings`
 - exported integration patch:
   `/home/claude/supervised-php-compiler/state/patches/ao-integration-p19-dynamic-call-static-method-strings-20260528.patch`
 - exported integration patch SHA256:
-  `d0cd0e814924babc1287b3cdb254ca939a27f715d5f97d3e748649f6bdf0c16a`
+  `4be43e1bbaf1cff03a497fad824ab06d9aba3fe82af9a824345f96c8bac650c9`
 - source candidate patch SHA256:
   `54b416fcffd52bfd82834185fe0c10734c09844c72d565282652e32f19980613`
 - reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
@@ -78,6 +80,11 @@ run is completed, parsed, regression-checked, and published here.
   `Zend/tests/dynamic_call/dynamic_call_non_static.phpt`, and
   `Zend/tests/dynamic_call/dynamic_call_freeing.phpt`
 - full PHPT suite: not run for this single source checkpoint
+- supervisor alignment: p28's final handoff export superseded the earlier
+  source-only export by adding the focused Rust test hunk. Primary now includes
+  that test coverage, and the supervisor reran `git diff --check`,
+  `cargo fmt --all -- --check`, and exact Rust test
+  `dynamic_static_method_string_calls_are_dispatched` with PASS.
 
 This checkpoint generalizes dynamic string callables of the `Class::method`
 shape through the existing static callable dispatch path, adds PHP-shaped
