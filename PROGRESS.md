@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 16:33 CEST
+Updated: 2026-05-28 16:44 CEST
 Primary branch: `master`
-Latest source head: `8f4e7996 fix: support static object array callbacks`
+Latest source head: `f508515b fix: allow abstract trait override targets`
 
 ## Progress Score
 
@@ -50,6 +50,46 @@ Focused PHPT history is tracked separately in
 Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
+
+Post-Batch002 source checkpoint 17 is now primary-integrated under AO
+supervision. This is a source checkpoint with focused proof, not a percentage
+change. The public score remains **1193 / 20294 runnable PHPTs = 5.88%** until
+another pinned full-suite run is completed, parsed, regression-checked, and
+published here.
+
+- primary source head:
+  `f508515b fix: allow abstract trait override targets`
+- p28 final handoff head:
+  `72dda13203750f569189f4a9f84bbc4b6d48cbc7`
+- exported integration patch:
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p17-attributes-next-source-20260528.patch`
+- exported integration patch SHA256:
+  `ae96e39c4792bf581f3b72df8565903e0e9998eb745640e7294f8bf3d754a80b`
+- source candidate patch SHA256:
+  `6da60add13f1c5be68041f5990ed6e35835c6d97bba8d4c4e9184e6e8910cea4`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS` with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-FOR-INTEGRATION /
+  P17-ATTRIBUTES-NEXT-SOURCE`
+- focused gates: PASS for `git diff --check`, docs/PROGRESS exclusion,
+  production exact-shape audit, `cargo fmt --all -- --check`, `cargo test -p
+  phpc --test object_model
+  abstract_trait_methods_can_satisfy_method_override_attributes -- --exact
+  --test-threads=1`, `cargo build -p phpc`, and wrapper PHPTs
+  `Zend/tests/attributes/override/016.phpt`,
+  `Zend/tests/attributes/override/gh12189_6.phpt`, and
+  `Zend/tests/attributes/override/021.phpt`
+- full PHPT suite: not run for this single source checkpoint
+
+This checkpoint generalizes abstract trait method support for method
+`#[\Override]` validation. Trait parser support now accepts public abstract
+method signatures with semicolon bodies, abstract trait requirements are kept
+out of executable method runtime tables, and startup override validation can
+match methods against directly used and nested composed abstract trait
+requirements. It is not keyed to PHPT filenames, fixture trait/class names,
+method names, source hashes, or exact output rows.
+
+Previous post-Batch002 source checkpoint 16 was p19 dynamic call:
 
 Post-Batch002 source checkpoint 16 is now primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
