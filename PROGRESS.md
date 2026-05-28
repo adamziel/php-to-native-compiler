@@ -83,8 +83,8 @@ Required live roles:
 
 Current AO snapshot: `phpc-orchestrator` working; `phpc-4` critic audit;
 `phpc-7` independent reviewer; `phpc-8` progress reporter; `phpc-9`
-focused coder; PR #1/r81 and PR #2/r82 are open PR 10 candidates pending
-independent acceptance.
+magic-signature coder; `phpc-10` by-reference coder. PR #1/r81 and PR #2/r82
+are open PR 10 candidates pending independent acceptance.
 
 ## Current Rules
 
