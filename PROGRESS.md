@@ -40,23 +40,36 @@ Focused passes prove candidate direction; they do not define project percent.
 
 Batch002 source integration is active under AO. The integration worker
 `phpc-28` built the reviewed stack on the accepted Batch001 base and gated
-seven source candidates:
+nine source candidates, with independent p7 review and phpc-26 critic approval
+for the public checkpoint.
 
-- stack head: `256574bc fix: initialize undefined by-reference array arguments`
+- stack head: `139931fd fix: materialize missing by-reference variable arguments`
 - exported patch:
   `/home/claude/supervised-php-compiler/state/patches/ao-integration-batch002-stack-20260528.patch`
 - exported patch SHA256:
-  `af3b3f3a507ca895b46e4c65bd947f1b35d89fa10542c219de41996f1be28ed1`
-- focused gates: PASS for diff checks, `cargo fmt`, focused Rust tests,
-  `cargo build -p phpc`, fixture harness, and a 19/19 focused PHPT union
-- full PHPT suite: not rerun; public score remains 5.51%
+  `6d32f1a019fbada399e240878ba83a9777c5bcff889a1e6f973214f69c179f85`
+- applied/gated stack: r81 plus Batch002 candidates 1-9
+- focused gates: PASS for diff/fmt checks, focused Rust tests,
+  `cargo build -p phpc`, and focused PHPT anchors including
+  `tests/lang/passByReference_005.phpt`, `_006.phpt`, `_004.phpt`, and
+  `_002.phpt` (4/4) on the candidate9 stack
+- review gate: p7 recorded `SAFE-INTEGRATION-CHECKPOINT / STACK-CLEAN-9-GATED`
+  with `FINAL_FAIL=0`
+- critic gate: phpc-26 recorded `SAFE-INTEGRATION-CHECKPOINT — STACK-CLEAN-9 only`
+- full PHPT suite: not rerun; public score remains 1118 / 20294 runnable PHPTs
+  (5.51%)
 
-Candidate 8 / PR #19 `passByReference_003` is the next integration blocker.
-It conflicts on the gated stack in `compiler/src/interpreter.rs` and
-`compiler/tests/functions_and_scopes.rs`; AO is resolving or rebasing that
-source conflict before counting it as progress. Coder lanes `phpc-15` through
-`phpc-19` have been switched from probe-only PHPT mapping to source-patch
-candidate work.
+Candidate 9 was not a direct patch replay: the reviewed patch depended on a
+downstream stack order, so p28 manually integrated the same generalized
+missing-variable warning/null and missing by-reference variable materialization
+semantics onto the current source stack before running the focused gates. The
+exported stack patch contains source/test changes only; public progress rows for
+PASS-NO-PATCH probes remain frozen while source integration is active.
+
+Candidate 10 is queued for source review: p16 static magic callback dispatch,
+patch SHA256 `561b597f23a510902f02d9dd4cb25b23c46b15e279dea5d232f269b7b1639613`.
+Its apply audit has passed and focused gates are pending while AO waits for an
+available cargo slot.
 
 ## Batch 001
 
