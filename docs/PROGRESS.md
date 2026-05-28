@@ -4,6 +4,19 @@
 
 Implemented:
 
+- Added interpreter source-order named-argument binding for direct
+  user-function calls, including by-reference parameters. Named arguments are
+  evaluated in source order, assigned to declared parameter slots, skipped
+  optional parameters use their defaults, and the existing direct-variable and
+  direct array-offset by-reference bridges now apply after name normalization.
+  Focused gates cover out-of-order named by-value parameters, out-of-order
+  named by-reference variables and array offsets, the pinned PHPT
+  `Zend/tests/named_params/references.phpt`, and the adjacent
+  `tests/lang/passByReference_007.phpt` regression anchor. Spread/unpack,
+  named variadic collection, dynamic/callback call surfaces, exact PHP
+  diagnostics for invalid named-argument forms, and native lowering remain
+  unsupported.
+
 - Added interpreter call-expression reference fallback for direct
   free-function, direct variable receiver object-method, and named static
   method calls. Statement-form reference assignment from calls known to return

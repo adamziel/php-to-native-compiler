@@ -889,6 +889,34 @@ echo "|", cache_get("notoptions");
 }
 
 #[test]
+fn named_reference_arguments_bind_declared_params_in_source_order() {
+    let execution = run_source(
+        r#"<?php
+function touch(&$p0 = null, $p1 = null, &$p2 = null, $p3 = null, &$p4 = null, $p5 = null) {
+    $p0++;
+    $p4++;
+    echo "value=", $p1, ":", $p5, "\n";
+}
+
+$v0 = $v1 = $v4 = $v5 = 0;
+touch(p4: $v4, p5: $v5, p0: $v0, p1: $v1);
+echo "vars=", $v0, ":", $v1, ":", $v4, ":", $v5, "\n";
+
+$items = [0 => 0, 1 => 0, 4 => 0, 5 => 0];
+touch(p4: $items[4], p5: $items[5], p0: $items[0], p1: $items[1]);
+echo "array=", $items[0], ":", $items[1], ":", $items[4], ":", $items[5];
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(
+        execution.stdout,
+        "value=0:0\nvars=1:0:1:0\nvalue=0:0\narray=1:0:1:0"
+    );
+    assert_eq!(execution.exit_code, 0);
+}
+
+#[test]
 fn method_reference_parameter_invocation_copies_back_direct_variable() {
     let execution = run_source(
         r#"<?php
@@ -8862,22 +8890,19 @@ echo first(...$items);
 }
 
 #[test]
-fn named_arguments_are_rejected_at_source_order_call_argument_boundary() {
-    let error = runtime_error(
+fn named_arguments_bind_to_declared_parameter_order() {
+    let execution = run_source(
         r#"<?php
-function greet($name) {
-    return $name;
+function greet($greeting, $name) {
+    return $greeting . ", " . $name;
 }
-echo greet(name: "Ada");
+echo greet(name: "Ada", greeting: "Hello");
 "#,
-    );
+    )
+    .unwrap();
 
-    assert_eq!(error.line, 5);
-    assert_eq!(error.column, 12);
-    assert_eq!(
-        error.message,
-        "unsupported call source-order call argument: interpreter call consumers have not been wired to shared source-order call-argument normalization"
-    );
+    assert_eq!(execution.stdout, "Hello, Ada");
+    assert_eq!(execution.exit_code, 0);
 }
 
 #[test]
