@@ -8297,6 +8297,13 @@ struct CallFrameArgumentBindings {
 }
 
 #[derive(Debug, Clone)]
+struct EvaluatedCallArgument {
+    value: Value,
+    reference_binding: Option<ReferenceBinding>,
+    array_copy_source_binding: Option<ArrayCopySourceBinding>,
+}
+
+#[derive(Debug, Clone)]
 enum ArrayCopySourceRoot {
     ObjectProperty { object: PhpObject, property: String },
     AliasPath(ArrayOffsetAliasRoot),
@@ -43688,6 +43695,312 @@ impl Interpreter {
         })
     }
 
+    fn evaluate_user_function_call_argument_for_param(
+        &mut self,
+        function: &FunctionDecl,
+        param: &FunctionParam,
+        param_index: usize,
+        arg: &Expr,
+        source_index: usize,
+        caller_scope: &mut SymbolTable,
+        allow_reference_return_array_bindings: bool,
+    ) -> CompileResult<EvaluatedCallArgument> {
+        if param.by_reference {
+            if let Expr::Variable(caller_name, _) = arg {
+                if let Some(aliases) = caller_scope.array_offset_aliases_for_name(caller_name) {
+                    if let Some(cell) =
+                        caller_scope.reference_cell_for_array_offset_alias_group(&aliases)
+                    {
+                        caller_scope.bind_static_to_cell(caller_name, cell.clone());
+                        let value = cell.value_cloned();
+                        return Ok(EvaluatedCallArgument {
+                            value,
+                            reference_binding: Some(ReferenceBinding {
+                                param_name: param.name.clone(),
+                                target: ReferenceBindingTarget::CallerCell {
+                                    name: caller_name.clone(),
+                                    cell,
+                                },
+                            }),
+                            array_copy_source_binding: None,
+                        });
+                    }
+                    let value = caller_scope.read_named(caller_name).ok_or_else(|| {
+                        runtime_error(arg.span(), RuntimeError::undefined_variable(caller_name))
+                    })?;
+                    return Ok(EvaluatedCallArgument {
+                        value,
+                        reference_binding: Some(ReferenceBinding {
+                            param_name: param.name.clone(),
+                            target: ReferenceBindingTarget::ArrayOffsets(aliases),
+                        }),
+                        array_copy_source_binding: None,
+                    });
+                }
+                let caller_cell = caller_scope.read_cell(caller_name).ok_or_else(|| {
+                    runtime_error(arg.span(), RuntimeError::undefined_variable(caller_name))
+                })?;
+                let value = caller_cell.value_cloned();
+                let source = matches!(value, Value::Array(_))
+                    .then(|| {
+                        caller_scope.public_or_dirty_object_property_array_copy_source_for_static(
+                            caller_name,
+                        )
+                    })
+                    .flatten();
+                let source_was_dirty = caller_scope
+                    .dirty_public_object_property_array_copy_sources
+                    .contains(caller_name);
+                let target = if let Some(source) = source {
+                    ReferenceBindingTarget::CallerCellWithStaticArrayCopySource {
+                        name: caller_name.clone(),
+                        cell: caller_cell,
+                        source,
+                        source_was_dirty,
+                    }
+                } else {
+                    ReferenceBindingTarget::CallerCell {
+                        name: caller_name.clone(),
+                        cell: caller_cell,
+                    }
+                };
+                return Ok(EvaluatedCallArgument {
+                    value,
+                    reference_binding: Some(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target,
+                    }),
+                    array_copy_source_binding: None,
+                });
+            }
+
+            if let Some((value, target)) =
+                self.evaluate_reference_call_argument_binding(function, arg, caller_scope)?
+            {
+                return Ok(EvaluatedCallArgument {
+                    value,
+                    reference_binding: Some(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target,
+                    }),
+                    array_copy_source_binding: None,
+                });
+            }
+
+            let allow_by_value_overloaded_reference_argument =
+                !function.returns_by_reference || allow_reference_return_array_bindings;
+            if allow_by_value_overloaded_reference_argument {
+                if let Some((value, target)) =
+                    self.evaluate_by_value_array_access_reference_argument(arg, caller_scope)?
+                {
+                    return Ok(EvaluatedCallArgument {
+                        value,
+                        reference_binding: Some(ReferenceBinding {
+                            param_name: param.name.clone(),
+                            target,
+                        }),
+                        array_copy_source_binding: None,
+                    });
+                }
+                if let Some((value, target)) =
+                    self.evaluate_by_value_magic_get_reference_argument(arg, caller_scope)?
+                {
+                    return Ok(EvaluatedCallArgument {
+                        value,
+                        reference_binding: Some(ReferenceBinding {
+                            param_name: param.name.clone(),
+                            target,
+                        }),
+                        array_copy_source_binding: None,
+                    });
+                }
+            }
+
+            if let Some((alias, value)) =
+                self.evaluate_append_array_reference_argument(arg, caller_scope)?
+            {
+                if function.returns_by_reference && !allow_reference_return_array_bindings {
+                    return Err(runtime_error(
+                        arg.span(),
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "append array reference arguments are not implemented for reference-returning functions in the current subset",
+                        ),
+                    ));
+                }
+                return Ok(EvaluatedCallArgument {
+                    value,
+                    reference_binding: Some(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::ArrayOffset(alias),
+                    }),
+                    array_copy_source_binding: None,
+                });
+            }
+            if let Some((alias, value)) =
+                self.evaluate_direct_array_reference_argument(arg, caller_scope)?
+            {
+                if function.returns_by_reference && !allow_reference_return_array_bindings {
+                    return Err(runtime_error(
+                        arg.span(),
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "direct array reference arguments are not implemented for reference-returning functions in the current subset",
+                        ),
+                    ));
+                }
+                return Ok(EvaluatedCallArgument {
+                    value,
+                    reference_binding: Some(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::ArrayOffset(alias),
+                    }),
+                    array_copy_source_binding: None,
+                });
+            }
+
+            if allow_by_value_overloaded_reference_argument {
+                if let Some((value, target)) =
+                    self.evaluate_by_value_magic_get_array_reference_argument(arg, caller_scope)?
+                {
+                    return Ok(EvaluatedCallArgument {
+                        value,
+                        reference_binding: Some(ReferenceBinding {
+                            param_name: param.name.clone(),
+                            target,
+                        }),
+                        array_copy_source_binding: None,
+                    });
+                }
+            }
+
+            if let Some((alias, value)) =
+                self.evaluate_magic_get_array_reference_argument(arg, caller_scope)?
+            {
+                if function.returns_by_reference && !allow_reference_return_array_bindings {
+                    return Err(runtime_error(
+                        arg.span(),
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "magic __get array reference arguments are not implemented for reference-returning functions in the current subset",
+                        ),
+                    ));
+                }
+                return Ok(EvaluatedCallArgument {
+                    value,
+                    reference_binding: Some(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::ArrayOffset(alias),
+                    }),
+                    array_copy_source_binding: None,
+                });
+            }
+            if let Some((alias, value)) = self
+                .evaluate_visible_object_property_array_reference_argument(
+                    arg,
+                    caller_scope,
+                    true,
+                )?
+            {
+                if function.returns_by_reference && !allow_reference_return_array_bindings {
+                    return Err(runtime_error(
+                        arg.span(),
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "object-property array reference arguments are not implemented for reference-returning functions in the current subset",
+                        ),
+                    ));
+                }
+                return Ok(EvaluatedCallArgument {
+                    value,
+                    reference_binding: Some(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::ArrayOffset(alias),
+                    }),
+                    array_copy_source_binding: None,
+                });
+            }
+            if let Some((caller_cell, value, name, source, object_property)) =
+                self.evaluate_visible_object_property_reference_argument(arg, caller_scope)?
+            {
+                let target = if let Some(source) = source {
+                    let (object, property) = object_property.expect(
+                        "visible object-property copy sources carry their container target",
+                    );
+                    ReferenceBindingTarget::CallerCellWithArrayCopySource {
+                        cell: caller_cell,
+                        source,
+                        source_was_dirty: false,
+                        object,
+                        property,
+                    }
+                } else {
+                    ReferenceBindingTarget::CallerCell {
+                        name,
+                        cell: caller_cell,
+                    }
+                };
+                return Ok(EvaluatedCallArgument {
+                    value,
+                    reference_binding: Some(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target,
+                    }),
+                    array_copy_source_binding: None,
+                });
+            }
+            if let Some((caller_cell, value)) =
+                self.evaluate_magic_get_reference_argument(arg, caller_scope)?
+            {
+                return Ok(EvaluatedCallArgument {
+                    value,
+                    reference_binding: Some(ReferenceBinding {
+                        param_name: param.name.clone(),
+                        target: ReferenceBindingTarget::CallerCell {
+                            name: "<magic __get>".to_string(),
+                            cell: caller_cell,
+                        },
+                    }),
+                    array_copy_source_binding: None,
+                });
+            }
+
+            return Err(runtime_error(
+                arg.span(),
+                RuntimeError::unsupported_call(
+                    callable_name(&function.name),
+                    "reference parameter invocation is only implemented for direct variable, direct array-offset, direct public object-property array-offset, and bounded magic __get reference arguments in the current subset",
+                ),
+            ));
+        }
+
+        let (value, array_copy_source) =
+            self.evaluate_value_with_array_copy_source(arg, caller_scope)?;
+        let value = caller_scope.value_with_object_property_aliases_from_array_copy(
+            value,
+            array_copy_source.clone(),
+            true,
+        );
+        let array_copy_source_binding = if matches!(value, Value::Array(_)) {
+            array_copy_source.map(|source| {
+                let target_keys = if param.is_variadic {
+                    vec![ArrayKey::Int((source_index - param_index) as i64)]
+                } else {
+                    Vec::new()
+                };
+                (param.name.clone(), target_keys, source)
+            })
+        } else {
+            None
+        };
+
+        Ok(EvaluatedCallArgument {
+            value,
+            reference_binding: None,
+            array_copy_source_binding,
+        })
+    }
+
     fn reference_bindings_for_call_frame_array_copy_sources(
         function: &FunctionDecl,
         values: &[Value],
@@ -49365,6 +49678,50 @@ impl Interpreter {
         function: &FunctionDecl,
         args: &[Expr],
     ) -> Vec<(String, String, Vec<ArrayKey>)> {
+        if args
+            .iter()
+            .any(|arg| matches!(arg, Expr::NamedArgument { .. }))
+        {
+            let mut bindings = Vec::new();
+            let mut saw_named = false;
+            let mut positional_index = 0usize;
+            let mut assigned = vec![false; function.params.len()];
+            for arg in args {
+                let (param_index, expr) = match arg {
+                    Expr::NamedArgument { name, expr, .. } => {
+                        saw_named = true;
+                        let Some(param_index) =
+                            function.params.iter().position(|param| param.name == *name)
+                        else {
+                            continue;
+                        };
+                        (param_index, expr.as_ref())
+                    }
+                    Expr::SpreadArgument { .. } => return Vec::new(),
+                    expr => {
+                        if saw_named {
+                            return Vec::new();
+                        }
+                        let param_index = positional_index;
+                        positional_index += 1;
+                        (param_index, expr)
+                    }
+                };
+                let Some(param) = function.params.get(param_index) else {
+                    continue;
+                };
+                if param.by_reference || param.is_variadic || assigned[param_index] {
+                    continue;
+                }
+                assigned[param_index] = true;
+                let Expr::Variable(source_name, _) = expr else {
+                    continue;
+                };
+                bindings.push((param.name.clone(), source_name.clone(), Vec::new()));
+            }
+            return bindings;
+        }
+
         function
             .params
             .iter()
@@ -53582,6 +53939,20 @@ impl Interpreter {
         Vec<ReferenceBinding>,
         Vec<ArrayCopySourceBinding>,
     )> {
+        if args
+            .iter()
+            .any(|arg| matches!(arg, Expr::NamedArgument { .. }))
+        {
+            return self
+                .evaluate_user_function_named_call_arguments_with_options_and_array_copy_sources(
+                    function,
+                    args,
+                    span,
+                    caller_scope,
+                    allow_reference_return_array_bindings,
+                );
+        }
+
         let mut values = Vec::with_capacity(args.len());
         let mut reference_bindings = Vec::new();
         let mut by_value_array_copy_source_bindings = Vec::new();
@@ -53604,269 +53975,21 @@ impl Interpreter {
                 continue;
             };
 
-            if param.by_reference {
-                if let Expr::Variable(caller_name, _) = arg {
-                    if let Some(aliases) = caller_scope.array_offset_aliases_for_name(caller_name) {
-                        if let Some(cell) =
-                            caller_scope.reference_cell_for_array_offset_alias_group(&aliases)
-                        {
-                            caller_scope.bind_static_to_cell(caller_name, cell.clone());
-                            values.push(cell.value_cloned());
-                            reference_bindings.push(ReferenceBinding {
-                                param_name: param.name.clone(),
-                                target: ReferenceBindingTarget::CallerCell {
-                                    name: caller_name.clone(),
-                                    cell,
-                                },
-                            });
-                            continue;
-                        }
-                        let value = caller_scope.read_named(caller_name).ok_or_else(|| {
-                            runtime_error(arg.span(), RuntimeError::undefined_variable(caller_name))
-                        })?;
-                        values.push(value);
-                        reference_bindings.push(ReferenceBinding {
-                            param_name: param.name.clone(),
-                            target: ReferenceBindingTarget::ArrayOffsets(aliases),
-                        });
-                        continue;
-                    }
-                    let caller_cell = caller_scope.read_cell(caller_name).ok_or_else(|| {
-                        runtime_error(arg.span(), RuntimeError::undefined_variable(caller_name))
-                    })?;
-                    let value = caller_cell.value_cloned();
-                    let source = matches!(value, Value::Array(_))
-                        .then(|| {
-                            caller_scope
-                                .public_or_dirty_object_property_array_copy_source_for_static(
-                                    caller_name,
-                                )
-                        })
-                        .flatten();
-                    let source_was_dirty = caller_scope
-                        .dirty_public_object_property_array_copy_sources
-                        .contains(caller_name);
-                    values.push(value);
-                    let target = if let Some(source) = source {
-                        ReferenceBindingTarget::CallerCellWithStaticArrayCopySource {
-                            name: caller_name.clone(),
-                            cell: caller_cell,
-                            source,
-                            source_was_dirty,
-                        }
-                    } else {
-                        ReferenceBindingTarget::CallerCell {
-                            name: caller_name.clone(),
-                            cell: caller_cell,
-                        }
-                    };
-                    reference_bindings.push(ReferenceBinding {
-                        param_name: param.name.clone(),
-                        target,
-                    });
-                } else {
-                    if let Some((value, target)) =
-                        self.evaluate_reference_call_argument_binding(function, arg, caller_scope)?
-                    {
-                        values.push(value);
-                        reference_bindings.push(ReferenceBinding {
-                            param_name: param.name.clone(),
-                            target,
-                        });
-                        continue;
-                    }
-
-                    let allow_by_value_overloaded_reference_argument =
-                        !function.returns_by_reference || allow_reference_return_array_bindings;
-                    if allow_by_value_overloaded_reference_argument {
-                        if let Some((value, target)) = self
-                            .evaluate_by_value_array_access_reference_argument(arg, caller_scope)?
-                        {
-                            values.push(value);
-                            reference_bindings.push(ReferenceBinding {
-                                param_name: param.name.clone(),
-                                target,
-                            });
-                            continue;
-                        }
-                        if let Some((value, target)) =
-                            self.evaluate_by_value_magic_get_reference_argument(arg, caller_scope)?
-                        {
-                            values.push(value);
-                            reference_bindings.push(ReferenceBinding {
-                                param_name: param.name.clone(),
-                                target,
-                            });
-                            continue;
-                        }
-                    }
-
-                    if let Some((alias, value)) =
-                        self.evaluate_append_array_reference_argument(arg, caller_scope)?
-                    {
-                        if function.returns_by_reference && !allow_reference_return_array_bindings {
-                            return Err(runtime_error(
-                                arg.span(),
-                                RuntimeError::unsupported_call(
-                                    callable_name(&function.name),
-                                    "append array reference arguments are not implemented for reference-returning functions in the current subset",
-                                ),
-                            ));
-                        }
-                        values.push(value);
-                        reference_bindings.push(ReferenceBinding {
-                            param_name: param.name.clone(),
-                            target: ReferenceBindingTarget::ArrayOffset(alias),
-                        });
-                    } else if let Some((alias, value)) =
-                        self.evaluate_direct_array_reference_argument(arg, caller_scope)?
-                    {
-                        if function.returns_by_reference && !allow_reference_return_array_bindings {
-                            return Err(runtime_error(
-                                arg.span(),
-                                RuntimeError::unsupported_call(
-                                    callable_name(&function.name),
-                                    "direct array reference arguments are not implemented for reference-returning functions in the current subset",
-                                ),
-                            ));
-                        }
-                        values.push(value);
-                        reference_bindings.push(ReferenceBinding {
-                            param_name: param.name.clone(),
-                            target: ReferenceBindingTarget::ArrayOffset(alias),
-                        });
-                    } else {
-                        if allow_by_value_overloaded_reference_argument {
-                            if let Some((value, target)) = self
-                                .evaluate_by_value_magic_get_array_reference_argument(
-                                    arg,
-                                    caller_scope,
-                                )?
-                            {
-                                values.push(value);
-                                reference_bindings.push(ReferenceBinding {
-                                    param_name: param.name.clone(),
-                                    target,
-                                });
-                                continue;
-                            }
-                        }
-
-                        if let Some((alias, value)) =
-                            self.evaluate_magic_get_array_reference_argument(arg, caller_scope)?
-                        {
-                            if function.returns_by_reference
-                                && !allow_reference_return_array_bindings
-                            {
-                                return Err(runtime_error(
-                                    arg.span(),
-                                    RuntimeError::unsupported_call(
-                                        callable_name(&function.name),
-                                        "magic __get array reference arguments are not implemented for reference-returning functions in the current subset",
-                                    ),
-                                ));
-                            }
-                            values.push(value);
-                            reference_bindings.push(ReferenceBinding {
-                                param_name: param.name.clone(),
-                                target: ReferenceBindingTarget::ArrayOffset(alias),
-                            });
-                        } else if let Some((alias, value)) = self
-                            .evaluate_visible_object_property_array_reference_argument(
-                                arg,
-                                caller_scope,
-                                true,
-                            )?
-                        {
-                            if function.returns_by_reference
-                                && !allow_reference_return_array_bindings
-                            {
-                                return Err(runtime_error(
-                                    arg.span(),
-                                    RuntimeError::unsupported_call(
-                                        callable_name(&function.name),
-                                        "object-property array reference arguments are not implemented for reference-returning functions in the current subset",
-                                    ),
-                                ));
-                            }
-                            values.push(value);
-                            reference_bindings.push(ReferenceBinding {
-                                param_name: param.name.clone(),
-                                target: ReferenceBindingTarget::ArrayOffset(alias),
-                            });
-                        } else if let Some((caller_cell, value, name, source, object_property)) =
-                            self.evaluate_visible_object_property_reference_argument(
-                                arg,
-                                caller_scope,
-                            )?
-                        {
-                            values.push(value);
-                            let target = if let Some(source) = source {
-                                let (object, property) = object_property.expect(
-                                    "visible object-property copy sources carry their container target",
-                                );
-                                ReferenceBindingTarget::CallerCellWithArrayCopySource {
-                                    cell: caller_cell,
-                                    source,
-                                    source_was_dirty: false,
-                                    object,
-                                    property,
-                                }
-                            } else {
-                                ReferenceBindingTarget::CallerCell {
-                                    name,
-                                    cell: caller_cell,
-                                }
-                            };
-                            reference_bindings.push(ReferenceBinding {
-                                param_name: param.name.clone(),
-                                target,
-                            });
-                        } else if let Some((caller_cell, value)) =
-                            self.evaluate_magic_get_reference_argument(arg, caller_scope)?
-                        {
-                            values.push(value);
-                            reference_bindings.push(ReferenceBinding {
-                                param_name: param.name.clone(),
-                                target: ReferenceBindingTarget::CallerCell {
-                                    name: "<magic __get>".to_string(),
-                                    cell: caller_cell,
-                                },
-                            });
-                        } else {
-                            return Err(runtime_error(
-                                arg.span(),
-                                RuntimeError::unsupported_call(
-                                    callable_name(&function.name),
-                                    "reference parameter invocation is only implemented for direct variable, direct array-offset, direct public object-property array-offset, and bounded magic __get reference arguments in the current subset",
-                                ),
-                            ));
-                        }
-                    }
-                }
-            } else {
-                let (value, array_copy_source) =
-                    self.evaluate_value_with_array_copy_source(arg, caller_scope)?;
-                let value = caller_scope.value_with_object_property_aliases_from_array_copy(
-                    value,
-                    array_copy_source.clone(),
-                    true,
-                );
-                if matches!(value, Value::Array(_)) {
-                    if let Some(source) = array_copy_source {
-                        let target_keys = if param.is_variadic {
-                            vec![ArrayKey::Int((index - param_index) as i64)]
-                        } else {
-                            Vec::new()
-                        };
-                        by_value_array_copy_source_bindings.push((
-                            param.name.clone(),
-                            target_keys,
-                            source,
-                        ));
-                    }
-                }
-                values.push(value);
+            let evaluated = self.evaluate_user_function_call_argument_for_param(
+                function,
+                param,
+                param_index,
+                arg,
+                index,
+                caller_scope,
+                allow_reference_return_array_bindings,
+            )?;
+            values.push(evaluated.value);
+            if let Some(binding) = evaluated.reference_binding {
+                reference_bindings.push(binding);
+            }
+            if let Some(binding) = evaluated.array_copy_source_binding {
+                by_value_array_copy_source_bindings.push(binding);
             }
         }
 
@@ -53883,6 +54006,181 @@ impl Interpreter {
                     "variadic reference parameter invocation is not implemented",
                 ),
             ));
+        }
+
+        Ok((
+            values,
+            reference_bindings,
+            by_value_array_copy_source_bindings,
+        ))
+    }
+
+    fn evaluate_user_function_named_call_arguments_with_options_and_array_copy_sources(
+        &mut self,
+        function: &FunctionDecl,
+        args: &[Expr],
+        span: Span,
+        caller_scope: &mut SymbolTable,
+        allow_reference_return_array_bindings: bool,
+    ) -> CompileResult<(
+        Vec<Value>,
+        Vec<ReferenceBinding>,
+        Vec<ArrayCopySourceBinding>,
+    )> {
+        let mut slots: Vec<Option<EvaluatedCallArgument>> =
+            (0..function.params.len()).map(|_| None).collect();
+        let mut saw_named = false;
+        let mut positional_index = 0usize;
+        let mut highest_param_index: Option<usize> = None;
+
+        for (source_index, arg) in args.iter().enumerate() {
+            let (param_index, arg_expr) = match arg {
+                Expr::NamedArgument { name, expr, span } => {
+                    saw_named = true;
+                    let Some(param_index) =
+                        function.params.iter().position(|param| param.name == *name)
+                    else {
+                        return Err(runtime_error(
+                            *span,
+                            RuntimeError::unsupported_call(
+                                callable_name(&function.name),
+                                format!(
+                                    "named argument ${name} does not match a declared parameter in the current subset"
+                                ),
+                            ),
+                        ));
+                    };
+                    (param_index, expr.as_ref())
+                }
+                Expr::SpreadArgument { span, .. } => {
+                    return Err(runtime_error(
+                        *span,
+                        RuntimeError::unsupported_call(
+                            callable_name(&function.name),
+                            "spread arguments mixed with named arguments are not implemented in the current subset",
+                        ),
+                    ));
+                }
+                expr => {
+                    if saw_named {
+                        return Err(runtime_error(
+                            expr.span(),
+                            RuntimeError::unsupported_call(
+                                callable_name(&function.name),
+                                "positional arguments after named arguments are not implemented in the current subset",
+                            ),
+                        ));
+                    }
+                    let param_index = positional_index;
+                    positional_index += 1;
+                    (param_index, expr)
+                }
+            };
+
+            let Some((effective_param_index, param)) = function
+                .params
+                .get(param_index)
+                .map(|param| (param_index, param))
+                .or_else(|| {
+                    function
+                        .params
+                        .iter()
+                        .enumerate()
+                        .next_back()
+                        .filter(|(_, param)| param.is_variadic)
+                })
+            else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        callable_name(&function.name),
+                        arity_expectation(
+                            required_param_count(function),
+                            function.params.len(),
+                            false,
+                        ),
+                        args.len(),
+                    ),
+                ));
+            };
+
+            if param.is_variadic {
+                return Err(runtime_error(
+                    arg.span(),
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        "variadic parameters with named arguments are not implemented in the current subset",
+                    ),
+                ));
+            }
+
+            if slots[effective_param_index].is_some() {
+                return Err(runtime_error(
+                    arg.span(),
+                    RuntimeError::unsupported_call(
+                        callable_name(&function.name),
+                        format!(
+                            "duplicate argument for parameter ${} is not implemented in the current subset",
+                            param.name
+                        ),
+                    ),
+                ));
+            }
+
+            let evaluated = self.evaluate_user_function_call_argument_for_param(
+                function,
+                param,
+                effective_param_index,
+                arg_expr,
+                source_index,
+                caller_scope,
+                allow_reference_return_array_bindings,
+            )?;
+            slots[effective_param_index] = Some(evaluated);
+            highest_param_index = Some(
+                highest_param_index
+                    .map(|current| current.max(effective_param_index))
+                    .unwrap_or(effective_param_index),
+            );
+        }
+
+        let Some(highest_param_index) = highest_param_index else {
+            return Ok((Vec::new(), Vec::new(), Vec::new()));
+        };
+
+        let mut values = Vec::with_capacity(highest_param_index + 1);
+        let mut reference_bindings = Vec::new();
+        let mut by_value_array_copy_source_bindings = Vec::new();
+
+        for (param_index, slot) in slots.into_iter().enumerate().take(highest_param_index + 1) {
+            if let Some(evaluated) = slot {
+                values.push(evaluated.value);
+                if let Some(binding) = evaluated.reference_binding {
+                    reference_bindings.push(binding);
+                }
+                if let Some(binding) = evaluated.array_copy_source_binding {
+                    by_value_array_copy_source_bindings.push(binding);
+                }
+                continue;
+            }
+
+            let param = &function.params[param_index];
+            let Some(default) = param.default.as_ref() else {
+                return Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        callable_name(&function.name),
+                        arity_expectation(
+                            required_param_count(function),
+                            function.params.len(),
+                            false,
+                        ),
+                        args.len(),
+                    ),
+                ));
+            };
+            let mut default_scope = SymbolTable::new();
+            values.push(self.evaluate(default, &mut default_scope)?);
         }
 
         Ok((
