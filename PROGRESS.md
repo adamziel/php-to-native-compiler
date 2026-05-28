@@ -1,8 +1,8 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-29 00:58 CEST
+Updated: 2026-05-29 01:10 CEST
 Primary branch: `master`
-Latest source head: `1c4da4c5 fix: expand standard array operations`
+Latest source head: `94a9cfd9 fix: add C locale setlocale and strcoll`
 
 ## Progress Score
 
@@ -94,6 +94,7 @@ stable pinned denominator and does not use the raw runner
 | Batch005 checkpoint10 sharded gate | Done | 1618 / 20294 pinned runnable PHPTs passed (7.97%); 3 PASS-to-SKIP platform guards from Windows-only PHPTs; run id `phpt-full-batch005-checkpoint10-sharded-20260528T224229Z-php-src-f97ff59-public-fd74fba9-source-1c4da4c5-stack10` |
 | Batch004 source batch | Complete | Batch004 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
 | Batch005 source batch | Complete | Batch005 source checkpoints accepted: 10 / 10; checkpoint10 sharded gate published |
+| Batch006 source batch | Started | Source checkpoints accepted: 1 / 4 gate threshold; checkpoint1 integrates p42 C/POSIX `setlocale()` and C-locale `strcoll()` capability |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -101,43 +102,46 @@ Focused passes prove candidate direction; they do not define project percent.
 
 ## Current Integration
 
-Batch005 source checkpoint 10 is primary-integrated under AO supervision, and
-the Batch005 checkpoint10 sharded publication gate is published. The public
-PHPT score is now **1618 / 20294 pinned runnable PHPTs = 7.97%**.
+Batch006 source checkpoint 1 is primary-integrated under AO supervision. This
+is a source checkpoint with focused proof, not a percentage change. The public
+PHPT score remains **1618 / 20294 pinned runnable PHPTs = 7.97%** until the
+next pinned full-suite or supervisor-approved sharded publication gate is
+completed, regression-checked, and published here.
 
 - primary source head:
-  `1c4da4c5 fix: expand standard array operations`
+  `94a9cfd9 fix: add C locale setlocale and strcoll`
 - reviewed patch:
-  `/home/claude/supervised-php-compiler/state/patches/ao-coder-standard-array-current-37941f23-20260528.patch`
-- reviewed patch SHA256:
-  `a3280b2db7a31346e4487a96bf28e1c477cbc25b243a854eb82b47cdf94203d6`
+  `/home/claude/supervised-php-compiler/state/patches/ao-coder-ext-standard-setlocale-strcoll-c-locale-capability-phpc42-fd74fba9-20260529.patch`
+- reviewed and integration patch SHA256:
+  `3d0d552b7c40a35e654c69c37f009575e18cccb3480e2faf0a4b2fae07709812`
 - current-public integration patch:
-  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p44-standard-array-successor4-5f4b43fe-20260529.patch`
-- current-public integration patch SHA256:
-  `4628dbd8e887da2c6b3ec1ce8575157ca41d2bcd983e262cd8964de233ff34d4`
-- reviewer gate: reviewer-B/phpc-48 recorded `FINAL GO-CANDIDATE` with
-  current-public `5f4b43fe` revalidation; artifacts:
-  `/home/claude/supervised-php-compiler/state/workers/batch005-review-standard-array-successor4-5f4b43fe-20260529.{status.md,report.md,gates.log}`
-- critic gate: phpc-49 recorded `SAFE-FOR-INTEGRATION`; artifacts:
-  `/home/claude/supervised-php-compiler/state/workers/batch005-critic-standard-array-successor4-5f4b43fe-20260529.{status.md,report.md}`
+  `/home/claude/supervised-php-compiler/state/patches/ao-integration-p42-setlocale-strcoll-7088dd77-20260529.patch`
+- reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
+  FOCUSED-GATES-PASS / CORRECTED-PHPT-EVIDENCE-PASS`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch006-review-ext-standard-setlocale-strcoll-fd74fba9-20260529.{status.md,report.md,gates.log}`
+- critic gate: phpc-33 recorded `SAFE-FOR-INTEGRATION`; artifacts:
+  `/home/claude/supervised-php-compiler/state/workers/batch006-critic-ext-standard-setlocale-strcoll-fd74fba9-20260529.{status.md,report.md}`
 - integration handoff: p28 recorded `FINAL-HANDOFF /
   READY-FOR-SUPERVISOR-APPLY`; artifacts:
-  `/home/claude/supervised-php-compiler/state/workers/ao-integration-p44-standard-array-successor4-5f4b43fe-20260529.{status.md,report.md,gates.log}`
+  `/home/claude/supervised-php-compiler/state/workers/ao-integration-p42-setlocale-strcoll-7088dd77-20260529.{status.md,report.md,gates.log}`
 - supervisor focused gates: PASS for patch SHA, `git apply --check`,
-  `git diff --check`, production exact-shape marker audit, and
-  `cargo fmt --all -- --check`; p28 scratch gates also passed focused Rust
-  `array_sort_builtin`, `array_unshift_builtin`, `current_builtin`,
-  `cargo build -p phpc`, and a 10-row focused standard-array PHPT cluster
-- full PHPT suite: Batch005 checkpoint10 sharded publication gate recorded
-  1618 / 20294 pinned runnable PHPTs = 7.97%; focused follow-up confirmed the
-  three PASS-to-SKIP rows are Windows-only platform skips, not source semantic
-  regressions
+  `git diff --check`, docs/PROGRESS/examples exclusion, production
+  exact-shape marker audit, `cargo fmt --all -- --check`, focused Rust
+  `setlocale_capability_builtin` (4/4), `cargo build -p phpc`, and focused
+  PHPT `ext/standard/tests/strings/strcoll.phpt` plus custom C/POSIX
+  `setlocale()` coverage (2/2)
+- full PHPT suite: not run for this single source checkpoint; Batch006 broad
+  gate is due after 4 accepted source checkpoints or after 45 minutes with at
+  least 75 expected pass lift, whichever comes first
 
-This checkpoint generalizes standard array ordering and pointer/mutation
-behavior, including sort operation routing, `SORT_*` flags, `array_shift()`,
-`array_push()`, and current/key/prev/reset/end array pointer behavior. It is
-not keyed to a PHPT filename, expected-output fixture, batch marker, public
-hash, or test-name branch.
+This checkpoint generalizes bounded C/POSIX locale support: `LC_*` constants,
+`setlocale()` metadata and argument handling for the supported subset, and
+C-locale byte collation for `strcoll()`. It is not keyed to a PHPT filename,
+expected-output fixture, batch marker, public hash, or test-name branch.
+
+Previous Batch005 source checkpoint 10 was standard array behavior, and the
+Batch005 checkpoint10 sharded publication gate is recorded above as the latest
+full-suite score publication.
 
 Previous Batch005 source checkpoint 9 was date/timezone scalar behavior:
 
