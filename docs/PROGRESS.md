@@ -4,6 +4,23 @@
 
 Implemented:
 
+- Added bounded PHP-style undefined direct-variable and direct array-offset
+  recovery for by-value call arguments in the interpreter path. User-function,
+  method, callback-helper, and ordinary builtin call-argument evaluation now
+  emits display `Warning:` diagnostics and passes `NULL` for missing direct
+  variables, missing direct array keys, and null/scalar direct offset reads
+  instead of aborting before the callee runs. Direct array-offset arguments
+  passed to by-reference parameters continue to materialize missing roots and
+  leaves as `NULL`, write callee mutations back, and now demote the temporary
+  reference slot after the call when no pre-existing caller reference existed,
+  while preserving explicit caller aliases. Focused gates cover undefined
+  by-value and by-reference array-offset call arguments, pre-existing array-slot
+  references, and pinned PHPTs `tests/lang/passByReference_003.phpt`,
+  `tests/lang/passByReference_001.phpt`, and
+  `tests/lang/passByReference_007.phpt`. General expression reads,
+  `$GLOBALS` offset recovery, broad key coercions, and native lowering remain
+  outside this bounded call-argument slice.
+
 - Added interpreter call-expression reference fallback for direct
   free-function, direct variable receiver object-method, and named static
   method calls. Statement-form reference assignment from calls known to return
