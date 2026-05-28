@@ -475,6 +475,16 @@
 - by-reference function, method, and constructor parameters may be declared.
   Calls that omit an optional by-reference parameter use that parameter's
   default value in the callee local scope without creating an alias. Calls that
+  use direct user-function named arguments are normalized through declared
+  parameter names before binding: explicit arguments are evaluated in source
+  order, skipped optional parameters use their defaults, and out-of-order
+  direct variable or direct array-offset arguments still bind to reached
+  by-reference parameters. This covers calls such as
+  `handler(later: $items[4], first: $items[0])` when the declared parameters
+  are supported by the existing reference bridges. Spread/unpack, variadic
+  named-argument collection, dynamic/callback call surfaces, and exact PHP
+  diagnostics for duplicate/unknown names remain unsupported in this
+  interpreter path. Calls that
   provide a by-reference parameter are supported only for direct variable
   arguments in the current user-function, instance-method, constructor, named
   static method, `self::` static method, `parent::` instance and static method
