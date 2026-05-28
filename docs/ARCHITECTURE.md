@@ -19,7 +19,11 @@ PHP source
 Milestone 1 implements the lexer, parser, AST, a direct interpreter/runtime
 execution path, and a narrow LLVM IR text emitter for simple straight-line code.
 The interpreter runs top-level statements in a global symbol table and creates a
-fresh local symbol table for each user-function call. Local scopes can import
+fresh local symbol table for each user-function call. Before a user-function
+body is entered, direct calls validate supported by-reference argument sources;
+definite value expressions passed to by-reference parameters produce a bounded
+PHP fatal `Error` and stop argument/callee evaluation rather than entering
+the legacy unsupported-reference path. Local scopes can import
 direct root variables through `global $name, ...;`; imported names route direct
 reads and writes through the shared root symbol table, while `unset($name)`
 drops the local import without deleting the root value. If the same local name

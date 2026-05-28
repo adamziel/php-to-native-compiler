@@ -43722,6 +43722,61 @@ impl Interpreter {
         })
     }
 
+    fn expr_is_definitely_by_value_reference_argument(arg: &Expr) -> bool {
+        matches!(
+            arg,
+            Expr::Null(_)
+                | Expr::Bool(_, _)
+                | Expr::Int(_, _)
+                | Expr::Float(_, _)
+                | Expr::String(_, _)
+                | Expr::InterpolatedString { .. }
+                | Expr::MagicLine { .. }
+                | Expr::MagicFile { .. }
+                | Expr::MagicDir { .. }
+                | Expr::MagicFunction { .. }
+                | Expr::MagicClass { .. }
+                | Expr::MagicMethod { .. }
+                | Expr::GlobalConstant { .. }
+                | Expr::ClassNameConstant { .. }
+                | Expr::SelfClassNameConstant { .. }
+                | Expr::ParentClassNameConstant { .. }
+                | Expr::StaticClassNameConstant { .. }
+                | Expr::ObjectClassNameConstant { .. }
+                | Expr::ClassConstant { .. }
+                | Expr::ObjectStaticClassConstant { .. }
+                | Expr::SelfClassConstant { .. }
+                | Expr::ParentClassConstant { .. }
+                | Expr::LateStaticClassConstant { .. }
+                | Expr::Array { .. }
+        )
+    }
+
+    fn emit_reference_argument_fatal(
+        &mut self,
+        function: &FunctionDecl,
+        param_index: usize,
+        param: &FunctionParam,
+        span: Span,
+    ) {
+        let file = self
+            .source_file
+            .clone()
+            .unwrap_or_else(|| "Command line code".to_string());
+        let callable = function.name.trim_start_matches('\\');
+        if !self.stdout.is_empty() && !self.stdout.ends_with('\n') {
+            self.stdout.push('\n');
+        }
+        self.stdout.push_str(&format!(
+            "Fatal error: Uncaught Error: {callable}(): Argument #{} (${}) could not be passed by reference in {file}:{}\nStack trace:\n#0 {{main}}\n  thrown in {file} on line {}",
+            param_index + 1,
+            param.name,
+            span.line,
+            span.line
+        ));
+        self.exit_signal = Some(255);
+    }
+
     fn evaluate_user_function_call_argument_for_param(
         &mut self,
         function: &FunctionDecl,
@@ -43988,6 +44043,15 @@ impl Interpreter {
                             cell: caller_cell,
                         },
                     }),
+                    array_copy_source_binding: None,
+                });
+            }
+
+            if Self::expr_is_definitely_by_value_reference_argument(arg) {
+                self.emit_reference_argument_fatal(function, param_index, param, arg.span());
+                return Ok(EvaluatedCallArgument {
+                    value: Value::Null,
+                    reference_binding: None,
                     array_copy_source_binding: None,
                 });
             }
@@ -51256,6 +51320,9 @@ impl Interpreter {
         prebound_locals: Vec<PreboundLocal>,
         by_value_array_copy_source_bindings: Vec<ArrayCopySourceBinding>,
     ) -> CompileResult<ReferenceReturnBinding> {
+        if self.exit_signal.is_some() {
+            return Ok(ReferenceReturnBinding::Cell(value_cell(Value::Null)));
+        }
         self.function_context.push(function.name.clone());
         if let Some(class_context) = class_context {
             self.class_context.push(class_context);
@@ -54011,6 +54078,13 @@ impl Interpreter {
                 caller_scope,
                 allow_reference_return_array_bindings,
             )?;
+            if self.exit_signal.is_some() {
+                return Ok((
+                    values,
+                    reference_bindings,
+                    by_value_array_copy_source_bindings,
+                ));
+            }
             values.push(evaluated.value);
             if let Some(binding) = evaluated.reference_binding {
                 reference_bindings.push(binding);
@@ -54163,6 +54237,9 @@ impl Interpreter {
                 caller_scope,
                 allow_reference_return_array_bindings,
             )?;
+            if self.exit_signal.is_some() {
+                return Ok((Vec::new(), Vec::new(), Vec::new()));
+            }
             slots[effective_param_index] = Some(evaluated);
             highest_param_index = Some(
                 highest_param_index
@@ -56130,6 +56207,9 @@ impl Interpreter {
         by_value_array_copy_bindings: Vec<(String, String, Vec<ArrayKey>)>,
         by_value_array_copy_source_bindings: Vec<ArrayCopySourceBinding>,
     ) -> CompileResult<(Value, Option<ArrayCopySource>)> {
+        if self.exit_signal.is_some() {
+            return Ok((Value::Null, None));
+        }
         let args = self.coerce_call_frame_values(function, args)?;
         self.function_context.push(function.name.clone());
         if let Some(class_context) = class_context {
