@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 17:49 CEST
+Updated: 2026-05-28 18:13 CEST
 Primary branch: `master`
 Latest source head: `202dd1ec fix: reject disallowed property types`
 
@@ -13,7 +13,7 @@ Progress is the pinned php-src PHPT full-suite pass rate:
 
 `passed runnable PHPTs / total runnable PHPTs`
 
-Current score: **1193 / 20294 runnable PHPTs = 5.88%**.
+Current score: **1311 / 20294 pinned runnable PHPTs = 6.46%**.
 
 No other percentage is public project progress. Focused PHPT passes, source
 checkpoints, PRs, and docs/status edits are evidence for the next batch, but
@@ -27,12 +27,23 @@ Counts: 1118 passed, 19156 failed, 964 skipped, 20 xfailed, 0 borked;
 `run-tests.php` exited 1. Evidence lives under
 `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch001-20260528T010422Z-php-src-f97ff59-base-3e702be4-stack10`.
 
-The latest full-suite result is Batch002 on the same php-src pin, run
+The Batch002 full-suite result was on the same php-src pin, run
 `phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11`.
 Counts: 1193 passed, 19081 failed, 964 skipped, 20 xfailed, 0 borked;
 `run-tests.php` exited 1. Regressions from the Batch001 PASS set: 0. Evidence
 lives under
 `/home/claude/supervised-php-compiler/state/logs/phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11`.
+
+The latest full-suite result is Batch003 on the same php-src pin, run
+`phpt-full-batch003-20260528T154907Z-php-src-f97ff59-public-20f3be4c-source-202dd1ec-stack21`.
+Counts: 1311 passed, 17129 failed, 967 skipped, 12 xfailed, 1839 borked;
+`run-tests.php` exited 1. Regressions from the Batch002 PASS set: 0. Evidence
+lives under
+`/home/claude/supervised-php-compiler/state/logs/phpt-full-batch003-20260528T154907Z-php-src-f97ff59-public-20f3be4c-source-202dd1ec-stack21`.
+
+Batch003 produced BORKED rows from PHPT harness/setup paths, so the public
+score uses the stable pinned denominator and does not use the raw runner
+`1311 / 18452 = 7.10%` calculation that excludes borked rows.
 
 ## PHPT Harness
 
@@ -44,7 +55,8 @@ lives under
 | Skip/xfail ledger | Started | `/home/claude/supervised-php-compiler/state/php-core-suite-skip-ledger.tsv` |
 | First full-suite baseline | Done | 1118 / 20294 runnable PHPTs passed (5.51%); run id `phpt-full-batch001-20260528T010422Z-php-src-f97ff59-base-3e702be4-stack10` |
 | Batch002 full-suite gate | Done | 1193 / 20294 runnable PHPTs passed (5.88%); 0 regressions from Batch001 PASS set; run id `phpt-full-batch002-20260528T100640Z-php-src-f97ff59-public-bc0ed214-source-e72efe27-stack11` |
-| Next full-suite gate | Due now | Post-Batch002 source checkpoints have exceeded the 10-checkpoint target; no further source checkpoint should be publicly routed before a pinned full-suite run and regression check |
+| Batch003 full-suite gate | Done | 1311 / 20294 pinned runnable PHPTs passed (6.46%); 0 regressions from Batch002 PASS set; run id `phpt-full-batch003-20260528T154907Z-php-src-f97ff59-public-20f3be4c-source-202dd1ec-stack21` |
+| Next source batch | Open | Route the next bounded source batch toward broad PHPT failures with focused PHPT proof; run the next full suite after 10 accepted source checkpoints |
 
 Focused PHPT history is tracked separately in
 `/home/claude/supervised-php-compiler/state/php-core-suite-focused-history.tsv`.
@@ -54,9 +66,9 @@ Focused passes prove candidate direction; they do not define project percent.
 
 Post-Batch002 source checkpoint 21 is now primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
-change. The public score remains **1193 / 20294 runnable PHPTs = 5.88%** until
-another pinned full-suite run is completed, parsed, regression-checked, and
-published here.
+change. Batch003 has now completed and moved the public score to **1311 /
+20294 pinned runnable PHPTs = 6.46%**, with 0 regressions from the Batch002
+PASS set.
 
 - primary source head:
   `202dd1ec fix: reject disallowed property types`
@@ -77,9 +89,8 @@ published here.
   `cargo build -p phpc`, and wrapper PHPTs
   `Zend/tests/type_declarations/typed_properties_053.phpt` and
   `Zend/tests/type_declarations/typed_properties_054.phpt`
-- full PHPT suite: **due next**; post-Batch002 source checkpoints have exceeded
-  the 10-checkpoint target and further source checkpoint routing is held until
-  a pinned full-suite run is completed and regressions are repaired
+- full PHPT suite: Batch003 complete; 1311 passed on the pinned public
+  denominator, 0 regressions from the Batch002 PASS set
 
 This checkpoint generalizes startup validation for disallowed property type
 names. Class, trait, interface, and promoted-property declarations now reject
@@ -91,9 +102,8 @@ Previous post-Batch002 source checkpoint 20 was p19 dynamic-call bug63173:
 
 Post-Batch002 source checkpoint 20 is now primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
-change. The public score remains **1193 / 20294 runnable PHPTs = 5.88%** until
-another pinned full-suite run is completed, parsed, regression-checked, and
-published here.
+change. At that checkpoint time, the public score remained **1193 / 20294
+runnable PHPTs = 5.88%** pending the next pinned full-suite run.
 
 - primary source head:
   `32b8b637 fix: validate dynamic array callback shape`
@@ -132,9 +142,8 @@ Previous post-Batch002 source checkpoint 19 was p15 assignment expression:
 
 Post-Batch002 source checkpoint 19 is now primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
-change. The public score remains **1193 / 20294 runnable PHPTs = 5.88%** until
-another pinned full-suite run is completed, parsed, regression-checked, and
-published here.
+change. At that checkpoint time, the public score remained **1193 / 20294
+runnable PHPTs = 5.88%** pending the next pinned full-suite run.
 
 - primary source head:
   `dfd7ff09 fix: return coerced typed property assignment values`
@@ -172,9 +181,8 @@ Previous post-Batch002 source checkpoint 18 was p31 argument unpack successor:
 
 Post-Batch002 source checkpoint 18 is now primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
-change. The public score remains **1193 / 20294 runnable PHPTs = 5.88%** until
-another pinned full-suite run is completed, parsed, regression-checked, and
-published here.
+change. At that checkpoint time, the public score remained **1193 / 20294
+runnable PHPTs = 5.88%** pending the next pinned full-suite run.
 
 - primary source head:
   `97e80bcc fix: support string-keyed argument unpacking`
@@ -214,9 +222,8 @@ Previous post-Batch002 source checkpoint 17 was p17 attributes next-source:
 
 Post-Batch002 source checkpoint 17 is now primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
-change. The public score remains **1193 / 20294 runnable PHPTs = 5.88%** until
-another pinned full-suite run is completed, parsed, regression-checked, and
-published here.
+change. At that checkpoint time, the public score remained **1193 / 20294
+runnable PHPTs = 5.88%** pending the next pinned full-suite run.
 
 - primary source head:
   `f508515b fix: allow abstract trait override targets`
@@ -254,9 +261,8 @@ Previous post-Batch002 source checkpoint 16 was p19 dynamic call:
 
 Post-Batch002 source checkpoint 16 is now primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
-change. The public score remains **1193 / 20294 runnable PHPTs = 5.88%** until
-another pinned full-suite run is completed, parsed, regression-checked, and
-published here.
+change. At that checkpoint time, the public score remained **1193 / 20294
+runnable PHPTs = 5.88%** pending the next pinned full-suite run.
 
 - primary source head:
   `8f4e7996 fix: support static object array callbacks`
@@ -294,9 +300,8 @@ Previous post-Batch002 source checkpoint 15 was p17 method override:
 
 Post-Batch002 source checkpoint 15 is now primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
-change. The public score remains **1193 / 20294 runnable PHPTs = 5.88%** until
-another pinned full-suite run is completed, parsed, regression-checked, and
-published here.
+change. At that checkpoint time, the public score remained **1193 / 20294
+runnable PHPTs = 5.88%** pending the next pinned full-suite run.
 
 - primary source head:
   `8d4f1971 fix: validate method override attributes`
@@ -340,9 +345,8 @@ Previous post-Batch002 source checkpoint 14 was p31 call-argument unpack:
 
 Post-Batch002 source checkpoint 14 is primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
-change. The public score remains **1193 / 20294 runnable PHPTs = 5.88%** until
-another pinned full-suite run is completed, parsed, regression-checked, and
-published here.
+change. At that checkpoint time, the public score remained **1193 / 20294
+runnable PHPTs = 5.88%** pending the next pinned full-suite run.
 
 - primary source head:
   `30e8e734 fix: expand argument unpacking for calls`
@@ -377,9 +381,8 @@ TypeError:
 
 Post-Batch002 source checkpoint 13 is primary-integrated under AO
 supervision. This is a source checkpoint with focused proof, not a percentage
-change. The public score remains **1193 / 20294 runnable PHPTs = 5.88%** until
-another pinned full-suite run is completed, parsed, regression-checked, and
-published here.
+change. At that checkpoint time, the public score remained **1193 / 20294
+runnable PHPTs = 5.88%** pending the next pinned full-suite run.
 
 - primary source head:
   `ed7fbc6b fix: throw type errors for constant defaults`
@@ -414,9 +417,9 @@ fixture function names, constant names, expected output rows, or `PHP_EOL`.
 Previous post-Batch002 source checkpoint 12 was p17 promoted-property override:
 
 Post-Batch002 source checkpoint 12 is primary-integrated under AO. This is a
-source checkpoint with focused proof, not a percentage change. The public score
-remains **1193 / 20294 runnable PHPTs = 5.88%** until another pinned full-suite
-run is completed, parsed, regression-checked, and published here.
+source checkpoint with focused proof, not a percentage change. At that
+checkpoint time, the public score remained **1193 / 20294 runnable PHPTs =
+5.88%** pending the next pinned full-suite run.
 
 - primary source head:
   `0dafd34e fix: validate promoted property override attributes`
