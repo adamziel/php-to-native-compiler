@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 03:10 CEST
+Updated: 2026-05-28 03:14 CEST
 Primary branch: `master`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
@@ -87,11 +87,11 @@ Required live roles:
 
 Current AO snapshot: `phpc-orchestrator` supervising; `phpc-11` full-suite gate
 running `run-tests.php`; `phpc-4` critic auditing PR #3/full-gate risk;
-`phpc-7` reviewing PR #3 only as a Batch 002 candidate; `phpc-8` progress
-reporter monitoring the gate; `phpc-10` by-reference coder; `phpc-12`
-foreach/GLOBALS coder. Completed PR #3 author session `phpc-9` was harvested
-and killed after artifacts were recorded. PR #2/r82 remains parked unless Batch
-001 PR 10 selection is reopened.
+`phpc-7` marked PR #3 `REBASE-NEEDED` for Batch 002 and is now reviewing
+r82/PR #2 as a Batch 002 candidate; `phpc-8` progress reporter monitoring the
+gate; `phpc-10` by-reference coder; `phpc-12` foreach/GLOBALS coder. Completed
+PR #3 author session `phpc-9` was harvested and killed after artifacts were
+recorded.
 
 ## Current Rules
 
