@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 12:46 CEST
+Updated: 2026-05-28 12:50 CEST
 Primary branch: `master`
 Latest source head: `0a18d1c5 fix: materialize undefined byref sources`
 
@@ -57,12 +57,12 @@ remains **1193 / 20294 runnable PHPTs = 5.88%** until another pinned full-suite
 run is completed, parsed, regression-checked, and published here.
 
 - primary source head: `0a18d1c5 fix: materialize undefined byref sources`
-- p28 integration handoff head:
-  `fe994c7c1dbe29fb131cc768070680558bfd56f2 fix: materialize undefined byref sources`
+- p28 final handoff head:
+  `f8a74c2299a90de7ccb50193aa3056b48b481f0c fix: materialize undefined by-reference sources`
 - exported integration patch:
   `/home/claude/supervised-php-compiler/state/patches/ao-integration-p18-byref-undefined-20260528.patch`
 - exported integration patch SHA256:
-  `457e1b8e927f3667ec5383f9d4a137e7923bed7b313437ccbc4a902129fe5c3c`
+  `aaf34af8b9751b061a4da6f8deda2a8b659bae48f27049c4c624313949fb29d8`
 - source candidate patch SHA256:
   `f35486eb1e43340cf1bf1841c4933ddeb1df55badafc841a221bddcc477d6387`
 - reviewer gate: p7 recorded `FINAL GO-CANDIDATE /
