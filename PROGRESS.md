@@ -1,6 +1,6 @@
 # PHP Native Compiler Progress
 
-Updated: 2026-05-28 07:03 CEST
+Updated: 2026-05-28 07:05 CEST
 Primary branch: `master`
 Latest source head: `0fa7b666 runtime: autoload enum_exists misses`
 
@@ -102,6 +102,7 @@ Gate status and parked candidates:
 | `Zend/tests/list/bug65969.phpt` chain assignment with `list()` PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing chain assignment behavior lets `list()` destructure the same array assigned to an object property, passing wrapper PHPT `Zend/tests/list/bug65969.phpt` 1/1 using the rebuilt reviewed public binary `/tmp/phpc-reviewed-public-687fcc41-20260528-target2/debug/phpc`; no source patch, no cargo gate beyond the authorized binary recovery, no full-suite run, and no percent change |
 | `Zend/tests/variadic/basic.phpt` basic variadic argument packing PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing variadic call binding packs surplus arguments and passes wrapper PHPT `Zend/tests/variadic/basic.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
 | `Zend/tests/variadic/optional_params.phpt` optional-parameter-before-variadic PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and durable p14 `SAFE-FOR-PROGRESS`; existing variadic call binding preserves optional defaults before collecting surplus arguments and passes wrapper PHPT `Zend/tests/variadic/optional_params.phpt` 1/1 using the pass005 repair2 reviewed binary; no source patch, no cargo gate, no full-suite run, and no percent change |
+| `Zend/tests/variadic/variadic_implements_non_variadic.phpt` variadic implementation widening PASS-NO-PATCH | ACCEPT-PASS-NO-PATCH after independent p7 review and p14 `SAFE-FOR-PROGRESS`; existing method compatibility behavior accepts an implementation that widens a non-variadic interface method to a variadic child method, passing wrapper PHPT `Zend/tests/variadic/variadic_implements_non_variadic.phpt` 1/1 using the rebuilt reviewed public binary `/tmp/phpc-reviewed-public-687fcc41-20260528-target2/debug/phpc`; no source patch, no cargo gate beyond the authorized binary recovery, no full-suite run, and no percent change |
 | `Zend/tests/bug39944.phpt` reference invocation | PR #2/r82 is parked/superseded for Batch002; do not stack it with PR #4 because both conflict in `compiler/src/interpreter.rs` and `compiler/tests/functions_and_scopes.rs` |
 | Magic visibility warnings | PR #3 is `REBASE-NEEDED` for Batch 002 after r81/stack10 due docs conflict; production/test hunks replay |
 | Foreach `$GLOBALS` lane | PASS-NO-PATCH accepted by reviewer; accepted stack10 passes `foreach_unset_globals`, `foreach_reference`, and `foreach_temp_array_expr_with_refs` |
