@@ -1295,19 +1295,25 @@ fn emit_ir_rejects_magic_function_until_native_source_mapping_exists() {
 }
 
 #[test]
-fn magic_namespace_constant_is_rejected_until_namespace_resolution_exists() {
-    let error = parse_error(
+fn magic_namespace_constant_uses_current_namespace_context() {
+    let global = run_source(
         r#"<?php
+echo "[", __NAMESPACE__, "]";
+"#,
+    )
+    .unwrap();
+    assert_eq!(global.stdout, "[]");
+
+    let namespaced = run_source(
+        r#"<?php
+namespace Foo\Bar;
+echo __NAMESPACE__, "\n";
+namespace Other;
 echo __NAMESPACE__;
 "#,
-    );
-
-    assert_eq!(error.line, 2);
-    assert_eq!(error.column, 6);
-    assert_eq!(
-        error.message,
-        "unsupported magic constant __NAMESPACE__: namespace context evaluation requires namespace-aware name resolution, which is not implemented"
-    );
+    )
+    .unwrap();
+    assert_eq!(namespaced.stdout, "Foo\\Bar\nOther");
 }
 
 #[test]

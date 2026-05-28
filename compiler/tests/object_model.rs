@@ -2185,14 +2185,39 @@ var_dump($call("box", "false"));
 }
 
 #[test]
-fn class_exists_requires_string_name_and_bool_autoload_arguments() {
-    let name_error = runtime_error("<?php\nvar_dump(class_exists(42));\n");
+fn metadata_exists_coerces_scalar_names_and_rejects_non_scalars() {
+    let source = r#"<?php
+class Box {}
+interface Contract {}
+trait Shared {}
+enum Mode { case On; }
+
+var_dump(class_exists(1));
+var_dump(class_exists(false));
+var_dump(class_exists(null));
+var_dump(class_exists("BOX"));
+var_dump(interface_exists(true));
+var_dump(interface_exists("Contract"));
+var_dump(trait_exists(0.5));
+var_dump(trait_exists("Shared"));
+var_dump(enum_exists(42));
+var_dump(enum_exists("Mode"));
+"#;
+
+    let execution = run_source(source).unwrap();
+    assert_eq!(
+        execution.stdout,
+        "bool(false)\nbool(false)\nbool(false)\nbool(true)\nbool(false)\nbool(true)\nbool(false)\nbool(true)\nbool(false)\nbool(true)\n"
+    );
+    assert_eq!(execution.exit_code, 0);
+
+    let name_error = runtime_error("<?php\nvar_dump(class_exists([]));\n");
 
     assert_eq!(name_error.line, 2);
     assert_eq!(name_error.column, 10);
     assert_eq!(
         name_error.message,
-        "unsupported call class_exists(): class name argument must be string, got int"
+        "unsupported call class_exists(): class-like name argument must be string-compatible scalar in the current subset, got array"
     );
 
     let autoload_error = runtime_error("<?php\nvar_dump(class_exists(\"Box\", []));\n");

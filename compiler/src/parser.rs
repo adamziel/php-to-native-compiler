@@ -6197,6 +6197,9 @@ impl Parser {
                     if magic_name == "__METHOD__" {
                         return Ok(Expr::MagicMethod { span: token.span });
                     }
+                    if magic_name == "__NAMESPACE__" {
+                        return Ok(Expr::String(self.current_namespace.clone(), token.span));
+                    }
                     return Err(
                         self.error_at(token.span, unsupported_magic_constant_message(magic_name))
                     );

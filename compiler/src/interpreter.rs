@@ -49913,6 +49913,22 @@ impl Interpreter {
         }
     }
 
+    fn call_metadata_exists(
+        &mut self,
+        function_name: &'static str,
+        name: &Value,
+        kind: AutoloadKind,
+        autoload: bool,
+        span: Span,
+    ) -> CompileResult<Value> {
+        let Some(name) = metadata_exists_class_like_name(function_name, name, span)? else {
+            return Ok(Value::Bool(false));
+        };
+        Ok(Value::Bool(self.class_like_exists_with_autoload(
+            &name, kind, autoload, span,
+        )?))
+    }
+
     fn class_like_exists_with_autoload(
         &mut self,
         name: &str,
@@ -64266,53 +64282,33 @@ impl Interpreter {
                 };
                 Ok(Value::String(type_name))
             }
-            "class_exists" => {
-                match args.as_slice() {
-                    [Value::String(class_name)] => Ok(Value::Bool(
-                        self.class_like_exists_with_autoload(
-                            class_name,
-                            AutoloadKind::Class,
-                            true,
-                            span,
-                        )?,
-                    )),
-                    [Value::String(class_name), autoload] => {
-                        let autoload =
-                            metadata_exists_autoload_flag("class_exists()", autoload, span)?;
-                        Ok(Value::Bool(self.class_like_exists_with_autoload(
-                            class_name,
-                            AutoloadKind::Class,
-                            autoload,
-                            span,
-                        )?))
-                    }
-                    [other] => Err(runtime_error(
+            "class_exists" => match args.as_slice() {
+                [class_name] => self.call_metadata_exists(
+                    "class_exists()",
+                    class_name,
+                    AutoloadKind::Class,
+                    true,
+                    span,
+                ),
+                [class_name, autoload] => {
+                    let autoload = metadata_exists_autoload_flag("class_exists()", autoload, span)?;
+                    self.call_metadata_exists(
+                        "class_exists()",
+                        class_name,
+                        AutoloadKind::Class,
+                        autoload,
                         span,
-                        RuntimeError::unsupported_call(
-                            "class_exists()",
-                            format!("class name argument must be string, got {}", other.type_name()),
-                        ),
-                    )),
-                    [_, other] => Err(runtime_error(
-                        span,
-                        RuntimeError::unsupported_call(
-                            "class_exists()",
-                            format!(
-                                "autoload argument must be bool-like scalar in the current subset, got {}",
-                                other.type_name()
-                            ),
-                        ),
-                    )),
-                    _ => Err(runtime_error(
-                        span,
-                        RuntimeError::arity_mismatch(
-                            "class_exists()",
-                            ArityExpectation::Between { min: 1, max: 2 },
-                            args.len(),
-                        ),
-                    )),
+                    )
                 }
-            }
+                _ => Err(runtime_error(
+                    span,
+                    RuntimeError::arity_mismatch(
+                        "class_exists()",
+                        ArityExpectation::Between { min: 1, max: 2 },
+                        args.len(),
+                    ),
+                )),
+            },
             "class_alias" => match args.as_slice() {
                 [Value::String(source_name), Value::String(alias_name)] => {
                     self.call_class_alias(source_name, alias_name, true, span)
@@ -64365,44 +64361,24 @@ impl Interpreter {
                 )),
             },
             "interface_exists" => match args.as_slice() {
-                [Value::String(interface_name)] => Ok(Value::Bool(
-                    self.class_like_exists_with_autoload(
-                        interface_name,
-                        AutoloadKind::Interface,
-                        true,
-                        span,
-                    )?,
-                )),
-                [Value::String(interface_name), autoload] => {
+                [interface_name] => self.call_metadata_exists(
+                    "interface_exists()",
+                    interface_name,
+                    AutoloadKind::Interface,
+                    true,
+                    span,
+                ),
+                [interface_name, autoload] => {
                     let autoload =
                         metadata_exists_autoload_flag("interface_exists()", autoload, span)?;
-                    Ok(Value::Bool(self.class_like_exists_with_autoload(
+                    self.call_metadata_exists(
+                        "interface_exists()",
                         interface_name,
                         AutoloadKind::Interface,
                         autoload,
                         span,
-                    )?))
+                    )
                 }
-                [other] => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "interface_exists()",
-                        format!(
-                            "interface name argument must be string, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                )),
-                [_, other] => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "interface_exists()",
-                        format!(
-                            "autoload argument must be bool-like scalar in the current subset, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                )),
                 _ => Err(runtime_error(
                     span,
                     RuntimeError::arity_mismatch(
@@ -64413,41 +64389,23 @@ impl Interpreter {
                 )),
             },
             "trait_exists" => match args.as_slice() {
-                [Value::String(trait_name)] => Ok(Value::Bool(
-                    self.class_like_exists_with_autoload(
-                        trait_name,
-                        AutoloadKind::Trait,
-                        true,
-                        span,
-                    )?,
-                )),
-                [Value::String(trait_name), autoload] => {
-                    let autoload =
-                        metadata_exists_autoload_flag("trait_exists()", autoload, span)?;
-                    Ok(Value::Bool(self.class_like_exists_with_autoload(
+                [trait_name] => self.call_metadata_exists(
+                    "trait_exists()",
+                    trait_name,
+                    AutoloadKind::Trait,
+                    true,
+                    span,
+                ),
+                [trait_name, autoload] => {
+                    let autoload = metadata_exists_autoload_flag("trait_exists()", autoload, span)?;
+                    self.call_metadata_exists(
+                        "trait_exists()",
                         trait_name,
                         AutoloadKind::Trait,
                         autoload,
                         span,
-                    )?))
+                    )
                 }
-                [other] => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "trait_exists()",
-                        format!("trait name argument must be string, got {}", other.type_name()),
-                    ),
-                )),
-                [_, other] => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "trait_exists()",
-                        format!(
-                            "autoload argument must be bool-like scalar in the current subset, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                )),
                 _ => Err(runtime_error(
                     span,
                     RuntimeError::arity_mismatch(
@@ -64458,41 +64416,23 @@ impl Interpreter {
                 )),
             },
             "enum_exists" => match args.as_slice() {
-                [Value::String(enum_name)] => Ok(Value::Bool(
-                    self.class_like_exists_with_autoload(
-                        enum_name,
-                        AutoloadKind::Enum,
-                        true,
-                        span,
-                    )?,
-                )),
-                [Value::String(enum_name), autoload] => {
-                    let autoload =
-                        metadata_exists_autoload_flag("enum_exists()", autoload, span)?;
-                    Ok(Value::Bool(self.class_like_exists_with_autoload(
+                [enum_name] => self.call_metadata_exists(
+                    "enum_exists()",
+                    enum_name,
+                    AutoloadKind::Enum,
+                    true,
+                    span,
+                ),
+                [enum_name, autoload] => {
+                    let autoload = metadata_exists_autoload_flag("enum_exists()", autoload, span)?;
+                    self.call_metadata_exists(
+                        "enum_exists()",
                         enum_name,
                         AutoloadKind::Enum,
                         autoload,
                         span,
-                    )?))
+                    )
                 }
-                [other] => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "enum_exists()",
-                        format!("enum name argument must be string, got {}", other.type_name()),
-                    ),
-                )),
-                [_, other] => Err(runtime_error(
-                    span,
-                    RuntimeError::unsupported_call(
-                        "enum_exists()",
-                        format!(
-                            "autoload argument must be bool-like scalar in the current subset, got {}",
-                            other.type_name()
-                        ),
-                    ),
-                )),
                 _ => Err(runtime_error(
                     span,
                     RuntimeError::arity_mismatch(
@@ -72989,6 +72929,30 @@ fn undefined_goto_label_error(span: Span, label: &str) -> Diagnostic {
         span.column,
         format!("undefined goto label '{label}'"),
     )
+}
+
+fn metadata_exists_class_like_name(
+    function_name: &'static str,
+    value: &Value,
+    span: Span,
+) -> CompileResult<Option<String>> {
+    match value {
+        Value::String(name) => Ok(Some(name.clone())),
+        Value::BinaryString(bytes) => Ok(String::from_utf8(bytes.clone()).ok()),
+        Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => {
+            Ok(Some(value.echo_string()))
+        }
+        other => Err(runtime_error(
+            span,
+            RuntimeError::unsupported_call(
+                function_name,
+                format!(
+                    "class-like name argument must be string-compatible scalar in the current subset, got {}",
+                    other.type_name()
+                ),
+            ),
+        )),
+    }
 }
 
 fn metadata_exists_autoload_flag(
